@@ -29,6 +29,9 @@ warnings.filterwarnings("ignore", category=UserWarning, module="openpyxl")
 
 # 初始化配置服务
 user_service = UserService()
+# 获取最新配置文件，待用
+config_service = ConfigService()
+init_config_data = config_service.load_config()
 # 文件夹路径设定
 BASE_DIR = Path(__file__).parent.parent  # 项目根目录
 IMG_DIR = f"{BASE_DIR}/img"
@@ -65,6 +68,30 @@ app.storage.general.setdefault("project_overview_config", {})
 #         progress=True,
 #         close_button="✖",
 #     )
+
+
+# 更新需求配置文件，供后续管理员调用
+def update_config_service():
+    global init_config_data
+    try:
+        init_config_data = config_service.load_config()
+        ui.notify(
+            "需求配置文件更新成功!",
+            type="positive",
+            position="bottom",
+            timeout=1000,
+            progress=True,
+            close_button="✖",
+        )
+    except Exception as e:
+        ui.notify(
+            f'需求配置文件更新出错： "{e}" ',
+            type="negative",
+            position="bottom",
+            timeout=1000,
+            progress=True,
+            close_button="✖",
+        )
 
 
 # 项目名切割处理函数
@@ -761,6 +788,23 @@ def login_page():
         dialog_set_password.open()
 
 
+@ui.page("/manage")
+def manage_page():
+    if app.storage.user.get("current_user") != "admin":
+        ui.navigate.to("/main")  # 如果不是管理员，跳转到主界面
+        return
+    with ui.header().classes("flex justify-between items-center bg-blue-500 h-12 px-4"):
+        ui.label("系统管理员界面").classes("text-white text-lg absolute left-1/2 transform -translate-x-1/2")
+        with ui.button(icon="menu").props("flat round").classes("ml-auto -mt-3.5 h-4 text-sm/4 text-white"):  # 右侧对齐
+            with ui.menu() as menu:
+                ui.menu_item("注销登录", on_click=lambda: logout())
+                ui.menu_item("返回主界面", on_click=lambda: ui.navigate.to("/main"))
+                ui.separator()
+                ui.menu_item("关闭菜单", menu.close)
+    with ui.column().classes("w-full h-[90vh] -space-y-2"):
+        ui.button("更新需求配置文件", on_click=lambda: update_config_service()).props("").classes("")
+
+
 # ======================
 # 主界面路由
 # ======================
@@ -1167,6 +1211,8 @@ def main_page():
         with ui.button(icon="menu").props("flat round").classes("ml-auto -mt-3.5 h-4 text-sm/4 text-white"):  # 右侧对齐
             with ui.menu() as menu:
                 ui.menu_item("注销登录", on_click=lambda: logout())
+                if app.storage.user.get("current_user") == "admin":
+                    ui.menu_item("系统管理", on_click=lambda: ui.navigate.to("/manage"))
                 ui.separator()
                 ui.menu_item("关闭菜单", menu.close)
     with ui.column().classes("w-full h-[90vh] -space-y-2"):
@@ -1218,9 +1264,6 @@ def requirement_page(type="", json_path="", project_name=""):
     if not app.storage.user.get("current_user"):
         ui.navigate.to("/login")  # 如果未登录，跳转到登录页
         return
-    # 获取最新配置文件，待用
-    config_service = ConfigService()
-    init_config_data = config_service.load_config()
 
     # 存储用户层级需求相关数据的变量初始化
     # 用于记录键盘按键状态

@@ -9,8 +9,8 @@ import pandas as pd
 
 class ConfigService:
     def __init__(self):
-        base_dir = Path(__file__).parent.parent
-        self.excel_path = base_dir / "data" / "config.xlsx"
+        self.base_dir = Path(__file__).parent.parent
+        self.excel_path = self.base_dir / "data" / "config.xlsx"
         self._cache = None  # 用于缓存加载的数据
         self._last_hash = None  # 用于检测文件是否修改
 
@@ -131,7 +131,7 @@ class ConfigService:
             "excel_version_hash": hashlib.md5(self.excel_path.read_bytes()).hexdigest()[:8],
             "entry_status": False,  # 初始化录入状态，默认没有录完
         }
-        with open("config_service.json", "w", encoding="utf-8") as f:
+        with open(f"{self.base_dir}/config_service.json", "w", encoding="utf-8") as f:
             json.dump(self._cache, f, ensure_ascii=False, indent=4)
         return self._cache
 
