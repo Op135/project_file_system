@@ -1,0 +1,97 @@
+/*  文件夹settings.json设置与工作区设置的关系：
+    1. 文件夹设置一般情况优先级高于工作区设置
+    2. 一部分设置（涉及到多人合作须统一的）在有工作区设置时，文件夹设置作废，灰色显示
+*/
+{
+    // 排除搜索
+    "search.exclude": {
+        "**/node_modules": true,
+        "**/venv": true
+    },
+    // 禁止Ruff插件报某类问题
+    "ruff.lint.ignore": [
+        "F401"
+    ],
+    // 设置Python终端在文件目录中执行
+    "python.terminal.executeInFileDir": true,
+    // 设置代码运行器的工作目录为当前文件所在的目录
+    "code-runner.fileDirectoryAsCwd": true,
+    // 设置代码运行器在终端中运行代码
+    "code-runner.runInTerminal": true,
+    // 设置编辑器的标尺，当代码行数超过150时会显示标尺
+    "editor.rulers": [
+        150
+    ],
+    // 设置编辑器的最大标记化行长度为1000000
+    "editor.maxTokenizationLineLength": 1000000,
+    // 禁用对非基本ASCII字符的高亮显示
+    "editor.unicodeHighlight.nonBasicASCII": false,
+    // 设置文件编码为UTF-8，符合PEP8风格指南
+    "files.encoding": "utf8",
+    // 禁用后，将在文件打开时不会尝试猜测字符集编码
+    "files.autoGuessEncoding": true,
+    // 保存时自动格式化文件，符合PEP8风格指南
+    "editor.formatOnSave": true,
+    // 设置制表符等于的空格数为4，符合PEP8风格指南
+    "editor.tabSize": 4,
+    // 设置字体大小为16，符合一般开发者的阅读习惯
+    "editor.fontSize": 16,
+    // 设置字体粗细为正常
+    "editor.fontWeight": "normal",
+    // 禁用粘贴时自动格式化代码
+    "editor.formatOnPaste": false,
+    // 禁用输入时自动格式化代码
+    "editor.formatOnType": false,
+    // 禁用编辑器中的拖放功能
+    "editor.dragAndDrop": false,
+    // 启用后，复制空选择时会复制当前行
+    "editor.emptySelectionClipboard": true,
+    // 启用后，搜索时会自动使用当前选择的内容作为搜索字符串
+    "editor.find.seedSearchStringFromSelection": "always",
+    // 启用悬停提示
+    "editor.hover.enabled": true,
+    // 启用后，悬停提示会保持显示直到手动关闭
+    "editor.hover.sticky": true,
+    // 启用编辑器中的链接功能
+    "editor.links": true,
+    // 启用括号匹配高亮
+    "editor.matchBrackets": "always",
+    // 启用圆角选择框
+    "editor.roundedSelection": true,
+    // 显示未使用的变量和导入
+    "editor.showUnused": true,
+    // 设置光标闪烁方式为扩展
+    "editor.cursorBlinking": "expand",
+    // 设置光标样式为细线
+    "editor.cursorStyle": "line",
+    // 设置光标宽度为0
+    "editor.cursorWidth": 0,
+    // 禁用小地图
+    "editor.minimap.enabled": false,
+    // 禁用光标平滑动画
+    "editor.cursorSmoothCaretAnimation": "off",
+    // 设置小地图的最大列数为80
+    "editor.minimap.maxColumn": 80,
+    // 启用小地图渲染字符
+    "editor.minimap.renderCharacters": true,
+    // 设置小地图滑块在鼠标悬停时显示
+    "editor.minimap.showSlider": "mouseover",
+    // 设置小地图显示在右侧
+    "editor.minimap.side": "right",
+    // 设置鼠标滚轮滚动灵敏度为1
+    "editor.mouseWheelScrollSensitivity": 1,
+    // 启用鼠标滚轮缩放
+    "editor.mouseWheelZoom": true,
+    // 禁用代码镜头
+    "editor.codeLens": false,
+    // 启用颜色装饰器
+    "editor.colorDecorators": true,
+    // 控制已更新文件的自动保存。设置自动保存延迟为1000毫秒（1秒）
+    "files.autoSaveDelay": 1000,
+    // 启用后，保存文件时在文件末尾插入一个最终新行。
+    "files.insertFinalNewline": true,
+    // 可以为不同语言或文档单独配置
+    "[markdown]": {
+        "editor.formatOnSave": true
+    },
+}

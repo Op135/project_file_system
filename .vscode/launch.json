@@ -1,0 +1,69 @@
+{
+    // 使用 IntelliSense 了解相关属性。 
+    // 悬停以查看现有属性的描述。
+    // 欲了解更多信息，请访问: https://go.microsoft.com/fwlink/?linkid=830387
+    // https://code.visualstudio.com/docs/python/debugging#_remote-script-debugging-with-ssh
+    /*
+    配置调试环境的重要文件。
+    它定义了如何启动和调试应用程序，包括指定调试器类型、调试目标、参数、环境变量等。
+    通过这个文件，开发者可以在 VSCode 中直接运行和调试各种语言的程序，而无需额外的调试工具。
+    对于每个启动配置，以下属性都是必需的：
+        type- 用于此 Launch 配置的 Debugger 类型。每个已安装的调试扩展都会引入一个类型：例如，用于内置的 Node 调试器，或者用于 PHP 和 Go 扩展的 and。nodephpgo
+        request- 此启动配置的请求类型。现在发射并受支持。attach
+        name- 显示在 Debug launch configuration 下拉列表中的读者友好名称。
+    以下是所有启动配置可用的一些可选属性：
+        presentation- 使用对象中的 、 和 属性，您可以在 Debug configuration 下拉列表和 Debug 快速选择中对配置和复合进行排序、分组和隐藏。ordergrouphiddenpresentation
+        preLaunchTask- 要在调试会话开始之前启动任务，请将此属性设置为 tasks.json中指定的任务的标签（在工作区的文件夹中）。或者，可以将其设置为使用默认生成任务。.vscode${defaultBuildTask}
+        postDebugTask- 要在调试会话结束时启动任务，请将此属性设置为 tasks.json 中指定的任务的名称（在工作区的文件夹中）。.vscode
+        internalConsoleOptions- 此属性控制调试会话期间 Debug 控制台面板的可见性。
+        debugServer - 仅适用于调试扩展作者：此属性允许您连接到指定的端口，而不是启动调试适配器。
+        serverReadyAction- 如果要在调试下的程序向调试控制台或集成终端输出特定消息时，在 Web 浏览器中打开 URL。有关详细信息，请参阅下面的 调试服务器程序时自动打开 URI 部分。
+    许多调试器支持以下某些属性：
+        program- 启动调试器时要运行的可执行文件或文件
+        args- 传递给程序进行调试的参数
+        env- 环境变量（该值可用于“取消定义”变量）null
+        envFile- 包含环境变量的 Dotenv 文件的路径
+        cwd- 用于查找依赖项和其他文件的当前工作目录
+        port- 连接到正在运行的进程时的端口
+        stopOnEntry- 程序启动时立即中断
+        console- 要使用的控制台类型，例如 、 、 或internalConsoleintegratedTerminalexternalTerminal
+    */
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: 当前文件（集成终端）",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "cwd": "${fileDirname}",
+            "justMyCode": true, // 只调试自己的代码，不调试第三方包的代码
+            // 使用集成终端调试当前文件
+        },
+        {
+            "name": "Python: 当前文件（外部终端）",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "externalTerminal",
+            "cwd": "${fileDirname}",
+            // 使用外部终端调试当前文件
+        },
+        {
+            "name": "Python: 调试测试文件",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/tests/test_main.py",
+            "console": "integratedTerminal",
+            "cwd": "${workspaceFolder}",
+            // 调试位于 tests 文件夹中的 test_main.py 文件
+        },
+        {
+            "name": "Node: 当前文件（集成终端）",
+            "type": "node",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal"
+        }
+    ]
+}

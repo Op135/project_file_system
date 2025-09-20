@@ -1,0 +1,259 @@
+{
+	// 设置使用此工作区设置文档的文件夹地址
+	"folders": [
+		{
+			"path": ".." // 指定工作区文件夹的路径，这里使用相对路径 ".." 表示上一级目录
+		}
+	],
+	"settings": {
+		// 设置默认的Python解释器路径
+		"python.defaultInterpreterPath": "D:\\miniforge3\\envs\\python_nicegui\\python.exe",
+		"python.terminal.activateEnvironment": true, // 启用自动环境激活（需配合 Conda 初始化）
+		"python.analysis.diagnosticMode": "workspace", // 禁止扩展自动扫描其他解释器（避免干扰）
+		"code-runner.fileDirectoryAsCwd": true, // 将文件所在目录设置为终端的工作目录
+		// 如果需要集成 Bash 终端（例如 Git Bash），可以配置以下内容
+		"terminal.integrated.defaultProfile.windows": "Windows PowerShell", // 设置默认终端为 Windows PowerShell
+		"terminal.integrated.profiles.windows": {
+			"Windows PowerShell": {
+				"path": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe", // 设置 PowerShell 的路径
+				"args": [
+					"-NoExit",
+					"-Command",
+					"conda activate python_nicegui" // 直接指定激活命令
+				],
+				"icon": "terminal-powershell" // 设置终端图标的样式
+			},
+			"Git Bash": {
+				"path": "D:\\ProgramFiles\\Git\\bin\\bash.exe", // 设置 Git Bash 的路径
+				"args": [
+					"--login" // 确保加载用户的环境变量和配置文件
+				],
+				"icon": "terminal-bash" // 设置终端图标的样式
+			},
+			"Windows cmd": {
+				"path": [
+					/* 在 Windows cmd 的路径配置中，
+					${env:windir}\\Sysnative\\cmd.exe 的优先级高于 ${env:windir}\\System32\\cmd.exe，
+					这样可以确保在 32 位和 64 位系统环境下都能正确找到 cmd.exe
+					*/
+					"${env:windir}\\Sysnative\\cmd.exe",
+					"${env:windir}\\System32\\cmd.exe"
+				],
+				"args": [
+					"/k conda activate python_nicegui && cd ${workspaceFolder}"
+				],
+				"icon": "terminal-cmd" // 设置终端图标的样式
+			},
+		},
+		"window.zoomLevel": 0, // 设置 VS Code 的缩放级别，0 表示默认大小
+		"workbench.iconTheme": "vscode-icons", // 设置图标主题为 vscode-icons
+		"files.autoSave": "off", // 设置文件自动保存为关闭状态
+		"breadcrumbs.enabled": true, // 启用面包屑导航，显示文件路径
+		"editor.tabSize": 4, // 设置 Tab 缩进为 2 个空格
+		"editor.minimap.enabled": false, // 禁用小地图，即编辑器右侧的代码预览
+		"editor.formatOnPaste": true, // 粘贴时自动格式化代码
+		"editor.formatOnSave": true, // 保存时自动格式化代码
+		"editor.unicodeHighlight.nonBasicASCII": false, // 控制是否突出显示所有非基本 ASCII 字符。只有介于 U+0020 到 U+007E 之间的字符、制表符、换行符和回车符才被视为基本 ASCII。
+		"editor.unicodeHighlight.includeComments": false, // 控制注释中的字符是否也应进行 Unicode 突出显示。解决注释里逗号有个方框的问题
+		"editor.unicodeHighlight.includeStrings": false, // 控制字符串中的字符是否也应进行 Unicode 突出显示。解决字符串里逗号有个方框的问题
+		"explorer.enableDragAndDrop": true, // 文件资源管理器中启用拖放功能
+		"git.decorations.enabled": true, // 启用 git 装饰，显示文件状态图标
+		"git.enableSmartCommit": true, // 启用 git 智能提交，自动添加更改的文件
+		"git.autofetch": true, // 启用自动拉取，定期从远程仓库拉取更新
+		"git.confirmSync": false, // 同步更改时不提示确认
+		"terminal.integrated.confirmOnExit": "always", // 关闭终端时不提示确认
+		"terminal.integrated.fastScrollSensitivity": 5, // 设置快速滚动灵敏度
+		"terminal.integrated.mouseWheelScrollSensitivity": 1, // 设置鼠标滚轮滚动灵敏度
+		"terminal.integrated.copyOnSelection": true, // 高亮文字时自动复制到剪贴板
+		// 推荐 standard 配置
+		"python.analysis.typeCheckingMode": "standard", // 设置 Python 类型检查模式为标准模式，共有：“关闭” “基础” “标准” “严格”四个模式
+		// 启用 Ruff
+		"ruff.enable": true,
+		// Ruff作为格式化工具（Formatter）
+		"ruff.lineLength": 120, // 设置 Ruff 的行长度限制为 120 个字符
+		"ruff.codeAction.fixViolation": {
+			"enable": true // 启用 Ruff 的代码操作来修复违规
+		},
+		"ruff.lint.enable": true, // 启用 Ruff 的 lint 检查
+		"ruff.showSyntaxErrors": true, // 显示 Ruff 的语法错误
+		"[python]": {
+			//【推荐】配置 Ruff 为 Python 的 Formatter
+			"editor.defaultFormatter": "charliermarsh.ruff", // 设置 Python 文件的默认格式化工具为 Ruff
+			"editor.formatOnType": true, // 输入时自动格式化代码
+			//【可选】保存时自动格式化 Python 代码
+			"editor.codeActionsOnSave": {
+				"source.fixAll.ruff": "always", // 保存时总是使用 Ruff 修复所有问题
+				"source.organizeImports.ruff": "always", // 保存时总是使用 Ruff 组织导入
+			},
+		},
+		"editor.fontSize": 16, // 设置编辑器的字体大小为 16
+		"editor.cursorStyle": "line-thin", // 设置光标样式为细线
+		"files.autoGuessEncoding": true, // 自动猜测文件编码
+		"files.encoding": "utf8", // 设置文件编码为 UTF-8
+		"vsicons.dontShowNewVersionMessage": true, // 不显示 vsicons 的新版本消息
+		"code-runner.runInTerminal": true, // 在终端中运行代码
+		"workbench.startupEditor": "terminal", // 在没有从上一会话中恢复出信息的情况下，控制启动时显示的编辑器
+		"workbench.editorAssociations": {
+			"*.ipynb": "jupyter-notebook" // 将 .ipynb 文件关联到 Jupyter Notebook 编辑器
+		},
+		"notebook.cellToolbarLocation": {
+			"default": "right", // 默认情况下，单元格工具栏位于右侧
+			"jupyter-notebook": "left" // 对于 Jupyter Notebook，单元格工具栏位于左侧
+		},
+		"workbench.colorTheme": "Monokai-lgy", // 设置工作区的主题为 Monokai-lgy
+		// 设置工作目录
+		"code-runner.cwd": "${fileDirname}", // 设置代码运行器的工作目录为当前文件所在的目录
+		// 配置语言的文件关联 (如: `"*.extension": "html"`)。这些关联的优先级高于已安装语言的默认关联。
+		"files.associations": {}, // 文件关联配置，这里为空
+		// 分配给新文件的默认语言模式。
+		"files.defaultLanguage": "", // 新文件的默认语言模式，这里为空
+		// 在删除文件或文件夹时，将它们移动到操作系统的“废纸篓”中 (Windows 为“回收站”)。禁用此设置将永久删除文件或文件夹。
+		"files.enableTrash": true, // 启用文件删除时移动到回收站
+		// 终端设置
+		"terminal.integrated.fontFamily": "Consolas", // 为终端设置合适的字体
+		"terminal.integrated.fontSize": 16, // 设置字体大小为 14
+		"terminal.integrated.cursorStyle": "line", // 设置光标样式为线条
+		"terminal.integrated.cursorBlinking": true, // 使光标闪烁
+		"terminal.integrated.scrollback": 10000, // 设置终端缓冲区的大小为 10000 行
+		"terminal.integrated.wordSeparators": " ()[]{}\"'`‖:", // 定义终端中的单词分隔符
+		"terminal.integrated.rightClickBehavior": "paste", // 设置右键单击行为为粘贴
+		"terminal.integrated.commandsToSkipShell": [
+			// 配置不跳到终端执行的命令，避免和编辑器命令冲突
+			"workbench.action.tasks.runTask",
+			"workbench.action.terminal.focus",
+			"workbench.action.terminal.toggleTerminal",
+			"workbench.action.terminal.clear",
+			"workbench.action.terminal.scrollToBottom",
+			"workbench.action.terminal.scrollToTop",
+			"workbench.action.terminal.reset",
+			"workbench.action.terminal.scrollToNextCommand",
+			"workbench.action.terminal.scrollToPreviousCommand"
+		],
+		"workbench.colorCustomizations": {
+			// 设置终端颜色，这里以黑色背景白色字体为例
+			"terminal.background": "#191916", // 设置终端背景颜色为 #282c34
+			"terminal.foreground": "#bababa" // 设置终端前景颜色为 #ffffff
+		},
+		// 插件配置项
+		"fileheader.configObj": {
+			"autoAdd": false, // 检测文件没有头部注释，自动添加文件头部注释
+			"autoAddLine": 100, // 文件超过多少行数 不再自动添加头部注释
+			"autoAlready": true, // 只添加插件支持的语言以及用户通过`language`选项自定义的注释
+			"supportAutoLanguage": [], // 设置之后，在数组内的文件才支持自动添加
+			// 自动添加头部注释黑名单
+			"prohibitAutoAdd": [
+				"json"
+			],
+			"prohibitItemAutoAdd": [
+				"项目的全称禁止项目自动添加头部注释, 使用快捷键自行添加"
+			],
+			"folderBlacklist": [
+				"node_modules"
+			], // 文件夹或文件名禁止自动添加头部注释
+			"wideSame": false, // 头部注释等宽设置
+			"wideNum": 13, // 头部注释字段长度 默认为13
+			"functionWideNum": 0, // 函数注释等宽设置 设为0 即为关闭
+			// 头部注释第几行插入
+			"headInsertLine": {
+				"php": 2 // php文件 插入到第二行
+			},
+			"beforeAnnotation": {
+				"py": "# -*- encoding: utf-8 -*-", // py文件默认，可修改
+				// "*": "\n" // 所有文件的头部注释都在前面增加一个换行(除了py)
+			}, // 头部注释之前插入内容
+			"afterAnnotation": {}, // 头部注释之后插入内容
+			"specialOptions": {}, // 特殊字段自定义
+			"switch": {
+				"newlineAddAnnotation": true // 默认遇到换行符(\r\n \n \r)添加注释符号
+			},
+			"moveCursor": true, // 自动移动光标到Description所在行
+			"dateFormat": "YYYY-MM-DD HH:mm:ss", // 设置日期格式
+			"atSymbol": [
+				"@",
+				"@"
+			], // 更改所有文件的自定义注释中的@符号
+			"atSymbolObj": {}, //  更改单独语言/文件的@
+			"colon": [
+				": ",
+				": "
+			], // 更改所有文件的注释冒号
+			"colonObj": {}, //  更改单独语言/文件的冒号
+			"filePathColon": "\\", // 路径分隔符替换，默认值： mac: / window是: \
+			"showErrorMessage": false, // 是否显示插件错误通知 用于debugger
+			"writeLog": false, // 错误日志生成
+			"CheckFileChange": false, // 单个文件保存时进行diff检查
+			"createHeader": true, // 新建文件自动添加头部注释
+			"useWorker": false, // 是否使用工作区设置
+			"designAddHead": false, // 添加注释图案时添加头部注释
+			"headDesignName": "random", // 图案注释使用哪个图案 
+			"headDesign": false, // 是否使用图案注释替换头部注释
+			// 自定义配置是否在函数内生成注释 不同文件类型和语言类型
+			"cursorModeInternalAll": {}, // 默认为false 在函数外生成函数注释
+			"openFunctionParamsCheck": true, // 开启关闭自动提取添加函数参数
+			"functionParamsShape": [
+				"{",
+				"}"
+			], // 函数参数外形自定义
+			"functionBlankSpaceAll": {}, // 函数注释空格缩进 默认为空对象 默认值为0 不缩进
+			"functionTypeSymbol": "*", // 参数没有类型时的默认值
+			"typeParamOrder": "type param", // 参数类型 和 参数的位置自定义
+			// 自定义语言注释，自定义取消 head、end 部分
+			// 不设置自定义配置language无效 默认都有head、end
+			"customHasHeadEnd": {}, // "cancel head and function" | "cancel head" | "cancel function" 
+			"throttleTime": 60000, // 对同一个文件 需要过1分钟再次修改文件并保存才会更新注释
+			// 自定义语言注释符号，覆盖插件的注释格式
+			"language": {
+				// js后缀文件
+				"js": {
+					"head": "/$$", // 统一增加几个*号
+					"middle": " $ @",
+					"end": " $/",
+					// 函数自定义注释符号：如果有此配置 会默认使用
+					"functionSymbol": {
+						"head": "/******* ", // 统一增加几个*号
+						"middle": " * @",
+						"end": " */"
+					}
+				},
+				// 一次匹配多种文件后缀文件 不用重复设置
+				"h/hpp/cpp": {
+					"head": "/*** ", // 统一增加几个*号
+					"middle": " * @",
+					"end": " */"
+				},
+				// 针对有特殊要求的文件如：test.blade.php
+				"blade.php": {
+					"head": "<!--",
+					"middle": " * @",
+					"end": "-->"
+				}
+			},
+			// 默认注释  没有匹配到注释符号的时候使用。
+			"annotationStr": {
+				"head": "/*",
+				"middle": " * @",
+				"end": " */",
+				"use": false
+			}
+		},
+		// 插件koroFileHeader的配置，头部注释与函数注释
+		// 头部注释
+		"fileheader.customMade": {
+			"Author": "林贵原", // 设置作者为 林贵原
+			"Date": "Do not edit", // 设置后默认设置文件生成时间
+			"LastEditTime": "Do not edit", // 设置后，保存文件更改默认更新最后编辑时间
+			"LastEditors": "林贵原", // 设置后，保存文件更改默认更新最后编辑人
+			"Description": "本程序的描述", // 设置文件描述
+			"FilePath": "Do not edit", // 设置后，默认生成文件相对于项目的路径
+			"custom_string_obkoro1": "尽力写出更美、更简洁的程序！" // 自定义字符串
+		},
+		// 函数注释
+		"fileheader.cursorMode": {
+			"description": "", // 函数描述
+			"param": "", // 函数参数
+			"return": "" // 函数返回值
+		},
+		"editor.linkedEditing": true,
+		"editor.gotoLocation.multipleDefinitions": "goto",
+	},
+}

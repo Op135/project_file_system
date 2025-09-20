@@ -1,0 +1,1064 @@
+{
+    "光学": [
+        {
+            "title": "光源选型",
+            "processing_type": "text",
+            "dialog_placeholder": "_光：规格型号",
+            "permission": {
+                "read_role": [
+                    "boss"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发光学"
+                ]
+            }
+        },
+        {
+            "title": "光源驱动条件",
+            "processing_type": "text",
+            "dialog_placeholder": "_光：If=_A，Vf=_V±_V，阈值电流=_A",
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售",
+                    "客服主管",
+                    "客服",
+                    "研发助理",
+                    "研发电子主管",
+                    "研发硬件",
+                    "研发软件",
+                    "研发结构",
+                    "研发样品",
+                    "工程",
+                    "质量"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发光学"
+                ]
+            }
+        },
+        {
+            "title": "光源最大热功率",
+            "processing_type": "text",
+            "dialog_placeholder": "_光：_W",
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售",
+                    "客服主管",
+                    "客服",
+                    "研发助理",
+                    "研发电子主管",
+                    "研发硬件",
+                    "研发软件",
+                    "研发结构",
+                    "研发样品",
+                    "工程",
+                    "质量"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发光学"
+                ]
+            }
+        },
+        {
+            "title": "光源温敏型号",
+            "processing_type": "text",
+            "dialog_placeholder": "_光：规格型号",
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售",
+                    "客服主管",
+                    "客服",
+                    "研发助理",
+                    "研发电子主管",
+                    "研发硬件",
+                    "研发软件",
+                    "研发结构",
+                    "研发样品",
+                    "工程",
+                    "质量"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发光学"
+                ]
+            }
+        },
+        {
+            "title": "光源期望工作温度",
+            "processing_type": "text",
+            "dialog_placeholder": "_光：T(温敏)=_℃",
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售",
+                    "客服主管",
+                    "客服",
+                    "研发助理",
+                    "研发电子主管",
+                    "研发硬件",
+                    "研发软件",
+                    "研发结构",
+                    "研发样品",
+                    "工程",
+                    "质量"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发光学"
+                ]
+            }
+        },
+        {
+            "title": "光源保护温度",
+            "processing_type": "text",
+            "dialog_placeholder": "_光：T(温敏)=_℃",
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售",
+                    "客服主管",
+                    "客服",
+                    "研发助理",
+                    "研发电子主管",
+                    "研发硬件",
+                    "研发软件",
+                    "研发结构",
+                    "研发样品",
+                    "工程",
+                    "质量"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发光学"
+                ]
+            }
+        },
+        {
+            "title": "采用光学件",
+            "processing_type": "text",
+            "dialog_placeholder": "透镜/玻片：器件名",
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售",
+                    "客服主管",
+                    "客服",
+                    "研发助理",
+                    "研发电子主管",
+                    "研发硬件",
+                    "研发软件",
+                    "研发结构",
+                    "研发样品",
+                    "工程",
+                    "质量"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发光学"
+                ]
+            }
+        },
+        {
+            "title": "哪些光学器件需要运动",
+            "processing_type": "text",
+            "dialog_placeholder": "透镜/玻片：器件名",
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售",
+                    "客服主管",
+                    "客服",
+                    "研发助理",
+                    "研发电子主管",
+                    "研发硬件",
+                    "研发软件",
+                    "研发结构",
+                    "研发样品",
+                    "工程",
+                    "质量"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发光学"
+                ]
+            }
+        },
+        {
+            "title": "光学器件运动逻辑说明",
+            "processing_type": "text",
+            "dialog_placeholder": "透镜/玻片：逻辑说明",
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售",
+                    "客服主管",
+                    "客服",
+                    "研发助理",
+                    "研发电子主管",
+                    "研发硬件",
+                    "研发软件",
+                    "研发结构",
+                    "研发样品",
+                    "工程",
+                    "质量"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发光学"
+                ]
+            }
+        },
+        {
+            "title": "光电传感器选型",
+            "processing_type": "text",
+            "dialog_placeholder": "规格型号：用途说明",
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售",
+                    "客服主管",
+                    "客服",
+                    "研发助理",
+                    "研发电子主管",
+                    "研发硬件",
+                    "研发软件",
+                    "研发结构",
+                    "研发样品",
+                    "工程",
+                    "质量"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发光学"
+                ]
+            }
+        },
+        {
+            "title": "光输出目标面距离",
+            "processing_type": "text",
+            "dialog_placeholder": "_mm@距模组输出口透镜顶点",
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售",
+                    "客服主管",
+                    "客服",
+                    "研发助理",
+                    "研发电子主管",
+                    "研发硬件",
+                    "研发软件",
+                    "研发结构",
+                    "研发样品",
+                    "工程",
+                    "质量"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发光学"
+                ]
+            }
+        }
+    ],
+    "结构": [
+        {
+            "title": "产品尺寸图",
+            "processing_type": "image",
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售",
+                    "客服主管",
+                    "客服",
+                    "研发助理",
+                    "研发电子主管",
+                    "研发硬件",
+                    "研发软件",
+                    "研发光学",
+                    "研发样品",
+                    "工程",
+                    "质量"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发结构"
+                ]
+            }
+        },
+        {
+            "title": "驱动板尺寸图",
+            "processing_type": "image",
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售",
+                    "客服主管",
+                    "客服",
+                    "研发助理",
+                    "研发电子主管",
+                    "研发硬件",
+                    "研发软件",
+                    "研发光学",
+                    "研发样品",
+                    "工程",
+                    "质量"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发结构"
+                ]
+            }
+        },
+        {
+            "title": "产品出光口位置图",
+            "processing_type": "image",
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售",
+                    "客服主管",
+                    "客服",
+                    "研发助理",
+                    "研发电子主管",
+                    "研发硬件",
+                    "研发软件",
+                    "研发光学",
+                    "研发样品",
+                    "工程",
+                    "质量"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发结构"
+                ]
+            }
+        },
+        {
+            "title": "产品出线位置图",
+            "processing_type": "image",
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售",
+                    "客服主管",
+                    "客服",
+                    "研发助理",
+                    "研发电子主管",
+                    "研发硬件",
+                    "研发软件",
+                    "研发光学",
+                    "研发样品",
+                    "工程",
+                    "质量"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发结构"
+                ]
+            }
+        },
+        {
+            "title": "产品进出风示意图",
+            "processing_type": "image",
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售",
+                    "客服主管",
+                    "客服",
+                    "研发助理",
+                    "研发电子主管",
+                    "研发硬件",
+                    "研发软件",
+                    "研发光学",
+                    "研发样品",
+                    "工程",
+                    "质量"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发结构"
+                ]
+            }
+        },
+        {
+            "title": "产品结构件选材",
+            "processing_type": "text",
+            "dialog_placeholder": "主要/零件名：材料型号，考虑其着色/重量/防锈/导电/导磁性能",
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售",
+                    "客服主管",
+                    "客服",
+                    "研发助理",
+                    "研发电子主管",
+                    "研发硬件",
+                    "研发软件",
+                    "研发光学",
+                    "研发样品",
+                    "工程",
+                    "质量"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发结构"
+                ]
+            }
+        },
+        {
+            "title": "产品涉及表面处理工艺",
+            "processing_type": "text",
+            "dialog_placeholder": "主要/零件名：阳极氧化/导电氧化，100目喷砂",
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售",
+                    "客服主管",
+                    "客服",
+                    "研发助理",
+                    "研发电子主管",
+                    "研发硬件",
+                    "研发软件",
+                    "研发光学",
+                    "研发样品",
+                    "工程",
+                    "质量"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发结构"
+                ]
+            }
+        },
+        {
+            "title": "产品外观颜色",
+            "processing_type": "text",
+            "dialog_placeholder": "公司常规色/具体色号",
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售",
+                    "客服主管",
+                    "客服",
+                    "研发助理",
+                    "研发电子主管",
+                    "研发硬件",
+                    "研发软件",
+                    "研发光学",
+                    "研发样品",
+                    "工程",
+                    "质量"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发结构"
+                ]
+            }
+        },
+        {
+            "title": "产品实秤重量",
+            "processing_type": "text",
+            "dialog_placeholder": "整机/主体：_kg",
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售",
+                    "客服主管",
+                    "客服",
+                    "研发助理",
+                    "研发电子主管",
+                    "研发硬件",
+                    "研发软件",
+                    "研发光学",
+                    "研发样品",
+                    "工程",
+                    "质量"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发结构"
+                ]
+            }
+        },
+        {
+            "title": "产品实测工作环境温湿度",
+            "processing_type": "text",
+            "dialog_placeholder": "-_℃，RH_%可启动/_℃，RH_%临近保护温度_℃",
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售",
+                    "客服主管",
+                    "客服",
+                    "研发助理",
+                    "研发电子主管",
+                    "研发硬件",
+                    "研发软件",
+                    "研发光学",
+                    "研发样品",
+                    "工程",
+                    "质量"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发结构"
+                ]
+            }
+        },
+        {
+            "title": "产品实测表面温升/温度",
+            "processing_type": "text",
+            "dialog_placeholder": "温度/温升_℃@测试条件",
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售",
+                    "客服主管",
+                    "客服",
+                    "研发助理",
+                    "研发电子主管",
+                    "研发硬件",
+                    "研发软件",
+                    "研发光学",
+                    "研发样品",
+                    "工程",
+                    "质量"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发结构"
+                ]
+            }
+        },
+        {
+            "title": "产品实测工作噪声",
+            "processing_type": "text",
+            "dialog_placeholder": "_dB(A)@测试条件",
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售",
+                    "客服主管",
+                    "客服",
+                    "研发助理",
+                    "研发电子主管",
+                    "研发硬件",
+                    "研发软件",
+                    "研发光学",
+                    "研发样品",
+                    "工程",
+                    "质量"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发结构"
+                ]
+            }
+        },
+        {
+            "title": "产品包材",
+            "processing_type": "text",
+            "dialog_placeholder": "纸箱/珍珠棉包装盒，_pcs/套",
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售",
+                    "客服主管",
+                    "客服",
+                    "研发助理",
+                    "研发电子主管",
+                    "研发硬件",
+                    "研发软件",
+                    "研发光学",
+                    "研发样品",
+                    "工程",
+                    "质量"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发结构"
+                ]
+            }
+        },
+        {
+            "title": "风扇选型",
+            "processing_type": "text",
+            "dialog_placeholder": "规格型号，_pcs/套，电压_V",
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售",
+                    "客服主管",
+                    "客服",
+                    "研发助理",
+                    "研发电子主管",
+                    "研发硬件",
+                    "研发软件",
+                    "研发光学",
+                    "研发样品",
+                    "工程",
+                    "质量"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发结构"
+                ]
+            }
+        },
+        {
+            "title": "散热器类型",
+            "processing_type": "text",
+            "dialog_placeholder": "铝型材/铜管/铝型材嵌铜板散热器",
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售",
+                    "客服主管",
+                    "客服",
+                    "研发助理",
+                    "研发电子主管",
+                    "研发硬件",
+                    "研发软件",
+                    "研发光学",
+                    "研发样品",
+                    "工程",
+                    "质量"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发结构"
+                ]
+            }
+        },
+        {
+            "title": "TEC选型",
+            "processing_type": "text",
+            "dialog_placeholder": "规格型号，_pcs/套，驱动电流_A，电压_V",
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售",
+                    "客服主管",
+                    "客服",
+                    "研发助理",
+                    "研发电子主管",
+                    "研发硬件",
+                    "研发软件",
+                    "研发光学",
+                    "研发样品",
+                    "工程",
+                    "质量"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发结构"
+                ]
+            }
+        },
+        {
+            "title": "转接座选型",
+            "processing_type": "text",
+            "dialog_placeholder": "选配/具体型号，普通/悬臂检测/接近开关检测",
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售",
+                    "客服主管",
+                    "客服",
+                    "研发助理",
+                    "研发电子主管",
+                    "研发硬件",
+                    "研发软件",
+                    "研发光学",
+                    "研发样品",
+                    "工程",
+                    "质量"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发结构"
+                ]
+            }
+        },
+        {
+            "title": "机构传感器选型",
+            "processing_type": "text",
+            "dialog_placeholder": "规格型号，_pcs/套",
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售",
+                    "客服主管",
+                    "客服",
+                    "研发助理",
+                    "研发电子主管",
+                    "研发硬件",
+                    "研发软件",
+                    "研发光学",
+                    "研发样品",
+                    "工程",
+                    "质量"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发结构"
+                ]
+            }
+        },
+        {
+            "title": "其它特殊零件图纸",
+            "processing_type": "file",
+            "file_name_regular": [],
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售",
+                    "客服主管",
+                    "客服",
+                    "研发助理",
+                    "研发电子主管",
+                    "研发硬件",
+                    "研发软件",
+                    "研发光学",
+                    "研发样品",
+                    "工程",
+                    "质量"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发结构"
+                ]
+            }
+        }
+    ],
+    "硬件": [
+        {
+            "title": "电子BOM",
+            "processing_type": "file",
+            "file_name_regular": [],
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售",
+                    "客服主管",
+                    "客服",
+                    "研发助理",
+                    "研发电子主管",
+                    "研发结构",
+                    "研发软件",
+                    "研发光学",
+                    "研发样品",
+                    "工程",
+                    "质量"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发硬件"
+                ]
+            }
+        },
+        {
+            "title": "产品驱动输入参数",
+            "processing_type": "text",
+            "dialog_placeholder": "电压_V，功率_W",
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售",
+                    "客服主管",
+                    "客服",
+                    "研发助理",
+                    "研发电子主管",
+                    "研发结构",
+                    "研发软件",
+                    "研发光学",
+                    "研发样品",
+                    "工程",
+                    "质量"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发硬件"
+                ]
+            }
+        },
+        {
+            "title": "产品输出类型",
+            "processing_type": "text",
+            "dialog_placeholder": "模拟输出/PWM输出",
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售",
+                    "客服主管",
+                    "客服",
+                    "研发助理",
+                    "研发电子主管",
+                    "研发结构",
+                    "研发软件",
+                    "研发光学",
+                    "研发样品",
+                    "工程",
+                    "质量"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发硬件"
+                ]
+            }
+        },
+        {
+            "title": "显示类配件",
+            "processing_type": "text",
+            "dialog_placeholder": "规格型号，_pcs/套",
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售",
+                    "客服主管",
+                    "客服",
+                    "研发助理",
+                    "研发电子主管",
+                    "研发结构",
+                    "研发软件",
+                    "研发光学",
+                    "研发样品",
+                    "工程",
+                    "质量"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发硬件"
+                ]
+            }
+        },
+        {
+            "title": "控制类配件",
+            "processing_type": "text",
+            "dialog_placeholder": "规格型号，_pcs/套",
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售",
+                    "客服主管",
+                    "客服",
+                    "研发助理",
+                    "研发电子主管",
+                    "研发结构",
+                    "研发软件",
+                    "研发光学",
+                    "研发样品",
+                    "工程",
+                    "质量"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发硬件"
+                ]
+            }
+        },
+        {
+            "title": "线材配件",
+            "processing_type": "text",
+            "dialog_placeholder": "线材名称（料号），_pcs/套",
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售",
+                    "客服主管",
+                    "客服",
+                    "研发助理",
+                    "研发电子主管",
+                    "研发结构",
+                    "研发软件",
+                    "研发光学",
+                    "研发样品",
+                    "工程",
+                    "质量"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发硬件"
+                ]
+            }
+        },
+        {
+            "title": "驱动板使用说明书",
+            "processing_type": "file",
+            "file_name_regular": [],
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售",
+                    "客服主管",
+                    "客服",
+                    "研发助理",
+                    "研发电子主管",
+                    "研发结构",
+                    "研发软件",
+                    "研发光学",
+                    "研发样品",
+                    "工程",
+                    "质量"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发硬件"
+                ]
+            }
+        }
+    ],
+    "软件": [
+        {
+            "title": "固件/UI执行文件",
+            "processing_type": "file",
+            "file_name_regular": [
+                "RF[A-Z]{2}-\\d{4}[A-Z]*-F\\d{2}_V\\d*\\.\\d*"
+            ],
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售",
+                    "客服主管",
+                    "客服",
+                    "研发助理",
+                    "研发电子主管",
+                    "研发结构",
+                    "研发硬件",
+                    "研发光学",
+                    "研发样品",
+                    "工程",
+                    "质量"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发软件"
+                ]
+            }
+        },
+        {
+            "title": "固件说明书",
+            "processing_type": "file",
+            "file_name_regular": [],
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售",
+                    "客服主管",
+                    "客服",
+                    "研发助理",
+                    "研发电子主管",
+                    "研发结构",
+                    "研发硬件",
+                    "研发光学",
+                    "研发样品",
+                    "工程",
+                    "质量"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发软件"
+                ]
+            }
+        }
+    ],
+    "工艺": [
+        {
+            "title": "工艺文件",
+            "processing_type": "file",
+            "file_name_regular": [],
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售",
+                    "客服主管",
+                    "客服",
+                    "研发助理",
+                    "研发电子主管",
+                    "研发结构",
+                    "研发软件",
+                    "研发光学",
+                    "研发样品",
+                    "研发硬件",
+                    "质量"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "工程"
+                ]
+            }
+        },
+        {
+            "title": "工艺重点要求",
+            "processing_type": "text",
+            "dialog_placeholder": "序号.要求",
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售",
+                    "客服主管",
+                    "客服",
+                    "研发助理",
+                    "研发电子主管",
+                    "研发结构",
+                    "研发软件",
+                    "研发光学",
+                    "研发样品",
+                    "研发硬件",
+                    "质量"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "工程"
+                ]
+            }
+        }
+    ]
+}

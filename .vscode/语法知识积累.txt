@@ -1,0 +1,7 @@
+on() 方法与事件类型
+NiceGUI 事件机制的两个关键点：
+事件监听: element.on() 是事件监听的唯一入口。
+事件参数: NiceGUI 会根据你监听的事件类型，自动传递对应的事件参数对象。
+on('keydown') 或 on('keyup') -> 传递 KeyEventArguments
+on('click') 或 on('mouseenter') -> 传递 MouseEventArguments
+on('input') -> 传递 GenericEventArguments

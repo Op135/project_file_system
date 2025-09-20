@@ -1,0 +1,49 @@
+# Anaconda 命令
+    # 查看可用python版本
+    conda search python
+
+    # 新建环境
+    conda create --name 环境名称 python=3.8
+
+    # 激活环境
+    conda activate 环境名称
+
+    # 安装包
+    # 尽量使用 conda install 安装包，因为 conda 会自动处理依赖关系，避免冲突
+    # 如果某些包只能通过 pip 安装，建议先使用 conda install pip 确保 pip 是最新版本
+    conda install 包名
+    pip3 install 包名
+
+    # 查看所有环境
+    conda env list
+    
+    # 删除环境
+    conda remove --name 环境名称 --all
+
+    # 查看环境里已安装的包，同时也会显示当前环境的路径
+    # conda list 会列出当前环境中所有通过 conda install 或 pip install 安装的包
+    # pip list 只会列出通过 pip install 安装的包
+    conda list
+
+    # 删除包
+    conda remove 包名称
+    pip uninstall 包名称
+
+    # 自动修改你的 PowerShell 配置文件，使 Conda 环境激活时能修改提示符
+    # (环境名称) PS F:\...>
+    conda init powershell
+    
+    # 查所有占用端口的进程PID
+    netstat -ano | findstr :8080
+    # 结束指定进程
+    taskkill /F /PID <占用的进程PID>
+
+    # 查看当前python版本
+    python --version
+    # 升级python版本
+    conda install python=3.9
+
+    # # 在本地电脑的项目文件夹中运行，记录项目依赖
+    pip freeze > requirements.txt
+    # 在服务器上，确保虚拟环境已激活，安装项目依赖
+    pip install -r requirements.txt

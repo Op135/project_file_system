@@ -1,0 +1,153 @@
+# Tailwind CSS 框架
+
+w-full
+w-10	# width: 2.5rem; /* 40px */
+w-1/2	# width: 50%;
+max-w-10 # max-width: 2.5rem; /* 40px */
+min-w-10 # max-width: 2.5rem; /* 40px */    设置ui.tooltip元素宽度比较有用
+# 设置容器宽度为父级 100%。需注意当父容器无明确宽度约束时可能导致布局溢出，建议配合 max-w-* 类使用
+
+gap-4
+# 通过 gap 属性设置子元素间距为 1rem（16px），替代传统 margin 方案。特别适用于需要等距分隔的按钮组或卡片布局
+
+flex-nowrap
+# 强制子元素单行排列（默认值），与 Bootstrap 的 .flex-nowrap 等效。当子元素总宽度超过容器时，可能出现横向滚动条或内容截断，建议配合 overflow-auto 使用：
+
+# display: flex 布局情况下
+# 控制 flex 和网格项沿容器横轴的定位方式
+items-stretch # align-items: stretch; 需确保父容器有明确高度定义
+# 使子元素在纵轴方向拉伸填满容器高度
+items-center # align-items: center;
+# 使子级元素上下垂直居中
+items-start	# align-items: flex-start;
+items-end	# align-items: flex-end;
+items-baseline	# align-items: baseline;
+
+# 控制网格项沿其内联轴对齐方式
+justify-items-start	# justify-items: start;
+justify-items-end	# justify-items: end;
+justify-items-center	# justify-items: center;
+justify-items-stretch	# justify-items: stretch;
+
+
+# 沿容器主轴的定位方式
+justify-center # justify-content: center;
+# 子级元素左右水平居中
+justify-start # 这会告诉Flexbox，无论内容多少，始终从容器的顶部开始排列子元素。
+justify-normal	# justify-content: normal;
+justify-end	# justify-content: flex-end;
+justify-between	# justify-content: space-between;
+justify-around	# justify-content: space-around;
+justify-evenly	# justify-content: space-evenly;
+justify-stretch	# justify-content: stretch;
+
+# 在多行 flex 和 grid 容器中的位置方式
+content-normal	# align-content: normal;
+content-center	# align-content: center;
+content-start	# align-content: flex-start;
+content-end	# align-content: flex-end;
+content-between	# align-content: space-between;
+content-around	# align-content: space-around;
+content-evenly	# align-content: space-evenly;
+content-baseline	# align-content: baseline;
+content-stretch	# align-content: stretch;
+
+
+text-center # text-align: center;
+text-justify # text-align: justify;
+
+space-y-0
+-space-y-2
+# 设置子元素间距，0还是有默认间距，可设置负值
+
+# 控制元素内边距
+p-1	# padding: 0.25rem; /* 4px */
+px-1	# padding-left: 0.25rem; /* 4px */
+        # padding-right: 0.25rem; /* 4px */
+py-1	# padding-top: 0.25rem; /* 4px */
+        # padding-bottom: 0.25rem; /* 4px */
+ps-1	# padding-inline-start: 0.25rem; /* 4px */
+pe-1	# padding-inline-end: 0.25rem; /* 4px */
+pt-1	# padding-top: 0.25rem; /* 4px */
+pr-1	# padding-right: 0.25rem; /* 4px */
+pb-1	# padding-bottom: 0.25rem; /* 4px */
+pl-1	# padding-left: 0.25rem; /* 4px */
+
+
+
+h-screen
+# 用于将元素的高度设置为视口（viewport）的完整高度，等价于 CSS 中的 height: 100vh
+h-fit
+# 由内容决定高度
+h-full
+# 高度为父级高度
+h-1
+# 元素高度: 0.25rem; /* 4px */
+h-4
+# 元素高度: 1rem; /* 16px */
+
+bg-颜色-亮度/透明度
+# bg-blue-100/10 亮度：从 50（最浅）到 950（最深）
+text-primary
+# 字体颜色
+
+
+border
+
+# 字体大小
+text-[14px]/[14px]
+# 任意大小和行高
+text-xs	
+#font-size: 0.75rem; /* 12px */
+#line-height: 1rem; /* 16px */
+text-sm
+#font-size: 0.875rem; /* 14px */
+#line-height: 1.25rem; /* 20px */
+text-base
+#font-size: 1rem; /* 16px */
+#line-height: 1.5rem; /* 24px */
+text-lg
+#font-size: 1.125rem; /* 18px */
+#line-height: 1.75rem; /* 28px */
+text-xl
+#font-size: 1.25rem; /* 20px */
+#line-height: 1.75rem; /* 28px */
+text-2xl
+#font-size: 1.5rem; /* 24px */
+#line-height: 2rem; /* 32px */
+
+# 字体行高
+leading-4
+# line-height: 1rem; /* 16px */
+
+# 字体大小及行高调整
+text-base/8
+#font-size: 1rem; /* 16px */
+#line-height: 1rem; /* 16px */
+
+# 元素圆角
+rounded-sm #小圆角
+rounded #中等圆角（默认）
+rounded-md #中等圆角（比默认稍大）
+rounded-lg #大圆角
+rounded-xl #更大圆角
+rounded-2xl #非常大的圆角
+rounded-full #圆形（用于头像等）
+rounded-t-lg #顶部大圆角
+rounded-[10px] #设置10像素的圆角
+
+
+mouseover # 当鼠标指针进入被选元素时触发1。
+mouseout # 当鼠标指针离开被选元素时触发1。
+mousemove # 当鼠标指针在元素内部移动时触发1。
+mousedown # 当鼠标在元素内部按下时触发1。
+mouseup # 当鼠标在元素内部松开时触发1。
+mouseenter # 当鼠标光标从元素外部首次移动到元素范围之内时触发，这个事件不冒泡3。
+mouseleave # 当鼠标光标从元素上方移动到元素范围之外时触发，这个事件不冒泡3。
+dblclick # 当鼠标在元素内部双击时触发1。
+contextmenu # 当鼠标在元素内部右击时触发2。
+
+app.storage.tab #（标签页存储）
+app.storage.client #（客户端存储）
+app.storage.user #（用户级存储），仅该策略有一个默认键值对，id:加密的 user_id（字符串），通过浏览器 Cookie 关联用户身份
+app.storage.general #（全局共享存储）服务器重启或崩溃将导致数据丢失，除非配置数据持久化：app = NiceGUI(storage_path='./storage')  # 数据保存到磁盘

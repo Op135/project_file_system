@@ -1,0 +1,6 @@
+channels:
+  - default
+  - conda-forge
+show_channel_urls: true
+proxy_servers:
+  http: http://proxy.example.com:8080
