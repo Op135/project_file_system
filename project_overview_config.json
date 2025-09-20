@@ -1,0 +1,29 @@
+{
+    "state": [],
+    "light_source": [
+        "light_source"
+    ],
+    "photometric": [],
+    "target_distance": [
+        "target_surface"
+    ],
+    "adapter_options": [
+        "adapter_options"
+    ],
+    "custom_labels": [],
+    "color": [
+        "product_color"
+    ],
+    "input_voltage": [
+        "drive_voltage"
+    ],
+    "input_mode": [
+        "product_control_mode"
+    ],
+    "output_mode": [
+        "drive_output_signal"
+    ],
+    "guide_beam": [
+        "guide_beam"
+    ]
+}

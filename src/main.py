@@ -52,6 +52,7 @@ MAX_FILE_SIZE = 20 * 1024 * 1024  # 20MB
 # 存储服务器层级需求相关数据的变量初始化
 app.storage.general.setdefault("overview_data", {})
 app.storage.general.setdefault("project_summary", {})
+app.storage.general.setdefault("project_overview_config", {})
 
 # 数据临时保存处理函数
 # def save_config_data(data):
@@ -102,6 +103,8 @@ def project_summary_update():
         project_data = {}
         with open(f"{BASE_DIR}/project_summary.json", "r", encoding="utf-8") as f:
             project_data = json.load(f)
+        with open(f"{BASE_DIR}/project_overview_config.json", "r", encoding="utf-8") as f:
+            app.storage.general["project_overview_config"] = json.load(f)
         for project_name, data in project_data.items():
             app.storage.general["project_summary"].setdefault(project_name, {})
             app.storage.general["project_summary"][project_name].update(data)
@@ -789,6 +792,13 @@ def main_page():
                 color: rgba(0, 0, 0, .54);
                 font-size: 24px;
             }
+            /*控制选项框内选项样式*/
+            .q-item {
+                min-height: 30px;
+                padding: 8px 16px;
+                color: inherit;
+                transition: color 0.3s,background-color 0.3s
+            }
             .ag-header-group-cell-label, .ag-header-cell-label {
                 display: flex;
                 flex: 1 1 auto;
@@ -867,6 +877,7 @@ def main_page():
         # 清空
         rows_select = []
         s = ""
+        # 设置筛选字符串
         # 如果第二选项选的是“所有”
         if select_sub_value["value"] == "所有":
             # 且第一选项选的不是“其它”，择拿正常项目名前面的字符串来匹配RFFM
@@ -882,9 +893,42 @@ def main_page():
         # 第一选项选的是“其它”且第二选项不是“所有”，拿具体特殊项目名来匹配，如RM3000
         else:
             s = select_sub_value["value"]
+
+        # 遍历无分类行数据列表，将符合筛选条件的行数据找出来
         for r in rows:
             # 如果匹配字符不为“-”且匹配字符串在项目名里（正常项目） 或 匹配字符为“-”且匹配字符不在项目名里（特殊项目）
             if s != "-" and s in r["project"] or s == "-" and s not in r["project"]:
+                # 获取当前行数据所属项目名
+                project_name = r["sub_project"]
+                # 如果服务器储存的概述数据里存在该当前项目对应概述资料
+                if project_name in app.storage.general["overview_data"]:
+                    # 遍历服务器 项目简介与概述数据对照字典
+                    for pro_key, over_key_li in app.storage.general["project_overview_config"].items():
+                        # 如果当前项目简介对照配置非空
+                        if over_key_li != []:
+                            show_str = ""
+                            # 遍历对照配置列表（可能一个项目简介配置了多个对应的概述数据项）
+                            for over_key in over_key_li:
+                                # 当前概述数据项label存在服务器概述数据对应项目里，说明可能存在概述内容
+                                if over_key in app.storage.general["overview_data"][project_name]:
+                                    chip_data_li = app.storage.general["overview_data"][project_name][over_key].values()
+                                    # 遍历概述内容每个chip数据
+                                    for chip_data in chip_data_li:
+                                        text = ""
+                                        # 如果有content键，则应该是文字型chip
+                                        if "content" in chip_data:
+                                            text = chip_data["content"]
+                                        # 如果有filename键，则应该是文件或图片型chip
+                                        elif "filename" in chip_data:
+                                            text = chip_data["filename"]
+                                        # 将文本拼接到带显示字符串上
+                                        if pro_key in ["light_source", "target_distance"]:
+                                            show_str = f"{show_str}\n{text}"
+                                        else:
+                                            show_str = f"{show_str}，{text}"
+                            # 将处理完成的字符串作为该行数据对应项目简介项的现实内容
+                            r[pro_key] = show_str.strip("，").removeprefix("\n")
+                # 将行数据加入待显示的符合选框的数据列表里
                 rows_select.append(r)
 
         # aggrid.run_grid_method("setRowData", rows_select)
@@ -1069,7 +1113,13 @@ def main_page():
         {"field": "model_notes", "headerName": "型号备注", "width": 150, "autoHeight": True},
         {"field": "state", "headerName": "产品状态", "width": 80},
         {"field": "creation_date", "headerName": "立项日期", "width": 100},
-        {"field": "light_source", "headerName": "光源选型", "width": 400, "autoHeight": True},
+        {
+            "field": "light_source",
+            "headerName": "光源选型",
+            "width": 400,
+            "autoHeight": True,
+            "cellStyle": {"white-space": "pre-line"},
+        },
         {"field": "photometric", "headerName": "光度学要求", "width": 120, "autoHeight": True},
         {"field": "target_distance", "headerName": "目标面距离", "width": 90, "autoHeight": True},
         {"field": "adapter_options", "headerName": "转接座可选类别", "width": 120, "autoHeight": True},
@@ -1861,6 +1911,7 @@ def requirement_page(type="", json_path="", project_name=""):
             self,
             project: str,
             title: str,
+            label: str,
             processing_type: str,
             permission: dict,
             upload_path: Path = SUBMIT_FILES_DIR,
@@ -1879,6 +1930,7 @@ def requirement_page(type="", json_path="", project_name=""):
                 raise ValueError("processing_type 必须是 'text','file','image'")
 
             self.title = title
+            self.label = label
             self.project = project
             self.processing_type = processing_type
             self.upload_path = upload_path
@@ -1895,12 +1947,10 @@ def requirement_page(type="", json_path="", project_name=""):
             # self.image_show = {"image_show": True}
             # self.dialog.bind_value_to(self.image_show, "image_show")
 
-            # 为每个按钮实例在 app.storage.general 中创建一个唯一的键，以防止多个实例间数据冲突
-            self.storage_key = self.title.replace(" ", "_").lower()  # lower()函数将大写字母转小写
-
+            # 为每个按钮实例在 app.storage.general 概述数据各项目字典里 以self.label作为键，后续保存用户输入
             # 初始化存储，如果 app.storage.general 中不存在对应的列表，则创建一个空列表
-            if self.storage_key not in app.storage.general["overview_data"][self.project]:
-                app.storage.general["overview_data"][self.project][self.storage_key] = dict()
+            if self.label not in app.storage.general["overview_data"][self.project]:
+                app.storage.general["overview_data"][self.project][self.label] = dict()
 
             # 创建主按钮，并绑定点击事件
             ui.button(f"{self.title}：", on_click=self._handle_main_button_click).props("flat").classes(
@@ -2030,7 +2080,7 @@ def requirement_page(type="", json_path="", project_name=""):
                     close_button="✖",
                 )
             elif text in [
-                d["content"] for d in app.storage.general["overview_data"][self.project][self.storage_key].values()
+                d["content"] for d in app.storage.general["overview_data"][self.project][self.label].values()
             ]:
                 ui.notify(
                     "内容已存在。",
@@ -2056,7 +2106,7 @@ def requirement_page(type="", json_path="", project_name=""):
                 }
 
                 # 将新数据追加到 app.storage.general 的列表中
-                app.storage.general["overview_data"][self.project][self.storage_key][chip_id] = chip_data
+                app.storage.general["overview_data"][self.project][self.label][chip_id] = chip_data
                 # 清空文本框并关闭对话框
                 self.textarea.value = ""
                 self.dialog.close()
@@ -2091,7 +2141,7 @@ def requirement_page(type="", json_path="", project_name=""):
                 "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             }
             # 将新数据追加到共享列表中
-            app.storage.general["overview_data"][self.project][self.storage_key][chip_id] = chip_data
+            app.storage.general["overview_data"][self.project][self.label][chip_id] = chip_data
             ui.notify(
                 f'文件 "{original_filename}" 显示成功!',
                 type="positive",
@@ -2120,7 +2170,7 @@ def requirement_page(type="", json_path="", project_name=""):
             filepath = self.upload_path / original_filename
             # 检查是否已存在该项里了
             if original_filename in [
-                d["filename"] for d in app.storage.general["overview_data"][self.project][self.storage_key].values()
+                d["filename"] for d in app.storage.general["overview_data"][self.project][self.label].values()
             ]:
                 ui.notify(
                     f'文件 "{original_filename}" 无需重复提交!',
@@ -2156,7 +2206,7 @@ def requirement_page(type="", json_path="", project_name=""):
                     "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 }
                 # 将新数据追加到共享列表中
-                app.storage.general["overview_data"][self.project][self.storage_key][chip_id] = chip_data
+                app.storage.general["overview_data"][self.project][self.label][chip_id] = chip_data
                 ui.notify(
                     f'文件 "{original_filename}" 上传成功!',
                     type="positive",
@@ -2199,7 +2249,7 @@ def requirement_page(type="", json_path="", project_name=""):
             # 删除元素重新显示
             self.chip_container.clear()
             with self.chip_container:
-                for chip_info in app.storage.general["overview_data"][self.project][self.storage_key].values():
+                for chip_info in app.storage.general["overview_data"][self.project][self.label].values():
                     self._create_chip_from_data(chip_info)
 
         def _update_chip_display(self):
@@ -2215,7 +2265,7 @@ def requirement_page(type="", json_path="", project_name=""):
                 # 获取当前UI上所有 chip 的ID
                 displayed_chip_ids = {child.props.get("data-chip-id") for child in self.chip_container}
                 # 获取共享存储中所有 chip 的ID
-                stored_chips_data = app.storage.general["overview_data"][self.project].get(self.storage_key, {})
+                stored_chips_data = app.storage.general["overview_data"][self.project].get(self.label, {})
                 stored_chip_ids = set(stored_chips_data.keys())
 
                 # 只有当UI和存储中的ID集合不一致时，才重新渲染，以提高效率
@@ -2264,29 +2314,29 @@ def requirement_page(type="", json_path="", project_name=""):
             # 如果用户具有编辑权限
             if self._edit_permission_judge():
                 if app.storage.user["current_user"] == "admin":
-                    del app.storage.general["overview_data"][self.project][self.storage_key][chip.props["data-chip-id"]]
+                    del app.storage.general["overview_data"][self.project][self.label][chip.props["data-chip-id"]]
                 elif app.storage.user["current_user"] != "admin":
-                    # app.storage.general["overview_data"][self.project][self.storage_key][chip.props["data-chip-id"]]["enabled"] = False
-                    # app.storage.general["overview_data"][self.project][self.storage_key][chip.props["data-chip-id"]]["removable"] = False
+                    # app.storage.general["overview_data"][self.project][self.label][chip.props["data-chip-id"]]["enabled"] = False
+                    # app.storage.general["overview_data"][self.project][self.label][chip.props["data-chip-id"]]["removable"] = False
                     if (
-                        app.storage.general["overview_data"][self.project][self.storage_key][
-                            chip.props["data-chip-id"]
-                        ]["icon"]
+                        app.storage.general["overview_data"][self.project][self.label][chip.props["data-chip-id"]][
+                            "icon"
+                        ]
                         == "block"
                     ):
-                        app.storage.general["overview_data"][self.project][self.storage_key][
-                            chip.props["data-chip-id"]
-                        ]["icon"] = None
-                        app.storage.general["overview_data"][self.project][self.storage_key][
-                            chip.props["data-chip-id"]
-                        ]["bg_color"] = "bg-light-blue-1"
+                        app.storage.general["overview_data"][self.project][self.label][chip.props["data-chip-id"]][
+                            "icon"
+                        ] = None
+                        app.storage.general["overview_data"][self.project][self.label][chip.props["data-chip-id"]][
+                            "bg_color"
+                        ] = "bg-light-blue-1"
                     else:
-                        app.storage.general["overview_data"][self.project][self.storage_key][
-                            chip.props["data-chip-id"]
-                        ]["icon"] = "block"
-                        app.storage.general["overview_data"][self.project][self.storage_key][
-                            chip.props["data-chip-id"]
-                        ]["bg_color"] = "bg-grey-5"
+                        app.storage.general["overview_data"][self.project][self.label][chip.props["data-chip-id"]][
+                            "icon"
+                        ] = "block"
+                        app.storage.general["overview_data"][self.project][self.label][chip.props["data-chip-id"]][
+                            "bg_color"
+                        ] = "bg-grey-5"
                     # 刷新chip容器内容
                     self._refresh_chip_container()
 
@@ -2296,29 +2346,27 @@ def requirement_page(type="", json_path="", project_name=""):
             if self._edit_permission_judge():
                 if app.storage.user["current_user"] == "admin":
                     thumbnail.delete()
-                    del app.storage.general["overview_data"][self.project][self.storage_key][
-                        thumbnail.props["data-chip-id"]
-                    ]
+                    del app.storage.general["overview_data"][self.project][self.label][thumbnail.props["data-chip-id"]]
                 elif app.storage.user["current_user"] != "admin":
                     if (
-                        app.storage.general["overview_data"][self.project][self.storage_key][
-                            thumbnail.props["data-chip-id"]
-                        ]["icon"]
+                        app.storage.general["overview_data"][self.project][self.label][thumbnail.props["data-chip-id"]][
+                            "icon"
+                        ]
                         == "block"
                     ):
-                        app.storage.general["overview_data"][self.project][self.storage_key][
-                            thumbnail.props["data-chip-id"]
-                        ]["icon"] = None
-                        app.storage.general["overview_data"][self.project][self.storage_key][
-                            thumbnail.props["data-chip-id"]
-                        ]["bg_color"] = "bg-light-blue-1"
+                        app.storage.general["overview_data"][self.project][self.label][thumbnail.props["data-chip-id"]][
+                            "icon"
+                        ] = None
+                        app.storage.general["overview_data"][self.project][self.label][thumbnail.props["data-chip-id"]][
+                            "bg_color"
+                        ] = "bg-light-blue-1"
                     else:
-                        app.storage.general["overview_data"][self.project][self.storage_key][
-                            thumbnail.props["data-chip-id"]
-                        ]["icon"] = "block"
-                        app.storage.general["overview_data"][self.project][self.storage_key][
-                            thumbnail.props["data-chip-id"]
-                        ]["bg_color"] = "bg-grey-5"
+                        app.storage.general["overview_data"][self.project][self.label][thumbnail.props["data-chip-id"]][
+                            "icon"
+                        ] = "block"
+                        app.storage.general["overview_data"][self.project][self.label][thumbnail.props["data-chip-id"]][
+                            "bg_color"
+                        ] = "bg-grey-5"
                     # 刷新chip容器内容
                     self._refresh_chip_container()
 
@@ -2327,11 +2375,11 @@ def requirement_page(type="", json_path="", project_name=""):
             # 如果用户具有编辑权限
             if self._edit_permission_judge():
                 temp_data = {}
-                old_data_keys = list(app.storage.general["overview_data"][self.project][self.storage_key].keys())
+                old_data_keys = list(app.storage.general["overview_data"][self.project][self.label].keys())
                 new_data_keys = move_element(old_data_keys, chip_data["id"], -1)
                 for k in new_data_keys:
-                    temp_data[k] = app.storage.general["overview_data"][self.project][self.storage_key][k]
-                app.storage.general["overview_data"][self.project][self.storage_key] = temp_data
+                    temp_data[k] = app.storage.general["overview_data"][self.project][self.label][k]
+                app.storage.general["overview_data"][self.project][self.label] = temp_data
                 # 刷新chip容器内容
                 self._refresh_chip_container()
 
@@ -2340,11 +2388,11 @@ def requirement_page(type="", json_path="", project_name=""):
             # 如果用户具有编辑权限
             if self._edit_permission_judge():
                 temp_data = {}
-                old_data_keys = list(app.storage.general["overview_data"][self.project][self.storage_key].keys())
+                old_data_keys = list(app.storage.general["overview_data"][self.project][self.label].keys())
                 new_data_keys = move_element(old_data_keys, chip_data["id"], 1)
                 for k in new_data_keys:
-                    temp_data[k] = app.storage.general["overview_data"][self.project][self.storage_key][k]
-                app.storage.general["overview_data"][self.project][self.storage_key] = temp_data
+                    temp_data[k] = app.storage.general["overview_data"][self.project][self.label][k]
+                app.storage.general["overview_data"][self.project][self.label] = temp_data
                 # 刷新chip容器内容
                 self._refresh_chip_container()
 
@@ -3734,6 +3782,7 @@ def requirement_page(type="", json_path="", project_name=""):
                                                 InteractiveButton(
                                                     project=project_name,
                                                     title=data["title"],
+                                                    label=data["label"],
                                                     processing_type=data["processing_type"],
                                                     dialog_placeholder=data["dialog_placeholder"],
                                                     permission=data["permission"],
@@ -3743,6 +3792,7 @@ def requirement_page(type="", json_path="", project_name=""):
                                                 InteractiveButton(
                                                     project=project_name,
                                                     title=data["title"],
+                                                    label=data["label"],
                                                     processing_type=data["processing_type"],
                                                     permission=data["permission"],
                                                     # upload_path=Path(""),
