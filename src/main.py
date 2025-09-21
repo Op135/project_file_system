@@ -52,22 +52,18 @@ FILES_URL_DIR = "/files"
 ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "pdf"}
 MAX_FILE_SIZE = 20 * 1024 * 1024  # 20MB
 
-# 存储服务器层级需求相关数据的变量初始化
+# 存储服务器层级 概述数据 的变量初始化
 app.storage.general.setdefault("overview_data", {})
+# 存储服务器层级 项目简介 的变量初始化
 app.storage.general.setdefault("project_summary", {})
+# 存储服务器层级 项目简介与概述数据动态更新配置 的变量初始化
 app.storage.general.setdefault("project_overview_config", {})
-
-# 数据临时保存处理函数
-# def save_config_data(data):
-#     app.storage.user["app.storage.client["config_data"]"] = data
-#     ui.notify(
-#         "临时保存完成，退出登录或关闭浏览器可能造成数据丢失，这取决于浏览器Cookie清除策略！",
-#         type="info",
-#         position="bottom",
-#         timeout=10000,
-#         progress=True,
-#         close_button="✖",
-#     )
+# 存储服务器层级 各项目各工程角色概述数据负责人 的变量初始化
+# 这个变量用于保存overview_config.json配置文件数据，在概述界面得到赋值
+over_config_data = {}
+app.storage.general.setdefault("overview_role", {})
+# 存储服务器层级 各项目负责销售 的变量初始化
+app.storage.general.setdefault("project_sale", {})
 
 
 # 更新需求配置文件，供后续管理员调用
@@ -143,6 +139,91 @@ def project_summary_update():
                     "overview": "查阅整理",
                 }
             )
+
+
+# 更新概述工程角色统计结果
+def overview_role_update(project_name):
+    """
+    app.storage.general["overview_role"][project_name]={"光学":{"most_user":"用户名","latest_user":"用户名"},...}
+    """
+    # 将服务器概述资料获取到
+    overview_data = app.storage.general["overview_data"]
+    # 设置时间对象识别格式
+    format_string = "%Y-%m-%d %H:%M:%S"
+    # 如果项目名存在服务器概述数据的键里
+    if project_name not in app.storage.general["overview_role"]:
+        temp_dic = {}
+        for over_class in over_config_data.keys():
+            temp_dic[over_class] = {}
+        app.storage.general["overview_role"][project_name] = temp_dic
+    else:
+        # 初始化概述角色字典
+        over_role_dic = app.storage.general["overview_role"][project_name]
+        # 遍历概述配置字典，主要用里面的角色分类，如光学、结构等等，和概述配置里的label
+        for over_class, over_config_li in over_config_data.items():
+            # 初始化临时保存概述里出现过的用户次数字典
+            frequency_user_dic = {}
+            # 初始化临时保存概述里出现过的用户最晚时间字典
+            time_user_dic = {}
+            # 遍历当前角色分类，如光学下，概述配置的各项
+            for over_config in over_config_li:
+                # 如果当前概述项的label存在服务器对应项目的概述数据字典键里
+                if (
+                    over_config["label"] in overview_data[project_name]
+                    and overview_data[project_name][over_config["label"]] != {}
+                ):
+                    # 遍历当前label下用户添加过的多个概述数据
+                    for over_data in overview_data[project_name][over_config["label"]].values():
+                        # 如果数据的创建用户已经存在临时记录字典里
+                        if over_data["creator"] in frequency_user_dic:
+                            # 将该用户创建次数加1次
+                            frequency_user_dic[over_data["creator"]] = frequency_user_dic[over_data["creator"]] + 1
+                            # 生成用户本次概述创建的时间对象
+                            time_obj_new = datetime.strptime(over_data["timestamp"], format_string)
+                            # 获取已保存的该用户概述最晚创建时间对象
+                            time_obj_old = time_user_dic[over_data["creator"]]
+                            # 两个时间对比，如果本次时间比已保存的时间更晚
+                            if time_obj_new > time_obj_old:
+                                # 将本次时间更新为该用户所有概述的最晚创建时间
+                                time_user_dic[over_data["creator"]] = time_obj_new
+                        # 如果数据的创建用户不存在临时记录字典里
+                        else:
+                            # 记该用户创建一次
+                            frequency_user_dic[over_data["creator"]] = 1
+                            # 记该用户首次创建时间
+                            time_user_dic[over_data["creator"]] = datetime.strptime(
+                                over_data["timestamp"], format_string
+                            )
+            # 当前角色的所有概述存在创建记录
+            if frequency_user_dic != {}:
+                # 找到临时保存用户创建概述次数字典里，所有次数的最大值
+                max_value = max(frequency_user_dic.values())
+                # 找到跟最大次数相同的对应所有用户
+                most_user_li = [key for key, value in frequency_user_dic.items() if value == max_value]
+                # 如果有多个人都创建了最大次数
+                if len(most_user_li) > 1:
+                    # 找到这些人创建概述数据的最晚时间
+                    lat_time = max([time_user_dic[user] for user in most_user_li])
+                    # 找到这些人里哪个人是最晚创建概述的
+                    for user in most_user_li:
+                        if time_user_dic[user] == lat_time:
+                            # 将找到的用户定义为概述创建最多次的人
+                            over_role_dic[over_class]["most_user"] = f"最多：{user}"
+                # 如果创建次数最多的情况只有一个人
+                else:
+                    # 将这个用户定义为概述创建最多次的人
+                    over_role_dic[over_class]["most_user"] = f"最多：{most_user_li[0]}"
+
+                # 找出临时保存用户最晚创建概述时间里最晚的时间点
+                latest_time = max(list(time_user_dic.values()))
+                # 找出最晚创建概述的用户
+                for user in time_user_dic.keys():
+                    if time_user_dic[user] == latest_time:
+                        # 将这个用户定义为最晚创建概述的人
+                        over_role_dic[over_class]["latest_user"] = f"最近：{user}"
+
+        # 将最终各角色模块找到的最多与最晚创建者字典更新到对应项目键值对里
+        app.storage.general["overview_role"][project_name] = over_role_dic
 
 
 # 在指定目录中查找包含特定前缀的文件名，并提取版本号
@@ -365,119 +446,6 @@ async def extract_requirement(file_path) -> dict:
     latest_data["original_version"] = new_data["original_version"]
     latest_data["req_timestamp"] = new_data["req_timestamp"]
     return {"contrast": extract_data, "latest": latest_data}
-
-
-# 数据输出处理函数
-def output_config_data(data, type):
-    data_json = data
-    project_name = app.storage.client["project_name"].strip()
-    if project_name == "":
-        ui.notify(
-            "必须给项目命名！",
-            type="negative",
-            position="bottom",
-            timeout=1000,
-            progress=True,
-            close_button="✖",
-        )
-    else:
-        file_dic = {}
-        for k, v in app.storage.client["file_thumbnail_dic"].items():
-            file_dic[k] = v["file_information"]
-        data_json["file_dic"] = file_dic
-        data_json["files"] = app.storage.client["files"]
-        data_json["deleted_files"] = app.storage.client["deleted_files"]
-        data_json["file_counter"] = app.storage.client["file_counter"]
-        data_json["project_name"] = app.storage.client["project_name"]
-        data_json["current_user"] = app.storage.user["current_user"]
-
-        version = app.storage.client["version"]
-        version_str_li = version.split(".")
-        # 输出类型为导出到本地
-        if type == "export":
-            # 将文件版本的小数点位加1
-            version_a_str = version_str_li[0]
-            # 注意出现3.11比3.2版本浮点数小，但是实际版本更高的影响
-            version_b_str = str(int(version_str_li[1]) + 1)
-            version = f"{version_a_str}.{version_b_str}"
-            app.storage.client["version"] = version
-            data_json["version"] = version
-            # 导出时加入或更新时间戳
-            data_json["req_timestamp"] = datetime.now().isoformat()
-            # 1. 将字典转换为 JSON 字符串
-            json_str = json.dumps(data_json, indent=4, ensure_ascii=False)
-            # 2. 生成 JavaScript 下载代码
-            js_code = f"""
-                const blob = new Blob([{json.dumps(json_str)}], {{ type: 'application/json' }});
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = 'data.json';  // 下载文件名
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
-            """
-            # 3. 执行 JavaScript
-            ui.run_javascript(js_code)
-
-            ui.notify(
-                f"需求已导出，版本已迭代到: V{version}",
-                type="positive",
-                position="bottom",
-                timeout=2000,
-                progress=True,
-                close_button="✖",
-            )
-        # 输出类型为提交到服务器
-        elif type == "submit":
-            if data_json["entry_status"]:
-                version_a = int(version_str_li[0])
-                original_version = f"{version_str_li[0]}.0"
-                # 查找指定路径下，含有提供项目名的文件，得到一个字典，完整版本为键，值为：{"name":文件名, "v_a":版本号整数部分, "v_b":版本号小数部分}
-                project_exists_file = find_files_with_prefix_and_version(REQ_DIR, project_name)
-                # 服务器存在该项目配置，则需要升级版本
-                if project_exists_file:
-                    v_max = max([float(s) for s in project_exists_file.keys()])
-                    if float(version) < v_max:
-                        version_a = project_exists_file[str(v_max)]["v_a"]
-                    version = f"{version_a + 1}.0"
-                # 服务器不存在该项目配置文件，版本设置为1.0
-                else:
-                    version = "1.0"
-                    original_version = "0.0"
-                app.storage.client["version"] = version
-                data_json["version"] = version
-                # 原版本用于记录当前版本是在哪个版本基础上做了修改的，直至提交到服务器
-                data_json["original_version"] = original_version
-                # 导出时加入或更新时间戳
-                data_json["req_timestamp"] = datetime.now().isoformat()
-                # 定义文件路径
-                file_path = os.path.join(REQ_DIR, f"{project_name}_需求配置_V{version}.json")
-                # 将字典转换为 JSON 字符串
-                json_str = json.dumps(data_json, indent=4, ensure_ascii=False)
-                # print(f"准备写入的 data 数据: {data}")
-                # 写入文件
-                with open(file_path, "w", encoding="utf-8") as f:
-                    f.write(json_str)
-
-                ui.notify(
-                    f"需求已提交，版本已迭代到: V{version}",
-                    type="positive",
-                    position="bottom",
-                    timeout=2000,
-                    progress=True,
-                    close_button="✖",
-                )
-            else:
-                ui.notify(
-                    "需求确认项未全部选填完毕，不能提交！",
-                    type="negative",
-                    position="center",
-                    timeout=0,
-                    progress=False,
-                    close_button="✖",
-                )
 
 
 def move_element(lst, element, step: int):
@@ -790,6 +758,7 @@ def login_page():
 
 @ui.page("/manage")
 def manage_page():
+    # 管理员管理界面
     if app.storage.user.get("current_user") != "admin":
         ui.navigate.to("/main")  # 如果不是管理员，跳转到主界面
         return
@@ -818,9 +787,9 @@ def main_page():
                 --ag-foreground-color: #111 !important;       /* 单元格文本颜色 */
                 --ag-header-foreground-color: #000 !important;       /*  表头文本颜色 */
                 --ag-header-background-color: #f1f0ed !important; /* 表头背景色 */
-                --ag-odd-row-background-color: #c6e6e855 !important; /* 奇数行背景色 */
-                --ag-background-color: #dfecd555 !important; /* 背景色 */
-                --ag-row-hover-color: #f2e6ceff !important;     /* 行悬停颜色 */
+                --ag-odd-row-background-color: #f6dead33 !important; /* 奇数行背景色 */
+                --ag-background-color: #93d5dc33 !important; /* 背景色 */
+                --ag-row-hover-color: #41b34933 !important;     /* 行悬停颜色 */
                 --ag-border-color: #ddd !important;           /* 边框颜色 */
                 --ag-cell-horizontal-border: solid 1px var(--ag-border-color) !important; /* 单元格右侧边框 */
                 --ag-row-border: solid 1px var(--ag-border-color) !important; /* 单元格底部边框 */
@@ -948,8 +917,8 @@ def main_page():
                 if project_name in app.storage.general["overview_data"]:
                     # 遍历服务器 项目简介与概述数据对照字典
                     for pro_key, over_key_li in app.storage.general["project_overview_config"].items():
-                        # 如果当前项目简介对照配置非空
-                        if over_key_li != []:
+                        # 如果当前处理的不是负责人配置，且项目简介对照配置非空
+                        if "charge" not in pro_key and over_key_li != []:
                             show_str = ""
                             # 遍历对照配置列表（可能一个项目简介配置了多个对应的概述数据项）
                             for over_key in over_key_li:
@@ -972,6 +941,20 @@ def main_page():
                                             show_str = f"{show_str}，{text}"
                             # 将处理完成的字符串作为该行数据对应项目简介项的现实内容
                             r[pro_key] = show_str.strip("，").removeprefix("\n")
+                        elif (
+                            "charge" in pro_key
+                            and over_key_li != ""
+                            and project_name in app.storage.general["overview_role"]
+                            and over_key_li in app.storage.general["overview_role"][project_name]
+                        ):
+                            show_str = app.storage.general["overview_role"][project_name][over_key_li]["latest_user"]
+                            if show_str == "":
+                                r[pro_key] = ""
+                            else:
+                                r[pro_key] = show_str.split("：")[1]
+
+                # 单独处理项目简介表里每行 负责销售 单元格的显示
+                r["sale_charge"] = app.storage.general["project_sale"].get(project_name, "")
                 # 将行数据加入待显示的符合选框的数据列表里
                 rows_select.append(r)
 
@@ -1177,6 +1160,14 @@ def main_page():
         {"field": "guide_beam", "headerName": "导光束要求", "width": 90},
         {"field": "requirement", "headerName": "需求录入", "width": 90},
         {"field": "overview", "headerName": "概述整理", "width": 90},
+        {"field": "sale_charge", "headerName": "销售", "width": 50},
+        {"field": "project_charge", "headerName": "项目", "width": 50},
+        {"field": "optics_charge", "headerName": "光学", "width": 50},
+        {"field": "structure_charge", "headerName": "结构", "width": 50},
+        {"field": "hardware_charge", "headerName": "硬件", "width": 50},
+        {"field": "software_charge", "headerName": "软件", "width": 50},
+        {"field": "ui_charge", "headerName": "UI", "width": 50},
+        {"field": "craft_charge", "headerName": "工艺", "width": 50},
     ]
     for col in project_summary_columns:
         if "width" in col:
@@ -1215,7 +1206,7 @@ def main_page():
                     ui.menu_item("系统管理", on_click=lambda: ui.navigate.to("/manage"))
                 ui.separator()
                 ui.menu_item("关闭菜单", menu.close)
-    with ui.column().classes("w-full h-[90vh] -space-y-2"):
+    with ui.column().classes("w-full h-[88vh] -space-y-2"):
         with ui.row().classes("items-center -space-x-2"):
             ui.label("项目筛选：").classes("text-[16px]/[28px]")
             select_major = (
@@ -2315,6 +2306,8 @@ def requirement_page(type="", json_path="", project_name=""):
                 if displayed_chip_ids != stored_chip_ids:
                     # 刷新chip容器内容
                     self._refresh_chip_container()
+                    # 刷新角色负责用户数据
+                    overview_role_update(self.project)
 
         # 打开文件
         def open_file(self, filepath):
@@ -3271,6 +3264,119 @@ def requirement_page(type="", json_path="", project_name=""):
                     if not file_data["file_information"]["file_del_bool"]:
                         file_data["file_obj"].get_thumbnail()
 
+    # 需求数据输出处理函数
+    def output_config_data(data, type):
+        data_json = data
+        project_name = app.storage.client["project_name"].strip()
+        if project_name == "":
+            ui.notify(
+                "必须给项目命名！",
+                type="negative",
+                position="bottom",
+                timeout=1000,
+                progress=True,
+                close_button="✖",
+            )
+        else:
+            file_dic = {}
+            for k, v in app.storage.client["file_thumbnail_dic"].items():
+                file_dic[k] = v["file_information"]
+            data_json["file_dic"] = file_dic
+            data_json["files"] = app.storage.client["files"]
+            data_json["deleted_files"] = app.storage.client["deleted_files"]
+            data_json["file_counter"] = app.storage.client["file_counter"]
+            data_json["project_name"] = app.storage.client["project_name"]
+            data_json["current_user"] = app.storage.user["current_user"]
+
+            version = app.storage.client["version"]
+            version_str_li = version.split(".")
+            # 输出类型为导出到本地
+            if type == "export":
+                # 将文件版本的小数点位加1
+                version_a_str = version_str_li[0]
+                # 注意出现3.11比3.2版本浮点数小，但是实际版本更高的影响
+                version_b_str = str(int(version_str_li[1]) + 1)
+                version = f"{version_a_str}.{version_b_str}"
+                app.storage.client["version"] = version
+                data_json["version"] = version
+                # 导出时加入或更新时间戳
+                data_json["req_timestamp"] = datetime.now().isoformat()
+                # 1. 将字典转换为 JSON 字符串
+                json_str = json.dumps(data_json, indent=4, ensure_ascii=False)
+                # 2. 生成 JavaScript 下载代码
+                js_code = f"""
+                    const blob = new Blob([{json.dumps(json_str)}], {{ type: 'application/json' }});
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'data.json';  // 下载文件名
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                """
+                # 3. 执行 JavaScript
+                ui.run_javascript(js_code)
+
+                ui.notify(
+                    f"需求已导出，版本已迭代到: V{version}",
+                    type="positive",
+                    position="bottom",
+                    timeout=2000,
+                    progress=True,
+                    close_button="✖",
+                )
+            # 输出类型为提交到服务器
+            elif type == "submit":
+                if data_json["entry_status"]:
+                    version_a = int(version_str_li[0])
+                    original_version = f"{version_str_li[0]}.0"
+                    # 查找指定路径下，含有提供项目名的文件，得到一个字典，完整版本为键，值为：{"name":文件名, "v_a":版本号整数部分, "v_b":版本号小数部分}
+                    project_exists_file = find_files_with_prefix_and_version(REQ_DIR, project_name)
+                    # 服务器存在该项目配置，则需要升级版本
+                    if project_exists_file:
+                        v_max = max([float(s) for s in project_exists_file.keys()])
+                        if float(version) < v_max:
+                            version_a = project_exists_file[str(v_max)]["v_a"]
+                        version = f"{version_a + 1}.0"
+                    # 服务器不存在该项目配置文件，版本设置为1.0
+                    else:
+                        version = "1.0"
+                        original_version = "0.0"
+                    app.storage.client["version"] = version
+                    data_json["version"] = version
+                    # 原版本用于记录当前版本是在哪个版本基础上做了修改的，直至提交到服务器
+                    data_json["original_version"] = original_version
+                    # 导出时加入或更新时间戳
+                    data_json["req_timestamp"] = datetime.now().isoformat()
+                    # 定义文件路径
+                    file_path = os.path.join(REQ_DIR, f"{project_name}_需求配置_V{version}.json")
+                    # 将字典转换为 JSON 字符串
+                    json_str = json.dumps(data_json, indent=4, ensure_ascii=False)
+                    # print(f"准备写入的 data 数据: {data}")
+                    # 写入文件
+                    with open(file_path, "w", encoding="utf-8") as f:
+                        f.write(json_str)
+                    # 将提交该需求的用户更新为该项目负责的销售员
+                    app.storage.general["project_sale"][project_name] = app.storage.user.get("current_user")
+                    ui.notify(
+                        f"需求已提交，版本已迭代到: V{version}",
+                        type="positive",
+                        position="bottom",
+                        timeout=2000,
+                        progress=True,
+                        close_button="✖",
+                    )
+                else:
+                    ui.notify(
+                        "需求确认项未全部选填完毕，不能提交！",
+                        type="negative",
+                        position="center",
+                        timeout=0,
+                        progress=False,
+                        close_button="✖",
+                    )
+
     # 需求显示界面框架构造函数
     def requirement_input_frame():
         # 需求界面内容
@@ -3807,44 +3913,56 @@ def requirement_page(type="", json_path="", project_name=""):
                     ui.label("概述整理").classes("text-xl")
                     with ui.column().classes("w-full overflow-y-auto p-1 gap-2"):
                         try:
-                            over_config_data = {}
+                            global over_config_data
+                            # 每次都以配置文件为准，不以服务器现有数据为准
+                            # 配置更新能直接呈现，但配置减项将导致原有数据不呈现
                             with open(f"{BASE_DIR}/overview_config.json", "r", encoding="utf-8") as f:
                                 # 使用 json.load() 读取文件内容并解析
                                 over_config_data = json.load(f)
-                            # 将json_data数据更新到客户端储存里，调用requirement_input_frame()显示需求确认项
-                            for role, over_data in over_config_data.items():
-                                with ui.card().classes("w-full px-3 gap-0"):
-                                    ui.label(f"{role}概述：").classes("text-base text-left w-full px-1 font-bold")
-                                    for data in over_data:
-                                        user_role = app.storage.user["current_role"]
-                                        if (
-                                            user_role in data["permission"]["read_role"]
-                                            or user_role in data["permission"]["edit_role"]
-                                        ):
-                                            if data["processing_type"] == "text":
-                                                InteractiveButton(
-                                                    project=project_name,
-                                                    title=data["title"],
-                                                    label=data["label"],
-                                                    processing_type=data["processing_type"],
-                                                    dialog_placeholder=data["dialog_placeholder"],
-                                                    permission=data["permission"],
-                                                    # delete_bool=False,
-                                                )
-                                            elif data["processing_type"] in ["file", "image"]:
-                                                InteractiveButton(
-                                                    project=project_name,
-                                                    title=data["title"],
-                                                    label=data["label"],
-                                                    processing_type=data["processing_type"],
-                                                    permission=data["permission"],
-                                                    # upload_path=Path(""),
-                                                    # delete_bool=False,
-                                                )
                         except json.JSONDecodeError:
                             print(f"错误：文件 '{json_path}' 不是有效的 JSON 格式。")
                         except Exception as e:
                             print(f"2读取文件时发生其他错误：{e}")
+
+                        overview_role_update(project_name)
+
+                        # 将json_data数据更新到客户端储存里，调用requirement_input_frame()显示需求确认项
+                        for role, over_data in over_config_data.items():
+                            with ui.card().classes("w-full px-3 gap-0"):
+                                with ui.row().classes("flex-nowrap -space-x-2 items-center"):
+                                    ui.label(f"{role}概述：").classes("text-base text-left w-full px-1 font-bold")
+                                    ui.chip(icon="history", color="brown-7").props("outline").classes(
+                                        "text-xs"
+                                    ).bind_text(app.storage.general["overview_role"][project_name][role], "most_user")
+                                    ui.chip(icon="add_reaction", color="green-7").props("outline").classes(
+                                        "text-xs"
+                                    ).bind_text(app.storage.general["overview_role"][project_name][role], "latest_user")
+                                for data in over_data:
+                                    user_role = app.storage.user["current_role"]
+                                    if (
+                                        user_role in data["permission"]["read_role"]
+                                        or user_role in data["permission"]["edit_role"]
+                                    ):
+                                        if data["processing_type"] == "text":
+                                            InteractiveButton(
+                                                project=project_name,
+                                                title=data["title"],
+                                                label=data["label"],
+                                                processing_type=data["processing_type"],
+                                                dialog_placeholder=data["dialog_placeholder"],
+                                                permission=data["permission"],
+                                                # delete_bool=False,
+                                            )
+                                        elif data["processing_type"] in ["file", "image"]:
+                                            InteractiveButton(
+                                                project=project_name,
+                                                title=data["title"],
+                                                label=data["label"],
+                                                processing_type=data["processing_type"],
+                                                permission=data["permission"],
+                                                # upload_path=Path(""),
+                                                # delete_bool=False,
+                                            )
 
             with ui.row().classes("fixed h-20 bottom-0 left-0 right-0 bg-sky-50 p-0 items-center shadow-inner"):
                 ui.label(text="参考文件：").classes("text-lg text-black ml-4")

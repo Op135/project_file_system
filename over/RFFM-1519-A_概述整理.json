@@ -9657,7 +9657,7 @@
                 "option_group_id": "18.0",
                 "option_view": "光学+工艺+质量",
                 "user_must_out": {
-                    "1": "无补充"
+                    "1": "光参XX要特别注意"
                 },
                 "option_tolerance_out": {},
                 "ref_out": "",
@@ -9822,12 +9822,12 @@
         "deleted_files": [],
         "file_counter": 6,
         "project_name": "RFFM-1519-A",
-        "current_user": "林贵原",
-        "version": "2.0",
-        "original_version": "1.0",
-        "req_timestamp": "2025-08-11T18:41:51.877788"
+        "current_user": "徐志航",
+        "version": "3.0",
+        "original_version": "2.0",
+        "req_timestamp": "2025-09-21T15:21:25.307695"
     },
-    "version": "2.0",
+    "version": "3.0",
     "2.0": {
         "added": {},
         "deleted": {
@@ -10211,5 +10211,138 @@
         "version": "2.0",
         "original_version": "1.0",
         "req_timestamp": "2025-08-11T18:41:51.877788"
+    },
+    "3.0": {
+        "added": {},
+        "deleted": {},
+        "modified": {
+            "138": {
+                "old_data": {
+                    "condition": "无条件",
+                    "node_id": "138",
+                    "guide_content": "请提供剩余产品光学补充需求",
+                    "answer_type": "多行文本",
+                    "input_num_accor": "",
+                    "input_name_accor": "",
+                    "input_tolerance": "",
+                    "ref_config": "True",
+                    "option_hint": "填写上面需求确认项无提及但客户有要求的光学内容，没有则写“无”。",
+                    "option_group_id": "18.0",
+                    "option_view": "光学+工艺+质量",
+                    "user_must_out": {
+                        "1": "无补充"
+                    },
+                    "option_tolerance_out": {},
+                    "ref_out": "",
+                    "options": [
+                        {
+                            "option_content": "",
+                            "option_out": "字典",
+                            "option_bold": "",
+                            "option_show": "补充光学要求：{V}",
+                            "option_label": ""
+                        }
+                    ],
+                    "num": "138"
+                },
+                "new_data": {
+                    "condition": "无条件",
+                    "node_id": "138",
+                    "guide_content": "请提供剩余产品光学补充需求",
+                    "answer_type": "多行文本",
+                    "input_num_accor": "",
+                    "input_name_accor": "",
+                    "input_tolerance": "",
+                    "ref_config": "True",
+                    "option_hint": "填写上面需求确认项无提及但客户有要求的光学内容，没有则写“无”。",
+                    "option_group_id": "18.0",
+                    "option_view": "光学+工艺+质量",
+                    "user_must_out": {
+                        "1": "光参XX要特别注意"
+                    },
+                    "option_tolerance_out": {},
+                    "ref_out": "",
+                    "options": [
+                        {
+                            "option_content": "",
+                            "option_out": "字典",
+                            "option_bold": "",
+                            "option_show": "补充光学要求：{V}",
+                            "option_label": ""
+                        }
+                    ],
+                    "num": "138"
+                }
+            }
+        },
+        "file_dic": {
+            "1": {
+                "file_del_bool": false,
+                "file_name": "IR-850-500-S-02-K10010073",
+                "file_url": "/uploads/IR-850-500-S-02-K10010073.f1a9abffe8f197027003b7ac5ce33fa4.pdf",
+                "file_name_hash": "IR-850-500-S-02-K10010073.f1a9abffe8f197027003b7ac5ce33fa4.pdf",
+                "file_name_suffix": "IR-850-500-S-02-K10010073.pdf",
+                "file_type": "application/pdf",
+                "file_lab": "1",
+                "parents_h": 9
+            },
+            "2": {
+                "file_del_bool": false,
+                "file_name": "临时性数据",
+                "file_url": "/uploads/临时性数据.bbb7a654f2ce1ee6a777865beab1f76b.xlsx",
+                "file_name_hash": "临时性数据.bbb7a654f2ce1ee6a777865beab1f76b.xlsx",
+                "file_name_suffix": "临时性数据.xlsx",
+                "file_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "file_lab": "2",
+                "parents_h": 9
+            },
+            "3": {
+                "file_del_bool": false,
+                "file_name": "琥珀色临时模组四光源驱动条件",
+                "file_url": "/uploads/琥珀色临时模组四光源驱动条件.e4d3934570fe6e04343c95ef842f14e2.pptx",
+                "file_name_hash": "琥珀色临时模组四光源驱动条件.e4d3934570fe6e04343c95ef842f14e2.pptx",
+                "file_name_suffix": "琥珀色临时模组四光源驱动条件.pptx",
+                "file_type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                "file_lab": "3",
+                "parents_h": 9
+            },
+            "4": {
+                "file_del_bool": false,
+                "file_name": "标准版本更新模板",
+                "file_url": "/uploads/标准版本更新模板.1dec186145b7a75831aa5f1421980227.docx",
+                "file_name_hash": "标准版本更新模板.1dec186145b7a75831aa5f1421980227.docx",
+                "file_name_suffix": "标准版本更新模板.docx",
+                "file_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                "file_lab": "4",
+                "parents_h": 9
+            },
+            "5": {
+                "file_del_bool": false,
+                "file_name": "Snipaste_2025-01-09_13-08-42",
+                "file_url": "/uploads/Snipaste_2025-01-09_13-08-42.00661caf7da65237520b08c398a61ae9.png",
+                "file_name_hash": "Snipaste_2025-01-09_13-08-42.00661caf7da65237520b08c398a61ae9.png",
+                "file_name_suffix": "Snipaste_2025-01-09_13-08-42.png",
+                "file_type": "image/png",
+                "file_lab": "5",
+                "parents_h": 9
+            },
+            "6": {
+                "file_del_bool": false,
+                "file_name": "微信图片_20241212095208",
+                "file_url": "/uploads/微信图片_20241212095208.e49868d32bbb9cb04364ba96f4c1eeb3.jpg",
+                "file_name_hash": "微信图片_20241212095208.e49868d32bbb9cb04364ba96f4c1eeb3.jpg",
+                "file_name_suffix": "微信图片_20241212095208.jpg",
+                "file_type": "image/jpeg",
+                "file_lab": "6",
+                "parents_h": 9
+            }
+        },
+        "deleted_files": [],
+        "file_counter": 6,
+        "project_name": "RFFM-1519-A",
+        "current_user": "徐志航",
+        "version": "3.0",
+        "original_version": "2.0",
+        "req_timestamp": "2025-09-21T15:21:25.307695"
     }
 }

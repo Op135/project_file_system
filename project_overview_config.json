@@ -25,5 +25,11 @@
     ],
     "guide_beam": [
         "guide_beam"
-    ]
+    ],
+    "optics_charge": "光学",
+    "structure_charge": "结构",
+    "hardware_charge": "硬件",
+    "software_charge": "软件",
+    "ui_charge": "UI",
+    "craft_charge": "工艺"
 }
