@@ -29,6 +29,7 @@ warnings.filterwarnings("ignore", category=UserWarning, module="openpyxl")
 
 # 初始化配置服务
 user_service = UserService()
+users_data = user_service.load_users()
 # 获取最新配置文件，待用
 config_service = ConfigService()
 init_config_data = config_service.load_config()
@@ -64,6 +65,30 @@ over_config_data = {}
 app.storage.general.setdefault("overview_role", {})
 # 存储服务器层级 各项目负责销售 的变量初始化
 app.storage.general.setdefault("project_sale", {})
+
+
+# 更新所有用户密码与角色数据
+def update_users_data():
+    global users_data
+    try:
+        users_data = user_service.load_users()
+        ui.notify(
+            "用户配置数据更新成功!",
+            type="positive",
+            position="bottom",
+            timeout=1000,
+            progress=True,
+            close_button="✖",
+        )
+    except Exception as e:
+        ui.notify(
+            f'用户配置数据更新出错： "{e}" ',
+            type="negative",
+            position="bottom",
+            timeout=1000,
+            progress=True,
+            close_button="✖",
+        )
 
 
 # 更新需求配置文件，供后续管理员调用
@@ -546,6 +571,8 @@ def get_file_hash(file_path, algorithm="md5"):
 # 注销登录处理函数
 def logout():
     del app.storage.user["current_user"]
+    del app.storage.user["is_admin"]
+    del app.storage.user["current_role"]
     ui.navigate.to("/login")
 
 
@@ -609,8 +636,7 @@ def login_page():
     # 返回用户是否为管理员的布尔值
     def check_admin_role(username: str) -> bool:
         try:
-            users = user_service.load_users()
-            return users.get(username, {}).get("role") == "admin"
+            return users_data.get(username, {}).get("role") == "admin"
         except Exception as e:
             ui.notify(
                 f"权限验证失败: {str(e)}",
@@ -772,6 +798,7 @@ def manage_page():
                 ui.menu_item("关闭菜单", menu.close)
     with ui.column().classes("w-full h-[90vh] -space-y-2"):
         ui.button("更新需求配置文件", on_click=lambda: update_config_service()).props("").classes("")
+        ui.button("更新用户配置数据", on_click=lambda: update_users_data()).props("").classes("")
 
 
 # ======================
@@ -1112,19 +1139,21 @@ def main_page():
             if tidy_bool:
                 ui.navigate.to(f"/main/requirement?type=overview&json_path={overview_file_path}")
         elif col_id == "sub_project":
+            # 切换传入列的可见性
             await toggle_visibility(
                 aggrid,
                 [
-                    "state",
-                    "model_notes",
-                    "creation_date",
-                    "light_source",
-                    "project",
-                    "target_distance",
-                    "output_mode",
-                    "guide_beam",
-                    "adapter_options",
-                    "customer",
+                    "state",  # 状态列
+                    "introduction",  # 简介列
+                    "model_notes",  # 型号备注列
+                    "creation_date",  # 创建日期列
+                    "light_source",  # 光源选型列
+                    "project",  # 对外项目号列
+                    "target_distance",  # 目标距离列
+                    "output_mode",  # 输出型号模式列
+                    "guide_beam",  # 导光束要求列
+                    "adapter_options",  # 转接座选型列
+                    "customer",  # 客户简称列
                 ],
             )
 
@@ -1140,26 +1169,26 @@ def main_page():
         {"field": "model_notes", "headerName": "型号备注", "width": 150, "autoHeight": True},
         {"field": "state", "headerName": "产品状态", "width": 80},
         {"field": "creation_date", "headerName": "立项日期", "width": 100},
+        {"field": "introduction", "headerName": "产品简介", "width": 300, "autoHeight": True},
+        {"field": "custom_labels", "headerName": "定制要点", "width": 400, "autoHeight": True},
         {
             "field": "light_source",
             "headerName": "光源选型",
             "width": 400,
             "autoHeight": True,
-            "cellStyle": {"white-space": "pre-line"},
+            # "cellStyle": {"white-space": "pre-line"},
         },
         {"field": "photometric", "headerName": "光度学要求", "width": 120, "autoHeight": True},
         {"field": "target_distance", "headerName": "目标面距离", "width": 90, "autoHeight": True},
         {"field": "adapter_options", "headerName": "转接座可选类别", "width": 120, "autoHeight": True},
-        {"field": "introduction", "headerName": "产品简介", "width": 300, "autoHeight": True},
-        {"field": "custom_labels", "headerName": "定制要点", "width": 400, "autoHeight": True},
         {"field": "color", "headerName": "外观颜色", "width": 50},
         {"field": "input_voltage", "headerName": "产品输入电压", "width": 100},
         {"field": "input_mode", "headerName": "输入控制模式", "width": 100},
         {"field": "output_mode", "headerName": "输出模式", "width": 100},
-        {"field": "customer", "headerName": "客户缩写", "width": 100},
         {"field": "guide_beam", "headerName": "导光束要求", "width": 90},
-        {"field": "requirement", "headerName": "需求录入", "width": 90},
-        {"field": "overview", "headerName": "概述整理", "width": 90},
+        {"field": "requirement", "headerName": "需求录入", "width": 80},
+        {"field": "overview", "headerName": "概述整理", "width": 80},
+        {"field": "customer", "headerName": "客户缩写", "width": 100},
         {"field": "sale_charge", "headerName": "销售", "width": 50},
         {"field": "project_charge", "headerName": "项目", "width": 50},
         {"field": "optics_charge", "headerName": "光学", "width": 50},
@@ -3328,6 +3357,16 @@ def requirement_page(type="", json_path="", project_name=""):
                 )
             # 输出类型为提交到服务器
             elif type == "submit":
+                if app.storage.user.get("current_role") not in ["销售", "销售总监", "admin"]:
+                    ui.notify(
+                        "当前用户无权限提交需求，只能导出到本地！",
+                        type="negative",
+                        position="center",
+                        timeout=0,
+                        progress=False,
+                        close_button="✖",
+                    )
+                    return
                 if data_json["entry_status"]:
                     version_a = int(version_str_li[0])
                     original_version = f"{version_str_li[0]}.0"
