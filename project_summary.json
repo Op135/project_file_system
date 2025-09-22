@@ -1,2480 +1,2480 @@
 {
     "RFFM-1001-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2020-03-04",
-        "introduction": "常规白光照明+荧光成像模式，内置驱动板"
+        "introduction": "常规白光照明+荧光成像模式，内置驱动板",
+        "customer": ""
     },
     "RFFM-1002-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2021-05-11",
-        "introduction": "常规白光照明+窄带成像模式，1009灯头尺寸"
+        "introduction": "常规白光照明+窄带成像模式，1009灯头尺寸",
+        "customer": ""
     },
     "RFFM-1002-B": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2024-07-12",
-        "introduction": "常规白光照明+窄带成像模式，1009基础上尺寸加大"
+        "introduction": "常规白光照明+窄带成像模式，1009基础上尺寸加大",
+        "customer": "SHCY "
     },
     "RFFM-1003-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2022-10-27",
-        "introduction": "常规白光照明+窄带成像模式"
+        "introduction": "常规白光照明+窄带成像模式",
+        "customer": "Digitrack"
     },
     "RFFM-1005-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2024-07-15",
-        "introduction": "常规白光照明+荧光成像模式"
+        "introduction": "常规白光照明+荧光成像模式",
+        "customer": ""
     },
     "RFFM-1006-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2024-12-04",
-        "introduction": "常规白光照明+荧光成像模式，红外光路镀膜加强"
+        "introduction": "常规白光照明+荧光成像模式，红外光路镀膜加强",
+        "customer": "HHJY"
     },
     "RFFM-1007-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2016-10-25",
-        "introduction": "常规白光照明+窄带成像模式，单芯片白光，更适合小口径导光束"
+        "introduction": "常规白光照明+窄带成像模式，单芯片白光，更适合小口径导光束",
+        "customer": "AH/KMAC"
     },
     "RFFM-1008-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2023-06-30",
-        "introduction": "常规白光照明+窄带成像模式，采用小尺寸透镜组"
+        "introduction": "常规白光照明+窄带成像模式，采用小尺寸透镜组",
+        "customer": "AHYL"
     },
     "RFFM-1009-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "常规白光照明+窄带成像模式"
+        "introduction": "常规白光照明+窄带成像模式",
+        "customer": "——"
     },
     "RFFM-1009-B": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "常规白光照明+窄带成像模式"
+        "introduction": "常规白光照明+窄带成像模式",
+        "customer": "OT"
     },
     "RFFM-1009-C": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "常规白光照明+窄带成像模式"
+        "introduction": "常规白光照明+窄带成像模式",
+        "customer": "——"
     },
     "RFFM-1009-D": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "常规白光照明+窄带成像模式"
+        "introduction": "常规白光照明+窄带成像模式",
+        "customer": "——"
     },
     "RFFM-1009-E": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "常规白光照明+窄带成像模式"
+        "introduction": "常规白光照明+窄带成像模式",
+        "customer": "——"
     },
     "RFFM-1009-F": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "常规白光照明+窄带成像模式"
+        "introduction": "常规白光照明+窄带成像模式",
+        "customer": "HK"
     },
     "RFFM-1009-G": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2022-10-20",
-        "introduction": "常规白光照明+窄带成像模式"
+        "introduction": "常规白光照明+窄带成像模式",
+        "customer": "OJH"
     },
     "RFFM-1009-H": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2023-01-13",
-        "introduction": "常规白光照明+窄带成像模式"
+        "introduction": "常规白光照明+窄带成像模式",
+        "customer": ""
     },
     "RFFM-1009-I": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2023-02-14",
-        "introduction": "常规白光照明+窄带成像模式"
+        "introduction": "常规白光照明+窄带成像模式",
+        "customer": "OT"
     },
     "RFFM-1009-J": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "常规白光照明+窄带成像模式"
+        "introduction": "常规白光照明+窄带成像模式",
+        "customer": "HK"
     },
     "RFFM-1009-K": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2024-09-18",
-        "introduction": "常规白光照明+窄带成像模式"
+        "introduction": "常规白光照明+窄带成像模式",
+        "customer": "OJH"
     },
     "RFFM-1013-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2017-07-28",
-        "introduction": "常规白光照明+荧光成像模式"
+        "introduction": "常规白光照明+荧光成像模式",
+        "customer": ""
     },
     "RFFM-0107-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2016-11-03",
-        "introduction": "常规白光照明"
+        "introduction": "常规白光照明",
+        "customer": "Medstar"
     },
     "RFFM-0107-B": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "常规白光照明，驱动板不装盒"
+        "introduction": "常规白光照明，驱动板不装盒",
+        "customer": "JW"
     },
     "RFFM-0107-C": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "常规白光照明，无光学处理，驱动板装盒"
+        "introduction": "常规白光照明，无光学处理，驱动板装盒",
+        "customer": "OPTP/Pearl"
     },
     "RFFM-1101-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2021-04-22",
-        "introduction": "常规白光照明，无光学处理，模组输出发散角120°，使用SMA905接口"
+        "introduction": "常规白光照明，无光学处理，模组输出发散角120°，使用SMA905接口",
+        "customer": "KM"
     },
     "RFFM-1103-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2023-06-16",
-        "introduction": "常规白光照明，单芯片白光，更适合小口径导光束"
+        "introduction": "常规白光照明，单芯片白光，更适合小口径导光束",
+        "customer": ""
     },
     "RFFM-1105-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2017-01-20",
-        "introduction": "常规白光照明"
+        "introduction": "常规白光照明",
+        "customer": "M.I.One"
     },
     "RFFM-1105-B": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "常规白光照明，驱动板装盒"
+        "introduction": "常规白光照明，驱动板装盒",
+        "customer": "——"
     },
     "RFFM-1105-C ": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "常规白光照明"
+        "introduction": "常规白光照明",
+        "customer": "Medstar"
     },
     "RFFM-1106-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "常规白光照明，驱动板装盒，用RFFM-1009驱动板"
+        "introduction": "常规白光照明，驱动板装盒，用RFFM-1009驱动板",
+        "customer": "Sanma"
     },
     "RFFM-1106-B": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "常规白光照明，驱动板装盒"
+        "introduction": "常规白光照明，驱动板装盒",
+        "customer": "Sanma"
     },
     "RFFM-1106-C": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "常规白光照明"
+        "introduction": "常规白光照明",
+        "customer": "Sanma"
     },
     "RFFM-1107-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2016-09-16",
-        "introduction": "常规白光照明，驱动板装盒，使用MF50101V2-1000C-A99 低风量风扇，模组长度较普通的短5mm"
+        "introduction": "常规白光照明，驱动板装盒，使用MF50101V2-1000C-A99 低风量风扇，模组长度较普通的短5mm",
+        "customer": "SL"
     },
     "RFFM-1107-B": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "常规白光照明，驱动板装盒"
+        "introduction": "常规白光照明，驱动板装盒",
+        "customer": "FX"
     },
     "RFFM-1107-C": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "常规白光照明，驱动板装盒"
+        "introduction": "常规白光照明，驱动板装盒",
+        "customer": "SD"
     },
     "RFFM-1107-D": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "常规白光照明，驱动板不装盒"
+        "introduction": "常规白光照明，驱动板不装盒",
+        "customer": "HK"
     },
     "RFFM-1107-E": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "常规白光照明，驱动板不装盒"
+        "introduction": "常规白光照明，驱动板不装盒",
+        "customer": "OJH"
     },
     "RFFM-1107-F": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "常规白光照明，驱动板装盒"
+        "introduction": "常规白光照明，驱动板装盒",
+        "customer": "OM"
     },
     "RFFM-1107-G": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2020-07-27",
-        "introduction": "常规白光照明，驱动板不装盒"
+        "introduction": "常规白光照明，驱动板不装盒",
+        "customer": "KM"
     },
     "RFFM-1107-H": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2021-07-12",
-        "introduction": "常规白光照明，使用RFFM-1108-A驱动板改"
+        "introduction": "常规白光照明，使用RFFM-1108-A驱动板改",
+        "customer": "——"
     },
     "RFFM-1107-I": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2021-07-16",
-        "introduction": "常规白光照明，使用RFFM-1108-A驱动板改"
+        "introduction": "常规白光照明，使用RFFM-1108-A驱动板改",
+        "customer": "HZYS、MGB"
     },
     "RFFM-1107-J": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2021-12-03",
-        "introduction": "常规白光照明，使用RFFM-1108-A驱动板改"
+        "introduction": "常规白光照明，使用RFFM-1108-A驱动板改",
+        "customer": "——"
     },
     "RFFM-1107-K": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2023-02-07",
-        "introduction": "常规白光照明，使用RFFM-1108-A驱动板改设计，0807透镜1靠近光源1.5mm（三片0.5mm垫片）"
+        "introduction": "常规白光照明，使用RFFM-1108-A驱动板改设计，0807透镜1靠近光源1.5mm（三片0.5mm垫片）",
+        "customer": "XA"
     },
     "RFFM-1107-L": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2023-07-03",
-        "introduction": "常规白光照明，驱动板不装盒"
+        "introduction": "常规白光照明，驱动板不装盒",
+        "customer": "Medical Experts"
     },
     "RFFM-1107-M": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2023-07-03",
-        "introduction": "常规白光照明，驱动板不装盒"
+        "introduction": "常规白光照明，驱动板不装盒",
+        "customer": "Medical Experts"
     },
     "RFFM-1107-N": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2023-09-15",
-        "introduction": "常规白光照明，使用RFFM-1108-A驱动板改，一体化设计，风扇较底座后凸"
+        "introduction": "常规白光照明，使用RFFM-1108-A驱动板改，一体化设计，风扇较底座后凸",
+        "customer": "SYG"
     },
     "RFFM-1107-P": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2023-10-10",
-        "introduction": "常规白光照明，使用RFFM-1108-A驱动板改"
+        "introduction": "常规白光照明，使用RFFM-1108-A驱动板改",
+        "customer": "SY"
     },
     "RFFM-1107-Q": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2024-01-12",
-        "introduction": "常规白光照明，使用RFFM-1108-A驱动板改"
+        "introduction": "常规白光照明，使用RFFM-1108-A驱动板改",
+        "customer": "DS-Med"
     },
     "RFFM-1107-R": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2024-02-01",
-        "introduction": "常规白光照明，驱动板不装盒"
+        "introduction": "常规白光照明，驱动板不装盒",
+        "customer": "HK"
     },
     "RFFM-1107-S": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2025-02-21",
-        "introduction": "常规白光照明，驱动板不装盒"
+        "introduction": "常规白光照明，驱动板不装盒",
+        "customer": "HKSZ"
     },
     "RFFM-1107-T": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2025-08-11",
-        "introduction": "常规白光照明，使用RFFM-1108-A驱动板改"
+        "introduction": "常规白光照明，使用RFFM-1108-A驱动板改",
+        "customer": "HZYS"
     },
     "RFFM-1107-U": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2025-09-04",
-        "introduction": "常规白光照明，驱动板不装盒"
+        "introduction": "常规白光照明，驱动板不装盒",
+        "customer": "DYJ"
     },
     "RFFM-1108-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2020-03-23",
-        "introduction": "常规白光照明，一体化设计，单芯片白光，更适合小口径导光束"
+        "introduction": "常规白光照明，一体化设计，单芯片白光，更适合小口径导光束",
+        "customer": "AH"
     },
     "RFFM-1108-B": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2020-08-04",
-        "introduction": "常规白光照明，一体化设计，单芯片白光，更适合小口径导光束"
+        "introduction": "常规白光照明，一体化设计，单芯片白光，更适合小口径导光束",
+        "customer": "SKS"
     },
     "RFFM-1108-C": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2020-11-20",
-        "introduction": "常规白光照明，单芯片白光，更适合小口径导光束"
+        "introduction": "常规白光照明，单芯片白光，更适合小口径导光束",
+        "customer": "SAR"
     },
     "RFFM-1108-D": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2024-10-28",
-        "introduction": "常规白光照明，一体化设计，单芯片白光，更适合小口径导光束"
+        "introduction": "常规白光照明，一体化设计，单芯片白光，更适合小口径导光束",
+        "customer": "FN"
     },
     "RFFM-1108-E": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2024-11-25",
-        "introduction": "常规白光照明，一体化设计，单芯片白光，更适合小口径导光束"
+        "introduction": "常规白光照明，一体化设计，单芯片白光，更适合小口径导光束",
+        "customer": "Russia-Endomed "
     },
     "RFFM-1109-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2021-05-12",
-        "introduction": "常规白光照明，一体化设计，在1108基础上，驱动板扩大导致底座修改"
+        "introduction": "常规白光照明，一体化设计，在1108基础上，驱动板扩大导致底座修改",
+        "customer": ""
     },
     "RFFM-1121-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2018-04-27",
-        "introduction": "常规白光照明，驱动板小板叠加"
+        "introduction": "常规白光照明，驱动板小板叠加",
+        "customer": "Chammed"
     },
     "RFFM-1121-B": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "常规白光照明"
+        "introduction": "常规白光照明",
+        "customer": "OM/Prism/Dandy"
     },
     "RFFM-1121-C": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "常规白光照明"
+        "introduction": "常规白光照明",
+        "customer": "Endomed"
     },
     "RFFM-1121-D": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "常规白光照明"
+        "introduction": "常规白光照明",
+        "customer": "PR"
     },
     "RFFM-1121-E": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "常规白光照明，驱动板小板叠加，使用MF60251V2-1000C-A99低风量风扇"
+        "introduction": "常规白光照明，驱动板小板叠加，使用MF60251V2-1000C-A99低风量风扇",
+        "customer": "HNK"
     },
     "RFFM-1121-F": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2020-07-06",
-        "introduction": "常规白光照明"
+        "introduction": "常规白光照明",
+        "customer": "LPM/OPTO/FX"
     },
     "RFFM-1121-G": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2020-07-31",
-        "introduction": "常规白光照明"
+        "introduction": "常规白光照明",
+        "customer": "CY"
     },
     "RFFM-1121-H": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2020-09-18",
-        "introduction": "常规白光照明"
+        "introduction": "常规白光照明",
+        "customer": "BS"
     },
     "RFFM-1121-I": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2021-01-19",
-        "introduction": "常规白光照明"
+        "introduction": "常规白光照明",
+        "customer": "Chammed"
     },
     "RFFM-1121-J": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2021-06-09",
-        "introduction": "常规白光照明"
+        "introduction": "常规白光照明",
+        "customer": "——"
     },
     "RFFM-1121-K": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2021-07-30",
-        "introduction": "常规白光照明"
+        "introduction": "常规白光照明",
+        "customer": "MGB"
     },
     "RFFM-1121-L": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2021-11-04",
-        "introduction": "常规白光照明"
+        "introduction": "常规白光照明",
+        "customer": "HWK"
     },
     "RFFM-1121-M": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2021-12-13",
-        "introduction": "常规白光照明"
+        "introduction": "常规白光照明",
+        "customer": "MGB"
     },
     "RFFM-1121-N": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2022-02-11",
-        "introduction": "常规白光照明"
+        "introduction": "常规白光照明",
+        "customer": ""
     },
     "RFFM-1121-P": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2022-05-23",
-        "introduction": "常规白光照明，驱动板小板叠加"
+        "introduction": "常规白光照明，驱动板小板叠加",
+        "customer": "Chammed"
     },
     "RFFM-1121-Q": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2022-06-09",
-        "introduction": "常规白光照明"
+        "introduction": "常规白光照明",
+        "customer": "YSYL"
     },
     "RFFM-1121-R": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2022-09-15",
-        "introduction": "常规白光照明"
+        "introduction": "常规白光照明",
+        "customer": "RW"
     },
     "RFFM-1121-S": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2022-12-16",
-        "introduction": "常规白光照明"
+        "introduction": "常规白光照明",
+        "customer": "AH"
     },
     "RFFM-1121-T": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2023-03-21",
-        "introduction": "常规白光照明"
+        "introduction": "常规白光照明",
+        "customer": "SAR"
     },
     "RFFM-1121-U": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2023-03-27",
-        "introduction": "常规白光照明"
+        "introduction": "常规白光照明",
+        "customer": "SL"
     },
     "RFFM-1121-V": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2023-05-26",
-        "introduction": "常规白光照明"
+        "introduction": "常规白光照明",
+        "customer": "HK"
     },
     "RFFM-1121-W": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2023-06-13",
-        "introduction": "常规白光照明"
+        "introduction": "常规白光照明",
+        "customer": "YDYX"
     },
     "RFFM-1121-Y": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2023-07-28",
-        "introduction": "常规白光照明"
+        "introduction": "常规白光照明",
+        "customer": "LY"
     },
     "RFFM-1121-Z": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2023-08-31",
-        "introduction": "常规白光照明"
+        "introduction": "常规白光照明",
+        "customer": "LY"
     },
     "RFFM-1121-BC": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2024-11-07",
-        "introduction": "常规白光照明"
+        "introduction": "常规白光照明",
+        "customer": "Endolax "
     },
     "RFFM-1121-BD": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2025-06-06",
-        "introduction": "常规白光照明"
+        "introduction": "常规白光照明",
+        "customer": "MIVONIX"
     },
     "RFFM-1121-EA": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2023-11-17",
-        "introduction": "常规白光照明，驱动板小板叠加，使用MF60251V2-1000C-A99低风量风扇"
+        "introduction": "常规白光照明，驱动板小板叠加，使用MF60251V2-1000C-A99低风量风扇",
+        "customer": "HNK"
     },
     "RFFM-1121-EB": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2024-04-11",
-        "introduction": "常规白光照明，驱动板小板叠加，使用MF60251V2-1000C-A99低风量风扇"
+        "introduction": "常规白光照明，驱动板小板叠加，使用MF60251V2-1000C-A99低风量风扇",
+        "customer": "JJYL"
     },
     "RFFM-1121-DA": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2024-01-18",
-        "introduction": "常规白光照明"
+        "introduction": "常规白光照明",
+        "customer": "DPM"
     },
     "RFFM-1121-HA": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2024-08-28",
-        "introduction": "常规白光照明"
+        "introduction": "常规白光照明",
+        "customer": "YYZX"
     },
     "RFFM-1121-KA": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2024-10-23",
-        "introduction": "常规白光照明"
+        "introduction": "常规白光照明",
+        "customer": "GY"
     },
     "RFFM-1122-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2018-04-27",
-        "introduction": "常规白光照明，驱动板小板叠加，塑胶外壳"
+        "introduction": "常规白光照明，驱动板小板叠加，塑胶外壳",
+        "customer": "SD"
     },
     "RFFM-1122-B": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2022-07-18",
-        "introduction": "常规白光照明，金属外壳"
+        "introduction": "常规白光照明，金属外壳",
+        "customer": "Sanma"
     },
     "RFFM-1123-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2021-06-23",
-        "introduction": "常规白光照明"
+        "introduction": "常规白光照明",
+        "customer": "OPTO/DFV"
     },
     "RFFM-1124-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2021-07-01",
-        "introduction": "常规白光照明"
+        "introduction": "常规白光照明",
+        "customer": "J.H."
     },
     "RFFM-1124-B": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2021-08-19",
-        "introduction": "常规白光照明"
+        "introduction": "常规白光照明",
+        "customer": "J.H."
     },
     "RFFM-1125-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2021-08-19",
-        "introduction": "常规白光照明"
+        "introduction": "常规白光照明",
+        "customer": ""
     },
     "RFFM-1126-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2025-03-18",
-        "introduction": "常规白光照明"
+        "introduction": "常规白光照明",
+        "customer": "AH"
     },
     "RFFM-1128-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2025-08-29",
-        "introduction": "常规白光照明，驱动板小板叠加，使用MF60251V2-1000C-A99低风量风扇"
+        "introduction": "常规白光照明，驱动板小板叠加，使用MF60251V2-1000C-A99低风量风扇",
+        "customer": "HNK"
     },
     "RFFM-1121C-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2018-08-28",
-        "introduction": "常规白光照明"
+        "introduction": "常规白光照明",
+        "customer": "AH"
     },
     "RFFM-1122C-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2018-08-28",
-        "introduction": "常规白光照明"
+        "introduction": "常规白光照明",
+        "customer": "Sanma"
     },
     "RFFM-1122C-B": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2021-01-25",
-        "introduction": "常规白光照明"
+        "introduction": "常规白光照明",
+        "customer": "Sanma"
     },
     "RFFM-1122C-C": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2022-10-11",
-        "introduction": "常规白光照明"
+        "introduction": "常规白光照明",
+        "customer": "Sanma"
     },
     "RFFM-2201-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2020-12-16",
-        "introduction": "LED单色光，1107结构，首样使用RFFM-1009-F驱动板（调电流），使用MF50101V2-1000C-A99低风量风扇"
+        "introduction": "LED单色光，1107结构，首样使用RFFM-1009-F驱动板（调电流），使用MF50101V2-1000C-A99低风量风扇",
+        "customer": "XA"
     },
     "RFFM-2202-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2021-03-02",
-        "introduction": "LED单色光，1121结构件，外框减薄1.5"
+        "introduction": "LED单色光，1121结构件，外框减薄1.5",
+        "customer": ""
     },
     "RFFM-2203-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2021-03-09",
-        "introduction": "LED单色光，1121结构件，外框减薄1.5，送样驱动RFFM-1504_DBCBAOT_B_V01（调电流）"
+        "introduction": "LED单色光，1121结构件，外框减薄1.5，送样驱动RFFM-1504_DBCBAOT_B_V01（调电流）",
+        "customer": "JY"
     },
     "RFFM-2204-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2021-04-28",
-        "introduction": "LED单色光，1107结构，RFFM-1108_DB12A_A_V05"
+        "introduction": "LED单色光，1107结构，RFFM-1108_DB12A_A_V05",
+        "customer": "Sanma"
     },
     "RFFM-2205-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2021-04-28",
-        "introduction": "LED单色光，1107结构，RFFM-1108_DB12A_A_V05"
+        "introduction": "LED单色光，1107结构，RFFM-1108_DB12A_A_V05",
+        "customer": "Sanma"
     },
     "RFFM-2206-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2021-06-02",
-        "introduction": "LED单色光，1107结构，首样使用RFFM-1009-F驱动板（调电流），使用MF50101V2-1000C-A99低风量风扇"
+        "introduction": "LED单色光，1107结构，首样使用RFFM-1009-F驱动板（调电流），使用MF50101V2-1000C-A99低风量风扇",
+        "customer": "WCYT"
     },
     "RFFM-2301-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2021-03-09",
-        "introduction": "LD单色光，型材壳设计"
+        "introduction": "LD单色光，型材壳设计",
+        "customer": "JY"
     },
     "RFFM-2302-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2021-04-28",
-        "introduction": "LD单色光，型材壳设计"
+        "introduction": "LD单色光，型材壳设计",
+        "customer": "Sanma"
     },
     "RFFM-2303-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2021-11-26",
-        "introduction": "LD单色光，型材壳设计"
+        "introduction": "LD单色光，型材壳设计",
+        "customer": ""
     },
     "RFFM-2401-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2023-02-20",
-        "introduction": "LD单色光，输出平行光，透镜头部可灵活放置"
+        "introduction": "LD单色光，输出平行光，透镜头部可灵活放置",
+        "customer": ""
     },
     "RFFM-2402-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2024-10-23",
-        "introduction": "LD单色光，输出平行光，驱动板内置"
+        "introduction": "LD单色光，输出平行光，驱动板内置",
+        "customer": "SZKL"
     },
     "RFFM-1401-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "常规白光照明，超薄设计"
+        "introduction": "常规白光照明，超薄设计",
+        "customer": "YNP"
     },
     "RFFM-1402-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2025-08-05",
-        "introduction": "常规白光照明，超薄设计"
+        "introduction": "常规白光照明，超薄设计",
+        "customer": "Chanmmed"
     },
     "RFFM-1403-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2024-08-26",
-        "introduction": "常规白光照明，超薄设计，散热器翻转180℃"
+        "introduction": "常规白光照明，超薄设计，散热器翻转180℃",
+        "customer": "M.I.ONE"
     },
     "RFFM-1405-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2017-12-27",
-        "introduction": "常规白光照明，驱动板不装盒（20250516重定）"
+        "introduction": "常规白光照明，驱动板不装盒（20250516重定）",
+        "customer": ""
     },
     "RFFM-1407-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2017-06-27",
-        "introduction": "常规白光照明，驱动板装盒"
+        "introduction": "常规白光照明，驱动板装盒",
+        "customer": "SL"
     },
     "RFFM-1407-B": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "常规白光照明，驱动板不装盒"
+        "introduction": "常规白光照明，驱动板不装盒",
+        "customer": "OM"
     },
     "RFFM-1407-C": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "常规白光照明，驱动板装盒"
+        "introduction": "常规白光照明，驱动板装盒",
+        "customer": "——"
     },
     "RFFM-1407-D": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2025-06-06",
-        "introduction": "常规白光照明，驱动板不装盒，RM3000板子"
+        "introduction": "常规白光照明，驱动板不装盒，RM3000板子",
+        "customer": "MIVONIX"
     },
     "RFFM-1408-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2024-06-20",
-        "introduction": "常规白光照明，1108驱动板"
+        "introduction": "常规白光照明，1108驱动板",
+        "customer": "HJ"
     },
     "RFFM-1501-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2020-10-19",
-        "introduction": "常规白光照明，发散角55°，耦合导光束（直径≥8mm，NA≥0.47）"
+        "introduction": "常规白光照明，发散角55°，耦合导光束（直径≥8mm，NA≥0.47）",
+        "customer": "JY"
     },
     "RFFM-1501-B": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2022-01-18",
-        "introduction": "常规白光照明，发散角55°，耦合导光束（直径≥8mm，NA≥0.47），"
+        "introduction": "常规白光照明，发散角55°，耦合导光束（直径≥8mm，NA≥0.47），",
+        "customer": "CC"
     },
     "RFFM-1502-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2021-08-02",
-        "introduction": "常规白光照明，散热部分定制结构"
+        "introduction": "常规白光照明，散热部分定制结构",
+        "customer": ""
     },
     "RFFM-1503-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2023-02-08",
-        "introduction": "常规白光照明，发散角55°，耦合导光束（直径≥8mm，NA≥0.47），"
+        "introduction": "常规白光照明，发散角55°，耦合导光束（直径≥8mm，NA≥0.47），",
+        "customer": ""
     },
     "RFFM-1519-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2017-07-12",
-        "introduction": "常规白光照明，出线方向与散热器出风方向垂直"
+        "introduction": "常规白光照明，出线方向与散热器出风方向垂直",
+        "customer": "WC"
     },
     "RFFM-1519-B": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "常规白光照明，出线方向与散热器出风方向垂直"
+        "introduction": "常规白光照明，出线方向与散热器出风方向垂直",
+        "customer": "HKWS"
     },
     "RFFM-1519-C": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "常规白光照明，出线方向与散热器出风方向垂直"
+        "introduction": "常规白光照明，出线方向与散热器出风方向垂直",
+        "customer": "HXJY"
     },
     "RFFM-1519-D": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "常规白光照明，出线方向与散热器出风方向垂直"
+        "introduction": "常规白光照明，出线方向与散热器出风方向垂直",
+        "customer": "Russer"
     },
     "RFFM-1519-E": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "常规白光照明，出线方向与散热器出风方向同向"
+        "introduction": "常规白光照明，出线方向与散热器出风方向同向",
+        "customer": "JH"
     },
     "RFFM-1519-F": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2020-11-06",
-        "introduction": "常规白光照明，出线方向与散热器出风方向垂直"
+        "introduction": "常规白光照明，出线方向与散热器出风方向垂直",
+        "customer": "SR"
     },
     "RFFM-1519-G": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2021-03-31",
-        "introduction": "常规白光照明，出线方向与散热器出风方向垂直"
+        "introduction": "常规白光照明，出线方向与散热器出风方向垂直",
+        "customer": "YS"
     },
     "RFFM-1519-H": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2021-05-14",
-        "introduction": "常规白光照明，出线方向与散热器出风方向垂直"
+        "introduction": "常规白光照明，出线方向与散热器出风方向垂直",
+        "customer": "KNST"
     },
     "RFFM-1519-I": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2021-05-14",
-        "introduction": "常规白光照明，出线方向与散热器出风方向垂直"
+        "introduction": "常规白光照明，出线方向与散热器出风方向垂直",
+        "customer": "DPM"
     },
     "RFFM-1519-J": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2021-07-09",
-        "introduction": "常规白光照明，出线方向与散热器出风方向垂直"
+        "introduction": "常规白光照明，出线方向与散热器出风方向垂直",
+        "customer": "BSM"
     },
     "RFFM-1519-K": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2021-08-18",
-        "introduction": "常规白光照明，出线方向与散热器出风方向垂直"
+        "introduction": "常规白光照明，出线方向与散热器出风方向垂直",
+        "customer": "SWS"
     },
     "RFFM-1519-L": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2021-09-08",
-        "introduction": "常规白光照明，出线方向与散热器出风方向垂直\n于2022-6改为一体化设计，出线方向与散热器出风方向同向，自带转接座"
+        "introduction": "常规白光照明，出线方向与散热器出风方向垂直\n于2022-6改为一体化设计，出线方向与散热器出风方向同向，自带转接座",
+        "customer": "DPM"
     },
     "RFFM-1519-M": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2021-12-03",
-        "introduction": "常规白光照明，出线方向与散热器出风方向垂直"
+        "introduction": "常规白光照明，出线方向与散热器出风方向垂直",
+        "customer": "SD"
     },
     "RFFM-1519-N": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2022-02-22",
-        "introduction": "常规白光照明，出线方向与散热器出风方向垂直"
+        "introduction": "常规白光照明，出线方向与散热器出风方向垂直",
+        "customer": "SL"
     },
     "RFFM-1519-P": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2022-03-03",
-        "introduction": "常规白光照明，出线方向与散热器出风方向垂直"
+        "introduction": "常规白光照明，出线方向与散热器出风方向垂直",
+        "customer": "MGB"
     },
     "RFFM-1519-Q": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2022-03-10",
-        "introduction": "常规白光照明，出线方向与散热器出风方向垂直"
+        "introduction": "常规白光照明，出线方向与散热器出风方向垂直",
+        "customer": "RY"
     },
     "RFFM-1519-R": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2022-07-11",
-        "introduction": "常规白光照明，出线方向与散热器出风方向垂直"
+        "introduction": "常规白光照明，出线方向与散热器出风方向垂直",
+        "customer": "SD"
     },
     "RFFM-1519-S": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2022-07-29",
-        "introduction": "常规白光照明，出线方向与散热器出风方向垂直"
+        "introduction": "常规白光照明，出线方向与散热器出风方向垂直",
+        "customer": "ZK"
     },
     "RFFM-1519-T": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2022-08-04",
-        "introduction": "常规白光照明，出线方向与散热器出风方向同向"
+        "introduction": "常规白光照明，出线方向与散热器出风方向同向",
+        "customer": "TD"
     },
     "RFFM-1519-U": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2022-08-16",
-        "introduction": "常规白光照明，出线方向与散热器出风方向垂直"
+        "introduction": "常规白光照明，出线方向与散热器出风方向垂直",
+        "customer": "dandy"
     },
     "RFFM-1519-V": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2022-10-27",
-        "introduction": "常规白光照明，出线方向与散热器出风方向垂直"
+        "introduction": "常规白光照明，出线方向与散热器出风方向垂直",
+        "customer": "JF"
     },
     "RFFM-1519-W": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2023-02-20",
-        "introduction": "常规白光照明，出线方向与散热器出风方向垂直"
+        "introduction": "常规白光照明，出线方向与散热器出风方向垂直",
+        "customer": "DANDY"
     },
     "RFFM-1519-Y": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2023-03-16",
-        "introduction": "常规白光照明，出线方向与散热器出风方向同向（改为垂直）"
+        "introduction": "常规白光照明，出线方向与散热器出风方向同向（改为垂直）",
+        "customer": "WY"
     },
     "RFFM-1519-Z": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2023-11-01",
-        "introduction": "常规白光照明，出线方向与散热器出风方向垂直"
+        "introduction": "常规白光照明，出线方向与散热器出风方向垂直",
+        "customer": "VIMS"
     },
     "RFFM-1519-BA": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2024-09-09",
-        "introduction": "常规白光照明，出线方向与散热器出风方向垂直"
+        "introduction": "常规白光照明，出线方向与散热器出风方向垂直",
+        "customer": "RJYL"
     },
     "RFFM-1519-BC": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2024-11-07",
-        "introduction": "常规白光照明，出线方向与散热器出风方向垂直"
+        "introduction": "常规白光照明，出线方向与散热器出风方向垂直",
+        "customer": "Endolax "
     },
     "RFFM-1519-BD": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2024-11-19",
-        "introduction": "常规白光照明，出线方向与散热器出风方向垂直"
+        "introduction": "常规白光照明，出线方向与散热器出风方向垂直",
+        "customer": "HKWS"
     },
     "RFFM-1519-BE": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2025-02-18",
-        "introduction": "常规白光照明，出线方向与散热器出风方向垂直"
+        "introduction": "常规白光照明，出线方向与散热器出风方向垂直",
+        "customer": "HKWS"
     },
     "RFFM-1519-LB": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2024-06-18",
-        "introduction": "常规白光照明，出线方向与散热器出风方向垂直"
+        "introduction": "常规白光照明，出线方向与散热器出风方向垂直",
+        "customer": "LB"
     },
     "RFFM-1519-SC": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2024-11-28",
-        "introduction": "常规白光照明，出线方向与散热器出风方向垂直"
+        "introduction": "常规白光照明，出线方向与散热器出风方向垂直",
+        "customer": "ZK"
     },
     "RFFM-1520-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2017-07-12",
-        "introduction": "常规白光照明，出线方向与散热器出风方向垂直"
+        "introduction": "常规白光照明，出线方向与散热器出风方向垂直",
+        "customer": "Envision"
     },
     "RFFM-1520-B": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2021-08-20",
-        "introduction": "常规白光照明，出线方向与散热器出风方向垂直"
+        "introduction": "常规白光照明，出线方向与散热器出风方向垂直",
+        "customer": "Sanma"
     },
     "RFFM-1520-C": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2021-08-25",
-        "introduction": "常规白光照明，出线方向与散热器出风方向垂直"
+        "introduction": "常规白光照明，出线方向与散热器出风方向垂直",
+        "customer": "装机箱"
     },
     "RFFM-1520-D": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2023-05-22",
-        "introduction": "常规白光照明，出线方向与散热器出风方向垂直"
+        "introduction": "常规白光照明，出线方向与散热器出风方向垂直",
+        "customer": "KNST"
     },
     "RFFM-1521-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2021-03-05",
-        "introduction": "常规白光照明，出线方向与散热器出风方向垂直"
+        "introduction": "常规白光照明，出线方向与散热器出风方向垂直",
+        "customer": ""
     },
     "RFFM-1521-B": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2021-03-05",
-        "introduction": "常规白光照明，出线方向与散热器出风方向垂直"
+        "introduction": "常规白光照明，出线方向与散热器出风方向垂直",
+        "customer": "KNST"
     },
     "RFFM-1522-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2021-08-23",
-        "introduction": "常规白光照明，出线方向与散热器出风方向垂直"
+        "introduction": "常规白光照明，出线方向与散热器出风方向垂直",
+        "customer": "装机箱"
     },
     "RFFM-1522-Ｂ": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2021-08-23",
-        "introduction": "常规白光照明，出线方向与散热器出风方向垂直"
+        "introduction": "常规白光照明，出线方向与散热器出风方向垂直",
+        "customer": "装机想"
     },
     "RFFM-1526-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "RM3000光源模组，带底座，采用铜管散热器"
+        "introduction": "RM3000光源模组，带底座，采用铜管散热器",
+        "customer": ""
     },
     "RFFM-1701-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2019-10-25",
-        "introduction": "常规白光照明+荧光成像模式，无铜管散热器"
+        "introduction": "常规白光照明+荧光成像模式，无铜管散热器",
+        "customer": ""
     },
     "RFFM-1703-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2021-03-22",
-        "introduction": "常规白光照明+荧光成像模式，散热器加高，超高红外输出，无铜管散热器\n配对应机箱"
+        "introduction": "常规白光照明+荧光成像模式，散热器加高，超高红外输出，无铜管散热器\n配对应机箱",
+        "customer": "SZJZ"
     },
     "RFFM-1704-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2021-03-22",
-        "introduction": "常规白光照明+荧光成像模式，散热器加高，超高红外输出，无铜管散热器\n配对应机箱"
+        "introduction": "常规白光照明+荧光成像模式，散热器加高，超高红外输出，无铜管散热器\n配对应机箱",
+        "customer": "SZJZ"
     },
     "RFFM-1705-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2021-03-22",
-        "introduction": "常规白光照明+荧光成像模式，散热器加高，超高红外输出，无铜管散热器\n配对应机箱"
+        "introduction": "常规白光照明+荧光成像模式，散热器加高，超高红外输出，无铜管散热器\n配对应机箱",
+        "customer": "SZJZ"
     },
     "RFFM-1707-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2024-05-07",
-        "introduction": "常规白光照明+荧光成像模式，散热器加高，超高红外输出，无铜管散热器"
+        "introduction": "常规白光照明+荧光成像模式，散热器加高，超高红外输出，无铜管散热器",
+        "customer": "XA"
     },
     "RFFM-1722P-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2025-03-27",
-        "introduction": "常规白光照明+荧光成像模式，无铜管散热器，白光常亮+普通频闪，红外常亮+普通频闪；"
+        "introduction": "常规白光照明+荧光成像模式，无铜管散热器，白光常亮+普通频闪，红外常亮+普通频闪；",
+        "customer": "RLNF"
     },
     "RFFM-1723C-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2018-05-24",
-        "introduction": "常规白光照明+荧光成像模式，无铜管散热器，一体化设计"
+        "introduction": "常规白光照明+荧光成像模式，无铜管散热器，一体化设计",
+        "customer": "DPM"
     },
     "RFFM-1723C-B": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "常规白光照明+荧光成像模式，无铜管散热器"
+        "introduction": "常规白光照明+荧光成像模式，无铜管散热器",
+        "customer": "——"
     },
     "RFFM-1723C-C": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "常规白光照明+荧光成像模式，无铜管散热器"
+        "introduction": "常规白光照明+荧光成像模式，无铜管散热器",
+        "customer": ""
     },
     "RFFM-1723C-D": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2020-09-14",
-        "introduction": "常规白光照明+荧光成像模式，无铜管散热器"
+        "introduction": "常规白光照明+荧光成像模式，无铜管散热器",
+        "customer": "NY"
     },
     "RFFM-1723C-E": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2021-03-31",
-        "introduction": "常规白光照明+荧光成像模式，无铜管散热器"
+        "introduction": "常规白光照明+荧光成像模式，无铜管散热器",
+        "customer": "HNK"
     },
     "RFFM-1723C-F": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2021-05-27",
-        "introduction": "常规白光照明+荧光成像模式，无铜管散热器"
+        "introduction": "常规白光照明+荧光成像模式，无铜管散热器",
+        "customer": "RY"
     },
     "RFFM-1723C-G": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2021-06-17",
-        "introduction": "常规白光照明+荧光成像模式，无铜管散热器"
+        "introduction": "常规白光照明+荧光成像模式，无铜管散热器",
+        "customer": "BS"
     },
     "RFFM-1723C-H": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2021-07-01",
-        "introduction": "常规白光照明+荧光成像模式，无铜管散热器"
+        "introduction": "常规白光照明+荧光成像模式，无铜管散热器",
+        "customer": "XWZN"
     },
     "RFFM-1723C-I": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2021-09-06",
-        "introduction": "常规白光照明+荧光成像模式，无铜管散热器"
+        "introduction": "常规白光照明+荧光成像模式，无铜管散热器",
+        "customer": "SR"
     },
     "RFFM-1723C-J": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2021-12-01",
-        "introduction": "常规白光照明+荧光成像模式，无铜管散热器，一体化设计"
+        "introduction": "常规白光照明+荧光成像模式，无铜管散热器，一体化设计",
+        "customer": "J.H."
     },
     "RFFM-1723C-K": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2021-12-22",
-        "introduction": "常规白光照明+荧光成像模式，无铜管散热器"
+        "introduction": "常规白光照明+荧光成像模式，无铜管散热器",
+        "customer": "Navaneeth"
     },
     "RFFM-1723C-L": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2022-05-11",
-        "introduction": "常规白光照明+荧光成像模式，无铜管散热器"
+        "introduction": "常规白光照明+荧光成像模式，无铜管散热器",
+        "customer": "FX"
     },
     "RFFM-1723C-M": {
-        "project_charge": " 林贵原",
         "model_notes": "客户指定型号RFFM-1723C-W-BS",
         "creation_date": "2021-06-17",
-        "introduction": "常规白光照明+荧光成像模式"
+        "introduction": "常规白光照明+荧光成像模式",
+        "customer": "BS"
     },
     "RFFM-1723C-N": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2022-09-06",
-        "introduction": "常规白光照明+荧光成像模式，无铜管散热器，一体化设计"
+        "introduction": "常规白光照明+荧光成像模式，无铜管散热器，一体化设计",
+        "customer": "——"
     },
     "RFFM-1723C-P": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2022-11-22",
-        "introduction": "常规白光照明+荧光成像模式，无铜管散热器"
+        "introduction": "常规白光照明+荧光成像模式，无铜管散热器",
+        "customer": "HNK"
     },
     "RFFM-1723C-Q": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2022-11-29",
-        "introduction": "常规白光照明+荧光成像模式，无铜管散热器"
+        "introduction": "常规白光照明+荧光成像模式，无铜管散热器",
+        "customer": "NY"
     },
     "RFFM-1723C-R": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2023-05-15",
-        "introduction": "常规白光照明+荧光成像模式，无铜管散热器"
+        "introduction": "常规白光照明+荧光成像模式，无铜管散热器",
+        "customer": "NY"
     },
     "RFFM-1723C-RA": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2025-04-21",
-        "introduction": ""
+        "introduction": "",
+        "customer": ""
     },
     "RFFM-1723C-T": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2023-09-19",
-        "introduction": "常规白光照明"
+        "introduction": "常规白光照明",
+        "customer": "BS"
     },
     "RFFM-1723C-AD": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2021-12-27",
-        "introduction": "常规白光照明+荧光成像模式，无铜管散热器，一体化设计，红外焦点内移，转接座无需导光棒"
+        "introduction": "常规白光照明+荧光成像模式，无铜管散热器，一体化设计，红外焦点内移，转接座无需导光棒",
+        "customer": ""
     },
     "RFFM-1723C-AE": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2023-07-14",
-        "introduction": "常规白光照明+荧光成像模式，无铜管散热器，一体化设计，红外焦点内移，转接座无需导光棒"
+        "introduction": "常规白光照明+荧光成像模式，无铜管散热器，一体化设计，红外焦点内移，转接座无需导光棒",
+        "customer": "DPM"
     },
     "RFFM-1723C-AF": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2024-05-08",
-        "introduction": "常规白光照明+荧光成像模式，无铜管散热器，分离式设计，红外焦点内移，转接座无需导光棒"
+        "introduction": "常规白光照明+荧光成像模式，无铜管散热器，分离式设计，红外焦点内移，转接座无需导光棒",
+        "customer": "NY"
     },
     "RFFM-1723C-AG": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2024-05-16",
-        "introduction": "常规白光照明+荧光成像模式，无铜管散热器，一体化设计，红外焦点内移，转接座无需导光棒"
+        "introduction": "常规白光照明+荧光成像模式，无铜管散热器，一体化设计，红外焦点内移，转接座无需导光棒",
+        "customer": "NY"
     },
     "RFFM-1723C-BJ": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2024-04-26",
-        "introduction": "常规白光照明+荧光成像模式，无铜管散热器"
+        "introduction": "常规白光照明+荧光成像模式，无铜管散热器",
+        "customer": "LY"
     },
     "RFFM-1723C-LB": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2024-06-18",
-        "introduction": "常规白光照明+荧光成像模式，无铜管散热器"
+        "introduction": "常规白光照明+荧光成像模式，无铜管散热器",
+        "customer": "LB"
     },
     "RFFM-1723C-BA": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2024-11-07",
-        "introduction": "常规白光照明+荧光成像模式，无铜管散热器"
+        "introduction": "常规白光照明+荧光成像模式，无铜管散热器",
+        "customer": "——"
     },
     "RFFM-1723C-BC": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2025-03-14",
-        "introduction": "常规白光照明+荧光成像模式，无铜管散热器"
+        "introduction": "常规白光照明+荧光成像模式，无铜管散热器",
+        "customer": "SAD"
     },
     "RFFM-1723P-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2024-01-18",
-        "introduction": "常规白光照明+荧光成像模式，无铜管散热器，白光常亮+普通频闪，红外常亮+普通频闪；"
+        "introduction": "常规白光照明+荧光成像模式，无铜管散热器，白光常亮+普通频闪，红外常亮+普通频闪；",
+        "customer": "BNB"
     },
     "RFFM-1723P-B": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2023-08-07",
-        "introduction": "常规白光照明+荧光成像模式，无铜管散热器，白光常亮+普通频闪，红外常亮+普通频闪；"
+        "introduction": "常规白光照明+荧光成像模式，无铜管散热器，白光常亮+普通频闪，红外常亮+普通频闪；",
+        "customer": ""
     },
     "RFFM-1723P-C": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2024-03-26",
-        "introduction": "常规白光照明+荧光成像模式，无铜管散热器，白光常亮+普通频闪，红外常亮+普通频闪；"
+        "introduction": "常规白光照明+荧光成像模式，无铜管散热器，白光常亮+普通频闪，红外常亮+普通频闪；",
+        "customer": "RLNF"
     },
     "RFFM-1723P-BS": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2024-07-19",
-        "introduction": "常规白光照明+荧光成像模式，嵌铜管散热器，白光常亮+普通频闪，红外常亮+普通频闪；"
+        "introduction": "常规白光照明+荧光成像模式，嵌铜管散热器，白光常亮+普通频闪，红外常亮+普通频闪；",
+        "customer": "BJSR"
     },
     "RFFM-1724-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2021-07-12",
-        "introduction": "常规白光照明+荧光成像模式，无铜管散热器，模组尺寸在1723C基础上加长1cm，红外光路增加窄带滤光片（客户实际基本不装）"
+        "introduction": "常规白光照明+荧光成像模式，无铜管散热器，模组尺寸在1723C基础上加长1cm，红外光路增加窄带滤光片（客户实际基本不装）",
+        "customer": "HKWS"
     },
     "RFFM-1724-B": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2021-07-12",
-        "introduction": "常规白光照明+荧光成像模式，无铜管散热器，模组尺寸在1723C基础上加长1cm，红外光路窄带滤光片不装"
+        "introduction": "常规白光照明+荧光成像模式，无铜管散热器，模组尺寸在1723C基础上加长1cm，红外光路窄带滤光片不装",
+        "customer": "SAD"
     },
     "RFFM-1724-C": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2023-04-26",
-        "introduction": "常规白光照明+荧光成像模式，无铜管散热器，模组尺寸在1723C基础上加长1cm，红外光路窄带滤光片不装"
+        "introduction": "常规白光照明+荧光成像模式，无铜管散热器，模组尺寸在1723C基础上加长1cm，红外光路窄带滤光片不装",
+        "customer": "KJ"
     },
     "RFFM-1724-D": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2024-04-02",
-        "introduction": "常规白光照明+荧光成像模式，无铜管散热器，模组尺寸在1723C基础上加长1cm，红外光路窄带滤光片不装"
+        "introduction": "常规白光照明+荧光成像模式，无铜管散热器，模组尺寸在1723C基础上加长1cm，红外光路窄带滤光片不装",
+        "customer": "SL"
     },
     "RFFM-1725-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2023-03-24",
-        "introduction": "常规白光照明+荧光成像模式，定制尺寸嵌铜管散热器，白光常亮+12A高亮频闪，红外常亮+高亮频闪；"
+        "introduction": "常规白光照明+荧光成像模式，定制尺寸嵌铜管散热器，白光常亮+12A高亮频闪，红外常亮+高亮频闪；",
+        "customer": "HNK"
     },
     "RFFM-1726-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2024-09-11",
-        "introduction": "常规白光照明+荧光成像模式，无铜管散热器，模组尺寸与1730一致"
+        "introduction": "常规白光照明+荧光成像模式，无铜管散热器，模组尺寸与1730一致",
+        "customer": "JF"
     },
     "RFFM-1728-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2024-11-26",
-        "introduction": "常规白光照明+荧光成像模式，定制尺寸嵌铜管散热器，白光常亮+11A高亮频闪，红外常亮+高亮频闪；"
+        "introduction": "常规白光照明+荧光成像模式，定制尺寸嵌铜管散热器，白光常亮+11A高亮频闪，红外常亮+高亮频闪；",
+        "customer": "DPM"
     },
     "RFFM-1729-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2019-06-11",
-        "introduction": "常规白光照明+荧光成像模式，无铜管散热器，使用RFFM-1723C-B驱动板（调电流），安装激光器的结构件修改设计"
+        "introduction": "常规白光照明+荧光成像模式，无铜管散热器，使用RFFM-1723C-B驱动板（调电流），安装激光器的结构件修改设计",
+        "customer": ""
     },
     "RFFM-1730-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2018-11-27",
-        "introduction": "常规白光照明+荧光成像模式，无铜管散热器"
+        "introduction": "常规白光照明+荧光成像模式，无铜管散热器",
+        "customer": "WC"
     },
     "RFFM-1730-B": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "常规白光照明+荧光成像模式，无铜管散热器，红外1M导光束后3.5W"
+        "introduction": "常规白光照明+荧光成像模式，无铜管散热器，红外1M导光束后3.5W",
+        "customer": ""
     },
     "RFFM-1730-C": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "常规白光照明+荧光成像模式，无铜管散热器，红外1M导光束后3.5W"
+        "introduction": "常规白光照明+荧光成像模式，无铜管散热器，红外1M导光束后3.5W",
+        "customer": ""
     },
     "RFFM-1730-D": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2020-10-29",
-        "introduction": "常规白光照明+荧光成像模式，无铜管散热器"
+        "introduction": "常规白光照明+荧光成像模式，无铜管散热器",
+        "customer": "CDXX"
     },
     "RFFM-1730-E": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2021-08-26",
-        "introduction": "常规白光照明+荧光成像模式，无铜管散热器，红外1M导光束后3.5W"
+        "introduction": "常规白光照明+荧光成像模式，无铜管散热器，红外1M导光束后3.5W",
+        "customer": "韩军"
     },
     "RFFM-1730-F": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2021-10-21",
-        "introduction": "常规白光照明+荧光成像模式，无铜管散热器，红外1M导光束后3.5W"
+        "introduction": "常规白光照明+荧光成像模式，无铜管散热器，红外1M导光束后3.5W",
+        "customer": "JH"
     },
     "RFFM-1730-G": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2021-12-29",
-        "introduction": "常规白光照明+荧光成像模式，无铜管散热器"
+        "introduction": "常规白光照明+荧光成像模式，无铜管散热器",
+        "customer": "WC"
     },
     "RFFM-1730-H": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2022-06-10",
-        "introduction": "常规白光照明+荧光成像模式，无铜管散热器，红外1M导光束后3.5W"
+        "introduction": "常规白光照明+荧光成像模式，无铜管散热器，红外1M导光束后3.5W",
+        "customer": "JF"
     },
     "RFFM-1730-I": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2022-07-08",
-        "introduction": "常规白光照明+荧光成像模式，无铜管散热器，红外1M导光束后3.5W"
+        "introduction": "常规白光照明+荧光成像模式，无铜管散热器，红外1M导光束后3.5W",
+        "customer": ""
     },
     "RFFM-1730-J": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2022-07-14",
-        "introduction": "常规白光照明+荧光成像模式，无铜管散热器，红外1M导光束后3.5W"
+        "introduction": "常规白光照明+荧光成像模式，无铜管散热器，红外1M导光束后3.5W",
+        "customer": "LY"
     },
     "RFFM-1730-K": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2022-11-09",
-        "introduction": "常规白光照明+荧光成像模式，无铜管散热器，红外1M导光束后3.5W"
+        "introduction": "常规白光照明+荧光成像模式，无铜管散热器，红外1M导光束后3.5W",
+        "customer": "HKWS"
     },
     "RFFM-1730-L": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2023-01-06",
-        "introduction": "常规白光照明+荧光成像模式，无铜管散热器，红外1M导光束后3.5W"
+        "introduction": "常规白光照明+荧光成像模式，无铜管散热器，红外1M导光束后3.5W",
+        "customer": "VIMS"
     },
     "RFFM-1730-M": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2023-03-24",
-        "introduction": "常规白光照明+荧光成像模式，无铜管散热器，红外1M导光束后3.5W"
+        "introduction": "常规白光照明+荧光成像模式，无铜管散热器，红外1M导光束后3.5W",
+        "customer": "JF"
     },
     "RFFM-1730-N": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2023-05-24",
-        "introduction": "常规白光照明+荧光成像模式，无铜管散热器，红外1M导光束后3.5W"
+        "introduction": "常规白光照明+荧光成像模式，无铜管散热器，红外1M导光束后3.5W",
+        "customer": "LY"
     },
     "RFFM-1730-P": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2023-06-30",
-        "introduction": "常规白光照明+荧光成像模式，无铜管散热器，红外1M导光束后3.5W"
+        "introduction": "常规白光照明+荧光成像模式，无铜管散热器，红外1M导光束后3.5W",
+        "customer": "JXYS"
     },
     "RFFM-1730-AD": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2023-03-03",
-        "introduction": "常规白光照明+荧光成像模式，无铜管散热器，一体化设计，红外焦点内移，转接座无需导光棒"
+        "introduction": "常规白光照明+荧光成像模式，无铜管散热器，一体化设计，红外焦点内移，转接座无需导光棒",
+        "customer": ""
     },
     "RFFM-1731-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2022-03-25",
-        "introduction": "常规白光照明+荧光成像模式，无铜管散热器，激光器内含两个不同波长芯片，分别驱动"
+        "introduction": "常规白光照明+荧光成像模式，无铜管散热器，激光器内含两个不同波长芯片，分别驱动",
+        "customer": "SHJT"
     },
     "RFFM-1732-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2023-03-14",
-        "introduction": "常规白光照明+荧光成像模式，无铜管散热器，白光常亮+高亮频闪，红外常亮+高亮频闪；"
+        "introduction": "常规白光照明+荧光成像模式，无铜管散热器，白光常亮+高亮频闪，红外常亮+高亮频闪；",
+        "customer": "HKWS"
     },
     "RFFM-1733-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2023-08-23",
-        "introduction": "常规白光照明+荧光成像模式，无铜管散热器，白光常亮+高亮频闪，红外常亮+高亮频闪；"
+        "introduction": "常规白光照明+荧光成像模式，无铜管散热器，白光常亮+高亮频闪，红外常亮+高亮频闪；",
+        "customer": ""
     },
     "RFFM-1733-B": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2023-09-22",
-        "introduction": "常规白光照明+荧光成像模式，无铜管散热器，白光常亮模式，红外常亮+高亮频闪；"
+        "introduction": "常规白光照明+荧光成像模式，无铜管散热器，白光常亮模式，红外常亮+高亮频闪；",
+        "customer": "KL"
     },
     "RFFM-1735-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2023-08-31",
-        "introduction": "常规白光照明+荧光成像模式，无铜管散热器"
+        "introduction": "常规白光照明+荧光成像模式，无铜管散热器",
+        "customer": "XSKJ"
     },
     "RFFM-1736-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2025-04-29",
-        "introduction": ""
+        "introduction": "",
+        "customer": "SZKL"
     },
     "RFFM-1738-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2025-08-06",
-        "introduction": "常规白光照明+荧光成像模式，无铜管散热器"
+        "introduction": "常规白光照明+荧光成像模式，无铜管散热器",
+        "customer": "HKY"
     },
     "RFFM-2121-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2019-04-17",
-        "introduction": "双50W常规白光照明，自恢复功能"
+        "introduction": "双50W常规白光照明，自恢复功能",
+        "customer": ""
     },
     "RFFM-3004-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2019-09-18",
-        "introduction": "多色光便捷更换"
+        "introduction": "多色光便捷更换",
+        "customer": "Nawoo"
     },
     "RFFM-16A1-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2017-09-18",
-        "introduction": "常规白光照明、窄带成像多组合模式，内含电机，驱动板装外壳上"
+        "introduction": "常规白光照明、窄带成像多组合模式，内含电机，驱动板装外壳上",
+        "customer": "AH"
     },
     "RFFM-16A1-B": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2021-12-16",
-        "introduction": "常规白光照明、窄带成像多组合模式，内含电机，驱动板装外壳上"
+        "introduction": "常规白光照明、窄带成像多组合模式，内含电机，驱动板装外壳上",
+        "customer": ""
     },
     "RFFM-16A1-C": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2023-07-05",
-        "introduction": "常规白光照明、窄带成像多组合模式，内含电机，驱动板独立安装"
+        "introduction": "常规白光照明、窄带成像多组合模式，内含电机，驱动板独立安装",
+        "customer": "RW"
     },
     "RFFM-16A2-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "常规白光照明、窄带成像多组合模式，内含电机"
+        "introduction": "常规白光照明、窄带成像多组合模式，内含电机",
+        "customer": ""
     },
     "RFFM-16A3-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2020-03-12",
-        "introduction": "可调色温自稳定RGB合成白光照明、荧光成像多组合模式"
+        "introduction": "可调色温自稳定RGB合成白光照明、荧光成像多组合模式",
+        "customer": "KNST"
     },
     "RFFM-16A4-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2019-12-02",
-        "introduction": "常规白光照明、窄带成像多组合模式，内含电机，内置驱动板（简单加顶盖）,临时演示及体验版本不量产"
+        "introduction": "常规白光照明、窄带成像多组合模式，内含电机，内置驱动板（简单加顶盖）,临时演示及体验版本不量产",
+        "customer": ""
     },
     "RFFM-16A5-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "常规白光照明、窄带成像多组合模式，内含电机，驱动板自由放置"
+        "introduction": "常规白光照明、窄带成像多组合模式，内含电机，驱动板自由放置",
+        "customer": ""
     },
     "RFFM-16A5-B": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "常规白光照明、窄带成像多组合模式，内含电机，驱动板自由放置"
+        "introduction": "常规白光照明、窄带成像多组合模式，内含电机，驱动板自由放置",
+        "customer": ""
     },
     "RFFM-16A6-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2020-04-13",
-        "introduction": "常规白光照明、窄带成像、荧光成像多组合模式，内含电机"
+        "introduction": "常规白光照明、窄带成像、荧光成像多组合模式，内含电机",
+        "customer": "SKX"
     },
     "RFFM-16A7-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "常规白光照明、窄带成像、荧光成像多组合模式，内含电机"
+        "introduction": "常规白光照明、窄带成像、荧光成像多组合模式，内含电机",
+        "customer": ""
     },
     "RFFM-16A8-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2020-12-02",
-        "introduction": "常规白光照明、窄带成像多组合模式，内含电机"
+        "introduction": "常规白光照明、窄带成像多组合模式，内含电机",
+        "customer": ""
     },
     "RFFM-16A9-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "常规白光照明、紫外、红外荧光成像多组合模式"
+        "introduction": "常规白光照明、紫外、红外荧光成像多组合模式",
+        "customer": "WEK"
     },
     "RFFM-16B1-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "常规白光照明、RGB单色光，窄带成像多组合模式"
+        "introduction": "常规白光照明、RGB单色光，窄带成像多组合模式",
+        "customer": "WCYT"
     },
     "RFFM-16B2-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "常规白光照明+荧光成像模式，光路中间留空间"
+        "introduction": "常规白光照明+荧光成像模式，光路中间留空间",
+        "customer": "WCYT"
     },
     "RFFM-16B2-B": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2023-10-13",
-        "introduction": "常规白光照明+荧光成像模式，双电机控制二向色及客供滤光片"
+        "introduction": "常规白光照明+荧光成像模式，双电机控制二向色及客供滤光片",
+        "customer": "KNST"
     },
     "RFFM-16B3-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2023-03-27",
-        "introduction": "常规白光照明、窄带成像多组合模式，内含电机，驱动板自由放置"
+        "introduction": "常规白光照明、窄带成像多组合模式，内含电机，驱动板自由放置",
+        "customer": "MLP"
     },
     "RFFM-16B3-B": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2023-06-08",
-        "introduction": "常规白光照明、窄带成像多组合模式，内含电机，驱动板装于底板上，配置按键板、顶盖（类似16A4）"
+        "introduction": "常规白光照明、窄带成像多组合模式，内含电机，驱动板装于底板上，配置按键板、顶盖（类似16A4）",
+        "customer": "XA"
     },
     "RFFM-16B4-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2022-09-14",
-        "introduction": "常规白光照明、窄带成像多组合模式，内含电机切换540nm滤光片，驱动板自由放置"
+        "introduction": "常规白光照明、窄带成像多组合模式，内含电机切换540nm滤光片，驱动板自由放置",
+        "customer": "CY"
     },
     "RFFM-16B5-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2022-09-01",
-        "introduction": "常规白光照明、窄带成像多组合模式，内含电机，驱动板自由放置"
+        "introduction": "常规白光照明、窄带成像多组合模式，内含电机，驱动板自由放置",
+        "customer": "ZJYY"
     },
     "RFFM-16B5-B": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2025-04-21",
-        "introduction": "常规白光照明、窄带成像多组合模式，内含电机，驱动板自由放置"
+        "introduction": "常规白光照明、窄带成像多组合模式，内含电机，驱动板自由放置",
+        "customer": "XA"
     },
     "RFFM-16B6-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2022-10-09",
-        "introduction": "常规白光照明、白光红光加强、红外荧光成像多组合模式，内含电机，驱动板内置一体化设计"
+        "introduction": "常规白光照明、白光红光加强、红外荧光成像多组合模式，内含电机，驱动板内置一体化设计",
+        "customer": ""
     },
     "RFFM-16B7-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2022-11-21",
-        "introduction": "常规白光照明、窄带成像多组合模式，内含电机"
+        "introduction": "常规白光照明、窄带成像多组合模式，内含电机",
+        "customer": ""
     },
     "RFFM-16C3-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2024-08-08",
-        "introduction": "常规白光照明、窄带成像多组合模式，内含舵机"
+        "introduction": "常规白光照明、窄带成像多组合模式，内含舵机",
+        "customer": "MLP"
     },
     "RFFM-16C4-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2025-04-29",
-        "introduction": "常规白光照明、405nm组合模式，内含舵机"
+        "introduction": "常规白光照明、405nm组合模式，内含舵机",
+        "customer": "HNK"
     },
     "RFFM-16C5-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2024-11-27",
-        "introduction": "常规白光照明、窄带成像多组合模式，内含舵机"
+        "introduction": "常规白光照明、窄带成像多组合模式，内含舵机",
+        "customer": "SY"
     },
     "RFFM-16C6-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2024-12-24",
-        "introduction": "白+紫光+近红外 复合光源模组"
+        "introduction": "白+紫光+近红外 复合光源模组",
+        "customer": "HNK"
     },
     "RFFM-16N1-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2023-06-28",
-        "introduction": "RGB合白光+415nm，采用小尺寸透镜组，导光束NA≥0.62"
+        "introduction": "RGB合白光+415nm，采用小尺寸透镜组，导光束NA≥0.62",
+        "customer": ""
     },
     "RFFM-16N1-B": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2024-01-26",
-        "introduction": "RGB合白光+415nm，采用小尺寸透镜组，导光束NA≥0.62"
+        "introduction": "RGB合白光+415nm，采用小尺寸透镜组，导光束NA≥0.62",
+        "customer": ""
     },
     "RFFM-16N1-C": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2025-06-18",
-        "introduction": "RGB合白光+415nm，采用小尺寸透镜组，导光束NA≥0.62"
+        "introduction": "RGB合白光+415nm，采用小尺寸透镜组，导光束NA≥0.62",
+        "customer": ""
     },
     "RFFM-16N2-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2024-05-11",
-        "introduction": "RGB合白光+415nm+琥珀色光，采用小尺寸透镜组，导光束NA≥0.76"
+        "introduction": "RGB合白光+415nm+琥珀色光，采用小尺寸透镜组，导光束NA≥0.76",
+        "customer": ""
     },
     "RFFM-16N3-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2024-05-11",
-        "introduction": "RGB合白光，采用小尺寸透镜组，眼科光源模组"
+        "introduction": "RGB合白光，采用小尺寸透镜组，眼科光源模组",
+        "customer": "YNK"
     },
     "RFFM-16N4-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2024-07-04",
-        "introduction": "RGB合白光+415nm，采用小尺寸透镜组，导光束NA≥0.76"
+        "introduction": "RGB合白光+415nm，采用小尺寸透镜组，导光束NA≥0.76",
+        "customer": "HKWS"
     },
     "RFFM-16N4-B": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "RGB合白光+415nm，采用小尺寸透镜组，导光束NA≥0.76"
+        "introduction": "RGB合白光+415nm，采用小尺寸透镜组，导光束NA≥0.76",
+        "customer": "——"
     },
     "RFFM-16N5-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2025-04-27",
-        "introduction": "RGB合白光，采用小尺寸透镜组，眼科光源模组"
+        "introduction": "RGB合白光，采用小尺寸透镜组，眼科光源模组",
+        "customer": "SAR"
     },
     "RFFM-16N7-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2025-03-13",
-        "introduction": ""
+        "introduction": "",
+        "customer": ""
     },
     "RFPT-6201-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2024-06-12",
-        "introduction": "单色红光输出，汇聚后高均匀性光分布"
+        "introduction": "单色红光输出，汇聚后高均匀性光分布",
+        "customer": "FDZJ"
     },
     "RFIL-10E3-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2023-09-20",
-        "introduction": ""
+        "introduction": "",
+        "customer": ""
     },
     "RFIL-1302-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2023-12-28",
-        "introduction": "由13颗灯分成两个通道，配备定制磁吸式NA0.56,2M直形与环形导光束出光，具备导光束检测功能"
+        "introduction": "由13颗灯分成两个通道，配备定制磁吸式NA0.56,2M直形与环形导光束出光，具备导光束检测功能",
+        "customer": "HKSZ"
     },
     "RFIL-1302-B": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "通用版，给其他客户"
+        "introduction": "通用版，给其他客户",
+        "customer": ""
     },
     "RFIL-1302-C": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2025-04-11",
-        "introduction": "由13颗灯分成两个通道，配备定制磁吸式NA0.56,2M直形与环形导光束出光，具备导光束检测功能"
+        "introduction": "由13颗灯分成两个通道，配备定制磁吸式NA0.56,2M直形与环形导光束出光，具备导光束检测功能",
+        "customer": "HKSZ"
     },
     "RFIL-1402-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2024-07-11",
-        "introduction": "四分区环形光源"
+        "introduction": "四分区环形光源",
+        "customer": "HKSZ"
     },
     "RFIL-3202-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2025-09-17",
-        "introduction": "机器视觉明场用白光+405nm紫光光源模组"
+        "introduction": "机器视觉明场用白光+405nm紫光光源模组",
+        "customer": "QS"
     },
     "RFIL-60E3-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2024-10-10",
-        "introduction": "工业光源，超高照度，搭配6种滤光片实现自动切换"
+        "introduction": "工业光源，超高照度，搭配6种滤光片实现自动切换",
+        "customer": "——"
     },
     "RFIL-6300-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2025-02-10",
-        "introduction": "模组 "
+        "introduction": "模组 ",
+        "customer": ""
     },
     "RFIL-6400-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2025-07-28",
-        "introduction": "机箱"
+        "introduction": "机箱",
+        "customer": "QS"
     },
     "RFIL-7001-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "云台探照灯，单灯，贴牌"
+        "introduction": "云台探照灯，单灯，贴牌",
+        "customer": ""
     },
     "RFIL-7002-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "云台探照灯，双灯，贴牌"
+        "introduction": "云台探照灯，双灯，贴牌",
+        "customer": ""
     },
     "RFIL-8101-A": {
-        "project_charge": " 林贵原",
         "model_notes": "与02调换",
         "creation_date": "2024-10-30",
-        "introduction": "显微镜环形光源"
+        "introduction": "显微镜环形光源",
+        "customer": "HKSZ"
     },
     "RFIL-8102-A": {
-        "project_charge": " 林贵原",
         "model_notes": "与01调换",
         "creation_date": "2024-10-30",
-        "introduction": "显微镜环形光源"
+        "introduction": "显微镜环形光源",
+        "customer": "HKSZ"
     },
     "RFIL-8103-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2025-02-14",
-        "introduction": "显微镜环形光源"
+        "introduction": "显微镜环形光源",
+        "customer": "HKSZ"
     },
     "RFIR-8083-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2025-05-08",
-        "introduction": "安防监控远距离投射近红外光"
+        "introduction": "安防监控远距离投射近红外光",
+        "customer": ""
     },
     "RFIR-1061-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2025-05-29",
-        "introduction": "工业近红外光源机，超高光功率，做消散斑处理"
+        "introduction": "工业近红外光源机，超高光功率，做消散斑处理",
+        "customer": ""
     },
     "RFDL-0101-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2018-05-04",
-        "introduction": "提供反光杯+光源散热块组件"
+        "introduction": "提供反光杯+光源散热块组件",
+        "customer": "RY"
     },
     "RFDL-0201-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2022-03-25",
-        "introduction": "RFDL-0207去除外壳，保留光学及电控模组"
+        "introduction": "RFDL-0207去除外壳，保留光学及电控模组",
+        "customer": ""
     },
     "RFDL-0207-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2017-06-08",
-        "introduction": "Denta200，自主设计外观，成品口腔灯"
+        "introduction": "Denta200，自主设计外观，成品口腔灯",
+        "customer": "——"
     },
     "RFDL-0300-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2018-01-05",
-        "introduction": "仅提供反光杯"
+        "introduction": "仅提供反光杯",
+        "customer": ""
     },
     "RFDL-0500-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "仅为客户提供的反光杯素材安排镀膜"
+        "introduction": "仅为客户提供的反光杯素材安排镀膜",
+        "customer": "DCI"
     },
     "RFDL-0402-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2018-07-27",
-        "introduction": "S4 提供包括反光杯、驱动板、光源散热块组件在内的完整光处理模组，无电机滤光片，单白光模式"
+        "introduction": "S4 提供包括反光杯、驱动板、光源散热块组件在内的完整光处理模组，无电机滤光片，单白光模式",
+        "customer": "DCI"
     },
     "RFDL-0402-B": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2018-07-27",
-        "introduction": "S5 提供反光杯、驱动板、光源散热块组件在内的完整光处理模组，有电机滤光片，白光+黄光模式"
+        "introduction": "S5 提供反光杯、驱动板、光源散热块组件在内的完整光处理模组，有电机滤光片，白光+黄光模式",
+        "customer": "DCI"
     },
     "RFMM-2607-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2019-01-09",
-        "introduction": "亮度7档，光斑大小8档，颜色四挡，使用MB50101V2-000C-A99低风量风扇"
+        "introduction": "亮度7档，光斑大小8档，颜色四挡，使用MB50101V2-000C-A99低风量风扇",
+        "customer": "ECLERIS"
     },
     "RFMM-2608-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2019-11-03",
-        "introduction": ""
+        "introduction": "",
+        "customer": ""
     },
     "RFMM-2609-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2021-07-05",
-        "introduction": ""
+        "introduction": "",
+        "customer": ""
     },
     "RFMM-2901-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2023-07-17",
-        "introduction": "体式显微镜环形照明光源模组，提供多模式多方位的倾斜式照明，亮度可调，包含独立工作及CAN控制模式"
+        "introduction": "体式显微镜环形照明光源模组，提供多模式多方位的倾斜式照明，亮度可调，包含独立工作及CAN控制模式",
+        "customer": "ZEISS"
     },
     "RFMM-8201-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2025-05-29",
-        "introduction": "体视显微镜的斜入射照明光源模组，提供鹅脖颈软管支撑式的双灯头设计"
+        "introduction": "体视显微镜的斜入射照明光源模组，提供鹅脖颈软管支撑式的双灯头设计",
+        "customer": "ZEISS"
     },
     "RFPL-1801-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2020-02-19",
-        "introduction": "客户设计外观结构，塑料外壳，按键开关，无调光"
+        "introduction": "客户设计外观结构，塑料外壳，按键开关，无调光",
+        "customer": "AH"
     },
     "RFPL-1818-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2018-01-17",
-        "introduction": "自主设计外观，金属外壳，旋环调光"
+        "introduction": "自主设计外观，金属外壳，旋环调光",
+        "customer": "——"
     },
     "RFPL-1818CH": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "充电器"
+        "introduction": "充电器",
+        "customer": "——"
     },
     "RFPL-1819-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2021-11-25",
-        "introduction": "自主设计外观，塑料外壳，按键调光"
+        "introduction": "自主设计外观，塑料外壳，按键调光",
+        "customer": "——"
     },
     "RFPL-1918-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2018-11-07",
-        "introduction": "发散光，类手电筒"
+        "introduction": "发散光，类手电筒",
+        "customer": "——"
     },
     "RFOL-2513-A": {
-        "project_charge": " 林贵原",
         "model_notes": "重启新设计给新客户",
         "creation_date": "2025-06-17",
-        "introduction": "手持式环形光源模组，无外壳，760nmLED+白光LED"
+        "introduction": "手持式环形光源模组，无外壳，760nmLED+白光LED",
+        "customer": ""
     },
     "RFOL-2515-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2025-09-05",
-        "introduction": "手持式环形光源模组，无外壳，785nmLED+白光LED"
+        "introduction": "手持式环形光源模组，无外壳，785nmLED+白光LED",
+        "customer": ""
     },
     "RFME-0001-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2022-02-16",
-        "introduction": "常规白光照明，结构定制，客户在内部增加光路处理"
+        "introduction": "常规白光照明，结构定制，客户在内部增加光路处理",
+        "customer": "WCYT"
     },
     "RFME-1520-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2021-08-25",
-        "introduction": "钣金机箱，外观风格自主设计，适配Wolf导光束"
+        "introduction": "钣金机箱，外观风格自主设计，适配Wolf导光束",
+        "customer": "Sanma/CM"
     },
     "RFME-1522-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2021-08-23",
-        "introduction": "钣金机箱，外观风格自主设计，适配Wolf导光束，内部使用RFFM-1522-A模组，触屏Logo为Rayfine"
+        "introduction": "钣金机箱，外观风格自主设计，适配Wolf导光束，内部使用RFFM-1522-A模组，触屏Logo为Rayfine",
+        "customer": "天津检测所"
     },
     "RFME-1522-B": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2021-08-23",
-        "introduction": "钣金机箱，外观风格自主设计，适配Wolf导光束，内部使用RFFM-1522-B模组"
+        "introduction": "钣金机箱，外观风格自主设计，适配Wolf导光束，内部使用RFFM-1522-B模组",
+        "customer": "TNYL"
     },
     "RFME-1523-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2023-05-29",
-        "introduction": "型材机箱，旋钮调光，80W定制光源"
+        "introduction": "型材机箱，旋钮调光，80W定制光源",
+        "customer": ""
     },
     "RFME-1601-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "钣金机箱，内部为16A1模组"
+        "introduction": "钣金机箱，内部为16A1模组",
+        "customer": "MLP"
     },
     "RFME-1602-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2022-01-27",
-        "introduction": "钣金机箱，内部为16A1模组，待定Vivian"
+        "introduction": "钣金机箱，内部为16A1模组，待定Vivian",
+        "customer": ""
     },
     "RFME-1701-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2020-04-15",
-        "introduction": "钣金机箱，内部为RFFM-1701模组"
+        "introduction": "钣金机箱，内部为RFFM-1701模组",
+        "customer": ""
     },
     "RFME-1702-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2020-09-14",
-        "introduction": "钣金机箱，内部为RFFM-1701模组，外观风格自主设计"
+        "introduction": "钣金机箱，内部为RFFM-1701模组，外观风格自主设计",
+        "customer": "Rayfine"
     },
     "RFME-1703-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "型材机箱，内部为RFFM-1703-A模组，面板镭射图标，适配Wolf导光束"
+        "introduction": "型材机箱，内部为RFFM-1703-A模组，面板镭射图标，适配Wolf导光束",
+        "customer": "SZJZ"
     },
     "RFME-1704-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "型材机箱，内部为RFFM-1704-A模组，面板镭射图标，适配Wolf导光束"
+        "introduction": "型材机箱，内部为RFFM-1704-A模组，面板镭射图标，适配Wolf导光束",
+        "customer": "SZJZ"
     },
     "RFME-1705-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "型材机箱，内部为RFFM-1705-A模组，面板镭射图标，适配Wolf导光束"
+        "introduction": "型材机箱，内部为RFFM-1705-A模组，面板镭射图标，适配Wolf导光束",
+        "customer": "SZJZ"
     },
     "RFME-1706-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2021-08-30",
-        "introduction": "型材机箱，内部为RFFM-1723C模组，面板镭射图标，适配Wolf导光束，机箱风格参照RFME-1703-A"
+        "introduction": "型材机箱，内部为RFFM-1723C模组，面板镭射图标，适配Wolf导光束，机箱风格参照RFME-1703-A",
+        "customer": "CM"
     },
     "RFME-1706-B": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2024-05-20",
-        "introduction": "钣金机箱，内部为RFFM-1723C模组，适配Wolf导光束，机箱风格参照RFME-1520-A"
+        "introduction": "钣金机箱，内部为RFFM-1723C模组，适配Wolf导光束，机箱风格参照RFME-1520-A",
+        "customer": ""
     },
     "RFME-8002-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2021-12-06",
-        "introduction": "使用ITUC-8002-A模组"
+        "introduction": "使用ITUC-8002-A模组",
+        "customer": ""
     },
     "RFEL-0201-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2016-11-11",
-        "introduction": "妇科检查灯"
+        "introduction": "妇科检查灯",
+        "customer": ""
     },
     "RFHL-0301-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2022-12-19",
-        "introduction": ""
+        "introduction": "",
+        "customer": ""
     },
     "RFOS-2001-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "RFFM-1009结构件一部分"
+        "introduction": "RFFM-1009结构件一部分",
+        "customer": ""
     },
     "RFCL-0001-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "计时灯；仅提供由光源、驱动板、电池、薄膜开关组成的模组；无光学设计"
+        "introduction": "计时灯；仅提供由光源、驱动板、电池、薄膜开关组成的模组；无光学设计",
+        "customer": ""
     },
     "RFCL-0031": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": ""
+        "introduction": "",
+        "customer": ""
     },
     "RFCL-0032": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": ""
+        "introduction": "",
+        "customer": ""
     },
     "RFCL-0601-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "集成785nm激光器，包括驱动板为小盒子，无光学件，500mW光源输出"
+        "introduction": "集成785nm激光器，包括驱动板为小盒子，无光学件，500mW光源输出",
+        "customer": "SZJZ"
     },
     "RFCL-0602-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2025-08-12",
-        "introduction": ""
+        "introduction": "",
+        "customer": ""
     },
     "RFCL-0801-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2023-10-26",
-        "introduction": "集成四种波段的激光器和驱动板封装在盒子里，配铜管散热器，SMA905接口输出"
+        "introduction": "集成四种波段的激光器和驱动板封装在盒子里，配铜管散热器，SMA905接口输出",
+        "customer": "APK"
     },
     "RFCL-0901-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2024-09-10",
-        "introduction": "30*30阵列分布灯珠，无光学处理、无散热部件、可单灯逐个点亮"
+        "introduction": "30*30阵列分布灯珠，无光学处理、无散热部件、可单灯逐个点亮",
+        "customer": "MDL"
     },
     "RFSL-1201-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2020-09-14",
-        "introduction": "主灯，四个叶片，32个单元模组"
+        "introduction": "主灯，四个叶片，32个单元模组",
+        "customer": "FL"
     },
     "RFSL-1201-B": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2020-09-14",
-        "introduction": "副灯，三个叶片，24个单元模组"
+        "introduction": "副灯，三个叶片，24个单元模组",
+        "customer": "FL"
     },
     "RFSL-1202-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2023-03-22",
-        "introduction": "主灯，五个叶片，35个单元模组"
+        "introduction": "主灯，五个叶片，35个单元模组",
+        "customer": "TECHONE"
     },
     "RFSL-1202-B": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2023-03-22",
-        "introduction": "副灯，四个叶片，28个单元模组"
+        "introduction": "副灯，四个叶片，28个单元模组",
+        "customer": "TECHONE"
     },
     "RFAM-1301-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2020-12-18",
-        "introduction": "从紫外到红外，多光源通过分光棱镜进行合束"
+        "introduction": "从紫外到红外，多光源通过分光棱镜进行合束",
+        "customer": ""
     },
     "RFAM-1302-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2020-12-18",
-        "introduction": "平行光输出，无风扇"
+        "introduction": "平行光输出，无风扇",
+        "customer": "ZY"
     },
     "RFAM-1303-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "150mm处Φ20范围光斑均匀"
+        "introduction": "150mm处Φ20范围光斑均匀",
+        "customer": ""
     },
     "RFAM-1304-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "工业视觉识别"
+        "introduction": "工业视觉识别",
+        "customer": ""
     },
     "RFAM-1305-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2021-12-20",
-        "introduction": "RFFM-1121玻璃透镜组去除最后一枚，结构件新设计60mm，平行光输出，非常亮情况使用，驱动控制同RFFM-1121-F（后更换为1519-C驱动板，驱动80W）"
+        "introduction": "RFFM-1121玻璃透镜组去除最后一枚，结构件新设计60mm，平行光输出，非常亮情况使用，驱动控制同RFFM-1121-F（后更换为1519-C驱动板，驱动80W）",
+        "customer": "DYA"
     },
     "RFAM-2801-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2021-07-28",
-        "introduction": "红外血糖分析"
+        "introduction": "红外血糖分析",
+        "customer": ""
     },
     "RFAM-3201-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2024-02-20",
-        "introduction": "半球状LED向心阵列灯罩"
+        "introduction": "半球状LED向心阵列灯罩",
+        "customer": ""
     },
     "RFAM-5201-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2024-03-28",
-        "introduction": "荧光定量模组"
+        "introduction": "荧光定量模组",
+        "customer": ""
     },
     "RFAM-5301-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2024-05-07",
-        "introduction": "菌落计数"
+        "introduction": "菌落计数",
+        "customer": ""
     },
     "RFUC-3601-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2023-10-26",
-        "introduction": "365nm紫外光输出，发散角34°"
+        "introduction": "365nm紫外光输出，发散角34°",
+        "customer": ""
     },
     "RFUC-3801-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2024-03-18",
-        "introduction": "平行光输出，白光+365nm紫外灯"
+        "introduction": "平行光输出，白光+365nm紫外灯",
+        "customer": ""
     },
     "ITUC-8001-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "手持式紫外固化"
+        "introduction": "手持式紫外固化",
+        "customer": ""
     },
     "ITUC-8002-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "1009模组基础上，白光端长度加长1.5mm，紫外端加风扇，使用1730驱动板"
+        "introduction": "1009模组基础上，白光端长度加长1.5mm，紫外端加风扇，使用1730驱动板",
+        "customer": ""
     },
     "ITUC-8002-B": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "1009模组基础上，白光端长度加长1.5mm，紫外端加风扇"
+        "introduction": "1009模组基础上，白光端长度加长1.5mm，紫外端加风扇",
+        "customer": ""
     },
     "ITUC-8003-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "手持式环状固化"
+        "introduction": "手持式环状固化",
+        "customer": ""
     },
     "ITUC-8004-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "1009模组基础上，紫外端加风扇"
+        "introduction": "1009模组基础上，紫外端加风扇",
+        "customer": ""
     },
     "ITUC-8005-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "1107去除最后一枚透镜"
+        "introduction": "1107去除最后一枚透镜",
+        "customer": "光禾医疗"
     },
     "ITUC-8007-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "1107模组"
+        "introduction": "1107模组",
+        "customer": ""
     },
     "RFAD-3003-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2024-03-20",
-        "introduction": "焦距13.0mm，普通，16N1用，螺丝配M3X25"
+        "introduction": "焦距13.0mm，普通，16N1用，螺丝配M3X25",
+        "customer": "——"
     },
     "RFAD-4002-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2025-06-16",
-        "introduction": "焦距1.0mm，接近开关检测，阳极氧化，线长50cm"
+        "introduction": "焦距1.0mm，接近开关检测，阳极氧化，线长50cm",
+        "customer": "——"
     },
     "RFAD-4003-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2023-08-30",
-        "introduction": "焦距11.0mm，普通（已设计）,1008用"
+        "introduction": "焦距11.0mm，普通（已设计）,1008用",
+        "customer": "——"
     },
     "RFAD-4003-B": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2023-12-14",
-        "introduction": "焦距1.0mm,普通（已设计）,RFFM-1407用"
+        "introduction": "焦距1.0mm,普通（已设计）,RFFM-1407用",
+        "customer": "——"
     },
     "RFAD-5001-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "焦距23.6mm，普通（未设计）"
+        "introduction": "焦距23.6mm，普通（未设计）",
+        "customer": "——"
     },
     "RFAD-5001-B": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "焦距23.6mm，接近开关检测+导光棒（未设计）"
+        "introduction": "焦距23.6mm，接近开关检测+导光棒（未设计）",
+        "customer": "——"
     },
     "RFAD-5001-C": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "焦距25.6mm，普通（已转产），螺丝配M3X18"
+        "introduction": "焦距25.6mm，普通（已转产），螺丝配M3X18",
+        "customer": "——"
     },
     "RFAD-5001-D": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "焦距25.6mm，接近开关检测+导光棒（未设计）"
+        "introduction": "焦距25.6mm，接近开关检测+导光棒（未设计）",
+        "customer": "——"
     },
     "RFAD-5002-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "焦距23.6mm，普通（已设计）"
+        "introduction": "焦距23.6mm，普通（已设计）",
+        "customer": "——"
     },
     "RFAD-5002-B": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2022-01-04",
-        "introduction": "焦距23.6mm，悬臂检测 插件红外传感器（已转产），线长30cm"
+        "introduction": "焦距23.6mm，悬臂检测 插件红外传感器（已转产），线长30cm",
+        "customer": "——"
     },
     "RFAD-5002-C": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2022-01-06",
-        "introduction": "焦距23.6mm，悬臂检测 插件红外传感器（已转产），线长30cm"
+        "introduction": "焦距23.6mm，悬臂检测 插件红外传感器（已转产），线长30cm",
+        "customer": "——"
     },
     "RFAD-5002-D": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2022-07-20",
-        "introduction": "焦距23.6mm，接近开关检测+导光棒（已设计），线长50cm"
+        "introduction": "焦距23.6mm，接近开关检测+导光棒（已设计），线长50cm",
+        "customer": "——"
     },
     "RFAD-5002-E": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2022-11-28",
-        "introduction": "焦距25.6mm，接近开关检测（已设计），线长50cm\n螺丝配M3X18，16系列专用"
+        "introduction": "焦距25.6mm，接近开关检测（已设计），线长50cm\n螺丝配M3X18，16系列专用",
+        "customer": "——"
     },
     "RFAD-5002-F": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2023-06-20",
-        "introduction": "焦距23.6mm，接近开关检测+导光棒（已设计），线长50cm"
+        "introduction": "焦距23.6mm，接近开关检测+导光棒（已设计），线长50cm",
+        "customer": "——"
     },
     "RFAD-5002-G": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2023-08-17",
-        "introduction": "焦距23.6mm，接近开关检测（已设计），线长50cm"
+        "introduction": "焦距23.6mm，接近开关检测（已设计），线长50cm",
+        "customer": "——"
     },
     "RFAD-5003-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "焦距23.6mm，普通，阳极氧化"
+        "introduction": "焦距23.6mm，普通，阳极氧化",
+        "customer": "——"
     },
     "RFAD-5003-B": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "焦距23.6mm，悬臂检测 插件红外传感器，阳极氧化，线长30cm，分两种物料：有包材和无包材，下单时注意"
+        "introduction": "焦距23.6mm，悬臂检测 插件红外传感器，阳极氧化，线长30cm，分两种物料：有包材和无包材，下单时注意",
+        "customer": "——"
     },
     "RFAD-5003-C": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "焦距25.6mm，普通，阳极氧化，螺丝配M3X18"
+        "introduction": "焦距25.6mm，普通，阳极氧化，螺丝配M3X18",
+        "customer": "——"
     },
     "RFAD-5003-D": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "焦距23.6mm，接近开关检测+导光棒，导电氧化（易刮花），线长50cm"
+        "introduction": "焦距23.6mm，接近开关检测+导光棒，导电氧化（易刮花），线长50cm",
+        "customer": "——"
     },
     "RFAD-5003-E": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "焦距23.6mm，接近开关检测+导光棒，阳极氧化，特殊线长"
+        "introduction": "焦距23.6mm，接近开关检测+导光棒，阳极氧化，特殊线长",
+        "customer": "——"
     },
     "RFAD-5003-F": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "焦距23.6mm，接近开关检测，阳极氧化，线长50cm"
+        "introduction": "焦距23.6mm，接近开关检测，阳极氧化，线长50cm",
+        "customer": "——"
     },
     "RFAD-5003-G": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "焦距25.6mm，接近开关检测+导光棒，阳极氧化，线长50cm\n螺丝配M3X18，16系列专用"
+        "introduction": "焦距25.6mm，接近开关检测+导光棒，阳极氧化，线长50cm\n螺丝配M3X18，16系列专用",
+        "customer": "——"
     },
     "RFAD-5003-H": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "焦距25.6mm，接近开关检测，阳极氧化，线长50cm\n螺丝配M3X18，16系列专用"
+        "introduction": "焦距25.6mm，接近开关检测，阳极氧化，线长50cm\n螺丝配M3X18，16系列专用",
+        "customer": "——"
     },
     "RFAD-5003-I": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "焦距23.6mm，接近开关检测+导光棒，阳极氧化，线长50cm"
+        "introduction": "焦距23.6mm，接近开关检测+导光棒，阳极氧化，线长50cm",
+        "customer": "——"
     },
     "RFAD-5003-J": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2024-08-12",
-        "introduction": "焦距23.6mm，接近开关检测，阳极氧化，线长50cm"
+        "introduction": "焦距23.6mm，接近开关检测，阳极氧化，线长50cm",
+        "customer": "——"
     },
     "RFAD-5004-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "焦距23.6mm，接近开关检测+导光棒（已打样），阳极氧化，线长50cm"
+        "introduction": "焦距23.6mm，接近开关检测+导光棒（已打样），阳极氧化，线长50cm",
+        "customer": "——"
     },
     "RFAD-5004-B": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "焦距23.6mm，接近开关检测（已打样），阳极氧化，线长50cm"
+        "introduction": "焦距23.6mm，接近开关检测（已打样），阳极氧化，线长50cm",
+        "customer": "——"
     },
     "RFAD-5005-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2023-07-25",
-        "introduction": "贴近XHP35光源，普通（以设计），阳极氧化"
+        "introduction": "贴近XHP35光源，普通（以设计），阳极氧化",
+        "customer": "——"
     },
     "RFAD-6001-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "焦距23.6mm，普通（未设计），阳极氧化"
+        "introduction": "焦距23.6mm，普通（未设计），阳极氧化",
+        "customer": "——"
     },
     "RFAD-6002-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "焦距23.6mm，普通（已设计），阳极氧化"
+        "introduction": "焦距23.6mm，普通（已设计），阳极氧化",
+        "customer": "——"
     },
     "RFAD-6002-B": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "焦距23.6mm，悬臂检测 插件红外传感器，阳极氧化，线长30cm，分两种物料：有包材和无包材，下单时注意"
+        "introduction": "焦距23.6mm，悬臂检测 插件红外传感器，阳极氧化，线长30cm，分两种物料：有包材和无包材，下单时注意",
+        "customer": "——"
     },
     "RFAD-6002-C": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "焦距23.6mm，接近开关检测+导光棒，阳极氧化，线长50cm"
+        "introduction": "焦距23.6mm，接近开关检测+导光棒，阳极氧化，线长50cm",
+        "customer": "——"
     },
     "RFAD-6002-D": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "焦距23.6mm，接近开关检测+导光棒，阳极氧化，特殊线长"
+        "introduction": "焦距23.6mm，接近开关检测+导光棒，阳极氧化，特殊线长",
+        "customer": "——"
     },
     "RFAD-6002-F": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2024-05-29",
-        "introduction": "焦距23.6mm，接近开关检测，阳极氧化，线长50cm"
+        "introduction": "焦距23.6mm，接近开关检测，阳极氧化，线长50cm",
+        "customer": "——"
     },
     "RFAD-6003-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "焦距23.6mm，普通，阳极氧化"
+        "introduction": "焦距23.6mm，普通，阳极氧化",
+        "customer": "——"
     },
     "RFAD-6003-B": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "焦距23.6mm，悬臂检测 插件红外传感器，阳极氧化，线长30cm\n分两种物料：有包材和无包材，下单时注意"
+        "introduction": "焦距23.6mm，悬臂检测 插件红外传感器，阳极氧化，线长30cm\n分两种物料：有包材和无包材，下单时注意",
+        "customer": "——"
     },
     "RFAD-6003-C": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "焦距23.6mm，接近开关检测，阳极氧化，线长50cm"
+        "introduction": "焦距23.6mm，接近开关检测，阳极氧化，线长50cm",
+        "customer": "——"
     },
     "RFAD-6003-D": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "焦距23.6mm，接近开关检测+导光棒，阳极氧化，线长50cm"
+        "introduction": "焦距23.6mm，接近开关检测+导光棒，阳极氧化，线长50cm",
+        "customer": "——"
     },
     "RFAD-6003-E": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "焦距23.6mm，悬臂检测 插件红外传感器，导电氧化（易刮花），线长30cm"
+        "introduction": "焦距23.6mm，悬臂检测 插件红外传感器，导电氧化（易刮花），线长30cm",
+        "customer": "——"
     },
     "RFAD-6003-F": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "焦距23.6mm，接近开关检测，阳极氧化，特殊线长"
+        "introduction": "焦距23.6mm，接近开关检测，阳极氧化，特殊线长",
+        "customer": "——"
     },
     "RFAD-6003-G": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2023-05-17",
-        "introduction": "焦距23.6mm，悬臂检测 贴片红外传感器，导电氧化（易刮花），线长30cm"
+        "introduction": "焦距23.6mm，悬臂检测 贴片红外传感器，导电氧化（易刮花），线长30cm",
+        "customer": "——"
     },
     "RFAD-6003-H": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2023-11-17",
-        "introduction": "焦距23.6mm，悬臂检测 插件红外传感器，导电氧化（易刮花），线长30cm"
+        "introduction": "焦距23.6mm，悬臂检测 插件红外传感器，导电氧化（易刮花），线长30cm",
+        "customer": "——"
     },
     "RFAD-6004-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "焦距23.6mm，普通，阳极氧化"
+        "introduction": "焦距23.6mm，普通，阳极氧化",
+        "customer": "——"
     },
     "RFAD-6004-B": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2022-07-25",
-        "introduction": "焦距23.6mm，悬臂检测 插件红外传感器（已设计），阳极氧化，线长30cm"
+        "introduction": "焦距23.6mm，悬臂检测 插件红外传感器（已设计），阳极氧化，线长30cm",
+        "customer": "——"
     },
     "RFAD-6004-C": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2025-03-06",
-        "introduction": "焦距23.6mm，悬臂检测 插件红外传感器，阳极氧化，线长30cm"
+        "introduction": "焦距23.6mm，悬臂检测 插件红外传感器，阳极氧化，线长30cm",
+        "customer": "——"
     },
     "RFAD-6004-D": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2025-06-16",
-        "introduction": "焦距23.6mm，接近开关检测，阳极氧化，线长50cm"
+        "introduction": "焦距23.6mm，接近开关检测，阳极氧化，线长50cm",
+        "customer": "——"
     },
     "RFAD-6004-E": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2025-08-08",
-        "introduction": "焦距23.6mm，接近开关检测，阳极氧化，线长35cm"
+        "introduction": "焦距23.6mm，接近开关检测，阳极氧化，线长35cm",
+        "customer": "——"
     },
     "RFAD-8001-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "焦距29mm，普通（未设计），阳极氧化"
+        "introduction": "焦距29mm，普通（未设计），阳极氧化",
+        "customer": "——"
     },
     "RFAD-8002-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "焦距29mm，普通（已设计），阳极氧化"
+        "introduction": "焦距29mm，普通（已设计），阳极氧化",
+        "customer": "——"
     },
     "RFAD-8002-B": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "焦距29mm，悬臂检测 插件红外传感器，阳极氧化，线长30cm"
+        "introduction": "焦距29mm，悬臂检测 插件红外传感器，阳极氧化，线长30cm",
+        "customer": "——"
     },
     "RFAD-8003-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "焦距29mm，普通，阳极氧化"
+        "introduction": "焦距29mm，普通，阳极氧化",
+        "customer": "——"
     },
     "RFAD-8003-B": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "焦距29mm，悬臂检测 插件红外传感器，阳极氧化，线长30cm"
+        "introduction": "焦距29mm，悬臂检测 插件红外传感器，阳极氧化，线长30cm",
+        "customer": "——"
     },
     "RFAD-8003-C": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "焦距29mm，悬臂检测 插件红外传感器，阳极氧化，线长30cm"
+        "introduction": "焦距29mm，悬臂检测 插件红外传感器，阳极氧化，线长30cm",
+        "customer": "——"
     },
     "RFAD-8003-D": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "焦距29mm，接近开关检测（未设计，零件图纸以占用D），阳极氧化"
+        "introduction": "焦距29mm，接近开关检测（未设计，零件图纸以占用D），阳极氧化",
+        "customer": "——"
     },
     "RFAD-8003-E": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "焦距29mm，普通，阳极氧化"
+        "introduction": "焦距29mm，普通，阳极氧化",
+        "customer": "——"
     },
     "RFAD-8003-F": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2023-07-07",
-        "introduction": "焦距29mm，接近开关检测，阳极氧化，线长50cm"
+        "introduction": "焦距29mm，接近开关检测，阳极氧化，线长50cm",
+        "customer": "——"
     },
     "RFAD-8003-G": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2024-04-07",
-        "introduction": "焦距29mm，普通+导光棒，阳极氧化（以设计）"
+        "introduction": "焦距29mm，普通+导光棒，阳极氧化（以设计）",
+        "customer": "——"
     },
     "RFAD-8003-H": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2024-09-04",
-        "introduction": "焦距29mm，接近开关检测+导光棒，阳极氧化，线长50cm"
+        "introduction": "焦距29mm，接近开关检测+导光棒，阳极氧化，线长50cm",
+        "customer": "——"
     },
     "RFAD-8003-I": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2025-03-31",
-        "introduction": "焦距29mm，普通，阳极氧化"
+        "introduction": "焦距29mm，普通，阳极氧化",
+        "customer": "——"
     },
     "RFAD-8004-A": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "",
-        "introduction": "焦距48mm，普通（未设计），阳极氧化"
+        "introduction": "焦距48mm，普通（未设计），阳极氧化",
+        "customer": "——"
     },
     "RFAD-8004-B": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2024-11-28",
-        "introduction": "焦距29mm，接近开关检测，阳极氧化"
+        "introduction": "焦距29mm，接近开关检测，阳极氧化",
+        "customer": "——"
     },
     "RM3000": {
-        "project_charge": " 林贵原",
         "model_notes": "",
         "creation_date": "2024-06-25",
-        "introduction": "自研光源整机，钣金式外壳，适配Stroz多款导光束，外观Stroz风格"
+        "introduction": "自研光源整机，钣金式外壳，适配Stroz多款导光束，外观Stroz风格",
+        "customer": "Stroz"
     }
 }
