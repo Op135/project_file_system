@@ -920,7 +920,7 @@ def main_page():
             select_dic[select_major_value["value"]], value=select_dic[select_major_value["value"]][0]
         )
 
-    # 按照两个选项的值，更新表格行数据，刷新表格显示
+    # 按照两个选项的值，更新表格行数据，将概述填写内容同步到简介表，刷新表格显示
     def update_aggrid(aggrid):
         nonlocal rows_select
         # 清空
@@ -969,18 +969,28 @@ def main_page():
                                         ].values()
                                         # 遍历概述内容每个chip数据
                                         for chip_data in chip_data_li:
-                                            text = ""
-                                            # 如果有content键，则应该是文字型chip
-                                            if "content" in chip_data:
-                                                text = chip_data["content"]
-                                            # 如果有filename键，则应该是文件或图片型chip
-                                            elif "filename" in chip_data:
-                                                text = chip_data["filename"]
-                                            # 将文本拼接到带显示字符串上
-                                            if pro_key in ["light_source", "target_distance"]:
-                                                show_str = f"{show_str}\n{text}"
-                                            else:
-                                                show_str = f"{show_str}，{text}"
+                                            # 该chip内容是激活的才显示
+                                            if chip_data["enabled"]:
+                                                text = ""
+                                                # 如果有content键，则应该是文字型chip
+                                                if "content" in chip_data:
+                                                    text = chip_data["content"]
+                                                # 如果有filename键，则应该是文件或图片型chip
+                                                elif "filename" in chip_data:
+                                                    text = ".".join(chip_data["filename"].split(".")[:-1])
+                                                # 将文本拼接到带显示字符串上
+                                                # 这几类换行拼接
+                                                if pro_key in [
+                                                    "light_source",
+                                                    "target_distance",
+                                                    "drive_pcb",
+                                                    "electronic_bom",
+                                                    "software_research",
+                                                    "software_mass",
+                                                ]:
+                                                    show_str = f"{show_str}\n{text}"
+                                                else:
+                                                    show_str = f"{show_str}，{text}"
                                 # 将处理完成的字符串作为该行数据对应项目简介项的现实内容
                                 r[pro_key] = show_str.strip("，").removeprefix("\n")
                             elif (
@@ -1171,6 +1181,10 @@ def main_page():
                     "guide_beam",  # 导光束要求列
                     "adapter_options",  # 转接座选型列
                     "customer",  # 客户简称列
+                    "drive_pcb",  # PCB规格
+                    "electronic_bom",  # 电子BOM
+                    "software_research",  # 研发版软件
+                    "software_mass",  # 量产版软件
                 ],
             )
 
@@ -1213,6 +1227,34 @@ def main_page():
         {"field": "input_mode", "headerName": "输入控制模式", "width": 80, "filter": "agTextColumnFilter"},
         {"field": "output_mode", "headerName": "输出模式", "width": 100, "filter": "agTextColumnFilter"},
         {"field": "guide_beam", "headerName": "导光束要求", "width": 90},
+        {
+            "field": "drive_pcb",
+            "headerName": "PCB规格",
+            "width": 180,
+            "autoHeight": True,
+            "filter": "agTextColumnFilter",
+        },
+        {
+            "field": "electronic_bom",
+            "headerName": "电子BOM",
+            "width": 180,
+            "autoHeight": True,
+            "filter": "agTextColumnFilter",
+        },
+        {
+            "field": "software_research",
+            "headerName": "研发版软件",
+            "width": 200,
+            "autoHeight": True,
+            "filter": "agTextColumnFilter",
+        },
+        {
+            "field": "software_mass",
+            "headerName": "量产版软件",
+            "width": 200,
+            "autoHeight": True,
+            "filter": "agTextColumnFilter",
+        },
         {"field": "requirement", "headerName": "需求录入", "width": 80},
         {"field": "overview", "headerName": "概述整理", "width": 80},
         {"field": "customer", "headerName": "客户缩写", "width": 100, "filter": "agTextColumnFilter"},
@@ -1286,6 +1328,8 @@ def main_page():
         # overflow-x: auto;        /* 启用水平滚动 */
         # aggrid.run_grid_method("domLayout", "print")
         # aggrid.style("text-align:center;width: 150%;")
+
+        # 按照两个选项的值，更新表格行数据，将概述填写内容同步到简介表，刷新表格显示
         select_major.on_value_change(lambda select_sub=select_sub: update_sub_select(select_sub))
         select_major.on_value_change(lambda aggrid=aggrid: update_aggrid(aggrid))
         select_sub.on_value_change(lambda aggrid=aggrid: update_aggrid(aggrid))
@@ -2322,8 +2366,8 @@ def requirement_page(type="", json_path="", project_name=""):
                 )
                 return False
 
+        # 处理主按钮的点击事件
         def _handle_main_button_click(self):
-            """处理主按钮的点击事件。"""
             # 如果用户具有编辑权限
             if self._edit_permission_judge():
                 if self.processing_type == "text":
@@ -2342,6 +2386,7 @@ def requirement_page(type="", json_path="", project_name=""):
                 for chip_info in app.storage.general["overview_data"][self.project][self.label].values():
                     self._create_chip_from_data(chip_info)
 
+        # 同步UI显示与共享存储中的数据
         def _update_chip_display(self):
             """
             同步UI显示与共享存储中的数据。
@@ -2385,6 +2430,7 @@ def requirement_page(type="", json_path="", project_name=""):
                     close_button="✖",
                 )
 
+        # 当元素被鼠标右键点击时触发的事件处理函数
         def on_right_click(self, chip_data):
             """
             当元素被鼠标右键点击时触发的事件处理函数。
@@ -2408,7 +2454,6 @@ def requirement_page(type="", json_path="", project_name=""):
                 if app.storage.user["current_user"] == "admin":
                     del app.storage.general["overview_data"][self.project][self.label][chip.props["data-chip-id"]]
                 elif app.storage.user["current_user"] != "admin":
-                    # app.storage.general["overview_data"][self.project][self.label][chip.props["data-chip-id"]]["enabled"] = False
                     # app.storage.general["overview_data"][self.project][self.label][chip.props["data-chip-id"]]["removable"] = False
                     if (
                         app.storage.general["overview_data"][self.project][self.label][chip.props["data-chip-id"]][
@@ -2416,6 +2461,10 @@ def requirement_page(type="", json_path="", project_name=""):
                         ]
                         == "block"
                     ):
+                        # 激活chip
+                        app.storage.general["overview_data"][self.project][self.label][chip.props["data-chip-id"]][
+                            "enabled"
+                        ] = True
                         app.storage.general["overview_data"][self.project][self.label][chip.props["data-chip-id"]][
                             "icon"
                         ] = None
@@ -2423,6 +2472,10 @@ def requirement_page(type="", json_path="", project_name=""):
                             "bg_color"
                         ] = "bg-light-blue-1"
                     else:
+                        # 失活chip
+                        app.storage.general["overview_data"][self.project][self.label][chip.props["data-chip-id"]][
+                            "enabled"
+                        ] = False
                         app.storage.general["overview_data"][self.project][self.label][chip.props["data-chip-id"]][
                             "icon"
                         ] = "block"
@@ -2446,6 +2499,10 @@ def requirement_page(type="", json_path="", project_name=""):
                         ]
                         == "block"
                     ):
+                        # 激活chip
+                        app.storage.general["overview_data"][self.project][self.label][thumbnail.props["data-chip-id"]][
+                            "enabled"
+                        ] = True
                         app.storage.general["overview_data"][self.project][self.label][thumbnail.props["data-chip-id"]][
                             "icon"
                         ] = None
@@ -2453,6 +2510,10 @@ def requirement_page(type="", json_path="", project_name=""):
                             "bg_color"
                         ] = "bg-light-blue-1"
                     else:
+                        # 失活chip
+                        app.storage.general["overview_data"][self.project][self.label][thumbnail.props["data-chip-id"]][
+                            "enabled"
+                        ] = False
                         app.storage.general["overview_data"][self.project][self.label][thumbnail.props["data-chip-id"]][
                             "icon"
                         ] = "block"
@@ -2554,8 +2615,8 @@ def requirement_page(type="", json_path="", project_name=""):
                     )
                 # 设置chip元素是否显示
                 # chip.set_value(chip_info["value"])
-                # 设置chip元素是否可点击
-                chip.set_enabled(chip_info["enabled"])
+                # 设置chip元素是否可点击，会导致其上的好标签出不来
+                # chip.set_enabled(chip_info["enabled"])
 
                 # 为chip绑定各种事件
                 chip.on("contextmenu", lambda chip_data=chip_info: self.on_right_click(chip_data))

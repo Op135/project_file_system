@@ -26,6 +26,18 @@
     "guide_beam": [
         "guide_beam"
     ],
+    "drive_pcb": [
+        "drive_pcb"
+    ],
+    "electronic_bom": [
+        "electronic_bom"
+    ],
+    "software_research": [
+        "software_research"
+    ],
+    "software_mass": [
+        "software_mass"
+    ],
     "optics_charge": "光学",
     "structure_charge": "结构",
     "hardware_charge": "硬件",

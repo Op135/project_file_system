@@ -1053,6 +1053,34 @@
             }
         },
         {
+            "label": "drive_pcb",
+            "title": "PCB裸板规格",
+            "processing_type": "text",
+            "dialog_placeholder": "如：RFFM-1121_DP24A_V02",
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售总监",
+                    "销售",
+                    "客服主管",
+                    "客服",
+                    "研发助理",
+                    "研发电子主管",
+                    "研发结构",
+                    "研发软件",
+                    "研发光学",
+                    "研发样品",
+                    "工程",
+                    "质量"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发硬件"
+                ]
+            }
+        },
+        {
             "label": "electronic_bom",
             "title": "电子BOM",
             "processing_type": "file",
@@ -1111,8 +1139,38 @@
     ],
     "软件": [
         {
-            "label": "software_execute_file",
-            "title": "固件执行文件",
+            "label": "software_research",
+            "title": "研发版固件执行文件",
+            "processing_type": "file",
+            "file_name_regular": [
+                "RF[A-Z]{2}-\\d{4}[A-Z]*-F\\d{2}_V\\d*\\.\\d*"
+            ],
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售总监",
+                    "销售",
+                    "客服主管",
+                    "客服",
+                    "研发助理",
+                    "研发电子主管",
+                    "研发结构",
+                    "研发硬件",
+                    "研发光学",
+                    "研发样品",
+                    "工程",
+                    "质量"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发软件"
+                ]
+            }
+        },
+        {
+            "label": "software_mass",
+            "title": "量产版固件执行文件",
             "processing_type": "file",
             "file_name_regular": [
                 "RF[A-Z]{2}-\\d{4}[A-Z]*-F\\d{2}_V\\d*\\.\\d*"
