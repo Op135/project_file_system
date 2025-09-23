@@ -95,10 +95,11 @@ def update_users_data():
 def handle_key(e: KeyEventArguments):
     if e.modifiers.ctrl and e.action.keydown:
         app.storage.client["key_state"]["ctrl"] = 9
-    if e.key.enter and e.action.keydown:
-        app.storage.client["key_state"]["enter"] = 1
     else:
         app.storage.client["key_state"]["ctrl"] = 0
+
+    if e.key.enter and e.action.keydown:
+        app.storage.client["key_state"]["enter"] = 1
         # app.storage.client["key_state"]["enter"] = 0
 
 
@@ -589,8 +590,7 @@ def logout():
 
 # 元素的显示函数
 def ui_show(ui):
-    key_state_dic = app.storage.client["key_state"]
-    if "ctrl" in key_state_dic.keys() and key_state_dic["ctrl"] == 9:
+    if "ctrl" in app.storage.client["key_state"].keys() and app.storage.client["key_state"]["ctrl"] == 9:
         ui.style("display: block;")
 
 
@@ -766,7 +766,7 @@ def login_page():
                 close_button="✖",
             )
 
-    #
+    # 回车登录
     def enter_try_login():
         if app.storage.client["key_state"].get("enter", 0) == 1:
             app.storage.client["key_state"]["enter"] = 0
