@@ -55,6 +55,8 @@ MAX_FILE_SIZE = 20 * 1024 * 1024  # 20MB
 
 # 存储服务器层级 概述数据 的变量初始化
 app.storage.general.setdefault("overview_data", {})
+# 存储服务器层级 项目需求最高版本号 的变量初始化
+app.storage.general.setdefault("project_req_max_ver", {})
 # 存储服务器层级 项目简介 的变量初始化
 app.storage.general.setdefault("project_summary", {})
 # 存储服务器层级 项目简介与概述数据动态更新配置 的变量初始化
@@ -806,6 +808,7 @@ def manage_page():
         ui.navigate.to("/main")  # 如果不是管理员，跳转到主界面
         return
     with ui.header().classes("flex justify-between items-center bg-blue-500 h-12 px-4"):
+        ui.image(f"{IMG_DIR}/Rayfine.png").classes("absolute w-20")
         ui.label("系统管理员界面").classes("text-white text-lg absolute left-1/2 transform -translate-x-1/2")
         with ui.button(icon="menu").props("flat round").classes("ml-auto -mt-3.5 h-4 text-sm/4 text-white"):  # 右侧对齐
             with ui.menu() as menu:
@@ -1323,6 +1326,7 @@ def main_page():
 
     # 主界面内容
     with ui.header().classes("flex justify-between items-center bg-blue-500 h-12 px-4"):
+        ui.image(f"{IMG_DIR}/Rayfine.png").classes("absolute w-20")
         ui.label("项目管理系统").classes(
             "text-white text-lg absolute left-1/2 transform -translate-x-1/2"
         )  # 绝对定位居中
@@ -2082,13 +2086,6 @@ def requirement_page(type="", json_path="", project_name=""):
             dialog_placeholder: str = "",
             # delete_bool: bool = True,
         ):
-            """
-            初始化 InteractiveButton 实例。
-
-            :param title: 按钮上显示的文本。
-            :param processing_type: 处理类型，必须是 "text" 或 "file"。
-            :param upload_path: 文件上传的目标目录。
-            """
             if processing_type not in ["text", "file", "image"]:
                 raise ValueError("processing_type 必须是 'text','file','image'")
 
@@ -2106,9 +2103,10 @@ def requirement_page(type="", json_path="", project_name=""):
             self.last_pos = (0, 0)
             self.image_x = 0.0
             self.image_y = 0.0
-            self.dialog = ui.dialog().props("h-screen w-full")
+            self.chip_dialog = ui.dialog().props("h-screen w-full")
+            self.notes_dialog = ui.dialog().props("h-screen w-full")
             # self.image_show = {"image_show": True}
-            # self.dialog.bind_value_to(self.image_show, "image_show")
+            # self.chip_dialog.bind_value_to(self.image_show, "image_show")
 
             # 为每个按钮实例在 app.storage.general 概述数据各项目字典里 以self.label作为键，后续保存用户输入
             # 初始化存储，如果 app.storage.general 中不存在对应的列表，则创建一个空列表
@@ -2125,8 +2123,11 @@ def requirement_page(type="", json_path="", project_name=""):
 
             # 根据处理类型，设置不同的交互逻辑
             if self.processing_type == "text":
-                self._setup_text_dialog()
+                # 预先设置文本chip的弹窗格式
+                self._setup_text_chip_dialog()
             elif self.processing_type == "image":
+                # 预先设置文件类chip的弹窗格式
+                self._setup_file_notes_dialog()
                 # 创建一个隐藏的 ui.upload 组件，我们将通过程序触发它
                 self.uploader = ui.upload(
                     on_upload=self._handle_file_upload,
@@ -2136,6 +2137,8 @@ def requirement_page(type="", json_path="", project_name=""):
                 # 隐藏upload元素
                 self.uploader.set_visibility(False)
             else:
+                # 预先设置文件类chip的弹窗格式
+                self._setup_file_notes_dialog()
                 # 创建一个隐藏的 ui.upload 组件，我们将通过程序触发它
                 self.uploader = ui.upload(
                     on_upload=self._handle_file_upload,
@@ -2150,8 +2153,8 @@ def requirement_page(type="", json_path="", project_name=""):
 
         # 显示大图
         def show_fullscreen(self, url_path):
-            with self.dialog:
-                self.dialog.clear()
+            with self.chip_dialog:
+                self.chip_dialog.clear()
                 self.image_big = ui.interactive_image(
                     url_path,
                 ).classes("cursor-grab")
@@ -2164,8 +2167,8 @@ def requirement_page(type="", json_path="", project_name=""):
                 self.image_big.on("mouseleave", self.end_drag)
                 self.image_big.on("wheel", self.handle_zoom)
             # 打开弹窗
-            self.dialog.open()
-            # print(self.dialog.value)
+            self.chip_dialog.open()
+            # print(self.chip_dialog.value)
             # 复位图片
             self.reset_transform()
 
@@ -2217,25 +2220,23 @@ def requirement_page(type="", json_path="", project_name=""):
             self.offset = (0, 0)
             self.update_transform()
 
-        def _setup_text_dialog(self):
-            """创建用于输入文本的对话框。"""
-            self.dialog.clear()
-            with self.dialog, ui.card().classes("w-1/2"):
-                ui.label("添加新的内容").classes("text-lg font-bold")
-                self.textarea = (
-                    ui.textarea(label=self.dialog_label, placeholder=self.dialog_placeholder)
-                    .props("outlined")
-                    .classes("w-full")
-                )
-                with ui.row().classes("w-full justify-end"):
-                    ui.button("添加", on_click=self._add_text_chip_data)
-
+        # <---------------------------------------------------------------->
         # 当用户点击“添加”按钮时，将文本数据添加到共享存储中
         def _add_text_chip_data(self):
-            text = self.textarea.value
+            text = self.chip_label.value
+            notes = self.chip_notes.value
             if not text:
                 ui.notify(
-                    "内容不能为空!",
+                    "概述内容不能为空!",
+                    type="negative",
+                    position="bottom",
+                    timeout=1000,
+                    progress=True,
+                    close_button="✖",
+                )
+            elif not notes:
+                ui.notify(
+                    "注释不能为空!",
                     type="negative",
                     position="bottom",
                     timeout=1000,
@@ -2246,7 +2247,7 @@ def requirement_page(type="", json_path="", project_name=""):
                 d["content"] for d in app.storage.general["overview_data"][self.project][self.label].values()
             ]:
                 ui.notify(
-                    "内容已存在。",
+                    "概述内容已存在。",
                     type="warning",
                     position="bottom",
                     timeout=1000,
@@ -2264,15 +2265,18 @@ def requirement_page(type="", json_path="", project_name=""):
                     "bg_color": "bg-light-blue-1",
                     "type": "text",
                     "content": text,
+                    "notes": notes,
                     "creator": app.storage.user.get("current_user", "匿名用户"),
                     "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "req_ver": app.storage.general["project_req_max_ver"][self.project],
                 }
 
                 # 将新数据追加到 app.storage.general 的列表中
                 app.storage.general["overview_data"][self.project][self.label][chip_id] = chip_data
                 # 清空文本框并关闭对话框
-                self.textarea.value = ""
-                self.dialog.close()
+                self.chip_label.value = ""
+                self.chip_notes.value = ""
+                self.chip_dialog.close()
                 ui.notify(
                     "内容已添加。",
                     type="positive",
@@ -2282,50 +2286,8 @@ def requirement_page(type="", json_path="", project_name=""):
                     close_button="✖",
                 )
 
-        def _show_have_file(self, filepath, original_filename):
-            """显示服务器已有文件"""
-            self.dialog.close()
-            # 准备要存储的 chip 数据
-            file_icon = ""
-            if self.processing_type == "file":
-                # 文件类型才将icon设置为引用小图，图片类不设置
-                file_icon = "attach_file"
-            chip_id = str(uuid.uuid4())
-            chip_data = {
-                "id": chip_id,
-                "icon": file_icon,
-                "enabled": True,  # 控制元素是否显示
-                # "removable": False,  # 控制元素是否有删除按钮
-                "bg_color": "bg-light-blue-1",
-                "type": self.processing_type,
-                "filepath": f"{filepath}",
-                "filename": original_filename,
-                "creator": app.storage.user.get("current_user", "匿名用户"),
-                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            }
-            # 将新数据追加到共享列表中
-            app.storage.general["overview_data"][self.project][self.label][chip_id] = chip_data
-            ui.notify(
-                f'文件 "{original_filename}" 显示成功!',
-                type="positive",
-                position="bottom",
-                timeout=1000,
-                progress=True,
-                close_button="✖",
-            )
-
-        def _select_file_show(self, filepath, original_filename):
-            """创建用于输入文本的对话框。"""
-            self.dialog.clear()
-            self.dialog.open()
-            with self.dialog, ui.card().classes("w-1/2 bg-orange-2"):
-                ui.label("服务器已有同名文件，无法上传覆盖，是否使用服务器已有文件？").classes("text-lg")
-                with ui.row().classes("w-full justify-end"):
-                    ui.button("是", on_click=lambda: self._show_have_file(filepath, original_filename), color="green-6")
-                    ui.button("否", on_click=lambda: self.dialog.close(), color="blue-grey-6")
-
+        # 处理文件/图片上传事件
         def _handle_file_upload(self, e):
-            """处理文件上传事件。"""
             original_filename = e.name
             # 生成一个唯一的内部文件名以避免覆盖，但保留原始文件名用于显示
             # unique_filename = f"{uuid.uuid4().hex}{Path(original_filename).suffix}"
@@ -2352,10 +2314,12 @@ def requirement_page(type="", json_path="", project_name=""):
                     f.write(e.content.read())
 
                 file_icon = ""
+                # 文件类型的icon与图片的设置不一样
                 if self.processing_type == "file":
                     # 文件类型才将icon设置为引用小图，图片类不设置
                     file_icon = "attach_file"
                 chip_id = str(uuid.uuid4())
+                # 生成文件或图片的chip_data
                 chip_data = {
                     "id": chip_id,
                     "icon": file_icon,
@@ -2365,9 +2329,13 @@ def requirement_page(type="", json_path="", project_name=""):
                     "type": self.processing_type,
                     # "filepath": f"{filepath}", 路径不能记死
                     "filename": original_filename,
+                    "notes": self.chip_notes.value,
                     "creator": app.storage.user.get("current_user", "匿名用户"),
                     "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "req_ver": app.storage.general["project_req_max_ver"][self.project],
                 }
+                self.chip_notes.value = ""
+                self.chip_dialog.close()
                 # 将新数据追加到共享列表中
                 app.storage.general["overview_data"][self.project][self.label][chip_id] = chip_data
                 ui.notify(
@@ -2379,33 +2347,53 @@ def requirement_page(type="", json_path="", project_name=""):
                     close_button="✖",
                 )
 
-        # 判断当前用户是否具有编辑权限
-        def _edit_permission_judge(self):
-            # 判断用户是否具有编辑权限
-            if app.storage.user["current_role"] in self.permission["edit_role"]:
-                return True
-            else:
-                ui.notify(
-                    "当前用户无该项编辑权限，请联系管理员申请!",
-                    type="info",
-                    position="bottom",
-                    timeout=1000,
-                    progress=True,
-                    close_button="✖",
-                )
-                return False
+        # 显示服务器已有文件
+        def _show_have_file(self, filepath, original_filename):
+            # 准备要存储的 chip 数据
+            file_icon = ""
+            if self.processing_type == "file":
+                # 文件类型才将icon设置为引用小图，图片类不设置
+                file_icon = "attach_file"
+            chip_id = str(uuid.uuid4())
+            # 生成文件或图片的chip_data
+            chip_data = {
+                "id": chip_id,
+                "icon": file_icon,
+                "enabled": True,  # 控制元素是否显示
+                # "removable": False,  # 控制元素是否有删除按钮
+                "bg_color": "bg-light-blue-1",
+                "type": self.processing_type,
+                "filepath": f"{filepath}",
+                "filename": original_filename,
+                "notes": self.chip_notes.value,
+                "creator": app.storage.user.get("current_user", "匿名用户"),
+                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "req_ver": app.storage.general["project_req_max_ver"][self.project],
+            }
+            self.chip_notes.value = ""
+            self.chip_dialog.close()
+            # 将新数据追加到共享列表中
+            app.storage.general["overview_data"][self.project][self.label][chip_id] = chip_data
+            ui.notify(
+                f'文件 "{original_filename}" 显示成功!',
+                type="positive",
+                position="bottom",
+                timeout=1000,
+                progress=True,
+                close_button="✖",
+            )
 
-        # 处理主按钮的点击事件
-        def _handle_main_button_click(self):
-            # 如果用户具有编辑权限
-            if self._edit_permission_judge():
-                if self.processing_type == "text":
-                    self.dialog.open()
-                else:  # 'file'
-                    # 在上传新文件前，先清空uploader列表，否则后续删除文件后，不能在重新插入
-                    self.uploader.reset()
-                    # 调用JavaScript方法来触发隐藏的<input type="file">元素的点击事件
-                    self.uploader.run_method("pickFiles")
+        # <----------------------------------------------------------------->
+
+        # 询问重复提交文件是否按服务器现有文件显示
+        def _select_file_show(self, filepath, original_filename):
+            self.chip_dialog.clear()
+            self.chip_dialog.open()
+            with self.chip_dialog, ui.card().classes("w-1/2 bg-orange-2"):
+                ui.label("服务器已有同名文件，无法上传覆盖，是否使用服务器已有文件？").classes("text-lg")
+                with ui.row().classes("w-full justify-end"):
+                    ui.button("是", on_click=lambda: self._show_have_file(filepath, original_filename), color="green-6")
+                    ui.button("否", on_click=lambda: self.chip_dialog.close(), color="blue-grey-6")
 
         # 刷新chip容器
         def _refresh_chip_container(self):
@@ -2422,9 +2410,9 @@ def requirement_page(type="", json_path="", project_name=""):
             这是由定时器调用的核心同步函数。
             """
             # 在用户打开了大图的情况下，不刷对应条目下的缩略图元素
-            if not self.dialog.value:
+            if not self.chip_dialog.value:
                 # if self.processing_type == "image":
-                #     print(self.dialog.value, self.title)
+                #     print(self.chip_dialog.value, self.title)
 
                 # 获取当前UI上所有 chip 的ID
                 displayed_chip_ids = {child.props.get("data-chip-id") for child in self.chip_container}
@@ -2614,7 +2602,7 @@ def requirement_page(type="", json_path="", project_name=""):
                 # 创建chip元素的附属元素
                 with chip:
                     # 为 chip 添加 tooltip
-                    tooltip_text = f"创建者: {chip_info['creator']}<br>时间: {chip_info['timestamp']}"
+                    tooltip_text = f"创建节点: 需求V{chip_info.get('req_ver')}后<br>创建者: {chip_info.get('creator')}<br>时间: {chip_info.get('timestamp')}<br>注释: <br>{chip_info.get('notes', '').replace('\n', '<br>')}"
                     with ui.tooltip():
                         ui.html(tooltip_text)
 
@@ -2686,7 +2674,7 @@ def requirement_page(type="", json_path="", project_name=""):
                     if chip_info["icon"]:
                         ui.icon(chip_info["icon"]).props("flat fab color=red").classes("absolute top-0 left-0 text-xl")
                     # 缩略图创建日期提示
-                    tooltip_text = f"创建者: {chip_info['creator']}<br>时间: {chip_info['timestamp']}"
+                    tooltip_text = f"创建节点: 需求V{chip_info.get('req_ver')}后<br>创建者: {chip_info.get('creator')}<br>时间: {chip_info.get('timestamp')}<br>注释: <br>{chip_info.get('notes', '').replace('\n', '<br>')}"
                     with ui.tooltip():
                         ui.html(tooltip_text)
 
@@ -2725,6 +2713,87 @@ def requirement_page(type="", json_path="", project_name=""):
                 thumbnail.on("mouseover", lambda b=move_down_button: ui_show(b)).on(
                     "mouseout", lambda b=move_down_button: ui_hide(b)
                 )
+
+        # 创建用于输入文本chip的概述内容与注释的对话框
+        def _setup_text_chip_dialog(self):
+            self.chip_dialog.clear()
+            with self.chip_dialog, ui.card().classes("w-1/2"):
+                ui.label("添加新的概述内容").classes("text-lg font-bold")
+                self.chip_label = (
+                    ui.textarea(label=self.dialog_label, placeholder=self.dialog_placeholder)
+                    .props("outlined")
+                    .classes("w-full")
+                )
+                self.chip_notes = (
+                    ui.textarea(
+                        label="针对本技术概述的注释（必填）",
+                        placeholder="首填/变更原因",
+                        validation={"不能空白": lambda value: value.strip() != ""},
+                    )
+                    .props("outlined")
+                    .classes("w-full")
+                )
+                with ui.row().classes("w-full justify-end"):
+                    ui.button("添加", on_click=self._add_text_chip_data)
+
+        # 触发文件上传界面，用于给用户选择文件，然后自动触发文件处理函数
+        def _get_file_upload(self):
+            if not self.chip_notes.value:
+                ui.notify(
+                    "注释不能为空!",
+                    type="negative",
+                    position="bottom",
+                    timeout=1000,
+                    progress=True,
+                    close_button="✖",
+                )
+            else:
+                # 在上传新文件前，先清空uploader列表，否则后续删除文件后，不能在重新插入
+                self.uploader.reset()
+                # 调用JavaScript方法来触发隐藏的<input type="file">元素的点击事件
+                self.uploader.run_method("pickFiles")
+
+        # 创建用于输入文件注释的对话框
+        def _setup_file_notes_dialog(self):
+            self.chip_dialog.clear()
+            with self.chip_dialog, ui.card().classes("w-1/2"):
+                ui.label("添加上传文件的注释").classes("text-lg font-bold")
+                self.chip_notes = (
+                    ui.textarea(
+                        label="针对本文件的注释（必填）",
+                        placeholder="首次提交/变更原因",
+                        validation={"不能空白": lambda value: value.strip() != ""},
+                    )
+                    .props("outlined")
+                    .classes("w-full")
+                )
+                with ui.row().classes("w-full justify-end"):
+                    ui.button("添加", on_click=self._get_file_upload)
+
+        # 判断当前用户是否具有编辑权限
+        def _edit_permission_judge(self):
+            # 判断用户是否具有编辑权限
+            if app.storage.user["current_role"] in self.permission["edit_role"]:
+                return True
+            else:
+                ui.notify(
+                    "当前用户无该项编辑权限，请联系管理员申请!",
+                    type="info",
+                    position="bottom",
+                    timeout=1000,
+                    progress=True,
+                    close_button="✖",
+                )
+                return False
+
+        # 处理主按钮的点击事件
+        def _handle_main_button_click(self):
+            # 如果用户具有编辑权限
+            if self._edit_permission_judge():
+                # if self.processing_type == "text":
+                #     self.chip_dialog.open()
+                # else:  # 'file'
+                self.chip_dialog.open()
 
     # 创建一个图片上传组件，包括一个上传按钮和上传好的图片缩略图
     def get_img_group(button_name="上传", input_any_suffix="/*", parents_h=9):
@@ -3538,9 +3607,7 @@ def requirement_page(type="", json_path="", project_name=""):
         # 需求界面内容
         header.clear()
         with header:
-            # ui.button("返回主界面", on_click=lambda: ui.navigate.to("/main")).classes(
-            #     "mr-auto -mt-2.5 h-4 text-sm/4 text-white"
-            # )  # 左侧对齐
+            ui.image(f"{IMG_DIR}/Rayfine.png").classes("absolute w-20")
             ui.label("需求管理模块").classes(
                 "text-white text-lg absolute left-1/2 transform -translate-x-1/2"
             )  # 绝对定位居中
@@ -3743,6 +3810,7 @@ def requirement_page(type="", json_path="", project_name=""):
         # 需求界面内容
         header.clear()
         with header:
+            ui.image(f"{IMG_DIR}/Rayfine.png").classes("absolute w-20")
             # )  # 左侧对齐
             ui.label("概述整理模块").classes(
                 "text-white text-lg absolute left-1/2 transform -translate-x-1/2"
@@ -3767,6 +3835,8 @@ def requirement_page(type="", json_path="", project_name=""):
                     with ui.column().classes("w-full overflow-y-auto p-1 gap-4"):
                         # === 步骤 1: 预处理 - 收集所有条目并获取其排序/分组信息 ===
                         version_keys = sorted([k for k in json_data if k.replace(".", "", 1).isdigit()], key=float)
+                        # 将项目需求的最高版本号更新记录到服务器级储存里，供后续使用
+                        app.storage.general["project_req_max_ver"][project_name] = max(version_keys)
                         # 储存最新版元素
                         ui_expansion = {}
                         ui_elements_latest = {}
