@@ -91,6 +91,17 @@ def update_users_data():
         )
 
 
+# 全局键盘事件跟踪处理函数
+def handle_key(e: KeyEventArguments):
+    if e.modifiers.ctrl and e.action.keydown:
+        app.storage.client["key_state"]["ctrl"] = 9
+    if e.key.enter and e.action.keydown:
+        app.storage.client["key_state"]["enter"] = 1
+    else:
+        app.storage.client["key_state"]["ctrl"] = 0
+        # app.storage.client["key_state"]["enter"] = 0
+
+
 # 更新需求配置文件，供后续管理员调用
 def update_config_service():
     global init_config_data
@@ -576,14 +587,6 @@ def logout():
     ui.navigate.to("/login")
 
 
-# 全局键盘事件跟踪处理函数
-def handle_key(e: KeyEventArguments):
-    if e.modifiers.ctrl and e.action.keydown:
-        app.storage.client["key_state"]["ctrl"] = 9
-    else:
-        app.storage.client["key_state"]["ctrl"] = 0
-
-
 # 元素的显示函数
 def ui_show(ui):
     key_state_dic = app.storage.client["key_state"]
@@ -615,62 +618,8 @@ def root():
 
 @ui.page("/login")
 def login_page():
-    # 登录页面
-    with ui.dialog().props("persistent") as dialog_login, ui.card().classes("w-1/3 p-4 bg-white shadow-md -space-y-6"):
-        # 创建卡片组件
-        ui.label("用户登录").classes("text-lg p-4")  # 显示文本内容
-        with ui.column().classes("w-full p-4 space-y-2"):
-            # 创建UI元素的引用
-            username_input = (
-                ui.input(label="用户名").classes("w-full").props('autofocus outlined :dense="dense" color="amber-8"')
-            )
-            password_input = (
-                ui.input(label="密码", password=True).classes("w-full").props('outlined :dense="dense" color="amber-8"')
-            )
-        with ui.row().classes("w-full p-4 flex-nowrap"):
-            ui.button("登录", on_click=lambda: try_login()).classes("w-1/3").props('outline color="amber-8"')
-            ui.button("修改密码", on_click=lambda: change_password()).classes("w-1/3").props('outline color="amber-8"')
-            ui.button("关闭", on_click=lambda: dialog_login.close()).classes("w-1/3").props('outline color="amber-8"')
-    dialog_login.open()
-
-    # 返回用户是否为管理员的布尔值
-    def check_admin_role(username: str) -> bool:
-        try:
-            return users_data.get(username, {}).get("role") == "admin"
-        except Exception as e:
-            ui.notify(
-                f"权限验证失败: {str(e)}",
-                type="negative",
-                position="bottom",
-                timeout=1000,
-                progress=True,
-                close_button="✖",
-            )
-            return False
-
-    # 实时检测是否需要设置初始密码
-    def check_initial_password():
-        input_username = username_input.value.strip()
-        if not input_username:  # or not enable_event:
-            return
-        try:
-            # 获取对应用户的密码与角色组成的字典{'password': 'xxx', 'role': 'user'}
-            user_info = user_service.get_user(input_username)
-            # 条件1：用户存在且密码为空
-            if user_info and user_info.get("password") is None:
-                set_password(input_username)  # 直接弹出密码设置
-        except Exception as e:
-            ui.notify(
-                f"用户查询失败: {str(e)}",
-                type="negative",
-                position="bottom",
-                timeout=1000,
-                progress=True,
-                close_button="✖",
-            )
-
-    # 添加实时检测
-    username_input.on("blur", check_initial_password)  # 失去焦点时检测
+    # 用于记录键盘按键状态
+    app.storage.client.setdefault("key_state", {})
 
     # 登录处理函数
     def try_login():
@@ -780,6 +729,74 @@ def login_page():
                 ui.button("提交", on_click=lambda: submit(new_pwd, confirm_pwd, target_username)).classes("w-1/2")
                 ui.button("取消", on_click=lambda: dialog_set_password.close()).classes("w-1/2")
         dialog_set_password.open()
+
+    # 返回用户是否为管理员的布尔值
+    def check_admin_role(username: str) -> bool:
+        try:
+            return users_data.get(username, {}).get("role") == "admin"
+        except Exception as e:
+            ui.notify(
+                f"权限验证失败: {str(e)}",
+                type="negative",
+                position="bottom",
+                timeout=1000,
+                progress=True,
+                close_button="✖",
+            )
+            return False
+
+    # 实时检测是否需要设置初始密码
+    def check_initial_password():
+        input_username = username_input.value.strip()
+        if not input_username:  # or not enable_event:
+            return
+        try:
+            # 获取对应用户的密码与角色组成的字典{'password': 'xxx', 'role': 'user'}
+            user_info = user_service.get_user(input_username)
+            # 条件1：用户存在且密码为空
+            if user_info and user_info.get("password") is None:
+                set_password(input_username)  # 直接弹出密码设置
+        except Exception as e:
+            ui.notify(
+                f"用户查询失败: {str(e)}",
+                type="negative",
+                position="bottom",
+                timeout=1000,
+                progress=True,
+                close_button="✖",
+            )
+
+    #
+    def enter_try_login():
+        if app.storage.client["key_state"].get("enter", 0) == 1:
+            app.storage.client["key_state"]["enter"] = 0
+            try_login()
+
+    # 登录页面
+    with ui.dialog().props("persistent") as dialog_login, ui.card().classes("w-1/3 p-4 bg-white shadow-md -space-y-6"):
+        # 创建卡片组件
+        ui.label("用户登录").classes("text-lg p-4")  # 显示文本内容
+        with ui.column().classes("w-full p-4 space-y-2"):
+            # 创建UI元素的引用
+            username_input = (
+                ui.input(label="用户名").classes("w-full").props('autofocus outlined :dense="dense" color="amber-8"')
+            )
+            password_input = (
+                ui.input(label="密码", password=True).classes("w-full").props('outlined :dense="dense" color="amber-8"')
+            )
+        with ui.row().classes("w-full p-4 flex-nowrap"):
+            ui.button("登录", on_click=lambda: try_login()).classes("w-1/3").props('outline color="amber-8"')
+            ui.button("修改密码", on_click=lambda: change_password()).classes("w-1/3").props('outline color="amber-8"')
+            ui.button("关闭", on_click=lambda: dialog_login.close()).classes("w-1/3").props('outline color="amber-8"')
+    dialog_login.open()
+    # 添加全局键盘事件跟踪
+    # ignore不设定默认导致键盘事件在'input', 'select', 'button', 'textarea'元素聚焦时被忽略
+    ui.keyboard(on_key=handle_key, ignore=["select", "button", "textarea"])
+    # 监控用户是否按下回车键
+    ui.timer(0.5, lambda: enter_try_login())
+
+    # 添加实时检测
+    username_input.on("blur", check_initial_password)  # 失去焦点时检测
 
 
 @ui.page("/manage")
@@ -1017,7 +1034,7 @@ def main_page():
         aggrid.update()
 
     # 根据传入的需求配置文件清单，核对检查是否有新需求配置未更新到概述文件里，并做相应整理，更新概述整理文件
-    async def requirement_version_tidy(project_exists_file, overview_file_path):
+    async def requirement_version_tidy(project_exists_file, overview_file_path) -> bool:
         overviow_data = {}
         if project_exists_file:  # 完整版本为键，值为：{"name":文件名, "v_a":版本号整数部分, "v_b":版本号小数部分}
             project_version_li = [float(s) for s in project_exists_file.keys()]
@@ -1031,8 +1048,10 @@ def main_page():
                         overviow_data = json.load(f)
                 except json.JSONDecodeError:
                     print(f"错误：文件 '{overview_file_path}' 不是有效的 JSON 格式。")
+                    return False
                 except Exception as e:
                     print(f"读取文件时发生其他错误：{e}")
+                    return False
                 overviow_version = float(overviow_data["version"])
                 # 可追加情况
                 if v_max > overviow_version:
@@ -1059,6 +1078,16 @@ def main_page():
                     return True
                 elif v_max == overviow_version:
                     return True
+                else:
+                    ui.notify(
+                        "出现需求配置丢失现象，请联系管理员处理，否则该项目资料将一直无法展示！",
+                        type="warning",
+                        position="center",
+                        timeout=0,
+                        progress=False,
+                        close_button="✖",
+                    )
+                    return False
             # 初次生成概述文件
             else:
                 for pro_ver in project_version_li:
@@ -4148,6 +4177,8 @@ def requirement_page(type="", json_path="", project_name=""):
                 "file_obj": file_thumbnail,
                 "file_information": v,
             }
+        # 添加全局键盘事件跟踪
+        # ignore不设定默认导致键盘事件在'input', 'select', 'button', 'textarea'元素聚焦时被忽略
         ui.keyboard(on_key=handle_key)
         overview_input_frame(json_data)
         # loads_overviews()
