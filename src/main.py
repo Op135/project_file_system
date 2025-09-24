@@ -1412,6 +1412,12 @@ def requirement_page(type="", json_path="", project_name=""):
     app.storage.client.setdefault("buttons_dic", {})
     # 新增一个地方来存放当前页面的关键UI元素
     app.storage.client.setdefault("page_elements", {})
+    # 用于后续保存需求问题项，已选填数目
+    app.storage.client.setdefault("req_activ_num", 0)
+    # 用于后续保存需求问题项，未选填数目
+    app.storage.client.setdefault("req_not_activ_num", 0)
+    # 用于后续保存需求问题项，总数目
+    app.storage.client.setdefault("req_com_num", 0)
 
     # 在全局作用域创建对话框（确保在菜单系统之外）
     # 创建项目名修改对话框
@@ -3070,8 +3076,12 @@ def requirement_page(type="", json_path="", project_name=""):
 
     # 问题列表展示函数
     def set_question_list(index):
+        # 清空已填需求项数目记录
+        app.storage.client["req_activ_num"] = 0
+        # 清空未填需求项数目记录
+        app.storage.client["req_not_activ_num"] = 0
+        # 获取问题表元素
         current_question_table = app.storage.client["page_elements"].get("question_table")
-
         # 清空之前的 UI 元素
         current_question_table.clear()
 
@@ -3139,31 +3149,50 @@ def requirement_page(type="", json_path="", project_name=""):
                         # 不能激活的节点，即使前面曾经激活过并选填过内容，也要清理掉
                         v["user_must_out"] = {}
                         v["option_tolerance_out"] = {}
-                    if len(app.storage.client["buttons_dic"].values()) > index:
-                        ui.run_javascript(
-                            f'document.getElementById("{list(app.storage.client["buttons_dic"].values())[index].html_id}").scrollIntoView({{ behavior: "smooth" }})'
-                        )
-        # 判断是否为最后一道确认项 或 配置文件前期已经录过一遍
-        # if index == len(app.storage.client["buttons_dic"].keys()) or app.storage.client["config_data"]["entry_status"]:
+                # 将当前按钮聚焦到视图中显示
+                if len(app.storage.client["buttons_dic"].values()) > index:
+                    ui.run_javascript(
+                        f'document.getElementById("{list(app.storage.client["buttons_dic"].values())[index].html_id}").scrollIntoView({{ behavior: "smooth" }})'
+                    )
+        # 更新需求问题项总数目
+        app.storage.client["req_com_num"] = len(app.storage.client["buttons_dic"])
+        app.storage.client["page_elements"]["circular_activ"].props["max"] = app.storage.client["req_com_num"]
+        app.storage.client["page_elements"]["circular_not_activ"].props["max"] = app.storage.client["req_com_num"]
+        app.storage.client["page_elements"]["circular_activ"].update()
+        app.storage.client["page_elements"]["circular_not_activ"].update()
         # 只有当所有激活确认项的必填项都非空，才意味着全部填完
         button_activ_li = []
         for b_k in app.storage.client["buttons_dic"].keys():
+            # 必填项存在键值对
             if data[b_k]["user_must_out"]:
+                # 单选类型，必填项的值为空，意味着该项确实有有效选填内容
                 if "单选" in data[b_k]["answer_type"] and data[b_k]["user_must_out"]["value"]:
                     button_activ_li.append(True)
+                    app.storage.client["req_activ_num"] += 1
+                # 多选类型，存在至少一个True，意味着该项确实有有效选填内容
                 elif "多选" in data[b_k]["answer_type"] and any(data[b_k]["user_must_out"].values()):
                     button_activ_li.append(True)
+                    app.storage.client["req_activ_num"] += 1
+                # 文本输入类型，所有必填输入框均非空，意味着该项确实有完整的有效内容
                 elif data[b_k]["answer_type"] in ["正整数", "单行文本", "多行文本"] and all(
                     data[b_k]["user_must_out"].values()
                 ):
                     button_activ_li.append(True)
+                    app.storage.client["req_activ_num"] += 1
+                # 其它情况判断该项没有完成选填
                 else:
+                    app.storage.client["req_not_activ_num"] += 1
                     button_activ_li.append(False)
+            # 连键值对都没有，意味着该项都没有展示过，判定为没有完成选填
             else:
+                app.storage.client["req_not_activ_num"] += 1
                 button_activ_li.append(False)
+
+        # 全部需求项均有有效选填
         if all(button_activ_li):
             # 更改录入状态
             app.storage.client["config_data"]["entry_status"] = True
+        # 否则更新录入状态为False
         else:
             app.storage.client["config_data"]["entry_status"] = False
 
@@ -3253,9 +3282,9 @@ def requirement_page(type="", json_path="", project_name=""):
     # 问题内容展示函数
     def question_display(event, k):
         # 获取当前问题的配置表键
-        index = find_key_position(app.storage.client["buttons_dic"], k)
+        # index = find_key_position(app.storage.client["buttons_dic"], k)
         # 更新问题列表,重复更新是为了让所有按钮恢复应该的禁用状态
-        set_question_list(index)
+        # set_question_list(index)
         # 目标确认项对应的列表按钮更新为可点击状态
         app.storage.client["buttons_dic"][k].classes("bg-amber-1").props(remove="disabled")  # 启用按钮
         # --- 修改开始 ---
@@ -3641,16 +3670,37 @@ def requirement_page(type="", json_path="", project_name=""):
                     ui.menu_item("关闭菜单", menu.close)
             with ui.row().classes("font-sans h-[calc(100vh-9rem)] items-stretch flex-nowrap w-full text-black"):
                 with ui.column().classes("w-1/4 min-w-[400px] items-center justify-start overflow-y-auto"):
-                    ui.label("确认项清单").classes("text-xl")
+                    with ui.row().classes("-space-x-2 items-center justify-center w-full"):
+                        ui.label("确认项清单").classes("text-xl")
+                        circular_activ = (
+                            ui.circular_progress(size="md", color="green")
+                            .bind_value_from(app.storage.client, "req_activ_num")
+                            .props("rounded")
+                            .classes("")
+                        )
+                        with circular_activ:
+                            ui.tooltip("已选填")
+                        circular_not_activ = (
+                            ui.circular_progress(size="md", color="orange")
+                            .bind_value_from(app.storage.client, "req_not_activ_num")
+                            .props("rounded")
+                            .classes("")
+                        )
+                        with circular_not_activ:
+                            ui.tooltip("剩余未选填")
+                        app.storage.client["page_elements"]["circular_activ"] = circular_activ
+                        app.storage.client["page_elements"]["circular_not_activ"] = circular_not_activ
+
                     question_table = ui.column().classes("w-full items-center overflow-y-auto -space-y-3")
                     with question_table:
                         # 将新创建的 question_table 实例存入 user storage
                         app.storage.client["page_elements"]["question_table"] = question_table
                         # 初始化一次确认项列表
                         set_question_list(0)
+
                 ui.separator().props("vertical")
                 with ui.column().classes("w-3/4 min-w-[700px] items-center"):
-                    with ui.row().classes("-space-x-2 items-center"):
+                    with ui.row().classes("-space-x-2 items-center justify-center w-full"):
                         project_button = (
                             ui.button("", on_click=lambda: get_project_dialog())
                             .props("flat")
@@ -4247,14 +4297,14 @@ def requirement_page(type="", json_path="", project_name=""):
                 "file_obj": file_thumbnail,
                 "file_information": v,
             }
-        # 添加全局键盘事件跟踪
-        # ignore不设定默认导致键盘事件在'input', 'select', 'button', 'textarea'元素聚焦时被忽略
-        ui.keyboard(on_key=handle_key)
         overview_input_frame(json_data)
         # loads_overviews()
     else:
         # header = ui.header().classes("flex justify-between items-center bg-blue-500 h-12 px-4")
         requirement_input_frame()
+    # 添加全局键盘事件跟踪
+    # ignore不设定默认导致键盘事件在'input', 'select', 'button', 'textarea'元素聚焦时被忽略
+    ui.keyboard(on_key=handle_key)
 
 
 # ======================
