@@ -33,6 +33,7 @@ users_data = user_service.load_users()
 # 获取最新配置文件，待用
 config_service = ConfigService()
 init_config_data = config_service.load_config()
+
 # 文件夹路径设定
 BASE_DIR = Path(__file__).parent.parent  # 项目根目录
 IMG_DIR = f"{BASE_DIR}/img"
@@ -49,9 +50,9 @@ GENERAL_PATH = f"{BASE_DIR}/storage_general.json"
 UPLOAD_URL_DIR = "/uploads"
 FILES_URL_DIR = "/files"
 
-
 ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "pdf"}
 MAX_FILE_SIZE = 20 * 1024 * 1024  # 20MB
+
 
 # 存储服务器层级 概述数据 的变量初始化
 app.storage.general.setdefault("overview_data", {})
@@ -801,31 +802,34 @@ def login_page():
     username_input.on("blur", check_initial_password)  # 失去焦点时检测
 
 
-@ui.page("/manage")
-def manage_page():
-    # 管理员管理界面
-    if app.storage.user.get("current_user") != "admin":
-        ui.navigate.to("/main")  # 如果不是管理员，跳转到主界面
-        return
-    with ui.header().classes("flex justify-between items-center bg-blue-500 h-12 px-4"):
-        ui.image(f"{IMG_DIR}/Rayfine.png").classes("absolute w-20")
-        ui.label("系统管理员界面").classes("text-white text-lg absolute left-1/2 transform -translate-x-1/2")
-        with ui.button(icon="menu").props("flat round").classes("ml-auto -mt-3.5 h-4 text-sm/4 text-white"):  # 右侧对齐
-            with ui.menu() as menu:
-                ui.menu_item("注销登录", on_click=lambda: logout())
-                ui.menu_item("返回主界面", on_click=lambda: ui.navigate.to("/main"))
-                ui.separator()
-                ui.menu_item("关闭菜单", menu.close)
-    with ui.column().classes("w-full h-[90vh] -space-y-2"):
-        ui.button("更新需求配置文件", on_click=lambda: update_config_service()).props("").classes("")
-        ui.button("更新用户配置数据", on_click=lambda: update_users_data()).props("").classes("")
-
-
 # ======================
 # 主界面路由
 # ======================
 @ui.page("/main")
 def main_page():
+    # 检查用户是否已登录
+    # {'current_user': '用户名', 'is_admin': False}
+    if not app.storage.user.get("current_user"):
+        ui.navigate.to("/login")  # 如果未登录，跳转到登录页
+        return
+    # 项目信息表
+    with ui.header().classes("flex justify-between items-center bg-blue-500 h-12 px-4"):
+        ui.image(f"{IMG_DIR}/Rayfine.png").classes("absolute w-20")
+        ui.label("百炼光研发管理系统").classes(
+            "text-white text-lg absolute left-1/2 transform -translate-x-1/2"
+        )  # 绝对定位居中
+        with ui.button(icon="menu").props("flat round").classes("ml-auto -mt-3.5 h-4 text-sm/4 text-white"):  # 右侧对齐
+            with ui.menu() as menu:
+                ui.menu_item("注销登录", on_click=lambda: logout())
+                if app.storage.user.get("current_user") == "admin":
+                    ui.menu_item("系统管理", on_click=lambda: ui.navigate.to("/manage"))
+                ui.separator()
+                ui.menu_item("关闭菜单", menu.close)
+    ui.button(icon="menu", text="项目信息", on_click=lambda: ui.navigate.to("/project_table"))
+
+
+@ui.page("/project_table")
+def project_table_page():
     # 向页面的 <head> 部分添加自定义的 HTML 代码。这通常用于添加自定义的 CSS 样式、JavaScript 代码或元数据（如 <meta> 标签）
     ui.add_head_html("""
         <style>
@@ -1324,17 +1328,16 @@ def main_page():
     select_dic = get_select_dic(select_li)
     select_major_li = list(select_dic.keys())
 
-    # 主界面内容
+    # 项目信息表
     with ui.header().classes("flex justify-between items-center bg-blue-500 h-12 px-4"):
         ui.image(f"{IMG_DIR}/Rayfine.png").classes("absolute w-20")
-        ui.label("项目管理系统").classes(
+        ui.label("项目信息表").classes(
             "text-white text-lg absolute left-1/2 transform -translate-x-1/2"
         )  # 绝对定位居中
         with ui.button(icon="menu").props("flat round").classes("ml-auto -mt-3.5 h-4 text-sm/4 text-white"):  # 右侧对齐
             with ui.menu() as menu:
                 ui.menu_item("注销登录", on_click=lambda: logout())
-                if app.storage.user.get("current_user") == "admin":
-                    ui.menu_item("系统管理", on_click=lambda: ui.navigate.to("/manage"))
+                ui.menu_item("返回主界面", on_click=lambda: ui.navigate.to("/main"))
                 ui.separator()
                 ui.menu_item("关闭菜单", menu.close)
     with ui.column().classes("w-full h-[88vh] -space-y-2"):
@@ -1368,6 +1371,26 @@ def main_page():
         select_sub.on_value_change(lambda aggrid=aggrid: update_aggrid(aggrid))
         aggrid.on("cellClicked", lambda e, aggrid=aggrid: handle_cell_click(e, aggrid))
         update_aggrid(aggrid)
+
+
+@ui.page("/manage")
+def manage_page():
+    # 管理员管理界面
+    if app.storage.user.get("current_user") != "admin":
+        ui.navigate.to("/main")  # 如果不是管理员，跳转到主界面
+        return
+    with ui.header().classes("flex justify-between items-center bg-blue-500 h-12 px-4"):
+        ui.image(f"{IMG_DIR}/Rayfine.png").classes("absolute w-20")
+        ui.label("系统管理员界面").classes("text-white text-lg absolute left-1/2 transform -translate-x-1/2")
+        with ui.button(icon="menu").props("flat round").classes("ml-auto -mt-3.5 h-4 text-sm/4 text-white"):  # 右侧对齐
+            with ui.menu() as menu:
+                ui.menu_item("注销登录", on_click=lambda: logout())
+                ui.menu_item("返回主界面", on_click=lambda: ui.navigate.to("/main"))
+                ui.separator()
+                ui.menu_item("关闭菜单", menu.close)
+    with ui.column().classes("w-full h-[90vh] -space-y-2"):
+        ui.button("更新需求配置文件", on_click=lambda: update_config_service()).props("").classes("")
+        ui.button("更新用户配置数据", on_click=lambda: update_users_data()).props("").classes("")
 
 
 # ======================
@@ -3282,9 +3305,9 @@ def requirement_page(type="", json_path="", project_name=""):
     # 问题内容展示函数
     def question_display(event, k):
         # 获取当前问题的配置表键
-        # index = find_key_position(app.storage.client["buttons_dic"], k)
+        index = find_key_position(app.storage.client["buttons_dic"], k)
         # 更新问题列表,重复更新是为了让所有按钮恢复应该的禁用状态
-        # set_question_list(index)
+        set_question_list(index)
         # 目标确认项对应的列表按钮更新为可点击状态
         app.storage.client["buttons_dic"][k].classes("bg-amber-1").props(remove="disabled")  # 启用按钮
         # --- 修改开始 ---
@@ -3653,6 +3676,7 @@ def requirement_page(type="", json_path="", project_name=""):
             ):  # 右侧对齐
                 with ui.menu().props("auto-close") as menu:
                     ui.menu_item("返回主界面", on_click=lambda: ui.navigate.to("/main"))
+                    ui.menu_item("返回项目信息表", on_click=lambda: ui.navigate.to("/project_table"))
                     ui.menu_item("注销登录", on_click=lambda: logout())
                     ui.separator()
                     ui.menu_item("新建需求", on_click=lambda: get_project_dialog("new"))
@@ -3671,7 +3695,9 @@ def requirement_page(type="", json_path="", project_name=""):
             with ui.row().classes("font-sans h-[calc(100vh-9rem)] items-stretch flex-nowrap w-full text-black"):
                 with ui.column().classes("w-1/4 min-w-[400px] items-center justify-start overflow-y-auto"):
                     with ui.row().classes("-space-x-2 items-center justify-center w-full"):
+                        ui.space()
                         ui.label("确认项清单").classes("text-xl")
+                        ui.space()
                         circular_activ = (
                             ui.circular_progress(size="md", color="green")
                             .bind_value_from(app.storage.client, "req_activ_num")
@@ -3687,7 +3713,7 @@ def requirement_page(type="", json_path="", project_name=""):
                             .classes("")
                         )
                         with circular_not_activ:
-                            ui.tooltip("剩余未选填")
+                            ui.tooltip("未选填")
                         app.storage.client["page_elements"]["circular_activ"] = circular_activ
                         app.storage.client["page_elements"]["circular_not_activ"] = circular_not_activ
 
@@ -3871,6 +3897,7 @@ def requirement_page(type="", json_path="", project_name=""):
             ):  # 右侧对齐
                 with ui.menu().props("auto-close") as menu:
                     ui.menu_item("返回主界面", on_click=lambda: ui.navigate.to("/main"))
+                    ui.menu_item("返回项目信息表", on_click=lambda: ui.navigate.to("/project_table"))
                     ui.menu_item("注销登录", on_click=lambda: logout())
                     ui.separator()
 
