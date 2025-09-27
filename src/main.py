@@ -41,17 +41,17 @@ UPLOADS_DIR = f"{BASE_DIR}/uploads"
 SUBMIT_FILES_DIR = Path(f"{BASE_DIR}/files")
 REQ_DIR = f"{BASE_DIR}/req"
 OVER_DIR = f"{BASE_DIR}/over"
+os.makedirs(IMG_DIR, exist_ok=True)
 os.makedirs(UPLOADS_DIR, exist_ok=True)
 os.makedirs(SUBMIT_FILES_DIR, exist_ok=True)
 os.makedirs(REQ_DIR, exist_ok=True)
-# 持久化app.storage.general里数据的文件路径
-GENERAL_PATH = f"{BASE_DIR}/storage_general.json"
+os.makedirs(OVER_DIR, exist_ok=True)
 # URL路径设定
 UPLOAD_URL_DIR = "/uploads"
 FILES_URL_DIR = "/files"
 
-ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "pdf"}
-MAX_FILE_SIZE = 20 * 1024 * 1024  # 20MB
+# ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "pdf"}
+# MAX_FILE_SIZE = 20 * 1024 * 1024
 
 
 # 存储服务器层级 概述数据 的变量初始化
@@ -4340,6 +4340,9 @@ def requirement_page(type="", json_path="", project_name=""):
 if __name__ in {"__main__", "__mp_main__"}:
     ui.run(
         title="项目文件管理系统",
+        # host='0.0.0.0' 允许来自局域网的任何IP访问
+        host="0.0.0.0",
+        # port=8080 是您选择的端口，可以自定义
         port=8080,
         storage_secret="YOUR_RANDOM_SECRET_KEY",  # 添加存储密钥
     )

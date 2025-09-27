@@ -1,0 +1,21 @@
+# Git
+.git
+.gitignore
+
+# VSCode
+.vscode/
+
+# NiceGUI 本地存储
+.nicegui/
+
+# Python 缓存
+__pycache__/
+*.pyc
+
+# Podman/Docker 桌面
+.DS_Store
+
+# 不希望包含在镜像中的数据目录
+# files/
+# over/
+# req/

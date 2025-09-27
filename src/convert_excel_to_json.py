@@ -53,10 +53,10 @@ def convert_excel_to_json(excel_path, json_path, sheet_name=0):
 # --- 使用方法 ---
 if __name__ == "__main__":
     # 1. 设置您的 Excel 文件路径
-    excel_file_path = "project_summary.xlsx"  # <--- 修改这里
+    excel_file_path = "./project_summary.xlsx"  # <--- 修改这里
 
     # 2. 设置您希望生成的 JSON 文件路径
-    json_file_path = "project_summary.json"  # <--- 修改这里
+    json_file_path = "./project_summary.json"  # <--- 修改这里
 
     # (可选) 如果您的数据不在第一个工作表，可以修改 sheet_name
     # sheet_to_process = 'Sheet1'
