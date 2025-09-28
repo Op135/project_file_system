@@ -47,3 +47,12 @@
     pip freeze > requirements.txt
     # 在服务器上，确保虚拟环境已激活，安装项目依赖
     pip install -r requirements.txt
+
+
+    # 导出一个包含所有包列表的 yml 文件
+    conda env export > environment.yml
+    # 根据文件创建一个全新的环境
+    conda env create -f environment.yml
+    # 在已激活的环境中，安装/更新文件里列出的包
+    # --prune：一个非常有用的选项，它会自动删除当前环境中存在、但在 environment.yml 文件中未列出的包，确保环境的干净和一致
+    conda env update --file environment.yml --prune

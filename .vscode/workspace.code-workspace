@@ -10,7 +10,9 @@
 		"python.defaultInterpreterPath": "D:\\miniforge3\\envs\\python_nicegui\\python.exe",
 		"python.terminal.activateEnvironment": true, // 启用自动环境激活（需配合 Conda 初始化）
 		"python.analysis.diagnosticMode": "workspace", // 禁止扩展自动扫描其他解释器（避免干扰）
-		"code-runner.fileDirectoryAsCwd": true, // 将文件所在目录设置为终端的工作目录
+		// "code-runner.fileDirectoryAsCwd": true, // 将文件所在目录设置为终端的工作目录
+		// 设置工作目录
+		"code-runner.cwd": "${workspaceFolder}", // 设置代码运行器的工作目录为:${workspaceFolder}工作目录 或 ${fileDirname}当前文件所在的目录
 		// 如果需要集成 Bash 终端（例如 Git Bash），可以配置以下内容
 		"terminal.integrated.defaultProfile.windows": "Windows PowerShell", // 设置默认终端为 Windows PowerShell
 		"terminal.integrated.profiles.windows": {
@@ -101,8 +103,6 @@
 			"jupyter-notebook": "left" // 对于 Jupyter Notebook，单元格工具栏位于左侧
 		},
 		"workbench.colorTheme": "Monokai-lgy", // 设置工作区的主题为 Monokai-lgy
-		// 设置工作目录
-		"code-runner.cwd": "${fileDirname}", // 设置代码运行器的工作目录为当前文件所在的目录
 		// 配置语言的文件关联 (如: `"*.extension": "html"`)。这些关联的优先级高于已安装语言的默认关联。
 		"files.associations": {}, // 文件关联配置，这里为空
 		// 分配给新文件的默认语言模式。

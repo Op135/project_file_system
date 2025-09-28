@@ -36,7 +36,7 @@
             "request": "launch",
             "program": "${file}",
             "console": "integratedTerminal",
-            "cwd": "${fileDirname}",
+            "cwd": "${workspaceFolder}", // ${fileDirname}
             "justMyCode": true, // 只调试自己的代码，不调试第三方包的代码
             // 使用集成终端调试当前文件
         },
@@ -46,7 +46,7 @@
             "request": "launch",
             "program": "${file}",
             "console": "externalTerminal",
-            "cwd": "${fileDirname}",
+            "cwd": "${workspaceFolder}",
             // 使用外部终端调试当前文件
         },
         {

@@ -27,6 +27,10 @@ from user_service import UserService
 # 这样可以精确地屏蔽掉这个警告，而不影响其他库的警告
 warnings.filterwarnings("ignore", category=UserWarning, module="openpyxl")
 
+# 从环境变量中读取密钥。如果找不到，则使用一个仅供本地开发的默认值。
+# 在生产环境中，必须设置环境变量，否则会使用不安全的默认值。
+ST = os.environ.get("STORAGE_SECRET", "this_is_not_a_secret_for_development_only")
+
 # 初始化配置服务
 user_service = UserService()
 users_data = user_service.load_users()
@@ -812,6 +816,16 @@ def main_page():
     if not app.storage.user.get("current_user"):
         ui.navigate.to("/login")  # 如果未登录，跳转到登录页
         return
+
+    # 定义导航项目
+    # 格式：(图标, 标题, 描述, 目标路径)
+    menu_items = [
+        ("analytics", "项目信息", "查看项目简要信息", "/project_table"),
+        ("inventory_2", "库存管理", "管理您的产品库存和流转", "/inventory"),
+        ("settings", "系统设置", "配置应用程序的核心参数", "/settings"),
+        ("people", "用户中心", "管理用户账户与权限", "/profile"),
+    ]
+
     # 项目信息表
     with ui.header().classes("flex justify-between items-center bg-blue-500 h-12 px-4"):
         ui.image(f"{IMG_DIR}/Rayfine.png").classes("absolute w-20")
@@ -825,7 +839,27 @@ def main_page():
                     ui.menu_item("系统管理", on_click=lambda: ui.navigate.to("/manage"))
                 ui.separator()
                 ui.menu_item("关闭菜单", menu.close)
-    ui.button(icon="menu", text="项目信息", on_click=lambda: ui.navigate.to("/project_table"))
+
+    # 使用 ui.grid 创建一个响应式的网格布局
+    # a-classes: 应用于所有子元素的通用样式
+    # b-classes: 应用于特定子元素的样式 (这里没用，但可以写 b-col-6 c-col-4 等)
+    with ui.grid(columns=4).classes("w-full gap-4"):
+        for icon, title, subtitle, target in menu_items:
+            # 每个功能模块都用一个 ui.card 包裹
+            with ui.card().classes(
+                "flex flex-col items-center justify-center cursor-pointer "
+                "hover:shadow-xl hover:-translate-y-1 transition-all duration-300 ease-in-out"
+            ) as card:
+                # 设置点击事件，导航到指定页面
+                # 当点击发生时，GenericEventArguments 对象被赋值给 _ 因为我们不需要处理这个点击事件对象，所以不关心它
+                card.on("click", lambda _, t=target: ui.navigate.to(t))
+
+                # 大图标
+                ui.icon(icon).classes("text-5xl text-blue-500 mb-4")
+                # 模块标题
+                ui.label(title).classes("text-xl font-semibold")
+                # 模块描述
+                ui.label(subtitle).classes("text-center text-gray-500 text-sm mt-1")
 
 
 @ui.page("/project_table")
@@ -4344,7 +4378,7 @@ if __name__ in {"__main__", "__mp_main__"}:
         host="0.0.0.0",
         # port=8080 是您选择的端口，可以自定义
         port=8080,
-        # storage_secret="YOUR_RANDOM_SECRET_KEY",  # 添加存储密钥
+        storage_secret=ST,  # 添加存储密钥
         dark=False,
         # 在生产环境中，必须禁用热重载功能，以获得更好的性能和稳定性
         reload=False,
