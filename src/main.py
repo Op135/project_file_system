@@ -4344,5 +4344,8 @@ if __name__ in {"__main__", "__mp_main__"}:
         host="0.0.0.0",
         # port=8080 是您选择的端口，可以自定义
         port=8080,
-        storage_secret="YOUR_RANDOM_SECRET_KEY",  # 添加存储密钥
+        # storage_secret="YOUR_RANDOM_SECRET_KEY",  # 添加存储密钥
+        dark=False,
+        # 在生产环境中，必须禁用热重载功能，以获得更好的性能和稳定性
+        reload=False,
     )
