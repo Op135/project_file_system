@@ -820,10 +820,10 @@ def main_page():
     # 定义导航项目
     # 格式：(图标, 标题, 描述, 目标路径)
     menu_items = [
-        ("analytics", "项目信息", "查看项目简要信息", "/project_table"),
-        ("inventory_2", "库存管理", "管理您的产品库存和流转", "/inventory"),
-        ("settings", "系统设置", "配置应用程序的核心参数", "/settings"),
-        ("people", "用户中心", "管理用户账户与权限", "/profile"),
+        ("assignment", "正式项目信息", "录入与查看正式项目信息", "/project_table"),
+        ("history_edu", "临时项目信息", "录入与查看临时项目信息", "/main"),
+        ("manage_accounts", "配置管理", "修改系统配置", "/main"),
+        ("insert_chart", "XX", "XX", "/main"),
     ]
 
     # 项目信息表
@@ -843,23 +843,24 @@ def main_page():
     # 使用 ui.grid 创建一个响应式的网格布局
     # a-classes: 应用于所有子元素的通用样式
     # b-classes: 应用于特定子元素的样式 (这里没用，但可以写 b-col-6 c-col-4 等)
-    with ui.grid(columns=4).classes("w-full gap-4"):
-        for icon, title, subtitle, target in menu_items:
-            # 每个功能模块都用一个 ui.card 包裹
-            with ui.card().classes(
-                "flex flex-col items-center justify-center cursor-pointer "
-                "hover:shadow-xl hover:-translate-y-1 transition-all duration-300 ease-in-out"
-            ) as card:
-                # 设置点击事件，导航到指定页面
-                # 当点击发生时，GenericEventArguments 对象被赋值给 _ 因为我们不需要处理这个点击事件对象，所以不关心它
-                card.on("click", lambda _, t=target: ui.navigate.to(t))
+    with ui.column().classes("w-full h-[calc(100vh-5rem)] items-center justify-center"):
+        with ui.grid(columns=2).classes("w-[calc(70vw)] gap-4 h-[calc(70vh)]"):
+            for icon, title, subtitle, target in menu_items:
+                # 每个功能模块都用一个 ui.card 包裹
+                with ui.card().classes(
+                    "flex flex-col items-center justify-center cursor-pointer "
+                    "hover:shadow-xl hover:-translate-y-1 transition-all duration-300 ease-in-out"
+                ) as card:
+                    # 设置点击事件，导航到指定页面
+                    # 当点击发生时，GenericEventArguments 对象被赋值给 _ 因为我们不需要处理这个点击事件对象，所以不关心它
+                    card.on("click", lambda _, t=target: ui.navigate.to(t))
 
-                # 大图标
-                ui.icon(icon).classes("text-5xl text-blue-500 mb-4")
-                # 模块标题
-                ui.label(title).classes("text-xl font-semibold")
-                # 模块描述
-                ui.label(subtitle).classes("text-center text-gray-500 text-sm mt-1")
+                    # 大图标
+                    ui.icon(icon).classes("text-5xl text-blue-500 mb-4")
+                    # 模块标题
+                    ui.label(title).classes("text-xl font-semibold")
+                    # 模块描述
+                    ui.label(subtitle).classes("text-center text-gray-500 text-sm mt-1")
 
 
 @ui.page("/project_table")
@@ -4381,5 +4382,6 @@ if __name__ in {"__main__", "__mp_main__"}:
         storage_secret=ST,  # 添加存储密钥
         dark=False,
         # 在生产环境中，必须禁用热重载功能，以获得更好的性能和稳定性
-        reload=False,
+        # False 不自动重载，True自动重载
+        reload=True,
     )

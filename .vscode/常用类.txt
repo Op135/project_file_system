@@ -59,6 +59,24 @@ text-justify # text-align: justify;
 space-y-0
 -space-y-2
 # 设置子元素间距，0还是有默认间距，可设置负值
+#分类	        单位	名称	        描述
+#绝对单位	px	像素 (Pixel)	屏幕上的一个“点”，但更准确地说是参考像素，大小固定。
+#                pt	点 (Point)	主要用于印刷，1pt = 1/72英寸。
+#             cm,mm,in	厘米,毫米,英寸	物理单位，主要用于印刷。
+
+#相对单位	%	百分比	        相对于父元素的同一属性的值。
+#(字体)	        rem	Root em	        相对于根元素 (<html>) 的 font-size。（非常常用）
+#                em	em	        相对于元素自身的 font-size；若未设置，则相对于父元素。
+#                ch	字符 "0" 宽度	相对于当前字体中数字“0”的宽度。
+#                ex	x-height	相对于当前字体中小写字母“x”的高度。
+
+#(视口)	        vw	视口宽度	1vw = 1% 的视口宽度。（非常常用）
+#                vh	视口高度	1vh = 1% 的视口高度。
+#                vmin	视口最小值	vw 和 vh 中较小的那一个值。
+#                vmax	视口最大值	vw 和 vh 中较大的那一个值。
+#             svw, svh	最小视口宽高	考虑了浏览器UI（如地址栏）的最小视口尺寸。
+#             lvw, lvh	最大视口宽高	忽略浏览器UI的最大视口尺寸。
+#             dvw, dvh	动态视口宽高	随浏览器UI显隐而动态改变的视口尺寸。
 
 # 控制元素内边距
 p-1	# padding: 0.25rem; /* 4px */
@@ -74,7 +92,7 @@ pb-1	# padding-bottom: 0.25rem; /* 4px */
 pl-1	# padding-left: 0.25rem; /* 4px */
 
 
-
+h-[calc(100vh-5rem)]
 h-screen
 # 用于将元素的高度设置为视口（viewport）的完整高度，等价于 CSS 中的 height: 100vh
 h-fit

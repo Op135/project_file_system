@@ -14,8 +14,13 @@
     ],
     // 设置Python终端在文件目录中执行
     "python.terminal.executeInFileDir": true,
+    /*Code Runner 扩展的配置是在 settings.json 文件中完成的*/
     // 设置代码运行器的工作目录为当前文件所在的目录
-    "code-runner.fileDirectoryAsCwd": true,
+    // 一个布尔值，如果为 true，它会覆盖 code-runner.cwd 的设置
+    // 并将工作目录强制设置为当前正在运行的文件的所在目录。默认值通常是 true，这也是导致混淆的主要原因
+    "code-runner.fileDirectoryAsCwd": false,
+    // 设置工作目录
+    "code-runner.cwd": "${workspaceFolder}", // 设置代码运行器的工作目录为:${workspaceFolder}工作目录 或 ${fileDirname}当前文件所在的目录
     // 设置代码运行器在终端中运行代码
     "code-runner.runInTerminal": true,
     // 设置编辑器的标尺，当代码行数超过150时会显示标尺

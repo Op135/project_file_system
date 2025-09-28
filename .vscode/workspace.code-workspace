@@ -1,4 +1,24 @@
 {
+	//${userHome}	用户主文件夹路径
+	//${workspaceFolder}	在vscode中打开的文件夹路径
+	//${workspaceFolderBasename}	VS Code 中打开的文件夹名称，不含斜杠（/）
+	//${file}	当前打开的文件
+	//${fileWorkspaceFolder}	当前打开文件的工作区文件夹
+	//${relativeFile}	当前打开的文件相对于工作区文件夹的位置
+	//${relativeFileDirname}	当前打开文件相对于工作区文件夹的目录名
+	//${fileBasename}	当前打开文件的基名
+	//${fileBasenameNoExtension}	当前打开文件的无扩展名基名
+	//${fileExtname}	当前打开文件的扩展名
+	//${fileDirname}	当前打开文件的文件夹路径
+	//${fileDirnameBasename}	当前打开文件的文件夹名称
+	//${cwd}	VS Code启动时任务运行器的当前工作目录
+	//${lineNumber}	当前活动文件中选定的行号
+	//${columnNumber}	当前活动文件中选定的列号
+	//${selectedText}	当前活动文件中选定的文本
+	//${execPath}	运行中的VS Code可执行文件路径
+	//${defaultBuildTask}	默认构建任务的名称
+	//${pathSeparator}	操作系统用于分隔文件路径中各组件的字符
+	//${/}	${pathSeparator}的简写
 	// 设置使用此工作区设置文档的文件夹地址
 	"folders": [
 		{
@@ -10,9 +30,6 @@
 		"python.defaultInterpreterPath": "D:\\miniforge3\\envs\\python_nicegui\\python.exe",
 		"python.terminal.activateEnvironment": true, // 启用自动环境激活（需配合 Conda 初始化）
 		"python.analysis.diagnosticMode": "workspace", // 禁止扩展自动扫描其他解释器（避免干扰）
-		// "code-runner.fileDirectoryAsCwd": true, // 将文件所在目录设置为终端的工作目录
-		// 设置工作目录
-		"code-runner.cwd": "${workspaceFolder}", // 设置代码运行器的工作目录为:${workspaceFolder}工作目录 或 ${fileDirname}当前文件所在的目录
 		// 如果需要集成 Bash 终端（例如 Git Bash），可以配置以下内容
 		"terminal.integrated.defaultProfile.windows": "Windows PowerShell", // 设置默认终端为 Windows PowerShell
 		"terminal.integrated.profiles.windows": {
@@ -93,7 +110,6 @@
 		"files.autoGuessEncoding": true, // 自动猜测文件编码
 		"files.encoding": "utf8", // 设置文件编码为 UTF-8
 		"vsicons.dontShowNewVersionMessage": true, // 不显示 vsicons 的新版本消息
-		"code-runner.runInTerminal": true, // 在终端中运行代码
 		"workbench.startupEditor": "terminal", // 在没有从上一会话中恢复出信息的情况下，控制启动时显示的编辑器
 		"workbench.editorAssociations": {
 			"*.ipynb": "jupyter-notebook" // 将 .ipynb 文件关联到 Jupyter Notebook 编辑器
