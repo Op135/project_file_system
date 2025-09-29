@@ -2220,6 +2220,7 @@ def requirement_page(type="", json_path="", project_name=""):
             self.last_pos = (0, 0)
             self.image_x = 0.0
             self.image_y = 0.0
+            # self.select_ver = {"value": None}
             self.chip_dialog = ui.dialog().props("h-screen w-full")
             self.notes_dialog = ui.dialog().props("h-screen w-full")
             # self.image_show = {"image_show": True}
@@ -2337,7 +2338,17 @@ def requirement_page(type="", json_path="", project_name=""):
             self.offset = (0, 0)
             self.update_transform()
 
-        # <---------------------------------------------------------------->
+        # <----------------------------------------------------------------
+        # 辅助函数，利用传入的项目最大版本值，生成多选项字典用于存入chip数据里
+        def _get_select_activ_dic(self, req_max_ver):
+            select_dic = {}
+            for select_label in [f"{i}.0" for i in range(1, int(float(req_max_ver)) + 1)]:
+                if select_label == req_max_ver:
+                    select_dic[select_label] = True
+                else:
+                    select_dic[select_label] = False
+            return select_dic
+
         # 当用户点击“添加”按钮时，将文本数据添加到共享存储中
         def _add_text_chip_data(self):
             text = self.chip_label.value
@@ -2374,6 +2385,7 @@ def requirement_page(type="", json_path="", project_name=""):
             else:
                 # 准备要存储的 chip 数据
                 chip_id = str(uuid.uuid4())
+                req_max_ver = app.storage.general["project_req_max_ver"][self.project]
                 chip_data = {
                     "id": chip_id,  # 使用UUID确保每个chip都有一个唯一的ID
                     "icon": None,
@@ -2385,7 +2397,8 @@ def requirement_page(type="", json_path="", project_name=""):
                     "notes": notes,
                     "creator": app.storage.user.get("current_user", "匿名用户"),
                     "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    "req_ver": app.storage.general["project_req_max_ver"][self.project],
+                    "req_ver": req_max_ver,
+                    "select_activ_dic": self._get_select_activ_dic(req_max_ver),
                 }
 
                 # 将新数据追加到 app.storage.general 的列表中
@@ -2436,6 +2449,7 @@ def requirement_page(type="", json_path="", project_name=""):
                     # 文件类型才将icon设置为引用小图，图片类不设置
                     file_icon = "attach_file"
                 chip_id = str(uuid.uuid4())
+                req_max_ver = app.storage.general["project_req_max_ver"][self.project]
                 # 生成文件或图片的chip_data
                 chip_data = {
                     "id": chip_id,
@@ -2449,7 +2463,8 @@ def requirement_page(type="", json_path="", project_name=""):
                     "notes": self.chip_notes.value,
                     "creator": app.storage.user.get("current_user", "匿名用户"),
                     "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    "req_ver": app.storage.general["project_req_max_ver"][self.project],
+                    "req_ver": req_max_ver,
+                    "select_activ_dic": self._get_select_activ_dic(req_max_ver),
                 }
                 self.chip_notes.value = ""
                 self.chip_dialog.close()
@@ -2472,6 +2487,7 @@ def requirement_page(type="", json_path="", project_name=""):
                 # 文件类型才将icon设置为引用小图，图片类不设置
                 file_icon = "attach_file"
             chip_id = str(uuid.uuid4())
+            req_max_ver = app.storage.general["project_req_max_ver"][self.project]
             # 生成文件或图片的chip_data
             chip_data = {
                 "id": chip_id,
@@ -2485,7 +2501,8 @@ def requirement_page(type="", json_path="", project_name=""):
                 "notes": self.chip_notes.value,
                 "creator": app.storage.user.get("current_user", "匿名用户"),
                 "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "req_ver": app.storage.general["project_req_max_ver"][self.project],
+                "req_ver": req_max_ver,
+                "select_activ_dic": self._get_select_activ_dic(req_max_ver),
             }
             self.chip_notes.value = ""
             self.chip_dialog.close()
@@ -2500,7 +2517,7 @@ def requirement_page(type="", json_path="", project_name=""):
                 close_button="✖",
             )
 
-        # <----------------------------------------------------------------->
+        # ----------------------------------------------------------------->
 
         # 询问重复提交文件是否按服务器现有文件显示
         def _select_file_show(self, filepath, original_filename):
@@ -2581,6 +2598,43 @@ def requirement_page(type="", json_path="", project_name=""):
             ui.run_javascript(js_code)
             ui.notify("内容已复制到剪贴板！", type="positive", position="top")
 
+        # <-----------------------------------------------------------------
+        # 设置chip的激活状态
+        def _set_chip_activ(self, chip_id):
+            req_max_ver = app.storage.general["project_req_max_ver"][self.project]
+            if app.storage.general["overview_data"][self.project][self.label][chip_id]["select_activ_dic"][req_max_ver]:
+                # 激活chip
+                app.storage.general["overview_data"][self.project][self.label][chip_id]["enabled"] = True
+                app.storage.general["overview_data"][self.project][self.label][chip_id]["icon"] = None
+                app.storage.general["overview_data"][self.project][self.label][chip_id]["bg_color"] = "bg-light-blue-1"
+            else:
+                # 失活chip
+                app.storage.general["overview_data"][self.project][self.label][chip_id]["enabled"] = False
+                app.storage.general["overview_data"][self.project][self.label][chip_id]["icon"] = "block"
+                app.storage.general["overview_data"][self.project][self.label][chip_id]["bg_color"] = "bg-grey-5"
+            # 刷新chip容器内容
+            self._refresh_chip_container()
+
+        # 创建用于让用户选择chip激活范围的弹窗
+        def _select_activ_dialog(self, chip_id):
+            self.chip_dialog.clear()
+            with self.chip_dialog, ui.card().classes("w-1/2"):
+                ui.label("选择概述生效的需求版本").classes("text-lg font-bold")
+                chip_select_dic = app.storage.general["overview_data"][self.project][self.label][chip_id].get(
+                    "select_activ_dic", {}
+                )
+                with ui.grid(columns=6).classes("w-full gap-0"):
+                    for select_label, val in chip_select_dic.items():
+                        ui.checkbox(text=select_label, value=val).bind_value(
+                            app.storage.general["overview_data"][self.project][self.label][chip_id]["select_activ_dic"],
+                            select_label,
+                        )
+                with ui.row().classes("w-full justify-end"):
+                    ui.label("注意以上改动是即时生效的").classes("text-lg font-bold")
+                    ui.button("关闭", on_click=lambda: self._set_chip_activ(chip_id)).on(
+                        "click", lambda: self.chip_dialog.close()
+                    )
+
         # 删除或修改chip在app.storage.general对应的数据
         def delete_chip_info(self, chip):
             # 如果用户具有编辑权限
@@ -2589,35 +2643,9 @@ def requirement_page(type="", json_path="", project_name=""):
                     del app.storage.general["overview_data"][self.project][self.label][chip.props["data-chip-id"]]
                 elif app.storage.user["current_user"] != "admin":
                     # app.storage.general["overview_data"][self.project][self.label][chip.props["data-chip-id"]]["removable"] = False
-                    if (
-                        app.storage.general["overview_data"][self.project][self.label][chip.props["data-chip-id"]][
-                            "icon"
-                        ]
-                        == "block"
-                    ):
-                        # 激活chip
-                        app.storage.general["overview_data"][self.project][self.label][chip.props["data-chip-id"]][
-                            "enabled"
-                        ] = True
-                        app.storage.general["overview_data"][self.project][self.label][chip.props["data-chip-id"]][
-                            "icon"
-                        ] = None
-                        app.storage.general["overview_data"][self.project][self.label][chip.props["data-chip-id"]][
-                            "bg_color"
-                        ] = "bg-light-blue-1"
-                    else:
-                        # 失活chip
-                        app.storage.general["overview_data"][self.project][self.label][chip.props["data-chip-id"]][
-                            "enabled"
-                        ] = False
-                        app.storage.general["overview_data"][self.project][self.label][chip.props["data-chip-id"]][
-                            "icon"
-                        ] = "block"
-                        app.storage.general["overview_data"][self.project][self.label][chip.props["data-chip-id"]][
-                            "bg_color"
-                        ] = "bg-grey-5"
-                    # 刷新chip容器内容
-                    self._refresh_chip_container()
+                    chip_id = chip.props["data-chip-id"]
+                    self.chip_dialog.open()
+                    self._select_activ_dialog(chip_id)
 
         # 删除或修改文件缩略图及其在app.storage.general的数据
         def clear_thumbnail(self, thumbnail):
@@ -2627,35 +2655,9 @@ def requirement_page(type="", json_path="", project_name=""):
                     thumbnail.delete()
                     del app.storage.general["overview_data"][self.project][self.label][thumbnail.props["data-chip-id"]]
                 elif app.storage.user["current_user"] != "admin":
-                    if (
-                        app.storage.general["overview_data"][self.project][self.label][thumbnail.props["data-chip-id"]][
-                            "icon"
-                        ]
-                        == "block"
-                    ):
-                        # 激活chip
-                        app.storage.general["overview_data"][self.project][self.label][thumbnail.props["data-chip-id"]][
-                            "enabled"
-                        ] = True
-                        app.storage.general["overview_data"][self.project][self.label][thumbnail.props["data-chip-id"]][
-                            "icon"
-                        ] = None
-                        app.storage.general["overview_data"][self.project][self.label][thumbnail.props["data-chip-id"]][
-                            "bg_color"
-                        ] = "bg-light-blue-1"
-                    else:
-                        # 失活chip
-                        app.storage.general["overview_data"][self.project][self.label][thumbnail.props["data-chip-id"]][
-                            "enabled"
-                        ] = False
-                        app.storage.general["overview_data"][self.project][self.label][thumbnail.props["data-chip-id"]][
-                            "icon"
-                        ] = "block"
-                        app.storage.general["overview_data"][self.project][self.label][thumbnail.props["data-chip-id"]][
-                            "bg_color"
-                        ] = "bg-grey-5"
-                    # 刷新chip容器内容
-                    self._refresh_chip_container()
+                    chip_id = thumbnail.props["data-chip-id"]
+                    self.chip_dialog.open()
+                    self._select_activ_dialog(chip_id)
 
         # 将该项插入的chip里指定chip上移一个位置
         def move_up_data(self, chip_data):
@@ -2695,11 +2697,11 @@ def requirement_page(type="", json_path="", project_name=""):
                 delete_bg = "bg-red text-white"
             else:
                 if chip_info["icon"] == "block":
-                    delete_icon = "check"
+                    delete_icon = "settings"  # 之前是check
                     delete_bg = "bg-white text-light-blue"
                 else:
-                    delete_icon = "block"
-                    delete_bg = "bg-white text-grey-10"
+                    delete_icon = "settings"  # 之前是block
+                    delete_bg = "bg-white text-light-blue"  # 之前是text-grey-10
 
             if chip_info["type"] in ["text", "file"]:
                 # 根据chip类型配置文字标签内容
@@ -2831,6 +2833,7 @@ def requirement_page(type="", json_path="", project_name=""):
                     "mouseout", lambda b=move_down_button: ui_hide(b)
                 )
 
+        # <-----------------------------------------------------------------
         # 创建用于输入文本chip的概述内容与注释的对话框
         def _setup_text_chip_dialog(self):
             self.chip_dialog.clear()
@@ -2843,7 +2846,7 @@ def requirement_page(type="", json_path="", project_name=""):
                 )
                 self.chip_notes = (
                     ui.textarea(
-                        label="针对本技术概述的注释（必填）",
+                        label="针对该技术概述的注释（必填）",
                         placeholder="首填/变更原因",
                         validation={"不能空白": lambda value: value.strip() != ""},
                     )
@@ -2877,7 +2880,7 @@ def requirement_page(type="", json_path="", project_name=""):
                 ui.label("添加上传文件的注释").classes("text-lg font-bold")
                 self.chip_notes = (
                     ui.textarea(
-                        label="针对本文件的注释（必填）",
+                        label="针对该文件的注释（必填）",
                         placeholder="首次提交/变更原因",
                         validation={"不能空白": lambda value: value.strip() != ""},
                     )
@@ -2886,6 +2889,8 @@ def requirement_page(type="", json_path="", project_name=""):
                 )
                 with ui.row().classes("w-full justify-end"):
                     ui.button("添加", on_click=self._get_file_upload)
+
+        # ----------------------------------------------------------------->
 
         # 判断当前用户是否具有编辑权限
         def _edit_permission_judge(self):
@@ -2910,7 +2915,7 @@ def requirement_page(type="", json_path="", project_name=""):
                 # if self.processing_type == "text":
                 #     self.chip_dialog.open()
                 # else:  # 'file'
-                self.chip_dialog.open()
+                _self.chip_dialog.open()
 
     # 创建一个图片上传组件，包括一个上传按钮和上传好的图片缩略图
     def get_img_group(button_name="上传", input_any_suffix="/*", parents_h=9):
@@ -3967,9 +3972,48 @@ def requirement_page(type="", json_path="", project_name=""):
     # 需求显示界面框架构造函数
     def overview_input_frame(json_data):
         project_name = json_data["1.0"]["project_name"]
-        # 判断服务器存存器概述数据字典里是否已经存在该项目键值对，没有则创建，用于后续储存该项目资料
+        # 判断服务器存存器概述数据字典里是否已经存在该项目键值对，没有则创建，用于后续储存该项目需求概述资料
         if project_name not in app.storage.general["overview_data"]:
             app.storage.general["overview_data"][project_name] = dict()
+
+        # 按照需求概述资料里记录的需求最新版本，遍历处理服务器存储的该项目需求概述chip资料里的版本激活设置
+        # 按照现有chip资料里的最高版本激活设置，生成更高版本设置
+        # 如果服务器存储的概述资料里存在该项目对应数据
+        if app.storage.general["overview_data"][project_name]:
+            # 设置一个结束整个遍历的变量
+            break_bool = False
+            # 遍历该项目概述内容，字典键为概述的各分类项，值为该项下chip字典
+            for chip_dic in app.storage.general["overview_data"][project_name].values():
+                # 该项目的版本激活设置里已经存在于当前概述版本相同的版本设置，意味着不需要更新补充
+                if break_bool:
+                    break
+                # 如果chip字典非空
+                if chip_dic:
+                    # 遍历各个chip数据
+                    for chip_data in chip_dic.values():
+                        # 讲chip数据里的选项激活设置字典的键，也就是版本整理成列表
+                        activ_key_li = [int(float(k)) for k in chip_data.get("select_activ_dic", {}).keys()]
+                        # print(activ_key_li)
+                        # 如果列表非空
+                        if activ_key_li:
+                            # 获取当前需求最新版本值
+                            new_ver = int(float(json_data["version"]))
+                            # 获取选项激活设置里最大的版本值
+                            old_max_ver = max(activ_key_li)
+                            # 如果当前需求版本值大于激活设置的最大版本值
+                            # print(old_max_ver, new_ver)
+                            if new_ver > old_max_ver:
+                                # 获取激活设置最大版本值对应的布尔设置值
+                                activ_max_bool = chip_data["select_activ_dic"][f"{old_max_ver}.0"]
+                                # 从现有激活设置最大版本值+1到当前需求版本值开始生成键值对，值均设置为激活设置最大值一样的布尔值
+                                for key in range(old_max_ver + 1, new_ver + 1):
+                                    chip_data["select_activ_dic"][f"{key}.0"] = activ_max_bool
+                                    # print(chip_data["select_activ_dic"][f"{key}.0"])
+                            # 如果当前需求版本值刚好等于激活设置的最大版本值，则提前终止整个遍历
+                            elif new_ver == old_max_ver:
+                                break_bool = True
+                                break
+
         # 需求界面内容
         header.clear()
         with header:
