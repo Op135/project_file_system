@@ -844,7 +844,7 @@ def main_page():
     # a-classes: 应用于所有子元素的通用样式
     # b-classes: 应用于特定子元素的样式 (这里没用，但可以写 b-col-6 c-col-4 等)
     with ui.column().classes("w-full h-[calc(100vh-5rem)] items-center justify-center"):
-        with ui.grid(columns=2).classes("w-[calc(70vw)] gap-4 h-[calc(70vh)]"):
+        with ui.grid(columns=4).classes("w-[calc(70vw)] gap-4 h-[calc(30vh)]"):
             for icon, title, subtitle, target in menu_items:
                 # 每个功能模块都用一个 ui.card 包裹
                 with ui.card().classes(
@@ -1371,8 +1371,8 @@ def project_table_page():
         )  # 绝对定位居中
         with ui.button(icon="menu").props("flat round").classes("ml-auto -mt-3.5 h-4 text-sm/4 text-white"):  # 右侧对齐
             with ui.menu() as menu:
-                ui.menu_item("注销登录", on_click=lambda: logout())
                 ui.menu_item("返回主界面", on_click=lambda: ui.navigate.to("/main"))
+                ui.menu_item("注销登录", on_click=lambda: logout())
                 ui.separator()
                 ui.menu_item("关闭菜单", menu.close)
     with ui.column().classes("w-full h-[88vh] -space-y-2"):
@@ -1419,8 +1419,8 @@ def manage_page():
         ui.label("系统管理员界面").classes("text-white text-lg absolute left-1/2 transform -translate-x-1/2")
         with ui.button(icon="menu").props("flat round").classes("ml-auto -mt-3.5 h-4 text-sm/4 text-white"):  # 右侧对齐
             with ui.menu() as menu:
-                ui.menu_item("注销登录", on_click=lambda: logout())
                 ui.menu_item("返回主界面", on_click=lambda: ui.navigate.to("/main"))
+                ui.menu_item("注销登录", on_click=lambda: logout())
                 ui.separator()
                 ui.menu_item("关闭菜单", menu.close)
     with ui.column().classes("w-full h-[90vh] -space-y-2"):
@@ -1915,7 +1915,7 @@ def requirement_page(type="", json_path="", project_name=""):
                     self.thumbnail = (
                         ui.interactive_image(f"{IMG_DIR}/file_type_pdf.png", content="")
                         .classes("h-full aspect-[1/1] cursor-pointer")
-                        .on("click", self.open_other_file)  # 使用浏览器打开则用.open_pdf_in_browser
+                        .on("click", self.open_pdf_in_browser)  # 使用浏览器打开则用.open_pdf_in_browser
                     )
                     ui.label(self.file_neme).classes(
                         f"h-full w-[{str(label_w)}px] text-[{str(font_px)}px]/[{str(font_px)}px] break-words text-black p-0 m-0 bg-white-500"
@@ -1926,7 +1926,7 @@ def requirement_page(type="", json_path="", project_name=""):
                     self.thumbnail = (
                         ui.interactive_image(f"{IMG_DIR}/file_type_other.png", content="")
                         .classes("h-full aspect-[1/1] cursor-pointer")
-                        .on("click", self.open_other_file)
+                        .on("click", self.check_and_download)
                     )
                     ui.label(self.file_neme).classes(
                         f"h-full w-[{str(label_w)}px] text-[{str(font_px)}px]/[{str(font_px)}px] break-words text-black p-0 m-0 bg-white-500"
@@ -2036,25 +2036,78 @@ def requirement_page(type="", json_path="", project_name=""):
             # 启动异步任务
             ui.timer(0.1, lambda: open_pdf(), once=True)
 
-        # 打开其它文件
-        def open_other_file(self):
-            # 获取操作系统类型
-            os_type = sys.platform
-            if os_type == "win32":
-                # os.startfile(f"{UPLOADS_DIR}/{self.file_neme_suffix}")
-                os.startfile(self.local_file_path)
-            elif os_type == "darwin":
-                # subprocess.run(["open", f"{UPLOADS_DIR}/{self.file_neme_suffix}"])
-                subprocess.run(["open", self.local_file_path])
+        def trigger_download(self, on_complete=None):
+            """专门负责触发下载的辅助函数"""
+            ui.notify(
+                f"开始下载文件: {self.file_neme_suffix}",
+                type="info",
+                position="bottom",
+                timeout=1000,
+                progress=True,
+                close_button="✖",
+            )
+            ui.download(self.local_file_path)
+            if on_complete:
+                on_complete()
+
+        # 我们创建一个新的、更智能的下载处理函数
+        async def check_and_download(self):
+            """
+            检查文件是否已在当前会话下载过。
+            如果是，则弹出一个带引导信息的对话框；如果否，则开始下载并标记。
+            """
+            storage_key = f"downloaded_{self.file_neme_hash}"
+            has_downloaded = await ui.run_javascript(f'sessionStorage.getItem("{storage_key}")')
+
+            if has_downloaded:
+                # 【修改点】对这里的对话框进行全面升级
+                with ui.dialog() as dialog, ui.card().classes("min-w-[400px]"):
+                    with ui.card_section():
+                        ui.label(f'文件 "{self.file_neme_suffix}" 已在本次会话中下载。').classes("text-lg font-medium")
+                        ui.separator().classes("my-3")
+                        ui.label("您可以：")
+                        # 使用 HTML 来创建更丰富的文本格式
+                        ui.html("""
+                            <ul class="q-pl-lg">
+                                <li>在浏览器的<b>下载栏</b>中直接找到它。</li>
+                                <li>按键盘快捷键 <kbd>Ctrl</kbd> + <kbd>J</kbd> (Windows/Linux) 或 <kbd>⌘</kbd> + <kbd>Shift</kbd> + <kbd>J</kbd> (Mac) 打开<b>下载内容页面</b>。</li>
+                            </ul>
+                        """).classes("text-base")
+
+                    with ui.card_actions().props("align=right"):
+                        # “重新下载”按钮，保持原样
+                        ui.button("仍要重新下载", on_click=lambda: self.trigger_download(dialog.close), color="primary")
+                        # 将“取消”按钮改为更中性的“关闭”
+                        ui.button("关闭", on_click=dialog.close, color="grey")
+
+                dialog.open()
+
+            # 3. 如果标记不存在 (首次点击)
             else:
-                ui.notify(
-                    "未适配当前操作系统，不能直接打开。",
-                    type="info",
-                    position="bottom",
-                    timeout=1000,
-                    progress=True,
-                    close_button="✖",
-                )
+                # a. 立即触发下载
+                self.trigger_download()
+                # b. 通过JavaScript在客户端设置标记
+                await ui.run_javascript(f'sessionStorage.setItem("{storage_key}", "true")')
+
+        # 打开其它文件，废弃，服务器不能命令本地电脑直接打开文件
+        # def open_other_file(self):
+        #     # 获取操作系统类型
+        #     os_type = sys.platform
+        #     if os_type == "win32":
+        #         # os.startfile(f"{UPLOADS_DIR}/{self.file_neme_suffix}")
+        #         os.startfile(self.local_file_path)
+        #     elif os_type == "darwin":
+        #         # subprocess.run(["open", f"{UPLOADS_DIR}/{self.file_neme_suffix}"])
+        #         subprocess.run(["open", self.local_file_path])
+        #     else:
+        #         ui.notify(
+        #             "未适配当前操作系统，不能直接打开。",
+        #             type="info",
+        #             position="bottom",
+        #             timeout=1000,
+        #             progress=True,
+        #             close_button="✖",
+        #         )
 
         # 显示大图
         def show_fullscreen(self):
@@ -2076,13 +2129,13 @@ def requirement_page(type="", json_path="", project_name=""):
             self.reset_transform()
 
         # 处理数字链接的点击事件
-        def handle_index_click(self):
+        async def handle_index_click(self):
             if self.file_type.startswith("image/"):
                 self.show_fullscreen()
             elif self.file_type == "application/pdf":
-                self.open_other_file()  # 使用浏览器打开则用open_pdf_in_browser()
+                self.open_pdf_in_browser()  # 使用浏览器打开则用open_pdf_in_browser()
             else:
-                self.open_other_file()
+                await self.check_and_download()
 
         # 图片开始拖拽
         def start_drag(self, e: GenericEventArguments):
@@ -3698,7 +3751,6 @@ def requirement_page(type="", json_path="", project_name=""):
             ui.label("需求管理模块").classes(
                 "text-white text-lg absolute left-1/2 transform -translate-x-1/2"
             )  # 绝对定位居中
-            # ui.button("注销登录", on_click=lambda: logout())
             # 创建文件上传组件
             upload = ui.upload(
                 on_upload=json_handle_upload,  # 绑定上传处理函数
