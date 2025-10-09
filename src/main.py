@@ -2,6 +2,7 @@
 import ast
 import asyncio
 import hashlib
+import io
 import itertools
 import json
 import math
@@ -16,6 +17,7 @@ from itertools import islice
 from pathlib import Path
 
 import wcwidth
+from html_sanitizer import Sanitizer
 from nicegui import app, events, ui
 from nicegui.events import GenericEventArguments, KeyEventArguments, MouseEventArguments, UploadEventArguments
 
@@ -837,7 +839,7 @@ def main_page():
                 ui.menu_item("注销登录", on_click=lambda: logout())
                 if app.storage.user.get("current_user") == "admin":
                     ui.menu_item("系统管理", on_click=lambda: ui.navigate.to("/manage"))
-                ui.separator()
+                ui.separator().props("size=1px")
                 ui.menu_item("关闭菜单", menu.close)
 
     # 使用 ui.grid 创建一个响应式的网格布局
@@ -1236,28 +1238,29 @@ def project_table_page():
             tidy_bool = await requirement_version_tidy(project_exists_file, overview_file_path)
             if tidy_bool:
                 ui.navigate.to(f"/main/requirement?type=overview&json_path={overview_file_path}")
-        elif col_id == "sub_project":
-            # 切换传入列的可见性
-            await toggle_visibility(
-                aggrid,
-                [
-                    "state",  # 状态列
-                    "introduction",  # 简介列
-                    "model_notes",  # 型号备注列
-                    "creation_date",  # 创建日期列
-                    "light_source",  # 光源选型列
-                    "project",  # 对外项目号列
-                    "target_distance",  # 目标距离列
-                    "output_mode",  # 输出型号模式列
-                    "guide_beam",  # 导光束要求列
-                    "adapter_options",  # 转接座选型列
-                    "customer",  # 客户简称列
-                    "drive_pcb",  # PCB规格
-                    "electronic_bom",  # 电子BOM
-                    "software_research",  # 研发版软件
-                    "software_mass",  # 量产版软件
-                ],
-            )
+
+    async def switch_toggle_vis():
+        # 切换传入列的可见性
+        await toggle_visibility(
+            aggrid,
+            [
+                "state",  # 状态列
+                "introduction",  # 简介列
+                "model_notes",  # 型号备注列
+                "creation_date",  # 创建日期列
+                "light_source",  # 光源选型列
+                "project",  # 对外项目号列
+                "target_distance",  # 目标距离列
+                "output_mode",  # 输出型号模式列
+                "guide_beam",  # 导光束要求列
+                "adapter_options",  # 转接座选型列
+                "customer",  # 客户简称列
+                "drive_pcb",  # PCB规格
+                "electronic_bom",  # 电子BOM
+                "software_research",  # 研发版软件
+                "software_mass",  # 量产版软件
+            ],
+        )
 
     # 定义项目主界面列配置
     # 文本筛选器 ("filter": "agTextColumnFilter"): 用于文本列，支持包含、开始于、结束于等多种筛选模式。
@@ -1373,7 +1376,7 @@ def project_table_page():
             with ui.menu() as menu:
                 ui.menu_item("返回主界面", on_click=lambda: ui.navigate.to("/main"))
                 ui.menu_item("注销登录", on_click=lambda: logout())
-                ui.separator()
+                ui.separator().props("size=1px")
                 ui.menu_item("关闭菜单", menu.close)
     with ui.column().classes("w-full h-[88vh] -space-y-2"):
         with ui.row().classes("items-center -space-x-2"):
@@ -1384,6 +1387,8 @@ def project_table_page():
             select_sub = (
                 ui.select(select_dic["RFFM"]).bind_value(select_sub_value, "value").props("outlined").classes("")
             )
+            with ui.fab("shopping_cart", label="表格功能", color="teal", direction="down"):
+                ui.fab_action("train", on_click=lambda: switch_toggle_vis())
 
         # 初始化 AG-Grid
         aggrid = ui.aggrid(
@@ -1421,7 +1426,7 @@ def manage_page():
             with ui.menu() as menu:
                 ui.menu_item("返回主界面", on_click=lambda: ui.navigate.to("/main"))
                 ui.menu_item("注销登录", on_click=lambda: logout())
-                ui.separator()
+                ui.separator().props("size=1px")
                 ui.menu_item("关闭菜单", menu.close)
     with ui.column().classes("w-full h-[90vh] -space-y-2"):
         ui.button("更新需求配置文件", on_click=lambda: update_config_service()).props("").classes("")
@@ -1583,10 +1588,10 @@ def requirement_page(type="", json_path="", project_name=""):
                 ui.button("开始对比", on_click=lambda: perform_comparison()).classes("bg-amber-8")
                 select2 = ui.select(config_files, label="选择新版本配置 (产品B)").props("outlined").classes("w-2/5")
 
-            ui.separator()
+            ui.separator().props("size=1px")
             # 结果展示区域
             results_area = ui.scroll_area().classes("gap-2 w-full h-96 p-2 bg-grey-2 rounded-lg")
-            ui.separator()
+            ui.separator().props("size=1px")
 
         async def perform_comparison():
             """执行对比并更新UI"""
@@ -1652,7 +1657,7 @@ def requirement_page(type="", json_path="", project_name=""):
                         for item_id, changes in diff["modified"].items():
                             with ui.card().classes("gap-1 w-full my-2"):
                                 ui.label(f"ID: {item_id}").classes("text-bold mb-2")
-                                ui.separator()
+                                ui.separator().props("size=1px")
                                 with ui.grid(columns=2).classes("w-full mt-2"):
                                     # 旧值
                                     with ui.card_section():
@@ -1797,10 +1802,11 @@ def requirement_page(type="", json_path="", project_name=""):
         upload.run_method("pickFiles")  # 触发浏览器的文件选择对话框
 
     # json数据导入处理函数——处理数据
-    def json_handle_upload(e: events.UploadEventArguments):
+    async def json_handle_upload(e: events.UploadEventArguments):
         """处理上传的JSON文件"""
         # 获取上传的文件内容
-        content = e.content.read().decode("utf-8")
+        content_obj = await e.file.read()
+        content = content_obj.decode("utf-8")
         try:
             # 解析JSON数据
             json_data = json.loads(content)
@@ -1847,10 +1853,10 @@ def requirement_page(type="", json_path="", project_name=""):
             # 触发隐藏的上传组件
             self.upload.run_method("pickFiles")  # 触发浏览器的文件选择对话框
 
-        def handle_upload(self, e: events.UploadEventArguments):
+        async def handle_upload(self, e: events.UploadEventArguments):
             # 处理上传事件
             if self.on_upload:
-                self.on_upload(e, self.parents_h)
+                await self.on_upload(e, self.parents_h)
             else:
                 print("上传文件无绑定回调函数")
 
@@ -1904,11 +1910,11 @@ def requirement_page(type="", json_path="", project_name=""):
 
             # 根据文件类型创建缩略图
             if self.file_type.startswith("image/"):
-                self.thumbnail = ui.interactive_image(self.file_url).classes("h-full cursor-pointer")
+                self.thumbnail = ui.interactive_image(self.file_url).classes(f"h-{str(self.parents_h)} cursor-pointer")
                 self.thumbnail.on("click", self.show_fullscreen)
 
             elif self.file_type == "application/pdf":
-                with ui.row().classes("h-full flex-nowrap gap-1") as self.pdf_row:
+                with ui.row().classes(f"h-{str(self.parents_h)} flex-nowrap gap-1") as self.pdf_row:
                     # 使用 PDF 图标作为 PDF 文件的缩略图
                     # with ui.link(text="NiceGUI on GitHub", target=f"{self.file_url}", new_tab=False) as self.thumbnail:
                     #     ui.image("/uploads/1.jpg").classes("h-full cursor-pointer")
@@ -1921,7 +1927,7 @@ def requirement_page(type="", json_path="", project_name=""):
                         f"h-full w-[{str(label_w)}px] text-[{str(font_px)}px]/[{str(font_px)}px] break-words text-black p-0 m-0 bg-white-500"
                     )
             else:
-                with ui.row().classes("h-full flex-nowrap gap-1") as self.other_row:
+                with ui.row().classes(f"h-{str(self.parents_h)} flex-nowrap gap-1") as self.other_row:
                     # 使用 其它文件 图标作为 其它 文件的缩略图
                     self.thumbnail = (
                         ui.interactive_image(f"{IMG_DIR}/file_type_other.png", content="")
@@ -2064,15 +2070,18 @@ def requirement_page(type="", json_path="", project_name=""):
                 with ui.dialog() as dialog, ui.card().classes("min-w-[400px]"):
                     with ui.card_section():
                         ui.label(f'文件 "{self.file_neme_suffix}" 已在本次会话中下载。').classes("text-lg font-medium")
-                        ui.separator().classes("my-3")
+                        ui.separator().props("size=1px").classes("my-3")
                         ui.label("您可以：")
                         # 使用 HTML 来创建更丰富的文本格式
-                        ui.html("""
+                        ui.html(
+                            """
                             <ul class="q-pl-lg">
                                 <li>在浏览器的<b>下载栏</b>中直接找到它。</li>
                                 <li>按键盘快捷键 <kbd>Ctrl</kbd> + <kbd>J</kbd> (Windows/Linux) 或 <kbd>⌘</kbd> + <kbd>Shift</kbd> + <kbd>J</kbd> (Mac) 打开<b>下载内容页面</b>。</li>
                             </ul>
-                        """).classes("text-base")
+                        """,
+                            sanitize=False,
+                        ).classes("text-base")  # 如果有用户输入内容，则建议改为sanitize=Sanitizer().sanitize
 
                     with ui.card_actions().props("align=right"):
                         # “重新下载”按钮，保持原样
@@ -2223,6 +2232,7 @@ def requirement_page(type="", json_path="", project_name=""):
             # self.select_ver = {"value": None}
             self.chip_dialog = ui.dialog().props("h-screen w-full")
             self.notes_dialog = ui.dialog().props("h-screen w-full")
+            self.activ_dialog = ui.dialog().props("h-screen w-full")
             # self.image_show = {"image_show": True}
             # self.chip_dialog.bind_value_to(self.image_show, "image_show")
 
@@ -2417,8 +2427,8 @@ def requirement_page(type="", json_path="", project_name=""):
                 )
 
         # 处理文件/图片上传事件
-        def _handle_file_upload(self, e):
-            original_filename = e.name
+        async def _handle_file_upload(self, e):
+            original_filename = e.file.name
             # 生成一个唯一的内部文件名以避免覆盖，但保留原始文件名用于显示
             # unique_filename = f"{uuid.uuid4().hex}{Path(original_filename).suffix}"
             # filepath = self.upload_path / unique_filename
@@ -2439,10 +2449,27 @@ def requirement_page(type="", json_path="", project_name=""):
             elif os.path.exists(filepath):
                 self._select_file_show(filepath, original_filename)
             else:
-                # e.content 是一个类文件对象，我们需要读取其内容并写入到本地文件
-                with open(filepath, "wb") as f:
-                    f.write(e.content.read())
+                try:
+                    # 1. 一次性将文件内容完整读入内存中的 bytes 对象
+                    #    无论 e.file 是 SmallFileUpload 还是 FileUpload，.read() 都是支持的。
+                    file_content = await e.file.read()
+                    # 2. 使用 io.BytesIO 将内存中的 bytes 数据包装成一个标准的文件对象
+                    #    这个 file_like_object 的行为与真实文件完全一致，始终支持 seek()。
+                    file_content_object = io.BytesIO(file_content)
 
+                    # e.file 是一个类文件对象，我们需要读取其内容并写入到本地文件
+                    with open(filepath, "wb") as f:
+                        f.write(file_content_object.read())
+                except Exception as ex:
+                    print(f"上传处理失败: {ex}")  # 在服务器端打印错误详情
+                    ui.notify(
+                        f"上传文件 '{e.file.name}' 失败: {str(ex)}",
+                        type="negative",
+                        position="bottom",
+                        timeout=0,
+                        progress=False,
+                        close_button="✖",
+                    )
                 file_icon = ""
                 # 文件类型的icon与图片的设置不一样
                 if self.processing_type == "file":
@@ -2617,8 +2644,8 @@ def requirement_page(type="", json_path="", project_name=""):
 
         # 创建用于让用户选择chip激活范围的弹窗
         def _select_activ_dialog(self, chip_id):
-            self.chip_dialog.clear()
-            with self.chip_dialog, ui.card().classes("w-1/2"):
+            self.activ_dialog.clear()
+            with self.activ_dialog, ui.card().classes("w-1/2"):
                 ui.label("选择概述生效的需求版本").classes("text-lg font-bold")
                 chip_select_dic = app.storage.general["overview_data"][self.project][self.label][chip_id].get(
                     "select_activ_dic", {}
@@ -2632,7 +2659,7 @@ def requirement_page(type="", json_path="", project_name=""):
                 with ui.row().classes("w-full justify-end"):
                     ui.label("注意以上改动是即时生效的").classes("text-lg font-bold")
                     ui.button("关闭", on_click=lambda: self._set_chip_activ(chip_id)).on(
-                        "click", lambda: self.chip_dialog.close()
+                        "click", lambda: self.activ_dialog.close()
                     )
 
         # 删除或修改chip在app.storage.general对应的数据
@@ -2644,7 +2671,7 @@ def requirement_page(type="", json_path="", project_name=""):
                 elif app.storage.user["current_user"] != "admin":
                     # app.storage.general["overview_data"][self.project][self.label][chip.props["data-chip-id"]]["removable"] = False
                     chip_id = chip.props["data-chip-id"]
-                    self.chip_dialog.open()
+                    self.activ_dialog.open()
                     self._select_activ_dialog(chip_id)
 
         # 删除或修改文件缩略图及其在app.storage.general的数据
@@ -2656,7 +2683,7 @@ def requirement_page(type="", json_path="", project_name=""):
                     del app.storage.general["overview_data"][self.project][self.label][thumbnail.props["data-chip-id"]]
                 elif app.storage.user["current_user"] != "admin":
                     chip_id = thumbnail.props["data-chip-id"]
-                    self.chip_dialog.open()
+                    self.activ_dialog.open()
                     self._select_activ_dialog(chip_id)
 
         # 将该项插入的chip里指定chip上移一个位置
@@ -2723,7 +2750,7 @@ def requirement_page(type="", json_path="", project_name=""):
                     # 为 chip 添加 tooltip
                     tooltip_text = f"创建节点: 需求V{chip_info.get('req_ver')}后<br>创建者: {chip_info.get('creator')}<br>时间: {chip_info.get('timestamp')}<br>注释: <br>{chip_info.get('notes', '').replace('\n', '<br>')}"
                     with ui.tooltip():
-                        ui.html(tooltip_text)
+                        ui.html(tooltip_text, sanitize=Sanitizer().sanitize)
 
                     # 注意：我们将on_click事件直接绑定在这里
                     delete_button = (
@@ -2779,6 +2806,7 @@ def requirement_page(type="", json_path="", project_name=""):
                 image_path = f"{self.upload_path}/{image_name}"
 
                 url_path = f"{FILES_URL_DIR}/{image_name}"
+                print(image_path, url_path)
                 app.add_static_file(local_file=image_path, url_path=url_path)
                 # 根据文件类型创建缩略图
                 thumbnail = (
@@ -2795,7 +2823,7 @@ def requirement_page(type="", json_path="", project_name=""):
                     # 缩略图创建日期提示
                     tooltip_text = f"创建节点: 需求V{chip_info.get('req_ver')}后<br>创建者: {chip_info.get('creator')}<br>时间: {chip_info.get('timestamp')}<br>注释: <br>{chip_info.get('notes', '').replace('\n', '<br>')}"
                     with ui.tooltip():
-                        ui.html(tooltip_text)
+                        ui.html(tooltip_text, sanitize=Sanitizer().sanitize)
 
                     # 缩略图删除按钮
                     delete_button = (
@@ -2912,14 +2940,12 @@ def requirement_page(type="", json_path="", project_name=""):
         def _handle_main_button_click(self):
             # 如果用户具有编辑权限
             if self._edit_permission_judge():
-                # if self.processing_type == "text":
-                #     self.chip_dialog.open()
-                # else:  # 'file'
-                _self.chip_dialog.open()
+                # 弹窗已经按照类型预先创建好，只打开即可，每次填写内容确定关闭时只清楚元素填写值，不清楚元素
+                self.chip_dialog.open()
 
     # 创建一个图片上传组件，包括一个上传按钮和上传好的图片缩略图
     def get_img_group(button_name="上传", input_any_suffix="/*", parents_h=9):
-        with ui.row().classes(f"h-{str(parents_h)} w-1/10").classes("p-0"):
+        with ui.row().classes(f"h-{str(parents_h)}").classes("p-0 -space-x-4"):
             ButtonUploader(
                 on_upload=handle_upload,
                 label=button_name,
@@ -2929,18 +2955,25 @@ def requirement_page(type="", json_path="", project_name=""):
             )
 
     # 文件上传后的处理函数
-    def handle_upload(e: UploadEventArguments, parents_h):
+    async def handle_upload(e: UploadEventArguments, parents_h):
         try:
             hash_obj = hashlib.md5()
             # new_file_hash = ""
             # 使用 os.path.splitext 来更稳健地分离文件名和后缀
-            file_name, file_suffix = os.path.splitext(e.name)
+            file_name, file_suffix = os.path.splitext(e.file.name)
             # 移除前导的点
             file_suffix = file_suffix.lstrip(".")
 
+            # 1. 一次性将文件内容完整读入内存中的 bytes 对象
+            #    无论 e.file 是 SmallFileUpload 还是 FileUpload，.read() 都是支持的。
+            file_content = await e.file.read()
+            # 2. 使用 io.BytesIO 将内存中的 bytes 数据包装成一个标准的文件对象
+            #    这个 file_like_object 的行为与真实文件完全一致，始终支持 seek()。
+            file_content_object = io.BytesIO(file_content)
+
             # 计算文件哈希值
-            e.content.seek(0)  # <--- 重要：将文件指针重置到开头
-            while chunk := e.content.read(4096):  # 分块读取，每块 4096 字节
+            file_content_object.seek(0)  # <--- 重要：将文件指针重置到开头
+            while chunk := file_content_object.read(4096):  # 分块读取，每块 4096 字节
                 hash_obj.update(chunk)
             # 返回哈希值的十六进制字符串
             new_file_hash = hash_obj.hexdigest()
@@ -2950,21 +2983,23 @@ def requirement_page(type="", json_path="", project_name=""):
             new_file_path = os.path.join(UPLOADS_DIR, file_name_hash)
             if not os.path.isfile(new_file_path):
                 # 保存上传的文件
-                e.content.seek(0)  # <--- 重要：再次将文件指针重置到开头以进行写入
+                file_content_object.seek(0)  # <--- 重要：再次将文件指针重置到开头以进行写入
                 with open(new_file_path, "wb") as f:
-                    while chunk := e.content.read(4096):  # <--- 重要：循环读取和写入
+                    while chunk := file_content_object.read(4096):  # <--- 重要：循环读取和写入
                         f.write(chunk)
-                # ui.notify(f"文件 {e.name} 已上传并保存到 {file_path}")
+                # ui.notify(f"文件 {e.file.name} 已上传并保存到 {file_path}")
 
             # 将文件路径映射为可访问的 URL
             url_path = f"{UPLOAD_URL_DIR}/{file_name_hash}"
+            print(new_file_path, url_path)
             app.add_static_file(local_file=new_file_path, url_path=url_path)
             if (
                 file_name_hash in app.storage.client["files"]
                 and file_name_hash not in app.storage.client["deleted_files"]
             ):
+                print("文件已存在")
                 ui.notify(
-                    f"文件已存在: {str(e.name)}",
+                    f"文件已存在: {str(e.file.name)}",
                     type="warning",
                     position="bottom",
                     timeout=1000,
@@ -2983,7 +3018,7 @@ def requirement_page(type="", json_path="", project_name=""):
                 # 而不是使用闭包捕获的旧变量
                 current_img_row = app.storage.client["page_elements"].get("img_row")
                 with current_img_row:
-                    file_thumbnail = FileThumbnail(url_path, e.type, e.name, file_lab, parents_h)
+                    file_thumbnail = FileThumbnail(url_path, e.file.content_type, e.file.name, file_lab, parents_h)
                     # 将文件缩略图实例存入字典
                     app.storage.client["file_thumbnail_dic"][file_thumbnail.file_index] = {
                         "file_obj": file_thumbnail,
@@ -2992,8 +3027,8 @@ def requirement_page(type="", json_path="", project_name=""):
                             "file_name": file_name,
                             "file_url": url_path,
                             "file_name_hash": file_name_hash,
-                            "file_name_suffix": e.name,
-                            "file_type": e.type,
+                            "file_name_suffix": e.file.name,
+                            "file_type": e.file.content_type,
                             "file_lab": file_lab,
                             "parents_h": parents_h,
                         },
@@ -3004,7 +3039,7 @@ def requirement_page(type="", json_path="", project_name=""):
         except Exception as ex:
             print(f"上传处理失败: {ex}")  # 在服务器端打印错误详情
             ui.notify(
-                f"上传文件 '{e.name}' 失败: {str(ex)}",
+                f"上传文件 '{e.file.name}' 失败: {str(ex)}",
                 type="negative",
                 position="bottom",
                 timeout=0,
@@ -3263,8 +3298,15 @@ def requirement_page(type="", json_path="", project_name=""):
                         app.storage.client["buttons_dic"][k] = button
                     else:
                         # 不能激活的节点，即使前面曾经激活过并选填过内容，也要清理掉
-                        v["user_must_out"] = {}
-                        v["option_tolerance_out"] = {}
+                        app.storage.client["config_data"]["data"][k]["user_must_out"] = {}
+                        app.storage.client["config_data"]["data"][k]["option_tolerance_out"] = {}
+                        # 清空缩略图引用记录字典里，与当前失效问题有关的记录
+                        if app.storage.client["config_data"]["data"][k]["ref_out"]:
+                            for ref_num, que_li in app.storage.client["ref_question_dic"].items():
+                                for q in que_li:
+                                    if q[0] == k:
+                                        app.storage.client["ref_question_dic"][ref_num].remove([q[0], q[1]])
+                        app.storage.client["config_data"]["data"][k]["ref_out"] = []
                 # 将当前按钮聚焦到视图中显示
                 if len(app.storage.client["buttons_dic"].values()) > index:
                     ui.run_javascript(
@@ -3423,6 +3465,7 @@ def requirement_page(type="", json_path="", project_name=""):
         with current_question_column:
             ui.label(question).classes("text-2xl text-black")
             ui.label(option_hint).classes("text-base text-grey-8")
+
             if options_type == "单选":
                 radio_dic = {}
                 for op_dic in options_list:
@@ -3770,19 +3813,19 @@ def requirement_page(type="", json_path="", project_name=""):
                     ui.menu_item("返回主界面", on_click=lambda: ui.navigate.to("/main"))
                     ui.menu_item("返回项目信息表", on_click=lambda: ui.navigate.to("/project_table"))
                     ui.menu_item("注销登录", on_click=lambda: logout())
-                    ui.separator()
+                    ui.separator().props("size=1px")
                     ui.menu_item("新建需求", on_click=lambda: get_project_dialog("new"))
                     ui.menu_item(
                         "提交需求", on_click=lambda: output_config_data(app.storage.client["config_data"], "submit")
                     )
                     ui.menu_item("对比需求", on_click=show_comparison_dialog)
-                    ui.separator()
+                    ui.separator().props("size=1px")
                     # ui.menu_item("临时保存", on_click=lambda: save_config_data(app.storage.client["config_data"]))
                     ui.menu_item(
                         "导出到本地", on_click=lambda: output_config_data(app.storage.client["config_data"], "export")
                     )
                     ui.menu_item("从本地导入", on_click=lambda: import_config_data(upload))
-                    ui.separator()
+                    ui.separator().props("size=1px")
                     ui.menu_item("关闭菜单", menu.close)
             with ui.row().classes("font-sans h-[calc(100vh-9rem)] items-stretch flex-nowrap w-full text-black"):
                 with ui.column().classes("w-1/4 min-w-[400px] items-center justify-start overflow-y-auto"):
@@ -3816,7 +3859,7 @@ def requirement_page(type="", json_path="", project_name=""):
                         # 初始化一次确认项列表
                         set_question_list(0)
 
-                ui.separator().props("vertical")
+                ui.separator().props("vertical size=1px")
                 with ui.column().classes("w-3/4 min-w-[700px] items-center"):
                     with ui.row().classes("-space-x-2 items-center justify-center w-full"):
                         project_button = (
@@ -3839,11 +3882,11 @@ def requirement_page(type="", json_path="", project_name=""):
                         # --- 修改结束 ---
                         app.storage.client["buttons_dic"]["1"].props(remove="disabled")  # 启用按钮
                         question_display(None, "1")  # 触发点击事件
-            with ui.row().classes("fixed h-20 bottom-0 left-0 right-0 bg-sky-50 p-0 items-center shadow-inner"):
+            with ui.row().classes("fixed bottom-0 left-0 right-0 bg-sky-50 p-3 items-center shadow-inner"):
                 # 创建一个按钮组件，组件里有一个空白行，待后续往里面放缩略图
                 row_h = 9
                 get_img_group("上传", '"image/*, .pdf, .xlsx, .docx, .pptx"', row_h)
-                with ui.row().classes(f"h-{str(row_h)} w-9/10").classes("p-0") as img_row:
+                with ui.row().classes(f"h-{str(row_h + 1)}").classes("p-0 overflow-y-auto") as img_row:
                     # 将新创建的 img_row 实例存入 user storage
                     app.storage.client["page_elements"]["img_row"] = img_row
                     # 检查缩略图对象存放字典，有对象则会创建缩略图
@@ -4030,10 +4073,10 @@ def requirement_page(type="", json_path="", project_name=""):
                     ui.menu_item("返回主界面", on_click=lambda: ui.navigate.to("/main"))
                     ui.menu_item("返回项目信息表", on_click=lambda: ui.navigate.to("/project_table"))
                     ui.menu_item("注销登录", on_click=lambda: logout())
-                    ui.separator()
+                    ui.separator().props("size=1px")
 
                     ui.menu_item("对比需求", on_click=show_comparison_dialog)
-                    ui.separator()
+                    ui.separator().props("size=1px")
 
                     ui.menu_item("关闭菜单", menu.close)
             with ui.row().classes("font-sans h-[calc(100vh-9rem)] items-stretch flex-nowrap w-full text-black"):
@@ -4106,7 +4149,7 @@ def requirement_page(type="", json_path="", project_name=""):
                                         continue
                                     # 如果是新的分组，则添加卡元素
                                     if group_id not in group_id_li:
-                                        # ui.separator().classes("my-2 bg-grey-1 h-0.3 rounded-sm shadow-1")
+                                        # ui.separator().props("size=1px").classes("my-2 bg-grey-1 h-0.3 rounded-sm shadow-1")
                                         with ui.card().classes(
                                             f"bg-{'blue-50/50' if float(group_id) % 2 == 0 else 'amber-50/50'} rounded-md shadow-1 p-2 gap-2 w-full"
                                         ) as ui_card:
@@ -4193,7 +4236,9 @@ def requirement_page(type="", json_path="", project_name=""):
                                                     f"需求ID：{node_id}<br>提交人：{user}<br>时间：{timestamp}"
                                                 )
                                                 with ui.tooltip("").classes("bg-gray-700 text-white min-w-40"):
-                                                    ui.html(tooltip_text)
+                                                    ui.html(
+                                                        tooltip_text, sanitize=False
+                                                    )  # 如果有用户输入内容，则建议改为sanitize=Sanitizer().sanitize
                                             target["content"].set_content(show_str)
                                             if item_data["ref_out"]:
                                                 # 在引用行里添加于缩略图编号一致的数字引用按钮
@@ -4222,7 +4267,9 @@ def requirement_page(type="", json_path="", project_name=""):
                                                     f"需求ID：{node_id}<br>提交人：{user}<br>时间：{timestamp}"
                                                 )
                                                 with ui.tooltip("").classes("bg-gray-700 text-white min-w-40"):
-                                                    ui.html(tooltip_text)
+                                                    ui.html(
+                                                        tooltip_text, sanitize=False
+                                                    )  # 如果有用户输入内容，则建议改为sanitize=Sanitizer().sanitize
 
                                             target["content"].set_content(f"<del>{show_str}</del>")
                                             target["content"].classes(add="text-gray-400")
@@ -4260,7 +4307,9 @@ def requirement_page(type="", json_path="", project_name=""):
                                                         f"需求ID：{node_id}<br>提交人：{user}<br>时间：{timestamp}"
                                                     )
                                                     with ui.tooltip("").classes("bg-gray-700 text-white min-w-40"):
-                                                        ui.html(tooltip_text)
+                                                        ui.html(
+                                                            tooltip_text, sanitize=False
+                                                        )  # 如果有用户输入内容，则建议改为sanitize=Sanitizer().sanitize
                                                 target["content"].set_content(new_text)
                                                 if item_data["new_data"]["ref_out"]:
                                                     # 在引用行里添加于缩略图编号一致的数字引用按钮
@@ -4288,7 +4337,9 @@ def requirement_page(type="", json_path="", project_name=""):
                                                         f"需求ID：{node_id}<br>提交人：{user}<br>时间：{timestamp}"
                                                     )
                                                     with ui.tooltip("").classes("bg-gray-700 text-white min-w-40"):
-                                                        ui.html(tooltip_text)
+                                                        ui.html(
+                                                            tooltip_text, sanitize=False
+                                                        )  # 如果有用户输入内容，则建议改为sanitize=Sanitizer().sanitize
 
                                                 target["content"].set_content(f"<del>{old_text}</del>")
                                                 target["content"].classes(add="text-gray-400")
@@ -4326,7 +4377,9 @@ def requirement_page(type="", json_path="", project_name=""):
                                                         f"需求ID：{node_id}<br>提交人：{user}<br>时间：{timestamp}"
                                                     )
                                                     with ui.tooltip("").classes("bg-gray-700 text-white min-w-40"):
-                                                        ui.html(tooltip_text)
+                                                        ui.html(
+                                                            tooltip_text, sanitize=False
+                                                        )  # 如果有用户输入内容，则建议改为sanitize=Sanitizer().sanitize
                                                 target["content"].set_content(new_text)
                                                 if item_data["new_data"]["ref_out"]:
                                                     # 在引用行里添加于缩略图编号一致的数字引用按钮
@@ -4341,7 +4394,7 @@ def requirement_page(type="", json_path="", project_name=""):
                                                         for role in item_data["new_data"]["option_view"].split("+"):
                                                             add_role_badge(role)
 
-                ui.separator().props("vertical")
+                ui.separator().props("vertical size=1px")
                 # 概述内容列
                 with ui.column().classes("w-1/2 min-w-[400px] items-center"):
                     ui.label("概述整理").classes("text-xl")
@@ -4398,12 +4451,12 @@ def requirement_page(type="", json_path="", project_name=""):
                                                 # delete_bool=False,
                                             )
 
-            with ui.row().classes("fixed h-20 bottom-0 left-0 right-0 bg-sky-50 p-0 items-center shadow-inner"):
-                ui.label(text="参考文件：").classes("text-lg text-black ml-4")
+            with ui.row().classes("fixed bottom-0 left-0 right-0 bg-sky-50 p-3 items-center shadow-inner"):
+                ui.label(text="参考文件：").classes("text-lg text-black m-0")
                 # 创建一个按钮组件，组件里有一个空白行，待后续往里面放缩略图
                 row_h = 9
                 # get_img_group("上传", '"image/*, .pdf, .xlsx, .docx, .pptx"', row_h)
-                with ui.row().classes(f"h-{str(row_h)} w-9/10").classes("p-0") as img_row:
+                with ui.row().classes(f"h-{str(row_h + 1)}").classes("p-0 overflow-y-auto") as img_row:
                     # 将新创建的 img_row 实例存入 user storage
                     app.storage.client["page_elements"]["img_row"] = img_row
                     # 检查缩略图对象存放字典，有对象则会创建缩略图

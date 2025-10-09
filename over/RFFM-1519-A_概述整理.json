@@ -5029,7 +5029,7 @@
                 "option_group_id": "1.0",
                 "option_view": "全员",
                 "user_must_out": {
-                    "value": "False"
+                    "value": "True"
                 },
                 "option_tolerance_out": {},
                 "ref_out": "",
@@ -5063,7 +5063,9 @@
                 "option_hint": "导光束作为光源给我司产品提供光，还是导光束作为传输工具参与我司产品对光的处理，还是我司产品需要将光输出给导光束？",
                 "option_group_id": "1.0",
                 "option_view": "光学+结构+工艺+质量",
-                "user_must_out": {},
+                "user_must_out": {
+                    "value": "CD"
+                },
                 "option_tolerance_out": {},
                 "ref_out": "",
                 "options": [
@@ -5124,7 +5126,9 @@
                 "option_hint": "导光束是否作为产品的一部分卖给客户？",
                 "option_group_id": "2.0",
                 "option_view": "光学+结构+工艺+质量",
-                "user_must_out": {},
+                "user_must_out": {
+                    "value": "False"
+                },
                 "option_tolerance_out": {},
                 "ref_out": "",
                 "options": [
@@ -5157,7 +5161,9 @@
                 "option_hint": "导光束转接座是由我司设计生产，还是客户自行设计生产？",
                 "option_group_id": "2.0",
                 "option_view": "光学+结构+工艺+质量",
-                "user_must_out": {},
+                "user_must_out": {
+                    "value": "True"
+                },
                 "option_tolerance_out": {},
                 "ref_out": "",
                 "options": [
@@ -5190,7 +5196,9 @@
                 "option_hint": "填写客户对导光束输入端通光口径的要求，注意是“透光”部分，单位统一为：mm。",
                 "option_group_id": "2.0",
                 "option_view": "光学+结构+工艺+质量",
-                "user_must_out": {},
+                "user_must_out": {
+                    "1": "5mm"
+                },
                 "option_tolerance_out": {},
                 "ref_out": "",
                 "options": [
@@ -5242,7 +5250,9 @@
                 "option_hint": "填写客户对导光束NA值的要求，无单位。",
                 "option_group_id": "2.0",
                 "option_view": "光学+结构+工艺+质量",
-                "user_must_out": {},
+                "user_must_out": {
+                    "1": "0.62"
+                },
                 "option_tolerance_out": {},
                 "ref_out": "",
                 "options": [
@@ -5268,7 +5278,9 @@
                 "option_hint": "按产品配合所需，提供导光束外形尺寸信息或要求，主要有：输入端头部尺寸、输出端头部尺寸、总长度，建议提供图纸，单位统一为：mm。",
                 "option_group_id": "2.0",
                 "option_view": "光学+结构+工艺+质量",
-                "user_must_out": {},
+                "user_must_out": {
+                    "1": "使用典型Wolf头部尺寸，长度3米"
+                },
                 "option_tolerance_out": {},
                 "ref_out": [
                     "6"
@@ -5296,7 +5308,9 @@
                 "option_hint": "产品生产出来后，在做光参数测试时，客户是否指定或提供导光束来测，而不是由我司自行决定？",
                 "option_group_id": "3.0",
                 "option_view": "光学+结构+工艺+质量",
-                "user_must_out": {},
+                "user_must_out": {
+                    "value": "True"
+                },
                 "option_tolerance_out": {},
                 "ref_out": "",
                 "options": [
@@ -5329,7 +5343,9 @@
                 "option_hint": "填写客户指定的导光束及测试参数，例如：客供3米导光束测：光通量，显色指数；其余光参数用我司1米导光束测试。",
                 "option_group_id": "3.0",
                 "option_view": "光学+工艺+质量",
-                "user_must_out": {},
+                "user_must_out": {
+                    "1": "客供3米导光束测：光通量，显色指数，色温"
+                },
                 "option_tolerance_out": {},
                 "ref_out": "",
                 "options": [
@@ -5355,7 +5371,9 @@
                 "option_hint": "我司转接座材料及表面工艺默认：6061铝合金，100目喷砂，原色阳极氧化；如果客户有其它要求的工艺，请选“是”。",
                 "option_group_id": "2.0",
                 "option_view": "结构+工艺+质量",
-                "user_must_out": {},
+                "user_must_out": {
+                    "value": "False"
+                },
                 "option_tolerance_out": {},
                 "ref_out": "",
                 "options": [
@@ -5414,7 +5432,9 @@
                 "option_hint": "我司转接座有默认的设计形式，是否符合客户使用场景？如果客户有形状或尺寸方面的具体定制要求，请选“是”。",
                 "option_group_id": "2.0",
                 "option_view": "光学+结构+质量",
-                "user_must_out": {},
+                "user_must_out": {
+                    "value": "False"
+                },
                 "option_tolerance_out": {},
                 "ref_out": "",
                 "options": [
@@ -5473,7 +5493,9 @@
                 "option_hint": "我司导光束转接座头部旋帽默认会有点胶处理，防止松脱掉，而部分客户要求不点胶出货，他们自行装配后自己点胶。",
                 "option_group_id": "2.0",
                 "option_view": "结构+工艺+质量",
-                "user_must_out": {},
+                "user_must_out": {
+                    "value": "True"
+                },
                 "option_tolerance_out": {},
                 "ref_out": "",
                 "options": [
@@ -5506,7 +5528,9 @@
                 "option_hint": "我司默认使用自己的导光束头部治具做插拔拉力测试，如果客户对导光束插拔力要求较高，则需要客户提供导光束做专门的拉力测试。",
                 "option_group_id": "3.0",
                 "option_view": "结构+工艺+质量",
-                "user_must_out": {},
+                "user_must_out": {
+                    "value": "False"
+                },
                 "option_tolerance_out": {},
                 "ref_out": "",
                 "options": [
@@ -5539,7 +5563,9 @@
                 "option_hint": "我司默认的拉力合格标准为：11~15N，如果客户需要指定合格标准，请选“是”。",
                 "option_group_id": "3.0",
                 "option_view": "结构+工艺+质量",
-                "user_must_out": {},
+                "user_must_out": {
+                    "value": "False"
+                },
                 "option_tolerance_out": {},
                 "ref_out": "",
                 "options": [
@@ -5598,7 +5624,9 @@
                 "option_hint": "与客户协商好转接座与产品主体是否装一起发货，还是分拆配好螺丝客户自己装配，包括包装装箱方式。",
                 "option_group_id": "2.0",
                 "option_view": "结构+工艺+质量",
-                "user_must_out": {},
+                "user_must_out": {
+                    "value": "一体包装"
+                },
                 "option_tolerance_out": {},
                 "ref_out": [
                     "5"
@@ -5640,7 +5668,9 @@
                 "option_hint": "大部分单白光模组默认支持机械悬臂检测，也可定制为接近开关检测；大部分荧光模组默认支持接近开关检测；新项目需要检测的情况下推荐接近开关检测；",
                 "option_group_id": "2.0",
                 "option_view": "全员",
-                "user_must_out": {},
+                "user_must_out": {
+                    "value": "悬臂"
+                },
                 "option_tolerance_out": {},
                 "ref_out": "",
                 "options": [
@@ -5680,7 +5710,9 @@
                 "option_hint": "导光束插拔影响哪些光源的亮灭，“影响所有光源”代表：拔出导光束所有光源灭，插入导光束所有光源亮；其它情况选“有特殊逻辑”",
                 "option_group_id": "2.0",
                 "option_view": "全员",
-                "user_must_out": {},
+                "user_must_out": {
+                    "value": "False"
+                },
                 "option_tolerance_out": {},
                 "ref_out": "",
                 "options": [
@@ -5897,7 +5929,7 @@
                 "option_group_id": "6.0",
                 "option_view": "全员",
                 "user_must_out": {
-                    "value": "False"
+                    "value": "True"
                 },
                 "option_tolerance_out": {},
                 "ref_out": "",
@@ -6628,7 +6660,7 @@
                     "白光": "5700K"
                 },
                 "option_tolerance_out": {
-                    "白光": "±300K"
+                    "白光": "±500K"
                 },
                 "ref_out": "",
                 "options": [
@@ -6787,7 +6819,7 @@
                 "option_group_id": "5.0",
                 "option_view": "光学+工艺+质量",
                 "user_must_out": {
-                    "白光": "1000lm"
+                    "白光": "1200lm"
                 },
                 "option_tolerance_out": {
                     "白光": "±10%"
@@ -7076,7 +7108,14 @@
                 "option_hint": "请仔细询问下列YY1081-2011标准特有光参数，哪些是客户关注并在入厂检时会检测的。",
                 "option_group_id": "6.0",
                 "option_view": "光学+工艺+质量",
-                "user_must_out": {},
+                "user_must_out": {
+                    "红绿辐通量比": true,
+                    "蓝绿辐通量比": true,
+                    "红外截止性能": false,
+                    "光照均匀性": false,
+                    "照度超限点": false,
+                    "不限制": false
+                },
                 "option_tolerance_out": {},
                 "ref_out": "",
                 "options": [
@@ -7137,8 +7176,12 @@
                 "option_hint": "填写该项要求的典型值与公差范围，无单位；推荐YY1081-2011标准默认公差±20%。",
                 "option_group_id": "6.0",
                 "option_view": "光学+工艺+质量",
-                "user_must_out": {},
-                "option_tolerance_out": {},
+                "user_must_out": {
+                    "白光": "0.75"
+                },
+                "option_tolerance_out": {
+                    "白光": "±20%"
+                },
                 "ref_out": "",
                 "options": [
                     {
@@ -7163,8 +7206,12 @@
                 "option_hint": "填写该项要求的典型值与公差范围，无单位；推荐YY1081-2011标准默认公差±20%。",
                 "option_group_id": "6.0",
                 "option_view": "光学+工艺+质量",
-                "user_must_out": {},
-                "option_tolerance_out": {},
+                "user_must_out": {
+                    "白光": "1.25"
+                },
+                "option_tolerance_out": {
+                    "白光": "±20%"
+                },
                 "ref_out": "",
                 "options": [
                     {
@@ -7267,7 +7314,14 @@
                 "option_hint": "按YY1081-2011标准要求，光通量、相对色温、显色指数、红绿辐通量比、蓝绿辐通量比需要在100%与50%亮度情况下均满足声称的规格标准要求",
                 "option_group_id": "6.0",
                 "option_view": "全员",
-                "user_must_out": {},
+                "user_must_out": {
+                    "光通量": true,
+                    "相对色温CCT": true,
+                    "CRI显指Ra": true,
+                    "红绿辐通量比": true,
+                    "蓝绿辐通量比": true,
+                    "不要求": false
+                },
                 "option_tolerance_out": {},
                 "ref_out": "",
                 "options": [
@@ -7455,7 +7509,7 @@
                 "option_group_id": "7.0",
                 "option_view": "全员",
                 "user_must_out": {
-                    "value": "True"
+                    "value": "False"
                 },
                 "option_tolerance_out": {},
                 "ref_out": "",
@@ -7489,9 +7543,7 @@
                 "option_hint": "填写客户要求的噪声上限值，单位统一为：dB(A)。",
                 "option_group_id": "7.0",
                 "option_view": "全员",
-                "user_must_out": {
-                    "1": "55dBA"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
                 "ref_out": "",
                 "options": [
@@ -9603,7 +9655,7 @@
                 "option_group_id": "18.0",
                 "option_view": "光学+工艺+质量",
                 "user_must_out": {
-                    "1": "光参XX要特别注意"
+                    "1": "无补充"
                 },
                 "option_tolerance_out": {},
                 "ref_out": "",
@@ -9701,82 +9753,7 @@
                     }
                 ],
                 "num": "141"
-            }
-        },
-        "file_dic": {
-            "1": {
-                "file_del_bool": false,
-                "file_name": "IR-850-500-S-02-K10010073",
-                "file_url": "/uploads/IR-850-500-S-02-K10010073.f1a9abffe8f197027003b7ac5ce33fa4.pdf",
-                "file_name_hash": "IR-850-500-S-02-K10010073.f1a9abffe8f197027003b7ac5ce33fa4.pdf",
-                "file_name_suffix": "IR-850-500-S-02-K10010073.pdf",
-                "file_type": "application/pdf",
-                "file_lab": "1",
-                "parents_h": 9
             },
-            "2": {
-                "file_del_bool": false,
-                "file_name": "临时性数据",
-                "file_url": "/uploads/临时性数据.bbb7a654f2ce1ee6a777865beab1f76b.xlsx",
-                "file_name_hash": "临时性数据.bbb7a654f2ce1ee6a777865beab1f76b.xlsx",
-                "file_name_suffix": "临时性数据.xlsx",
-                "file_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                "file_lab": "2",
-                "parents_h": 9
-            },
-            "3": {
-                "file_del_bool": false,
-                "file_name": "琥珀色临时模组四光源驱动条件",
-                "file_url": "/uploads/琥珀色临时模组四光源驱动条件.e4d3934570fe6e04343c95ef842f14e2.pptx",
-                "file_name_hash": "琥珀色临时模组四光源驱动条件.e4d3934570fe6e04343c95ef842f14e2.pptx",
-                "file_name_suffix": "琥珀色临时模组四光源驱动条件.pptx",
-                "file_type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-                "file_lab": "3",
-                "parents_h": 9
-            },
-            "4": {
-                "file_del_bool": false,
-                "file_name": "标准版本更新模板",
-                "file_url": "/uploads/标准版本更新模板.1dec186145b7a75831aa5f1421980227.docx",
-                "file_name_hash": "标准版本更新模板.1dec186145b7a75831aa5f1421980227.docx",
-                "file_name_suffix": "标准版本更新模板.docx",
-                "file_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                "file_lab": "4",
-                "parents_h": 9
-            },
-            "5": {
-                "file_del_bool": false,
-                "file_name": "Snipaste_2025-01-09_13-08-42",
-                "file_url": "/uploads/Snipaste_2025-01-09_13-08-42.00661caf7da65237520b08c398a61ae9.png",
-                "file_name_hash": "Snipaste_2025-01-09_13-08-42.00661caf7da65237520b08c398a61ae9.png",
-                "file_name_suffix": "Snipaste_2025-01-09_13-08-42.png",
-                "file_type": "image/png",
-                "file_lab": "5",
-                "parents_h": 9
-            },
-            "6": {
-                "file_del_bool": false,
-                "file_name": "微信图片_20241212095208",
-                "file_url": "/uploads/微信图片_20241212095208.e49868d32bbb9cb04364ba96f4c1eeb3.jpg",
-                "file_name_hash": "微信图片_20241212095208.e49868d32bbb9cb04364ba96f4c1eeb3.jpg",
-                "file_name_suffix": "微信图片_20241212095208.jpg",
-                "file_type": "image/jpeg",
-                "file_lab": "6",
-                "parents_h": 9
-            }
-        },
-        "deleted_files": [],
-        "file_counter": 6,
-        "project_name": "RFFM-1519-A",
-        "current_user": "李晓明",
-        "version": "6.0",
-        "original_version": "5.0",
-        "req_timestamp": "2025-09-29T18:06:27.801274"
-    },
-    "version": "6.0",
-    "2.0": {
-        "added": {},
-        "deleted": {
             "142": {
                 "condition": "无条件",
                 "node_id": "142",
@@ -9804,288 +9781,6 @@
                     }
                 ],
                 "num": "142"
-            }
-        },
-        "modified": {
-            "49": {
-                "old_data": {
-                    "condition": "48any['CCT']",
-                    "node_id": "49",
-                    "guide_content": "相关色温CCT要求",
-                    "answer_type": "单行文本",
-                    "input_num_accor": "31",
-                    "input_name_accor": "32",
-                    "input_tolerance": "正负",
-                    "ref_config": "True",
-                    "option_hint": "填写该项要求的典型值与公差范围，单位统一为：K。",
-                    "option_group_id": "5.0",
-                    "option_view": "光学+工艺+质量",
-                    "user_must_out": {
-                        "白光": "5700K"
-                    },
-                    "option_tolerance_out": {
-                        "白光": "±500K"
-                    },
-                    "ref_out": "",
-                    "options": [
-                        {
-                            "option_content": "",
-                            "option_out": "字典",
-                            "option_bold": "",
-                            "option_show": "相关色温CCT要求：[{K}典型值{V}，公差{T}]",
-                            "option_label": ""
-                        }
-                    ],
-                    "num": "49"
-                },
-                "new_data": {
-                    "condition": "48any['CCT']",
-                    "node_id": "49",
-                    "guide_content": "相关色温CCT要求",
-                    "answer_type": "单行文本",
-                    "input_num_accor": "31",
-                    "input_name_accor": "32",
-                    "input_tolerance": "正负",
-                    "ref_config": "True",
-                    "option_hint": "填写该项要求的典型值与公差范围，单位统一为：K。",
-                    "option_group_id": "5.0",
-                    "option_view": "光学+工艺+质量",
-                    "user_must_out": {
-                        "白光": "5700K"
-                    },
-                    "option_tolerance_out": {
-                        "白光": "±300K"
-                    },
-                    "ref_out": "",
-                    "options": [
-                        {
-                            "option_content": "",
-                            "option_out": "字典",
-                            "option_bold": "",
-                            "option_show": "相关色温CCT要求：[{K}典型值{V}，公差{T}]",
-                            "option_label": ""
-                        }
-                    ],
-                    "num": "49"
-                }
-            },
-            "78": {
-                "old_data": {
-                    "condition": "77==True",
-                    "node_id": "78",
-                    "guide_content": "产品工作时噪声的限定要求",
-                    "answer_type": "单行文本",
-                    "input_num_accor": "",
-                    "input_name_accor": "",
-                    "input_tolerance": "上限",
-                    "ref_config": "False",
-                    "option_hint": "填写客户要求的噪声上限值，单位统一为：dB(A)。",
-                    "option_group_id": "7.0",
-                    "option_view": "全员",
-                    "user_must_out": {},
-                    "option_tolerance_out": {},
-                    "ref_out": "",
-                    "options": [
-                        {
-                            "option_content": "",
-                            "option_out": "字典",
-                            "option_bold": "",
-                            "option_show": "产品工作噪声上限：{V}",
-                            "option_label": ""
-                        }
-                    ],
-                    "num": "78"
-                },
-                "new_data": {
-                    "condition": "77==True",
-                    "node_id": "78",
-                    "guide_content": "产品工作时噪声的限定要求",
-                    "answer_type": "单行文本",
-                    "input_num_accor": "",
-                    "input_name_accor": "",
-                    "input_tolerance": "上限",
-                    "ref_config": "False",
-                    "option_hint": "填写客户要求的噪声上限值，单位统一为：dB(A)。",
-                    "option_group_id": "7.0",
-                    "option_view": "全员",
-                    "user_must_out": {
-                        "1": "55dBA"
-                    },
-                    "option_tolerance_out": {},
-                    "ref_out": "",
-                    "options": [
-                        {
-                            "option_content": "",
-                            "option_out": "字典",
-                            "option_bold": "",
-                            "option_show": "产品工作噪声上限：{V}",
-                            "option_label": ""
-                        }
-                    ],
-                    "num": "78"
-                }
-            },
-            "21": {
-                "old_data": {
-                    "condition": "6==True",
-                    "node_id": "21",
-                    "guide_content": "导光束转接座包装要求",
-                    "answer_type": "单选",
-                    "input_num_accor": "",
-                    "input_name_accor": "",
-                    "input_tolerance": "",
-                    "ref_config": "True",
-                    "option_hint": "与客户协商好转接座与产品主体是否装一起发货，还是分拆配好螺丝客户自己装配，包括包装装箱方式。",
-                    "option_group_id": "2.0",
-                    "option_view": "结构+工艺+质量",
-                    "user_must_out": {
-                        "value": "一体包装"
-                    },
-                    "option_tolerance_out": {},
-                    "ref_out": [
-                        "5"
-                    ],
-                    "options": [
-                        {
-                            "option_content": "与产品主体“分拆”装同箱",
-                            "option_out": "分拆同箱",
-                            "option_bold": "分拆装同箱",
-                            "option_show": "转接座与主体{V}",
-                            "option_label": "分拆同箱"
-                        },
-                        {
-                            "option_content": "与产品主体“装一起”包装",
-                            "option_out": "一体包装",
-                            "option_bold": "装一起包装",
-                            "option_show": "转接座与主体{V}",
-                            "option_label": "一体包装"
-                        },
-                        {
-                            "option_content": "与产品主体“分箱”包装",
-                            "option_out": "分箱包装",
-                            "option_bold": "分箱包装",
-                            "option_show": "转接座与主体{V}",
-                            "option_label": "分箱包装"
-                        }
-                    ],
-                    "num": "21"
-                },
-                "new_data": {
-                    "condition": "6==True",
-                    "node_id": "21",
-                    "guide_content": "导光束转接座包装要求",
-                    "answer_type": "单选",
-                    "input_num_accor": "",
-                    "input_name_accor": "",
-                    "input_tolerance": "",
-                    "ref_config": "True",
-                    "option_hint": "与客户协商好转接座与产品主体是否装一起发货，还是分拆配好螺丝客户自己装配，包括包装装箱方式。",
-                    "option_group_id": "2.0",
-                    "option_view": "结构+工艺+质量",
-                    "user_must_out": {
-                        "value": "分拆同箱"
-                    },
-                    "option_tolerance_out": {},
-                    "ref_out": [
-                        "5"
-                    ],
-                    "options": [
-                        {
-                            "option_content": "与产品主体“分拆”装同箱",
-                            "option_out": "分拆同箱",
-                            "option_bold": "分拆装同箱",
-                            "option_show": "转接座与主体{V}",
-                            "option_label": "分拆同箱"
-                        },
-                        {
-                            "option_content": "与产品主体“装一起”包装",
-                            "option_out": "一体包装",
-                            "option_bold": "装一起包装",
-                            "option_show": "转接座与主体{V}",
-                            "option_label": "一体包装"
-                        },
-                        {
-                            "option_content": "与产品主体“分箱”包装",
-                            "option_out": "分箱包装",
-                            "option_bold": "分箱包装",
-                            "option_show": "转接座与主体{V}",
-                            "option_label": "分箱包装"
-                        }
-                    ],
-                    "num": "21"
-                }
-            },
-            "77": {
-                "old_data": {
-                    "condition": "2any['光学','结构']",
-                    "node_id": "77",
-                    "guide_content": "是否限定产品工作时的噪声",
-                    "answer_type": "单选",
-                    "input_num_accor": "",
-                    "input_name_accor": "",
-                    "input_tolerance": "",
-                    "ref_config": "False",
-                    "option_hint": "是否限定产品工作时允许产生的噪声上限。",
-                    "option_group_id": "7.0",
-                    "option_view": "全员",
-                    "user_must_out": {
-                        "value": "False"
-                    },
-                    "option_tolerance_out": {},
-                    "ref_out": "",
-                    "options": [
-                        {
-                            "option_content": "是",
-                            "option_out": "True",
-                            "option_bold": "",
-                            "option_show": "",
-                            "option_label": "限噪声"
-                        },
-                        {
-                            "option_content": "否",
-                            "option_out": "False",
-                            "option_bold": "不限定",
-                            "option_show": "产品工作时噪声{V}",
-                            "option_label": ""
-                        }
-                    ],
-                    "num": "77"
-                },
-                "new_data": {
-                    "condition": "2any['光学','结构']",
-                    "node_id": "77",
-                    "guide_content": "是否限定产品工作时的噪声",
-                    "answer_type": "单选",
-                    "input_num_accor": "",
-                    "input_name_accor": "",
-                    "input_tolerance": "",
-                    "ref_config": "False",
-                    "option_hint": "是否限定产品工作时允许产生的噪声上限。",
-                    "option_group_id": "7.0",
-                    "option_view": "全员",
-                    "user_must_out": {
-                        "value": "True"
-                    },
-                    "option_tolerance_out": {},
-                    "ref_out": "",
-                    "options": [
-                        {
-                            "option_content": "是",
-                            "option_out": "True",
-                            "option_bold": "",
-                            "option_show": "",
-                            "option_label": "限噪声"
-                        },
-                        {
-                            "option_content": "否",
-                            "option_out": "False",
-                            "option_bold": "不限定",
-                            "option_show": "产品工作时噪声{V}",
-                            "option_label": ""
-                        }
-                    ],
-                    "num": "77"
-                }
             }
         },
         "file_dic": {
@@ -10154,2106 +9849,9 @@
         "file_counter": 6,
         "project_name": "RFFM-1519-A",
         "current_user": "林贵原",
-        "version": "2.0",
-        "original_version": "1.0",
-        "req_timestamp": "2025-08-11T18:41:51.877788"
+        "version": "1.0",
+        "original_version": "0.0",
+        "req_timestamp": "2025-08-11T18:41:09.427843"
     },
-    "3.0": {
-        "added": {},
-        "deleted": {},
-        "modified": {
-            "138": {
-                "old_data": {
-                    "condition": "无条件",
-                    "node_id": "138",
-                    "guide_content": "请提供剩余产品光学补充需求",
-                    "answer_type": "多行文本",
-                    "input_num_accor": "",
-                    "input_name_accor": "",
-                    "input_tolerance": "",
-                    "ref_config": "True",
-                    "option_hint": "填写上面需求确认项无提及但客户有要求的光学内容，没有则写“无”。",
-                    "option_group_id": "18.0",
-                    "option_view": "光学+工艺+质量",
-                    "user_must_out": {
-                        "1": "无补充"
-                    },
-                    "option_tolerance_out": {},
-                    "ref_out": "",
-                    "options": [
-                        {
-                            "option_content": "",
-                            "option_out": "字典",
-                            "option_bold": "",
-                            "option_show": "补充光学要求：{V}",
-                            "option_label": ""
-                        }
-                    ],
-                    "num": "138"
-                },
-                "new_data": {
-                    "condition": "无条件",
-                    "node_id": "138",
-                    "guide_content": "请提供剩余产品光学补充需求",
-                    "answer_type": "多行文本",
-                    "input_num_accor": "",
-                    "input_name_accor": "",
-                    "input_tolerance": "",
-                    "ref_config": "True",
-                    "option_hint": "填写上面需求确认项无提及但客户有要求的光学内容，没有则写“无”。",
-                    "option_group_id": "18.0",
-                    "option_view": "光学+工艺+质量",
-                    "user_must_out": {
-                        "1": "光参XX要特别注意"
-                    },
-                    "option_tolerance_out": {},
-                    "ref_out": "",
-                    "options": [
-                        {
-                            "option_content": "",
-                            "option_out": "字典",
-                            "option_bold": "",
-                            "option_show": "补充光学要求：{V}",
-                            "option_label": ""
-                        }
-                    ],
-                    "num": "138"
-                }
-            }
-        },
-        "file_dic": {
-            "1": {
-                "file_del_bool": false,
-                "file_name": "IR-850-500-S-02-K10010073",
-                "file_url": "/uploads/IR-850-500-S-02-K10010073.f1a9abffe8f197027003b7ac5ce33fa4.pdf",
-                "file_name_hash": "IR-850-500-S-02-K10010073.f1a9abffe8f197027003b7ac5ce33fa4.pdf",
-                "file_name_suffix": "IR-850-500-S-02-K10010073.pdf",
-                "file_type": "application/pdf",
-                "file_lab": "1",
-                "parents_h": 9
-            },
-            "2": {
-                "file_del_bool": false,
-                "file_name": "临时性数据",
-                "file_url": "/uploads/临时性数据.bbb7a654f2ce1ee6a777865beab1f76b.xlsx",
-                "file_name_hash": "临时性数据.bbb7a654f2ce1ee6a777865beab1f76b.xlsx",
-                "file_name_suffix": "临时性数据.xlsx",
-                "file_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                "file_lab": "2",
-                "parents_h": 9
-            },
-            "3": {
-                "file_del_bool": false,
-                "file_name": "琥珀色临时模组四光源驱动条件",
-                "file_url": "/uploads/琥珀色临时模组四光源驱动条件.e4d3934570fe6e04343c95ef842f14e2.pptx",
-                "file_name_hash": "琥珀色临时模组四光源驱动条件.e4d3934570fe6e04343c95ef842f14e2.pptx",
-                "file_name_suffix": "琥珀色临时模组四光源驱动条件.pptx",
-                "file_type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-                "file_lab": "3",
-                "parents_h": 9
-            },
-            "4": {
-                "file_del_bool": false,
-                "file_name": "标准版本更新模板",
-                "file_url": "/uploads/标准版本更新模板.1dec186145b7a75831aa5f1421980227.docx",
-                "file_name_hash": "标准版本更新模板.1dec186145b7a75831aa5f1421980227.docx",
-                "file_name_suffix": "标准版本更新模板.docx",
-                "file_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                "file_lab": "4",
-                "parents_h": 9
-            },
-            "5": {
-                "file_del_bool": false,
-                "file_name": "Snipaste_2025-01-09_13-08-42",
-                "file_url": "/uploads/Snipaste_2025-01-09_13-08-42.00661caf7da65237520b08c398a61ae9.png",
-                "file_name_hash": "Snipaste_2025-01-09_13-08-42.00661caf7da65237520b08c398a61ae9.png",
-                "file_name_suffix": "Snipaste_2025-01-09_13-08-42.png",
-                "file_type": "image/png",
-                "file_lab": "5",
-                "parents_h": 9
-            },
-            "6": {
-                "file_del_bool": false,
-                "file_name": "微信图片_20241212095208",
-                "file_url": "/uploads/微信图片_20241212095208.e49868d32bbb9cb04364ba96f4c1eeb3.jpg",
-                "file_name_hash": "微信图片_20241212095208.e49868d32bbb9cb04364ba96f4c1eeb3.jpg",
-                "file_name_suffix": "微信图片_20241212095208.jpg",
-                "file_type": "image/jpeg",
-                "file_lab": "6",
-                "parents_h": 9
-            }
-        },
-        "deleted_files": [],
-        "file_counter": 6,
-        "project_name": "RFFM-1519-A",
-        "current_user": "徐志航",
-        "version": "3.0",
-        "original_version": "2.0",
-        "req_timestamp": "2025-09-21T15:21:25.307695"
-    },
-    "4.0": {
-        "added": {},
-        "deleted": {},
-        "modified": {
-            "15": {
-                "old_data": {
-                    "condition": "6==True",
-                    "node_id": "15",
-                    "guide_content": "是否指定导光束转接座尺寸形状",
-                    "answer_type": "单选",
-                    "input_num_accor": "",
-                    "input_name_accor": "",
-                    "input_tolerance": "",
-                    "ref_config": "True",
-                    "option_hint": "我司转接座有默认的设计形式，是否符合客户使用场景？如果客户有形状或尺寸方面的具体定制要求，请选“是”。",
-                    "option_group_id": "2.0",
-                    "option_view": "光学+结构+质量",
-                    "user_must_out": {
-                        "value": "False"
-                    },
-                    "option_tolerance_out": {},
-                    "ref_out": "",
-                    "options": [
-                        {
-                            "option_content": "是",
-                            "option_out": "True",
-                            "option_bold": "",
-                            "option_show": "",
-                            "option_label": "定制转接座尺寸"
-                        },
-                        {
-                            "option_content": "否",
-                            "option_out": "False",
-                            "option_bold": "不限定",
-                            "option_show": "{V}转接座外形尺寸",
-                            "option_label": ""
-                        }
-                    ],
-                    "num": "15"
-                },
-                "new_data": {
-                    "condition": "6==True",
-                    "node_id": "15",
-                    "guide_content": "是否指定导光束转接座尺寸形状",
-                    "answer_type": "单选",
-                    "input_num_accor": "",
-                    "input_name_accor": "",
-                    "input_tolerance": "",
-                    "ref_config": "True",
-                    "option_hint": "我司转接座有默认的设计形式，是否符合客户使用场景？如果客户有形状或尺寸方面的具体定制要求，请选“是”。",
-                    "option_group_id": "2.0",
-                    "option_view": "光学+结构+质量",
-                    "user_must_out": {},
-                    "option_tolerance_out": {},
-                    "ref_out": "",
-                    "options": [
-                        {
-                            "option_content": "是",
-                            "option_out": "True",
-                            "option_bold": "",
-                            "option_show": "",
-                            "option_label": "定制转接座尺寸"
-                        },
-                        {
-                            "option_content": "否",
-                            "option_out": "False",
-                            "option_bold": "不限定",
-                            "option_show": "{V}转接座外形尺寸",
-                            "option_label": ""
-                        }
-                    ],
-                    "num": "15"
-                }
-            },
-            "22": {
-                "old_data": {
-                    "condition": "6==True",
-                    "node_id": "22",
-                    "guide_content": "导光束转接座是否要求具备插拔检测功能",
-                    "answer_type": "单选",
-                    "input_num_accor": "",
-                    "input_name_accor": "",
-                    "input_tolerance": "",
-                    "ref_config": "False",
-                    "option_hint": "大部分单白光模组默认支持机械悬臂检测，也可定制为接近开关检测；大部分荧光模组默认支持接近开关检测；新项目需要检测的情况下推荐接近开关检测；",
-                    "option_group_id": "2.0",
-                    "option_view": "全员",
-                    "user_must_out": {
-                        "value": "悬臂"
-                    },
-                    "option_tolerance_out": {},
-                    "ref_out": "",
-                    "options": [
-                        {
-                            "option_content": "机械悬臂检测",
-                            "option_out": "悬臂",
-                            "option_bold": "悬臂检测",
-                            "option_show": "转接座选用{V}类",
-                            "option_label": "悬臂检测"
-                        },
-                        {
-                            "option_content": "接近开关检测",
-                            "option_out": "接近开关",
-                            "option_bold": "接近开关检测",
-                            "option_show": "转接座选用{V}类",
-                            "option_label": "接近开关检测"
-                        },
-                        {
-                            "option_content": "普通无检测",
-                            "option_out": "普通",
-                            "option_bold": "普通无检测",
-                            "option_show": "转接座选用{V}类",
-                            "option_label": "普通无检测"
-                        }
-                    ],
-                    "num": "22"
-                },
-                "new_data": {
-                    "condition": "6==True",
-                    "node_id": "22",
-                    "guide_content": "导光束转接座是否要求具备插拔检测功能",
-                    "answer_type": "单选",
-                    "input_num_accor": "",
-                    "input_name_accor": "",
-                    "input_tolerance": "",
-                    "ref_config": "False",
-                    "option_hint": "大部分单白光模组默认支持机械悬臂检测，也可定制为接近开关检测；大部分荧光模组默认支持接近开关检测；新项目需要检测的情况下推荐接近开关检测；",
-                    "option_group_id": "2.0",
-                    "option_view": "全员",
-                    "user_must_out": {},
-                    "option_tolerance_out": {},
-                    "ref_out": "",
-                    "options": [
-                        {
-                            "option_content": "机械悬臂检测",
-                            "option_out": "悬臂",
-                            "option_bold": "悬臂检测",
-                            "option_show": "转接座选用{V}类",
-                            "option_label": "悬臂检测"
-                        },
-                        {
-                            "option_content": "接近开关检测",
-                            "option_out": "接近开关",
-                            "option_bold": "接近开关检测",
-                            "option_show": "转接座选用{V}类",
-                            "option_label": "接近开关检测"
-                        },
-                        {
-                            "option_content": "普通无检测",
-                            "option_out": "普通",
-                            "option_bold": "普通无检测",
-                            "option_show": "转接座选用{V}类",
-                            "option_label": "普通无检测"
-                        }
-                    ],
-                    "num": "22"
-                }
-            },
-            "6": {
-                "old_data": {
-                    "condition": "4any['CD','DCD','CDCD','DCDCD']",
-                    "node_id": "6",
-                    "guide_content": "是否购买我司导光束转接座",
-                    "answer_type": "单选",
-                    "input_num_accor": "",
-                    "input_name_accor": "",
-                    "input_tolerance": "",
-                    "ref_config": "False",
-                    "option_hint": "导光束转接座是由我司设计生产，还是客户自行设计生产？",
-                    "option_group_id": "2.0",
-                    "option_view": "光学+结构+工艺+质量",
-                    "user_must_out": {
-                        "value": "True"
-                    },
-                    "option_tolerance_out": {},
-                    "ref_out": "",
-                    "options": [
-                        {
-                            "option_content": "是",
-                            "option_out": "True",
-                            "option_bold": "购买我司",
-                            "option_show": "导光束转接座{V}的",
-                            "option_label": "配转接座"
-                        },
-                        {
-                            "option_content": "否",
-                            "option_out": "False",
-                            "option_bold": "客户自制",
-                            "option_show": "{V}导光束转接机构",
-                            "option_label": ""
-                        }
-                    ],
-                    "num": "6"
-                },
-                "new_data": {
-                    "condition": "4any['CD','DCD','CDCD','DCDCD']",
-                    "node_id": "6",
-                    "guide_content": "是否购买我司导光束转接座",
-                    "answer_type": "单选",
-                    "input_num_accor": "",
-                    "input_name_accor": "",
-                    "input_tolerance": "",
-                    "ref_config": "False",
-                    "option_hint": "导光束转接座是由我司设计生产，还是客户自行设计生产？",
-                    "option_group_id": "2.0",
-                    "option_view": "光学+结构+工艺+质量",
-                    "user_must_out": {},
-                    "option_tolerance_out": {},
-                    "ref_out": "",
-                    "options": [
-                        {
-                            "option_content": "是",
-                            "option_out": "True",
-                            "option_bold": "购买我司",
-                            "option_show": "导光束转接座{V}的",
-                            "option_label": "配转接座"
-                        },
-                        {
-                            "option_content": "否",
-                            "option_out": "False",
-                            "option_bold": "客户自制",
-                            "option_show": "{V}导光束转接机构",
-                            "option_label": ""
-                        }
-                    ],
-                    "num": "6"
-                }
-            },
-            "7": {
-                "old_data": {
-                    "condition": "5==True or 4any['CDC','CD','DCD','CDCD','DCDCD']",
-                    "node_id": "7",
-                    "guide_content": "导光束输入端通光口径",
-                    "answer_type": "单行文本",
-                    "input_num_accor": "",
-                    "input_name_accor": "",
-                    "input_tolerance": "",
-                    "ref_config": "True",
-                    "option_hint": "填写客户对导光束输入端通光口径的要求，注意是“透光”部分，单位统一为：mm。",
-                    "option_group_id": "2.0",
-                    "option_view": "光学+结构+工艺+质量",
-                    "user_must_out": {
-                        "1": "5mm"
-                    },
-                    "option_tolerance_out": {},
-                    "ref_out": "",
-                    "options": [
-                        {
-                            "option_content": "",
-                            "option_out": "字典",
-                            "option_bold": "",
-                            "option_show": "导光束输入端通光口径：{V}",
-                            "option_label": ""
-                        }
-                    ],
-                    "num": "7"
-                },
-                "new_data": {
-                    "condition": "5==True or 4any['CDC','CD','DCD','CDCD','DCDCD']",
-                    "node_id": "7",
-                    "guide_content": "导光束输入端通光口径",
-                    "answer_type": "单行文本",
-                    "input_num_accor": "",
-                    "input_name_accor": "",
-                    "input_tolerance": "",
-                    "ref_config": "True",
-                    "option_hint": "填写客户对导光束输入端通光口径的要求，注意是“透光”部分，单位统一为：mm。",
-                    "option_group_id": "2.0",
-                    "option_view": "光学+结构+工艺+质量",
-                    "user_must_out": {},
-                    "option_tolerance_out": {},
-                    "ref_out": "",
-                    "options": [
-                        {
-                            "option_content": "",
-                            "option_out": "字典",
-                            "option_bold": "",
-                            "option_show": "导光束输入端通光口径：{V}",
-                            "option_label": ""
-                        }
-                    ],
-                    "num": "7"
-                }
-            },
-            "9": {
-                "old_data": {
-                    "condition": "3==True",
-                    "node_id": "9",
-                    "guide_content": "导光束NA值",
-                    "answer_type": "单行文本",
-                    "input_num_accor": "",
-                    "input_name_accor": "",
-                    "input_tolerance": "",
-                    "ref_config": "True",
-                    "option_hint": "填写客户对导光束NA值的要求，无单位。",
-                    "option_group_id": "2.0",
-                    "option_view": "光学+结构+工艺+质量",
-                    "user_must_out": {
-                        "1": "0.62"
-                    },
-                    "option_tolerance_out": {},
-                    "ref_out": "",
-                    "options": [
-                        {
-                            "option_content": "",
-                            "option_out": "字典",
-                            "option_bold": "",
-                            "option_show": "导光束NA值：{V}",
-                            "option_label": ""
-                        }
-                    ],
-                    "num": "9"
-                },
-                "new_data": {
-                    "condition": "3==True",
-                    "node_id": "9",
-                    "guide_content": "导光束NA值",
-                    "answer_type": "单行文本",
-                    "input_num_accor": "",
-                    "input_name_accor": "",
-                    "input_tolerance": "",
-                    "ref_config": "True",
-                    "option_hint": "填写客户对导光束NA值的要求，无单位。",
-                    "option_group_id": "2.0",
-                    "option_view": "光学+结构+工艺+质量",
-                    "user_must_out": {},
-                    "option_tolerance_out": {},
-                    "ref_out": "",
-                    "options": [
-                        {
-                            "option_content": "",
-                            "option_out": "字典",
-                            "option_bold": "",
-                            "option_show": "导光束NA值：{V}",
-                            "option_label": ""
-                        }
-                    ],
-                    "num": "9"
-                }
-            },
-            "5": {
-                "old_data": {
-                    "condition": "3==True",
-                    "node_id": "5",
-                    "guide_content": "我司是否负责导光束的供货",
-                    "answer_type": "单选",
-                    "input_num_accor": "",
-                    "input_name_accor": "",
-                    "input_tolerance": "",
-                    "ref_config": "False",
-                    "option_hint": "导光束是否作为产品的一部分卖给客户？",
-                    "option_group_id": "2.0",
-                    "option_view": "光学+结构+工艺+质量",
-                    "user_must_out": {
-                        "value": "False"
-                    },
-                    "option_tolerance_out": {},
-                    "ref_out": "",
-                    "options": [
-                        {
-                            "option_content": "是",
-                            "option_out": "True",
-                            "option_bold": "我司",
-                            "option_show": "导光束由{V}负责供货",
-                            "option_label": "配导光束"
-                        },
-                        {
-                            "option_content": "否",
-                            "option_out": "False",
-                            "option_bold": "客户",
-                            "option_show": "导光束由{V}自行搭配",
-                            "option_label": ""
-                        }
-                    ],
-                    "num": "5"
-                },
-                "new_data": {
-                    "condition": "3==True",
-                    "node_id": "5",
-                    "guide_content": "我司是否负责导光束的供货",
-                    "answer_type": "单选",
-                    "input_num_accor": "",
-                    "input_name_accor": "",
-                    "input_tolerance": "",
-                    "ref_config": "False",
-                    "option_hint": "导光束是否作为产品的一部分卖给客户？",
-                    "option_group_id": "2.0",
-                    "option_view": "光学+结构+工艺+质量",
-                    "user_must_out": {},
-                    "option_tolerance_out": {},
-                    "ref_out": "",
-                    "options": [
-                        {
-                            "option_content": "是",
-                            "option_out": "True",
-                            "option_bold": "我司",
-                            "option_show": "导光束由{V}负责供货",
-                            "option_label": "配导光束"
-                        },
-                        {
-                            "option_content": "否",
-                            "option_out": "False",
-                            "option_bold": "客户",
-                            "option_show": "导光束由{V}自行搭配",
-                            "option_label": ""
-                        }
-                    ],
-                    "num": "5"
-                }
-            },
-            "3": {
-                "old_data": {
-                    "condition": "2any['光学','结构']",
-                    "node_id": "3",
-                    "guide_content": "产品是否涉及导光束",
-                    "answer_type": "单选",
-                    "input_num_accor": "",
-                    "input_name_accor": "",
-                    "input_tolerance": "",
-                    "ref_config": "False",
-                    "option_hint": "产品是否需要与导光束进行协同？",
-                    "option_group_id": "1.0",
-                    "option_view": "全员",
-                    "user_must_out": {
-                        "value": "True"
-                    },
-                    "option_tolerance_out": {},
-                    "ref_out": "",
-                    "options": [
-                        {
-                            "option_content": "是",
-                            "option_out": "True",
-                            "option_bold": "涉及",
-                            "option_show": "产品{V}导光束",
-                            "option_label": "涉及导光束"
-                        },
-                        {
-                            "option_content": "否",
-                            "option_out": "False",
-                            "option_bold": "不涉及",
-                            "option_show": "产品{V}导光束",
-                            "option_label": "无导光束"
-                        }
-                    ],
-                    "num": "3"
-                },
-                "new_data": {
-                    "condition": "2any['光学','结构']",
-                    "node_id": "3",
-                    "guide_content": "产品是否涉及导光束",
-                    "answer_type": "单选",
-                    "input_num_accor": "",
-                    "input_name_accor": "",
-                    "input_tolerance": "",
-                    "ref_config": "False",
-                    "option_hint": "产品是否需要与导光束进行协同？",
-                    "option_group_id": "1.0",
-                    "option_view": "全员",
-                    "user_must_out": {
-                        "value": "False"
-                    },
-                    "option_tolerance_out": {},
-                    "ref_out": "",
-                    "options": [
-                        {
-                            "option_content": "是",
-                            "option_out": "True",
-                            "option_bold": "涉及",
-                            "option_show": "产品{V}导光束",
-                            "option_label": "涉及导光束"
-                        },
-                        {
-                            "option_content": "否",
-                            "option_out": "False",
-                            "option_bold": "不涉及",
-                            "option_show": "产品{V}导光束",
-                            "option_label": "无导光束"
-                        }
-                    ],
-                    "num": "3"
-                }
-            },
-            "17": {
-                "old_data": {
-                    "condition": "6==True",
-                    "node_id": "17",
-                    "guide_content": "转接座头部旋帽是否按我司工艺点胶出货",
-                    "answer_type": "单选",
-                    "input_num_accor": "",
-                    "input_name_accor": "",
-                    "input_tolerance": "",
-                    "ref_config": "False",
-                    "option_hint": "我司导光束转接座头部旋帽默认会有点胶处理，防止松脱掉，而部分客户要求不点胶出货，他们自行装配后自己点胶。",
-                    "option_group_id": "2.0",
-                    "option_view": "结构+工艺+质量",
-                    "user_must_out": {
-                        "value": "True"
-                    },
-                    "option_tolerance_out": {},
-                    "ref_out": "",
-                    "options": [
-                        {
-                            "option_content": "是",
-                            "option_out": "True",
-                            "option_bold": "",
-                            "option_show": "转接座旋帽{V}",
-                            "option_label": ""
-                        },
-                        {
-                            "option_content": "否",
-                            "option_out": "False",
-                            "option_bold": "不点胶",
-                            "option_show": "转接座旋帽{V}",
-                            "option_label": "转接座旋帽不点胶"
-                        }
-                    ],
-                    "num": "17"
-                },
-                "new_data": {
-                    "condition": "6==True",
-                    "node_id": "17",
-                    "guide_content": "转接座头部旋帽是否按我司工艺点胶出货",
-                    "answer_type": "单选",
-                    "input_num_accor": "",
-                    "input_name_accor": "",
-                    "input_tolerance": "",
-                    "ref_config": "False",
-                    "option_hint": "我司导光束转接座头部旋帽默认会有点胶处理，防止松脱掉，而部分客户要求不点胶出货，他们自行装配后自己点胶。",
-                    "option_group_id": "2.0",
-                    "option_view": "结构+工艺+质量",
-                    "user_must_out": {},
-                    "option_tolerance_out": {},
-                    "ref_out": "",
-                    "options": [
-                        {
-                            "option_content": "是",
-                            "option_out": "True",
-                            "option_bold": "",
-                            "option_show": "转接座旋帽{V}",
-                            "option_label": ""
-                        },
-                        {
-                            "option_content": "否",
-                            "option_out": "False",
-                            "option_bold": "不点胶",
-                            "option_show": "转接座旋帽{V}",
-                            "option_label": "转接座旋帽不点胶"
-                        }
-                    ],
-                    "num": "17"
-                }
-            },
-            "23": {
-                "old_data": {
-                    "condition": "2any['硬件'] and 22any['悬臂','接近开关']",
-                    "node_id": "23",
-                    "guide_content": "导光束插拔影响的光源与处理逻辑",
-                    "answer_type": "单选",
-                    "input_num_accor": "",
-                    "input_name_accor": "",
-                    "input_tolerance": "",
-                    "ref_config": "False",
-                    "option_hint": "导光束插拔影响哪些光源的亮灭，“影响所有光源”代表：拔出导光束所有光源灭，插入导光束所有光源亮；其它情况选“有特殊逻辑”",
-                    "option_group_id": "2.0",
-                    "option_view": "全员",
-                    "user_must_out": {
-                        "value": "False"
-                    },
-                    "option_tolerance_out": {},
-                    "ref_out": "",
-                    "options": [
-                        {
-                            "option_content": "有特殊逻辑",
-                            "option_out": "True",
-                            "option_bold": "",
-                            "option_show": "",
-                            "option_label": "导光束插拔有特殊逻辑"
-                        },
-                        {
-                            "option_content": "使所有光源亮灭",
-                            "option_out": "False",
-                            "option_bold": "插拔使所有光源亮灭",
-                            "option_show": "导光束{V}",
-                            "option_label": "导光束插拔影响所有光源"
-                        }
-                    ],
-                    "num": "23"
-                },
-                "new_data": {
-                    "condition": "2any['硬件'] and 22any['悬臂','接近开关']",
-                    "node_id": "23",
-                    "guide_content": "导光束插拔影响的光源与处理逻辑",
-                    "answer_type": "单选",
-                    "input_num_accor": "",
-                    "input_name_accor": "",
-                    "input_tolerance": "",
-                    "ref_config": "False",
-                    "option_hint": "导光束插拔影响哪些光源的亮灭，“影响所有光源”代表：拔出导光束所有光源灭，插入导光束所有光源亮；其它情况选“有特殊逻辑”",
-                    "option_group_id": "2.0",
-                    "option_view": "全员",
-                    "user_must_out": {},
-                    "option_tolerance_out": {},
-                    "ref_out": "",
-                    "options": [
-                        {
-                            "option_content": "有特殊逻辑",
-                            "option_out": "True",
-                            "option_bold": "",
-                            "option_show": "",
-                            "option_label": "导光束插拔有特殊逻辑"
-                        },
-                        {
-                            "option_content": "使所有光源亮灭",
-                            "option_out": "False",
-                            "option_bold": "插拔使所有光源亮灭",
-                            "option_show": "导光束{V}",
-                            "option_label": "导光束插拔影响所有光源"
-                        }
-                    ],
-                    "num": "23"
-                }
-            },
-            "10": {
-                "old_data": {
-                    "condition": "5==True or 6==True or 4any['CDC','DC','DCD','CDCD']",
-                    "node_id": "10",
-                    "guide_content": "导光束外形尺寸",
-                    "answer_type": "多行文本",
-                    "input_num_accor": "",
-                    "input_name_accor": "",
-                    "input_tolerance": "",
-                    "ref_config": "True",
-                    "option_hint": "按产品配合所需，提供导光束外形尺寸信息或要求，主要有：输入端头部尺寸、输出端头部尺寸、总长度，建议提供图纸，单位统一为：mm。",
-                    "option_group_id": "2.0",
-                    "option_view": "光学+结构+工艺+质量",
-                    "user_must_out": {
-                        "1": "使用典型Wolf头部尺寸，长度3米"
-                    },
-                    "option_tolerance_out": {},
-                    "ref_out": [
-                        "6"
-                    ],
-                    "options": [
-                        {
-                            "option_content": "",
-                            "option_out": "字典",
-                            "option_bold": "",
-                            "option_show": "导光束外形尺寸要求：{V}",
-                            "option_label": ""
-                        }
-                    ],
-                    "num": "10"
-                },
-                "new_data": {
-                    "condition": "5==True or 6==True or 4any['CDC','DC','DCD','CDCD']",
-                    "node_id": "10",
-                    "guide_content": "导光束外形尺寸",
-                    "answer_type": "多行文本",
-                    "input_num_accor": "",
-                    "input_name_accor": "",
-                    "input_tolerance": "",
-                    "ref_config": "True",
-                    "option_hint": "按产品配合所需，提供导光束外形尺寸信息或要求，主要有：输入端头部尺寸、输出端头部尺寸、总长度，建议提供图纸，单位统一为：mm。",
-                    "option_group_id": "2.0",
-                    "option_view": "光学+结构+工艺+质量",
-                    "user_must_out": {},
-                    "option_tolerance_out": {},
-                    "ref_out": [
-                        "6"
-                    ],
-                    "options": [
-                        {
-                            "option_content": "",
-                            "option_out": "字典",
-                            "option_bold": "",
-                            "option_show": "导光束外形尺寸要求：{V}",
-                            "option_label": ""
-                        }
-                    ],
-                    "num": "10"
-                }
-            },
-            "21": {
-                "old_data": {
-                    "condition": "6==True",
-                    "node_id": "21",
-                    "guide_content": "导光束转接座包装要求",
-                    "answer_type": "单选",
-                    "input_num_accor": "",
-                    "input_name_accor": "",
-                    "input_tolerance": "",
-                    "ref_config": "True",
-                    "option_hint": "与客户协商好转接座与产品主体是否装一起发货，还是分拆配好螺丝客户自己装配，包括包装装箱方式。",
-                    "option_group_id": "2.0",
-                    "option_view": "结构+工艺+质量",
-                    "user_must_out": {
-                        "value": "分拆同箱"
-                    },
-                    "option_tolerance_out": {},
-                    "ref_out": [
-                        "5"
-                    ],
-                    "options": [
-                        {
-                            "option_content": "与产品主体“分拆”装同箱",
-                            "option_out": "分拆同箱",
-                            "option_bold": "分拆装同箱",
-                            "option_show": "转接座与主体{V}",
-                            "option_label": "分拆同箱"
-                        },
-                        {
-                            "option_content": "与产品主体“装一起”包装",
-                            "option_out": "一体包装",
-                            "option_bold": "装一起包装",
-                            "option_show": "转接座与主体{V}",
-                            "option_label": "一体包装"
-                        },
-                        {
-                            "option_content": "与产品主体“分箱”包装",
-                            "option_out": "分箱包装",
-                            "option_bold": "分箱包装",
-                            "option_show": "转接座与主体{V}",
-                            "option_label": "分箱包装"
-                        }
-                    ],
-                    "num": "21"
-                },
-                "new_data": {
-                    "condition": "6==True",
-                    "node_id": "21",
-                    "guide_content": "导光束转接座包装要求",
-                    "answer_type": "单选",
-                    "input_num_accor": "",
-                    "input_name_accor": "",
-                    "input_tolerance": "",
-                    "ref_config": "True",
-                    "option_hint": "与客户协商好转接座与产品主体是否装一起发货，还是分拆配好螺丝客户自己装配，包括包装装箱方式。",
-                    "option_group_id": "2.0",
-                    "option_view": "结构+工艺+质量",
-                    "user_must_out": {},
-                    "option_tolerance_out": {},
-                    "ref_out": [
-                        "5"
-                    ],
-                    "options": [
-                        {
-                            "option_content": "与产品主体“分拆”装同箱",
-                            "option_out": "分拆同箱",
-                            "option_bold": "分拆装同箱",
-                            "option_show": "转接座与主体{V}",
-                            "option_label": "分拆同箱"
-                        },
-                        {
-                            "option_content": "与产品主体“装一起”包装",
-                            "option_out": "一体包装",
-                            "option_bold": "装一起包装",
-                            "option_show": "转接座与主体{V}",
-                            "option_label": "一体包装"
-                        },
-                        {
-                            "option_content": "与产品主体“分箱”包装",
-                            "option_out": "分箱包装",
-                            "option_bold": "分箱包装",
-                            "option_show": "转接座与主体{V}",
-                            "option_label": "分箱包装"
-                        }
-                    ],
-                    "num": "21"
-                }
-            },
-            "11": {
-                "old_data": {
-                    "condition": "3==True",
-                    "node_id": "11",
-                    "guide_content": "是否指定或提供导光束做出厂光参数测试",
-                    "answer_type": "单选",
-                    "input_num_accor": "",
-                    "input_name_accor": "",
-                    "input_tolerance": "",
-                    "ref_config": "False",
-                    "option_hint": "产品生产出来后，在做光参数测试时，客户是否指定或提供导光束来测，而不是由我司自行决定？",
-                    "option_group_id": "3.0",
-                    "option_view": "光学+结构+工艺+质量",
-                    "user_must_out": {
-                        "value": "True"
-                    },
-                    "option_tolerance_out": {},
-                    "ref_out": "",
-                    "options": [
-                        {
-                            "option_content": "是",
-                            "option_out": "True",
-                            "option_bold": "客户指定/提供",
-                            "option_show": "{V}导光束做光参数测试",
-                            "option_label": "指定导光束测光"
-                        },
-                        {
-                            "option_content": "否",
-                            "option_out": "False",
-                            "option_bold": "",
-                            "option_show": "{V}光参数测试工具",
-                            "option_label": ""
-                        }
-                    ],
-                    "num": "11"
-                },
-                "new_data": {
-                    "condition": "3==True",
-                    "node_id": "11",
-                    "guide_content": "是否指定或提供导光束做出厂光参数测试",
-                    "answer_type": "单选",
-                    "input_num_accor": "",
-                    "input_name_accor": "",
-                    "input_tolerance": "",
-                    "ref_config": "False",
-                    "option_hint": "产品生产出来后，在做光参数测试时，客户是否指定或提供导光束来测，而不是由我司自行决定？",
-                    "option_group_id": "3.0",
-                    "option_view": "光学+结构+工艺+质量",
-                    "user_must_out": {},
-                    "option_tolerance_out": {},
-                    "ref_out": "",
-                    "options": [
-                        {
-                            "option_content": "是",
-                            "option_out": "True",
-                            "option_bold": "客户指定/提供",
-                            "option_show": "{V}导光束做光参数测试",
-                            "option_label": "指定导光束测光"
-                        },
-                        {
-                            "option_content": "否",
-                            "option_out": "False",
-                            "option_bold": "",
-                            "option_show": "{V}光参数测试工具",
-                            "option_label": ""
-                        }
-                    ],
-                    "num": "11"
-                }
-            },
-            "13": {
-                "old_data": {
-                    "condition": "6==True",
-                    "node_id": "13",
-                    "guide_content": "是否指定导光束转接座材料及表面工艺",
-                    "answer_type": "单选",
-                    "input_num_accor": "",
-                    "input_name_accor": "",
-                    "input_tolerance": "",
-                    "ref_config": "False",
-                    "option_hint": "我司转接座材料及表面工艺默认：6061铝合金，100目喷砂，原色阳极氧化；如果客户有其它要求的工艺，请选“是”。",
-                    "option_group_id": "2.0",
-                    "option_view": "结构+工艺+质量",
-                    "user_must_out": {
-                        "value": "False"
-                    },
-                    "option_tolerance_out": {},
-                    "ref_out": "",
-                    "options": [
-                        {
-                            "option_content": "是",
-                            "option_out": "True",
-                            "option_bold": "",
-                            "option_show": "",
-                            "option_label": "定制转接座材质表面"
-                        },
-                        {
-                            "option_content": "否",
-                            "option_out": "False",
-                            "option_bold": "不指定",
-                            "option_show": "{V}转接座材料与表面工艺",
-                            "option_label": ""
-                        }
-                    ],
-                    "num": "13"
-                },
-                "new_data": {
-                    "condition": "6==True",
-                    "node_id": "13",
-                    "guide_content": "是否指定导光束转接座材料及表面工艺",
-                    "answer_type": "单选",
-                    "input_num_accor": "",
-                    "input_name_accor": "",
-                    "input_tolerance": "",
-                    "ref_config": "False",
-                    "option_hint": "我司转接座材料及表面工艺默认：6061铝合金，100目喷砂，原色阳极氧化；如果客户有其它要求的工艺，请选“是”。",
-                    "option_group_id": "2.0",
-                    "option_view": "结构+工艺+质量",
-                    "user_must_out": {},
-                    "option_tolerance_out": {},
-                    "ref_out": "",
-                    "options": [
-                        {
-                            "option_content": "是",
-                            "option_out": "True",
-                            "option_bold": "",
-                            "option_show": "",
-                            "option_label": "定制转接座材质表面"
-                        },
-                        {
-                            "option_content": "否",
-                            "option_out": "False",
-                            "option_bold": "不指定",
-                            "option_show": "{V}转接座材料与表面工艺",
-                            "option_label": ""
-                        }
-                    ],
-                    "num": "13"
-                }
-            },
-            "18": {
-                "old_data": {
-                    "condition": "6==True",
-                    "node_id": "18",
-                    "guide_content": "是否提供导光束做转接座拉力出厂测试",
-                    "answer_type": "单选",
-                    "input_num_accor": "",
-                    "input_name_accor": "",
-                    "input_tolerance": "",
-                    "ref_config": "False",
-                    "option_hint": "我司默认使用自己的导光束头部治具做插拔拉力测试，如果客户对导光束插拔力要求较高，则需要客户提供导光束做专门的拉力测试。",
-                    "option_group_id": "3.0",
-                    "option_view": "结构+工艺+质量",
-                    "user_must_out": {
-                        "value": "False"
-                    },
-                    "option_tolerance_out": {},
-                    "ref_out": "",
-                    "options": [
-                        {
-                            "option_content": "是",
-                            "option_out": "True",
-                            "option_bold": "客供",
-                            "option_show": "使用{V}导光束做拉力测试",
-                            "option_label": "客供导光束测拉力"
-                        },
-                        {
-                            "option_content": "否",
-                            "option_out": "False",
-                            "option_bold": "",
-                            "option_show": "使用{V}导光束做拉力测试",
-                            "option_label": ""
-                        }
-                    ],
-                    "num": "18"
-                },
-                "new_data": {
-                    "condition": "6==True",
-                    "node_id": "18",
-                    "guide_content": "是否提供导光束做转接座拉力出厂测试",
-                    "answer_type": "单选",
-                    "input_num_accor": "",
-                    "input_name_accor": "",
-                    "input_tolerance": "",
-                    "ref_config": "False",
-                    "option_hint": "我司默认使用自己的导光束头部治具做插拔拉力测试，如果客户对导光束插拔力要求较高，则需要客户提供导光束做专门的拉力测试。",
-                    "option_group_id": "3.0",
-                    "option_view": "结构+工艺+质量",
-                    "user_must_out": {},
-                    "option_tolerance_out": {},
-                    "ref_out": "",
-                    "options": [
-                        {
-                            "option_content": "是",
-                            "option_out": "True",
-                            "option_bold": "客供",
-                            "option_show": "使用{V}导光束做拉力测试",
-                            "option_label": "客供导光束测拉力"
-                        },
-                        {
-                            "option_content": "否",
-                            "option_out": "False",
-                            "option_bold": "",
-                            "option_show": "使用{V}导光束做拉力测试",
-                            "option_label": ""
-                        }
-                    ],
-                    "num": "18"
-                }
-            },
-            "19": {
-                "old_data": {
-                    "condition": "6==True",
-                    "node_id": "19",
-                    "guide_content": "是否指定转接座拉力测试合格标准",
-                    "answer_type": "单选",
-                    "input_num_accor": "",
-                    "input_name_accor": "",
-                    "input_tolerance": "",
-                    "ref_config": "False",
-                    "option_hint": "我司默认的拉力合格标准为：11~15N，如果客户需要指定合格标准，请选“是”。",
-                    "option_group_id": "3.0",
-                    "option_view": "结构+工艺+质量",
-                    "user_must_out": {
-                        "value": "False"
-                    },
-                    "option_tolerance_out": {},
-                    "ref_out": "",
-                    "options": [
-                        {
-                            "option_content": "是",
-                            "option_out": "True",
-                            "option_bold": "指定拉力标准",
-                            "option_show": "转接座拉力测试{V}",
-                            "option_label": "指定拉力标准"
-                        },
-                        {
-                            "option_content": "否",
-                            "option_out": "False",
-                            "option_bold": "",
-                            "option_show": "转接座拉力测试{V}",
-                            "option_label": ""
-                        }
-                    ],
-                    "num": "19"
-                },
-                "new_data": {
-                    "condition": "6==True",
-                    "node_id": "19",
-                    "guide_content": "是否指定转接座拉力测试合格标准",
-                    "answer_type": "单选",
-                    "input_num_accor": "",
-                    "input_name_accor": "",
-                    "input_tolerance": "",
-                    "ref_config": "False",
-                    "option_hint": "我司默认的拉力合格标准为：11~15N，如果客户需要指定合格标准，请选“是”。",
-                    "option_group_id": "3.0",
-                    "option_view": "结构+工艺+质量",
-                    "user_must_out": {},
-                    "option_tolerance_out": {},
-                    "ref_out": "",
-                    "options": [
-                        {
-                            "option_content": "是",
-                            "option_out": "True",
-                            "option_bold": "指定拉力标准",
-                            "option_show": "转接座拉力测试{V}",
-                            "option_label": "指定拉力标准"
-                        },
-                        {
-                            "option_content": "否",
-                            "option_out": "False",
-                            "option_bold": "",
-                            "option_show": "转接座拉力测试{V}",
-                            "option_label": ""
-                        }
-                    ],
-                    "num": "19"
-                }
-            },
-            "4": {
-                "old_data": {
-                    "condition": "3==True",
-                    "node_id": "4",
-                    "guide_content": "导光束与产品的协同关系",
-                    "answer_type": "单选",
-                    "input_num_accor": "",
-                    "input_name_accor": "",
-                    "input_tolerance": "",
-                    "ref_config": "True",
-                    "option_hint": "导光束作为光源给我司产品提供光，还是导光束作为传输工具参与我司产品对光的处理，还是我司产品需要将光输出给导光束？",
-                    "option_group_id": "1.0",
-                    "option_view": "光学+结构+工艺+质量",
-                    "user_must_out": {
-                        "value": "CD"
-                    },
-                    "option_tolerance_out": {},
-                    "ref_out": "",
-                    "options": [
-                        {
-                            "option_content": "导光束→产品",
-                            "option_out": "DC",
-                            "option_bold": "导光束→产品",
-                            "option_show": "导光束为输入源：{V}",
-                            "option_label": ""
-                        },
-                        {
-                            "option_content": "产品→导光束",
-                            "option_out": "CD",
-                            "option_bold": "产品→导光束",
-                            "option_show": "导光束为输出目标：{V}",
-                            "option_label": ""
-                        },
-                        {
-                            "option_content": "产品→导光束→产品",
-                            "option_out": "CDC",
-                            "option_bold": "产品→导光束→产品",
-                            "option_show": "导光束为传输作用：{V}",
-                            "option_label": ""
-                        },
-                        {
-                            "option_content": "导光束→产品→导光束",
-                            "option_out": "DCD",
-                            "option_bold": "导光束→产品→导光束",
-                            "option_show": "导光束作为源与目标：{V}",
-                            "option_label": ""
-                        },
-                        {
-                            "option_content": "产品→导光束→产品→导光束",
-                            "option_out": "CDCD",
-                            "option_bold": "产品→导光束→产品→导光束",
-                            "option_show": "导光束参与传输也是目标：{V}",
-                            "option_label": ""
-                        },
-                        {
-                            "option_content": "导光束→产品→导光束→产品→导光束",
-                            "option_out": "DCDCD",
-                            "option_bold": "导光束→产品→导光束→产品→导光束",
-                            "option_show": "导光束作为输入、过程、目标：{V}",
-                            "option_label": ""
-                        }
-                    ],
-                    "num": "4"
-                },
-                "new_data": {
-                    "condition": "3==True",
-                    "node_id": "4",
-                    "guide_content": "导光束与产品的协同关系",
-                    "answer_type": "单选",
-                    "input_num_accor": "",
-                    "input_name_accor": "",
-                    "input_tolerance": "",
-                    "ref_config": "True",
-                    "option_hint": "导光束作为光源给我司产品提供光，还是导光束作为传输工具参与我司产品对光的处理，还是我司产品需要将光输出给导光束？",
-                    "option_group_id": "1.0",
-                    "option_view": "光学+结构+工艺+质量",
-                    "user_must_out": {},
-                    "option_tolerance_out": {},
-                    "ref_out": "",
-                    "options": [
-                        {
-                            "option_content": "导光束→产品",
-                            "option_out": "DC",
-                            "option_bold": "导光束→产品",
-                            "option_show": "导光束为输入源：{V}",
-                            "option_label": ""
-                        },
-                        {
-                            "option_content": "产品→导光束",
-                            "option_out": "CD",
-                            "option_bold": "产品→导光束",
-                            "option_show": "导光束为输出目标：{V}",
-                            "option_label": ""
-                        },
-                        {
-                            "option_content": "产品→导光束→产品",
-                            "option_out": "CDC",
-                            "option_bold": "产品→导光束→产品",
-                            "option_show": "导光束为传输作用：{V}",
-                            "option_label": ""
-                        },
-                        {
-                            "option_content": "导光束→产品→导光束",
-                            "option_out": "DCD",
-                            "option_bold": "导光束→产品→导光束",
-                            "option_show": "导光束作为源与目标：{V}",
-                            "option_label": ""
-                        },
-                        {
-                            "option_content": "产品→导光束→产品→导光束",
-                            "option_out": "CDCD",
-                            "option_bold": "产品→导光束→产品→导光束",
-                            "option_show": "导光束参与传输也是目标：{V}",
-                            "option_label": ""
-                        },
-                        {
-                            "option_content": "导光束→产品→导光束→产品→导光束",
-                            "option_out": "DCDCD",
-                            "option_bold": "导光束→产品→导光束→产品→导光束",
-                            "option_show": "导光束作为输入、过程、目标：{V}",
-                            "option_label": ""
-                        }
-                    ],
-                    "num": "4"
-                }
-            },
-            "12": {
-                "old_data": {
-                    "condition": "11==True",
-                    "node_id": "12",
-                    "guide_content": "指定或提供的导光束检测哪些光参数",
-                    "answer_type": "多行文本",
-                    "input_num_accor": "",
-                    "input_name_accor": "",
-                    "input_tolerance": "",
-                    "ref_config": "True",
-                    "option_hint": "填写客户指定的导光束及测试参数，例如：客供3米导光束测：光通量，显色指数；其余光参数用我司1米导光束测试。",
-                    "option_group_id": "3.0",
-                    "option_view": "光学+工艺+质量",
-                    "user_must_out": {
-                        "1": "客供3米导光束测：光通量，显色指数，色温"
-                    },
-                    "option_tolerance_out": {},
-                    "ref_out": "",
-                    "options": [
-                        {
-                            "option_content": "",
-                            "option_out": "字典",
-                            "option_bold": "",
-                            "option_show": "导光束限定要求：{V}",
-                            "option_label": ""
-                        }
-                    ],
-                    "num": "12"
-                },
-                "new_data": {
-                    "condition": "11==True",
-                    "node_id": "12",
-                    "guide_content": "指定或提供的导光束检测哪些光参数",
-                    "answer_type": "多行文本",
-                    "input_num_accor": "",
-                    "input_name_accor": "",
-                    "input_tolerance": "",
-                    "ref_config": "True",
-                    "option_hint": "填写客户指定的导光束及测试参数，例如：客供3米导光束测：光通量，显色指数；其余光参数用我司1米导光束测试。",
-                    "option_group_id": "3.0",
-                    "option_view": "光学+工艺+质量",
-                    "user_must_out": {},
-                    "option_tolerance_out": {},
-                    "ref_out": "",
-                    "options": [
-                        {
-                            "option_content": "",
-                            "option_out": "字典",
-                            "option_bold": "",
-                            "option_show": "导光束限定要求：{V}",
-                            "option_label": ""
-                        }
-                    ],
-                    "num": "12"
-                }
-            }
-        },
-        "file_dic": {
-            "1": {
-                "file_del_bool": false,
-                "file_name": "IR-850-500-S-02-K10010073",
-                "file_url": "/uploads/IR-850-500-S-02-K10010073.f1a9abffe8f197027003b7ac5ce33fa4.pdf",
-                "file_name_hash": "IR-850-500-S-02-K10010073.f1a9abffe8f197027003b7ac5ce33fa4.pdf",
-                "file_name_suffix": "IR-850-500-S-02-K10010073.pdf",
-                "file_type": "application/pdf",
-                "file_lab": "1",
-                "parents_h": 9
-            },
-            "2": {
-                "file_del_bool": false,
-                "file_name": "临时性数据",
-                "file_url": "/uploads/临时性数据.bbb7a654f2ce1ee6a777865beab1f76b.xlsx",
-                "file_name_hash": "临时性数据.bbb7a654f2ce1ee6a777865beab1f76b.xlsx",
-                "file_name_suffix": "临时性数据.xlsx",
-                "file_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                "file_lab": "2",
-                "parents_h": 9
-            },
-            "3": {
-                "file_del_bool": false,
-                "file_name": "琥珀色临时模组四光源驱动条件",
-                "file_url": "/uploads/琥珀色临时模组四光源驱动条件.e4d3934570fe6e04343c95ef842f14e2.pptx",
-                "file_name_hash": "琥珀色临时模组四光源驱动条件.e4d3934570fe6e04343c95ef842f14e2.pptx",
-                "file_name_suffix": "琥珀色临时模组四光源驱动条件.pptx",
-                "file_type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-                "file_lab": "3",
-                "parents_h": 9
-            },
-            "4": {
-                "file_del_bool": false,
-                "file_name": "标准版本更新模板",
-                "file_url": "/uploads/标准版本更新模板.1dec186145b7a75831aa5f1421980227.docx",
-                "file_name_hash": "标准版本更新模板.1dec186145b7a75831aa5f1421980227.docx",
-                "file_name_suffix": "标准版本更新模板.docx",
-                "file_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                "file_lab": "4",
-                "parents_h": 9
-            },
-            "5": {
-                "file_del_bool": false,
-                "file_name": "Snipaste_2025-01-09_13-08-42",
-                "file_url": "/uploads/Snipaste_2025-01-09_13-08-42.00661caf7da65237520b08c398a61ae9.png",
-                "file_name_hash": "Snipaste_2025-01-09_13-08-42.00661caf7da65237520b08c398a61ae9.png",
-                "file_name_suffix": "Snipaste_2025-01-09_13-08-42.png",
-                "file_type": "image/png",
-                "file_lab": "5",
-                "parents_h": 9
-            },
-            "6": {
-                "file_del_bool": false,
-                "file_name": "微信图片_20241212095208",
-                "file_url": "/uploads/微信图片_20241212095208.e49868d32bbb9cb04364ba96f4c1eeb3.jpg",
-                "file_name_hash": "微信图片_20241212095208.e49868d32bbb9cb04364ba96f4c1eeb3.jpg",
-                "file_name_suffix": "微信图片_20241212095208.jpg",
-                "file_type": "image/jpeg",
-                "file_lab": "6",
-                "parents_h": 9
-            }
-        },
-        "deleted_files": [],
-        "file_counter": 6,
-        "project_name": "RFFM-1519-A",
-        "current_user": "李晓明",
-        "version": "4.0",
-        "original_version": "3.0",
-        "req_timestamp": "2025-09-29T17:51:03.414053"
-    },
-    "5.0": {
-        "added": {},
-        "deleted": {},
-        "modified": {
-            "67": {
-                "old_data": {
-                    "condition": "66any['红绿辐通量比']",
-                    "node_id": "67",
-                    "guide_content": "红绿辐通量比要求",
-                    "answer_type": "单行文本",
-                    "input_num_accor": "31",
-                    "input_name_accor": "32",
-                    "input_tolerance": "正负",
-                    "ref_config": "False",
-                    "option_hint": "填写该项要求的典型值与公差范围，无单位；推荐YY1081-2011标准默认公差±20%。",
-                    "option_group_id": "6.0",
-                    "option_view": "光学+工艺+质量",
-                    "user_must_out": {
-                        "白光": "0.75"
-                    },
-                    "option_tolerance_out": {
-                        "白光": "±20%"
-                    },
-                    "ref_out": "",
-                    "options": [
-                        {
-                            "option_content": "",
-                            "option_out": "字典",
-                            "option_bold": "",
-                            "option_show": "红绿辐通量比要求：[{K}典型值{V}，公差{T}]",
-                            "option_label": ""
-                        }
-                    ],
-                    "num": "67"
-                },
-                "new_data": {
-                    "condition": "66any['红绿辐通量比']",
-                    "node_id": "67",
-                    "guide_content": "红绿辐通量比要求",
-                    "answer_type": "单行文本",
-                    "input_num_accor": "31",
-                    "input_name_accor": "32",
-                    "input_tolerance": "正负",
-                    "ref_config": "False",
-                    "option_hint": "填写该项要求的典型值与公差范围，无单位；推荐YY1081-2011标准默认公差±20%。",
-                    "option_group_id": "6.0",
-                    "option_view": "光学+工艺+质量",
-                    "user_must_out": {},
-                    "option_tolerance_out": {},
-                    "ref_out": "",
-                    "options": [
-                        {
-                            "option_content": "",
-                            "option_out": "字典",
-                            "option_bold": "",
-                            "option_show": "红绿辐通量比要求：[{K}典型值{V}，公差{T}]",
-                            "option_label": ""
-                        }
-                    ],
-                    "num": "67"
-                }
-            },
-            "72": {
-                "old_data": {
-                    "condition": "30==True",
-                    "node_id": "72",
-                    "guide_content": "50%亮度要测的光参数有哪些",
-                    "answer_type": "多选",
-                    "input_num_accor": "",
-                    "input_name_accor": "",
-                    "input_tolerance": "",
-                    "ref_config": "False",
-                    "option_hint": "按YY1081-2011标准要求，光通量、相对色温、显色指数、红绿辐通量比、蓝绿辐通量比需要在100%与50%亮度情况下均满足声称的规格标准要求",
-                    "option_group_id": "6.0",
-                    "option_view": "全员",
-                    "user_must_out": {
-                        "光通量": true,
-                        "相对色温CCT": true,
-                        "CRI显指Ra": true,
-                        "红绿辐通量比": true,
-                        "蓝绿辐通量比": true,
-                        "不要求": false
-                    },
-                    "option_tolerance_out": {},
-                    "ref_out": "",
-                    "options": [
-                        {
-                            "option_content": "光通量",
-                            "option_out": "50%光通量",
-                            "option_bold": "光通量",
-                            "option_show": "要求加测50%亮度档，并满足合格标准的光参数有{V}",
-                            "option_label": "测50%光通量"
-                        },
-                        {
-                            "option_content": "相对色温CCT",
-                            "option_out": "50%CCT",
-                            "option_bold": "CCT",
-                            "option_show": "",
-                            "option_label": "测50%CCT"
-                        },
-                        {
-                            "option_content": "CRI显指Ra",
-                            "option_out": "50%Ra",
-                            "option_bold": "Ra",
-                            "option_show": "",
-                            "option_label": "测50%Ra"
-                        },
-                        {
-                            "option_content": "红绿辐通量比",
-                            "option_out": "50%红绿比",
-                            "option_bold": "红绿辐通量比",
-                            "option_show": "",
-                            "option_label": "测50%红绿比"
-                        },
-                        {
-                            "option_content": "蓝绿辐通量比",
-                            "option_out": "50%蓝绿比",
-                            "option_bold": "蓝绿辐通量比",
-                            "option_show": "",
-                            "option_label": "测50%蓝绿比"
-                        },
-                        {
-                            "option_content": "不要求",
-                            "option_out": "不要求",
-                            "option_bold": "不要求",
-                            "option_show": "",
-                            "option_label": ""
-                        }
-                    ],
-                    "num": "72"
-                },
-                "new_data": {
-                    "condition": "30==True",
-                    "node_id": "72",
-                    "guide_content": "50%亮度要测的光参数有哪些",
-                    "answer_type": "多选",
-                    "input_num_accor": "",
-                    "input_name_accor": "",
-                    "input_tolerance": "",
-                    "ref_config": "False",
-                    "option_hint": "按YY1081-2011标准要求，光通量、相对色温、显色指数、红绿辐通量比、蓝绿辐通量比需要在100%与50%亮度情况下均满足声称的规格标准要求",
-                    "option_group_id": "6.0",
-                    "option_view": "全员",
-                    "user_must_out": {},
-                    "option_tolerance_out": {},
-                    "ref_out": "",
-                    "options": [
-                        {
-                            "option_content": "光通量",
-                            "option_out": "50%光通量",
-                            "option_bold": "光通量",
-                            "option_show": "要求加测50%亮度档，并满足合格标准的光参数有{V}",
-                            "option_label": "测50%光通量"
-                        },
-                        {
-                            "option_content": "相对色温CCT",
-                            "option_out": "50%CCT",
-                            "option_bold": "CCT",
-                            "option_show": "",
-                            "option_label": "测50%CCT"
-                        },
-                        {
-                            "option_content": "CRI显指Ra",
-                            "option_out": "50%Ra",
-                            "option_bold": "Ra",
-                            "option_show": "",
-                            "option_label": "测50%Ra"
-                        },
-                        {
-                            "option_content": "红绿辐通量比",
-                            "option_out": "50%红绿比",
-                            "option_bold": "红绿辐通量比",
-                            "option_show": "",
-                            "option_label": "测50%红绿比"
-                        },
-                        {
-                            "option_content": "蓝绿辐通量比",
-                            "option_out": "50%蓝绿比",
-                            "option_bold": "蓝绿辐通量比",
-                            "option_show": "",
-                            "option_label": "测50%蓝绿比"
-                        },
-                        {
-                            "option_content": "不要求",
-                            "option_out": "不要求",
-                            "option_bold": "不要求",
-                            "option_show": "",
-                            "option_label": ""
-                        }
-                    ],
-                    "num": "72"
-                }
-            },
-            "66": {
-                "old_data": {
-                    "condition": "30==True",
-                    "node_id": "66",
-                    "guide_content": "下列哪些内窥镜冷光源特有光参数客户进行限制",
-                    "answer_type": "多选",
-                    "input_num_accor": "",
-                    "input_name_accor": "",
-                    "input_tolerance": "",
-                    "ref_config": "False",
-                    "option_hint": "请仔细询问下列YY1081-2011标准特有光参数，哪些是客户关注并在入厂检时会检测的。",
-                    "option_group_id": "6.0",
-                    "option_view": "光学+工艺+质量",
-                    "user_must_out": {
-                        "红绿辐通量比": true,
-                        "蓝绿辐通量比": true,
-                        "红外截止性能": false,
-                        "光照均匀性": false,
-                        "照度超限点": false,
-                        "不限制": false
-                    },
-                    "option_tolerance_out": {},
-                    "ref_out": "",
-                    "options": [
-                        {
-                            "option_content": "红绿辐通量比",
-                            "option_out": "红绿辐通量比",
-                            "option_bold": "红绿辐通量比",
-                            "option_show": "限制的内窥镜特有光参数：{V}",
-                            "option_label": "限制红绿比"
-                        },
-                        {
-                            "option_content": "蓝绿辐通量比",
-                            "option_out": "蓝绿辐通量比",
-                            "option_bold": "蓝绿辐通量比",
-                            "option_show": "",
-                            "option_label": "限制蓝绿比"
-                        },
-                        {
-                            "option_content": "红外截止性能",
-                            "option_out": "红外截止性能",
-                            "option_bold": "红外截止性能",
-                            "option_show": "",
-                            "option_label": "限制红外截止"
-                        },
-                        {
-                            "option_content": "光照均匀性",
-                            "option_out": "光照均匀性",
-                            "option_bold": "光照均匀性",
-                            "option_show": "",
-                            "option_label": "限制光照均匀性"
-                        },
-                        {
-                            "option_content": "照度超限点",
-                            "option_out": "照度超限点",
-                            "option_bold": "照度超限点",
-                            "option_show": "",
-                            "option_label": "限制超限点数"
-                        },
-                        {
-                            "option_content": "不限制",
-                            "option_out": "不限制",
-                            "option_bold": "不限制",
-                            "option_show": "",
-                            "option_label": ""
-                        }
-                    ],
-                    "num": "66"
-                },
-                "new_data": {
-                    "condition": "30==True",
-                    "node_id": "66",
-                    "guide_content": "下列哪些内窥镜冷光源特有光参数客户进行限制",
-                    "answer_type": "多选",
-                    "input_num_accor": "",
-                    "input_name_accor": "",
-                    "input_tolerance": "",
-                    "ref_config": "False",
-                    "option_hint": "请仔细询问下列YY1081-2011标准特有光参数，哪些是客户关注并在入厂检时会检测的。",
-                    "option_group_id": "6.0",
-                    "option_view": "光学+工艺+质量",
-                    "user_must_out": {},
-                    "option_tolerance_out": {},
-                    "ref_out": "",
-                    "options": [
-                        {
-                            "option_content": "红绿辐通量比",
-                            "option_out": "红绿辐通量比",
-                            "option_bold": "红绿辐通量比",
-                            "option_show": "限制的内窥镜特有光参数：{V}",
-                            "option_label": "限制红绿比"
-                        },
-                        {
-                            "option_content": "蓝绿辐通量比",
-                            "option_out": "蓝绿辐通量比",
-                            "option_bold": "蓝绿辐通量比",
-                            "option_show": "",
-                            "option_label": "限制蓝绿比"
-                        },
-                        {
-                            "option_content": "红外截止性能",
-                            "option_out": "红外截止性能",
-                            "option_bold": "红外截止性能",
-                            "option_show": "",
-                            "option_label": "限制红外截止"
-                        },
-                        {
-                            "option_content": "光照均匀性",
-                            "option_out": "光照均匀性",
-                            "option_bold": "光照均匀性",
-                            "option_show": "",
-                            "option_label": "限制光照均匀性"
-                        },
-                        {
-                            "option_content": "照度超限点",
-                            "option_out": "照度超限点",
-                            "option_bold": "照度超限点",
-                            "option_show": "",
-                            "option_label": "限制超限点数"
-                        },
-                        {
-                            "option_content": "不限制",
-                            "option_out": "不限制",
-                            "option_bold": "不限制",
-                            "option_show": "",
-                            "option_label": ""
-                        }
-                    ],
-                    "num": "66"
-                }
-            },
-            "30": {
-                "old_data": {
-                    "condition": "28==True",
-                    "node_id": "30",
-                    "guide_content": "产品是否属于内窥镜冷光源",
-                    "answer_type": "单选",
-                    "input_num_accor": "",
-                    "input_name_accor": "",
-                    "input_tolerance": "",
-                    "ref_config": "False",
-                    "option_hint": "如果属于内窥镜冷光源，则需要考虑行业标准YY1081-2011的一些合规性技术要求。",
-                    "option_group_id": "6.0",
-                    "option_view": "全员",
-                    "user_must_out": {
-                        "value": "True"
-                    },
-                    "option_tolerance_out": {},
-                    "ref_out": "",
-                    "options": [
-                        {
-                            "option_content": "是",
-                            "option_out": "True",
-                            "option_bold": "内窥镜领域",
-                            "option_show": "产品属于{V}，需符合YY1081-2011标准要求",
-                            "option_label": "内窥镜光源"
-                        },
-                        {
-                            "option_content": "否",
-                            "option_out": "False",
-                            "option_bold": "",
-                            "option_show": "",
-                            "option_label": ""
-                        }
-                    ],
-                    "num": "30"
-                },
-                "new_data": {
-                    "condition": "28==True",
-                    "node_id": "30",
-                    "guide_content": "产品是否属于内窥镜冷光源",
-                    "answer_type": "单选",
-                    "input_num_accor": "",
-                    "input_name_accor": "",
-                    "input_tolerance": "",
-                    "ref_config": "False",
-                    "option_hint": "如果属于内窥镜冷光源，则需要考虑行业标准YY1081-2011的一些合规性技术要求。",
-                    "option_group_id": "6.0",
-                    "option_view": "全员",
-                    "user_must_out": {
-                        "value": "False"
-                    },
-                    "option_tolerance_out": {},
-                    "ref_out": "",
-                    "options": [
-                        {
-                            "option_content": "是",
-                            "option_out": "True",
-                            "option_bold": "内窥镜领域",
-                            "option_show": "产品属于{V}，需符合YY1081-2011标准要求",
-                            "option_label": "内窥镜光源"
-                        },
-                        {
-                            "option_content": "否",
-                            "option_out": "False",
-                            "option_bold": "",
-                            "option_show": "",
-                            "option_label": ""
-                        }
-                    ],
-                    "num": "30"
-                }
-            },
-            "68": {
-                "old_data": {
-                    "condition": "66any['蓝绿辐通量比']",
-                    "node_id": "68",
-                    "guide_content": "蓝绿辐通量比要求",
-                    "answer_type": "单行文本",
-                    "input_num_accor": "31",
-                    "input_name_accor": "32",
-                    "input_tolerance": "正负",
-                    "ref_config": "False",
-                    "option_hint": "填写该项要求的典型值与公差范围，无单位；推荐YY1081-2011标准默认公差±20%。",
-                    "option_group_id": "6.0",
-                    "option_view": "光学+工艺+质量",
-                    "user_must_out": {
-                        "白光": "1.25"
-                    },
-                    "option_tolerance_out": {
-                        "白光": "±20%"
-                    },
-                    "ref_out": "",
-                    "options": [
-                        {
-                            "option_content": "",
-                            "option_out": "字典",
-                            "option_bold": "",
-                            "option_show": "蓝绿辐通量比要求：[{K}典型值{V}，公差{T}]",
-                            "option_label": ""
-                        }
-                    ],
-                    "num": "68"
-                },
-                "new_data": {
-                    "condition": "66any['蓝绿辐通量比']",
-                    "node_id": "68",
-                    "guide_content": "蓝绿辐通量比要求",
-                    "answer_type": "单行文本",
-                    "input_num_accor": "31",
-                    "input_name_accor": "32",
-                    "input_tolerance": "正负",
-                    "ref_config": "False",
-                    "option_hint": "填写该项要求的典型值与公差范围，无单位；推荐YY1081-2011标准默认公差±20%。",
-                    "option_group_id": "6.0",
-                    "option_view": "光学+工艺+质量",
-                    "user_must_out": {},
-                    "option_tolerance_out": {},
-                    "ref_out": "",
-                    "options": [
-                        {
-                            "option_content": "",
-                            "option_out": "字典",
-                            "option_bold": "",
-                            "option_show": "蓝绿辐通量比要求：[{K}典型值{V}，公差{T}]",
-                            "option_label": ""
-                        }
-                    ],
-                    "num": "68"
-                }
-            }
-        },
-        "file_dic": {
-            "1": {
-                "file_del_bool": false,
-                "file_name": "IR-850-500-S-02-K10010073",
-                "file_url": "/uploads/IR-850-500-S-02-K10010073.f1a9abffe8f197027003b7ac5ce33fa4.pdf",
-                "file_name_hash": "IR-850-500-S-02-K10010073.f1a9abffe8f197027003b7ac5ce33fa4.pdf",
-                "file_name_suffix": "IR-850-500-S-02-K10010073.pdf",
-                "file_type": "application/pdf",
-                "file_lab": "1",
-                "parents_h": 9
-            },
-            "2": {
-                "file_del_bool": false,
-                "file_name": "临时性数据",
-                "file_url": "/uploads/临时性数据.bbb7a654f2ce1ee6a777865beab1f76b.xlsx",
-                "file_name_hash": "临时性数据.bbb7a654f2ce1ee6a777865beab1f76b.xlsx",
-                "file_name_suffix": "临时性数据.xlsx",
-                "file_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                "file_lab": "2",
-                "parents_h": 9
-            },
-            "3": {
-                "file_del_bool": false,
-                "file_name": "琥珀色临时模组四光源驱动条件",
-                "file_url": "/uploads/琥珀色临时模组四光源驱动条件.e4d3934570fe6e04343c95ef842f14e2.pptx",
-                "file_name_hash": "琥珀色临时模组四光源驱动条件.e4d3934570fe6e04343c95ef842f14e2.pptx",
-                "file_name_suffix": "琥珀色临时模组四光源驱动条件.pptx",
-                "file_type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-                "file_lab": "3",
-                "parents_h": 9
-            },
-            "4": {
-                "file_del_bool": false,
-                "file_name": "标准版本更新模板",
-                "file_url": "/uploads/标准版本更新模板.1dec186145b7a75831aa5f1421980227.docx",
-                "file_name_hash": "标准版本更新模板.1dec186145b7a75831aa5f1421980227.docx",
-                "file_name_suffix": "标准版本更新模板.docx",
-                "file_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                "file_lab": "4",
-                "parents_h": 9
-            },
-            "5": {
-                "file_del_bool": false,
-                "file_name": "Snipaste_2025-01-09_13-08-42",
-                "file_url": "/uploads/Snipaste_2025-01-09_13-08-42.00661caf7da65237520b08c398a61ae9.png",
-                "file_name_hash": "Snipaste_2025-01-09_13-08-42.00661caf7da65237520b08c398a61ae9.png",
-                "file_name_suffix": "Snipaste_2025-01-09_13-08-42.png",
-                "file_type": "image/png",
-                "file_lab": "5",
-                "parents_h": 9
-            },
-            "6": {
-                "file_del_bool": false,
-                "file_name": "微信图片_20241212095208",
-                "file_url": "/uploads/微信图片_20241212095208.e49868d32bbb9cb04364ba96f4c1eeb3.jpg",
-                "file_name_hash": "微信图片_20241212095208.e49868d32bbb9cb04364ba96f4c1eeb3.jpg",
-                "file_name_suffix": "微信图片_20241212095208.jpg",
-                "file_type": "image/jpeg",
-                "file_lab": "6",
-                "parents_h": 9
-            }
-        },
-        "deleted_files": [],
-        "file_counter": 6,
-        "project_name": "RFFM-1519-A",
-        "current_user": "李晓明",
-        "version": "5.0",
-        "original_version": "4.0",
-        "req_timestamp": "2025-09-29T18:06:18.691214"
-    },
-    "6.0": {
-        "added": {},
-        "deleted": {},
-        "modified": {
-            "55": {
-                "old_data": {
-                    "condition": "48any['光通量']",
-                    "node_id": "55",
-                    "guide_content": "光通量要求",
-                    "answer_type": "单行文本",
-                    "input_num_accor": "31",
-                    "input_name_accor": "32",
-                    "input_tolerance": "正负",
-                    "ref_config": "True",
-                    "option_hint": "填写该项要求的典型值与公差范围，单位统一为：lm。",
-                    "option_group_id": "5.0",
-                    "option_view": "光学+工艺+质量",
-                    "user_must_out": {
-                        "白光": "1200lm"
-                    },
-                    "option_tolerance_out": {
-                        "白光": "±10%"
-                    },
-                    "ref_out": "",
-                    "options": [
-                        {
-                            "option_content": "",
-                            "option_out": "字典",
-                            "option_bold": "",
-                            "option_show": "光通量要求：[{K}典型值{V}，公差{T}]",
-                            "option_label": ""
-                        }
-                    ],
-                    "num": "55"
-                },
-                "new_data": {
-                    "condition": "48any['光通量']",
-                    "node_id": "55",
-                    "guide_content": "光通量要求",
-                    "answer_type": "单行文本",
-                    "input_num_accor": "31",
-                    "input_name_accor": "32",
-                    "input_tolerance": "正负",
-                    "ref_config": "True",
-                    "option_hint": "填写该项要求的典型值与公差范围，单位统一为：lm。",
-                    "option_group_id": "5.0",
-                    "option_view": "光学+工艺+质量",
-                    "user_must_out": {
-                        "白光": "1000lm"
-                    },
-                    "option_tolerance_out": {
-                        "白光": "±10%"
-                    },
-                    "ref_out": "",
-                    "options": [
-                        {
-                            "option_content": "",
-                            "option_out": "字典",
-                            "option_bold": "",
-                            "option_show": "光通量要求：[{K}典型值{V}，公差{T}]",
-                            "option_label": ""
-                        }
-                    ],
-                    "num": "55"
-                }
-            }
-        },
-        "file_dic": {
-            "1": {
-                "file_del_bool": false,
-                "file_name": "IR-850-500-S-02-K10010073",
-                "file_url": "/uploads/IR-850-500-S-02-K10010073.f1a9abffe8f197027003b7ac5ce33fa4.pdf",
-                "file_name_hash": "IR-850-500-S-02-K10010073.f1a9abffe8f197027003b7ac5ce33fa4.pdf",
-                "file_name_suffix": "IR-850-500-S-02-K10010073.pdf",
-                "file_type": "application/pdf",
-                "file_lab": "1",
-                "parents_h": 9
-            },
-            "2": {
-                "file_del_bool": false,
-                "file_name": "临时性数据",
-                "file_url": "/uploads/临时性数据.bbb7a654f2ce1ee6a777865beab1f76b.xlsx",
-                "file_name_hash": "临时性数据.bbb7a654f2ce1ee6a777865beab1f76b.xlsx",
-                "file_name_suffix": "临时性数据.xlsx",
-                "file_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                "file_lab": "2",
-                "parents_h": 9
-            },
-            "3": {
-                "file_del_bool": false,
-                "file_name": "琥珀色临时模组四光源驱动条件",
-                "file_url": "/uploads/琥珀色临时模组四光源驱动条件.e4d3934570fe6e04343c95ef842f14e2.pptx",
-                "file_name_hash": "琥珀色临时模组四光源驱动条件.e4d3934570fe6e04343c95ef842f14e2.pptx",
-                "file_name_suffix": "琥珀色临时模组四光源驱动条件.pptx",
-                "file_type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-                "file_lab": "3",
-                "parents_h": 9
-            },
-            "4": {
-                "file_del_bool": false,
-                "file_name": "标准版本更新模板",
-                "file_url": "/uploads/标准版本更新模板.1dec186145b7a75831aa5f1421980227.docx",
-                "file_name_hash": "标准版本更新模板.1dec186145b7a75831aa5f1421980227.docx",
-                "file_name_suffix": "标准版本更新模板.docx",
-                "file_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                "file_lab": "4",
-                "parents_h": 9
-            },
-            "5": {
-                "file_del_bool": false,
-                "file_name": "Snipaste_2025-01-09_13-08-42",
-                "file_url": "/uploads/Snipaste_2025-01-09_13-08-42.00661caf7da65237520b08c398a61ae9.png",
-                "file_name_hash": "Snipaste_2025-01-09_13-08-42.00661caf7da65237520b08c398a61ae9.png",
-                "file_name_suffix": "Snipaste_2025-01-09_13-08-42.png",
-                "file_type": "image/png",
-                "file_lab": "5",
-                "parents_h": 9
-            },
-            "6": {
-                "file_del_bool": false,
-                "file_name": "微信图片_20241212095208",
-                "file_url": "/uploads/微信图片_20241212095208.e49868d32bbb9cb04364ba96f4c1eeb3.jpg",
-                "file_name_hash": "微信图片_20241212095208.e49868d32bbb9cb04364ba96f4c1eeb3.jpg",
-                "file_name_suffix": "微信图片_20241212095208.jpg",
-                "file_type": "image/jpeg",
-                "file_lab": "6",
-                "parents_h": 9
-            }
-        },
-        "deleted_files": [],
-        "file_counter": 6,
-        "project_name": "RFFM-1519-A",
-        "current_user": "李晓明",
-        "version": "6.0",
-        "original_version": "5.0",
-        "req_timestamp": "2025-09-29T18:06:27.801274"
-    }
+    "version": "1.0"
 }

@@ -10,8 +10,12 @@ min-w-10 # max-width: 2.5rem; /* 40px */    设置ui.tooltip元素宽度比较�
 gap-4
 # 通过 gap 属性设置子元素间距为 1rem（16px），替代传统 margin 方案。特别适用于需要等距分隔的按钮组或卡片布局
 
+
 flex-nowrap
 # 强制子元素单行排列（默认值），与 Bootstrap 的 .flex-nowrap 等效。当子元素总宽度超过容器时，可能出现横向滚动条或内容截断，建议配合 overflow-auto 使用：
+overflow-x-auto
+# 自动横向滚动条
+
 
 # display: flex 布局情况下
 # 控制 flex 和网格项沿容器横轴的定位方式
