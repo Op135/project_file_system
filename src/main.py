@@ -1741,8 +1741,9 @@ def requirement_page(type="", json_path="", project_name=""):
                 app.storage.client["original_project"] = project_old_name
                 # 将原项目版本记录为新项目的衍生版本
                 app.storage.client["original_version"] = app.storage.client["version"]
+                # print(app.storage.client["original_version"], app.storage.client["version"])
                 # 初始化版本为0.0
-                app.storage.client["version"] = "0.0"
+                # app.storage.client["version"] = "0.0"
             project_dialog.close()
 
     # 取消项目命名处理函数
@@ -3710,6 +3711,7 @@ def requirement_page(type="", json_path="", project_name=""):
 
     # 需求数据输出处理函数
     def output_config_data(data, type):
+        change_name = False
         data_json = data
         project_name = app.storage.client["project_name"].strip()
         if project_name == "":
@@ -3733,22 +3735,26 @@ def requirement_page(type="", json_path="", project_name=""):
             data_json["current_user"] = app.storage.user["current_user"]
 
             version = app.storage.client["version"]
-            # 初版 或 刚刚改了项目名 衍生项目名记录要继承
-            print(app.storage.client["original_project"], app.storage.client["project_name"])
+
+            # print(app.storage.client["original_project"], app.storage.client["project_name"])
+            # 不是初版的修改且不是刚刚改了项目名
             if (
-                version == "0.0"
-                or app.storage.client["project_name"] != app.storage.client["original_project"]
-                and app.storage.client["original_project"] != ""
+                app.storage.client["original_project"] == ""
+                or version != "0.0"
+                and app.storage.client["project_name"] == app.storage.client["original_project"]
             ):
+                # 在现有项目上的修改，要记录现有项目
+                data_json["original_project"] = app.storage.client["project_name"]
+
+            # 非衍生的初版 或 刚刚改了项目名 衍生项目名记录要继承
+            else:
                 data_json["original_project"] = app.storage.client["original_project"]
                 # 确保下次提交如果没有改名字的话，走另外一个逻辑
                 app.storage.client["original_project"] = app.storage.client["project_name"]
+                # print("执行了")
+                change_name = True
 
-            # 不是初版的修改且不是刚刚改了项目名
-            else:
-                # 在现有项目上的修改，要记录现有项目
-                data_json["original_project"] = app.storage.client["project_name"]
-            print(app.storage.client["original_project"], app.storage.client["project_name"])
+            # print(app.storage.client["original_project"], app.storage.client["project_name"])
             version_str_li = version.split(".")
             # 输出类型为导出到本地
             if type == "export":
@@ -3808,13 +3814,16 @@ def requirement_page(type="", json_path="", project_name=""):
                     # 服务器存在该项目配置，则需要升级版本
                     if project_exists_file:
                         v_max = max([float(s) for s in project_exists_file.keys()])
-                        if float(version) < v_max:
+                        # 当前版本比服务器最高版本低 或 由其它项目衍生过来的，均按照本项目服务器最高版本来+1保存
+                        if float(version) < v_max or change_name:
                             version_a = int(project_exists_file[str(v_max)]["v_a"])
                         version = f"{version_a + 1}.0"
                     # 服务器不存在该项目配置文件，版本设置为1.0
                     else:
                         version = "1.0"
-                        original_version = "0.0"
+                        # 排除其它项目衍生过来的情况，那种情况保持衍生的记录版本
+                        if not change_name:
+                            original_version = "0.0"
                     app.storage.client["version"] = version
                     data_json["version"] = version
                     # 原版本用于记录当前版本是在哪个版本基础上做了修改的，直至提交到服务器
@@ -4000,12 +4009,12 @@ def requirement_page(type="", json_path="", project_name=""):
                         ui.label("V").classes("text-xl ")
                         with ui.column().classes("-space-y-4 items-center"):
                             ui.button(icon="arrow_drop_up", on_click=lambda: get_project_req("up")).props(
-                                'flat padding="0px 6px"'
-                            ).classes("").style("font-size: 10px;")
+                                'glossy rounded color="amber-8" padding="0px 6px" text-color="grey-1"'
+                            ).classes("").style("font-size: 8px;")
                             ui.label().classes("text-xl text-amber-9").bind_text_from(app.storage.client, "version")
                             ui.button(icon="arrow_drop_down", on_click=lambda: get_project_req("down")).props(
-                                'flat padding="0px 6px"'
-                            ).classes("").style("font-size: 10px;")
+                                'glossy rounded color="amber-8" padding="0px 6px" text-color="grey-1"'
+                            ).classes("").style("font-size: 8px;")
                         ui.label("需求确认项").classes("text-xl")
                     with ui.column().classes(
                         "m-2 gap-8 w-full items-center justify-start overflow-y-auto"
@@ -4216,7 +4225,7 @@ def requirement_page(type="", json_path="", project_name=""):
             with ui.row().classes("font-sans h-[calc(100vh-9rem)] items-stretch flex-nowrap w-full text-black"):
                 # 需求内容列
                 with ui.column().classes("w-1/2 min-w-[400px]"):
-                    ui.label("需求内容").classes("text-xl text-center w-full")
+                    ui.label(f"{project_name} 需求内容").classes("text-xl text-center w-full")
                     with ui.column().classes("w-full overflow-y-auto p-1 gap-4"):
                         # === 步骤 1: 预处理 - 收集所有条目并获取其排序/分组信息 ===
                         version_keys = sorted([k for k in json_data if k.replace(".", "", 1).isdigit()], key=float)
@@ -4256,15 +4265,17 @@ def requirement_page(type="", json_path="", project_name=""):
                             original_str = ""
                             original_version = version_data.get("original_version", "0.0")
                             original_project = version_data.get("original_project", "")
-                            # 非衍生自0.0版本或版本不为0，即最新版本的，增加衍生信息
+                            # 非全新配置需求，衍生修改需求
                             if original_project != "":
                                 original_str = f"衍生自：{original_project}"
+                                # 不是汇总最新数据，且
                                 if version != "0" and original_version != "0.0":
                                     original_str = f"{original_str}，V{original_version}"
                                 elif version != "0" and original_version == "0.0":
                                     original_str = f"{original_str}，初版"
                                 else:
                                     original_str = ""
+                            # 全新配置需求
                             else:
                                 if version != "0" and original_version == "0.0":
                                     original_str = "全新配置需求"
@@ -4542,7 +4553,7 @@ def requirement_page(type="", json_path="", project_name=""):
                 ui.separator().props("vertical size=1px")
                 # 概述内容列
                 with ui.column().classes("w-1/2 min-w-[400px] items-center"):
-                    ui.label("概述整理").classes("text-xl")
+                    ui.label(f"{project_name} 概述整理").classes("text-xl")
                     with ui.column().classes("w-full overflow-y-auto p-1 gap-2"):
                         try:
                             global over_config_data
