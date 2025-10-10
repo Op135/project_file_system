@@ -17,7 +17,7 @@
                     "value": "模组"
                 },
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "整机",
@@ -49,13 +49,13 @@
                 "option_group_id": "1.0",
                 "option_view": "全员",
                 "user_must_out": {
-                    "光能输出": true,
-                    "机械结构": true,
-                    "硬件驱动控制": true,
+                    "光能输出": false,
+                    "机械结构": false,
+                    "硬件驱动控制": false,
                     "软件控制": true
                 },
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "光能输出",
@@ -100,11 +100,9 @@
                 "option_hint": "产品是否需要与导光束进行协同？",
                 "option_group_id": "1.0",
                 "option_view": "全员",
-                "user_must_out": {
-                    "value": "True"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -135,11 +133,9 @@
                 "option_hint": "导光束作为光源给我司产品提供光，还是导光束作为传输工具参与我司产品对光的处理，还是我司产品需要将光输出给导光束？",
                 "option_group_id": "1.0",
                 "option_view": "光学+结构+工艺+质量",
-                "user_must_out": {
-                    "value": "CD"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "导光束→产品",
@@ -198,11 +194,9 @@
                 "option_hint": "导光束是否作为产品的一部分卖给客户？",
                 "option_group_id": "2.0",
                 "option_view": "光学+结构+工艺+质量",
-                "user_must_out": {
-                    "value": "False"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -233,11 +227,9 @@
                 "option_hint": "导光束转接座是由我司设计生产，还是客户自行设计生产？",
                 "option_group_id": "2.0",
                 "option_view": "光学+结构+工艺+质量",
-                "user_must_out": {
-                    "value": "True"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -268,11 +260,9 @@
                 "option_hint": "填写客户对导光束输入端通光口径的要求，注意是“透光”部分，单位统一为：mm。",
                 "option_group_id": "2.0",
                 "option_view": "光学+结构+工艺+质量",
-                "user_must_out": {
-                    "1": "5mm"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -298,7 +288,7 @@
                 "option_view": "光学+结构+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -322,11 +312,9 @@
                 "option_hint": "填写客户对导光束NA值的要求，无单位。",
                 "option_group_id": "2.0",
                 "option_view": "光学+结构+工艺+质量",
-                "user_must_out": {
-                    "1": "0.62"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -350,13 +338,9 @@
                 "option_hint": "按产品配合所需，提供导光束外形尺寸信息或要求，主要有：输入端头部尺寸、输出端头部尺寸、总长度，建议提供图纸，单位统一为：mm。",
                 "option_group_id": "2.0",
                 "option_view": "光学+结构+工艺+质量",
-                "user_must_out": {
-                    "1": "使用典型Wolf头部尺寸，长度3米"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": [
-                    "6"
-                ],
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -380,11 +364,9 @@
                 "option_hint": "产品生产出来后，在做光参数测试时，客户是否指定或提供导光束来测，而不是由我司自行决定？",
                 "option_group_id": "3.0",
                 "option_view": "光学+结构+工艺+质量",
-                "user_must_out": {
-                    "value": "True"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -415,11 +397,9 @@
                 "option_hint": "填写客户指定的导光束及测试参数，例如：客供3米导光束测：光通量，显色指数；其余光参数用我司1米导光束测试。",
                 "option_group_id": "3.0",
                 "option_view": "光学+工艺+质量",
-                "user_must_out": {
-                    "1": "客供3米导光束测：光通量，显色指数，色温"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -443,11 +423,9 @@
                 "option_hint": "我司转接座材料及表面工艺默认：6061铝合金，100目喷砂，原色阳极氧化；如果客户有其它要求的工艺，请选“是”。",
                 "option_group_id": "2.0",
                 "option_view": "结构+工艺+质量",
-                "user_must_out": {
-                    "value": "False"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -480,7 +458,7 @@
                 "option_view": "结构+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -504,11 +482,9 @@
                 "option_hint": "我司转接座有默认的设计形式，是否符合客户使用场景？如果客户有形状或尺寸方面的具体定制要求，请选“是”。",
                 "option_group_id": "2.0",
                 "option_view": "光学+结构+质量",
-                "user_must_out": {
-                    "value": "False"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -541,7 +517,7 @@
                 "option_view": "光学+结构+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -565,11 +541,9 @@
                 "option_hint": "我司导光束转接座头部旋帽默认会有点胶处理，防止松脱掉，而部分客户要求不点胶出货，他们自行装配后自己点胶。",
                 "option_group_id": "2.0",
                 "option_view": "结构+工艺+质量",
-                "user_must_out": {
-                    "value": "True"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -600,11 +574,9 @@
                 "option_hint": "我司默认使用自己的导光束头部治具做插拔拉力测试，如果客户对导光束插拔力要求较高，则需要客户提供导光束做专门的拉力测试。",
                 "option_group_id": "3.0",
                 "option_view": "结构+工艺+质量",
-                "user_must_out": {
-                    "value": "False"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -635,11 +607,9 @@
                 "option_hint": "我司默认的拉力合格标准为：11~15N，如果客户需要指定合格标准，请选“是”。",
                 "option_group_id": "3.0",
                 "option_view": "结构+工艺+质量",
-                "user_must_out": {
-                    "value": "False"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -672,7 +642,7 @@
                 "option_view": "结构+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -696,13 +666,9 @@
                 "option_hint": "与客户协商好转接座与产品主体是否装一起发货，还是分拆配好螺丝客户自己装配，包括包装装箱方式。",
                 "option_group_id": "2.0",
                 "option_view": "结构+工艺+质量",
-                "user_must_out": {
-                    "value": "一体包装"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": [
-                    "5"
-                ],
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "与产品主体“分拆”装同箱",
@@ -740,11 +706,9 @@
                 "option_hint": "大部分单白光模组默认支持机械悬臂检测，也可定制为接近开关检测；大部分荧光模组默认支持接近开关检测；新项目需要检测的情况下推荐接近开关检测；",
                 "option_group_id": "2.0",
                 "option_view": "全员",
-                "user_must_out": {
-                    "value": "悬臂"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "机械悬臂检测",
@@ -782,11 +746,9 @@
                 "option_hint": "导光束插拔影响哪些光源的亮灭，“影响所有光源”代表：拔出导光束所有光源灭，插入导光束所有光源亮；其它情况选“有特殊逻辑”",
                 "option_group_id": "2.0",
                 "option_view": "全员",
-                "user_must_out": {
-                    "value": "False"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "有特殊逻辑",
@@ -819,7 +781,7 @@
                 "option_view": "全员",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -843,11 +805,9 @@
                 "option_hint": "站在客户使用场景考虑，产品是否需要输出单色光，注意RGB合白光不算单色光（即使内部需要单色光源，但客户使用场景只用合白光模式）；例如：红光、绿光、紫光等。",
                 "option_group_id": "4.0",
                 "option_view": "全员",
-                "user_must_out": {
-                    "value": "False"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -880,7 +840,7 @@
                 "option_view": "全员",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -906,7 +866,7 @@
                 "option_view": "全员",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -930,11 +890,9 @@
                 "option_hint": "产品是否需要输出白光，不管是荧光白光，还是RGB合白光，均属于白光。",
                 "option_group_id": "5.0",
                 "option_view": "全员",
-                "user_must_out": {
-                    "value": "True"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -965,11 +923,9 @@
                 "option_hint": "产品是否需要输出特定混合光，“特定”指的是需要在某些光参数方面做特定要求、由我司控制光源实现的混合光；客户通过单色光自由混合实现的除外。",
                 "option_group_id": "5.0",
                 "option_view": "全员",
-                "user_must_out": {
-                    "value": "False"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -1000,11 +956,9 @@
                 "option_hint": "如果属于内窥镜冷光源，则需要考虑行业标准YY1081-2011的一些合规性技术要求。",
                 "option_group_id": "6.0",
                 "option_view": "全员",
-                "user_must_out": {
-                    "value": "True"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -1035,11 +989,9 @@
                 "option_hint": "产品需要多少个白光输出，例如同一个产品，但需要输出不同色温的白光，一种色温算一种。",
                 "option_group_id": "5.0",
                 "option_view": "全员",
-                "user_must_out": {
-                    "1": "1"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -1063,11 +1015,9 @@
                 "option_hint": "取名力求简单明了，例如：暖白光、冷白光，5500K白光、6500K白光等。",
                 "option_group_id": "5.0",
                 "option_view": "全员",
-                "user_must_out": {
-                    "1": "白光"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -1093,7 +1043,7 @@
                 "option_view": "光学+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "峰值波长",
@@ -1210,7 +1160,7 @@
                 "option_view": "光学+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -1236,7 +1186,7 @@
                 "option_view": "光学+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -1262,7 +1212,7 @@
                 "option_view": "光学+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -1288,7 +1238,7 @@
                 "option_view": "光学+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -1314,7 +1264,7 @@
                 "option_view": "光学+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -1340,7 +1290,7 @@
                 "option_view": "光学+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -1366,7 +1316,7 @@
                 "option_view": "光学+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -1392,7 +1342,7 @@
                 "option_view": "光学+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -1418,7 +1368,7 @@
                 "option_view": "光学+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -1444,7 +1394,7 @@
                 "option_view": "光学+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -1470,7 +1420,7 @@
                 "option_view": "光学+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -1496,7 +1446,7 @@
                 "option_view": "光学+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -1522,7 +1472,7 @@
                 "option_view": "光学+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -1548,7 +1498,7 @@
                 "option_view": "光学+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -1572,27 +1522,9 @@
                 "option_hint": "请仔细询问下列光参数里，哪些是客户关注并在入厂检时会检测的。",
                 "option_group_id": "5.0",
                 "option_view": "光学+工艺+质量",
-                "user_must_out": {
-                    "相关色温CCT": true,
-                    "CRI显指Ra": true,
-                    "CRI显指R9": false,
-                    "色坐标CIExy": false,
-                    "色坐标CIEuv": false,
-                    "光谱峰值比": false,
-                    "光通量": true,
-                    "光功率": false,
-                    "照度": false,
-                    "辐照度": false,
-                    "光斑尺寸": false,
-                    "光斑均匀性": false,
-                    "光强": false,
-                    "辐射强度": false,
-                    "亮度": false,
-                    "光束全角": false,
-                    "视场全角": false
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "相关色温CCT",
@@ -1728,13 +1660,9 @@
                 "option_hint": "填写该项要求的典型值与公差范围，单位统一为：K。",
                 "option_group_id": "5.0",
                 "option_view": "光学+工艺+质量",
-                "user_must_out": {
-                    "白光": "5700K"
-                },
-                "option_tolerance_out": {
-                    "白光": "±500K"
-                },
-                "ref_out": "",
+                "user_must_out": {},
+                "option_tolerance_out": {},
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -1758,11 +1686,9 @@
                 "option_hint": "填写该项要求的下限值，无单位。",
                 "option_group_id": "5.0",
                 "option_view": "光学+工艺+质量",
-                "user_must_out": {
-                    "白光": "90"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -1788,7 +1714,7 @@
                 "option_view": "光学+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -1814,7 +1740,7 @@
                 "option_view": "光学+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -1840,7 +1766,7 @@
                 "option_view": "光学+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -1866,7 +1792,7 @@
                 "option_view": "光学+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -1890,13 +1816,9 @@
                 "option_hint": "填写该项要求的典型值与公差范围，单位统一为：lm。",
                 "option_group_id": "5.0",
                 "option_view": "光学+工艺+质量",
-                "user_must_out": {
-                    "白光": "1200lm"
-                },
-                "option_tolerance_out": {
-                    "白光": "±10%"
-                },
-                "ref_out": "",
+                "user_must_out": {},
+                "option_tolerance_out": {},
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -1922,7 +1844,7 @@
                 "option_view": "光学+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -1948,7 +1870,7 @@
                 "option_view": "光学+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -1974,7 +1896,7 @@
                 "option_view": "光学+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -2000,7 +1922,7 @@
                 "option_view": "光学+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -2026,7 +1948,7 @@
                 "option_view": "光学+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -2052,7 +1974,7 @@
                 "option_view": "光学+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -2078,7 +2000,7 @@
                 "option_view": "光学+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -2104,7 +2026,7 @@
                 "option_view": "光学+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -2130,7 +2052,7 @@
                 "option_view": "光学+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -2156,7 +2078,7 @@
                 "option_view": "光学+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -2180,16 +2102,9 @@
                 "option_hint": "请仔细询问下列YY1081-2011标准特有光参数，哪些是客户关注并在入厂检时会检测的。",
                 "option_group_id": "6.0",
                 "option_view": "光学+工艺+质量",
-                "user_must_out": {
-                    "红绿辐通量比": true,
-                    "蓝绿辐通量比": true,
-                    "红外截止性能": false,
-                    "光照均匀性": false,
-                    "照度超限点": false,
-                    "不限制": false
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "红绿辐通量比",
@@ -2248,13 +2163,9 @@
                 "option_hint": "填写该项要求的典型值与公差范围，无单位；推荐YY1081-2011标准默认公差±20%。",
                 "option_group_id": "6.0",
                 "option_view": "光学+工艺+质量",
-                "user_must_out": {
-                    "白光": "0.75"
-                },
-                "option_tolerance_out": {
-                    "白光": "±20%"
-                },
-                "ref_out": "",
+                "user_must_out": {},
+                "option_tolerance_out": {},
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -2278,13 +2189,9 @@
                 "option_hint": "填写该项要求的典型值与公差范围，无单位；推荐YY1081-2011标准默认公差±20%。",
                 "option_group_id": "6.0",
                 "option_view": "光学+工艺+质量",
-                "user_must_out": {
-                    "白光": "1.25"
-                },
-                "option_tolerance_out": {
-                    "白光": "±20%"
-                },
-                "ref_out": "",
+                "user_must_out": {},
+                "option_tolerance_out": {},
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -2310,7 +2217,7 @@
                 "option_view": "光学+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -2336,7 +2243,7 @@
                 "option_view": "光学+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -2362,7 +2269,7 @@
                 "option_view": "光学+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -2386,16 +2293,9 @@
                 "option_hint": "按YY1081-2011标准要求，光通量、相对色温、显色指数、红绿辐通量比、蓝绿辐通量比需要在100%与50%亮度情况下均满足声称的规格标准要求",
                 "option_group_id": "6.0",
                 "option_view": "全员",
-                "user_must_out": {
-                    "光通量": true,
-                    "相对色温CCT": true,
-                    "CRI显指Ra": true,
-                    "红绿辐通量比": true,
-                    "蓝绿辐通量比": true,
-                    "不要求": false
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "光通量",
@@ -2455,10 +2355,10 @@
                 "option_group_id": "7.0",
                 "option_view": "全员",
                 "user_must_out": {
-                    "value": "True"
+                    "value": "False"
                 },
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -2489,13 +2389,9 @@
                 "option_hint": "填写客户要求的温度范围上下限，默认单位：℃。",
                 "option_group_id": "7.0",
                 "option_view": "全员",
-                "user_must_out": {
-                    "1": "-20℃"
-                },
-                "option_tolerance_out": {
-                    "1": "50℃"
-                },
-                "ref_out": "",
+                "user_must_out": {},
+                "option_tolerance_out": {},
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -2523,7 +2419,7 @@
                     "value": "False"
                 },
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -2556,7 +2452,7 @@
                 "option_view": "全员",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -2580,11 +2476,9 @@
                 "option_hint": "是否限定产品工作时允许产生的噪声上限。",
                 "option_group_id": "7.0",
                 "option_view": "全员",
-                "user_must_out": {
-                    "value": "False"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -2617,7 +2511,7 @@
                 "option_view": "全员",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -2641,11 +2535,9 @@
                 "option_hint": "是否限定产品工作时的外表面温度或温升。",
                 "option_group_id": "7.0",
                 "option_view": "全员",
-                "user_must_out": {
-                    "value": "False"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -2678,7 +2570,7 @@
                 "option_view": "全员",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -2702,11 +2594,9 @@
                 "option_hint": "是否限定产品的防护等级，即防固体异物、液体进入的能力。",
                 "option_group_id": "8.0",
                 "option_view": "结构+工艺+质量",
-                "user_must_out": {
-                    "value": "False"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -2739,7 +2629,7 @@
                 "option_view": "结构+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -2763,13 +2653,9 @@
                 "option_hint": "是否指定产品外形尺寸或安装孔尺寸，选“是”则需要附图纸或图片说明。",
                 "option_group_id": "9.0",
                 "option_view": "结构+质量",
-                "user_must_out": {
-                    "value": "True"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": [
-                    "4"
-                ],
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -2800,13 +2686,9 @@
                 "option_hint": "是否指定产品出光口相对位置，选“是”则需要附图纸或图片说明。",
                 "option_group_id": "9.0",
                 "option_view": "光学+结构+工艺+质量",
-                "user_must_out": {
-                    "value": "True"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": [
-                    "3"
-                ],
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -2837,11 +2719,9 @@
                 "option_hint": "是否指定产品出线位置，选“是”则需要附图纸或图片说明。",
                 "option_group_id": "9.0",
                 "option_view": "结构+工艺+质量",
-                "user_must_out": {
-                    "value": "False"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -2872,13 +2752,9 @@
                 "option_hint": "是否指定产品进出风位置与方向，选“是”则需要附图纸或图片说明。",
                 "option_group_id": "7.0",
                 "option_view": "光学+结构+工艺+质量",
-                "user_must_out": {
-                    "value": "True"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": [
-                    "1"
-                ],
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -2909,11 +2785,9 @@
                 "option_hint": "是否定制产品出线线材长度？",
                 "option_group_id": "9.0",
                 "option_view": "结构+硬件+质量",
-                "user_must_out": {
-                    "value": "False"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -2946,7 +2820,7 @@
                 "option_view": "结构+硬件+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -2970,11 +2844,9 @@
                 "option_hint": "是否指定产品外观颜色？",
                 "option_group_id": "10.0",
                 "option_view": "结构+质量",
-                "user_must_out": {
-                    "value": "False"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -3007,7 +2879,7 @@
                 "option_view": "结构+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -3031,11 +2903,9 @@
                 "option_hint": "是否指定产品表面处理工艺，特别是要求表面导电氧化。",
                 "option_group_id": "10.0",
                 "option_view": "结构+质量",
-                "user_must_out": {
-                    "value": "False"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -3068,7 +2938,7 @@
                 "option_view": "结构+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -3092,11 +2962,9 @@
                 "option_hint": "是否限定产品重量上限值？",
                 "option_group_id": "10.0",
                 "option_view": "光学+结构+硬件+质量",
-                "user_must_out": {
-                    "value": "True"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -3127,11 +2995,9 @@
                 "option_hint": "填写产品重量上限值，默认单位：kg。",
                 "option_group_id": "10.0",
                 "option_view": "光学+结构+硬件+质量",
-                "user_must_out": {
-                    "1": "20kg"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -3155,11 +3021,9 @@
                 "option_hint": "我司常规产品默认使用普通无调速功能风扇，特殊需要才会应用调速风扇，客户是否指定必须使用调速风扇?",
                 "option_group_id": "11.0",
                 "option_view": "全员",
-                "user_must_out": {
-                    "value": "False"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -3190,11 +3054,9 @@
                 "option_hint": "是否指定产品使用的风扇类型、规格、数量、线长等规格参数?",
                 "option_group_id": "11.0",
                 "option_view": "全员",
-                "user_must_out": {
-                    "value": "False"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -3227,7 +3089,7 @@
                 "option_view": "全员",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -3251,11 +3113,9 @@
                 "option_hint": "是否指定散热器的类型与尺寸？例如：铝型材散热器、铜管散热器、压铸铝合金散热器等。",
                 "option_group_id": "7.0",
                 "option_view": "光学+结构+工艺+质量",
-                "user_must_out": {
-                    "value": "False"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -3288,7 +3148,7 @@
                 "option_view": "光学+结构+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -3312,11 +3172,9 @@
                 "option_hint": "选择产品电源输入类型，模组一般用直流，成品机箱一般用交流。",
                 "option_group_id": "12.0",
                 "option_view": "全员",
-                "user_must_out": {
-                    "value": "直流输入"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "直流",
@@ -3347,11 +3205,9 @@
                 "option_hint": "选择直流输入电压，这个需要跟客户配合确认。",
                 "option_group_id": "12.0",
                 "option_view": "全员",
-                "user_must_out": {
-                    "value": "12V"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "DC12V",
@@ -3398,7 +3254,7 @@
                 "option_view": "全员",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "AC90~264V",
@@ -3422,11 +3278,9 @@
                 "option_hint": "客户成像端有摄像系统参与就意味着产品不止用于为人眼观察提供照明，摄像系统能捕捉到更高频率的照明闪烁，这将影响驱动输出方案的选择。",
                 "option_group_id": "13.0",
                 "option_view": "光学+硬件+软件",
-                "user_must_out": {
-                    "value": "True"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -3457,11 +3311,9 @@
                 "option_hint": "驱动板模拟输出将导致光源输出色温随调光档位变化幅度较大，但可以杜绝摄像系统成像出现闪烁条纹问题；如果拒绝该方案，将采用PWM输出方案，客户得自己考虑如何解决闪烁条纹问题。",
                 "option_group_id": "13.0",
                 "option_view": "光学+硬件+软件+工艺",
-                "user_must_out": {
-                    "value": "True"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -3494,7 +3346,7 @@
                 "option_view": "光学+硬件+软件+工艺",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -3525,11 +3377,9 @@
                 "option_hint": "是否限制产品工作时的功耗上限值。通常出现在客户整机系统功率分配已经计划好，且不好不愿调整。",
                 "option_group_id": "12.0",
                 "option_view": "全员",
-                "user_must_out": {
-                    "value": "True"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -3560,11 +3410,9 @@
                 "option_hint": "填写具体功耗上限值，默认单位：W。",
                 "option_group_id": "12.0",
                 "option_view": "全员",
-                "user_must_out": {
-                    "1": "100W"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -3588,11 +3436,9 @@
                 "option_hint": "是否指定产品驱动板外形尺寸与安装孔尺寸，选“是”则需要附图纸或图片说明。",
                 "option_group_id": "14.0",
                 "option_view": "结构+硬件+质量",
-                "user_must_out": {
-                    "value": "False"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -3623,11 +3469,9 @@
                 "option_hint": "是否指定驱动板使用某种类型的接口或某个特定的接口型号规格？",
                 "option_group_id": "14.0",
                 "option_view": "结构+硬件+质量",
-                "user_must_out": {
-                    "value": "True"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -3658,13 +3502,9 @@
                 "option_hint": "填写具体接口规格要求。",
                 "option_group_id": "14.0",
                 "option_view": "结构+硬件+质量",
-                "user_must_out": {
-                    "1": "详见表格数据"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": [
-                    "2"
-                ],
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -3688,25 +3528,9 @@
                 "option_hint": "选择产品控制模式。",
                 "option_group_id": "15.0",
                 "option_view": "硬件+软件+工艺+质量",
-                "user_must_out": {
-                    "TTL": false,
-                    "PWM": false,
-                    "RS232": false,
-                    "RS422": false,
-                    "RS485": false,
-                    "IIC": false,
-                    "SPI": false,
-                    "USB": false,
-                    "CAN": false,
-                    "LAN": false,
-                    "按键开关": false,
-                    "电位器": true,
-                    "编码器": false,
-                    "触控屏": false,
-                    "踏板": false
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "TTL",
@@ -3828,11 +3652,9 @@
                 "option_hint": "产品供货时，是否包含控制操作时需要使用的配件，例如：按钮、电位器、触摸屏等等。",
                 "option_group_id": "15.0",
                 "option_view": "结构+硬件+工艺+质量",
-                "user_must_out": {
-                    "value": "True"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -3863,17 +3685,9 @@
                 "option_hint": "选择批量供货时具体提供的操控类配件。",
                 "option_group_id": "15.0",
                 "option_view": "结构+硬件+工艺+质量",
-                "user_must_out": {
-                    "按键开关": false,
-                    "电位器": true,
-                    "编码器": false,
-                    "触控屏": false,
-                    "钥匙开关": false,
-                    "急停开关": false,
-                    "踏板": false
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "按键开关",
@@ -3939,11 +3753,9 @@
                 "option_hint": "是否指定供货的控制操作类配件的具体规格型号。",
                 "option_group_id": "15.0",
                 "option_view": "结构+硬件+工艺+质量",
-                "user_must_out": {
-                    "value": "False"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -3976,7 +3788,7 @@
                 "option_view": "结构+硬件+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -4000,11 +3812,9 @@
                 "option_hint": "是否要求产品使用某些器件来显示功能状态，例如：指示灯、显示屏等等。",
                 "option_group_id": "15.0",
                 "option_view": "结构+硬件+工艺+质量",
-                "user_must_out": {
-                    "value": "False"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -4037,7 +3847,7 @@
                 "option_view": "结构+硬件+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "LED指示灯",
@@ -4077,7 +3887,7 @@
                 "option_view": "硬件+软件+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -4103,7 +3913,7 @@
                 "option_view": "结构+硬件+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -4136,7 +3946,7 @@
                 "option_view": "结构+硬件+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "LED指示灯",
@@ -4176,7 +3986,7 @@
                 "option_view": "结构+硬件+软件+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -4209,7 +4019,7 @@
                 "option_view": "结构+硬件+软件+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -4234,10 +4044,10 @@
                 "option_group_id": "15.0",
                 "option_view": "结构+硬件+工艺+质量",
                 "user_must_out": {
-                    "value": "True"
+                    "value": "False"
                 },
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -4272,7 +4082,7 @@
                     "value": "False"
                 },
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -4305,7 +4115,7 @@
                 "option_view": "光学+硬件+软件+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -4333,7 +4143,7 @@
                     "value": "False"
                 },
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -4366,7 +4176,7 @@
                 "option_view": "光学+硬件+软件+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -4391,14 +4201,14 @@
                 "option_group_id": "999.0",
                 "option_view": "全员",
                 "user_must_out": {
-                    "EMC": true,
-                    "RoHS": true,
+                    "EMC": false,
+                    "RoHS": false,
                     "激光安全": false,
-                    "光生物安全": true,
-                    "不要求": false
+                    "光生物安全": false,
+                    "不要求": true
                 },
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "EMC",
@@ -4450,11 +4260,9 @@
                 "option_hint": "是否指定产品调光范围与调光步距。",
                 "option_group_id": "16.0",
                 "option_view": "光学+硬件+软件+工艺+质量",
-                "user_must_out": {
-                    "value": "True"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -4485,11 +4293,9 @@
                 "option_hint": "填写具体调光范围要求。",
                 "option_group_id": "16.0",
                 "option_view": "光学+硬件+软件+工艺+质量",
-                "user_must_out": {
-                    "1": "1%~100%"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -4513,11 +4319,9 @@
                 "option_hint": "填写具体调光步距要求。",
                 "option_group_id": "16.0",
                 "option_view": "光学+硬件+软件+质量",
-                "user_must_out": {
-                    "1": "1%"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -4541,11 +4345,9 @@
                 "option_hint": "是否要求产品具备频闪/脉冲形式输出功能？",
                 "option_group_id": "16.0",
                 "option_view": "全员",
-                "user_must_out": {
-                    "value": "False"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -4578,7 +4380,7 @@
                 "option_view": "全员",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -4604,7 +4406,7 @@
                 "option_view": "全员",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -4637,7 +4439,7 @@
                 "option_view": "全员",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -4661,11 +4463,9 @@
                 "option_hint": "是否指定光源超温报警保护温度与保护逻辑，包括可能的减半输出温度、关闭温度、恢复温度等等，温度单位统一为：℃。",
                 "option_group_id": "17.0",
                 "option_view": "全员",
-                "user_must_out": {
-                    "value": "True"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -4696,13 +4496,9 @@
                 "option_hint": "填写详细的超温报警保护温度与保护逻辑。",
                 "option_group_id": "17.0",
                 "option_view": "全员",
-                "user_must_out": {
-                    "1": "80℃关闭光源，60℃恢复输出，详细检附件说明"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": [
-                    "4"
-                ],
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -4715,7 +4511,7 @@
                 "num": "137"
             },
             "138": {
-                "condition": "无条件",
+                "condition": "2any['光学']",
                 "node_id": "138",
                 "guide_content": "请提供剩余产品光学补充需求",
                 "answer_type": "多行文本",
@@ -4726,11 +4522,9 @@
                 "option_hint": "填写上面需求确认项无提及但客户有要求的光学内容，没有则写“无”。",
                 "option_group_id": "18.0",
                 "option_view": "光学+工艺+质量",
-                "user_must_out": {
-                    "1": "无补充"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -4743,7 +4537,7 @@
                 "num": "138"
             },
             "139": {
-                "condition": "无条件",
+                "condition": "2any['结构']",
                 "node_id": "139",
                 "guide_content": "请提供剩余产品结构补充需求",
                 "answer_type": "多行文本",
@@ -4754,11 +4548,9 @@
                 "option_hint": "填写上面需求确认项无提及但客户有要求的结构内容，没有则写“无”。",
                 "option_group_id": "18.0",
                 "option_view": "结构+工艺+质量",
-                "user_must_out": {
-                    "1": "无补充"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -4771,7 +4563,7 @@
                 "num": "139"
             },
             "140": {
-                "condition": "无条件",
+                "condition": "2any['硬件']",
                 "node_id": "140",
                 "guide_content": "请提供剩余产品硬件补充需求",
                 "answer_type": "多行文本",
@@ -4782,11 +4574,9 @@
                 "option_hint": "填写上面需求确认项无提及但客户有要求的硬件内容，没有则写“无”。",
                 "option_group_id": "18.0",
                 "option_view": "硬件+工艺+质量",
-                "user_must_out": {
-                    "1": "无补充"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -4799,7 +4589,7 @@
                 "num": "140"
             },
             "141": {
-                "condition": "无条件",
+                "condition": "2any['软件']",
                 "node_id": "141",
                 "guide_content": "请提供剩余产品软件补充需求",
                 "answer_type": "多行文本",
@@ -4811,10 +4601,10 @@
                 "option_group_id": "18.0",
                 "option_view": "软件+工艺+质量",
                 "user_must_out": {
-                    "1": "无补充"
+                    "1": "阿斯蒂芬阿萨德发生fsd阿斯蒂芬阿斯蒂芬"
                 },
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -4839,10 +4629,10 @@
                 "option_group_id": "18.0",
                 "option_view": "工艺+结构+质量",
                 "user_must_out": {
-                    "1": "无补充"
+                    "1": "阿斯蒂芬"
                 },
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -4857,75 +4647,15 @@
         },
         "deleted": {},
         "modified": {},
-        "file_dic": {
-            "1": {
-                "file_del_bool": false,
-                "file_name": "IR-850-500-S-02-K10010073",
-                "file_url": "/uploads/IR-850-500-S-02-K10010073.f1a9abffe8f197027003b7ac5ce33fa4.pdf",
-                "file_name_hash": "IR-850-500-S-02-K10010073.f1a9abffe8f197027003b7ac5ce33fa4.pdf",
-                "file_name_suffix": "IR-850-500-S-02-K10010073.pdf",
-                "file_type": "application/pdf",
-                "file_lab": "1",
-                "parents_h": 9
-            },
-            "2": {
-                "file_del_bool": false,
-                "file_name": "临时性数据",
-                "file_url": "/uploads/临时性数据.bbb7a654f2ce1ee6a777865beab1f76b.xlsx",
-                "file_name_hash": "临时性数据.bbb7a654f2ce1ee6a777865beab1f76b.xlsx",
-                "file_name_suffix": "临时性数据.xlsx",
-                "file_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                "file_lab": "2",
-                "parents_h": 9
-            },
-            "3": {
-                "file_del_bool": false,
-                "file_name": "琥珀色临时模组四光源驱动条件",
-                "file_url": "/uploads/琥珀色临时模组四光源驱动条件.e4d3934570fe6e04343c95ef842f14e2.pptx",
-                "file_name_hash": "琥珀色临时模组四光源驱动条件.e4d3934570fe6e04343c95ef842f14e2.pptx",
-                "file_name_suffix": "琥珀色临时模组四光源驱动条件.pptx",
-                "file_type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-                "file_lab": "3",
-                "parents_h": 9
-            },
-            "4": {
-                "file_del_bool": false,
-                "file_name": "标准版本更新模板",
-                "file_url": "/uploads/标准版本更新模板.1dec186145b7a75831aa5f1421980227.docx",
-                "file_name_hash": "标准版本更新模板.1dec186145b7a75831aa5f1421980227.docx",
-                "file_name_suffix": "标准版本更新模板.docx",
-                "file_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                "file_lab": "4",
-                "parents_h": 9
-            },
-            "5": {
-                "file_del_bool": false,
-                "file_name": "Snipaste_2025-01-09_13-08-42",
-                "file_url": "/uploads/Snipaste_2025-01-09_13-08-42.00661caf7da65237520b08c398a61ae9.png",
-                "file_name_hash": "Snipaste_2025-01-09_13-08-42.00661caf7da65237520b08c398a61ae9.png",
-                "file_name_suffix": "Snipaste_2025-01-09_13-08-42.png",
-                "file_type": "image/png",
-                "file_lab": "5",
-                "parents_h": 9
-            },
-            "6": {
-                "file_del_bool": false,
-                "file_name": "微信图片_20241212095208",
-                "file_url": "/uploads/微信图片_20241212095208.e49868d32bbb9cb04364ba96f4c1eeb3.jpg",
-                "file_name_hash": "微信图片_20241212095208.e49868d32bbb9cb04364ba96f4c1eeb3.jpg",
-                "file_name_suffix": "微信图片_20241212095208.jpg",
-                "file_type": "image/jpeg",
-                "file_lab": "6",
-                "parents_h": 9
-            }
-        },
+        "file_dic": {},
         "deleted_files": [],
-        "file_counter": 6,
-        "project_name": "RFFM-1519-A",
-        "current_user": "林贵原",
+        "file_counter": 0,
+        "project_name": "RFFM-1002-A",
+        "current_user": "李晓明",
         "version": "1.0",
         "original_version": "0.0",
-        "req_timestamp": "2025-08-11T18:41:09.427843"
+        "original_project": "RFFM-1001-A",
+        "req_timestamp": "2025-10-10T19:08:22.773282"
     },
     "0": {
         "added": {
@@ -4945,7 +4675,7 @@
                     "value": "模组"
                 },
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "整机",
@@ -4977,13 +4707,13 @@
                 "option_group_id": "1.0",
                 "option_view": "全员",
                 "user_must_out": {
-                    "光能输出": true,
-                    "机械结构": true,
-                    "硬件驱动控制": true,
+                    "光能输出": false,
+                    "机械结构": false,
+                    "硬件驱动控制": false,
                     "软件控制": true
                 },
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "光能输出",
@@ -5028,11 +4758,9 @@
                 "option_hint": "产品是否需要与导光束进行协同？",
                 "option_group_id": "1.0",
                 "option_view": "全员",
-                "user_must_out": {
-                    "value": "True"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -5063,11 +4791,9 @@
                 "option_hint": "导光束作为光源给我司产品提供光，还是导光束作为传输工具参与我司产品对光的处理，还是我司产品需要将光输出给导光束？",
                 "option_group_id": "1.0",
                 "option_view": "光学+结构+工艺+质量",
-                "user_must_out": {
-                    "value": "CD"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "导光束→产品",
@@ -5126,11 +4852,9 @@
                 "option_hint": "导光束是否作为产品的一部分卖给客户？",
                 "option_group_id": "2.0",
                 "option_view": "光学+结构+工艺+质量",
-                "user_must_out": {
-                    "value": "False"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -5161,11 +4885,9 @@
                 "option_hint": "导光束转接座是由我司设计生产，还是客户自行设计生产？",
                 "option_group_id": "2.0",
                 "option_view": "光学+结构+工艺+质量",
-                "user_must_out": {
-                    "value": "True"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -5196,11 +4918,9 @@
                 "option_hint": "填写客户对导光束输入端通光口径的要求，注意是“透光”部分，单位统一为：mm。",
                 "option_group_id": "2.0",
                 "option_view": "光学+结构+工艺+质量",
-                "user_must_out": {
-                    "1": "5mm"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -5226,7 +4946,7 @@
                 "option_view": "光学+结构+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -5250,11 +4970,9 @@
                 "option_hint": "填写客户对导光束NA值的要求，无单位。",
                 "option_group_id": "2.0",
                 "option_view": "光学+结构+工艺+质量",
-                "user_must_out": {
-                    "1": "0.62"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -5278,13 +4996,9 @@
                 "option_hint": "按产品配合所需，提供导光束外形尺寸信息或要求，主要有：输入端头部尺寸、输出端头部尺寸、总长度，建议提供图纸，单位统一为：mm。",
                 "option_group_id": "2.0",
                 "option_view": "光学+结构+工艺+质量",
-                "user_must_out": {
-                    "1": "使用典型Wolf头部尺寸，长度3米"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": [
-                    "6"
-                ],
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -5308,11 +5022,9 @@
                 "option_hint": "产品生产出来后，在做光参数测试时，客户是否指定或提供导光束来测，而不是由我司自行决定？",
                 "option_group_id": "3.0",
                 "option_view": "光学+结构+工艺+质量",
-                "user_must_out": {
-                    "value": "True"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -5343,11 +5055,9 @@
                 "option_hint": "填写客户指定的导光束及测试参数，例如：客供3米导光束测：光通量，显色指数；其余光参数用我司1米导光束测试。",
                 "option_group_id": "3.0",
                 "option_view": "光学+工艺+质量",
-                "user_must_out": {
-                    "1": "客供3米导光束测：光通量，显色指数，色温"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -5371,11 +5081,9 @@
                 "option_hint": "我司转接座材料及表面工艺默认：6061铝合金，100目喷砂，原色阳极氧化；如果客户有其它要求的工艺，请选“是”。",
                 "option_group_id": "2.0",
                 "option_view": "结构+工艺+质量",
-                "user_must_out": {
-                    "value": "False"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -5408,7 +5116,7 @@
                 "option_view": "结构+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -5432,11 +5140,9 @@
                 "option_hint": "我司转接座有默认的设计形式，是否符合客户使用场景？如果客户有形状或尺寸方面的具体定制要求，请选“是”。",
                 "option_group_id": "2.0",
                 "option_view": "光学+结构+质量",
-                "user_must_out": {
-                    "value": "False"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -5469,7 +5175,7 @@
                 "option_view": "光学+结构+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -5493,11 +5199,9 @@
                 "option_hint": "我司导光束转接座头部旋帽默认会有点胶处理，防止松脱掉，而部分客户要求不点胶出货，他们自行装配后自己点胶。",
                 "option_group_id": "2.0",
                 "option_view": "结构+工艺+质量",
-                "user_must_out": {
-                    "value": "True"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -5528,11 +5232,9 @@
                 "option_hint": "我司默认使用自己的导光束头部治具做插拔拉力测试，如果客户对导光束插拔力要求较高，则需要客户提供导光束做专门的拉力测试。",
                 "option_group_id": "3.0",
                 "option_view": "结构+工艺+质量",
-                "user_must_out": {
-                    "value": "False"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -5563,11 +5265,9 @@
                 "option_hint": "我司默认的拉力合格标准为：11~15N，如果客户需要指定合格标准，请选“是”。",
                 "option_group_id": "3.0",
                 "option_view": "结构+工艺+质量",
-                "user_must_out": {
-                    "value": "False"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -5600,7 +5300,7 @@
                 "option_view": "结构+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -5624,13 +5324,9 @@
                 "option_hint": "与客户协商好转接座与产品主体是否装一起发货，还是分拆配好螺丝客户自己装配，包括包装装箱方式。",
                 "option_group_id": "2.0",
                 "option_view": "结构+工艺+质量",
-                "user_must_out": {
-                    "value": "一体包装"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": [
-                    "5"
-                ],
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "与产品主体“分拆”装同箱",
@@ -5668,11 +5364,9 @@
                 "option_hint": "大部分单白光模组默认支持机械悬臂检测，也可定制为接近开关检测；大部分荧光模组默认支持接近开关检测；新项目需要检测的情况下推荐接近开关检测；",
                 "option_group_id": "2.0",
                 "option_view": "全员",
-                "user_must_out": {
-                    "value": "悬臂"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "机械悬臂检测",
@@ -5710,11 +5404,9 @@
                 "option_hint": "导光束插拔影响哪些光源的亮灭，“影响所有光源”代表：拔出导光束所有光源灭，插入导光束所有光源亮；其它情况选“有特殊逻辑”",
                 "option_group_id": "2.0",
                 "option_view": "全员",
-                "user_must_out": {
-                    "value": "False"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "有特殊逻辑",
@@ -5747,7 +5439,7 @@
                 "option_view": "全员",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -5771,11 +5463,9 @@
                 "option_hint": "站在客户使用场景考虑，产品是否需要输出单色光，注意RGB合白光不算单色光（即使内部需要单色光源，但客户使用场景只用合白光模式）；例如：红光、绿光、紫光等。",
                 "option_group_id": "4.0",
                 "option_view": "全员",
-                "user_must_out": {
-                    "value": "False"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -5808,7 +5498,7 @@
                 "option_view": "全员",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -5834,7 +5524,7 @@
                 "option_view": "全员",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -5858,11 +5548,9 @@
                 "option_hint": "产品是否需要输出白光，不管是荧光白光，还是RGB合白光，均属于白光。",
                 "option_group_id": "5.0",
                 "option_view": "全员",
-                "user_must_out": {
-                    "value": "True"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -5893,11 +5581,9 @@
                 "option_hint": "产品是否需要输出特定混合光，“特定”指的是需要在某些光参数方面做特定要求、由我司控制光源实现的混合光；客户通过单色光自由混合实现的除外。",
                 "option_group_id": "5.0",
                 "option_view": "全员",
-                "user_must_out": {
-                    "value": "False"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -5928,11 +5614,9 @@
                 "option_hint": "如果属于内窥镜冷光源，则需要考虑行业标准YY1081-2011的一些合规性技术要求。",
                 "option_group_id": "6.0",
                 "option_view": "全员",
-                "user_must_out": {
-                    "value": "True"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -5963,11 +5647,9 @@
                 "option_hint": "产品需要多少个白光输出，例如同一个产品，但需要输出不同色温的白光，一种色温算一种。",
                 "option_group_id": "5.0",
                 "option_view": "全员",
-                "user_must_out": {
-                    "1": "1"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -5991,11 +5673,9 @@
                 "option_hint": "取名力求简单明了，例如：暖白光、冷白光，5500K白光、6500K白光等。",
                 "option_group_id": "5.0",
                 "option_view": "全员",
-                "user_must_out": {
-                    "1": "白光"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -6021,7 +5701,7 @@
                 "option_view": "光学+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "峰值波长",
@@ -6138,7 +5818,7 @@
                 "option_view": "光学+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -6164,7 +5844,7 @@
                 "option_view": "光学+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -6190,7 +5870,7 @@
                 "option_view": "光学+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -6216,7 +5896,7 @@
                 "option_view": "光学+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -6242,7 +5922,7 @@
                 "option_view": "光学+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -6268,7 +5948,7 @@
                 "option_view": "光学+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -6294,7 +5974,7 @@
                 "option_view": "光学+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -6320,7 +6000,7 @@
                 "option_view": "光学+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -6346,7 +6026,7 @@
                 "option_view": "光学+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -6372,7 +6052,7 @@
                 "option_view": "光学+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -6398,7 +6078,7 @@
                 "option_view": "光学+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -6424,7 +6104,7 @@
                 "option_view": "光学+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -6450,7 +6130,7 @@
                 "option_view": "光学+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -6476,7 +6156,7 @@
                 "option_view": "光学+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -6500,27 +6180,9 @@
                 "option_hint": "请仔细询问下列光参数里，哪些是客户关注并在入厂检时会检测的。",
                 "option_group_id": "5.0",
                 "option_view": "光学+工艺+质量",
-                "user_must_out": {
-                    "相关色温CCT": true,
-                    "CRI显指Ra": true,
-                    "CRI显指R9": false,
-                    "色坐标CIExy": false,
-                    "色坐标CIEuv": false,
-                    "光谱峰值比": false,
-                    "光通量": true,
-                    "光功率": false,
-                    "照度": false,
-                    "辐照度": false,
-                    "光斑尺寸": false,
-                    "光斑均匀性": false,
-                    "光强": false,
-                    "辐射强度": false,
-                    "亮度": false,
-                    "光束全角": false,
-                    "视场全角": false
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "相关色温CCT",
@@ -6656,13 +6318,9 @@
                 "option_hint": "填写该项要求的典型值与公差范围，单位统一为：K。",
                 "option_group_id": "5.0",
                 "option_view": "光学+工艺+质量",
-                "user_must_out": {
-                    "白光": "5700K"
-                },
-                "option_tolerance_out": {
-                    "白光": "±500K"
-                },
-                "ref_out": "",
+                "user_must_out": {},
+                "option_tolerance_out": {},
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -6686,11 +6344,9 @@
                 "option_hint": "填写该项要求的下限值，无单位。",
                 "option_group_id": "5.0",
                 "option_view": "光学+工艺+质量",
-                "user_must_out": {
-                    "白光": "90"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -6716,7 +6372,7 @@
                 "option_view": "光学+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -6742,7 +6398,7 @@
                 "option_view": "光学+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -6768,7 +6424,7 @@
                 "option_view": "光学+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -6794,7 +6450,7 @@
                 "option_view": "光学+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -6818,13 +6474,9 @@
                 "option_hint": "填写该项要求的典型值与公差范围，单位统一为：lm。",
                 "option_group_id": "5.0",
                 "option_view": "光学+工艺+质量",
-                "user_must_out": {
-                    "白光": "1200lm"
-                },
-                "option_tolerance_out": {
-                    "白光": "±10%"
-                },
-                "ref_out": "",
+                "user_must_out": {},
+                "option_tolerance_out": {},
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -6850,7 +6502,7 @@
                 "option_view": "光学+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -6876,7 +6528,7 @@
                 "option_view": "光学+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -6902,7 +6554,7 @@
                 "option_view": "光学+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -6928,7 +6580,7 @@
                 "option_view": "光学+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -6954,7 +6606,7 @@
                 "option_view": "光学+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -6980,7 +6632,7 @@
                 "option_view": "光学+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -7006,7 +6658,7 @@
                 "option_view": "光学+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -7032,7 +6684,7 @@
                 "option_view": "光学+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -7058,7 +6710,7 @@
                 "option_view": "光学+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -7084,7 +6736,7 @@
                 "option_view": "光学+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -7108,16 +6760,9 @@
                 "option_hint": "请仔细询问下列YY1081-2011标准特有光参数，哪些是客户关注并在入厂检时会检测的。",
                 "option_group_id": "6.0",
                 "option_view": "光学+工艺+质量",
-                "user_must_out": {
-                    "红绿辐通量比": true,
-                    "蓝绿辐通量比": true,
-                    "红外截止性能": false,
-                    "光照均匀性": false,
-                    "照度超限点": false,
-                    "不限制": false
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "红绿辐通量比",
@@ -7176,13 +6821,9 @@
                 "option_hint": "填写该项要求的典型值与公差范围，无单位；推荐YY1081-2011标准默认公差±20%。",
                 "option_group_id": "6.0",
                 "option_view": "光学+工艺+质量",
-                "user_must_out": {
-                    "白光": "0.75"
-                },
-                "option_tolerance_out": {
-                    "白光": "±20%"
-                },
-                "ref_out": "",
+                "user_must_out": {},
+                "option_tolerance_out": {},
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -7206,13 +6847,9 @@
                 "option_hint": "填写该项要求的典型值与公差范围，无单位；推荐YY1081-2011标准默认公差±20%。",
                 "option_group_id": "6.0",
                 "option_view": "光学+工艺+质量",
-                "user_must_out": {
-                    "白光": "1.25"
-                },
-                "option_tolerance_out": {
-                    "白光": "±20%"
-                },
-                "ref_out": "",
+                "user_must_out": {},
+                "option_tolerance_out": {},
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -7238,7 +6875,7 @@
                 "option_view": "光学+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -7264,7 +6901,7 @@
                 "option_view": "光学+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -7290,7 +6927,7 @@
                 "option_view": "光学+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -7314,16 +6951,9 @@
                 "option_hint": "按YY1081-2011标准要求，光通量、相对色温、显色指数、红绿辐通量比、蓝绿辐通量比需要在100%与50%亮度情况下均满足声称的规格标准要求",
                 "option_group_id": "6.0",
                 "option_view": "全员",
-                "user_must_out": {
-                    "光通量": true,
-                    "相对色温CCT": true,
-                    "CRI显指Ra": true,
-                    "红绿辐通量比": true,
-                    "蓝绿辐通量比": true,
-                    "不要求": false
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "光通量",
@@ -7383,10 +7013,10 @@
                 "option_group_id": "7.0",
                 "option_view": "全员",
                 "user_must_out": {
-                    "value": "True"
+                    "value": "False"
                 },
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -7417,13 +7047,9 @@
                 "option_hint": "填写客户要求的温度范围上下限，默认单位：℃。",
                 "option_group_id": "7.0",
                 "option_view": "全员",
-                "user_must_out": {
-                    "1": "-20℃"
-                },
-                "option_tolerance_out": {
-                    "1": "50℃"
-                },
-                "ref_out": "",
+                "user_must_out": {},
+                "option_tolerance_out": {},
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -7451,7 +7077,7 @@
                     "value": "False"
                 },
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -7484,7 +7110,7 @@
                 "option_view": "全员",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -7508,11 +7134,9 @@
                 "option_hint": "是否限定产品工作时允许产生的噪声上限。",
                 "option_group_id": "7.0",
                 "option_view": "全员",
-                "user_must_out": {
-                    "value": "False"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -7545,7 +7169,7 @@
                 "option_view": "全员",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -7569,11 +7193,9 @@
                 "option_hint": "是否限定产品工作时的外表面温度或温升。",
                 "option_group_id": "7.0",
                 "option_view": "全员",
-                "user_must_out": {
-                    "value": "False"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -7606,7 +7228,7 @@
                 "option_view": "全员",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -7630,11 +7252,9 @@
                 "option_hint": "是否限定产品的防护等级，即防固体异物、液体进入的能力。",
                 "option_group_id": "8.0",
                 "option_view": "结构+工艺+质量",
-                "user_must_out": {
-                    "value": "False"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -7667,7 +7287,7 @@
                 "option_view": "结构+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -7691,13 +7311,9 @@
                 "option_hint": "是否指定产品外形尺寸或安装孔尺寸，选“是”则需要附图纸或图片说明。",
                 "option_group_id": "9.0",
                 "option_view": "结构+质量",
-                "user_must_out": {
-                    "value": "True"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": [
-                    "4"
-                ],
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -7728,13 +7344,9 @@
                 "option_hint": "是否指定产品出光口相对位置，选“是”则需要附图纸或图片说明。",
                 "option_group_id": "9.0",
                 "option_view": "光学+结构+工艺+质量",
-                "user_must_out": {
-                    "value": "True"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": [
-                    "3"
-                ],
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -7765,11 +7377,9 @@
                 "option_hint": "是否指定产品出线位置，选“是”则需要附图纸或图片说明。",
                 "option_group_id": "9.0",
                 "option_view": "结构+工艺+质量",
-                "user_must_out": {
-                    "value": "False"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -7800,13 +7410,9 @@
                 "option_hint": "是否指定产品进出风位置与方向，选“是”则需要附图纸或图片说明。",
                 "option_group_id": "7.0",
                 "option_view": "光学+结构+工艺+质量",
-                "user_must_out": {
-                    "value": "True"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": [
-                    "1"
-                ],
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -7837,11 +7443,9 @@
                 "option_hint": "是否定制产品出线线材长度？",
                 "option_group_id": "9.0",
                 "option_view": "结构+硬件+质量",
-                "user_must_out": {
-                    "value": "False"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -7874,7 +7478,7 @@
                 "option_view": "结构+硬件+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -7898,11 +7502,9 @@
                 "option_hint": "是否指定产品外观颜色？",
                 "option_group_id": "10.0",
                 "option_view": "结构+质量",
-                "user_must_out": {
-                    "value": "False"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -7935,7 +7537,7 @@
                 "option_view": "结构+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -7959,11 +7561,9 @@
                 "option_hint": "是否指定产品表面处理工艺，特别是要求表面导电氧化。",
                 "option_group_id": "10.0",
                 "option_view": "结构+质量",
-                "user_must_out": {
-                    "value": "False"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -7996,7 +7596,7 @@
                 "option_view": "结构+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -8020,11 +7620,9 @@
                 "option_hint": "是否限定产品重量上限值？",
                 "option_group_id": "10.0",
                 "option_view": "光学+结构+硬件+质量",
-                "user_must_out": {
-                    "value": "True"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -8055,11 +7653,9 @@
                 "option_hint": "填写产品重量上限值，默认单位：kg。",
                 "option_group_id": "10.0",
                 "option_view": "光学+结构+硬件+质量",
-                "user_must_out": {
-                    "1": "20kg"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -8083,11 +7679,9 @@
                 "option_hint": "我司常规产品默认使用普通无调速功能风扇，特殊需要才会应用调速风扇，客户是否指定必须使用调速风扇?",
                 "option_group_id": "11.0",
                 "option_view": "全员",
-                "user_must_out": {
-                    "value": "False"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -8118,11 +7712,9 @@
                 "option_hint": "是否指定产品使用的风扇类型、规格、数量、线长等规格参数?",
                 "option_group_id": "11.0",
                 "option_view": "全员",
-                "user_must_out": {
-                    "value": "False"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -8155,7 +7747,7 @@
                 "option_view": "全员",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -8179,11 +7771,9 @@
                 "option_hint": "是否指定散热器的类型与尺寸？例如：铝型材散热器、铜管散热器、压铸铝合金散热器等。",
                 "option_group_id": "7.0",
                 "option_view": "光学+结构+工艺+质量",
-                "user_must_out": {
-                    "value": "False"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -8216,7 +7806,7 @@
                 "option_view": "光学+结构+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -8240,11 +7830,9 @@
                 "option_hint": "选择产品电源输入类型，模组一般用直流，成品机箱一般用交流。",
                 "option_group_id": "12.0",
                 "option_view": "全员",
-                "user_must_out": {
-                    "value": "直流输入"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "直流",
@@ -8275,11 +7863,9 @@
                 "option_hint": "选择直流输入电压，这个需要跟客户配合确认。",
                 "option_group_id": "12.0",
                 "option_view": "全员",
-                "user_must_out": {
-                    "value": "12V"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "DC12V",
@@ -8326,7 +7912,7 @@
                 "option_view": "全员",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "AC90~264V",
@@ -8350,11 +7936,9 @@
                 "option_hint": "客户成像端有摄像系统参与就意味着产品不止用于为人眼观察提供照明，摄像系统能捕捉到更高频率的照明闪烁，这将影响驱动输出方案的选择。",
                 "option_group_id": "13.0",
                 "option_view": "光学+硬件+软件",
-                "user_must_out": {
-                    "value": "True"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -8385,11 +7969,9 @@
                 "option_hint": "驱动板模拟输出将导致光源输出色温随调光档位变化幅度较大，但可以杜绝摄像系统成像出现闪烁条纹问题；如果拒绝该方案，将采用PWM输出方案，客户得自己考虑如何解决闪烁条纹问题。",
                 "option_group_id": "13.0",
                 "option_view": "光学+硬件+软件+工艺",
-                "user_must_out": {
-                    "value": "True"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -8422,7 +8004,7 @@
                 "option_view": "光学+硬件+软件+工艺",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -8453,11 +8035,9 @@
                 "option_hint": "是否限制产品工作时的功耗上限值。通常出现在客户整机系统功率分配已经计划好，且不好不愿调整。",
                 "option_group_id": "12.0",
                 "option_view": "全员",
-                "user_must_out": {
-                    "value": "True"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -8488,11 +8068,9 @@
                 "option_hint": "填写具体功耗上限值，默认单位：W。",
                 "option_group_id": "12.0",
                 "option_view": "全员",
-                "user_must_out": {
-                    "1": "100W"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -8516,11 +8094,9 @@
                 "option_hint": "是否指定产品驱动板外形尺寸与安装孔尺寸，选“是”则需要附图纸或图片说明。",
                 "option_group_id": "14.0",
                 "option_view": "结构+硬件+质量",
-                "user_must_out": {
-                    "value": "False"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -8551,11 +8127,9 @@
                 "option_hint": "是否指定驱动板使用某种类型的接口或某个特定的接口型号规格？",
                 "option_group_id": "14.0",
                 "option_view": "结构+硬件+质量",
-                "user_must_out": {
-                    "value": "True"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -8586,13 +8160,9 @@
                 "option_hint": "填写具体接口规格要求。",
                 "option_group_id": "14.0",
                 "option_view": "结构+硬件+质量",
-                "user_must_out": {
-                    "1": "详见表格数据"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": [
-                    "2"
-                ],
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -8616,25 +8186,9 @@
                 "option_hint": "选择产品控制模式。",
                 "option_group_id": "15.0",
                 "option_view": "硬件+软件+工艺+质量",
-                "user_must_out": {
-                    "TTL": false,
-                    "PWM": false,
-                    "RS232": false,
-                    "RS422": false,
-                    "RS485": false,
-                    "IIC": false,
-                    "SPI": false,
-                    "USB": false,
-                    "CAN": false,
-                    "LAN": false,
-                    "按键开关": false,
-                    "电位器": true,
-                    "编码器": false,
-                    "触控屏": false,
-                    "踏板": false
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "TTL",
@@ -8756,11 +8310,9 @@
                 "option_hint": "产品供货时，是否包含控制操作时需要使用的配件，例如：按钮、电位器、触摸屏等等。",
                 "option_group_id": "15.0",
                 "option_view": "结构+硬件+工艺+质量",
-                "user_must_out": {
-                    "value": "True"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -8791,17 +8343,9 @@
                 "option_hint": "选择批量供货时具体提供的操控类配件。",
                 "option_group_id": "15.0",
                 "option_view": "结构+硬件+工艺+质量",
-                "user_must_out": {
-                    "按键开关": false,
-                    "电位器": true,
-                    "编码器": false,
-                    "触控屏": false,
-                    "钥匙开关": false,
-                    "急停开关": false,
-                    "踏板": false
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "按键开关",
@@ -8867,11 +8411,9 @@
                 "option_hint": "是否指定供货的控制操作类配件的具体规格型号。",
                 "option_group_id": "15.0",
                 "option_view": "结构+硬件+工艺+质量",
-                "user_must_out": {
-                    "value": "False"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -8904,7 +8446,7 @@
                 "option_view": "结构+硬件+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -8928,11 +8470,9 @@
                 "option_hint": "是否要求产品使用某些器件来显示功能状态，例如：指示灯、显示屏等等。",
                 "option_group_id": "15.0",
                 "option_view": "结构+硬件+工艺+质量",
-                "user_must_out": {
-                    "value": "False"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -8965,7 +8505,7 @@
                 "option_view": "结构+硬件+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "LED指示灯",
@@ -9005,7 +8545,7 @@
                 "option_view": "硬件+软件+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -9031,7 +8571,7 @@
                 "option_view": "结构+硬件+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -9064,7 +8604,7 @@
                 "option_view": "结构+硬件+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "LED指示灯",
@@ -9104,7 +8644,7 @@
                 "option_view": "结构+硬件+软件+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -9137,7 +8677,7 @@
                 "option_view": "结构+硬件+软件+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -9162,10 +8702,10 @@
                 "option_group_id": "15.0",
                 "option_view": "结构+硬件+工艺+质量",
                 "user_must_out": {
-                    "value": "True"
+                    "value": "False"
                 },
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -9200,7 +8740,7 @@
                     "value": "False"
                 },
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -9233,7 +8773,7 @@
                 "option_view": "光学+硬件+软件+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -9261,7 +8801,7 @@
                     "value": "False"
                 },
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -9294,7 +8834,7 @@
                 "option_view": "光学+硬件+软件+工艺+质量",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -9321,12 +8861,12 @@
                 "user_must_out": {
                     "EMC": true,
                     "RoHS": true,
-                    "激光安全": false,
+                    "激光安全": true,
                     "光生物安全": true,
-                    "不要求": false
+                    "不要求": true
                 },
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "EMC",
@@ -9378,11 +8918,9 @@
                 "option_hint": "是否指定产品调光范围与调光步距。",
                 "option_group_id": "16.0",
                 "option_view": "光学+硬件+软件+工艺+质量",
-                "user_must_out": {
-                    "value": "True"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -9413,11 +8951,9 @@
                 "option_hint": "填写具体调光范围要求。",
                 "option_group_id": "16.0",
                 "option_view": "光学+硬件+软件+工艺+质量",
-                "user_must_out": {
-                    "1": "1%~100%"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -9441,11 +8977,9 @@
                 "option_hint": "填写具体调光步距要求。",
                 "option_group_id": "16.0",
                 "option_view": "光学+硬件+软件+质量",
-                "user_must_out": {
-                    "1": "1%"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -9469,11 +9003,9 @@
                 "option_hint": "是否要求产品具备频闪/脉冲形式输出功能？",
                 "option_group_id": "16.0",
                 "option_view": "全员",
-                "user_must_out": {
-                    "value": "False"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -9506,7 +9038,7 @@
                 "option_view": "全员",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -9532,7 +9064,7 @@
                 "option_view": "全员",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -9565,7 +9097,7 @@
                 "option_view": "全员",
                 "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -9589,11 +9121,9 @@
                 "option_hint": "是否指定光源超温报警保护温度与保护逻辑，包括可能的减半输出温度、关闭温度、恢复温度等等，温度单位统一为：℃。",
                 "option_group_id": "17.0",
                 "option_view": "全员",
-                "user_must_out": {
-                    "value": "True"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "是",
@@ -9624,13 +9154,9 @@
                 "option_hint": "填写详细的超温报警保护温度与保护逻辑。",
                 "option_group_id": "17.0",
                 "option_view": "全员",
-                "user_must_out": {
-                    "1": "80℃关闭光源，60℃恢复输出，详细检附件说明"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": [
-                    "4"
-                ],
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -9643,7 +9169,7 @@
                 "num": "137"
             },
             "138": {
-                "condition": "无条件",
+                "condition": "2any['光学']",
                 "node_id": "138",
                 "guide_content": "请提供剩余产品光学补充需求",
                 "answer_type": "多行文本",
@@ -9654,11 +9180,9 @@
                 "option_hint": "填写上面需求确认项无提及但客户有要求的光学内容，没有则写“无”。",
                 "option_group_id": "18.0",
                 "option_view": "光学+工艺+质量",
-                "user_must_out": {
-                    "1": "无补充"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -9671,7 +9195,7 @@
                 "num": "138"
             },
             "139": {
-                "condition": "无条件",
+                "condition": "2any['结构']",
                 "node_id": "139",
                 "guide_content": "请提供剩余产品结构补充需求",
                 "answer_type": "多行文本",
@@ -9682,11 +9206,9 @@
                 "option_hint": "填写上面需求确认项无提及但客户有要求的结构内容，没有则写“无”。",
                 "option_group_id": "18.0",
                 "option_view": "结构+工艺+质量",
-                "user_must_out": {
-                    "1": "无补充"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -9699,7 +9221,7 @@
                 "num": "139"
             },
             "140": {
-                "condition": "无条件",
+                "condition": "2any['硬件']",
                 "node_id": "140",
                 "guide_content": "请提供剩余产品硬件补充需求",
                 "answer_type": "多行文本",
@@ -9710,11 +9232,9 @@
                 "option_hint": "填写上面需求确认项无提及但客户有要求的硬件内容，没有则写“无”。",
                 "option_group_id": "18.0",
                 "option_view": "硬件+工艺+质量",
-                "user_must_out": {
-                    "1": "无补充"
-                },
+                "user_must_out": {},
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -9727,7 +9247,7 @@
                 "num": "140"
             },
             "141": {
-                "condition": "无条件",
+                "condition": "2any['软件']",
                 "node_id": "141",
                 "guide_content": "请提供剩余产品软件补充需求",
                 "answer_type": "多行文本",
@@ -9739,10 +9259,10 @@
                 "option_group_id": "18.0",
                 "option_view": "软件+工艺+质量",
                 "user_must_out": {
-                    "1": "无补充"
+                    "1": "阿斯蒂芬阿萨德发生fsd阿斯蒂芬阿斯蒂芬阿道夫是"
                 },
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -9767,10 +9287,10 @@
                 "option_group_id": "18.0",
                 "option_view": "工艺+结构+质量",
                 "user_must_out": {
-                    "1": "无补充"
+                    "1": "阿斯蒂芬"
                 },
                 "option_tolerance_out": {},
-                "ref_out": "",
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -9783,75 +9303,225 @@
                 "num": "142"
             }
         },
-        "file_dic": {
-            "1": {
-                "file_del_bool": false,
-                "file_name": "IR-850-500-S-02-K10010073",
-                "file_url": "/uploads/IR-850-500-S-02-K10010073.f1a9abffe8f197027003b7ac5ce33fa4.pdf",
-                "file_name_hash": "IR-850-500-S-02-K10010073.f1a9abffe8f197027003b7ac5ce33fa4.pdf",
-                "file_name_suffix": "IR-850-500-S-02-K10010073.pdf",
-                "file_type": "application/pdf",
-                "file_lab": "1",
-                "parents_h": 9
-            },
-            "2": {
-                "file_del_bool": false,
-                "file_name": "临时性数据",
-                "file_url": "/uploads/临时性数据.bbb7a654f2ce1ee6a777865beab1f76b.xlsx",
-                "file_name_hash": "临时性数据.bbb7a654f2ce1ee6a777865beab1f76b.xlsx",
-                "file_name_suffix": "临时性数据.xlsx",
-                "file_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                "file_lab": "2",
-                "parents_h": 9
-            },
-            "3": {
-                "file_del_bool": false,
-                "file_name": "琥珀色临时模组四光源驱动条件",
-                "file_url": "/uploads/琥珀色临时模组四光源驱动条件.e4d3934570fe6e04343c95ef842f14e2.pptx",
-                "file_name_hash": "琥珀色临时模组四光源驱动条件.e4d3934570fe6e04343c95ef842f14e2.pptx",
-                "file_name_suffix": "琥珀色临时模组四光源驱动条件.pptx",
-                "file_type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-                "file_lab": "3",
-                "parents_h": 9
-            },
-            "4": {
-                "file_del_bool": false,
-                "file_name": "标准版本更新模板",
-                "file_url": "/uploads/标准版本更新模板.1dec186145b7a75831aa5f1421980227.docx",
-                "file_name_hash": "标准版本更新模板.1dec186145b7a75831aa5f1421980227.docx",
-                "file_name_suffix": "标准版本更新模板.docx",
-                "file_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                "file_lab": "4",
-                "parents_h": 9
-            },
-            "5": {
-                "file_del_bool": false,
-                "file_name": "Snipaste_2025-01-09_13-08-42",
-                "file_url": "/uploads/Snipaste_2025-01-09_13-08-42.00661caf7da65237520b08c398a61ae9.png",
-                "file_name_hash": "Snipaste_2025-01-09_13-08-42.00661caf7da65237520b08c398a61ae9.png",
-                "file_name_suffix": "Snipaste_2025-01-09_13-08-42.png",
-                "file_type": "image/png",
-                "file_lab": "5",
-                "parents_h": 9
-            },
-            "6": {
-                "file_del_bool": false,
-                "file_name": "微信图片_20241212095208",
-                "file_url": "/uploads/微信图片_20241212095208.e49868d32bbb9cb04364ba96f4c1eeb3.jpg",
-                "file_name_hash": "微信图片_20241212095208.e49868d32bbb9cb04364ba96f4c1eeb3.jpg",
-                "file_name_suffix": "微信图片_20241212095208.jpg",
-                "file_type": "image/jpeg",
-                "file_lab": "6",
-                "parents_h": 9
+        "file_dic": {},
+        "deleted_files": [],
+        "file_counter": 0,
+        "project_name": "RFFM-1002-A",
+        "current_user": "李晓明",
+        "version": "3.0",
+        "original_version": "2.0",
+        "original_project": "RFFM-1002-A",
+        "req_timestamp": "2025-10-10T19:09:20.495157"
+    },
+    "version": "3.0",
+    "2.0": {
+        "added": {},
+        "deleted": {},
+        "modified": {
+            "141": {
+                "old_data": {
+                    "condition": "2any['软件']",
+                    "node_id": "141",
+                    "guide_content": "请提供剩余产品软件补充需求",
+                    "answer_type": "多行文本",
+                    "input_num_accor": "",
+                    "input_name_accor": "",
+                    "input_tolerance": "",
+                    "ref_config": "True",
+                    "option_hint": "填写上面需求确认项无提及但客户有要求的软件内容，没有则写“无”。",
+                    "option_group_id": "18.0",
+                    "option_view": "软件+工艺+质量",
+                    "user_must_out": {
+                        "1": "阿斯蒂芬阿萨德发生fsd阿斯蒂芬阿斯蒂芬"
+                    },
+                    "option_tolerance_out": {},
+                    "ref_out": [],
+                    "options": [
+                        {
+                            "option_content": "",
+                            "option_out": "字典",
+                            "option_bold": "",
+                            "option_show": "补充软件要求：{V}",
+                            "option_label": ""
+                        }
+                    ],
+                    "num": "141"
+                },
+                "new_data": {
+                    "condition": "2any['软件']",
+                    "node_id": "141",
+                    "guide_content": "请提供剩余产品软件补充需求",
+                    "answer_type": "多行文本",
+                    "input_num_accor": "",
+                    "input_name_accor": "",
+                    "input_tolerance": "",
+                    "ref_config": "True",
+                    "option_hint": "填写上面需求确认项无提及但客户有要求的软件内容，没有则写“无”。",
+                    "option_group_id": "18.0",
+                    "option_view": "软件+工艺+质量",
+                    "user_must_out": {
+                        "1": "阿斯蒂芬阿萨德发生fsd阿斯蒂芬阿斯蒂芬阿道夫是"
+                    },
+                    "option_tolerance_out": {},
+                    "ref_out": [],
+                    "options": [
+                        {
+                            "option_content": "",
+                            "option_out": "字典",
+                            "option_bold": "",
+                            "option_show": "补充软件要求：{V}",
+                            "option_label": ""
+                        }
+                    ],
+                    "num": "141"
+                }
             }
         },
+        "file_dic": {},
         "deleted_files": [],
-        "file_counter": 6,
-        "project_name": "RFFM-1519-A",
-        "current_user": "林贵原",
-        "version": "1.0",
-        "original_version": "0.0",
-        "req_timestamp": "2025-08-11T18:41:09.427843"
+        "file_counter": 0,
+        "project_name": "RFFM-1002-A",
+        "current_user": "李晓明",
+        "version": "2.0",
+        "original_version": "1.0",
+        "original_project": "RFFM-1002-A",
+        "req_timestamp": "2025-10-10T19:08:40.310329"
     },
-    "version": "1.0"
+    "3.0": {
+        "added": {},
+        "deleted": {},
+        "modified": {
+            "128": {
+                "old_data": {
+                    "condition": "无条件",
+                    "node_id": "128",
+                    "guide_content": "以下哪些认证/测试客户要求提供",
+                    "answer_type": "多选",
+                    "input_num_accor": "",
+                    "input_name_accor": "",
+                    "input_tolerance": "",
+                    "ref_config": "False",
+                    "option_hint": "研发部只负责EMC摸底测试，EMC与其它认证证书都需要向质量部申请安排正式第三方测试，才能出证。",
+                    "option_group_id": "999.0",
+                    "option_view": "全员",
+                    "user_must_out": {
+                        "EMC": false,
+                        "RoHS": false,
+                        "激光安全": false,
+                        "光生物安全": false,
+                        "不要求": true
+                    },
+                    "option_tolerance_out": {},
+                    "ref_out": [],
+                    "options": [
+                        {
+                            "option_content": "EMC",
+                            "option_out": "EMC",
+                            "option_bold": "EMC",
+                            "option_show": "证书要求：{V}",
+                            "option_label": "EMC"
+                        },
+                        {
+                            "option_content": "RoHS",
+                            "option_out": "RoHS",
+                            "option_bold": "RoHS",
+                            "option_show": "",
+                            "option_label": "RoHS"
+                        },
+                        {
+                            "option_content": "激光安全",
+                            "option_out": "激光安全",
+                            "option_bold": "激光安全",
+                            "option_show": "",
+                            "option_label": "激光安全"
+                        },
+                        {
+                            "option_content": "光生物安全",
+                            "option_out": "光生物安全",
+                            "option_bold": "光生物安全",
+                            "option_show": "",
+                            "option_label": "光生物安全"
+                        },
+                        {
+                            "option_content": "不要求",
+                            "option_out": "不要求",
+                            "option_bold": "不要求",
+                            "option_show": "",
+                            "option_label": ""
+                        }
+                    ],
+                    "num": "128"
+                },
+                "new_data": {
+                    "condition": "无条件",
+                    "node_id": "128",
+                    "guide_content": "以下哪些认证/测试客户要求提供",
+                    "answer_type": "多选",
+                    "input_num_accor": "",
+                    "input_name_accor": "",
+                    "input_tolerance": "",
+                    "ref_config": "False",
+                    "option_hint": "研发部只负责EMC摸底测试，EMC与其它认证证书都需要向质量部申请安排正式第三方测试，才能出证。",
+                    "option_group_id": "999.0",
+                    "option_view": "全员",
+                    "user_must_out": {
+                        "EMC": true,
+                        "RoHS": true,
+                        "激光安全": true,
+                        "光生物安全": true,
+                        "不要求": true
+                    },
+                    "option_tolerance_out": {},
+                    "ref_out": [],
+                    "options": [
+                        {
+                            "option_content": "EMC",
+                            "option_out": "EMC",
+                            "option_bold": "EMC",
+                            "option_show": "证书要求：{V}",
+                            "option_label": "EMC"
+                        },
+                        {
+                            "option_content": "RoHS",
+                            "option_out": "RoHS",
+                            "option_bold": "RoHS",
+                            "option_show": "",
+                            "option_label": "RoHS"
+                        },
+                        {
+                            "option_content": "激光安全",
+                            "option_out": "激光安全",
+                            "option_bold": "激光安全",
+                            "option_show": "",
+                            "option_label": "激光安全"
+                        },
+                        {
+                            "option_content": "光生物安全",
+                            "option_out": "光生物安全",
+                            "option_bold": "光生物安全",
+                            "option_show": "",
+                            "option_label": "光生物安全"
+                        },
+                        {
+                            "option_content": "不要求",
+                            "option_out": "不要求",
+                            "option_bold": "不要求",
+                            "option_show": "",
+                            "option_label": ""
+                        }
+                    ],
+                    "num": "128"
+                }
+            }
+        },
+        "file_dic": {},
+        "deleted_files": [],
+        "file_counter": 0,
+        "project_name": "RFFM-1002-A",
+        "current_user": "李晓明",
+        "version": "3.0",
+        "original_version": "2.0",
+        "original_project": "RFFM-1002-A",
+        "req_timestamp": "2025-10-10T19:09:20.495157"
+    }
 }

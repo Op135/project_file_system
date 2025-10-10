@@ -22,7 +22,7 @@ overflow-x-auto
 items-stretch # align-items: stretch; 需确保父容器有明确高度定义
 # 使子元素在纵轴方向拉伸填满容器高度
 items-center # align-items: center;
-# 使子级元素上下垂直居中
+# 使子级元素上下垂直居中(左右移动调整)
 items-start	# align-items: flex-start;
 items-end	# align-items: flex-end;
 items-baseline	# align-items: baseline;
@@ -36,7 +36,7 @@ justify-items-stretch	# justify-items: stretch;
 
 # 沿容器主轴的定位方式
 justify-center # justify-content: center;
-# 子级元素左右水平居中
+# 子级元素左右水平居中(上下移动调整)
 justify-start # 这会告诉Flexbox，无论内容多少，始终从容器的顶部开始排列子元素。
 justify-normal	# justify-content: normal;
 justify-end	# justify-content: flex-end;

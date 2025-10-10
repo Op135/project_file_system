@@ -107,7 +107,7 @@ class ConfigService:
                     "option_view": self.clean_text(row.选项查阅整理要求).strip(),
                     "user_must_out": {},
                     "option_tolerance_out": {},
-                    "ref_out": "",
+                    "ref_out": [],
                     "options": option_list,
                 }
             else:

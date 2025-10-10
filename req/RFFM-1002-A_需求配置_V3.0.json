@@ -12,7 +12,9 @@
             "option_hint": "产品是作为局部模组集成到客户产品上，还是以成品机箱形式供用户直接使用？",
             "option_group_id": "1.0",
             "option_view": "全员",
-            "user_must_out": {},
+            "user_must_out": {
+                "value": "模组"
+            },
             "option_tolerance_out": {},
             "ref_out": [],
             "options": [
@@ -44,7 +46,12 @@
             "option_hint": "该项目我司负责哪些功能模块的设计与生产，即我们卖什么？",
             "option_group_id": "1.0",
             "option_view": "全员",
-            "user_must_out": {},
+            "user_must_out": {
+                "光能输出": false,
+                "机械结构": false,
+                "硬件驱动控制": false,
+                "软件控制": true
+            },
             "option_tolerance_out": {},
             "ref_out": [],
             "options": [
@@ -2274,7 +2281,9 @@
             "option_hint": "尽量与客户做清晰的约定",
             "option_group_id": "7.0",
             "option_view": "全员",
-            "user_must_out": {},
+            "user_must_out": {
+                "value": "False"
+            },
             "option_tolerance_out": {},
             "ref_out": [],
             "options": [
@@ -2331,7 +2340,9 @@
             "option_hint": "尽量与客户做清晰的约定",
             "option_group_id": "7.0",
             "option_view": "全员",
-            "user_must_out": {},
+            "user_must_out": {
+                "value": "False"
+            },
             "option_tolerance_out": {},
             "ref_out": [],
             "options": [
@@ -3909,7 +3920,9 @@
             "option_hint": "是否批量供货时需要提供电源或信号输入配线。",
             "option_group_id": "15.0",
             "option_view": "结构+硬件+工艺+质量",
-            "user_must_out": {},
+            "user_must_out": {
+                "value": "False"
+            },
             "option_tolerance_out": {},
             "ref_out": [],
             "options": [
@@ -3941,7 +3954,9 @@
             "option_hint": "是否要求产品具备定期校正光参数的功能。",
             "option_group_id": "16.0",
             "option_view": "光学+硬件+软件+工艺+质量",
-            "user_must_out": {},
+            "user_must_out": {
+                "value": "False"
+            },
             "option_tolerance_out": {},
             "ref_out": [],
             "options": [
@@ -3998,7 +4013,9 @@
             "option_hint": "是否要求产品具备使用传感器实现闭环反馈控制的功能。",
             "option_group_id": "16.0",
             "option_view": "光学+硬件+软件+工艺+质量",
-            "user_must_out": {},
+            "user_must_out": {
+                "value": "False"
+            },
             "option_tolerance_out": {},
             "ref_out": [],
             "options": [
@@ -4055,7 +4072,13 @@
             "option_hint": "研发部只负责EMC摸底测试，EMC与其它认证证书都需要向质量部申请安排正式第三方测试，才能出证。",
             "option_group_id": "999.0",
             "option_view": "全员",
-            "user_must_out": {},
+            "user_must_out": {
+                "EMC": true,
+                "RoHS": true,
+                "激光安全": true,
+                "光生物安全": true,
+                "不要求": true
+            },
             "option_tolerance_out": {},
             "ref_out": [],
             "options": [
@@ -4436,7 +4459,9 @@
             "option_hint": "填写上面需求确认项无提及但客户有要求的软件内容，没有则写“无”。",
             "option_group_id": "18.0",
             "option_view": "软件+工艺+质量",
-            "user_must_out": {},
+            "user_must_out": {
+                "1": "阿斯蒂芬阿萨德发生fsd阿斯蒂芬阿斯蒂芬阿道夫是"
+            },
             "option_tolerance_out": {},
             "ref_out": [],
             "options": [
@@ -4461,7 +4486,9 @@
             "option_hint": "填写上面需求确认项无提及但客户有要求的工艺内容，没有则写“无”。",
             "option_group_id": "18.0",
             "option_view": "工艺+结构+质量",
-            "user_must_out": {},
+            "user_must_out": {
+                "1": "阿斯蒂芬"
+            },
             "option_tolerance_out": {},
             "ref_out": [],
             "options": [
@@ -4475,7 +4502,17 @@
             ]
         }
     },
-    "config_timestamp": "2025-10-10T19:08:05.997757",
+    "config_timestamp": "2025-10-10T18:31:26.698821",
     "excel_version_hash": "8058aee2",
-    "entry_status": false
+    "entry_status": true,
+    "file_dic": {},
+    "files": [],
+    "deleted_files": [],
+    "file_counter": 0,
+    "project_name": "RFFM-1002-A",
+    "original_project": "RFFM-1002-A",
+    "current_user": "李晓明",
+    "version": "3.0",
+    "original_version": "2.0",
+    "req_timestamp": "2025-10-10T19:09:20.495157"
 }

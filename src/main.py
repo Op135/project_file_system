@@ -480,6 +480,7 @@ async def extract_requirement(file_path) -> dict:
     extract_data["current_user"] = new_data["current_user"]
     extract_data["version"] = new_data["version"]
     extract_data["original_version"] = new_data["original_version"]
+    extract_data["original_project"] = new_data["original_project"]
     extract_data["req_timestamp"] = new_data["req_timestamp"]
     # 将最新数据提取出来
     latest_data["added"] = new_data["data"]
@@ -490,6 +491,7 @@ async def extract_requirement(file_path) -> dict:
     latest_data["current_user"] = new_data["current_user"]
     latest_data["version"] = new_data["version"]
     latest_data["original_version"] = new_data["original_version"]
+    latest_data["original_project"] = new_data["original_project"]
     latest_data["req_timestamp"] = new_data["req_timestamp"]
     return {"contrast": extract_data, "latest": latest_data}
 
@@ -893,6 +895,33 @@ def project_table_page():
                 color: rgba(0, 0, 0, .54);
                 font-size: 24px;
             }
+            /**/
+            .ag-menu {
+                background-color: white;
+            }
+            .ag-picker-field-wrapper {
+                background-color: #e9f7f8;
+            }
+            .ag-select-list{
+                background-color: white;
+            }
+            /*控制展开式按钮样式*/
+            .q-btn--fab {
+                padding-left: 8px;
+                padding-right: 8px;
+                padding-bottom: 4px;
+                padding-top: 4px;
+                min-height: 30px;
+                min-width: 56px;
+            }
+            .q-btn--fab-mini {
+                padding: 6px;
+                min-height: 30px;
+                min-width: 30px;
+            }
+            .q-fab__actions .q-btn {
+                margin: 3px;
+            }
             /*控制选项框内选项样式*/
             .q-item {
                 min-height: 30px;
@@ -1239,7 +1268,7 @@ def project_table_page():
             if tidy_bool:
                 ui.navigate.to(f"/main/requirement?type=overview&json_path={overview_file_path}")
 
-    async def switch_toggle_vis():
+    async def switch_toggle_vis(visible=None):
         # 切换传入列的可见性
         await toggle_visibility(
             aggrid,
@@ -1260,6 +1289,7 @@ def project_table_page():
                 "software_research",  # 研发版软件
                 "software_mass",  # 量产版软件
             ],
+            visible,
         )
 
     # 定义项目主界面列配置
@@ -1275,7 +1305,7 @@ def project_table_page():
         },
         {"field": "project", "headerName": "对外产品型号", "width": 120},
         {"field": "model_notes", "headerName": "型号备注", "width": 150, "autoHeight": True},
-        {"field": "state", "headerName": "产品状态", "width": 70, "filter": "agTextColumnFilter"},
+        {"field": "state", "headerName": "产品状态", "width": 80, "filter": "agTextColumnFilter"},
         {"field": "creation_date", "headerName": "立项日期", "width": 100, "filter": "agDateColumnFilter"},
         {"field": "introduction", "headerName": "产品简介", "width": 300, "autoHeight": True},
         {"field": "custom_labels", "headerName": "定制要点", "width": 400, "autoHeight": True},
@@ -1288,19 +1318,19 @@ def project_table_page():
             # "cellStyle": {"white-space": "pre-line"},
         },
         {"field": "photometric", "headerName": "光度学要求", "width": 120, "autoHeight": True},
-        {"field": "target_distance", "headerName": "目标面距离", "width": 90, "autoHeight": True},
+        {"field": "target_distance", "headerName": "目标面距离", "width": 100, "autoHeight": True},
         {
             "field": "adapter_options",
             "headerName": "转接座可选类别",
-            "width": 130,
+            "width": 140,
             "autoHeight": True,
             "filter": "agTextColumnFilter",
         },
-        {"field": "color", "headerName": "外观颜色", "width": 70, "filter": "agTextColumnFilter"},
-        {"field": "input_voltage", "headerName": "产品输入电压", "width": 80, "filter": "agTextColumnFilter"},
-        {"field": "input_mode", "headerName": "输入控制模式", "width": 80, "filter": "agTextColumnFilter"},
+        {"field": "color", "headerName": "外观颜色", "width": 80, "filter": "agTextColumnFilter"},
+        {"field": "input_voltage", "headerName": "产品输入电压", "width": 100, "filter": "agTextColumnFilter"},
+        {"field": "input_mode", "headerName": "输入控制模式", "width": 100, "filter": "agTextColumnFilter"},
         {"field": "output_mode", "headerName": "输出模式", "width": 100, "filter": "agTextColumnFilter"},
-        {"field": "guide_beam", "headerName": "导光束要求", "width": 90},
+        {"field": "guide_beam", "headerName": "导光束要求", "width": 100},
         {
             "field": "drive_pcb",
             "headerName": "PCB规格",
@@ -1332,14 +1362,14 @@ def project_table_page():
         {"field": "requirement", "headerName": "需求录入", "width": 80},
         {"field": "overview", "headerName": "概述整理", "width": 80},
         {"field": "customer", "headerName": "客户缩写", "width": 100, "filter": "agTextColumnFilter"},
-        {"field": "sale_charge", "headerName": "销售", "width": 70, "filter": "agTextColumnFilter"},
-        {"field": "project_charge", "headerName": "项目", "width": 70, "filter": "agTextColumnFilter"},
-        {"field": "optics_charge", "headerName": "光学", "width": 50},
-        {"field": "structure_charge", "headerName": "结构", "width": 50},
-        {"field": "hardware_charge", "headerName": "硬件", "width": 50},
-        {"field": "software_charge", "headerName": "软件", "width": 50},
-        {"field": "ui_charge", "headerName": "UI", "width": 50},
-        {"field": "craft_charge", "headerName": "工艺", "width": 50},
+        {"field": "sale_charge", "headerName": "销售", "width": 80, "filter": "agTextColumnFilter"},
+        {"field": "project_charge", "headerName": "项目", "width": 80, "filter": "agTextColumnFilter"},
+        {"field": "optics_charge", "headerName": "光学", "width": 60},
+        {"field": "structure_charge", "headerName": "结构", "width": 60},
+        {"field": "hardware_charge", "headerName": "硬件", "width": 6},
+        {"field": "software_charge", "headerName": "软件", "width": 60},
+        {"field": "ui_charge", "headerName": "UI", "width": 60},
+        {"field": "craft_charge", "headerName": "工艺", "width": 60},
     ]
     for col in project_summary_columns:
         if "width" in col:
@@ -1387,8 +1417,9 @@ def project_table_page():
             select_sub = (
                 ui.select(select_dic["RFFM"]).bind_value(select_sub_value, "value").props("outlined").classes("")
             )
-            with ui.fab("shopping_cart", label="表格功能", color="teal", direction="down"):
-                ui.fab_action("train", on_click=lambda: switch_toggle_vis())
+            with ui.fab("construction", label="表格功能", color="blue", direction="right"):
+                ui.fab_action("zoom_in_map", on_click=lambda: switch_toggle_vis(False))
+                ui.fab_action("zoom_out_map", on_click=lambda: switch_toggle_vis(True))
 
         # 初始化 AG-Grid
         aggrid = ui.aggrid(
@@ -1501,7 +1532,7 @@ def requirement_page(type="", json_path="", project_name=""):
     try:
         config_files = [f.name for f in Path(REQ_DIR).glob("*.json") if f.is_file()]
         if not config_files:
-            ui.notify("错误：未在目录下找到任何JSON配置文件。", color="negative")
+            ui.notify("系统初始化，目录下未找到任何JSON配置文件。", color="info")
             config_files = []
     except Exception as e:
         ui.notify(f"读取配置文件目录时出错: {e}", color="negative")
@@ -1706,6 +1737,11 @@ def requirement_page(type="", json_path="", project_name=""):
                 ui.navigate.to(f"/main/requirement?type=requirement&project_name={app.storage.client['project_name']}")
             # 不是为了新建项目需求而弹窗,且确实修改了项目名，则在保留需求配置内容情况下，初始化版本为0.0
             elif project_old_name != app.storage.client["project_name"]:
+                # 将原项目名记录为新项目的衍生依据项目
+                app.storage.client["original_project"] = project_old_name
+                # 将原项目版本记录为新项目的衍生版本
+                app.storage.client["original_version"] = app.storage.client["version"]
+                # 初始化版本为0.0
                 app.storage.client["version"] = "0.0"
             project_dialog.close()
 
@@ -1724,6 +1760,8 @@ def requirement_page(type="", json_path="", project_name=""):
         app.storage.client["ref_question_dic"] = {}
         app.storage.client["buttons_dic"] = {}
         app.storage.client["version"] = "0.0"
+        app.storage.client["original_version"] = "0.0"
+        app.storage.client["original_project"] = ""
 
         requirement_input_frame()
         # 刷新界面
@@ -1764,6 +1802,9 @@ def requirement_page(type="", json_path="", project_name=""):
         app.storage.client["project_name"] = json_data["project_name"]
         # version
         app.storage.client["version"] = json_data["version"]
+        # 将衍生自哪个项目的信息获取过来
+        app.storage.client["original_project"] = json_data["original_project"]
+        app.storage.client["original_version"] = json_data["original_version"]
         # 将剩余配置与用户填写记录信息覆盖现有配置
         app.storage.client["config_data"] = json_data
         # 遍历配置信息，抽取引用信息，重新恢复引用_确认项记录
@@ -2806,7 +2847,7 @@ def requirement_page(type="", json_path="", project_name=""):
                 image_path = f"{self.upload_path}/{image_name}"
 
                 url_path = f"{FILES_URL_DIR}/{image_name}"
-                print(image_path, url_path)
+                # print(image_path, url_path)
                 app.add_static_file(local_file=image_path, url_path=url_path)
                 # 根据文件类型创建缩略图
                 thumbnail = (
@@ -2991,7 +3032,7 @@ def requirement_page(type="", json_path="", project_name=""):
 
             # 将文件路径映射为可访问的 URL
             url_path = f"{UPLOAD_URL_DIR}/{file_name_hash}"
-            print(new_file_path, url_path)
+            # print(new_file_path, url_path)
             app.add_static_file(local_file=new_file_path, url_path=url_path)
             if (
                 file_name_hash in app.storage.client["files"]
@@ -3692,9 +3733,27 @@ def requirement_page(type="", json_path="", project_name=""):
             data_json["current_user"] = app.storage.user["current_user"]
 
             version = app.storage.client["version"]
+            # 初版 或 刚刚改了项目名 衍生项目名记录要继承
+            print(app.storage.client["original_project"], app.storage.client["project_name"])
+            if (
+                version == "0.0"
+                or app.storage.client["project_name"] != app.storage.client["original_project"]
+                and app.storage.client["original_project"] != ""
+            ):
+                data_json["original_project"] = app.storage.client["original_project"]
+                # 确保下次提交如果没有改名字的话，走另外一个逻辑
+                app.storage.client["original_project"] = app.storage.client["project_name"]
+
+            # 不是初版的修改且不是刚刚改了项目名
+            else:
+                # 在现有项目上的修改，要记录现有项目
+                data_json["original_project"] = app.storage.client["project_name"]
+            print(app.storage.client["original_project"], app.storage.client["project_name"])
             version_str_li = version.split(".")
             # 输出类型为导出到本地
             if type == "export":
+                # 记录衍生版本
+                data_json["original_version"] = version
                 # 将文件版本的小数点位加1
                 version_a_str = version_str_li[0]
                 # 注意出现3.11比3.2版本浮点数小，但是实际版本更高的影响
@@ -3750,7 +3809,7 @@ def requirement_page(type="", json_path="", project_name=""):
                     if project_exists_file:
                         v_max = max([float(s) for s in project_exists_file.keys()])
                         if float(version) < v_max:
-                            version_a = project_exists_file[str(v_max)]["v_a"]
+                            version_a = int(project_exists_file[str(v_max)]["v_a"])
                         version = f"{version_a + 1}.0"
                     # 服务器不存在该项目配置文件，版本设置为1.0
                     else:
@@ -3789,6 +3848,71 @@ def requirement_page(type="", json_path="", project_name=""):
                         progress=False,
                         close_button="✖",
                     )
+
+    # 滚动获取特定版本需求配置文件，并重新跳转页面
+    def get_project_req(direction):
+        current_version = app.storage.client.get("version", "")
+        project_name = app.storage.client.get("project_name", "")
+        if current_version == "" or project_name == "":
+            ui.notify(
+                "项目名或需求版本获取失败，无法响应！",
+                type="warning",
+                position="center",
+                timeout=1000,
+                progress=True,
+                close_button="✖",
+            )
+            return
+        # 查找指定路径下，含有提供项目名的文件，得到一个字典，完整版本为键，值为：{"name":文件名, "v_a":版本号整数部分, "v_b":版本号小数部分}
+        project_exists_file = find_files_with_prefix_and_version(REQ_DIR, project_name)
+        if project_exists_file:
+            current_version = float(current_version)
+            version_li = list([float(s) for s in project_exists_file.keys()])
+            version_li.sort()
+            step = 0
+            while True:
+                # 如果当前版本有小数部分
+                if int(current_version) != current_version:
+                    if direction == "down":
+                        step = 1
+                    elif direction != "up":
+                        print("滚动查阅需求传参有误")
+                    get_version = float(int(current_version) + step)
+                # 当前版本没有小数部分
+                else:
+                    if direction == "up":
+                        step = -1
+                    elif direction == "down":
+                        step = 1
+                    else:
+                        print("滚动查阅需求传参有误")
+                    get_version = float(int(current_version) + step)
+                if get_version <= 0 or get_version > max(version_li):
+                    ui.notify(
+                        "超过版本界限或无其它指定版本！",
+                        type="info",
+                        position="bottom",
+                        timeout=1000,
+                        progress=True,
+                        close_button="✖",
+                    )
+                    break
+                elif get_version in version_li:
+                    # 定义文件路径
+                    file_path = os.path.join(REQ_DIR, project_exists_file[str(get_version)]["name"])
+                    ui.navigate.to(f"/main/requirement?type=requirement&json_path={file_path}")
+                    break
+                else:
+                    current_version = get_version
+        else:
+            ui.notify(
+                "该项目当前没有需求配置！",
+                type="info",
+                position="bottom",
+                timeout=1000,
+                progress=True,
+                close_button="✖",
+            )
 
     # 需求显示界面框架构造函数
     def requirement_input_frame():
@@ -3833,6 +3957,7 @@ def requirement_page(type="", json_path="", project_name=""):
                         ui.space()
                         ui.label("确认项清单").classes("text-xl")
                         ui.space()
+                        # 统计圆环
                         circular_activ = (
                             ui.circular_progress(size="md", color="green")
                             .bind_value_from(app.storage.client, "req_activ_num")
@@ -3861,7 +3986,7 @@ def requirement_page(type="", json_path="", project_name=""):
 
                 ui.separator().props("vertical size=1px")
                 with ui.column().classes("w-3/4 min-w-[700px] items-center"):
-                    with ui.row().classes("-space-x-2 items-center justify-center w-full"):
+                    with ui.row().classes("-space-x-3 items-center justify-center w-full"):
                         project_button = (
                             ui.button("", on_click=lambda: get_project_dialog())
                             .props("flat")
@@ -3872,7 +3997,16 @@ def requirement_page(type="", json_path="", project_name=""):
                         app.storage.client["page_elements"]["project_button"] = project_button
                         # 将新创建的 project_button 实例存入 user storage
                         project_button.bind_text_from(app.storage.client, "project_name")
-                        ui.label("当前需求确认项").classes("text-xl")
+                        ui.label("V").classes("text-xl ")
+                        with ui.column().classes("-space-y-4 items-center"):
+                            ui.button(icon="arrow_drop_up", on_click=lambda: get_project_req("up")).props(
+                                'flat padding="0px 6px"'
+                            ).classes("").style("font-size: 10px;")
+                            ui.label().classes("text-xl text-amber-9").bind_text_from(app.storage.client, "version")
+                            ui.button(icon="arrow_drop_down", on_click=lambda: get_project_req("down")).props(
+                                'flat padding="0px 6px"'
+                            ).classes("").style("font-size: 10px;")
+                        ui.label("需求确认项").classes("text-xl")
                     with ui.column().classes(
                         "m-2 gap-8 w-full items-center justify-start overflow-y-auto"
                     ) as question_column:
@@ -4121,9 +4255,20 @@ def requirement_page(type="", json_path="", project_name=""):
                             group_id_li = []
                             original_str = ""
                             original_version = version_data.get("original_version", "0.0")
+                            original_project = version_data.get("original_project", "")
                             # 非衍生自0.0版本或版本不为0，即最新版本的，增加衍生信息
-                            if original_version != "0.0" and version != "0":
-                                original_str = f"基于V{original_version}修改"
+                            if original_project != "":
+                                original_str = f"衍生自：{original_project}"
+                                if version != "0" and original_version != "0.0":
+                                    original_str = f"{original_str}，V{original_version}"
+                                elif version != "0" and original_version == "0.0":
+                                    original_str = f"{original_str}，初版"
+                                else:
+                                    original_str = ""
+                            else:
+                                if version != "0" and original_version == "0.0":
+                                    original_str = "全新配置需求"
+
                             # 处理需求内容标题内容
                             version_label = f"需求版本V{version}增删改内容"
                             if version == "0":
