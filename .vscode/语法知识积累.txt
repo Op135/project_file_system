@@ -5,3 +5,14 @@ NiceGUI 事件机制的两个关键点：
 on('keydown') 或 on('keyup') -> 传递 KeyEventArguments
 on('click') 或 on('mouseenter') -> 传递 MouseEventArguments
 on('input') -> 传递 GenericEventArguments
+
+
+import asyncio # 导入 asyncio 库
+# 必须将事件处理函数定义为 async def
+async def non_blocking_handler():
+    ui.notify("操作开始，此任务将暂停5秒...")
+    
+    # 使用 await asyncio.sleep() 来实现非阻塞暂停
+    await asyncio.sleep(5)
+    
+    ui.notify("操作结束！这期间UI一直是可交互的。")

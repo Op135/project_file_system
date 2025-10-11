@@ -290,6 +290,9 @@ def find_files_with_prefix_and_version(directory, prefix):
     if not os.path.exists(directory):
         print(f"错误：目录 {directory} 不存在")
         return result_dic
+    if not prefix:
+        print(f"错误项目名： {prefix} ")
+        return result_dic
 
     # 编译正则表达式：匹配前缀 + 提取版本号
     # 解释：前缀任意字符 + 下划线 + "V" + 1个或多个数字（捕获组） + 文件结束
@@ -318,7 +321,7 @@ def find_files_with_prefix_and_version(directory, prefix):
 
 
 # 对比两个需求配置文件的需求确认项的差异
-def compare_configs_by_id(old_data, new_data, add_options: list = []):
+def compare_configs_by_id(old_data, new_data, add_options: list = []) -> dict:
     """
     通过唯一ID对比两个配置字典的变化。
     {
@@ -473,8 +476,8 @@ async def extract_requirement(file_path) -> dict:
 
     # 第三步，将新旧版本数据进行对比
     extract_data = compare_configs_by_id(old_data["data"], new_data["data"])
-    extract_data["file_dic"] = new_data["file_dic"]
-    extract_data["deleted_files"] = new_data["deleted_files"]
+    extract_data["file_dic"] = old_data.get("file_dic", {}) | new_data.get("file_dic", {})
+    extract_data["deleted_files"] = list(set(old_data.get("deleted_files", []) + new_data.get("deleted_files", [])))
     extract_data["file_counter"] = new_data["file_counter"]
     extract_data["project_name"] = new_data["project_name"]
     extract_data["current_user"] = new_data["current_user"]
@@ -484,8 +487,8 @@ async def extract_requirement(file_path) -> dict:
     extract_data["req_timestamp"] = new_data["req_timestamp"]
     # 将最新数据提取出来
     latest_data["added"] = new_data["data"]
-    latest_data["file_dic"] = new_data["file_dic"]
-    latest_data["deleted_files"] = new_data["deleted_files"]
+    latest_data["file_dic"] = old_data.get("file_dic", {}) | new_data.get("file_dic", {})
+    latest_data["deleted_files"] = list(set(old_data.get("deleted_files", []) + new_data.get("deleted_files", [])))
     latest_data["file_counter"] = new_data["file_counter"]
     latest_data["project_name"] = new_data["project_name"]
     latest_data["current_user"] = new_data["current_user"]
@@ -895,7 +898,7 @@ def project_table_page():
                 color: rgba(0, 0, 0, .54);
                 font-size: 24px;
             }
-            /**/
+            /*控制表格筛选下拉菜单背景颜色*/
             .ag-menu {
                 background-color: white;
             }
@@ -912,7 +915,7 @@ def project_table_page():
                 padding-bottom: 4px;
                 padding-top: 4px;
                 min-height: 30px;
-                min-width: 56px;
+                min-width: 30px;
             }
             .q-btn--fab-mini {
                 padding: 6px;
@@ -1417,9 +1420,9 @@ def project_table_page():
             select_sub = (
                 ui.select(select_dic["RFFM"]).bind_value(select_sub_value, "value").props("outlined").classes("")
             )
-            with ui.fab("construction", label="表格功能", color="blue", direction="right"):
-                ui.fab_action("zoom_in_map", on_click=lambda: switch_toggle_vis(False))
-                ui.fab_action("zoom_out_map", on_click=lambda: switch_toggle_vis(True))
+            with ui.fab("construction", label="", color="blue", direction="right"):
+                ui.fab_action("zoom_in_map", color="amber-9", on_click=lambda: switch_toggle_vis(False))
+                ui.fab_action("zoom_out_map", color="green-9", on_click=lambda: switch_toggle_vis(True))
 
         # 初始化 AG-Grid
         aggrid = ui.aggrid(
@@ -1522,11 +1525,16 @@ def requirement_page(type="", json_path="", project_name=""):
         contrast_card = (
             ui.card().classes("gap-2").style("min-width: 800px; max-width: 90vw; min-hight: 800px; max-hight: 90vw;")
         )
+    # 创建用于选择需求版本的对话框
+    with ui.dialog().classes("") as req_version_dialog:
+        version_card = ui.card().classes("w-1/4")
     # 存储对话框引用
     app.storage.client["page_elements"]["project_card"] = project_card
     app.storage.client["page_elements"]["project_dialog"] = project_dialog
     app.storage.client["page_elements"]["contrast_card"] = contrast_card
     app.storage.client["page_elements"]["contrast_dialog"] = contrast_dialog
+    app.storage.client["page_elements"]["version_card"] = version_card
+    app.storage.client["page_elements"]["req_version_dialog"] = req_version_dialog
 
     # 获取所有JSON配置文件的文件名
     try:
@@ -2181,6 +2189,17 @@ def requirement_page(type="", json_path="", project_name=""):
 
         # 处理数字链接的点击事件
         async def handle_index_click(self):
+            print(self.file_neme_hash, app.storage.client["deleted_files"])
+            if self.file_neme_hash in app.storage.client["deleted_files"]:
+                ui.notify(
+                    "该文件已被销售删除，虽可查看，但谨慎参考！",
+                    type="warning",
+                    position="center",
+                    timeout=0,
+                    progress=False,
+                    close_button="✖",
+                )
+            await asyncio.sleep(3)
             if self.file_type.startswith("image/"):
                 self.show_fullscreen()
             elif self.file_type == "application/pdf":
@@ -3724,30 +3743,26 @@ def requirement_page(type="", json_path="", project_name=""):
                 close_button="✖",
             )
         else:
-            file_dic = {}
-            for k, v in app.storage.client["file_thumbnail_dic"].items():
-                file_dic[k] = v["file_information"]
-            data_json["file_dic"] = file_dic
             data_json["files"] = app.storage.client["files"]
             data_json["deleted_files"] = app.storage.client["deleted_files"]
-            data_json["file_counter"] = app.storage.client["file_counter"]
             data_json["project_name"] = app.storage.client["project_name"]
             data_json["current_user"] = app.storage.user["current_user"]
 
             version = app.storage.client["version"]
 
             # print(app.storage.client["original_project"], app.storage.client["project_name"])
-            # 不是初版的修改且不是刚刚改了项目名
+            # 全新填写初版 或 正常非初版非改项目名
             if (
-                app.storage.client["original_project"] == ""
+                app.storage.client["original_version"] == "0.0"
                 or version != "0.0"
                 and app.storage.client["project_name"] == app.storage.client["original_project"]
             ):
                 # 在现有项目上的修改，要记录现有项目
                 data_json["original_project"] = app.storage.client["project_name"]
 
-            # 非衍生的初版 或 刚刚改了项目名 衍生项目名记录要继承
+            #  刚刚改了项目名
             else:
+                # 改项目名时，会把旧名字记录在app.storage.client["original_project"]
                 data_json["original_project"] = app.storage.client["original_project"]
                 # 确保下次提交如果没有改名字的话，走另外一个逻辑
                 app.storage.client["original_project"] = app.storage.client["project_name"]
@@ -3758,6 +3773,11 @@ def requirement_page(type="", json_path="", project_name=""):
             version_str_li = version.split(".")
             # 输出类型为导出到本地
             if type == "export":
+                file_dic = {}
+                for k, v in app.storage.client["file_thumbnail_dic"].items():
+                    file_dic[k] = v["file_information"]
+                data_json["file_dic"] = file_dic
+                data_json["file_counter"] = app.storage.client["file_counter"]
                 # 记录衍生版本
                 data_json["original_version"] = version
                 # 将文件版本的小数点位加1
@@ -3807,6 +3827,14 @@ def requirement_page(type="", json_path="", project_name=""):
                     )
                     return
                 if data_json["entry_status"]:
+                    整理引用文件的编号可能的冲突问题
+                    file_dic = {}
+                    for k, v in app.storage.client["file_thumbnail_dic"].items():
+                        file_dic[k] = v["file_information"]
+                    data_json["file_dic"] = file_dic
+                    data_json["file_counter"] = app.storage.client["file_counter"]
+
+                    # 迭代更新版本
                     version_a = int(version_str_li[0])
                     original_version = f"{version_str_li[0]}.0"
                     # 查找指定路径下，含有提供项目名的文件，得到一个字典，完整版本为键，值为：{"name":文件名, "v_a":版本号整数部分, "v_b":版本号小数部分}
@@ -3923,6 +3951,57 @@ def requirement_page(type="", json_path="", project_name=""):
                 close_button="✖",
             )
 
+    def get_select_req(select_project_name):
+        if select_project_name:
+            # 定义文件路径
+            file_path = os.path.join(REQ_DIR, select_project_name)
+            ui.navigate.to(f"/main/requirement?type=requirement&json_path={file_path}")
+
+    # 滚动获取特定版本需求配置文件，并重新跳转页面
+    def select_project_req():
+        select_value = {"value": ""}
+        current_version = app.storage.client.get("version", "")
+        project_name = app.storage.client.get("project_name", "")
+        if current_version == "" or project_name == "":
+            ui.notify(
+                "项目名或需求版本获取失败，无法响应！",
+                type="warning",
+                position="center",
+                timeout=1000,
+                progress=True,
+                close_button="✖",
+            )
+            return
+        req_version_dialog = app.storage.client["page_elements"].get("req_version_dialog").props("persistent")
+        version_card = app.storage.client["page_elements"].get("version_card")
+        version_card.clear()
+        # 查找指定路径下，含有提供项目名的文件，得到一个字典，完整版本为键，值为：{"name":文件名, "v_a":版本号整数部分, "v_b":版本号小数部分}
+        project_exists_file = find_files_with_prefix_and_version(REQ_DIR, project_name)
+        if project_exists_file:
+            current_version = float(current_version)
+            version_li = list([float(s) for s in project_exists_file.keys()])
+            version_li.sort()
+            with version_card:
+                with ui.column().classes("w-full"):
+                    ui.label("从下列可选需求版本中选择一个：")
+                    ui.radio(version_li, value=version_li[-1]).props("inline").bind_value_to(select_value, "value")
+                    with ui.row().classes("w-full justify-end"):
+                        ui.button(
+                            "确定",
+                            on_click=lambda: get_select_req(project_exists_file[str(select_value["value"])]["name"]),
+                        ).on("click", lambda: req_version_dialog.close())
+                        ui.button("取消", on_click=lambda: req_version_dialog.close())
+            req_version_dialog.open()
+        else:
+            ui.notify(
+                "该项目当前没有其它需求配置！",
+                type="info",
+                position="bottom",
+                timeout=1000,
+                progress=True,
+                close_button="✖",
+            )
+
     # 需求显示界面框架构造函数
     def requirement_input_frame():
         # 需求界面内容
@@ -4007,14 +4086,17 @@ def requirement_page(type="", json_path="", project_name=""):
                         # 将新创建的 project_button 实例存入 user storage
                         project_button.bind_text_from(app.storage.client, "project_name")
                         ui.label("V").classes("text-xl ")
-                        with ui.column().classes("-space-y-4 items-center"):
-                            ui.button(icon="arrow_drop_up", on_click=lambda: get_project_req("up")).props(
-                                'glossy rounded color="amber-8" padding="0px 6px" text-color="grey-1"'
-                            ).classes("").style("font-size: 8px;")
-                            ui.label().classes("text-xl text-amber-9").bind_text_from(app.storage.client, "version")
-                            ui.button(icon="arrow_drop_down", on_click=lambda: get_project_req("down")).props(
-                                'glossy rounded color="amber-8" padding="0px 6px" text-color="grey-1"'
-                            ).classes("").style("font-size: 8px;")
+                        # with ui.column().classes("-space-y-4 items-center"):
+                        # ui.button(icon="arrow_drop_up", on_click=lambda: get_project_req("up")).props(
+                        #     'glossy rounded color="amber-8" padding="0px 6px" text-color="grey-1"'
+                        # ).classes("").style("font-size: 8px;")
+                        # ui.label().classes("text-xl text-amber-9").bind_text_from(app.storage.client, "version")
+                        ui.button(on_click=lambda: select_project_req()).props("flat").classes(
+                            "text-xl text-amber-9 px-0"
+                        ).bind_text_from(app.storage.client, "version")
+                        # ui.button(icon="arrow_drop_down", on_click=lambda: get_project_req("down")).props(
+                        #     'glossy rounded color="amber-8" padding="0px 6px" text-color="grey-1"'
+                        # ).classes("").style("font-size: 8px;")
                         ui.label("需求确认项").classes("text-xl")
                     with ui.column().classes(
                         "m-2 gap-8 w-full items-center justify-start overflow-y-auto"
@@ -4272,7 +4354,7 @@ def requirement_page(type="", json_path="", project_name=""):
                                 if version != "0" and original_version != "0.0":
                                     original_str = f"{original_str}，V{original_version}"
                                 elif version != "0" and original_version == "0.0":
-                                    original_str = f"{original_str}，初版"
+                                    original_str = "全新配置需求"
                                 else:
                                     original_str = ""
                             # 全新配置需求
@@ -4654,6 +4736,7 @@ def requirement_page(type="", json_path="", project_name=""):
             print(f"读取文件时发生其他错误：{e}")
         # 获取概述文件里，版本最高的文件缩略图字典内容，复现文件缩略图
         file_information = json_data[get_max_numeric_key(json_data)]["file_dic"]
+        app.storage.client["deleted_files"] = json_data[get_max_numeric_key(json_data)]["deleted_files"]
         app.storage.client["file_thumbnail_dic"] = {}
         for k, v in file_information.items():
             app.add_static_file(local_file=f"{UPLOADS_DIR}/{v['file_name_hash']}", url_path=v["file_url"])
@@ -4680,6 +4763,7 @@ def requirement_page(type="", json_path="", project_name=""):
 if __name__ in {"__main__", "__mp_main__"}:
     ui.run(
         title="项目文件管理系统",
+        favicon=f"{IMG_DIR}/RFRF.png",
         # host='0.0.0.0' 允许来自局域网的任何IP访问
         host="0.0.0.0",
         # port=8080 是您选择的端口，可以自定义
