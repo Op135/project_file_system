@@ -1,6 +1,7 @@
 # -*- encoding: utf-8 -*-
 import ast
 import asyncio
+import copy
 import hashlib
 import io
 import itertools
@@ -398,7 +399,7 @@ def compare_configs_by_id(old_data, new_data, add_options: list = []) -> dict:
 
 
 # 提取传入的需求配置文件里的待显示信息,即变动信息
-async def extract_requirement(file_path) -> dict:
+async def extract_requirement(over_data_file_dic, file_path) -> dict:
     pattern = re.compile(r"(.*_V)(\d+)\.(\d+).json")
     match = pattern.search(file_path)
     version_a = 1
@@ -476,7 +477,7 @@ async def extract_requirement(file_path) -> dict:
 
     # 第三步，将新旧版本数据进行对比
     extract_data = compare_configs_by_id(old_data["data"], new_data["data"])
-    extract_data["file_dic"] = old_data.get("file_dic", {}) | new_data.get("file_dic", {})
+    extract_data["file_dic"] = over_data_file_dic | new_data.get("file_dic", {})
     extract_data["deleted_files"] = list(set(old_data.get("deleted_files", []) + new_data.get("deleted_files", [])))
     extract_data["file_counter"] = new_data["file_counter"]
     extract_data["project_name"] = new_data["project_name"]
@@ -487,7 +488,7 @@ async def extract_requirement(file_path) -> dict:
     extract_data["req_timestamp"] = new_data["req_timestamp"]
     # 将最新数据提取出来
     latest_data["added"] = new_data["data"]
-    latest_data["file_dic"] = old_data.get("file_dic", {}) | new_data.get("file_dic", {})
+    latest_data["file_dic"] = over_data_file_dic | new_data.get("file_dic", {})
     latest_data["deleted_files"] = list(set(old_data.get("deleted_files", []) + new_data.get("deleted_files", [])))
     latest_data["file_counter"] = new_data["file_counter"]
     latest_data["project_name"] = new_data["project_name"]
@@ -1112,6 +1113,7 @@ def project_table_page():
     # 根据传入的需求配置文件清单，核对检查是否有新需求配置未更新到概述文件里，并做相应整理，更新概述整理文件
     async def requirement_version_tidy(project_exists_file, overview_file_path) -> bool:
         overviow_data = {}
+        overviow_data["0"] = {"file_dic": {}}
         if project_exists_file:  # 完整版本为键，值为：{"name":文件名, "v_a":版本号整数部分, "v_b":版本号小数部分}
             project_version_li = [float(s) for s in project_exists_file.keys()]
             # 将版本列表按照升序排序
@@ -1138,7 +1140,8 @@ def project_table_page():
                             continue
                         # 以项目配置文件 版本 为键，该版本配置文件的 增删改内容及状态信息 为值，保存到概述字典里
                         temp_dict = await extract_requirement(
-                            os.path.join(REQ_DIR, project_exists_file[str(pro_ver)]["name"])
+                            overviow_data["0"]["file_dic"],
+                            os.path.join(REQ_DIR, project_exists_file[str(pro_ver)]["name"]),
                         )
                         if temp_dict:
                             overviow_data[str(pro_ver)] = temp_dict["contrast"]
@@ -1169,7 +1172,7 @@ def project_table_page():
                 for pro_ver in project_version_li:
                     # 以项目配置文件 版本 为键，该版本配置文件的 增删改内容及状态信息 为值，保存到概述字典里
                     temp_dict = await extract_requirement(
-                        os.path.join(REQ_DIR, project_exists_file[str(pro_ver)]["name"])
+                        overviow_data["0"]["file_dic"], os.path.join(REQ_DIR, project_exists_file[str(pro_ver)]["name"])
                     )
                     if temp_dict:
                         overviow_data[str(pro_ver)] = temp_dict["contrast"]
@@ -1244,6 +1247,12 @@ def project_table_page():
             # ui.notify(f"已隐藏列: {', '.join(cols_to_hide)}")
         # 刷新 Ag-Grid
         # grid.update()
+
+    # 创建一个按钮，其点击事件调用 run_grid_method
+
+    # 调用 AG Grid API 清除所有筛选模型
+    def clear_all_filters(grid):
+        grid.run_grid_method("setFilterModel", None)
 
     # 按钮点击事件（操作存储/行数据）
     async def handle_cell_click(event, aggrid):
@@ -1412,7 +1421,7 @@ def project_table_page():
                 ui.separator().props("size=1px")
                 ui.menu_item("关闭菜单", menu.close)
     with ui.column().classes("w-full h-[88vh] -space-y-2"):
-        with ui.row().classes("items-center -space-x-2"):
+        with ui.row().classes("items-center -space-x-2") as tool_row:
             ui.label("项目筛选：").classes("text-[16px]/[28px]")
             select_major = (
                 ui.select(select_major_li).bind_value(select_major_value, "value").props("outlined").classes("")
@@ -1420,9 +1429,6 @@ def project_table_page():
             select_sub = (
                 ui.select(select_dic["RFFM"]).bind_value(select_sub_value, "value").props("outlined").classes("")
             )
-            with ui.fab("construction", label="", color="blue", direction="right"):
-                ui.fab_action("zoom_in_map", color="amber-9", on_click=lambda: switch_toggle_vis(False))
-                ui.fab_action("zoom_out_map", color="green-9", on_click=lambda: switch_toggle_vis(True))
 
         # 初始化 AG-Grid
         aggrid = ui.aggrid(
@@ -1445,6 +1451,12 @@ def project_table_page():
         select_sub.on_value_change(lambda aggrid=aggrid: update_aggrid(aggrid))
         aggrid.on("cellClicked", lambda e, aggrid=aggrid: handle_cell_click(e, aggrid))
         update_aggrid(aggrid)
+
+        with tool_row:
+            with ui.fab("construction", label="", color="blue", direction="right"):
+                ui.fab_action("zoom_in_map", color="amber-9", on_click=lambda: switch_toggle_vis(False))
+                ui.fab_action("zoom_out_map", color="green-9", on_click=lambda: switch_toggle_vis(True))
+                ui.fab_action("filter_alt_off", color="purple-9", on_click=lambda: clear_all_filters(aggrid))
 
 
 @ui.page("/manage")
@@ -2189,8 +2201,9 @@ def requirement_page(type="", json_path="", project_name=""):
 
         # 处理数字链接的点击事件
         async def handle_index_click(self):
-            print(self.file_neme_hash, app.storage.client["deleted_files"])
-            if self.file_neme_hash in app.storage.client["deleted_files"]:
+            # print(self.file_neme_hash, app.storage.client["deleted_files"])
+            # if self.file_neme_hash in app.storage.client["deleted_files"]:
+            if app.storage.client["file_thumbnail_dic"][self.file_index]["file_information"]["file_del_bool"]:
                 ui.notify(
                     "该文件已被销售删除，虽可查看，但谨慎参考！",
                     type="warning",
@@ -2199,7 +2212,7 @@ def requirement_page(type="", json_path="", project_name=""):
                     progress=False,
                     close_button="✖",
                 )
-            await asyncio.sleep(3)
+                await asyncio.sleep(3)
             if self.file_type.startswith("image/"):
                 self.show_fullscreen()
             elif self.file_type == "application/pdf":
@@ -3305,15 +3318,18 @@ def requirement_page(type="", json_path="", project_name=""):
                 # 如果是 无条件 需要创立的就直接创建
                 if v["condition"] == "无条件":
                     button_num += 1
-                    button = (
+                    with (
                         ui.button(
                             # 将按钮序号和问题内容作为按键文字显示
                             f"{button_num}. {v['guide_content']}",
                             on_click=lambda e, k=k: question_display(e, k),
                         )
                         .classes("text-sm w-full")
-                        .props('align="left" disabled flat color="grey-8"')
-                    )
+                        .props('align="left" disabled flat color="grey-10"') as button
+                    ):
+                        ui.badge(
+                            f"{v['option_group_id']}组/ID{v['node_id']}", color="#22222222", text_color="white"
+                        ).props("floating transparent").classes("my-1 mr-1  px-[2px] py-[1px] text-[10px]/[10px]")
                     # 如果该按钮对应的确认项有用户输出内容，则启用按钮
                     if v["user_must_out"]:
                         if "单选" in v["answer_type"] and v["user_must_out"]["value"]:
@@ -3337,14 +3353,18 @@ def requirement_page(type="", json_path="", project_name=""):
                     # 调用节点激活条件逻辑处理函数处理逻辑字符串，结果为真则按钮激活创建
                     if logic_out(k, cond_lgoic_str):
                         button_num += 1
-                        button = (
+                        with (
                             ui.button(
+                                # 将按钮序号和问题内容作为按键文字显示
                                 f"{button_num}. {v['guide_content']}",
                                 on_click=lambda e, k=k: question_display(e, k),
                             )
                             .classes("text-sm w-full")
-                            .props('align="left" disabled flat color="grey-8"')
-                        )
+                            .props('align="left" disabled flat color="grey-10"') as button
+                        ):
+                            ui.badge(
+                                f"{v['option_group_id']}组/ID{v['node_id']}", color="#22222222", text_color="white"
+                            ).props("floating transparent").classes("my-1 mr-1  px-[2px] py-[1px] text-[10px]/[10px]")
                         # 如果该按钮对应的确认项有用户输出内容，则启用按钮
                         if v["user_must_out"]:
                             if "单选" in v["answer_type"] and v["user_must_out"]["value"]:
@@ -3728,6 +3748,88 @@ def requirement_page(type="", json_path="", project_name=""):
                     if not file_data["file_information"]["file_del_bool"]:
                         file_data["file_obj"].get_thumbnail()
 
+    def update_new_data_in_place(old_data: dict, new_data: dict) -> tuple:
+        """
+        根据 old_data 的内容，就地更新 new_data 字典。
+
+        函数逻辑:
+        1. 遍历 new_data['file_dic'] 中的每个文件条目。
+        2. 如果文件在 old_data 中存在冲突（key 相同但内容不同），则为其分配一个新 ID。
+        3. 新 ID 基于 old_data['file_counter'] 的递增值。
+        4. **直接修改 new_data['file_dic']**：
+        - 删除旧的数字键条目。
+        - 以新 ID 为键，添加更新后的文件条目。
+        - **更新文件条目字典内部的 'file_lab' 键值为新 ID**。
+        5. 记录所有 ID 变更的映射关系 (old_key -> new_key)。
+        6. **直接修改 new_data['data']**：使用映射关系更新 'ref_out' 列表中的文件引用。
+        7. 函数返回修改后的 new_data 字典。
+
+        Args:
+            old_data (dict): 用于比对和提供文件计数器起点的旧字典。
+            new_data (dict): 将被就地修改的新字典。
+
+        Returns:
+            tuple: 经过就地修改后的 new_data 字典和迭代后的file_counter。
+        """
+        # 从旧字典获取文件计数器起点和文件列表
+        file_counter = old_data.get("file_counter", 0)
+        old_file_dic = old_data.get("file_dic", {})
+
+        # 直接操作新字典的文件列表
+        new_file_dic = new_data.get("file_dic", {})
+        if not new_file_dic:
+            return (new_data, file_counter)  # 如果没有文件，则无需处理
+
+        key_map = {}  # 用于存储旧键到新键的映射
+        temp_file_dic = copy.deepcopy(new_file_dic)
+
+        # 遍历键的列表副本，因为我们将在循环中修改字典本身
+        for original_key in list(temp_file_dic.keys()):
+            file_info = temp_file_dic[original_key]
+
+            is_identical = False
+            # 检查 key 是否存在于旧字典中且内容一致
+            if original_key in old_file_dic:
+                _temp_new = copy.deepcopy(file_info)
+                del _temp_new["file_del_bool"]
+                _temp_old = copy.deepcopy(old_file_dic[original_key])
+                del _temp_old["file_del_bool"]
+                if _temp_new == _temp_old:
+                    is_identical = True
+
+            if is_identical:
+                # 内容一致，无需修改，键映射保持不变
+                key_map[original_key] = original_key
+                continue
+
+            # 如果 key 在旧字典中不存在，或者存在但内容不一致（冲突），则分配新 key
+            file_counter += 1
+            new_key = str(file_counter)
+
+            # 记录键的映射关系
+            key_map[original_key] = new_key
+
+            # 核心步骤：就地修改 new_data['file_dic']
+            # 1. 首先更新文件条目字典内部的 "file_lab"
+            file_info["file_lab"] = new_key
+
+            # 2. 然后从字典中移除旧键的条目
+            entry_to_move = temp_file_dic.pop(original_key)
+            if int(original_key) <= old_data.get("file_counter", 0):
+                del new_file_dic[original_key]
+            # 3. 使用新键重新插入该条目
+            new_file_dic[new_key] = entry_to_move
+
+        # 就地更新 new_data['data'] 部分中的文件引用
+        data_section = new_data.get("data", {})
+        for node_content in data_section.values():
+            if "ref_out" in node_content and isinstance(node_content.get("ref_out"), list):
+                # 使用列表推导式和 key_map 来创建更新后的引用列表
+                updated_ref_out = [key_map.get(ref, ref) for ref in node_content["ref_out"]]
+                node_content["ref_out"] = updated_ref_out
+
+        return (new_data, file_counter)
+
     # 需求数据输出处理函数
     def output_config_data(data, type):
         change_name = False
@@ -3743,6 +3845,11 @@ def requirement_page(type="", json_path="", project_name=""):
                 close_button="✖",
             )
         else:
+            file_dic = {}
+            for k, v in app.storage.client["file_thumbnail_dic"].items():
+                file_dic[k] = v["file_information"]
+            data_json["file_dic"] = file_dic
+            data_json["file_counter"] = app.storage.client["file_counter"]
             data_json["files"] = app.storage.client["files"]
             data_json["deleted_files"] = app.storage.client["deleted_files"]
             data_json["project_name"] = app.storage.client["project_name"]
@@ -3773,11 +3880,6 @@ def requirement_page(type="", json_path="", project_name=""):
             version_str_li = version.split(".")
             # 输出类型为导出到本地
             if type == "export":
-                file_dic = {}
-                for k, v in app.storage.client["file_thumbnail_dic"].items():
-                    file_dic[k] = v["file_information"]
-                data_json["file_dic"] = file_dic
-                data_json["file_counter"] = app.storage.client["file_counter"]
                 # 记录衍生版本
                 data_json["original_version"] = version
                 # 将文件版本的小数点位加1
@@ -3827,13 +3929,6 @@ def requirement_page(type="", json_path="", project_name=""):
                     )
                     return
                 if data_json["entry_status"]:
-                    整理引用文件的编号可能的冲突问题
-                    file_dic = {}
-                    for k, v in app.storage.client["file_thumbnail_dic"].items():
-                        file_dic[k] = v["file_information"]
-                    data_json["file_dic"] = file_dic
-                    data_json["file_counter"] = app.storage.client["file_counter"]
-
                     # 迭代更新版本
                     version_a = int(version_str_li[0])
                     original_version = f"{version_str_li[0]}.0"
@@ -3846,6 +3941,22 @@ def requirement_page(type="", json_path="", project_name=""):
                         if float(version) < v_max or change_name:
                             version_a = int(project_exists_file[str(v_max)]["v_a"])
                         version = f"{version_a + 1}.0"
+
+                        try:
+                            old_data_path = os.path.join(REQ_DIR, project_exists_file[str(v_max)]["name"])
+
+                            with open(old_data_path, "r", encoding="utf-8") as f:
+                                # 使用 json.load() 读取文件内容并解析
+                                old_data = json.load(f)
+
+                                return_tuple = update_new_data_in_place(old_data, data_json)
+                                data_json = return_tuple[0]
+                                data_json["file_counter"] = return_tuple[1]
+                        except json.JSONDecodeError:
+                            print(f"错误：文件 '{json_path}' 不是有效的 JSON 格式。")
+                        except Exception as e:
+                            print(f"读取文件时发生其他错误：{e}")
+
                     # 服务器不存在该项目配置文件，版本设置为1.0
                     else:
                         version = "1.0"
@@ -3876,6 +3987,7 @@ def requirement_page(type="", json_path="", project_name=""):
                         progress=True,
                         close_button="✖",
                     )
+                    ui.navigate.to(f"/main/requirement?type=requirement&json_path={file_path}")
                 else:
                     ui.notify(
                         "需求确认项未全部选填完毕，不能提交！",
@@ -4098,6 +4210,12 @@ def requirement_page(type="", json_path="", project_name=""):
                         #     'glossy rounded color="amber-8" padding="0px 6px" text-color="grey-1"'
                         # ).classes("").style("font-size: 8px;")
                         ui.label("需求确认项").classes("text-xl")
+
+                    # 将原项目名记录为新项目的衍生依据项目
+                    app.storage.client["original_project"] = app.storage.client["project_name"]
+                    # 将原项目版本记录为新项目的衍生版本
+                    app.storage.client["original_version"] = app.storage.client["version"]
+
                     with ui.column().classes(
                         "m-2 gap-8 w-full items-center justify-start overflow-y-auto"
                     ) as question_column:
@@ -4127,7 +4245,7 @@ def requirement_page(type="", json_path="", project_name=""):
         answer_type = item.get("answer_type")
 
         if not user_out:
-            # 如果没有用户输出，尝试寻找一个默认的显示文本
+            # 如果没有用户输出
             return "无"
 
         # 1. 处理单选类型
@@ -4347,14 +4465,19 @@ def requirement_page(type="", json_path="", project_name=""):
                             original_str = ""
                             original_version = version_data.get("original_version", "0.0")
                             original_project = version_data.get("original_project", "")
-                            # 非全新配置需求，衍生修改需求
+                            # 非全新配置需求
                             if original_project != "":
-                                original_str = f"衍生自：{original_project}"
-                                # 不是汇总最新数据，且
+                                if original_project == project_name:
+                                    original_str = f"修改自：{original_project}"
+                                else:
+                                    original_str = f"衍生自：{original_project}"
+                                # 不是汇总最新数据，且衍生自某个版本
                                 if version != "0" and original_version != "0.0":
                                     original_str = f"{original_str}，V{original_version}"
+                                # 特殊情况，全新输入再提交前改了名字，依旧判定为全新
                                 elif version != "0" and original_version == "0.0":
                                     original_str = "全新配置需求"
+                                # 术语汇总最新数据的
                                 else:
                                     original_str = ""
                             # 全新配置需求
@@ -4377,168 +4500,102 @@ def requirement_page(type="", json_path="", project_name=""):
                             if version == "0":
                                 ui_expansion["latest"] = exp
                             with exp:
-                                for item_info in sorted_items:
-                                    # 获取需求ID
-                                    node_id = item_info["node_id"]
-                                    # 获取分组ID
-                                    group_id = item_info["option_group_id"]
+                                with ui.column().classes("w-full") as exp_content:
+                                    for item_info in sorted_items:
+                                        # 获取需求ID
+                                        node_id = item_info["node_id"]
+                                        # 获取分组ID
+                                        group_id = item_info["option_group_id"]
 
-                                    if group_id == "":
-                                        continue
-                                    # 如果是新的分组，则添加卡元素
-                                    if group_id not in group_id_li:
-                                        # ui.separator().props("size=1px").classes("my-2 bg-grey-1 h-0.3 rounded-sm shadow-1")
-                                        with ui.card().classes(
-                                            f"bg-{'blue-50/50' if float(group_id) % 2 == 0 else 'amber-50/50'} rounded-md shadow-1 p-2 gap-2 w-full"
-                                        ) as ui_card:
-                                            # ui.label(f"需求组编号：{int(float(group_id))}").classes(
-                                            #     "text-gray-500 text-[10px]/[16px] font-medium"
-                                            # )
-                                            ui.badge(f"{int(float(group_id))}", color="bg-gray-500/10").classes(
-                                                "bg-gray-500/30 py-0 px-1 rounded-md text-[8px]/[12px]"
-                                            ).style("position:absolute;top: -4px;left: -3px;")
-                                        ui_cards[group_id] = ui_card
-                                        group_id_li.append(group_id)
-
-                                    # 创建UI容器和占位符
-                                    with ui_cards[group_id]:
-                                        with ui.column().classes(
-                                            "w-full gap-2 mb-1 text-[14px]/[20px] text-gray-500 bg-gradient-to-b from-gray-50/10 to-gray-300/10 rounded-md"
-                                        ) as container:
+                                        if group_id == "":
+                                            continue
+                                        # 如果是新的分组，则添加卡元素
+                                        if group_id not in group_id_li:
+                                            # ui.separator().props("size=1px").classes("my-2 bg-grey-1 h-0.3 rounded-sm shadow-1")
+                                            with ui.card().classes(
+                                                # f"bg-{'blue-50/50' if float(group_id) % 2 == 0 else 'amber-50/50'} rounded-md shadow-1 p-2 gap-2 w-full"
+                                                "rounded-md shadow-1 px-2 pt-2 pb-0 gap-2 w-full"
+                                            ) as ui_card:
+                                                # ui.label(f"需求组编号：{int(float(group_id))}").classes(
+                                                #     "text-gray-500 text-[10px]/[16px] font-medium"
+                                                # )
+                                                ui.badge(f"{int(float(group_id))}", color="bg-gray-500/10").classes(
+                                                    "bg-gray-500/30 py-0 px-1 rounded-md text-[8px]/[12px]"
+                                                ).style("position:absolute;top: -4px;left: -3px;")
+                                            ui_cards[group_id] = ui_card
+                                            group_id_li.append(group_id)
                                             # 将容器的可见性先设为False，有内容时再打开
-                                            container.visible = False
-                                            with ui.row().classes("items-center w-full gap-0") as old_row:
-                                                old_content = ui.markdown()
-                                                old_ref_row = ui.row().classes("gap-0")
-                                            old_row.visible = False
-                                            with ui.row().classes("items-center w-full gap-0"):
-                                                version_badge = ui.badge().classes("my-1 mr-1")
-                                                content = ui.markdown()
-                                                ref_row = ui.row().classes("gap-0")
-                                                ui.space()
-                                                role_row = ui.row().classes("gap-0")
-                                            # history_container = ui.column().classes("w-full pl-4 gap-0")
+                                            ui_card.visible = False
 
-                                        # 存储UI元素引用
+                                        # 创建UI容器和占位符
+                                        with ui_cards[group_id]:
+                                            with ui.column().classes(
+                                                "w-full gap-2 mb-1 text-[14px]/[20px] text-gray-500 bg-gradient-to-b from-gray-50/10 to-gray-300/10 rounded-md"
+                                            ) as container:
+                                                # 将容器的可见性先设为False，有内容时再打开
+                                                container.visible = False
+                                                with ui.row().classes("items-center w-full gap-0") as old_row:
+                                                    old_content = ui.markdown()
+                                                    old_ref_row = ui.row().classes("gap-0")
+                                                old_row.visible = False
+                                                with ui.row().classes("items-center w-full gap-0"):
+                                                    version_badge = ui.badge().classes("my-1 mr-1")
+                                                    content = ui.markdown()
+                                                    ref_row = ui.row().classes("gap-0")
+                                                    ui.space()
+                                                    role_row = ui.row().classes("gap-0")
+                                                # history_container = ui.column().classes("w-full pl-4 gap-0")
 
-                                        ui_elements[node_id] = {
-                                            "container": container,
-                                            "old_row": old_row,
-                                            "old_content": old_content,
-                                            "old_ref_row": old_ref_row,
-                                            "version_badge": version_badge,
-                                            "content": content,
-                                            "ref_row": ref_row,
-                                            "role_badge": role_row,
-                                            # "history_container": history_container,
-                                        }
-                                        # 单独创建最新版模块的元素字典
-                                        # if version == "0":
-                                        #     ui_elements_latest[node_id] = ui_elements[node_id]
+                                                # 存储UI元素引用
+                                                ui_elements[node_id] = {
+                                                    "container": container,
+                                                    "group_card": ui_cards[group_id],
+                                                    "old_row": old_row,
+                                                    "old_content": old_content,
+                                                    "old_ref_row": old_ref_row,
+                                                    "version_badge": version_badge,
+                                                    "content": content,
+                                                    "ref_row": ref_row,
+                                                    "role_badge": role_row,
+                                                    # "history_container": history_container,
+                                                }
+                                                # 单独创建最新版模块的元素字典
+                                                # if version == "0":
+                                                #     ui_elements_latest[node_id] = ui_elements[node_id]
 
-                                # === 步骤 4: 按时间顺序填充和更新UI ===
-                                # for version in version_keys:
-                                # version_data = json_data[version]
-                                # version_num = version_data.get("version", "N/A")
-                                user = version_data.get("current_user", "N/A")
-                                timestamp = version_data.get("req_timestamp", "N/A").replace("T", " ").split(".")[0]
+                                    # === 步骤 4: 按时间顺序填充和更新UI ===
+                                    # for version in version_keys:
+                                    # version_data = json_data[version]
+                                    # version_num = version_data.get("version", "N/A")
+                                    user = version_data.get("current_user", "N/A")
+                                    timestamp = version_data.get("req_timestamp", "N/A").replace("T", " ").split(".")[0]
 
-                                # 处理新增
-                                for node_id, item_data in version_data.get("added", {}).items():
-                                    if node_id in ui_elements:
-                                        target = ui_elements[node_id]
-                                        show_str = format_show_string(item_data)
-                                        if show_str != "无":
-                                            target["container"].visible = True  # 填充内容，设为可见
-                                            status = "新增"
-                                            if version == version_keys[1]:
-                                                status = "初版"
-                                            # 如果是最新版模块，则显示版本标签
-                                            elif version == "0":
-                                                ui_elements_latest[node_id] = "1.0"
-                                                target["version_badge"].bind_text_from(ui_elements_latest, node_id)
-                                                status = "1.0"
-                                            else:
-                                                if node_id in ui_elements_latest.keys():
-                                                    ui_elements_latest[node_id] = version
-                                            target["version_badge"].set_text(f"{status}")
-                                            color = "blue-grey-2" if status == "初版" else "green-7"
-                                            # if node_id in ui_elements_latest.keys():
-                                            #     ui_elements_latest[node_id]["version_badge"].set_text(f"{version}")
+                                    # 处理新增
+                                    for node_id, item_data in version_data.get("added", {}).items():
+                                        if node_id in ui_elements:
+                                            target = ui_elements[node_id]
+                                            show_str = format_show_string(item_data)
+                                            if show_str != "无":
+                                                target["container"].visible = True  # 填充内容，设为可见
+                                                target["group_card"].visible = True  # 填充内容，设为可见
+                                                status = "新增"
+                                                if version == version_keys[1]:
+                                                    status = "初版"
+                                                # 如果是最新版模块，则显示版本标签
+                                                elif version == "0":
+                                                    ui_elements_latest[node_id] = "1.0"
+                                                    target["version_badge"].bind_text_from(ui_elements_latest, node_id)
+                                                    status = "1.0"
+                                                else:
+                                                    if node_id in ui_elements_latest.keys():
+                                                        ui_elements_latest[node_id] = version
+                                                target["version_badge"].set_text(f"{status}")
+                                                color = "blue-grey-2" if status == "初版" else "green-7"
+                                                # if node_id in ui_elements_latest.keys():
+                                                #     ui_elements_latest[node_id]["version_badge"].set_text(f"{version}")
 
-                                            # ui_expansion["latest"].update()
-                                            target["version_badge"].props(f"color={color}")
-                                            with target["version_badge"]:
-                                                # target["version_badge"].clear()
-                                                tooltip_text = (
-                                                    f"需求ID：{node_id}<br>提交人：{user}<br>时间：{timestamp}"
-                                                )
-                                                with ui.tooltip("").classes("bg-gray-700 text-white min-w-40"):
-                                                    ui.html(
-                                                        tooltip_text, sanitize=False
-                                                    )  # 如果有用户输入内容，则建议改为sanitize=Sanitizer().sanitize
-                                            target["content"].set_content(show_str)
-                                            if item_data["ref_out"]:
-                                                # 在引用行里添加于缩略图编号一致的数字引用按钮
-                                                with target["ref_row"]:
-                                                    for t_lab in item_data["ref_out"]:
-                                                        thumbnail_obj = app.storage.client["file_thumbnail_dic"][t_lab][
-                                                            "file_obj"
-                                                        ]
-                                                        add_overview_lab(thumbnail_obj)
-                                            if item_data["option_view"]:
-                                                with target["role_badge"]:
-                                                    for role in item_data["option_view"].split("+"):
-                                                        add_role_badge(role)
-                                # 处理删除
-                                for node_id, item_data in version_data.get("deleted", {}).items():
-                                    if node_id in ui_elements:
-                                        target = ui_elements[node_id]
-                                        show_str = format_show_string(item_data)
-                                        if show_str != "无":
-                                            target["container"].visible = True
-                                            target["version_badge"].set_text("删除")
-                                            target["version_badge"].props("color=red-7")
-                                            with target["version_badge"]:
-                                                # target["version_badge"].clear()
-                                                tooltip_text = (
-                                                    f"需求ID：{node_id}<br>提交人：{user}<br>时间：{timestamp}"
-                                                )
-                                                with ui.tooltip("").classes("bg-gray-700 text-white min-w-40"):
-                                                    ui.html(
-                                                        tooltip_text, sanitize=False
-                                                    )  # 如果有用户输入内容，则建议改为sanitize=Sanitizer().sanitize
-
-                                            target["content"].set_content(f"<del>{show_str}</del>")
-                                            target["content"].classes(add="text-gray-400")
-                                            if item_data["ref_out"]:
-                                                # 在引用行里添加于缩略图编号一致的数字引用按钮
-                                                with target["ref_row"]:
-                                                    for t_lab in item_data["ref_out"]:
-                                                        thumbnail_obj = app.storage.client["file_thumbnail_dic"][t_lab][
-                                                            "file_obj"
-                                                        ]
-                                                        add_overview_lab(thumbnail_obj)
-                                            if item_data["option_view"]:
-                                                with target["role_badge"]:
-                                                    for role in item_data["option_view"].split("+"):
-                                                        add_role_badge(role)
-                                # 处理修改
-                                for node_id, item_data in version_data.get("modified", {}).items():
-                                    if node_id in ui_elements:
-                                        target = ui_elements[node_id]
-                                        new_text = format_show_string(item_data["new_data"])
-                                        old_text = format_show_string(item_data["old_data"])
-                                        # 判断是首次填充还是追加历史
-                                        # 之前是空的，现在首次填充
-                                        if old_text == "无":
-                                            if new_text != "无":
-                                                target["container"].visible = True
-                                                target["version_badge"].set_text("新增")
-                                                # 更新最新版模块版本标签
-                                                if node_id in ui_elements_latest.keys():
-                                                    ui_elements_latest[node_id] = version
-                                                target["version_badge"].props("color=green-7")
+                                                # ui_expansion["latest"].update()
+                                                target["version_badge"].props(f"color={color}")
                                                 with target["version_badge"]:
                                                     # target["version_badge"].clear()
                                                     tooltip_text = (
@@ -4548,26 +4605,28 @@ def requirement_page(type="", json_path="", project_name=""):
                                                         ui.html(
                                                             tooltip_text, sanitize=False
                                                         )  # 如果有用户输入内容，则建议改为sanitize=Sanitizer().sanitize
-                                                target["content"].set_content(new_text)
-                                                if item_data["new_data"]["ref_out"]:
+                                                target["content"].set_content(show_str)
+                                                if item_data["ref_out"]:
                                                     # 在引用行里添加于缩略图编号一致的数字引用按钮
                                                     with target["ref_row"]:
-                                                        for t_lab in item_data["new_data"]["ref_out"]:
+                                                        for t_lab in item_data["ref_out"]:
                                                             thumbnail_obj = app.storage.client["file_thumbnail_dic"][
                                                                 t_lab
                                                             ]["file_obj"]
                                                             add_overview_lab(thumbnail_obj)
-                                                if item_data["new_data"]["option_view"]:
+                                                if item_data["option_view"]:
                                                     with target["role_badge"]:
-                                                        for role in item_data["new_data"]["option_view"].split("+"):
+                                                        for role in item_data["option_view"].split("+"):
                                                             add_role_badge(role)
-                                        else:  # 之前已有内容，追加更改
-                                            if new_text == "无":
+                                    # 处理删除
+                                    for node_id, item_data in version_data.get("deleted", {}).items():
+                                        if node_id in ui_elements:
+                                            target = ui_elements[node_id]
+                                            show_str = format_show_string(item_data)
+                                            if show_str != "无":
                                                 target["container"].visible = True
-                                                target["version_badge"].set_text("作废")
-                                                # 更新最新版模块版本标签，作废的一般进入不了这个条件判断，保险先放着
-                                                if node_id in ui_elements_latest.keys():
-                                                    ui_elements_latest[node_id] = version
+                                                target["group_card"].visible = True  # 填充内容，设为可见
+                                                target["version_badge"].set_text("删除")
                                                 target["version_badge"].props("color=red-7")
                                                 with target["version_badge"]:
                                                     # target["version_badge"].clear()
@@ -4579,59 +4638,142 @@ def requirement_page(type="", json_path="", project_name=""):
                                                             tooltip_text, sanitize=False
                                                         )  # 如果有用户输入内容，则建议改为sanitize=Sanitizer().sanitize
 
-                                                target["content"].set_content(f"<del>{old_text}</del>")
+                                                target["content"].set_content(f"<del>{show_str}</del>")
                                                 target["content"].classes(add="text-gray-400")
-                                                if item_data["old_data"]["ref_out"]:
+                                                if item_data["ref_out"]:
                                                     # 在引用行里添加于缩略图编号一致的数字引用按钮
                                                     with target["ref_row"]:
-                                                        for t_lab in item_data["old_data"]["ref_out"]:
+                                                        for t_lab in item_data["ref_out"]:
                                                             thumbnail_obj = app.storage.client["file_thumbnail_dic"][
                                                                 t_lab
                                                             ]["file_obj"]
                                                             add_overview_lab(thumbnail_obj)
-                                                if item_data["old_data"]["option_view"]:
+                                                if item_data["option_view"]:
                                                     with target["role_badge"]:
-                                                        for role in item_data["old_data"]["option_view"].split("+"):
+                                                        for role in item_data["option_view"].split("+"):
                                                             add_role_badge(role)
-                                            else:
-                                                target["container"].visible = True
-                                                target["old_row"].visible = True
-                                                target["old_content"].set_content(old_text)
-                                                if item_data["old_data"]["ref_out"]:
-                                                    # 在引用行里添加于缩略图编号一致的数字引用按钮
-                                                    with target["old_ref_row"]:
-                                                        for t_lab in item_data["old_data"]["ref_out"]:
-                                                            thumbnail_obj = app.storage.client["file_thumbnail_dic"][
-                                                                t_lab
-                                                            ]["file_obj"]
-                                                            add_overview_lab(thumbnail_obj)
-                                                target["version_badge"].set_text("更改为")
-                                                # 更新最新版模块版本标签
-                                                if node_id in ui_elements_latest.keys():
-                                                    ui_elements_latest[node_id] = version
-                                                target["version_badge"].props("color=orange-7")
-                                                with target["version_badge"]:
-                                                    tooltip_text = (
-                                                        f"需求ID：{node_id}<br>提交人：{user}<br>时间：{timestamp}"
-                                                    )
-                                                    with ui.tooltip("").classes("bg-gray-700 text-white min-w-40"):
-                                                        ui.html(
-                                                            tooltip_text, sanitize=False
-                                                        )  # 如果有用户输入内容，则建议改为sanitize=Sanitizer().sanitize
-                                                target["content"].set_content(new_text)
-                                                if item_data["new_data"]["ref_out"]:
-                                                    # 在引用行里添加于缩略图编号一致的数字引用按钮
-                                                    with target["ref_row"]:
-                                                        for t_lab in item_data["new_data"]["ref_out"]:
-                                                            thumbnail_obj = app.storage.client["file_thumbnail_dic"][
-                                                                t_lab
-                                                            ]["file_obj"]
-                                                            add_overview_lab(thumbnail_obj)
-                                                if item_data["new_data"]["option_view"]:
-                                                    with target["role_badge"]:
-                                                        for role in item_data["new_data"]["option_view"].split("+"):
-                                                            add_role_badge(role)
+                                    # 处理修改
+                                    for node_id, item_data in version_data.get("modified", {}).items():
+                                        if node_id in ui_elements:
+                                            target = ui_elements[node_id]
+                                            new_text = format_show_string(item_data["new_data"])
+                                            old_text = format_show_string(item_data["old_data"])
+                                            # 判断是首次填充还是追加历史
+                                            # 之前是空的，现在首次填充
+                                            if old_text == "无":
+                                                if new_text != "无":
+                                                    target["container"].visible = True
+                                                    target["group_card"].visible = True  # 填充内容，设为可见
+                                                    target["version_badge"].set_text("新增")
+                                                    # 更新最新版模块版本标签
+                                                    if node_id in ui_elements_latest.keys():
+                                                        ui_elements_latest[node_id] = version
+                                                    target["version_badge"].props("color=green-7")
+                                                    with target["version_badge"]:
+                                                        # target["version_badge"].clear()
+                                                        tooltip_text = (
+                                                            f"需求ID：{node_id}<br>提交人：{user}<br>时间：{timestamp}"
+                                                        )
+                                                        with ui.tooltip("").classes("bg-gray-700 text-white min-w-40"):
+                                                            ui.html(
+                                                                tooltip_text, sanitize=False
+                                                            )  # 如果有用户输入内容，则建议改为sanitize=Sanitizer().sanitize
+                                                    target["content"].set_content(new_text)
+                                                    if item_data["new_data"]["ref_out"]:
+                                                        # 在引用行里添加于缩略图编号一致的数字引用按钮
+                                                        with target["ref_row"]:
+                                                            for t_lab in item_data["new_data"]["ref_out"]:
+                                                                thumbnail_obj = app.storage.client[
+                                                                    "file_thumbnail_dic"
+                                                                ][t_lab]["file_obj"]
+                                                                add_overview_lab(thumbnail_obj)
+                                                    if item_data["new_data"]["option_view"]:
+                                                        with target["role_badge"]:
+                                                            for role in item_data["new_data"]["option_view"].split("+"):
+                                                                add_role_badge(role)
+                                            else:  # 之前已有内容，追加更改
+                                                if new_text == "无":
+                                                    target["container"].visible = True
+                                                    target["group_card"].visible = True  # 填充内容，设为可见
+                                                    target["version_badge"].set_text("作废")
+                                                    # 更新最新版模块版本标签，作废的一般进入不了这个条件判断，保险先放着
+                                                    if node_id in ui_elements_latest.keys():
+                                                        ui_elements_latest[node_id] = version
+                                                    target["version_badge"].props("color=red-7")
+                                                    with target["version_badge"]:
+                                                        # target["version_badge"].clear()
+                                                        tooltip_text = (
+                                                            f"需求ID：{node_id}<br>提交人：{user}<br>时间：{timestamp}"
+                                                        )
+                                                        with ui.tooltip("").classes("bg-gray-700 text-white min-w-40"):
+                                                            ui.html(
+                                                                tooltip_text, sanitize=False
+                                                            )  # 如果有用户输入内容，则建议改为sanitize=Sanitizer().sanitize
 
+                                                    target["content"].set_content(f"<del>{old_text}</del>")
+                                                    target["content"].classes(add="text-gray-400")
+                                                    if item_data["old_data"]["ref_out"]:
+                                                        # 在引用行里添加于缩略图编号一致的数字引用按钮
+                                                        with target["ref_row"]:
+                                                            for t_lab in item_data["old_data"]["ref_out"]:
+                                                                thumbnail_obj = app.storage.client[
+                                                                    "file_thumbnail_dic"
+                                                                ][t_lab]["file_obj"]
+                                                                add_overview_lab(thumbnail_obj)
+                                                    if item_data["old_data"]["option_view"]:
+                                                        with target["role_badge"]:
+                                                            for role in item_data["old_data"]["option_view"].split("+"):
+                                                                add_role_badge(role)
+                                                else:
+                                                    target["container"].visible = True
+                                                    target["group_card"].visible = True  # 填充内容，设为可见
+                                                    target["old_row"].visible = True
+                                                    target["old_content"].set_content(old_text)
+                                                    if item_data["old_data"]["ref_out"]:
+                                                        # 在引用行里添加于缩略图编号一致的数字引用按钮
+                                                        with target["old_ref_row"]:
+                                                            for t_lab in item_data["old_data"]["ref_out"]:
+                                                                thumbnail_obj = app.storage.client[
+                                                                    "file_thumbnail_dic"
+                                                                ][t_lab]["file_obj"]
+                                                                add_overview_lab(thumbnail_obj)
+                                                    target["version_badge"].set_text("更改为")
+                                                    # 更新最新版模块版本标签
+                                                    if node_id in ui_elements_latest.keys():
+                                                        ui_elements_latest[node_id] = version
+                                                    target["version_badge"].props("color=orange-7")
+                                                    with target["version_badge"]:
+                                                        tooltip_text = (
+                                                            f"需求ID：{node_id}<br>提交人：{user}<br>时间：{timestamp}"
+                                                        )
+                                                        with ui.tooltip("").classes("bg-gray-700 text-white min-w-40"):
+                                                            ui.html(
+                                                                tooltip_text, sanitize=False
+                                                            )  # 如果有用户输入内容，则建议改为sanitize=Sanitizer().sanitize
+                                                    target["content"].set_content(new_text)
+                                                    if item_data["new_data"]["ref_out"]:
+                                                        # 在引用行里添加于缩略图编号一致的数字引用按钮
+                                                        with target["ref_row"]:
+                                                            for t_lab in item_data["new_data"]["ref_out"]:
+                                                                thumbnail_obj = app.storage.client[
+                                                                    "file_thumbnail_dic"
+                                                                ][t_lab]["file_obj"]
+                                                                add_overview_lab(thumbnail_obj)
+                                                    if item_data["new_data"]["option_view"]:
+                                                        with target["role_badge"]:
+                                                            for role in item_data["new_data"]["option_view"].split("+"):
+                                                                add_role_badge(role)
+                            # 只给显示出来的card进行间隔上色
+                            n = 1
+                            for child in exp_content.default_slot.children:
+                                if not child.visible:
+                                    continue
+                                if n == 1:
+                                    child.classes("bg-blue-100/40 shadow-xs shadow-blue-300/30")
+                                    n = 0
+                                else:
+                                    child.classes("bg-amber-100/40 shadow-xs shadow-amber-300/30")
+                                    n = 1
                 ui.separator().props("vertical size=1px")
                 # 概述内容列
                 with ui.column().classes("w-1/2 min-w-[400px] items-center"):

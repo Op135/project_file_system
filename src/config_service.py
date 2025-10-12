@@ -103,7 +103,7 @@ class ConfigService:
                     "input_tolerance": self.clean_text(row.输入是否要求范围).strip(),
                     "ref_config": self.clean_text(row.文件引用配置).strip(),
                     "option_hint": self.clean_text(row.需求项提示).strip(),
-                    "option_group_id": self.clean_text(row.选项展示组).strip(),
+                    "option_group_id": str(int(float(self.clean_text(row.选项展示组).strip()))),
                     "option_view": self.clean_text(row.选项查阅整理要求).strip(),
                     "user_must_out": {},
                     "option_tolerance_out": {},
