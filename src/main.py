@@ -1378,7 +1378,7 @@ def project_table_page():
         {"field": "project_charge", "headerName": "项目", "width": 80, "filter": "agTextColumnFilter"},
         {"field": "optics_charge", "headerName": "光学", "width": 60},
         {"field": "structure_charge", "headerName": "结构", "width": 60},
-        {"field": "hardware_charge", "headerName": "硬件", "width": 6},
+        {"field": "hardware_charge", "headerName": "硬件", "width": 60},
         {"field": "software_charge", "headerName": "软件", "width": 60},
         {"field": "ui_charge", "headerName": "UI", "width": 60},
         {"field": "craft_charge", "headerName": "工艺", "width": 60},
@@ -1488,6 +1488,9 @@ def requirement_page(type="", json_path="", project_name=""):
         <style>
             .nicegui-editor .q-editor__content p, .nicegui-markdown p {
                 margin: 0.2rem 0;
+            }
+            .q-dialog__inner--minimized {
+                padding: 12px;
             }
         </style>
     """)
@@ -1951,6 +1954,28 @@ def requirement_page(type="", json_path="", project_name=""):
             self.file_up_time = get_time()
             self.add_lab_bool = False
             self.delet_lab = delet_lab
+            self.dialog = ui.dialog().props("maximized").classes("p-0")
+            if self.file_type.startswith("image/"):
+                with self.dialog:
+                    with (
+                        ui.card()
+                        .classes("relative h-full w-full overflow-hidden items-center justify-center")
+                        .style("background-color: rgba(0,0,0,0);")
+                    ):
+                        ui.label("按ESC键退出图片查看界面").classes(
+                            "absolute top-15 right-10 text-xl text-amber-9 z-999"
+                        )
+                        self.image_big = ui.interactive_image(
+                            self.file_url,
+                        ).classes("cursor-grab")
+                    # self.image_big.props("fit=contain")
+                    # 绑定事件
+                    self.image_big.on("mousedown", self.start_drag)
+                    self.image_big.on_mouse(self.get_img_xy)
+                    self.image_big.on("mousemove", self.handle_drag)
+                    self.image_big.on("mouseup", self.end_drag)
+                    self.image_big.on("mouseleave", self.end_drag)
+                    self.image_big.on("wheel", self.handle_zoom)
             # 存取文件计数值，也就是文件数字标记
             self.file_index = file_lab
             if auto_create:
@@ -2180,25 +2205,6 @@ def requirement_page(type="", json_path="", project_name=""):
         #             close_button="✖",
         #         )
 
-        # 显示大图
-        def show_fullscreen(self):
-            with ui.dialog().props("h-screen w-full") as self.dialog:
-                self.image_big = ui.interactive_image(
-                    self.file_url,
-                ).classes("cursor-grab")
-                # self.image_big.props("fit=contain")
-                # 绑定事件
-                self.image_big.on("mousedown", self.start_drag)
-                self.image_big.on_mouse(self.get_img_xy)
-                self.image_big.on("mousemove", self.handle_drag)
-                self.image_big.on("mouseup", self.end_drag)
-                self.image_big.on("mouseleave", self.end_drag)
-                self.image_big.on("wheel", self.handle_zoom)
-            # 打开弹窗
-            self.dialog.open()
-            # 复位图片
-            self.reset_transform()
-
         # 处理数字链接的点击事件
         async def handle_index_click(self):
             # print(self.file_neme_hash, app.storage.client["deleted_files"])
@@ -2256,6 +2262,13 @@ def requirement_page(type="", json_path="", project_name=""):
             # 更新图片
             self.update_transform()
 
+        # 显示大图
+        def show_fullscreen(self):
+            # 打开弹窗
+            self.dialog.open()
+            # 复位图片
+            self.reset_transform()
+
         # 更新图片变换函数
         def update_transform(self):
             self.image_big.style(
@@ -2304,9 +2317,10 @@ def requirement_page(type="", json_path="", project_name=""):
             self.image_x = 0.0
             self.image_y = 0.0
             # self.select_ver = {"value": None}
-            self.chip_dialog = ui.dialog().props("h-screen w-full")
-            self.notes_dialog = ui.dialog().props("h-screen w-full")
-            self.activ_dialog = ui.dialog().props("h-screen w-full")
+            self.chip_dialog = ui.dialog().classes("")
+            self.img_dialog = ui.dialog().props("maximized").classes("p-0")
+            self.check_down_dialog = ui.dialog().classes("")
+            self.activ_dialog = ui.dialog().classes("")
             # self.image_show = {"image_show": True}
             # self.chip_dialog.bind_value_to(self.image_show, "image_show")
 
@@ -2324,12 +2338,7 @@ def requirement_page(type="", json_path="", project_name=""):
             self.chip_container = ui.row().classes("w-full items-center gap-2 pl-8")
 
             # 根据处理类型，设置不同的交互逻辑
-            if self.processing_type == "text":
-                # 预先设置文本chip的弹窗格式
-                self._setup_text_chip_dialog()
-            elif self.processing_type == "image":
-                # 预先设置文件类chip的弹窗格式
-                self._setup_file_notes_dialog()
+            if self.processing_type == "image":
                 # 创建一个隐藏的 ui.upload 组件，我们将通过程序触发它
                 self.uploader = ui.upload(
                     on_upload=self._handle_file_upload,
@@ -2339,8 +2348,6 @@ def requirement_page(type="", json_path="", project_name=""):
                 # 隐藏upload元素
                 self.uploader.set_visibility(False)
             else:
-                # 预先设置文件类chip的弹窗格式
-                self._setup_file_notes_dialog()
                 # 创建一个隐藏的 ui.upload 组件，我们将通过程序触发它
                 self.uploader = ui.upload(
                     on_upload=self._handle_file_upload,
@@ -2355,11 +2362,17 @@ def requirement_page(type="", json_path="", project_name=""):
 
         # 显示大图
         def show_fullscreen(self, url_path):
-            with self.chip_dialog:
-                self.chip_dialog.clear()
-                self.image_big = ui.interactive_image(
-                    url_path,
-                ).classes("cursor-grab")
+            self.img_dialog.clear()
+            with self.img_dialog:
+                with (
+                    ui.card()
+                    .classes("relative h-full w-full overflow-hidden items-center justify-center")
+                    .style("background-color: rgba(0,0,0,0);")
+                ):
+                    ui.label("按ESC键退出图片查看界面").classes("absolute top-15 right-10 text-xl text-amber-9 z-999")
+                    self.image_big = ui.interactive_image(
+                        url_path,
+                    ).classes("cursor-grab")
                 # self.image_big.props("fit=contain")
                 # 绑定事件
                 self.image_big.on("mousedown", self.start_drag)
@@ -2369,7 +2382,7 @@ def requirement_page(type="", json_path="", project_name=""):
                 self.image_big.on("mouseleave", self.end_drag)
                 self.image_big.on("wheel", self.handle_zoom)
             # 打开弹窗
-            self.chip_dialog.open()
+            self.img_dialog.open()
             # print(self.chip_dialog.value)
             # 复位图片
             self.reset_transform()
@@ -2503,10 +2516,12 @@ def requirement_page(type="", json_path="", project_name=""):
         # 处理文件/图片上传事件
         async def _handle_file_upload(self, e):
             original_filename = e.file.name
+            file_type = e.file.content_type
             # 生成一个唯一的内部文件名以避免覆盖，但保留原始文件名用于显示
             # unique_filename = f"{uuid.uuid4().hex}{Path(original_filename).suffix}"
             # filepath = self.upload_path / unique_filename
             filepath = self.upload_path / original_filename
+            url_path = f"{FILES_URL_DIR}/{original_filename}"
             # 检查是否已存在该项里了
             if original_filename in [
                 d["filename"] for d in app.storage.general["overview_data"][self.project][self.label].values()
@@ -2521,7 +2536,8 @@ def requirement_page(type="", json_path="", project_name=""):
                 )
             # 检查服务器是否存在同名文件
             elif os.path.exists(filepath):
-                self._select_file_show(filepath, original_filename)
+                # app.add_static_file(local_file=filepath, url_path=url_path)
+                self._select_file_show(original_filename, file_type, url_path)
             else:
                 try:
                     # 1. 一次性将文件内容完整读入内存中的 bytes 对象
@@ -2534,10 +2550,11 @@ def requirement_page(type="", json_path="", project_name=""):
                     # e.file 是一个类文件对象，我们需要读取其内容并写入到本地文件
                     with open(filepath, "wb") as f:
                         f.write(file_content_object.read())
+                    # app.add_static_file(local_file=filepath, url_path=url_path)
                 except Exception as ex:
                     print(f"上传处理失败: {ex}")  # 在服务器端打印错误详情
                     ui.notify(
-                        f"上传文件 '{e.file.name}' 失败: {str(ex)}",
+                        f"上传文件 '{original_filename}' 失败: {str(ex)}",
                         type="negative",
                         position="bottom",
                         timeout=0,
@@ -2559,8 +2576,10 @@ def requirement_page(type="", json_path="", project_name=""):
                     # "removable": False,  # 控制元素是否有删除按钮
                     "bg_color": "bg-light-blue-1",
                     "type": self.processing_type,
+                    "file_type": file_type,
                     # "filepath": f"{filepath}", 路径不能记死
                     "filename": original_filename,
+                    "url_path": url_path,
                     "notes": self.chip_notes.value,
                     "creator": app.storage.user.get("current_user", "匿名用户"),
                     "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -2581,7 +2600,7 @@ def requirement_page(type="", json_path="", project_name=""):
                 )
 
         # 显示服务器已有文件
-        def _show_have_file(self, filepath, original_filename):
+        def _show_have_file(self, original_filename, file_type, url_path):
             # 准备要存储的 chip 数据
             file_icon = ""
             if self.processing_type == "file":
@@ -2597,8 +2616,10 @@ def requirement_page(type="", json_path="", project_name=""):
                 # "removable": False,  # 控制元素是否有删除按钮
                 "bg_color": "bg-light-blue-1",
                 "type": self.processing_type,
-                "filepath": f"{filepath}",
+                "file_type": file_type,
+                # "filepath": f"{filepath}",
                 "filename": original_filename,
+                "url_path": url_path,
                 "notes": self.chip_notes.value,
                 "creator": app.storage.user.get("current_user", "匿名用户"),
                 "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -2621,13 +2642,17 @@ def requirement_page(type="", json_path="", project_name=""):
         # ----------------------------------------------------------------->
 
         # 询问重复提交文件是否按服务器现有文件显示
-        def _select_file_show(self, filepath, original_filename):
+        def _select_file_show(self, original_filename, file_type, url_path):
             self.chip_dialog.clear()
             self.chip_dialog.open()
             with self.chip_dialog, ui.card().classes("w-1/2 bg-orange-2"):
                 ui.label("服务器已有同名文件，无法上传覆盖，是否使用服务器已有文件？").classes("text-lg")
                 with ui.row().classes("w-full justify-end"):
-                    ui.button("是", on_click=lambda: self._show_have_file(filepath, original_filename), color="green-6")
+                    ui.button(
+                        "是",
+                        on_click=lambda: self._show_have_file(original_filename, file_type, url_path),
+                        color="green-6",
+                    )
                     ui.button("否", on_click=lambda: self.chip_dialog.close(), color="blue-grey-6")
 
         # 刷新chip容器
@@ -2645,7 +2670,7 @@ def requirement_page(type="", json_path="", project_name=""):
             这是由定时器调用的核心同步函数。
             """
             # 在用户打开了大图的情况下，不刷对应条目下的缩略图元素
-            if not self.chip_dialog.value:
+            if not (self.chip_dialog.value or self.check_down_dialog.value or self.activ_dialog.value):
                 # if self.processing_type == "image":
                 #     print(self.chip_dialog.value, self.title)
 
@@ -2663,24 +2688,107 @@ def requirement_page(type="", json_path="", project_name=""):
                     overview_role_update(self.project)
 
         # 打开文件
-        def open_file(self, filepath):
-            # 获取操作系统类型
-            os_type = sys.platform
-            if os_type == "win32":
-                # os.startfile(f"{UPLOADS_DIR}/{self.file_neme_suffix}")
-                os.startfile(filepath)
-            elif os_type == "darwin":
-                # subprocess.run(["open", f"{UPLOADS_DIR}/{self.file_neme_suffix}"])
-                subprocess.run(["open", filepath])
+        # def open_file(self, filepath):
+        #     # 获取操作系统类型
+        #     os_type = sys.platform
+        #     if os_type == "win32":
+        #         # os.startfile(f"{UPLOADS_DIR}/{self.file_neme_suffix}")
+        #         os.startfile(filepath)
+        #     elif os_type == "darwin":
+        #         # subprocess.run(["open", f"{UPLOADS_DIR}/{self.file_neme_suffix}"])
+        #         subprocess.run(["open", filepath])
+        #     else:
+        #         ui.notify(
+        #             "未适配当前操作系统，不能直接打开。",
+        #             type="info",
+        #             position="bottom",
+        #             timeout=1000,
+        #             progress=True,
+        #             close_button="✖",
+        #         )
+        # pdf文件打开函数
+        def open_pdf_in_browser(self, url_path):
+            # 在浏览器中打开 PDF 文件
+            async def get_base_url():
+                # 通过 JavaScript 获取当前页面的协议、域名和路径
+                result = await ui.run_javascript("window.location.origin;")
+                return result
+
+            # 2. 异步执行并拼接完整 URL
+            async def open_pdf():
+                base_url = await get_base_url()
+                full_url = f"{base_url}{url_path}"
+                # 处理空格等特殊字符
+                encoded_url = full_url.replace(" ", "%20")
+                # 3. 打开新窗口
+                ui.run_javascript(f'window.open("{encoded_url}", "_blank");')
+                # print(f"尝试打开PDF：{encoded_url}")
+
+            # 启动异步任务
+            ui.timer(0.1, lambda: open_pdf(), once=True)
+
+        def trigger_download(self, filepath, file_name, on_complete=None):
+            """专门负责触发下载的辅助函数"""
+            ui.notify(
+                f"开始下载文件: {file_name}",
+                type="info",
+                position="bottom",
+                timeout=1000,
+                progress=True,
+                close_button="✖",
+            )
+            ui.download(filepath)
+            if on_complete:
+                on_complete()
+
+        # 我们创建一个新的、更智能的下载处理函数
+        async def check_and_download(self, filepath, file_name):
+            """
+            检查文件是否已在当前会话下载过。
+            如果是，则弹出一个带引导信息的对话框；如果否，则开始下载并标记。
+            """
+            storage_key = f"downloaded_{file_name}"
+            has_downloaded = await ui.run_javascript(f'sessionStorage.getItem("{storage_key}")')
+
+            if has_downloaded:
+                # 【修改点】对这里的对话框进行全面升级
+                self.check_down_dialog.clear()
+                with self.check_down_dialog, ui.card().classes("min-w-[400px]"):
+                    with ui.card_section():
+                        ui.label(f'文件 "{file_name}" 已在本次会话中下载。').classes("text-lg font-medium")
+                        ui.separator().props("size=1px").classes("my-3")
+                        ui.label("您可以：")
+                        # 使用 HTML 来创建更丰富的文本格式
+                        ui.html(
+                            """
+                            <ul class="q-pl-lg">
+                                <li>在浏览器的<b>下载栏</b>中直接找到它。</li>
+                                <li>按键盘快捷键 <kbd>Ctrl</kbd> + <kbd>J</kbd> (Windows/Linux) 或 <kbd>⌘</kbd> + <kbd>Shift</kbd> + <kbd>J</kbd> (Mac) 打开<b>下载内容页面</b>。</li>
+                            </ul>
+                        """,
+                            sanitize=False,
+                        ).classes("text-base")  # 如果有用户输入内容，则建议改为sanitize=Sanitizer().sanitize
+
+                    with ui.card_actions().props("align=right"):
+                        # “重新下载”按钮，保持原样
+                        ui.button(
+                            "仍要重新下载",
+                            on_click=lambda filepath=filepath, file_name=file_name: self.trigger_download(
+                                filepath, file_name, self.check_down_dialog.close
+                            ),
+                            color="primary",
+                        )
+                        # 将“取消”按钮改为更中性的“关闭”
+                        ui.button("关闭", on_click=self.check_down_dialog.close, color="grey")
+
+                self.check_down_dialog.open()
+
+            # 3. 如果标记不存在 (首次点击)
             else:
-                ui.notify(
-                    "未适配当前操作系统，不能直接打开。",
-                    type="info",
-                    position="bottom",
-                    timeout=1000,
-                    progress=True,
-                    close_button="✖",
-                )
+                # a. 立即触发下载
+                self.trigger_download(filepath, file_name)
+                # b. 通过JavaScript在客户端设置标记
+                await ui.run_javascript(f'sessionStorage.setItem("{storage_key}", "true")')
 
         # 当元素被鼠标右键点击时触发的事件处理函数
         def on_right_click(self, chip_data):
@@ -2735,6 +2843,7 @@ def requirement_page(type="", json_path="", project_name=""):
                     ui.button("关闭", on_click=lambda: self._set_chip_activ(chip_id)).on(
                         "click", lambda: self.activ_dialog.close()
                     )
+            self.activ_dialog.open()
 
         # 删除或修改chip在app.storage.general对应的数据
         def delete_chip_info(self, chip):
@@ -2745,7 +2854,6 @@ def requirement_page(type="", json_path="", project_name=""):
                 elif app.storage.user["current_user"] != "admin":
                     # app.storage.general["overview_data"][self.project][self.label][chip.props["data-chip-id"]]["removable"] = False
                     chip_id = chip.props["data-chip-id"]
-                    self.activ_dialog.open()
                     self._select_activ_dialog(chip_id)
 
         # 删除或修改文件缩略图及其在app.storage.general的数据
@@ -2757,7 +2865,6 @@ def requirement_page(type="", json_path="", project_name=""):
                     del app.storage.general["overview_data"][self.project][self.label][thumbnail.props["data-chip-id"]]
                 elif app.storage.user["current_user"] != "admin":
                     chip_id = thumbnail.props["data-chip-id"]
-                    self.activ_dialog.open()
                     self._select_activ_dialog(chip_id)
 
         # 将该项插入的chip里指定chip上移一个位置
@@ -2871,7 +2978,14 @@ def requirement_page(type="", json_path="", project_name=""):
                     # chip.on_click(lambda: print(chip.value))
                     # chip.set_enabled(False)
                 elif chip_info["type"] == "file":
-                    chip.on_click(lambda filepath=filepath: self.open_file(filepath))
+                    app.add_static_file(local_file=filepath, url_path=chip_info["url_path"])
+                    if chip_info["file_type"] == "application/pdf":
+                        # 使用浏览器打开则用open_pdf_in_browser()
+                        chip.on_click(lambda url_path=chip_info["url_path"]: self.open_pdf_in_browser(url_path))
+                    else:
+                        chip.on_click(
+                            lambda filepath=filepath, file_name=chip_text: self.check_and_download(filepath, file_name)
+                        )
 
             # chip类型为缩略图
             elif chip_info["type"] == "image":
@@ -2957,6 +3071,7 @@ def requirement_page(type="", json_path="", project_name=""):
                 )
                 with ui.row().classes("w-full justify-end"):
                     ui.button("添加", on_click=self._add_text_chip_data)
+            self.chip_dialog.open()
 
         # 触发文件上传界面，用于给用户选择文件，然后自动触发文件处理函数
         def _get_file_upload(self):
@@ -2991,6 +3106,7 @@ def requirement_page(type="", json_path="", project_name=""):
                 )
                 with ui.row().classes("w-full justify-end"):
                     ui.button("添加", on_click=self._get_file_upload)
+            self.chip_dialog.open()
 
         # ----------------------------------------------------------------->
 
@@ -3014,8 +3130,16 @@ def requirement_page(type="", json_path="", project_name=""):
         def _handle_main_button_click(self):
             # 如果用户具有编辑权限
             if self._edit_permission_judge():
-                # 弹窗已经按照类型预先创建好，只打开即可，每次填写内容确定关闭时只清楚元素填写值，不清楚元素
-                self.chip_dialog.open()
+                # 根据处理类型，设置不同的交互逻辑
+                if self.processing_type == "text":
+                    # 设置文本chip的弹窗格式
+                    self._setup_text_chip_dialog()
+                elif self.processing_type == "image":
+                    # 设置文件类chip的弹窗格式
+                    self._setup_file_notes_dialog()
+                else:
+                    # 设置文件类chip的弹窗格式
+                    self._setup_file_notes_dialog()
 
     # 创建一个图片上传组件，包括一个上传按钮和上传好的图片缩略图
     def get_img_group(button_name="上传", input_any_suffix="/*", parents_h=9):
@@ -3329,7 +3453,7 @@ def requirement_page(type="", json_path="", project_name=""):
                     ):
                         ui.badge(
                             f"{v['option_group_id']}组/ID{v['node_id']}", color="#22222222", text_color="white"
-                        ).props("floating transparent").classes("my-1 mr-1  px-[2px] py-[1px] text-[10px]/[10px]")
+                        ).props("floating transparent").classes("my-1 mr-1 px-[2px] py-[1px] text-[10px]/[10px]")
                     # 如果该按钮对应的确认项有用户输出内容，则启用按钮
                     if v["user_must_out"]:
                         if "单选" in v["answer_type"] and v["user_must_out"]["value"]:

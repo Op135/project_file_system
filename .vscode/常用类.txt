@@ -15,7 +15,13 @@ flex-nowrap
 # 强制子元素单行排列（默认值），与 Bootstrap 的 .flex-nowrap 等效。当子元素总宽度超过容器时，可能出现横向滚动条或内容截断，建议配合 overflow-auto 使用：
 overflow-x-auto
 # 自动横向滚动条
+overflow-hidden
+# 隐藏滚动条
 
+relative
+# 父级设置为自己浮动定位的参考
+absolute top-0 right-0
+# 子级设置绝对定位及位置
 
 # display: flex 布局情况下
 # 控制 flex 和网格项沿容器横轴的定位方式
