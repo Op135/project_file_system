@@ -12,7 +12,9 @@
             "option_hint": "产品是作为局部模组集成到客户产品上，还是以成品机箱形式供用户直接使用？",
             "option_group_id": "1",
             "option_view": "全员",
-            "user_must_out": {},
+            "user_must_out": {
+                "value": "模组"
+            },
             "option_tolerance_out": {},
             "ref_out": [],
             "options": [
@@ -44,7 +46,12 @@
             "option_hint": "该项目我司负责哪些功能模块的设计与生产，即我们卖什么？",
             "option_group_id": "1",
             "option_view": "全员",
-            "user_must_out": {},
+            "user_must_out": {
+                "光能输出": false,
+                "机械结构": false,
+                "硬件驱动控制": false,
+                "软件控制": true
+            },
             "option_tolerance_out": {},
             "ref_out": [],
             "options": [
@@ -2274,7 +2281,9 @@
             "option_hint": "尽量与客户做清晰的约定",
             "option_group_id": "7",
             "option_view": "全员",
-            "user_must_out": {},
+            "user_must_out": {
+                "value": "False"
+            },
             "option_tolerance_out": {},
             "ref_out": [],
             "options": [
@@ -2331,7 +2340,9 @@
             "option_hint": "尽量与客户做清晰的约定",
             "option_group_id": "7",
             "option_view": "全员",
-            "user_must_out": {},
+            "user_must_out": {
+                "value": "False"
+            },
             "option_tolerance_out": {},
             "ref_out": [],
             "options": [
@@ -3941,7 +3952,9 @@
             "option_hint": "是否要求产品具备定期校正光参数的功能。",
             "option_group_id": "16",
             "option_view": "光学+硬件+软件+工艺+质量",
-            "user_must_out": {},
+            "user_must_out": {
+                "value": "False"
+            },
             "option_tolerance_out": {},
             "ref_out": [],
             "options": [
@@ -3998,7 +4011,9 @@
             "option_hint": "是否要求产品具备使用传感器实现闭环反馈控制的功能。",
             "option_group_id": "16",
             "option_view": "光学+硬件+软件+工艺+质量",
-            "user_must_out": {},
+            "user_must_out": {
+                "value": "False"
+            },
             "option_tolerance_out": {},
             "ref_out": [],
             "options": [
@@ -4055,7 +4070,13 @@
             "option_hint": "研发部只负责EMC摸底测试，EMC与其它认证证书都需要向质量部申请安排正式第三方测试，才能出证。",
             "option_group_id": "999",
             "option_view": "全员",
-            "user_must_out": {},
+            "user_must_out": {
+                "EMC": false,
+                "RoHS": false,
+                "激光安全": false,
+                "光生物安全": false,
+                "不要求": true
+            },
             "option_tolerance_out": {},
             "ref_out": [],
             "options": [
@@ -4436,9 +4457,13 @@
             "option_hint": "填写上面需求确认项无提及但客户有要求的软件内容，没有则写“无”。",
             "option_group_id": "18",
             "option_view": "软件+工艺+质量",
-            "user_must_out": {},
+            "user_must_out": {
+                "1": "撒旦法"
+            },
             "option_tolerance_out": {},
-            "ref_out": [],
+            "ref_out": [
+                "1"
+            ],
             "options": [
                 {
                     "option_content": "",
@@ -4461,9 +4486,15 @@
             "option_hint": "填写上面需求确认项无提及但客户有要求的工艺内容，没有则写“无”。",
             "option_group_id": "18",
             "option_view": "工艺+结构+质量",
-            "user_must_out": {},
+            "user_must_out": {
+                "1": "阿迪"
+            },
             "option_tolerance_out": {},
-            "ref_out": [],
+            "ref_out": [
+                "1",
+                "2",
+                "3"
+            ],
             "options": [
                 {
                     "option_content": "",
@@ -4475,7 +4506,52 @@
             ]
         }
     },
-    "config_timestamp": "2025-10-14T18:43:50.358816",
+    "config_timestamp": "2025-10-13T09:43:08.522483",
     "excel_version_hash": "c82e9da0",
-    "entry_status": false
+    "entry_status": true,
+    "file_dic": {
+        "1": {
+            "file_del_bool": false,
+            "file_name": "IR-850-500-S-02-K10010073",
+            "file_url": "/uploads/IR-850-500-S-02-K10010073.f1a9abffe8f197027003b7ac5ce33fa4.pdf",
+            "file_name_hash": "IR-850-500-S-02-K10010073.f1a9abffe8f197027003b7ac5ce33fa4.pdf",
+            "file_name_suffix": "IR-850-500-S-02-K10010073.pdf",
+            "file_type": "application/pdf",
+            "file_lab": "1",
+            "parents_h": 9
+        },
+        "2": {
+            "file_del_bool": false,
+            "file_name": "微信图片_20241212095208",
+            "file_url": "/uploads/微信图片_20241212095208.e49868d32bbb9cb04364ba96f4c1eeb3.jpg",
+            "file_name_hash": "微信图片_20241212095208.e49868d32bbb9cb04364ba96f4c1eeb3.jpg",
+            "file_name_suffix": "微信图片_20241212095208.jpg",
+            "file_type": "image/jpeg",
+            "file_lab": "2",
+            "parents_h": 9
+        },
+        "3": {
+            "file_del_bool": false,
+            "file_name": "标准版本更新模板",
+            "file_url": "/uploads/标准版本更新模板.1dec186145b7a75831aa5f1421980227.docx",
+            "file_name_hash": "标准版本更新模板.1dec186145b7a75831aa5f1421980227.docx",
+            "file_name_suffix": "标准版本更新模板.docx",
+            "file_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "file_lab": "3",
+            "parents_h": 9
+        }
+    },
+    "file_counter": 3,
+    "files": [
+        "IR-850-500-S-02-K10010073.f1a9abffe8f197027003b7ac5ce33fa4.pdf",
+        "微信图片_20241212095208.e49868d32bbb9cb04364ba96f4c1eeb3.jpg",
+        "标准版本更新模板.1dec186145b7a75831aa5f1421980227.docx"
+    ],
+    "deleted_files": [],
+    "project_name": "RFFM-1001-A",
+    "current_user": "李晓明",
+    "original_project": "RFFM-1001-A",
+    "version": "3.0",
+    "original_version": "2.0",
+    "req_timestamp": "2025-10-14T16:07:51.720014"
 }

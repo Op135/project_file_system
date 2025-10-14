@@ -137,6 +137,28 @@ def update_config_service():
         )
 
 
+# 传入待判断字符串和正则表达式，输出判断结果
+def validate_format_regex(s: str, ps: str) -> bool:
+    """
+    传入待判断字符串和正则表达式，输出判断结果
+
+    Args:
+        s: 待检查的字符串。
+        ps: 传入正则表达式，必须用r"字符串"形式。
+
+    Returns:
+        如果字符串符合格式，则返回 True，否则返回 False。
+    """
+    # 编译正则表达式以提高性能（在多次调用时尤其有效）
+    pattern = re.compile(f"{ps}")
+
+    # re.fullmatch() 会尝试将整个字符串与模式进行匹配
+    if pattern.fullmatch(s):
+        return True
+    else:
+        return False
+
+
 # 项目名切割处理函数
 def project_name_process_string(s: str) -> str:
     """
@@ -177,7 +199,9 @@ def project_summary_update():
             app.storage.general["project_overview_config"] = json.load(f)
         for project_name, data in project_data.items():
             app.storage.general["project_summary"].setdefault(project_name, {})
+            # 设置所有项目手动设置在json配置文件里的展示内容
             app.storage.general["project_summary"][project_name].update(data)
+            # 设置所有项目均一致的展示内容
             app.storage.general["project_summary"][project_name].update(
                 {
                     "sub_project": project_name,
@@ -834,7 +858,7 @@ def main_page():
         ("insert_chart", "XX", "XX", "/main"),
     ]
 
-    # 项目信息表
+    # 主界面
     with ui.header().classes("flex justify-between items-center bg-blue-500 h-12 px-4"):
         ui.image(f"{IMG_DIR}/Rayfine.png").classes("absolute w-20")
         ui.label("百炼光研发管理系统").classes(
@@ -1072,7 +1096,7 @@ def project_table_page():
                                                 # 如果有filename键，则应该是文件或图片型chip
                                                 elif "filename" in chip_data:
                                                     text = ".".join(chip_data["filename"].split(".")[:-1])
-                                                # 将文本拼接到带显示字符串上
+                                                # 将文本拼接到待显示字符串上
                                                 # 这几类换行拼接
                                                 if pro_key in [
                                                     "light_source",
@@ -1085,8 +1109,8 @@ def project_table_page():
                                                     show_str = f"{show_str}\n{text}"
                                                 else:
                                                     show_str = f"{show_str}，{text}"
-                                # 将处理完成的字符串作为该行数据对应项目简介项的现实内容
-                                r[pro_key] = show_str.strip("，").removeprefix("\n")
+                                # 将处理完成的字符串作为该行数据对应项目简介项的显示内容
+                                r[pro_key] = show_str.strip("，").removeprefix("\n")  # removeprefix移除字符串前缀
                             elif (
                                 "charge" in pro_key
                                 and over_key_li != ""
@@ -2440,6 +2464,7 @@ def requirement_page(type="", json_path="", project_name=""):
         def _get_select_activ_dic(self, req_max_ver):
             select_dic = {}
             for select_label in [f"{i}.0" for i in range(1, int(float(req_max_ver)) + 1)]:
+                # 新增加的chip，其之前的版本默认属于不激活，只有当前最新版本记录为激活
                 if select_label == req_max_ver:
                     select_dic[select_label] = True
                 else:
@@ -2486,7 +2511,7 @@ def requirement_page(type="", json_path="", project_name=""):
                 chip_data = {
                     "id": chip_id,  # 使用UUID确保每个chip都有一个唯一的ID
                     "icon": None,
-                    "enabled": True,  # 控制元素是否显示
+                    "enabled": True,  # 控制元素是否可点击，接着用来控制是否在项目表上显示
                     # "removable": False,  # 控制元素是否有删除按钮
                     "bg_color": "bg-light-blue-1",
                     "type": "text",
@@ -2572,7 +2597,7 @@ def requirement_page(type="", json_path="", project_name=""):
                 chip_data = {
                     "id": chip_id,
                     "icon": file_icon,
-                    "enabled": True,  # 控制元素是否显示
+                    "enabled": True,  # 控制元素是否可点击，接着用来控制是否在项目表上显示
                     # "removable": False,  # 控制元素是否有删除按钮
                     "bg_color": "bg-light-blue-1",
                     "type": self.processing_type,
@@ -2612,7 +2637,7 @@ def requirement_page(type="", json_path="", project_name=""):
             chip_data = {
                 "id": chip_id,
                 "icon": file_icon,
-                "enabled": True,  # 控制元素是否显示
+                "enabled": True,  # 控制元素是否可点击，接着用来控制是否在项目表上显示
                 # "removable": False,  # 控制元素是否有删除按钮
                 "bg_color": "bg-light-blue-1",
                 "type": self.processing_type,
@@ -2810,12 +2835,27 @@ def requirement_page(type="", json_path="", project_name=""):
         # <-----------------------------------------------------------------
         # 设置chip的激活状态
         def _set_chip_activ(self, chip_id):
+            # chip以当前最新版本的设置为当前显示状态
             req_max_ver = app.storage.general["project_req_max_ver"][self.project]
             if app.storage.general["overview_data"][self.project][self.label][chip_id]["select_activ_dic"][req_max_ver]:
                 # 激活chip
                 app.storage.general["overview_data"][self.project][self.label][chip_id]["enabled"] = True
-                app.storage.general["overview_data"][self.project][self.label][chip_id]["icon"] = None
+                if app.storage.general["overview_data"][self.project][self.label][chip_id]["type"] == "file":
+                    app.storage.general["overview_data"][self.project][self.label][chip_id]["icon"] = "attach_file"
+                else:
+                    app.storage.general["overview_data"][self.project][self.label][chip_id]["icon"] = None
                 app.storage.general["overview_data"][self.project][self.label][chip_id]["bg_color"] = "bg-light-blue-1"
+            # 防止chip状态None（null）被当成False，当用户在弹窗选择激活状态时不做选择动作，保持原有null状态chip被处理成False显示效果
+            elif (
+                app.storage.general["overview_data"][self.project][self.label][chip_id]["select_activ_dic"][req_max_ver]
+                is None
+            ):
+                # 只要跳过这个情况不做任何修改即可；只单单修改当前一个chip状态，改需求所有类似状态的chip在概述框架渲染检测需求有没有新版本时统一设置了
+                pass
+                # 冗余设计，复用注意检查与整体刷新处设置是否一致
+                # app.storage.general["overview_data"][self.project][self.label][chip_id]["enabled"] = None
+                # app.storage.general["overview_data"][self.project][self.label][chip_id]["icon"] = "question_mark"
+                # app.storage.general["overview_data"][self.project][self.label][chip_id]["bg_color"] = "bg-amber-1"
             else:
                 # 失活chip
                 app.storage.general["overview_data"][self.project][self.label][chip_id]["enabled"] = False
@@ -4042,9 +4082,30 @@ def requirement_page(type="", json_path="", project_name=""):
                 )
             # 输出类型为提交到服务器
             elif type == "submit":
+                print(project_name)
                 if app.storage.user.get("current_role") not in ["销售", "销售总监", "admin"]:
                     ui.notify(
                         "当前用户无权限提交需求，只能导出到本地！",
+                        type="negative",
+                        position="center",
+                        timeout=0,
+                        progress=False,
+                        close_button="✖",
+                    )
+                    return
+                if project_name.split("-")[0] != "RFTS" and project_name not in app.storage.general["project_summary"]:
+                    ui.notify(
+                        "非临时项目，又未正式立项，不可提交服务器，只可导出到本地！",
+                        type="negative",
+                        position="center",
+                        timeout=0,
+                        progress=False,
+                        close_button="✖",
+                    )
+                    return
+                if project_name.split("-")[0] == "RFTS" and not validate_format_regex(project_name, r"^RFTS-\d{4}$"):
+                    ui.notify(
+                        "不符合临时项目号命名规则：RFTS-4位数字，不可提交服务器，只可导出到本地！",
                         type="negative",
                         position="center",
                         timeout=0,
@@ -4072,7 +4133,7 @@ def requirement_page(type="", json_path="", project_name=""):
                             with open(old_data_path, "r", encoding="utf-8") as f:
                                 # 使用 json.load() 读取文件内容并解析
                                 old_data = json.load(f)
-
+                                # 处理新需求插入文件数字可能的与旧版本需求的冲突
                                 return_tuple = update_new_data_in_place(old_data, data_json)
                                 data_json = return_tuple[0]
                                 data_json["file_counter"] = return_tuple[1]
@@ -4259,7 +4320,7 @@ def requirement_page(type="", json_path="", project_name=""):
             ):  # 右侧对齐
                 with ui.menu().props("auto-close") as menu:
                     ui.menu_item("返回主界面", on_click=lambda: ui.navigate.to("/main"))
-                    ui.menu_item("返回项目信息表", on_click=lambda: ui.navigate.to("/project_table"))
+                    ui.menu_item("返回正式项目信息表", on_click=lambda: ui.navigate.to("/project_table"))
                     ui.menu_item("注销登录", on_click=lambda: logout())
                     ui.separator().props("size=1px")
                     ui.menu_item("新建需求", on_click=lambda: get_project_dialog("new"))
@@ -4482,6 +4543,8 @@ def requirement_page(type="", json_path="", project_name=""):
     # 需求显示界面框架构造函数
     def overview_input_frame(json_data):
         project_name = json_data["1.0"]["project_name"]
+        # 获取当前需求最新版本值
+        new_ver = int(float(json_data["version"]))
         # 判断服务器存存器概述数据字典里是否已经存在该项目键值对，没有则创建，用于后续储存该项目需求概述资料
         if project_name not in app.storage.general["overview_data"]:
             app.storage.general["overview_data"][project_name] = dict()
@@ -4491,38 +4554,46 @@ def requirement_page(type="", json_path="", project_name=""):
         # 如果服务器存储的概述资料里存在该项目对应数据
         if app.storage.general["overview_data"][project_name]:
             # 设置一个结束整个遍历的变量
-            break_bool = False
+            # break_bool = False
             # 遍历该项目概述内容，字典键为概述的各分类项，值为该项下chip字典
             for chip_dic in app.storage.general["overview_data"][project_name].values():
                 # 该项目的版本激活设置里已经存在于当前概述版本相同的版本设置，意味着不需要更新补充
-                if break_bool:
-                    break
+                # if break_bool:
+                #     break
                 # 如果chip字典非空
                 if chip_dic:
                     # 遍历各个chip数据
                     for chip_data in chip_dic.values():
-                        # 讲chip数据里的选项激活设置字典的键，也就是版本整理成列表
+                        # 将chip数据里的选项激活设置字典的键，也就是版本整理成列表
                         activ_key_li = [int(float(k)) for k in chip_data.get("select_activ_dic", {}).keys()]
                         # print(activ_key_li)
                         # 如果列表非空
                         if activ_key_li:
-                            # 获取当前需求最新版本值
-                            new_ver = int(float(json_data["version"]))
                             # 获取选项激活设置里最大的版本值
                             old_max_ver = max(activ_key_li)
                             # 如果当前需求版本值大于激活设置的最大版本值
                             # print(old_max_ver, new_ver)
                             if new_ver > old_max_ver:
                                 # 获取激活设置最大版本值对应的布尔设置值
-                                activ_max_bool = chip_data["select_activ_dic"][f"{old_max_ver}.0"]
-                                # 从现有激活设置最大版本值+1到当前需求版本值开始生成键值对，值均设置为激活设置最大值一样的布尔值
+                                # activ_max_bool = chip_data["select_activ_dic"][f"{old_max_ver}.0"]
+                                # 从现有激活设置最大版本值+1到当前需求版本值开始生成键值对
                                 for key in range(old_max_ver + 1, new_ver + 1):
-                                    chip_data["select_activ_dic"][f"{key}.0"] = activ_max_bool
+                                    # 新版本值均设置为激活设置最大值一样的布尔值
+                                    # chip_data["select_activ_dic"][f"{key}.0"] = activ_max_bool
+                                    # 新版本值均设置为None，为第三状态值，待工程师处理
+                                    chip_data["select_activ_dic"][f"{key}.0"] = None
                                     # print(chip_data["select_activ_dic"][f"{key}.0"])
                             # 如果当前需求版本值刚好等于激活设置的最大版本值，则提前终止整个遍历
-                            elif new_ver == old_max_ver:
-                                break_bool = True
-                                break
+                            # elif new_ver == old_max_ver:
+                            #     break_bool = True
+                            #     break
+                            # 与上一elif判断语句块矛盾，不能同时存在才能发挥检查刷新所有chip待选择显示效果效果
+                            if chip_data["select_activ_dic"][f"{new_ver}.0"] is None:
+                                # 将这个存在未手动选择激活状态的chip的相关状态配置成特殊显示
+                                # 设置为None，这个chip的内容在项目总表展示时才会表明待选择处理
+                                chip_data["enabled"] = None
+                                chip_data["icon"] = "question_mark"
+                                chip_data["bg_color"] = "bg-amber-5"
 
         # 需求界面内容
         header.clear()
@@ -4538,7 +4609,7 @@ def requirement_page(type="", json_path="", project_name=""):
             ):  # 右侧对齐
                 with ui.menu().props("auto-close") as menu:
                     ui.menu_item("返回主界面", on_click=lambda: ui.navigate.to("/main"))
-                    ui.menu_item("返回项目信息表", on_click=lambda: ui.navigate.to("/project_table"))
+                    ui.menu_item("返回正式项目信息表", on_click=lambda: ui.navigate.to("/project_table"))
                     ui.menu_item("注销登录", on_click=lambda: logout())
                     ui.separator().props("size=1px")
 
