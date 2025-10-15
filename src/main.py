@@ -250,7 +250,7 @@ def overview_role_update(project_name):
                             # 将该用户创建次数加1次
                             frequency_user_dic[over_data["creator"]] = frequency_user_dic[over_data["creator"]] + 1
                             # 生成用户本次概述创建的时间对象
-                            time_obj_new = datetime.strptime(over_data["timestamp"], format_string)
+                            time_obj_new = datetime.strptime(next(reversed(over_data["timestamp"])), format_string)
                             # 获取已保存的该用户概述最晚创建时间对象
                             time_obj_old = time_user_dic[over_data["creator"]]
                             # 两个时间对比，如果本次时间比已保存的时间更晚
@@ -263,7 +263,7 @@ def overview_role_update(project_name):
                             frequency_user_dic[over_data["creator"]] = 1
                             # 记该用户首次创建时间
                             time_user_dic[over_data["creator"]] = datetime.strptime(
-                                over_data["timestamp"], format_string
+                                next(reversed(over_data["timestamp"])), format_string
                             )
             # 当前角色的所有概述存在创建记录
             if frequency_user_dic != {}:
@@ -971,6 +971,7 @@ def project_table_page():
                 height: 100% !important;
                 align-items: center;
                 justify-content: center;
+                line-height: 25px;
             }
 
             /* 基础单元格样式 */
@@ -992,7 +993,13 @@ def project_table_page():
         
             /* 字体加粗样式 */
             .bold-text {
-                font-weight: 700;
+                font-weight: 700 !important;
+            }
+            .red-text {
+                color: red !important;
+            }
+            .amber-text {
+                color: #df8b00 !important;
             }
         </style>
     """)
@@ -1087,8 +1094,8 @@ def project_table_page():
                                         ].values()
                                         # 遍历概述内容每个chip数据
                                         for chip_data in chip_data_li:
-                                            # 该chip内容是激活的才显示
-                                            if chip_data["enabled"]:
+                                            # 该chip内容是激活 或者 待定状态 才显示
+                                            if chip_data["enabled"] or chip_data["enabled"] is None:
                                                 text = ""
                                                 # 如果有content键，则应该是文字型chip
                                                 if "content" in chip_data:
@@ -1096,6 +1103,10 @@ def project_table_page():
                                                 # 如果有filename键，则应该是文件或图片型chip
                                                 elif "filename" in chip_data:
                                                     text = ".".join(chip_data["filename"].split(".")[:-1])
+
+                                                # 待定状态的概述内容串 加上特殊标记符号
+                                                if chip_data["enabled"] is None:
+                                                    text = f"「{text}」?"
                                                 # 将文本拼接到待显示字符串上
                                                 # 这几类换行拼接
                                                 if pro_key in [
@@ -1111,6 +1122,7 @@ def project_table_page():
                                                     show_str = f"{show_str}，{text}"
                                 # 将处理完成的字符串作为该行数据对应项目简介项的显示内容
                                 r[pro_key] = show_str.strip("，").removeprefix("\n")  # removeprefix移除字符串前缀
+                            # 处理负责人配置部分显示内容
                             elif (
                                 "charge" in pro_key
                                 and over_key_li != ""
@@ -1120,10 +1132,21 @@ def project_table_page():
                                 show_str = app.storage.general["overview_role"][project_name][over_key_li][
                                     "latest_user"
                                 ]
-                                if show_str == "":
-                                    r[pro_key] = ""
-                                else:
-                                    r[pro_key] = show_str.split("：")[1]
+                                show_str = show_str.split("：")[1] if show_str else ""
+                                if show_str:
+                                    selected_bool = False
+                                    for class_dic in app.storage.general["overview_data"][project_name].values():
+                                        for ver_dic in class_dic.values():
+                                            select_activ_dic = ver_dic.get("select_activ_dic", {})
+                                            if select_activ_dic:
+                                                max_ver = max([int(float(ver)) for ver in select_activ_dic.keys()])
+                                                if select_activ_dic[f"{max_ver}.0"] is None:
+                                                    if over_key_li == ver_dic.get("role", ""):
+                                                        selected_bool = True
+                                    if selected_bool:
+                                        show_str = f"待{show_str}\n选概述"
+
+                                r[pro_key] = show_str
 
                     # 单独处理项目简介表里每行 负责销售 单元格的显示
                     r["sale_charge"] = app.storage.general["project_sale"].get(project_name, "")
@@ -1399,20 +1422,34 @@ def project_table_page():
         {"field": "overview", "headerName": "概述整理", "width": 80},
         {"field": "customer", "headerName": "客户缩写", "width": 100, "filter": "agTextColumnFilter"},
         {"field": "sale_charge", "headerName": "销售", "width": 80, "filter": "agTextColumnFilter"},
-        {"field": "project_charge", "headerName": "项目", "width": 80, "filter": "agTextColumnFilter"},
-        {"field": "optics_charge", "headerName": "光学", "width": 60},
-        {"field": "structure_charge", "headerName": "结构", "width": 60},
-        {"field": "hardware_charge", "headerName": "硬件", "width": 60},
-        {"field": "software_charge", "headerName": "软件", "width": 60},
-        {"field": "ui_charge", "headerName": "UI", "width": 60},
-        {"field": "craft_charge", "headerName": "工艺", "width": 60},
+        {
+            "field": "project_charge",
+            "headerName": "项目",
+            "width": 80,
+            "autoHeight": True,
+            "filter": "agTextColumnFilter",
+        },
+        {"field": "optics_charge", "headerName": "光学", "width": 80, "autoHeight": True},
+        {"field": "structure_charge", "headerName": "结构", "width": 80, "autoHeight": True},
+        {"field": "hardware_charge", "headerName": "硬件", "width": 80, "autoHeight": True},
+        {"field": "software_charge", "headerName": "软件", "width": 80, "autoHeight": True},
+        {"field": "ui_charge", "headerName": "UI", "width": 80, "autoHeight": True},
+        {"field": "craft_charge", "headerName": "工艺", "width": 80, "autoHeight": True},
     ]
     for col in project_summary_columns:
         if "width" in col:
             col["minWidth"] = col["width"]
         if "autoHeight" in col:
+            # 该类使得\n符号会起作用，达到手动换行作用
             col["cellClass"] = "left-auto-break"
         col["headerClass"] = "center-auto-break"
+        # 设置单元格样式规则
+        col["cellClassRules"] = {
+            # 当表达式为 true 时，应用 'red-text' 类
+            # typeof x === 'string': 这是一个安全检查，确保我们只在字符串类型的数据上执行后续操作
+            # x.includes('?') 这是 JavaScript 的内建函数，如果字符串 x 中包含子字符串 '?'，它就返回 true
+            "amber-text": "typeof x === 'string' && (x.includes('?') || x.includes('概述'))",
+        }
         # col["cellClass"] = "ag-cell"
 
     # 将手动数据添加覆盖到服务器保存数据里
@@ -1462,6 +1499,8 @@ def project_table_page():
                 "headerHeight": 50,
                 # 强制渲染所有行，禁用虚拟滚动
                 "suppressRowVirtualisation": True,
+                # 允许单元格文本选择
+                "enableCellTextSelection": True,
             }
         ).classes("ag-theme-alpine ag-header-cell-resize::after h-full")
         # min-width: 1000px;       /* 防止宽度过小 */
@@ -2314,6 +2353,7 @@ def requirement_page(type="", json_path="", project_name=""):
         def __init__(
             self,
             project: str,
+            role: str,
             title: str,
             label: str,
             processing_type: str,
@@ -2326,6 +2366,7 @@ def requirement_page(type="", json_path="", project_name=""):
             if processing_type not in ["text", "file", "image"]:
                 raise ValueError("processing_type 必须是 'text','file','image'")
 
+            self.role = role
             self.title = title
             self.label = label
             self.project = project
@@ -2344,7 +2385,7 @@ def requirement_page(type="", json_path="", project_name=""):
             self.chip_dialog = ui.dialog().classes("")
             self.img_dialog = ui.dialog().props("maximized").classes("p-0")
             self.check_down_dialog = ui.dialog().classes("")
-            self.activ_dialog = ui.dialog().classes("")
+            self.activ_dialog = ui.dialog().props("persistent").classes("")
             # self.image_show = {"image_show": True}
             # self.chip_dialog.bind_value_to(self.image_show, "image_show")
 
@@ -2508,8 +2549,11 @@ def requirement_page(type="", json_path="", project_name=""):
                 # 准备要存储的 chip 数据
                 chip_id = str(uuid.uuid4())
                 req_max_ver = app.storage.general["project_req_max_ver"][self.project]
+                select_activ_dic = self._get_select_activ_dic(req_max_ver)
+                creator = app.storage.user.get("current_user", "匿名用户")
                 chip_data = {
                     "id": chip_id,  # 使用UUID确保每个chip都有一个唯一的ID
+                    "role": self.role,
                     "icon": None,
                     "enabled": True,  # 控制元素是否可点击，接着用来控制是否在项目表上显示
                     # "removable": False,  # 控制元素是否有删除按钮
@@ -2517,10 +2561,15 @@ def requirement_page(type="", json_path="", project_name=""):
                     "type": "text",
                     "content": text,
                     "notes": notes,
-                    "creator": app.storage.user.get("current_user", "匿名用户"),
-                    "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "creator": creator,
+                    "timestamp": {
+                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"): {
+                            "creator": creator,
+                            "select_activ_dic": select_activ_dic,
+                        }
+                    },
                     "req_ver": req_max_ver,
-                    "select_activ_dic": self._get_select_activ_dic(req_max_ver),
+                    "select_activ_dic": select_activ_dic,
                 }
 
                 # 将新数据追加到 app.storage.general 的列表中
@@ -2593,9 +2642,12 @@ def requirement_page(type="", json_path="", project_name=""):
                     file_icon = "attach_file"
                 chip_id = str(uuid.uuid4())
                 req_max_ver = app.storage.general["project_req_max_ver"][self.project]
+                select_activ_dic = self._get_select_activ_dic(req_max_ver)
+                creator = app.storage.user.get("current_user", "匿名用户")
                 # 生成文件或图片的chip_data
                 chip_data = {
                     "id": chip_id,
+                    "role": self.role,
                     "icon": file_icon,
                     "enabled": True,  # 控制元素是否可点击，接着用来控制是否在项目表上显示
                     # "removable": False,  # 控制元素是否有删除按钮
@@ -2606,10 +2658,15 @@ def requirement_page(type="", json_path="", project_name=""):
                     "filename": original_filename,
                     "url_path": url_path,
                     "notes": self.chip_notes.value,
-                    "creator": app.storage.user.get("current_user", "匿名用户"),
-                    "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "creator": creator,
+                    "timestamp": {
+                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"): {
+                            "creator": creator,
+                            "select_activ_dic": select_activ_dic,
+                        }
+                    },
                     "req_ver": req_max_ver,
-                    "select_activ_dic": self._get_select_activ_dic(req_max_ver),
+                    "select_activ_dic": select_activ_dic,
                 }
                 self.chip_notes.value = ""
                 self.chip_dialog.close()
@@ -2633,9 +2690,12 @@ def requirement_page(type="", json_path="", project_name=""):
                 file_icon = "attach_file"
             chip_id = str(uuid.uuid4())
             req_max_ver = app.storage.general["project_req_max_ver"][self.project]
+            select_activ_dic = self._get_select_activ_dic(req_max_ver)
+            creator = app.storage.user.get("current_user", "匿名用户")
             # 生成文件或图片的chip_data
             chip_data = {
                 "id": chip_id,
+                "role": self.role,
                 "icon": file_icon,
                 "enabled": True,  # 控制元素是否可点击，接着用来控制是否在项目表上显示
                 # "removable": False,  # 控制元素是否有删除按钮
@@ -2646,10 +2706,15 @@ def requirement_page(type="", json_path="", project_name=""):
                 "filename": original_filename,
                 "url_path": url_path,
                 "notes": self.chip_notes.value,
-                "creator": app.storage.user.get("current_user", "匿名用户"),
-                "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "creator": creator,
+                "timestamp": {
+                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"): {
+                        "creator": creator,
+                        "select_activ_dic": select_activ_dic,
+                    }
+                },
                 "req_ver": req_max_ver,
-                "select_activ_dic": self._get_select_activ_dic(req_max_ver),
+                "select_activ_dic": select_activ_dic,
             }
             self.chip_notes.value = ""
             self.chip_dialog.close()
@@ -2834,7 +2899,7 @@ def requirement_page(type="", json_path="", project_name=""):
 
         # <-----------------------------------------------------------------
         # 设置chip的激活状态
-        def _set_chip_activ(self, chip_id):
+        def _set_chip_activ(self, chip_id, old_chip_select_dic):
             # chip以当前最新版本的设置为当前显示状态
             req_max_ver = app.storage.general["project_req_max_ver"][self.project]
             if app.storage.general["overview_data"][self.project][self.label][chip_id]["select_activ_dic"][req_max_ver]:
@@ -2850,6 +2915,7 @@ def requirement_page(type="", json_path="", project_name=""):
                 app.storage.general["overview_data"][self.project][self.label][chip_id]["select_activ_dic"][req_max_ver]
                 is None
             ):
+                # 该情况意味着用户没有修改当前chip最新版本的null状态，看了一下而已
                 # 只要跳过这个情况不做任何修改即可；只单单修改当前一个chip状态，改需求所有类似状态的chip在概述框架渲染检测需求有没有新版本时统一设置了
                 pass
                 # 冗余设计，复用注意检查与整体刷新处设置是否一致
@@ -2861,8 +2927,27 @@ def requirement_page(type="", json_path="", project_name=""):
                 app.storage.general["overview_data"][self.project][self.label][chip_id]["enabled"] = False
                 app.storage.general["overview_data"][self.project][self.label][chip_id]["icon"] = "block"
                 app.storage.general["overview_data"][self.project][self.label][chip_id]["bg_color"] = "bg-grey-5"
+
+            # 如果激活弹窗关闭时，检测到激活多选项发生了变化，则修改该chip的编辑人
+            if (
+                old_chip_select_dic
+                != app.storage.general["overview_data"][self.project][self.label][chip_id]["select_activ_dic"]
+            ):
+                select_activ_dic = app.storage.general["overview_data"][self.project][self.label][chip_id][
+                    "select_activ_dic"
+                ]
+                creator = app.storage.user.get("current_user", "匿名用户")
+                app.storage.general["overview_data"][self.project][self.label][chip_id]["creator"] = creator
+                app.storage.general["overview_data"][self.project][self.label][chip_id]["timestamp"][
+                    datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                ] = {
+                    "creator": creator,
+                    "select_activ_dic": select_activ_dic,
+                }
             # 刷新chip容器内容
             self._refresh_chip_container()
+            # 刷新概述负责人
+            overview_role_update(self.project)
 
         # 创建用于让用户选择chip激活范围的弹窗
         def _select_activ_dialog(self, chip_id):
@@ -2872,6 +2957,7 @@ def requirement_page(type="", json_path="", project_name=""):
                 chip_select_dic = app.storage.general["overview_data"][self.project][self.label][chip_id].get(
                     "select_activ_dic", {}
                 )
+                old_chip_select_dic = copy.deepcopy(chip_select_dic)
                 with ui.grid(columns=6).classes("w-full gap-0"):
                     for select_label, val in chip_select_dic.items():
                         ui.checkbox(text=select_label, value=val).bind_value(
@@ -2880,7 +2966,7 @@ def requirement_page(type="", json_path="", project_name=""):
                         )
                 with ui.row().classes("w-full justify-end"):
                     ui.label("注意以上改动是即时生效的").classes("text-lg font-bold")
-                    ui.button("关闭", on_click=lambda: self._set_chip_activ(chip_id)).on(
+                    ui.button("关闭", on_click=lambda: self._set_chip_activ(chip_id, old_chip_select_dic)).on(
                         "click", lambda: self.activ_dialog.close()
                     )
             self.activ_dialog.open()
@@ -2969,7 +3055,7 @@ def requirement_page(type="", json_path="", project_name=""):
                 # 创建chip元素的附属元素
                 with chip:
                     # 为 chip 添加 tooltip
-                    tooltip_text = f"创建节点: 需求V{chip_info.get('req_ver')}后<br>创建者: {chip_info.get('creator')}<br>时间: {chip_info.get('timestamp')}<br>注释: <br>{chip_info.get('notes', '').replace('\n', '<br>')}"
+                    tooltip_text = f"创建节点: 需求V{chip_info.get('req_ver')}后<br>创建者: {chip_info.get('creator')}<br>时间: {next(reversed(chip_info.get('timestamp', {})))}<br>注释: <br>{chip_info.get('notes', '').replace('\n', '<br>')}"
                     with ui.tooltip():
                         ui.html(tooltip_text, sanitize=Sanitizer().sanitize)
 
@@ -3049,7 +3135,7 @@ def requirement_page(type="", json_path="", project_name=""):
                     if chip_info["icon"]:
                         ui.icon(chip_info["icon"]).props("flat fab color=red").classes("absolute top-0 left-0 text-xl")
                     # 缩略图创建日期提示
-                    tooltip_text = f"创建节点: 需求V{chip_info.get('req_ver')}后<br>创建者: {chip_info.get('creator')}<br>时间: {chip_info.get('timestamp')}<br>注释: <br>{chip_info.get('notes', '').replace('\n', '<br>')}"
+                    tooltip_text = f"创建节点: 需求V{chip_info.get('req_ver')}后<br>创建者: {chip_info.get('creator')}<br>时间: {next(reversed(chip_info.get('timestamp', {})))}<br>注释: <br>{chip_info.get('notes', '').replace('\n', '<br>')}"
                     with ui.tooltip():
                         ui.html(tooltip_text, sanitize=Sanitizer().sanitize)
 
@@ -5008,6 +5094,7 @@ def requirement_page(type="", json_path="", project_name=""):
                                         if data["processing_type"] == "text":
                                             InteractiveButton(
                                                 project=project_name,
+                                                role=role,
                                                 title=data["title"],
                                                 label=data["label"],
                                                 processing_type=data["processing_type"],
@@ -5018,6 +5105,7 @@ def requirement_page(type="", json_path="", project_name=""):
                                         elif data["processing_type"] in ["file", "image"]:
                                             InteractiveButton(
                                                 project=project_name,
+                                                role=role,
                                                 title=data["title"],
                                                 label=data["label"],
                                                 processing_type=data["processing_type"],
