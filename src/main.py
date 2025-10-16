@@ -1552,6 +1552,17 @@ def requirement_page(type="", json_path="", project_name=""):
             .nicegui-editor .q-editor__content p, .nicegui-markdown p {
                 margin: 0.2rem 0;
             }
+            /*控制选项框内选项样式*/
+            .q-item {
+                min-height: 30px;
+                padding: 10px 16px;
+                color: inherit;
+                transition: color 0.3s,background-color 0.3s
+            }
+            /*.q-menu {
+                background-color:#efffff;
+            }*/
+            
             .q-dialog__inner--minimized {
                 padding: 12px;
             }
@@ -4349,20 +4360,20 @@ def requirement_page(type="", json_path="", project_name=""):
             data_json["deleted_files"] = app.storage.client["deleted_files"]
             data_json["project_name"] = app.storage.client["project_name"]
             data_json["current_user"] = app.storage.user["current_user"]
-
+            # 获取当前版本
             version = app.storage.client["version"]
-
-            # print(app.storage.client["original_project"], app.storage.client["project_name"])
-            # 全新填写初版 或 正常非初版非改项目名
+            # 处理项目名的衍生记录
+            # 没改名情况
             if (
+                # 当前版本的参照版本为0.0版（新填 或 1.0版且没改名，改名时会将参照版本更新为当前版本）
                 app.storage.client["original_version"] == "0.0"
-                or version != "0.0"
+                or version != "0.0"  # 当前版本不为0.0即高版本 且 没有改名
                 and app.storage.client["project_name"] == app.storage.client["original_project"]
             ):
-                # 在现有项目上的修改，要记录现有项目
+                # 项目名相当于没变，接着记录
                 data_json["original_project"] = app.storage.client["project_name"]
 
-            #  刚刚改了项目名
+            #  改了项目名
             else:
                 # 改项目名时，会把旧名字记录在app.storage.client["original_project"]
                 data_json["original_project"] = app.storage.client["original_project"]
@@ -4371,7 +4382,6 @@ def requirement_page(type="", json_path="", project_name=""):
                 # print("执行了")
                 change_name = True
 
-            # print(app.storage.client["original_project"], app.storage.client["project_name"])
             version_str_li = version.split(".")
             # 输出类型为导出到本地
             if type == "export":
@@ -4413,7 +4423,6 @@ def requirement_page(type="", json_path="", project_name=""):
                 )
             # 输出类型为提交到服务器
             elif type == "submit":
-                print(project_name)
                 if app.storage.user.get("current_role") not in ["销售", "销售总监", "admin"]:
                     ui.notify(
                         "当前用户无权限提交需求，只能导出到本地！",
@@ -4473,12 +4482,60 @@ def requirement_page(type="", json_path="", project_name=""):
                         except Exception as e:
                             print(f"读取文件时发生其他错误：{e}")
 
-                    # 服务器不存在该项目配置文件，版本设置为1.0
+                    # 服务器不存在该项目配置文件
                     else:
-                        version = "1.0"
+                        # 刚刚改了项目名,临时项目与正式项目均先复制参考的项目需求
+                        if change_name:
+                            # 定义文件路径
+                            old_file_path = os.path.join(
+                                REQ_DIR, f"{data_json['original_project']}_需求配置_V{version}.json"
+                            )
+                            old_data_json = {}
+                            try:
+                                # 每次都以配置文件为准，不以服务器现有数据为准
+                                # 配置更新能直接呈现，但配置减项将导致原有数据不呈现
+                                with open(old_file_path, "r", encoding="utf-8") as f:
+                                    # 使用 json.load() 读取文件内容并解析
+                                    old_data_json = json.load(f)
+                            except json.JSONDecodeError:
+                                print(f"错误：文件 '{json_path}' 不是有效的 JSON 格式。")
+                            except Exception as e:
+                                print(f"读取文件时发生其他错误：{e}")
+                            old_data_json["project_name"] = project_name
+                            old_data_json["current_user"] = app.storage.user["current_user"]
+                            old_data_json["original_project"] = data_json["original_project"]
+                            old_data_json["version"] = "1.0"
+                            old_data_json["original_version"] = version
+                            old_data_json["req_timestamp"] = datetime.now().isoformat()
+                            # 更新客户端数据
+                            app.storage.client["version"] = version
+                            # 将字典转换为 JSON 字符串
+                            old_json_str = json.dumps(old_data_json, indent=4, ensure_ascii=False)
+                            # print(f"准备写入的 data 数据: {data}")
+                            # 写入文件
+                            copy_file_path = os.path.join(REQ_DIR, f"{project_name}_需求配置_V1.0.json")
+                            try:
+                                with open(copy_file_path, "w", encoding="utf-8") as f:
+                                    f.write(old_json_str)
+                                ui.notify(
+                                    "复制衍生临时项目需求文件成功。",
+                                    type="positive",
+                                    position="bottom",
+                                    timeout=2000,
+                                    progress=True,
+                                    close_button="✖",
+                                )
+                            except Exception as e:
+                                print(f"复制修改衍生临时项目需求文件时发生其他错误：{e}")
+                            # 复制保存好旧版本临时需求配置文件后，接着处理一次
+                            output_config_data(data, type)
+                            return
                         # 排除其它项目衍生过来的情况，那种情况保持衍生的记录版本
-                        if not change_name:
+                        else:
                             original_version = "0.0"
+                            version = "1.0"
+
+                    # 不管服务器有没有该项目需求配置文件
                     app.storage.client["version"] = version
                     data_json["version"] = version
                     # 原版本用于记录当前版本是在哪个版本基础上做了修改的，直至提交到服务器
