@@ -1555,6 +1555,17 @@ def requirement_page(type="", json_path="", project_name=""):
             .q-dialog__inner--minimized {
                 padding: 12px;
             }
+            .q-textarea textarea {
+                /* 1. 设置一个最小高度，而不是固定高度 */
+                height: 50px;
+                min-height: 50px;
+
+                /* 2. 明确允许用户垂直方向拖动调整大小 (也可设为 "both") */
+                resize: vertical;
+
+                /* 3. 当内容超出当前高度时，自动显示垂直滚动条 */
+                overflow-y: auto !important; /* Quasar 有时会设置 overflow:hidden, !important 确保覆盖 */
+            }
         </style>
     """)
 
@@ -2361,10 +2372,13 @@ def requirement_page(type="", json_path="", project_name=""):
             upload_path: Path = SUBMIT_FILES_DIR,
             dialog_label: str = "按规定格式输入",
             dialog_placeholder: str = "",
+            state_options: list = [],
+            node_options: list = [],
+            instrument_options: list = [],
             # delete_bool: bool = True,
         ):
-            if processing_type not in ["text", "file", "image"]:
-                raise ValueError("processing_type 必须是 'text','file','image'")
+            if processing_type not in ["text", "file", "image", "test"]:
+                raise ValueError("processing_type 必须是 'text','file','image','test'")
 
             self.role = role
             self.title = title
@@ -2375,6 +2389,9 @@ def requirement_page(type="", json_path="", project_name=""):
             self.dialog_placeholder = dialog_placeholder
             self.dialog_label = dialog_label
             self.permission = permission
+            self.state_options = state_options
+            self.node_options = node_options
+            self.instrument_options = instrument_options
             # self.delete_bool = delete_bool
             self.offset = (0, 0)
             self.is_dragging = False
@@ -2729,6 +2746,106 @@ def requirement_page(type="", json_path="", project_name=""):
                 close_button="✖",
             )
 
+        # 将测试项配置信息添加到共享储存中
+        def _add_test_chip_data(self, test_select_data):
+            text = self.chip_label.value
+            notes = self.chip_notes.value
+            # 判断是否存在选择“其它”但不写明特殊要求的情况
+            other_bool = False
+            if test_select_data["state_select"] == "其它" and not test_select_data["state_other_text"]:
+                other_bool = True
+            if test_select_data["node_select"] == "其它" and not test_select_data["node_other_text"]:
+                other_bool = True
+            if test_select_data["instrument_select"] == "其它" and not test_select_data["instrument_other_text"]:
+                other_bool = True
+
+            # 测试项内容不能为空，选项一旦生成也不能不选（None）
+            if (
+                not text
+                or test_select_data["state_select"] is None
+                or test_select_data["node_select"] is None
+                or test_select_data["instrument_select"] is None
+            ):
+                ui.notify(
+                    "测试项内容及选项必须填写和选择!",
+                    type="negative",
+                    position="bottom",
+                    timeout=1000,
+                    progress=True,
+                    close_button="✖",
+                )
+            elif not notes:
+                ui.notify(
+                    "注释不能为空!",
+                    type="negative",
+                    position="bottom",
+                    timeout=1000,
+                    progress=True,
+                    close_button="✖",
+                )
+            elif other_bool:
+                ui.notify(
+                    "特殊要求不能为空!",
+                    type="negative",
+                    position="bottom",
+                    timeout=1000,
+                    progress=True,
+                    close_button="✖",
+                )
+            elif (text, test_select_data) in [
+                (d["content"], d["test_select_data"])
+                for d in app.storage.general["overview_data"][self.project][self.label].values()
+            ]:
+                ui.notify(
+                    "测试项内容标准已存在。",
+                    type="warning",
+                    position="bottom",
+                    timeout=1000,
+                    progress=True,
+                    close_button="✖",
+                )
+            else:
+                # 准备要存储的 chip 数据
+                chip_id = str(uuid.uuid4())
+                req_max_ver = app.storage.general["project_req_max_ver"][self.project]
+                select_activ_dic = self._get_select_activ_dic(req_max_ver)
+                creator = app.storage.user.get("current_user", "匿名用户")
+                chip_data = {
+                    "id": chip_id,  # 使用UUID确保每个chip都有一个唯一的ID
+                    "role": self.role,
+                    "icon": None,
+                    "enabled": True,  # 控制元素是否可点击，接着用来控制是否在项目表上显示
+                    # "removable": False,  # 控制元素是否有删除按钮
+                    "bg_color": "bg-light-blue-1",
+                    "type": "test",
+                    "content": text,
+                    "notes": notes,
+                    "test_select_data": test_select_data,
+                    "creator": creator,
+                    "timestamp": {
+                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"): {
+                            "creator": creator,
+                            "select_activ_dic": select_activ_dic,
+                        }
+                    },
+                    "req_ver": req_max_ver,
+                    "select_activ_dic": select_activ_dic,
+                }
+
+                # 将新数据追加到 app.storage.general 的列表中
+                app.storage.general["overview_data"][self.project][self.label][chip_id] = chip_data
+                # 清空文本框并关闭对话框
+                self.chip_notes.value = ""
+                self.chip_dialog.close()
+                ui.notify(
+                    "内容已添加。",
+                    type="positive",
+                    position="bottom",
+                    timeout=1000,
+                    progress=True,
+                    close_button="✖",
+                )
+
         # ----------------------------------------------------------------->
 
         # 询问重复提交文件是否按服务器现有文件显示
@@ -3037,9 +3154,9 @@ def requirement_page(type="", json_path="", project_name=""):
                     delete_icon = "settings"  # 之前是block
                     delete_bg = "bg-white text-light-blue"  # 之前是text-grey-10
 
-            if chip_info["type"] in ["text", "file"]:
+            if chip_info["type"] in ["text", "file", "test"]:
                 # 根据chip类型配置文字标签内容
-                if chip_info["type"] == "text":
+                if chip_info["type"] in ["text", "test"]:
                     chip_text = chip_info["content"]
                 elif chip_info["type"] == "file":
                     chip_text = chip_info["filename"]
@@ -3234,6 +3351,134 @@ def requirement_page(type="", json_path="", project_name=""):
                     ui.button("添加", on_click=self._get_file_upload)
             self.chip_dialog.open()
 
+        def _set_other_ui(self, other_ui, select_value):
+            if select_value == "其它":
+                other_ui.set_visibility(True)
+            elif other_ui:
+                other_ui.set_visibility(False)
+                other_ui.set_value("")
+
+        # 创建用于配置测试项的对话框
+        def _setup_test_chip_dialog(self):
+            self.chip_dialog.clear()
+            with self.chip_dialog, ui.card().classes("w-full"):
+                ui.label(f"添加产品的{self.title}").classes("text-lg font-bold")
+                placeholder = ""
+                test_select_data = {
+                    "state_select": "",
+                    "state_other_text": "",
+                    "node_select": "",
+                    "node_other_text": "",
+                    "instrument_select": "",
+                    "instrument_other_text": "",
+                }
+
+                if self.label == "optical_testing":
+                    placeholder = "色温：5500K±500K；测试项名称：参数标准"
+                elif self.label == "mechanical_testing":
+                    placeholder = "测试项名称：测试条件、产品状态、操作步骤、合格标准等信息。"
+                elif self.label == "electronic_testing":
+                    placeholder = "电压：12V±3%；测试项名称：参数标准"
+                elif self.label == "software_testing":
+                    placeholder = "测试项名称：操作步骤、合格标准等信息；或指明依据的文档。"
+                elif self.label == "ui_testing":
+                    placeholder = "写明UI检查内容与要求。"
+                self.chip_label = (
+                    ui.textarea(
+                        label="检测内容与标准",
+                        placeholder=placeholder,
+                        validation={"不能空白": lambda value: value.strip() != ""},
+                    )
+                    .props("outlined")
+                    .classes("w-full")
+                )
+                if self.state_options:
+                    with ui.column().classes("w-full p-0 m-0"):
+                        state_select = (
+                            ui.select(
+                                self.state_options,
+                                multiple=False,
+                                label="条件/状态",
+                            )
+                            .props("outlined")
+                            .classes("w-full")
+                            .bind_value(test_select_data, "state_select")
+                        )
+                        state_other_ui = (
+                            ui.textarea(
+                                label="条件/状态特殊要求",
+                                placeholder="写明特殊要求",
+                                validation={"不能空白": lambda value: value.strip() != ""},
+                            )
+                            .props("outlined")
+                            .classes("w-full")
+                            .bind_value(test_select_data, "state_other_text")
+                        )
+                        state_other_ui.set_visibility(False)
+                        state_select.on_value_change(lambda: self._set_other_ui(state_other_ui, state_select.value))
+                if self.node_options:
+                    with ui.column().classes("w-full p-0 m-0"):
+                        node_select = (
+                            ui.select(
+                                self.node_options,
+                                multiple=False,
+                                label="节点/位置",
+                            )
+                            .props("outlined")
+                            .classes("w-full")
+                            .bind_value(test_select_data, "node_select")
+                        )
+                        node_other_ui = (
+                            ui.textarea(
+                                label="节点/位置特殊要求",
+                                placeholder="写明特殊要求",
+                                validation={"不能空白": lambda value: value.strip() != ""},
+                            )
+                            .props("outlined")
+                            .classes("w-full")
+                            .bind_value(test_select_data, "node_other_text")
+                        )
+                        node_other_ui.set_visibility(False)
+                        node_select.on_value_change(lambda: self._set_other_ui(node_other_ui, node_select.value))
+                if self.instrument_options:
+                    with ui.column().classes("w-full p-0 m-0"):
+                        instrument_select = (
+                            ui.select(
+                                self.instrument_options,
+                                multiple=False,
+                                label="工具/仪器/治具",
+                            )
+                            .props("outlined")
+                            .classes("w-full")
+                            .bind_value(test_select_data, "instrument_select")
+                        )
+                        instrument_other_ui = (
+                            ui.textarea(
+                                label="工具/仪器/治具特殊要求",
+                                placeholder="写明特殊要求",
+                                validation={"不能空白": lambda value: value.strip() != ""},
+                            )
+                            .props("outlined")
+                            .classes("w-full")
+                            .bind_value(test_select_data, "instrument_other_text")
+                        )
+                        instrument_other_ui.set_visibility(False)
+                        instrument_select.on_value_change(
+                            lambda: self._set_other_ui(instrument_other_ui, instrument_select.value)
+                        )
+                self.chip_notes = (
+                    ui.textarea(
+                        label="针对该检测内容与标准的注释（必填）",
+                        placeholder="首填/变更原因",
+                        validation={"不能空白": lambda value: value.strip() != ""},
+                    )
+                    .props("outlined")
+                    .classes("w-full")
+                )
+                with ui.row().classes("w-full justify-end"):
+                    ui.button("添加", on_click=lambda: self._add_test_chip_data(test_select_data))
+            self.chip_dialog.open()
+
         # ----------------------------------------------------------------->
 
         # 判断当前用户是否具有编辑权限
@@ -3260,9 +3505,9 @@ def requirement_page(type="", json_path="", project_name=""):
                 if self.processing_type == "text":
                     # 设置文本chip的弹窗格式
                     self._setup_text_chip_dialog()
-                elif self.processing_type == "image":
+                elif self.processing_type == "test":
                     # 设置文件类chip的弹窗格式
-                    self._setup_file_notes_dialog()
+                    self._setup_test_chip_dialog()
                 else:
                     # 设置文件类chip的弹窗格式
                     self._setup_file_notes_dialog()
@@ -5074,7 +5319,7 @@ def requirement_page(type="", json_path="", project_name=""):
 
                         overview_role_update(project_name)
 
-                        # 将json_data数据更新到客户端储存里，调用requirement_input_frame()显示需求确认项
+                        # 显示概述模块内容
                         for role, over_data in over_config_data.items():
                             with ui.card().classes("w-full px-3 gap-0"):
                                 with ui.row().classes("flex-nowrap -space-x-2 items-center"):
@@ -5110,6 +5355,20 @@ def requirement_page(type="", json_path="", project_name=""):
                                                 label=data["label"],
                                                 processing_type=data["processing_type"],
                                                 permission=data["permission"],
+                                                # upload_path=Path(""),
+                                                # delete_bool=False,
+                                            )
+                                        elif data["processing_type"] in ["test"]:
+                                            InteractiveButton(
+                                                project=project_name,
+                                                role=role,
+                                                title=data["title"],
+                                                label=data["label"],
+                                                processing_type=data["processing_type"],
+                                                permission=data["permission"],
+                                                state_options=data["state_options"],
+                                                node_options=data["node_options"],
+                                                instrument_options=data["instrument_options"],
                                                 # upload_path=Path(""),
                                                 # delete_bool=False,
                                             )
