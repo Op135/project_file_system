@@ -1194,15 +1194,22 @@ def project_table_page():
                             overviow_data[str(pro_ver)] = temp_dict["contrast"]
                             overviow_data["0"] = temp_dict["latest"]
                             overviow_data["version"] = str(pro_ver)
+                            overviow_data["first_create"] = False
                     # 将字典转换为 JSON 字符串
                     overviow_str = json.dumps(overviow_data, indent=4, ensure_ascii=False)
-                    # print(f"准备写入的 data 数据: {data}")
                     # 写入文件
                     with open(overview_file_path, "w", encoding="utf-8") as f:
                         f.write(overviow_str)
                     print(f"概述文件新版内容写入成功：{overview_file_path}")
                     return True
                 elif v_max == overviow_version:
+                    if overviow_data["first_create"]:
+                        overviow_data["first_create"] = False
+                        # 将字典转换为 JSON 字符串
+                        overviow_str = json.dumps(overviow_data, indent=4, ensure_ascii=False)
+                        # 写入文件
+                        with open(overview_file_path, "w", encoding="utf-8") as f:
+                            f.write(overviow_str)
                     return True
                 else:
                     ui.notify(
@@ -1225,6 +1232,7 @@ def project_table_page():
                         overviow_data[str(pro_ver)] = temp_dict["contrast"]
                         overviow_data["0"] = temp_dict["latest"]
                         overviow_data["version"] = str(pro_ver)
+                        overviow_data["first_create"] = True
                 # 将字典转换为 JSON 字符串
                 overviow_str = json.dumps(overviow_data, indent=4, ensure_ascii=False)
                 # print(f"准备写入的 data 数据: {data}")
@@ -1319,7 +1327,7 @@ def project_table_page():
             else:
                 ui.navigate.to(f"/main/requirement?type=requirement&project_name={row_data['sub_project']}")
         elif col_id == "overview":
-            # 查找指定路径下，含有提供项目名的文件，得到一个字典，完整版本为键，值为：{"name":文件名, "v_a":版本号整数部分, "v_b":版本号小数部分}
+            # 查找指定路径下，含有提供项目名的文件，得到一个字典，"完整版本" 为键，值为：{"name":文件名, "v_a":版本号整数部分, "v_b":版本号小数部分}
             project_exists_file = find_files_with_prefix_and_version(REQ_DIR, project_name)
             overview_file_path = os.path.join(OVER_DIR, f"{project_name}_概述整理.json")
             # 核对检查是否有新需求配置未更新到概述文件里，并做相应整理
@@ -3385,11 +3393,11 @@ def requirement_page(type="", json_path="", project_name=""):
                 }
 
                 if self.label == "optical_testing":
-                    placeholder = "色温：5500K±500K；测试项名称：参数标准"
+                    placeholder = "色温：5500K±500K"
                 elif self.label == "mechanical_testing":
                     placeholder = "测试项名称：测试条件、产品状态、操作步骤、合格标准等信息。"
                 elif self.label == "electronic_testing":
-                    placeholder = "电压：12V±3%；测试项名称：参数标准"
+                    placeholder = "电压：12V±3%"
                 elif self.label == "software_testing":
                     placeholder = "测试项名称：操作步骤、合格标准等信息；或指明依据的文档。"
                 elif self.label == "ui_testing":
@@ -4507,8 +4515,7 @@ def requirement_page(type="", json_path="", project_name=""):
                             old_data_json["version"] = "1.0"
                             old_data_json["original_version"] = version
                             old_data_json["req_timestamp"] = datetime.now().isoformat()
-                            # 更新客户端数据
-                            app.storage.client["version"] = version
+
                             # 将字典转换为 JSON 字符串
                             old_json_str = json.dumps(old_data_json, indent=4, ensure_ascii=False)
                             # print(f"准备写入的 data 数据: {data}")
@@ -4517,6 +4524,10 @@ def requirement_page(type="", json_path="", project_name=""):
                             try:
                                 with open(copy_file_path, "w", encoding="utf-8") as f:
                                     f.write(old_json_str)
+                                # 成功复制参照项目需求文件后，马上复制该项目概述内容
+                                app.storage.general["overview_data"][project_name] = copy.deepcopy(
+                                    app.storage.general["overview_data"][data_json["original_project"]]
+                                )
                                 ui.notify(
                                     "复制衍生临时项目需求文件成功。",
                                     type="positive",
@@ -4527,6 +4538,8 @@ def requirement_page(type="", json_path="", project_name=""):
                                 )
                             except Exception as e:
                                 print(f"复制修改衍生临时项目需求文件时发生其他错误：{e}")
+                            # 更新客户端数据
+                            app.storage.client["version"] = "1.0"
                             # 复制保存好旧版本临时需求配置文件后，接着处理一次
                             output_config_data(data, type)
                             return
@@ -4959,8 +4972,8 @@ def requirement_page(type="", json_path="", project_name=""):
                         if activ_key_li:
                             # 获取选项激活设置里最大的版本值
                             old_max_ver = max(activ_key_li)
+
                             # 如果当前需求版本值大于激活设置的最大版本值
-                            # print(old_max_ver, new_ver)
                             if new_ver > old_max_ver:
                                 # 获取激活设置最大版本值对应的布尔设置值
                                 # activ_max_bool = chip_data["select_activ_dic"][f"{old_max_ver}.0"]
@@ -4970,7 +4983,10 @@ def requirement_page(type="", json_path="", project_name=""):
                                     # chip_data["select_activ_dic"][f"{key}.0"] = activ_max_bool
                                     # 新版本值均设置为None，为第三状态值，待工程师处理
                                     chip_data["select_activ_dic"][f"{key}.0"] = None
-                                    # print(chip_data["select_activ_dic"][f"{key}.0"])
+                            # 如果是首次生成概述界面，且有服务器储存存在概述内容，则属于衍生项目且复制了概述内容
+                            # 最高版本的激活状态要改成None，让其黄色显示
+                            if json_data["first_create"]:
+                                chip_data["select_activ_dic"][f"{old_max_ver}.0"] = None
                             # 如果当前需求版本值刚好等于激活设置的最大版本值，则提前终止整个遍历
                             # elif new_ver == old_max_ver:
                             #     break_bool = True
