@@ -1163,9 +1163,29 @@ def project_table_page():
         overviow_data["0"] = {"file_dic": {}}
         if project_exists_file:  # 完整版本为键，值为：{"name":文件名, "v_a":版本号整数部分, "v_b":版本号小数部分}
             project_version_li = [float(s) for s in project_exists_file.keys()]
+            # 将版本列表按降序排列
+            project_version_li.sort(reverse=True)
+            # 从高版本需求遍历到低版本
+            for v in project_version_li:
+                old_data_path = os.path.join(REQ_DIR, project_exists_file[str(v)]["name"])
+                with open(old_data_path, "r", encoding="utf-8") as f:
+                    # 使用 json.load() 读取文件内容并解析
+                    old_data = json.load(f)
+                    # 遍历直至遇到已审状态的需求
+                    if old_data.get("review_state", True):
+                        # 退出遍历处理
+                        break
+                    # 未审的需求，其版本号删掉，不参与后续需求概述整理
+                    else:
+                        project_version_li.remove(v)
+
+            # 如果处理后的需求列表为空，即所有需求均未审
+            if not project_version_li:
+                return False
             # 将版本列表按照升序排序
             project_version_li.sort()
             v_max = max(project_version_li)
+
             if os.path.exists(overview_file_path):
                 try:
                     with open(overview_file_path, "r", encoding="utf-8") as f:
@@ -1203,6 +1223,8 @@ def project_table_page():
                     print(f"概述文件新版内容写入成功：{overview_file_path}")
                     return True
                 elif v_max == overviow_version:
+                    # 虽然需求没有新版本，但概述文件已经不是第一次创建
+                    # 也需将标记改为False，防止初版概述chip激活状态修改记录被抹除
                     if overviow_data["first_create"]:
                         overviow_data["first_create"] = False
                         # 将字典转换为 JSON 字符串
@@ -4368,6 +4390,7 @@ def requirement_page(type="", json_path="", project_name=""):
             data_json["deleted_files"] = app.storage.client["deleted_files"]
             data_json["project_name"] = app.storage.client["project_name"]
             data_json["current_user"] = app.storage.user["current_user"]
+            data_json["review_state"] = False  # 需求配置文件设置为未审状态
             # 获取当前版本
             version = app.storage.client["version"]
             # 处理项目名的衍生记录
@@ -4476,11 +4499,22 @@ def requirement_page(type="", json_path="", project_name=""):
                         version = f"{version_a + 1}.0"
 
                         try:
+                            # 获取旧版最高版需求文件数据
                             old_data_path = os.path.join(REQ_DIR, project_exists_file[str(v_max)]["name"])
-
                             with open(old_data_path, "r", encoding="utf-8") as f:
                                 # 使用 json.load() 读取文件内容并解析
                                 old_data = json.load(f)
+                                # 如果最近一次需求配置文件还处于未审状态，本次需求还不能提交
+                                if not old_data.get("review_state", True):
+                                    ui.notify(
+                                        "上个版本需求仍处于未审状态，不能继续提交需求，可导出到本地！",
+                                        type="negative",
+                                        position="center",
+                                        timeout=0,
+                                        progress=False,
+                                        close_button="✖",
+                                    )
+                                    return
                                 # 处理新需求插入文件数字可能的与旧版本需求的冲突
                                 return_tuple = update_new_data_in_place(old_data, data_json)
                                 data_json = return_tuple[0]
@@ -4515,6 +4549,8 @@ def requirement_page(type="", json_path="", project_name=""):
                             old_data_json["version"] = "1.0"
                             old_data_json["original_version"] = version
                             old_data_json["req_timestamp"] = datetime.now().isoformat()
+                            # 衍生复制过来的需求，默认通过审核
+                            old_data_json["review_state"] = True
 
                             # 将字典转换为 JSON 字符串
                             old_json_str = json.dumps(old_data_json, indent=4, ensure_ascii=False)
