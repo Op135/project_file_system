@@ -4458,10 +4458,12 @@
             "option_group_id": "18",
             "option_view": "软件+工艺+质量",
             "user_must_out": {
-                "1": "撒旦法"
+                "1": "但是对方"
             },
             "option_tolerance_out": {},
-            "ref_out": [],
+            "ref_out": [
+                "1"
+            ],
             "options": [
                 {
                     "option_content": "",
@@ -4485,12 +4487,10 @@
             "option_group_id": "18",
             "option_view": "工艺+结构+质量",
             "user_must_out": {
-                "1": "阿迪"
+                "1": "阿斯蒂芬"
             },
             "option_tolerance_out": {},
-            "ref_out": [
-                "1"
-            ],
+            "ref_out": [],
             "options": [
                 {
                     "option_content": "",
@@ -4502,30 +4502,30 @@
             ]
         }
     },
-    "config_timestamp": "2025-10-13T09:43:08.522483",
+    "config_timestamp": "2025-10-18T11:37:16.543699",
     "excel_version_hash": "c82e9da0",
     "entry_status": true,
     "file_dic": {
         "1": {
             "file_del_bool": false,
-            "file_name": "IR-850-500-S-02-K10010073",
-            "file_url": "/uploads/IR-850-500-S-02-K10010073.f1a9abffe8f197027003b7ac5ce33fa4.pdf",
-            "file_name_hash": "IR-850-500-S-02-K10010073.f1a9abffe8f197027003b7ac5ce33fa4.pdf",
-            "file_name_suffix": "IR-850-500-S-02-K10010073.pdf",
-            "file_type": "application/pdf",
+            "file_name": "Snipaste_2025-01-09_13-08-42",
+            "file_url": "/uploads/Snipaste_2025-01-09_13-08-42.00661caf7da65237520b08c398a61ae9.png",
+            "file_name_hash": "Snipaste_2025-01-09_13-08-42.00661caf7da65237520b08c398a61ae9.png",
+            "file_name_suffix": "Snipaste_2025-01-09_13-08-42.png",
+            "file_type": "image/png",
             "file_lab": "1",
             "parents_h": 9
         }
     },
     "file_counter": 1,
     "files": [
-        "IR-850-500-S-02-K10010073.f1a9abffe8f197027003b7ac5ce33fa4.pdf"
+        "Snipaste_2025-01-09_13-08-42.00661caf7da65237520b08c398a61ae9.png"
     ],
     "deleted_files": [],
-    "project_name": "RFFM-1001-A",
+    "project_name": "RFFM-1003-A",
     "current_user": "李晓明",
-    "original_project": "RFFM-1001-A",
+    "original_project": "RFFM-1003-A",
     "version": "2.0",
     "original_version": "1.0",
-    "req_timestamp": "2025-10-18T11:37:44.450429"
+    "req_timestamp": "2025-10-18T11:39:59.116861"
 }
