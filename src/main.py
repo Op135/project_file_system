@@ -655,7 +655,8 @@ async def requirement_version_tidy(project_exists_file, overview_file_path, revi
     if project_exists_file:  # 完整版本为键，值为：{"name":文件名, "v_a":版本号整数部分, "v_b":版本号小数部分}
         project_version_li = [float(s) for s in project_exists_file.keys()]
 
-        if review:
+        # 为了审核跳转的概述界面，不执行该块代码，直接呈现所有需求整理结果
+        if not review:
             # 将版本列表按降序排列
             project_version_li.sort(reverse=True)
             # 从高版本需求遍历到低版本
