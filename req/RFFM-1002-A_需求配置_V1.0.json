@@ -4487,7 +4487,7 @@
             "option_group_id": "18",
             "option_view": "工艺+结构+质量",
             "user_must_out": {
-                "1": "阿斯蒂芬"
+                "1": "阿斯蒂芬电饭锅的方式的"
             },
             "option_tolerance_out": {},
             "ref_out": [],
@@ -4527,5 +4527,5 @@
     "original_project": "RFFM-1002-A",
     "version": "1.0",
     "original_version": "0.0",
-    "req_timestamp": "2025-10-18T11:39:41.009595"
+    "req_timestamp": "2025-10-21T18:54:09.771778"
 }

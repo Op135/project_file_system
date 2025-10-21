@@ -621,6 +621,61 @@ def get_file_hash(file_path, algorithm="md5"):
     return hash_obj.hexdigest()
 
 
+def delete_file(file_path):
+    try:
+        # 2. 尝试删除文件
+        os.remove(file_path)
+        ui.notify(
+            f"文件 '{file_path}' 已成功删除。",
+            type="positive",
+            position="bottom",
+            timeout=2000,
+            progress=True,
+            close_button="✖",
+        )
+    except FileNotFoundError:
+        # 3. 处理文件不存在的错误
+        ui.notify(
+            f"错误：文件 '{file_path}' 未找到。",
+            type="warning",
+            position="bottom",
+            timeout=2000,
+            progress=True,
+            close_button="✖",
+        )
+    except PermissionError:
+        # 4. 处理权限不足的错误
+        ui.notify(
+            f"错误：没有权限删除文件 '{file_path}'。",
+            type="warning",
+            position="bottom",
+            timeout=2000,
+            progress=True,
+            close_button="✖",
+        )
+    except IsADirectoryError:
+        # 5. 处理试图删除目录的错误
+        ui.notify(
+            f"错误：'{file_path}' 是一个目录，不能使用 os.remove() 删除。",
+            type="warning",
+            position="bottom",
+            timeout=2000,
+            progress=True,
+            close_button="✖",
+        )
+        # (注意：删除空目录请使用 os.rmdir(), 删除非空目录请使用 shutil.rmtree())
+    except Exception as e:
+        # 6. 捕获其他可能的异常
+        ui.notify(
+            f"删除文件时发生未知错误: {e}",
+            type="warning",
+            position="bottom",
+            timeout=2000,
+            progress=True,
+            close_button="✖",
+        )
+
+
 # 注销登录处理函数
 def logout():
     del app.storage.user["current_user"]
@@ -649,7 +704,11 @@ def find_key_position(dictionary, target_key):
 
 
 # 根据传入的需求配置文件清单，核对检查是否有新需求配置未更新到概述文件里，并做相应整理，更新概述整理文件
-async def requirement_version_tidy(project_exists_file, overview_file_path, review=False) -> bool:
+async def requirement_version_tidy(project_name, review=False) -> str:
+    # 查找指定路径下，含有提供项目名的文件，得到一个字典，"完整版本" 为键，值为：{"name":文件名, "v_a":版本号整数部分, "v_b":版本号小数部分}
+    project_exists_file = find_files_with_prefix_and_version(REQ_DIR, project_name)
+    overview_file_path = os.path.join(OVER_DIR, f"{project_name}_概述整理.json")
+    overview_file_path_temp = os.path.join(OVER_DIR, f"{project_name}_概述整理_temp.json")
     overviow_data = {}
     overviow_data["0"] = {"file_dic": {}}
     if project_exists_file:  # 完整版本为键，值为：{"name":文件名, "v_a":版本号整数部分, "v_b":版本号小数部分}
@@ -669,7 +728,7 @@ async def requirement_version_tidy(project_exists_file, overview_file_path, revi
                 # 遍历直至遇到已审状态的需求
                 # if old_data.get("review_state", True):
                 if app.storage.general["wait_review"].get(project_name, {}):
-                    if app.storage.general["wait_review"][project_name].get(str(v), True):
+                    if app.storage.general["wait_review"][project_name].get(str(v), "已审") == "已审":
                         # 当前版本需求已审核过了，可以开始处理继续处理概述
                         # 退出遍历处理
                         break
@@ -687,7 +746,7 @@ async def requirement_version_tidy(project_exists_file, overview_file_path, revi
                 progress=True,
                 close_button="✖",
             )
-            return False
+            return ""
         # 将版本列表按照升序排序
         project_version_li.sort()
         v_max = max(project_version_li)
@@ -699,10 +758,10 @@ async def requirement_version_tidy(project_exists_file, overview_file_path, revi
                     overviow_data = json.load(f)
             except json.JSONDecodeError:
                 print(f"错误：文件 '{overview_file_path}' 不是有效的 JSON 格式。")
-                return False
+                return ""
             except Exception as e:
                 print(f"读取文件时发生其他错误：{e}")
-                return False
+                return ""
             overviow_version = float(overviow_data["version"])
             # 可追加情况
             if v_max > overviow_version:
@@ -723,11 +782,18 @@ async def requirement_version_tidy(project_exists_file, overview_file_path, revi
                         overviow_data["first_create"] = False
                 # 将字典转换为 JSON 字符串
                 overviow_str = json.dumps(overviow_data, indent=4, ensure_ascii=False)
-                # 写入文件
-                with open(overview_file_path, "w", encoding="utf-8") as f:
-                    f.write(overviow_str)
-                print(f"概述文件新版内容写入成功：{overview_file_path}")
-                return True
+                # 写入文
+                if review:
+                    with open(overview_file_path_temp, "w", encoding="utf-8") as f:
+                        f.write(overviow_str)
+                    print(f"临时概述文件新版内容写入成功：{overview_file_path_temp}")
+                    return overview_file_path_temp
+                else:
+                    with open(overview_file_path, "w", encoding="utf-8") as f:
+                        f.write(overviow_str)
+                    print(f"概述文件新版内容写入成功：{overview_file_path}")
+                    return overview_file_path
+
             elif v_max == overviow_version:
                 # 虽然需求没有新版本，但概述文件已经不是第一次创建
                 # 也需将标记改为False，防止初版概述chip激活状态修改记录被抹除
@@ -738,7 +804,7 @@ async def requirement_version_tidy(project_exists_file, overview_file_path, revi
                     # 写入文件
                     with open(overview_file_path, "w", encoding="utf-8") as f:
                         f.write(overviow_str)
-                return True
+                return overview_file_path
             else:
                 ui.notify(
                     "出现需求配置丢失现象，请联系管理员处理，否则该项目资料将一直无法展示！",
@@ -748,7 +814,7 @@ async def requirement_version_tidy(project_exists_file, overview_file_path, revi
                     progress=False,
                     close_button="✖",
                 )
-                return False
+                return ""
         # 初次生成概述文件
         else:
             for pro_ver in project_version_li:
@@ -768,7 +834,7 @@ async def requirement_version_tidy(project_exists_file, overview_file_path, revi
             with open(overview_file_path, "w", encoding="utf-8") as f:
                 f.write(overviow_str)
             print(f"概述文件初版写入成功：{overview_file_path}")
-            return True
+            return overview_file_path
     else:
         ui.notify(
             "无该项目需求配置文件，无法整理。",
@@ -779,16 +845,13 @@ async def requirement_version_tidy(project_exists_file, overview_file_path, revi
             close_button="✖",
         )
         await asyncio.sleep(2)
-        return False
+        return ""
 
 
 async def get_overviow_page(project_name, review: bool):
-    # 查找指定路径下，含有提供项目名的文件，得到一个字典，"完整版本" 为键，值为：{"name":文件名, "v_a":版本号整数部分, "v_b":版本号小数部分}
-    project_exists_file = find_files_with_prefix_and_version(REQ_DIR, project_name)
-    overview_file_path = os.path.join(OVER_DIR, f"{project_name}_概述整理.json")
     # 核对检查是否有新需求配置未更新到概述文件里，并做相应整理
-    tidy_bool = await requirement_version_tidy(project_exists_file, overview_file_path, review)
-    if tidy_bool:
+    overview_file_path = await requirement_version_tidy(project_name, review)
+    if overview_file_path:
         ui.navigate.to(f"/main/requirement?type=overview&json_path={overview_file_path}")
 
 
@@ -1377,13 +1440,6 @@ def project_table_page():
             else:
                 ui.navigate.to(f"/main/requirement?type=requirement&project_name={row_data['sub_project']}")
         elif col_id == "overview":
-            # 查找指定路径下，含有提供项目名的文件，得到一个字典，"完整版本" 为键，值为：{"name":文件名, "v_a":版本号整数部分, "v_b":版本号小数部分}
-            # project_exists_file = find_files_with_prefix_and_version(REQ_DIR, project_name)
-            # overview_file_path = os.path.join(OVER_DIR, f"{project_name}_概述整理.json")
-            # # 核对检查是否有新需求配置未更新到概述文件里，并做相应整理
-            # tidy_bool = await requirement_version_tidy(project_exists_file, overview_file_path, False)
-            # if tidy_bool:
-            #     ui.navigate.to(f"/main/requirement?type=overview&json_path={overview_file_path}")
             await get_overviow_page(project_name, False)
 
     async def switch_toggle_vis(visible=None):
@@ -4423,6 +4479,10 @@ def requirement_page(type="", json_path="", project_name=""):
 
             # 获取当前版本
             version = app.storage.client["version"]
+            review_state = ""
+            if app.storage.general["wait_review"].get(project_name, {}):
+                review_state = app.storage.general["wait_review"][project_name].get(version, "")
+            print(project_name, version, review_state)
             # 处理项目名的衍生记录
             # 没改名情况
             if (
@@ -4431,8 +4491,9 @@ def requirement_page(type="", json_path="", project_name=""):
                 or version != "0.0"  # 当前版本不为0.0即高版本 且 没有改名
                 and app.storage.client["project_name"] == app.storage.client["original_project"]
             ):
-                # 项目名相当于没变，接着记录
-                data_json["original_project"] = app.storage.client["project_name"]
+                if review_state in ["已审", ""]:
+                    # 项目名相当于没变，接着记录
+                    data_json["original_project"] = app.storage.client["project_name"]
 
             #  改了项目名
             else:
@@ -4517,7 +4578,9 @@ def requirement_page(type="", json_path="", project_name=""):
                 if data_json["entry_status"]:
                     # 迭代更新版本
                     version_a = int(version_str_li[0])
-                    original_version = f"{version_str_li[0]}.0"
+                    original_version = (
+                        f"{version_str_li[0]}.0" if review_state == "已审" else f"{int(version_str_li[0]) - 1}.0"
+                    )
                     # 查找指定路径下，含有提供项目名的文件，得到一个字典，完整版本为键，值为：{"name":文件名, "v_a":版本号整数部分, "v_b":版本号小数部分}
                     project_exists_file = find_files_with_prefix_and_version(REQ_DIR, project_name)
                     # 服务器存在该项目配置，则需要升级版本
@@ -4526,7 +4589,9 @@ def requirement_page(type="", json_path="", project_name=""):
                         # 当前版本比服务器最高版本低 或 由其它项目衍生过来的，均按照本项目服务器最高版本来+1保存
                         if float(version) < v_max or change_name:
                             version_a = int(project_exists_file[str(v_max)]["v_a"])
-                        version = f"{version_a + 1}.0"
+                        # 已审状态才能升级版本
+                        if review_state in ["已审", ""]:
+                            version = f"{version_a + 1}.0"
 
                         try:
                             # 获取旧版最高版需求文件数据
@@ -4537,7 +4602,10 @@ def requirement_page(type="", json_path="", project_name=""):
                                 # 如果最近一次需求配置文件还处于未审状态，本次需求还不能提交
                                 # if not old_data.get("review_state", True):
                                 if app.storage.general["wait_review"][project_name]:
-                                    if not app.storage.general["wait_review"][project_name].get(f"{version_a}.0", True):
+                                    if (
+                                        app.storage.general["wait_review"][project_name].get(f"{version_a}.0", "已审")
+                                        == "待审"
+                                    ):
                                         ui.notify(
                                             "上次提交需求仍处于未审状态，不能继续提交需求，可导出到本地！",
                                             type="negative",
@@ -4584,7 +4652,7 @@ def requirement_page(type="", json_path="", project_name=""):
                             # 衍生复制过来的需求，默认通过审核
                             # old_data_json["review_state"] = True
                             # 将该需求版本标记到待审字典里
-                            app.storage.general["wait_review"][project_name] = {"1.0": True}
+                            app.storage.general["wait_review"][project_name] = {"1.0": "已审"}
 
                             # 将字典转换为 JSON 字符串
                             old_json_str = json.dumps(old_data_json, indent=4, ensure_ascii=False)
@@ -4634,7 +4702,7 @@ def requirement_page(type="", json_path="", project_name=""):
                     with open(file_path, "w", encoding="utf-8") as f:
                         f.write(json_str)
                     # 将该需求版本标记到待审字典里
-                    app.storage.general["wait_review"][project_name] = {version: False}
+                    app.storage.general["wait_review"][project_name] = {version: "待审"}
                     # 将提交该需求的用户更新为该项目负责的销售员
                     app.storage.general["project_sale"][project_name] = app.storage.user.get("current_user")
                     ui.notify(
@@ -5597,8 +5665,45 @@ def information_page():
     current_user = app.storage.user["current_user"]
     is_admin = app.storage.user["is_admin"]
     current_role = app.storage.user["current_role"]
+
+    def set_review_revise(p_name, v):
+        app.storage.general["wait_review"][p_name][v] = "待修改"
+
+    def set_review_pass(p_name, v):
+        app.storage.general["wait_review"][p_name][v] = "已审"
+        delete_file(f"{OVER_DIR}/{p_name}_概述整理_temp.json")
+
+    def set_review_await(p_name, v):
+        app.storage.general["wait_review"][p_name][v] = "待审"
+
+    def get_review_button(button_group, project_name, ver):
+        # 1. 总是先从 storage 获取最新的状态
+        review_str = app.storage.general["wait_review"][project_name][ver]
+        # 2. 关键逻辑：检查新状态
+        if review_str == "已审":
+            # 3. 如果状态是 "已审"，删除这个按钮组
+            button_group.delete()
+        else:
+            # 4. 否则 (例如 "待修改" 或 "待审")，才更新按钮组的内容
+            button_group.clear()
+            with button_group:
+                ui.button(
+                    f"{project_name}_V{ver} 需求状态：「{review_str}」",
+                    on_click=lambda p_name=project_name: get_overviow_page(p_name, True),
+                )
+                ui.button(
+                    "审核通过",
+                    on_click=lambda p_name=project_name, v=ver: set_review_pass(p_name, v),
+                ).on("click", lambda bg=button_group, pn=project_name, v=ver: get_review_button(bg, pn, v))
+                ui.button(
+                    "待修改",
+                    on_click=lambda p_name=project_name, v=ver: set_review_revise(p_name, v),
+                ).on("click", lambda bg=button_group, pn=project_name, v=ver: get_review_button(bg, pn, v))
+            # review_column.update()
+
     # 主界面
-    with ui.header().classes("flex justify-between items-center bg-blue-500 h-12 px-4"):
+    header = ui.header().classes("flex justify-between items-center bg-blue-500 h-12 px-4")
+    with header:
         ui.image(f"{IMG_DIR}/Rayfine.png").classes("absolute w-20")
         ui.label("项目信息").classes("text-white text-lg absolute left-1/2 transform -translate-x-1/2")  # 绝对定位居中
         with ui.button(icon="menu").props("flat round").classes("ml-auto -mt-3.5 h-4 text-sm/4 text-white"):  # 右侧对齐
@@ -5607,16 +5712,15 @@ def information_page():
                 ui.menu_item("注销登录", on_click=lambda: logout())
                 ui.separator().props("size=1px")
                 ui.menu_item("关闭菜单", menu.close)
-    with ui.column():
+    review_column = ui.column()
+    with review_column:
         if current_role in ["研发经理"] and app.storage.general.get("wait_review", {}):
             for project_name, ver_bool_dic in app.storage.general["wait_review"].items():
-                for ver, review_bool in ver_bool_dic.items():
-                    # 如果当前项目的当前版本未审False
-                    if not review_bool:
-                        ui.button(
-                            f"{project_name}_V{ver}需求待整理",
-                            on_click=lambda p_name=project_name: get_overviow_page(p_name, True),
-                        )
+                for ver, review_str in ver_bool_dic.items():
+                    # 如果当前项目的当前版本未审
+                    if review_str != "已审":
+                        button_group = ui.button_group()
+                        get_review_button(button_group, project_name, ver)
 
 
 # ======================
