@@ -4201,9 +4201,9 @@
                 "user_must_out": {
                     "EMC": false,
                     "RoHS": false,
-                    "激光安全": false,
-                    "光生物安全": false,
-                    "不要求": true
+                    "激光安全": true,
+                    "光生物安全": true,
+                    "不要求": false
                 },
                 "option_tolerance_out": {},
                 "ref_out": [],
@@ -4599,7 +4599,7 @@
                 "option_group_id": "18",
                 "option_view": "软件+工艺+质量",
                 "user_must_out": {
-                    "1": "撒旦法"
+                    "1": "地方"
                 },
                 "option_tolerance_out": {},
                 "ref_out": [],
@@ -4627,12 +4627,10 @@
                 "option_group_id": "18",
                 "option_view": "工艺+结构+质量",
                 "user_must_out": {
-                    "1": "阿迪"
+                    "1": "阿斯蒂芬风格的风格阿斯蒂芬"
                 },
                 "option_tolerance_out": {},
-                "ref_out": [
-                    "1"
-                ],
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -4645,26 +4643,15 @@
                 "num": "142"
             }
         },
-        "file_dic": {
-            "1": {
-                "file_del_bool": false,
-                "file_name": "IR-850-500-S-02-K10010073",
-                "file_url": "/uploads/IR-850-500-S-02-K10010073.f1a9abffe8f197027003b7ac5ce33fa4.pdf",
-                "file_name_hash": "IR-850-500-S-02-K10010073.f1a9abffe8f197027003b7ac5ce33fa4.pdf",
-                "file_name_suffix": "IR-850-500-S-02-K10010073.pdf",
-                "file_type": "application/pdf",
-                "file_lab": "1",
-                "parents_h": 9
-            }
-        },
+        "file_dic": {},
         "deleted_files": [],
-        "file_counter": 1,
+        "file_counter": 0,
         "project_name": "RFFM-1001-A",
-        "current_user": "李晓明",
-        "version": "2.0",
-        "original_version": "1.0",
+        "current_user": "陈若冰",
+        "version": "1.0",
+        "original_version": "0.0",
         "original_project": "RFFM-1001-A",
-        "req_timestamp": "2025-10-18T11:37:44.450429"
+        "req_timestamp": "2025-10-22T16:23:18.724102"
     },
     "1.0": {
         "added": {
@@ -8868,9 +8855,9 @@
                 "user_must_out": {
                     "EMC": false,
                     "RoHS": false,
-                    "激光安全": false,
-                    "光生物安全": false,
-                    "不要求": true
+                    "激光安全": true,
+                    "光生物安全": true,
+                    "不要求": false
                 },
                 "option_tolerance_out": {},
                 "ref_out": [],
@@ -9266,7 +9253,7 @@
                 "option_group_id": "18",
                 "option_view": "软件+工艺+质量",
                 "user_must_out": {
-                    "1": "撒旦法"
+                    "1": "地方"
                 },
                 "option_tolerance_out": {},
                 "ref_out": [],
@@ -9294,12 +9281,10 @@
                 "option_group_id": "18",
                 "option_view": "工艺+结构+质量",
                 "user_must_out": {
-                    "1": "阿迪"
+                    "1": "阿斯蒂芬风格的风格阿斯蒂芬"
                 },
                 "option_tolerance_out": {},
-                "ref_out": [
-                    "1"
-                ],
+                "ref_out": [],
                 "options": [
                     {
                         "option_content": "",
@@ -9314,52 +9299,16 @@
         },
         "deleted": {},
         "modified": {},
-        "file_dic": {
-            "1": {
-                "file_del_bool": false,
-                "file_name": "IR-850-500-S-02-K10010073",
-                "file_url": "/uploads/IR-850-500-S-02-K10010073.f1a9abffe8f197027003b7ac5ce33fa4.pdf",
-                "file_name_hash": "IR-850-500-S-02-K10010073.f1a9abffe8f197027003b7ac5ce33fa4.pdf",
-                "file_name_suffix": "IR-850-500-S-02-K10010073.pdf",
-                "file_type": "application/pdf",
-                "file_lab": "1",
-                "parents_h": 9
-            }
-        },
+        "file_dic": {},
         "deleted_files": [],
-        "file_counter": 1,
+        "file_counter": 0,
         "project_name": "RFFM-1001-A",
-        "current_user": "李晓明",
+        "current_user": "陈若冰",
         "version": "1.0",
         "original_version": "0.0",
         "original_project": "RFFM-1001-A",
-        "req_timestamp": "2025-10-13T10:22:34.305624"
+        "req_timestamp": "2025-10-22T16:23:18.724102"
     },
-    "version": "2.0",
-    "first_create": false,
-    "2.0": {
-        "added": {},
-        "deleted": {},
-        "modified": {},
-        "file_dic": {
-            "1": {
-                "file_del_bool": false,
-                "file_name": "IR-850-500-S-02-K10010073",
-                "file_url": "/uploads/IR-850-500-S-02-K10010073.f1a9abffe8f197027003b7ac5ce33fa4.pdf",
-                "file_name_hash": "IR-850-500-S-02-K10010073.f1a9abffe8f197027003b7ac5ce33fa4.pdf",
-                "file_name_suffix": "IR-850-500-S-02-K10010073.pdf",
-                "file_type": "application/pdf",
-                "file_lab": "1",
-                "parents_h": 9
-            }
-        },
-        "deleted_files": [],
-        "file_counter": 1,
-        "project_name": "RFFM-1001-A",
-        "current_user": "李晓明",
-        "version": "2.0",
-        "original_version": "1.0",
-        "original_project": "RFFM-1001-A",
-        "req_timestamp": "2025-10-18T11:37:44.450429"
-    }
+    "version": "1.0",
+    "first_create": false
 }

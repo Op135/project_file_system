@@ -4073,9 +4073,9 @@
             "user_must_out": {
                 "EMC": false,
                 "RoHS": false,
-                "激光安全": false,
-                "光生物安全": false,
-                "不要求": true
+                "激光安全": true,
+                "光生物安全": true,
+                "不要求": false
             },
             "option_tolerance_out": {},
             "ref_out": [],
@@ -4458,12 +4458,10 @@
             "option_group_id": "18",
             "option_view": "软件+工艺+质量",
             "user_must_out": {
-                "1": "但是对方"
+                "1": "地方"
             },
             "option_tolerance_out": {},
-            "ref_out": [
-                "1"
-            ],
+            "ref_out": [],
             "options": [
                 {
                     "option_content": "",
@@ -4487,7 +4485,7 @@
             "option_group_id": "18",
             "option_view": "工艺+结构+质量",
             "user_must_out": {
-                "1": "阿斯蒂芬电饭锅的方式的"
+                "1": "阿斯蒂芬风格的风格阿斯蒂芬"
             },
             "option_tolerance_out": {},
             "ref_out": [],
@@ -4502,30 +4500,17 @@
             ]
         }
     },
-    "config_timestamp": "2025-10-18T11:37:16.543699",
+    "config_timestamp": "2025-10-22T16:04:22.529439",
     "excel_version_hash": "c82e9da0",
     "entry_status": true,
-    "file_dic": {
-        "1": {
-            "file_del_bool": false,
-            "file_name": "Snipaste_2025-01-09_13-08-42",
-            "file_url": "/uploads/Snipaste_2025-01-09_13-08-42.00661caf7da65237520b08c398a61ae9.png",
-            "file_name_hash": "Snipaste_2025-01-09_13-08-42.00661caf7da65237520b08c398a61ae9.png",
-            "file_name_suffix": "Snipaste_2025-01-09_13-08-42.png",
-            "file_type": "image/png",
-            "file_lab": "1",
-            "parents_h": 9
-        }
-    },
-    "file_counter": 1,
-    "files": [
-        "Snipaste_2025-01-09_13-08-42.00661caf7da65237520b08c398a61ae9.png"
-    ],
+    "file_dic": {},
+    "file_counter": 0,
+    "files": [],
     "deleted_files": [],
     "project_name": "RFFM-1002-A",
-    "current_user": "李晓明",
-    "original_project": "RFFM-1002-A",
+    "current_user": "陈若冰",
+    "original_project": "RFFM-1001-A",
     "version": "1.0",
-    "original_version": "0.0",
-    "req_timestamp": "2025-10-21T18:54:09.771778"
+    "original_version": "1.0",
+    "req_timestamp": "2025-10-22T16:41:03.436158"
 }
