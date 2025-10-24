@@ -1674,6 +1674,9 @@ def manage_page():
 def requirement_page(type="", json_path="", project_name=""):
     ui.add_head_html("""
         <style>
+            .q-btn{
+                /*min-height: 2.1em;*/   
+            }
             .nicegui-editor .q-editor__content p, .nicegui-markdown p {
                 margin: 0.2rem 0;
             }
@@ -1733,7 +1736,7 @@ def requirement_page(type="", json_path="", project_name=""):
     # 初始化需求版本
     app.storage.client.setdefault("version", "0.0")
     # 初始化需求版本
-    app.storage.client.setdefault("target_version", "0.0")
+    # app.storage.client.setdefault("target_version", "")
     # 需求确认项按钮字典
     app.storage.client.setdefault("buttons_dic", {})
     # 新增一个地方来存放当前页面的关键UI元素
@@ -1945,7 +1948,8 @@ def requirement_page(type="", json_path="", project_name=""):
         app.storage.client["page_elements"].get("project_dialog").props("persistent")
         app.storage.client["page_elements"].get("project_dialog").open()
         with project_card:
-            ui.label("请输入项目号：").classes("text-h5 font-bold")
+            ui.label("请输入项目号：").classes("text-xl font-bold")
+            ui.label("提交/导出需求或选择查阅版本时该设置才生效").classes("text-base text-red")
             input_field = ui.input().classes("text-[20px]/[22px] w-full")
             # 写入的值绑定到目标项目名变量
             input_field.bind_value(app.storage.client, "target_project_name")
@@ -1968,6 +1972,7 @@ def requirement_page(type="", json_path="", project_name=""):
                 progress=True,
                 close_button="✖",
             )
+            app.storage.client["target_project_name"] = app.storage.client["project_name"]
         elif (
             target_project_name.split("-")[0] != "RFTS"
             and target_project_name not in app.storage.general["project_summary"]
@@ -1982,23 +1987,24 @@ def requirement_page(type="", json_path="", project_name=""):
             )
             app.storage.client["target_project_name"] = app.storage.client["project_name"]
         else:
-            app.storage.client["page_elements"].get("project_button").props(remove="icon")
+            app.storage.client["page_elements"].get("target_project_button").props(remove="icon")
             # 为了新建项目需求而弹窗，则调用新需求处理函数
             if key_str == "new":
                 ui.navigate.to(f"/main/requirement?type=requirement&project_name={target_project_name}")
             # 不是为了新建项目需求而弹窗,且确实修改了项目名，则在保留需求配置内容情况下，初始化版本为0.0
-            elif project_name != target_project_name:
-                # 改了名，版本就不要再延续旧项目的了，更新为新命名的项目的最高版本
-                if app.storage.general.get("wait_review", {}):
-                    ver_max = max(
-                        [
-                            int(float(v))
-                            for v in app.storage.general["wait_review"].get(target_project_name, {"0.0": {}}).keys()
-                        ]
-                    )
-                    # 更新
-                    ver_str = f"{ver_max}.0"
-                    app.storage.client["target_version"] = ver_str
+            # elif project_name != target_project_name:
+            # 改了名，版本就不要再延续旧项目的了，更新为新命名的项目的最高版本
+            # if app.storage.general.get("wait_review", {}):
+            #     ver_max = max(
+            #         [
+            #             int(float(v))
+            #             for v in app.storage.general["wait_review"].get(target_project_name, {"0.0": {}}).keys()
+            #         ]
+            #     )
+            #     # 更新
+            #     ver_str = f"{ver_max}.0"
+            # app.storage.client["target_version"] = ver_str
+            # app.storage.client["target_version"] = ""
 
         project_dialog.close()
 
@@ -2017,7 +2023,7 @@ def requirement_page(type="", json_path="", project_name=""):
         app.storage.client["ref_question_dic"] = {}
         app.storage.client["buttons_dic"] = {}
         app.storage.client["version"] = "0.0"
-        app.storage.client["target_version"] = "0.0"
+        # app.storage.client["target_version"] = ""
         app.storage.client["original_version"] = "0.0"
         app.storage.client["original_project"] = ""
 
@@ -2026,7 +2032,7 @@ def requirement_page(type="", json_path="", project_name=""):
         set_question_list(0)  # 初始化一次确认项列表
         app.storage.client["buttons_dic"]["1"].props(remove="disabled")  # 启用按钮
         question_display(None, "1")  # 触发点击事件
-        app.storage.client["page_elements"].get("project_button").props(remove="icon")
+        app.storage.client["page_elements"].get("target_project_button").props(remove="icon")
         req_thumbnail_display()
         # 显示成功通知
         ui.notify(
@@ -2056,12 +2062,13 @@ def requirement_page(type="", json_path="", project_name=""):
         app.storage.client["files"] = json_data["files"]
         app.storage.client["deleted_files"] = json_data["deleted_files"]
         app.storage.client["file_counter"] = json_data["file_counter"]
-        # 恢复项目名称
+        # 恢复项目名称与版本
         app.storage.client["project_name"] = json_data["project_name"]
-        app.storage.client["target_project_name"] = json_data["project_name"]
-        # version
         app.storage.client["version"] = json_data["version"]
-        app.storage.client["target_version"] = json_data["version"]
+        # 设置提交目标名称与版本
+        app.storage.client["target_project_name"] = json_data["project_name"]
+        # app.storage.client["target_version"] = json_data["version"]
+        # app.storage.client["target_version"] = ""
         # 将衍生自哪个项目的信息获取过来
         app.storage.client["original_project"] = json_data["original_project"]
         app.storage.client["original_version"] = json_data["original_version"]
@@ -4496,7 +4503,7 @@ def requirement_page(type="", json_path="", project_name=""):
         project_name = app.storage.client["project_name"].strip()
         version = app.storage.client["version"]
         target_project_name = app.storage.client["target_project_name"].strip()
-        target_version = app.storage.client["target_version"].strip()
+        # target_version = app.storage.client["target_version"].strip()
         original_project = app.storage.client["original_project"]
         original_version = app.storage.client["original_version"]
 
@@ -4521,13 +4528,13 @@ def requirement_page(type="", json_path="", project_name=""):
 
             # 在没改名情况下，这两个状态是同一个项目的，改名了就不是
             review_state = ""
-            target_review_state = ""
+            # target_review_state = ""
             if app.storage.general["wait_review"].get(project_name, {}):
                 review_state = app.storage.general["wait_review"][project_name].get(version, {"state": ""})["state"]
-            if app.storage.general["wait_review"].get(target_project_name, {}):
-                target_review_state = app.storage.general["wait_review"][target_project_name].get(
-                    target_version, {"state": ""}
-                )["state"]
+            # if app.storage.general["wait_review"].get(target_project_name, {}):
+            #     target_review_state = app.storage.general["wait_review"][target_project_name].get(
+            #         target_version, {"state": ""}
+            #     )["state"]
 
             # 当前项目已审情况可正常更新参照项目名
             # 其它状态，比如待修改、初次提交，不动作就保持了原有数据；待审后面拦截不能导出和提交
@@ -4748,7 +4755,7 @@ def requirement_page(type="", json_path="", project_name=""):
                             app.storage.client["version"] = "1.0"
                             app.storage.client["project_name"] = target_project_name
                             app.storage.client["target_project_name"] = target_project_name
-                            app.storage.client["target_version"] = "1.0"
+                            # app.storage.client["target_version"] = ""
                             app.storage.client["original_project"] = target_project_name
                             app.storage.client["original_version"] = "1.0"
                             # 复制保存好旧版本临时需求配置文件后，接着处理一次
@@ -4798,71 +4805,6 @@ def requirement_page(type="", json_path="", project_name=""):
                         close_button="✖",
                     )
 
-    # 滚动获取特定版本需求配置文件，并重新跳转页面
-    def get_project_req(direction):
-        target_version = app.storage.client.get("target_version", "")
-        target_project_name = app.storage.client.get("target_project_name", "")
-        if target_version == "" or target_project_name == "":
-            ui.notify(
-                "项目名或需求版本获取失败，无法响应！",
-                type="warning",
-                position="center",
-                timeout=1000,
-                progress=True,
-                close_button="✖",
-            )
-            return
-        # 查找指定路径下，含有提供项目名的文件，得到一个字典，完整版本为键，值为：{"name":文件名, "v_a":版本号整数部分, "v_b":版本号小数部分}
-        project_exists_file = find_files_with_prefix_and_version(REQ_DIR, project_name)
-        if project_exists_file:
-            target_version = float(target_version)
-            version_li = list([float(s) for s in project_exists_file.keys()])
-            version_li.sort()
-            step = 0
-            while True:
-                # 如果当前版本有小数部分
-                if int(target_version) != target_version:
-                    if direction == "down":
-                        step = 1
-                    elif direction != "up":
-                        print("滚动查阅需求传参有误")
-                    get_version = float(int(target_version) + step)
-                # 当前版本没有小数部分
-                else:
-                    if direction == "up":
-                        step = -1
-                    elif direction == "down":
-                        step = 1
-                    else:
-                        print("滚动查阅需求传参有误")
-                    get_version = float(int(target_version) + step)
-                if get_version <= 0 or get_version > max(version_li):
-                    ui.notify(
-                        "超过版本界限或无其它指定版本！",
-                        type="info",
-                        position="bottom",
-                        timeout=1000,
-                        progress=True,
-                        close_button="✖",
-                    )
-                    break
-                elif get_version in version_li:
-                    # 定义文件路径
-                    file_path = os.path.join(REQ_DIR, project_exists_file[str(get_version)]["name"])
-                    ui.navigate.to(f"/main/requirement?type=requirement&json_path={file_path}")
-                    break
-                else:
-                    target_version = get_version
-        else:
-            ui.notify(
-                "该项目当前没有需求配置！",
-                type="info",
-                position="bottom",
-                timeout=1000,
-                progress=True,
-                close_button="✖",
-            )
-
     def get_select_req(select_project_name):
         if select_project_name:
             # 定义文件路径
@@ -4872,9 +4814,8 @@ def requirement_page(type="", json_path="", project_name=""):
     # 滚动获取特定版本需求配置文件，并重新跳转页面
     def select_project_req():
         select_value = {"value": ""}
-        target_version = app.storage.client.get("target_version", "")
         target_project_name = app.storage.client.get("target_project_name", "")
-        if target_version == "" or target_project_name == "":
+        if target_project_name == "":
             ui.notify(
                 "项目名或需求版本获取失败，无法响应！",
                 type="warning",
@@ -4895,7 +4836,8 @@ def requirement_page(type="", json_path="", project_name=""):
             version_li.sort()
             with version_card:
                 with ui.column().classes("w-full"):
-                    ui.label("从下列可选需求版本中选择一个：")
+                    ui.label("选择切换的需求版本：").classes("text-xl font-bold")
+                    ui.label("确定切换将覆盖当前编辑的需求内容").classes("text-base text-red")
                     ui.radio(version_li, value=version_li[-1]).props("inline").bind_value_to(select_value, "value")
                     with ui.row().classes("w-full justify-end"):
                         ui.button(
@@ -4986,31 +4928,33 @@ def requirement_page(type="", json_path="", project_name=""):
 
                 ui.separator().props("vertical size=1px")
                 with ui.column().classes("w-3/4 min-w-[700px] items-center"):
+                    with ui.column().classes("-space-y-5 items-center justify-left w-full"):
+                        with ui.row().classes("-space-x-3 items-center justify-left w-full"):
+                            ui.label("型号设置").classes("text-base ")
+                            target_project_button = (
+                                ui.button("", on_click=lambda: get_project_dialog())
+                                .props("flat")
+                                .classes("text-base text-amber-9 px-0")
+                                .bind_text(app.storage.client, "target_project_name")
+                            )
+                            if app.storage.client["target_project_name"].strip() == "":
+                                target_project_button.set_icon("quiz")
+                            app.storage.client["page_elements"]["target_project_button"] = target_project_button
+                        with ui.row().classes("-space-x-3 items-center justify-left w-full"):
+                            ui.label("版本查阅").classes("text-base ")
+                            ui.button(icon="list_alt", on_click=lambda: select_project_req()).props("flat").classes(
+                                "text-base text-amber-9 px-0"
+                            )
+                            # .bind_text(app.storage.client, "target_version")
+
+                            # if app.storage.client["target_version"].strip() == "":
+                            # target_version_button.set_icon("quiz")
+                            # app.storage.client["page_elements"]["target_version_button"] = target_version_button
                     with ui.row().classes("-space-x-3 items-center justify-center w-full"):
-                        ui.label("基于：").classes("text-xl ")
-                        target_project_button = (
-                            ui.button("", on_click=lambda: get_project_dialog())
-                            .props("flat")
-                            .classes("text-xl text-amber-9")
-                        )
-                        if app.storage.client["target_project_name"].strip() == "":
-                            target_project_button.set_icon("quiz")
-                        app.storage.client["page_elements"]["project_button"] = target_project_button
-                        ui.button(on_click=lambda: select_project_req()).props("flat").classes(
-                            "text-xl text-amber-9 px-0"
-                        ).bind_text(app.storage.client, "target_version")
-                        ui.label("提交/导出").classes("text-xl ")
-                        # 将新创建的 project_button 实例存入 user storage
-                        target_project_button.bind_text(app.storage.client, "target_project_name")
+                        ui.label("当前编辑需求：").classes("text-xl ")
                         ui.label().classes("text-xl ").bind_text(app.storage.client, "project_name")
                         ui.label("_V").classes("text-xl ")
                         ui.label().classes("text-xl ").bind_text(app.storage.client, "version")
-                        ui.label("需求内容").classes("text-xl ")
-
-                    # 将原项目名记录为新项目的衍生依据项目
-                    # app.storage.client["original_project"] = app.storage.client["project_name"]
-                    # 将原项目版本记录为新项目的衍生版本
-                    # app.storage.client["original_version"] = app.storage.client["version"]
 
                     with ui.column().classes(
                         "m-2 gap-8 w-full items-center justify-start overflow-y-auto"
@@ -5030,6 +4974,39 @@ def requirement_page(type="", json_path="", project_name=""):
                     app.storage.client["page_elements"]["img_row"] = img_row
                     # 检查缩略图对象存放字典，有对象则会创建缩略图
                     req_thumbnail_display()
+            if app.storage.general.get("wait_review", {}):
+                if app.storage.general["wait_review"].get(app.storage.client["project_name"], {}):
+                    if app.storage.general["wait_review"][app.storage.client["project_name"]].get(
+                        app.storage.client["version"], ""
+                    ):
+                        if (
+                            app.storage.general["wait_review"][app.storage.client["project_name"]][
+                                app.storage.client["version"]
+                            ]["state"]
+                            == "待审"
+                        ):
+                            ui.notify(
+                                "当前需求处于待审状态，禁止导出和提交！",
+                                type="warning",
+                                position="center",
+                                timeout=0,
+                                progress=False,
+                                close_button="✖",
+                            )
+                        elif (
+                            app.storage.general["wait_review"][app.storage.client["project_name"]][
+                                app.storage.client["version"]
+                            ]["state"]
+                            == "待修改"
+                        ):
+                            ui.notify(
+                                "当前需求处于待修改状态，修改后可提交，但禁止导出！",
+                                type="warning",
+                                position="center",
+                                timeout=0,
+                                progress=False,
+                                close_button="✖",
+                            )
 
     # 根据需求条目数据，格式化最终显示的字符串
     def format_show_string(item: dict) -> str:
