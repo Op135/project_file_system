@@ -4071,8 +4071,8 @@
             "option_group_id": "999",
             "option_view": "全员",
             "user_must_out": {
-                "EMC": false,
-                "RoHS": false,
+                "EMC": true,
+                "RoHS": true,
                 "激光安全": true,
                 "光生物安全": true,
                 "不要求": false
@@ -4458,7 +4458,7 @@
             "option_group_id": "18",
             "option_view": "软件+工艺+质量",
             "user_must_out": {
-                "1": "地方"
+                "1": "发个机会"
             },
             "option_tolerance_out": {},
             "ref_out": [],
@@ -4485,7 +4485,7 @@
             "option_group_id": "18",
             "option_view": "工艺+结构+质量",
             "user_must_out": {
-                "1": "阿斯蒂芬风格的风格阿斯蒂芬"
+                "1": "水果黄瓜好 "
             },
             "option_tolerance_out": {},
             "ref_out": [],
@@ -4500,17 +4500,17 @@
             ]
         }
     },
-    "config_timestamp": "2025-10-22T16:04:22.529439",
+    "config_timestamp": "2025-10-24T18:40:12.498389",
     "excel_version_hash": "c82e9da0",
     "entry_status": true,
     "file_dic": {},
     "file_counter": 0,
     "files": [],
     "deleted_files": [],
+    "current_user": "李晓明",
     "project_name": "RFFM-1001-A",
-    "current_user": "陈若冰",
+    "original_version": "0.1",
     "original_project": "RFFM-1001-A",
     "version": "1.0",
-    "original_version": "0.0",
-    "req_timestamp": "2025-10-22T16:23:18.724102"
+    "req_timestamp": "2025-10-24T18:41:40.860573"
 }
