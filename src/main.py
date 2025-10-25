@@ -1641,10 +1641,18 @@ def project_table_page():
         update_aggrid(aggrid)
 
         with tool_row:
-            with ui.fab("construction", label="", color="blue", direction="right"):
-                ui.fab_action("zoom_in_map", color="amber-9", on_click=lambda: switch_toggle_vis(False))
-                ui.fab_action("zoom_out_map", color="green-9", on_click=lambda: switch_toggle_vis(True))
-                ui.fab_action("filter_alt_off", color="purple-9", on_click=lambda: clear_all_filters(aggrid))
+            with ui.row().classes("items-center -space-x-4"):
+                ui.label("功能按键：").classes("text-[16px]/[28px]")
+                # with ui.fab("construction", label="", color="blue", direction="right"):
+                ui.button(icon="zoom_in_map", color="amber-9", on_click=lambda: switch_toggle_vis(False)).props(
+                    "flat round"
+                )
+                ui.button(icon="zoom_out_map", color="green-9", on_click=lambda: switch_toggle_vis(True)).props(
+                    "flat round"
+                )
+                ui.button(icon="filter_alt_off", color="purple-9", on_click=lambda: clear_all_filters(aggrid)).props(
+                    "flat round"
+                )
 
 
 @ui.page("/manage")
@@ -1747,6 +1755,8 @@ def requirement_page(type="", json_path="", project_name=""):
     app.storage.client.setdefault("req_not_activ_num", 0)
     # 用于后续保存需求问题项，总数目
     app.storage.client.setdefault("req_com_num", 0)
+    # 用于保存当前需求问题序号
+    app.storage.client.setdefault("current_question_num", 0)
 
     # 在全局作用域创建对话框（确保在菜单系统之外）
     # 创建项目名修改对话框
@@ -1777,6 +1787,24 @@ def requirement_page(type="", json_path="", project_name=""):
     except Exception as e:
         ui.notify(f"读取配置文件目录时出错: {e}", color="negative")
         config_files = []
+
+    # 键盘事件跟踪处理函数
+    def requirement_handle_key(e: KeyEventArguments):
+        k = app.storage.client["current_question_num"]
+        options_type = app.storage.client["config_data"]["data"][k]["answer_type"]
+
+        if e.key.name == "ArrowUp" and e.action.keydown:
+            app.storage.client["key_state"]["arrowup"] = 1
+            get_option(k, options_type, -1)
+        elif e.key.name == "ArrowUp" and e.action.keyup:
+            app.storage.client["key_state"]["arrowup"] = 0
+        if e.key.name == "ArrowDown" and e.action.keydown:
+            app.storage.client["key_state"]["arrowdown"] = 1
+            get_option(k, options_type, 1)
+        elif e.key.name == "ArrowDown" and e.action.keyup:
+            app.storage.client["key_state"]["arrowdown"] = 0
+
+            # app.storage.client["key_state"]["enter"] = 0
 
     # 显示传入数据的用户填写内容
     def show_user_output(data):
@@ -4101,7 +4129,7 @@ def requirement_page(type="", json_path="", project_name=""):
             app.storage.client["config_data"]["entry_status"] = False
 
     # 问题展示页面按钮处理函数
-    def get_option(event, k, options_type, next):
+    def get_option(k, options_type, next):
         # 单选，包括单选项与下拉单选
         radio_bool = False
         # 多选，包括多选项与下拉多选
@@ -4185,6 +4213,7 @@ def requirement_page(type="", json_path="", project_name=""):
 
     # 问题内容展示函数
     def question_display(event, k):
+        app.storage.client["current_question_num"] = k
         # 获取当前问题的配置表键
         index = find_key_position(app.storage.client["buttons_dic"], k)
         # 更新问题列表,重复更新是为了让所有按钮恢复应该的禁用状态
@@ -4210,193 +4239,209 @@ def requirement_page(type="", json_path="", project_name=""):
         # print(f"处理节点序号{k}的显示:{app.storage.client['config_data']['data'][k]['user_must_out']}")
         with current_question_column:
             ui.label(question).classes("text-2xl text-black")
-            ui.label(option_hint).classes("text-base text-grey-8")
+            ui.label(option_hint).classes("text-base text-grey-8 max-w-2/3")
 
-            if options_type == "单选":
-                radio_dic = {}
-                for op_dic in options_list:
-                    radio_dic[op_dic["option_out"]] = op_dic["option_content"]
-                # 创建单选按钮 options:	a list ['value1', ...] or dictionary {'value1':'label1', ...} specifying the options
-                radio = ui.radio(radio_dic).classes("").props("inline")
-                radio.bind_value(app.storage.client["config_data"]["data"][k]["user_must_out"], "value")
-
-            elif options_type == "多选":
-                with ui.row().classes("items-stretch"):
+            with ui.column().classes("m-0 gap-8 w-full items-center justify-start overflow-auto"):
+                if options_type == "单选":
+                    radio_dic = {}
                     for op_dic in options_list:
-                        # 创建复选框
-                        checkbox = ui.checkbox(op_dic["option_content"]).classes("")
-                        # 绑定复选框的值到列表
-                        checkbox.bind_value(
-                            app.storage.client["config_data"]["data"][k]["user_must_out"], op_dic["option_content"]
+                        radio_dic[op_dic["option_out"]] = op_dic["option_content"]
+                    # 创建单选按钮 options:	a list ['value1', ...] or dictionary {'value1':'label1', ...} specifying the options
+                    radio = ui.radio(radio_dic).classes("").props("inline")
+                    radio.bind_value(app.storage.client["config_data"]["data"][k]["user_must_out"], "value")
+
+                elif options_type == "多选":
+                    with ui.row().classes("items-start justify-center w-2/3"):
+                        for op_dic in options_list:
+                            # 创建复选框
+                            checkbox = ui.checkbox(op_dic["option_content"]).classes("")
+                            # 绑定复选框的值到列表
+                            checkbox.bind_value(
+                                app.storage.client["config_data"]["data"][k]["user_must_out"], op_dic["option_content"]
+                            )
+
+                elif options_type == "下拉单选":
+                    dropdown_dic = {}
+                    for op_dic in options_list:
+                        dropdown_dic[op_dic["option_out"]] = op_dic["option_content"]
+                    # 创建下拉选择框
+                    dropdown = ui.select(dropdown_dic).classes("w-1/6 text-base")
+                    # dropdown.bind_value(selected_dropdown_dic)
+                    dropdown.bind_value(app.storage.client["config_data"]["data"][k]["user_must_out"], "value")
+
+                elif options_type in ["正整数", "单行文本", "多行文本"]:
+                    # 根据依据获取用户在输入框填入的数量，输入项有名称则名称为健，没有则用数字字符
+                    input_num_accor = app.storage.client["config_data"]["data"][k]["input_num_accor"]
+                    input_num = (
+                        1
+                        if input_num_accor == ""
+                        else int(
+                            float(app.storage.client["config_data"]["data"][input_num_accor]["user_must_out"]["1"])
+                        )
+                    )
+
+                    # 根据依据获取用户在输入框填入的输入项名称
+                    input_name_accor = app.storage.client["config_data"]["data"][k]["input_name_accor"]
+                    if input_name_accor == "":
+                        input_name_storage_dic = dict(app.storage.client["config_data"]["data"][k]["user_must_out"])
+                    else:
+                        input_name_storage_dic = dict(
+                            app.storage.client["config_data"]["data"][input_name_accor]["user_must_out"]
                         )
 
-            elif options_type == "下拉单选":
-                dropdown_dic = {}
-                for op_dic in options_list:
-                    dropdown_dic[op_dic["option_out"]] = op_dic["option_content"]
-                # 创建下拉选择框
-                dropdown = ui.select(dropdown_dic).classes("w-1/6 text-base")
-                # dropdown.bind_value(selected_dropdown_dic)
-                dropdown.bind_value(app.storage.client["config_data"]["data"][k]["user_must_out"], "value")
+                    # 如果用户修改输入项数量，且小于以前的，要清除掉以前多出来的已经生成过的多余键值对
+                    if input_num < len(input_name_storage_dic.keys()):
+                        app.storage.client["config_data"]["data"][k]["user_must_out"] = dict(
+                            islice(input_name_storage_dic.items(), input_num)  # islice高效获取字典前N个键值对
+                        )
+                    input_name_dic = {} if input_name_accor == "" else input_name_storage_dic
+                    # 获取公差要求
+                    input_tolerance_bool = app.storage.client["config_data"]["data"][k]["input_tolerance"]
+                    # 该项的项名称不需要依据，给项的健默认按照数字字符进行设置
+                    if input_name_dic == {}:
+                        for i in range(input_num):
+                            input_name_dic[str(i + 1)] = str(i + 1)
+                    # 获取可能的已有用户输入内容
+                    with ui.column().classes("min-w-1/4 -space-y-2"):
+                        for n in range(input_num):
+                            with ui.row().classes("justify-center flex-nowrap items-stretch w-full"):
+                                # 可能是数字123也可能是前置依赖的客户输出识别字符串
+                                input_label_key = list(input_name_dic.values())[n]
 
-            elif options_type in ["正整数", "单行文本", "多行文本"]:
-                # 根据依据获取用户在输入框填入的数量，输入项有名称则名称为健，没有则用数字字符
-                input_num_accor = app.storage.client["config_data"]["data"][k]["input_num_accor"]
-                input_num = (
-                    1
-                    if input_num_accor == ""
-                    else int(float(app.storage.client["config_data"]["data"][input_num_accor]["user_must_out"]["1"]))
-                )
+                                label_1 = "值"
+                                label_2 = ""
+                                if input_tolerance_bool == "正负":
+                                    label_1 = "典型值"
+                                    label_2 = "正负公差范围"
+                                elif input_tolerance_bool == "范围":
+                                    label_1 = "下限值"
+                                    label_2 = "上限值"
+                                elif input_tolerance_bool == "下限":
+                                    label_1 = "下限值"
+                                elif input_tolerance_bool == "上限":
+                                    label_1 = "上限值"
 
-                # 根据依据获取用户在输入框填入的输入项名称
-                input_name_accor = app.storage.client["config_data"]["data"][k]["input_name_accor"]
-                if input_name_accor == "":
-                    input_name_storage_dic = dict(app.storage.client["config_data"]["data"][k]["user_must_out"])
-                else:
-                    input_name_storage_dic = dict(
-                        app.storage.client["config_data"]["data"][input_name_accor]["user_must_out"]
-                    )
+                                # 编辑配置好输入框标签内容
+                                if input_label_key.isdigit():
+                                    input_label = f"项{input_label_key}的{label_1}:"
+                                    input_tolerance_label = f"项{input_label_key}的{label_2}:"
+                                else:
+                                    input_label = f"{input_label_key}的{label_1}:"
+                                    input_tolerance_label = f"{input_label_key}的{label_2}:"
 
-                # 如果用户修改输入项数量，且小于以前的，要清除掉以前多出来的已经生成过的多余键值对
-                if input_num < len(input_name_storage_dic.keys()):
-                    app.storage.client["config_data"]["data"][k]["user_must_out"] = dict(
-                        islice(input_name_storage_dic.items(), input_num)  # islice高效获取字典前N个键值对
-                    )
-                input_name_dic = {} if input_name_accor == "" else input_name_storage_dic
-                # 获取公差要求
-                input_tolerance_bool = app.storage.client["config_data"]["data"][k]["input_tolerance"]
-                # 该项的项名称不需要依据，给项的健默认按照数字字符进行设置
-                if input_name_dic == {}:
-                    for i in range(input_num):
-                        input_name_dic[str(i + 1)] = str(i + 1)
-                # 获取可能的已有用户输入内容
-                with ui.column().classes("w-1/4 -space-y-2"):
-                    for n in range(input_num):
-                        with ui.row().classes("justify-center flex-nowrap items-stretch w-full"):
-                            # 可能是数字123也可能是前置依赖的客户输出识别字符串
-                            input_label_key = list(input_name_dic.values())[n]
-
-                            label_1 = "值"
-                            label_2 = ""
-                            if input_tolerance_bool == "正负":
-                                label_1 = "典型值"
-                                label_2 = "正负公差范围"
-                            elif input_tolerance_bool == "范围":
-                                label_1 = "下限值"
-                                label_2 = "上限值"
-                            elif input_tolerance_bool == "下限":
-                                label_1 = "下限值"
-                            elif input_tolerance_bool == "上限":
-                                label_1 = "上限值"
-
-                            # 编辑配置好输入框标签内容
-                            if input_label_key.isdigit():
-                                input_label = f"项{input_label_key}的{label_1}:"
-                                input_tolerance_label = f"项{input_label_key}的{label_2}:"
-                            else:
-                                input_label = f"{input_label_key}的{label_1}:"
-                                input_tolerance_label = f"{input_label_key}的{label_2}:"
-
-                            # 处理正整数输入框
-                            if options_type == "正整数":
-                                input_field = (
-                                    ui.input(
-                                        label=input_label,
-                                        placeholder="",
-                                        validation={"必须是整数": lambda value: value.isdigit()},
-                                    )
-                                    .props("outlined stack-label")
-                                    .classes("text-[14px]/[16px] w-full")
-                                )
-                                input_field.bind_value(
-                                    app.storage.client["config_data"]["data"][k]["user_must_out"], input_label_key
-                                )
-                                if input_tolerance_bool in ["正负", "范围"]:
-                                    input_tolerance = (
+                                # 处理正整数输入框
+                                if options_type == "正整数":
+                                    input_field = (
                                         ui.input(
-                                            label=input_tolerance_label,
+                                            label=input_label,
+                                            placeholder="",
+                                            validation={"必须是整数": lambda value: value.isdigit()},
+                                        )
+                                        .props("outlined stack-label")
+                                        .classes("text-[14px]/[16px] w-full")
+                                    )
+                                    input_field.bind_value(
+                                        app.storage.client["config_data"]["data"][k]["user_must_out"], input_label_key
+                                    )
+                                    if input_tolerance_bool in ["正负", "范围"]:
+                                        input_tolerance = (
+                                            ui.input(
+                                                label=input_tolerance_label,
+                                                placeholder="",
+                                                validation={"不能空白": lambda value: value.strip() != ""},
+                                            )
+                                            .props("outlined stack-label")
+                                            .classes("text-[14px]/[16px] w-full")
+                                        )
+                                        input_tolerance.bind_value(
+                                            app.storage.client["config_data"]["data"][k]["option_tolerance_out"],
+                                            input_label_key,
+                                        )
+                                # 处理单行文本输入框
+                                elif options_type == "单行文本":
+                                    input_field = (
+                                        ui.input(
+                                            label=input_label,
                                             placeholder="",
                                             validation={"不能空白": lambda value: value.strip() != ""},
                                         )
                                         .props("outlined stack-label")
                                         .classes("text-[14px]/[16px] w-full")
                                     )
-                                    input_tolerance.bind_value(
-                                        app.storage.client["config_data"]["data"][k]["option_tolerance_out"],
-                                        input_label_key,
+                                    input_field.bind_value(
+                                        app.storage.client["config_data"]["data"][k]["user_must_out"], input_label_key
                                     )
-                            # 处理单行文本输入框
-                            elif options_type == "单行文本":
-                                input_field = (
-                                    ui.input(
-                                        label=input_label,
-                                        placeholder="",
-                                        validation={"不能空白": lambda value: value.strip() != ""},
-                                    )
-                                    .props("outlined stack-label")
-                                    .classes("text-[14px]/[16px] w-full")
-                                )
-                                input_field.bind_value(
-                                    app.storage.client["config_data"]["data"][k]["user_must_out"], input_label_key
-                                )
-                                if input_tolerance_bool in ["正负", "范围"]:
-                                    input_tolerance = (
-                                        ui.input(
-                                            label=input_tolerance_label,
+                                    if input_tolerance_bool in ["正负", "范围"]:
+                                        input_tolerance = (
+                                            ui.input(
+                                                label=input_tolerance_label,
+                                                placeholder="",
+                                                validation={"不能空白": lambda value: value.strip() != ""},
+                                            )
+                                            .props("outlined stack-label")
+                                            .classes("w-full text-[14px]/[16px] w-full")
+                                        )
+                                        input_tolerance.bind_value(
+                                            app.storage.client["config_data"]["data"][k]["option_tolerance_out"],
+                                            input_label_key,
+                                        )
+                                # 处理多行文本输入框，多行文本不处理公差范围.
+                                elif options_type == "多行文本":
+                                    input_field = (
+                                        ui.textarea(
+                                            label=input_label,
                                             placeholder="",
                                             validation={"不能空白": lambda value: value.strip() != ""},
                                         )
-                                        .props("outlined stack-label")
+                                        .props("outlined stack-label autogrow")
                                         .classes("w-full text-[14px]/[16px] w-full")
                                     )
-                                    input_tolerance.bind_value(
-                                        app.storage.client["config_data"]["data"][k]["option_tolerance_out"],
-                                        input_label_key,
+                                    input_field.bind_value(
+                                        app.storage.client["config_data"]["data"][k]["user_must_out"], input_label_key
                                     )
-                            # 处理多行文本输入框，多行文本不处理公差范围.
-                            elif options_type == "多行文本":
-                                input_field = (
-                                    ui.textarea(
-                                        label=input_label,
-                                        placeholder="",
-                                        validation={"不能空白": lambda value: value.strip() != ""},
-                                    )
-                                    .props("outlined stack-label autogrow")
-                                    .classes("w-full text-[14px]/[16px] w-full")
-                                )
-                                input_field.bind_value(
-                                    app.storage.client["config_data"]["data"][k]["user_must_out"], input_label_key
-                                )
-            # 确认项“确认”与“返回”按钮
-            with ui.row().classes("items-stretch gap-8"):
-                ui.button("下一个", on_click=lambda e, kk=k: get_option(e, kk, options_type, 1))
-                ui.button("上一个", on_click=lambda e, kk=k: get_option(e, kk, options_type, -1))
-            # 处理需要插入引用确认项
-            if ref_config_bool:
-                with ui.row().classes("gap-1 w-full justify-center"):
-                    with ui.column().classes("w-1/5 h-fit -space-y-5 border-2 border-solid border-Gray-500 rounded-md"):
-                        ui.label("引用：").classes("p-1 text-sm text-gray-500")
-                        ref_row = ui.row().classes("space-x-0 p-2")
+                # 处理需要插入引用确认项
+                if ref_config_bool:
+                    with ui.row().classes("gap-1 w-full justify-center"):
+                        with ui.column().classes(
+                            "w-1/4 h-fit -space-y-5 border-2 border-solid border-Gray-500 rounded-md"
+                        ):
+                            ui.label("引用：").classes("p-1 text-sm text-gray-500")
+                            ref_row = ui.row().classes("space-x-0 p-2")
 
-                        if app.storage.client["config_data"]["data"][k]["ref_out"]:
-                            for t_lab in app.storage.client["config_data"]["data"][k]["ref_out"]:
-                                add_ref_button(
-                                    app.storage.client["file_thumbnail_dic"][t_lab]["file_obj"],
-                                    ref_row,
-                                    k,
-                                    question,
-                                    False,
-                                )
-                    ui.button(
-                        on_click=lambda ref_row=ref_row, question_k=k, question=question: add_activ_ref(
-                            ref_row, question_k, question
-                        )
-                    ).props('icon-right="add_link"').classes("h-full p-2")
-                    ui.button(
-                        on_click=lambda ref_row=ref_row, question_k=k, question=question: add_del_lab(
-                            ref_row, question_k, question
-                        )
-                    ).props('icon-right="link_off"').props().classes("h-full p-2 bg-blue-grey-8")
+                            if app.storage.client["config_data"]["data"][k]["ref_out"]:
+                                for t_lab in app.storage.client["config_data"]["data"][k]["ref_out"]:
+                                    add_ref_button(
+                                        app.storage.client["file_thumbnail_dic"][t_lab]["file_obj"],
+                                        ref_row,
+                                        k,
+                                        question,
+                                        False,
+                                    )
+                        ui.button(
+                            on_click=lambda ref_row=ref_row, question_k=k, question=question: add_activ_ref(
+                                ref_row, question_k, question
+                            )
+                        ).props('icon-right="add_link"').classes("h-full p-2")
+                        ui.button(
+                            on_click=lambda ref_row=ref_row, question_k=k, question=question: add_del_lab(
+                                ref_row, question_k, question
+                            )
+                        ).props('icon-right="link_off"').props().classes("h-full p-2 bg-blue-grey-8")
+
+            # 确认项“确认”与“返回”按钮
+            with ui.button_group().props("push").classes("absolute bottom-0 right-2"):
+                ui.button(
+                    # "上一个",
+                    icon="arrow_upward",
+                    color="amber-8",
+                    on_click=lambda kk=k: get_option(kk, options_type, -1),
+                ).props("push")
+                ui.button(
+                    # "下一个",
+                    icon="arrow_downward",
+                    color="green-8",
+                    on_click=lambda kk=k: get_option(kk, options_type, 1),
+                ).props("push")
 
     # 刷新需求录入界面文件缩略图显示区域函数
     def req_thumbnail_display():
@@ -4927,34 +4972,35 @@ def requirement_page(type="", json_path="", project_name=""):
                         set_question_list(0)
 
                 ui.separator().props("vertical size=1px")
-                with ui.column().classes("w-3/4 min-w-[700px] items-center"):
-                    with ui.column().classes("-space-y-5 items-center justify-left w-full"):
-                        with ui.row().classes("-space-x-3 items-center justify-left w-full"):
-                            ui.label("型号设置").classes("text-base ")
-                            target_project_button = (
-                                ui.button("", on_click=lambda: get_project_dialog())
-                                .props("flat")
-                                .classes("text-base text-amber-9 px-0")
-                                .bind_text(app.storage.client, "target_project_name")
-                            )
-                            if app.storage.client["target_project_name"].strip() == "":
-                                target_project_button.set_icon("quiz")
-                            app.storage.client["page_elements"]["target_project_button"] = target_project_button
-                        with ui.row().classes("-space-x-3 items-center justify-left w-full"):
-                            ui.label("版本查阅").classes("text-base ")
-                            ui.button(icon="list_alt", on_click=lambda: select_project_req()).props("flat").classes(
-                                "text-base text-amber-9 px-0"
-                            )
-                            # .bind_text(app.storage.client, "target_version")
+                with ui.column().classes("relative w-3/4 min-w-[700px] items-center"):
+                    with ui.row().classes("relative w-full items-center justify-center"):
+                        with ui.column().classes("absolute left-0 -top-2 -space-y-5 items-center justify-left"):
+                            with ui.row().classes("-space-x-3 items-center justify-left w-full"):
+                                ui.label("型号设置").classes("text-base ")
+                                target_project_button = (
+                                    ui.button("", on_click=lambda: get_project_dialog())
+                                    .props("flat")
+                                    .classes("text-base text-amber-9 px-0")
+                                    .bind_text(app.storage.client, "target_project_name")
+                                )
+                                if app.storage.client["target_project_name"].strip() == "":
+                                    target_project_button.set_icon("quiz")
+                                app.storage.client["page_elements"]["target_project_button"] = target_project_button
+                            with ui.row().classes("-space-x-3 items-center justify-left w-full"):
+                                ui.label("版本查阅").classes("text-base ")
+                                ui.button(icon="list_alt", on_click=lambda: select_project_req()).props("flat").classes(
+                                    "text-base text-amber-9 px-0"
+                                )
+                                # .bind_text(app.storage.client, "target_version")
 
-                            # if app.storage.client["target_version"].strip() == "":
-                            # target_version_button.set_icon("quiz")
-                            # app.storage.client["page_elements"]["target_version_button"] = target_version_button
-                    with ui.row().classes("-space-x-3 items-center justify-center w-full"):
-                        ui.label("当前编辑需求：").classes("text-xl ")
-                        ui.label().classes("text-xl ").bind_text(app.storage.client, "project_name")
-                        ui.label("_V").classes("text-xl ")
-                        ui.label().classes("text-xl ").bind_text(app.storage.client, "version")
+                                # if app.storage.client["target_version"].strip() == "":
+                                # target_version_button.set_icon("quiz")
+                                # app.storage.client["page_elements"]["target_version_button"] = target_version_button
+                        with ui.row().classes("-space-x-3 items-center justify-center w-full "):
+                            ui.label("当前编辑需求：").classes("text-xl ")
+                            ui.label().classes("text-xl text-amber-8").bind_text(app.storage.client, "project_name")
+                            ui.label("_V").classes("text-xl text-amber-8")
+                            ui.label().classes("text-xl text-amber-8").bind_text(app.storage.client, "version")
 
                     with ui.column().classes(
                         "m-2 gap-8 w-full items-center justify-start overflow-y-auto"
@@ -5007,6 +5053,8 @@ def requirement_page(type="", json_path="", project_name=""):
                                 progress=False,
                                 close_button="✖",
                             )
+        # ignore不设定默认导致键盘事件在'input', 'select', 'button', 'textarea'元素聚焦时被忽略
+        ui.keyboard(on_key=requirement_handle_key, ignore=[])
 
     # 根据需求条目数据，格式化最终显示的字符串
     def format_show_string(item: dict) -> str:
