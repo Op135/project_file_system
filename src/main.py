@@ -1793,16 +1793,16 @@ def requirement_page(type="", json_path="", project_name=""):
         k = app.storage.client["current_question_num"]
         options_type = app.storage.client["config_data"]["data"][k]["answer_type"]
 
-        if e.key.name == "ArrowUp" and e.action.keydown:
-            app.storage.client["key_state"]["arrowup"] = 1
+        if e.key.name == "ArrowLeft" and e.action.keydown:
+            app.storage.client["key_state"]["arrowleft"] = 1
             get_option(k, options_type, -1)
-        elif e.key.name == "ArrowUp" and e.action.keyup:
-            app.storage.client["key_state"]["arrowup"] = 0
-        if e.key.name == "ArrowDown" and e.action.keydown:
-            app.storage.client["key_state"]["arrowdown"] = 1
+        elif e.key.name == "ArrowLeft" and e.action.keyup:
+            app.storage.client["key_state"]["arrowleft"] = 0
+        if e.key.name == "ArrowRight" and e.action.keydown:
+            app.storage.client["key_state"]["arrowright"] = 1
             get_option(k, options_type, 1)
-        elif e.key.name == "ArrowDown" and e.action.keyup:
-            app.storage.client["key_state"]["arrowdown"] = 0
+        elif e.key.name == "ArrowRight" and e.action.keyup:
+            app.storage.client["key_state"]["arrowright"] = 0
 
             # app.storage.client["key_state"]["enter"] = 0
 
@@ -4239,7 +4239,7 @@ def requirement_page(type="", json_path="", project_name=""):
         # print(f"处理节点序号{k}的显示:{app.storage.client['config_data']['data'][k]['user_must_out']}")
         with current_question_column:
             ui.label(question).classes("text-2xl text-black")
-            ui.label(option_hint).classes("text-base text-grey-8 max-w-2/3")
+            ui.label(option_hint).classes("text-base text-grey-8 max-w-full")
 
             with ui.column().classes("m-0 gap-8 w-full items-center justify-start overflow-auto"):
                 if options_type == "单选":
@@ -4251,7 +4251,7 @@ def requirement_page(type="", json_path="", project_name=""):
                     radio.bind_value(app.storage.client["config_data"]["data"][k]["user_must_out"], "value")
 
                 elif options_type == "多选":
-                    with ui.row().classes("items-start justify-center w-2/3"):
+                    with ui.row().classes("items-start justify-center w-full"):
                         for op_dic in options_list:
                             # 创建复选框
                             checkbox = ui.checkbox(op_dic["option_content"]).classes("")
@@ -4429,19 +4429,19 @@ def requirement_page(type="", json_path="", project_name=""):
                         ).props('icon-right="link_off"').props().classes("h-full p-2 bg-blue-grey-8")
 
             # 确认项“确认”与“返回”按钮
-            with ui.button_group().props("push").classes("absolute bottom-0 right-2"):
-                ui.button(
-                    # "上一个",
-                    icon="arrow_upward",
-                    color="amber-8",
-                    on_click=lambda kk=k: get_option(kk, options_type, -1),
-                ).props("push")
-                ui.button(
-                    # "下一个",
-                    icon="arrow_downward",
-                    color="green-8",
-                    on_click=lambda kk=k: get_option(kk, options_type, 1),
-                ).props("push")
+            # with ui.button_group().props("push").classes("absolute bottom-0 right-2"):
+            ui.button(
+                # "上一个",
+                icon="arrow_back_ios",
+                color="amber-8",
+                on_click=lambda kk=k: get_option(kk, options_type, -1),
+            ).props("flat").classes("absolute top-1/2 left-2 -translate-y-1/2 h-1/2 text-xl")
+            ui.button(
+                # "下一个",
+                icon="arrow_forward_ios",
+                color="green-8",
+                on_click=lambda kk=k: get_option(kk, options_type, 1),
+            ).props("flat").classes("absolute top-1/2 right-2 -translate-y-1/2 h-1/2 text-xl")
 
     # 刷新需求录入界面文件缩略图显示区域函数
     def req_thumbnail_display():
@@ -5003,7 +5003,7 @@ def requirement_page(type="", json_path="", project_name=""):
                             ui.label().classes("text-xl text-amber-8").bind_text(app.storage.client, "version")
 
                     with ui.column().classes(
-                        "m-2 gap-8 w-full items-center justify-start overflow-y-auto"
+                        "mx-0 mt-10 px-22 gap-8 w-full items-center justify-start overflow-y-auto"
                     ) as question_column:
                         # --- 修改开始 ---
                         # 将新创建的 question_column 实例存入 user storage

@@ -22,6 +22,10 @@ relative
 # 父级设置为自己浮动定位的参考
 absolute top-0 right-0
 # 子级设置绝对定位及位置
+top-1/2
+# CSS 的 top: 50%使子元素的顶部对齐到父元素的中点。
+-translate-y-1/2
+# CSS 的 transform: translateY(-50%)）使子元素相对于其自身的高度向上移动 50%
 
 # display: flex 布局情况下
 # 控制 flex 和网格项沿容器横轴的定位方式
