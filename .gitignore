@@ -1,0 +1,9 @@
+db/
+files/
+over/
+req/
+.nicegui/
+uploads/
+*.pyc
+# 忽略 Python 字节码缓存
+__pycache__/
