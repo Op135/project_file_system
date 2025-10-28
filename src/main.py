@@ -22,6 +22,8 @@ from html_sanitizer import Sanitizer
 from nicegui import app, events, ui
 from nicegui.events import GenericEventArguments, KeyEventArguments, MouseEventArguments, UploadEventArguments
 
+import db_storage  # 导入我们创建的模块
+
 # from nicegui_toolkit import inject_layout_tool
 from config_service import ConfigService
 from user_service import UserService
@@ -60,9 +62,14 @@ FILES_URL_DIR = "/files"
 # ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "pdf"}
 # MAX_FILE_SIZE = 20 * 1024 * 1024
 
+# 注册 NiceGUI 的生命周期事件
+# 在服务器启动时调用 init_db
+app.on_startup(db_storage.init_db)
+# 在服务器关闭时调用 close_db
+app.on_shutdown(db_storage.close_db)
 
 # 存储服务器层级 概述数据 的变量初始化
-app.storage.general.setdefault("overview_data", {})
+# app.storage.general.setdefault("overview_data", {})
 # 存储服务器层级 项目需求最高版本号 的变量初始化
 app.storage.general.setdefault("project_req_max_ver", {})
 # 存储服务器层级 项目简介 的变量初始化
@@ -220,7 +227,7 @@ def overview_role_update(project_name):
     app.storage.general["overview_role"][project_name]={"光学":{"most_user":"用户名","latest_user":"用户名"},...}
     """
     # 将服务器概述资料获取到
-    overview_data = app.storage.general["overview_data"]
+    overview_data = db_storage.get_item(f"{project_name}_over_data", {})
     # 设置时间对象识别格式
     format_string = "%Y-%m-%d %H:%M:%S"
     # 如果项目名存在服务器概述数据的键里
@@ -241,12 +248,9 @@ def overview_role_update(project_name):
             # 遍历当前角色分类，如光学下，概述配置的各项
             for over_config in over_config_li:
                 # 如果当前概述项的label存在服务器对应项目的概述数据字典键里
-                if (
-                    over_config["label"] in overview_data[project_name]
-                    and overview_data[project_name][over_config["label"]] != {}
-                ):
+                if over_config["label"] in overview_data and overview_data[over_config["label"]] != {}:
                     # 遍历当前label下用户添加过的多个概述数据
-                    for over_data in overview_data[project_name][over_config["label"]].values():
+                    for over_data in overview_data[over_config["label"]].values():
                         # 如果数据的创建用户已经存在临时记录字典里
                         if over_data["creator"] in frequency_user_dic:
                             # 将该用户创建次数加1次
@@ -545,10 +549,10 @@ def move_element(lst, element, step: int):
 
     # 如果元素已经是第一个，则不能再向前移动
     if step < 0 and current_index == 0:
-        print(f"'{element}' 已在最前面，无法再向前移动。")
+        # print(f"'{element}' 已在最前面，无法再向前移动。")
         return lst
     elif step > 1 and current_index == len(lst) - 1:
-        print(f"'{element}' 已在最后面，无法再向后移动。")
+        # print(f"'{element}' 已在最后面，无法再向后移动。")
         return lst
 
     # 弹出元素
@@ -704,7 +708,11 @@ def find_key_position(dictionary, target_key):
 
 
 # 根据传入的需求配置文件清单，核对检查是否有新需求配置未更新到概述文件里，并做相应整理，更新概述整理文件
-async def requirement_version_tidy(project_name, review) -> str:
+async def requirement_version_tidy(project_name, review: bool) -> str:
+    """
+    project_name： 项目名。
+    review：是否为了审核需求，True为了审核，False普通浏览概述
+    """
     # 查找指定路径下，含有提供项目名的文件，得到一个字典，"完整版本" 为键，值为：{"name":文件名, "v_a":版本号整数部分, "v_b":版本号小数部分}
     project_exists_file = find_files_with_prefix_and_version(REQ_DIR, project_name)
     overview_file_path = os.path.join(OVER_DIR, f"{project_name}_概述整理.json")
@@ -857,10 +865,17 @@ async def requirement_version_tidy(project_name, review) -> str:
 
 
 async def get_overviow_page(project_name, review: bool):
+    """
+    project_name： 项目名。
+    review：是否为了审核需求，True为了审核，False普通浏览概述
+    """
     # 核对检查是否有新需求配置未更新到概述文件里，并做相应整理
     overview_file_path = await requirement_version_tidy(project_name, review)
     if overview_file_path:
-        ui.navigate.to(f"/main/requirement?type=overview&json_path={overview_file_path}")
+        if review:
+            ui.navigate.to(f"/main/requirement?type=temp_overview&json_path={overview_file_path}")
+        else:
+            ui.navigate.to(f"/main/requirement?type=overview&json_path={overview_file_path}")
 
 
 # ======================
@@ -1297,8 +1312,9 @@ def project_table_page():
                 if s != "-" and s in r["project"] or s == "-" and s not in r["project"]:
                     # 获取当前行数据所属项目名
                     project_name = r["sub_project"]
+                    overview_data = db_storage.get_item(f"{project_name}_over_data", {})
                     # 如果服务器储存的概述数据里存在该当前项目对应概述资料
-                    if project_name in app.storage.general["overview_data"]:
+                    if overview_data:
                         # 遍历服务器 项目简介与概述数据对照字典
                         for pro_key, over_key_li in app.storage.general["project_overview_config"].items():
                             # 如果当前处理的不是负责人配置，且项目简介对照配置非空
@@ -1307,10 +1323,8 @@ def project_table_page():
                                 # 遍历对照配置列表（可能一个项目简介配置了多个对应的概述数据项）
                                 for over_key in over_key_li:
                                     # 当前概述数据项label存在服务器概述数据对应项目里，说明可能存在概述内容
-                                    if over_key in app.storage.general["overview_data"][project_name]:
-                                        chip_data_li = app.storage.general["overview_data"][project_name][
-                                            over_key
-                                        ].values()
+                                    if over_key in overview_data:
+                                        chip_data_li = overview_data.get(over_key, {}).values()
                                         # 遍历概述内容每个chip数据
                                         for chip_data in chip_data_li:
                                             # 该chip内容是激活 或者 待定状态 才显示
@@ -1354,7 +1368,7 @@ def project_table_page():
                                 show_str = show_str.split("：")[1] if show_str else ""
                                 if show_str:
                                     selected_bool = False
-                                    for class_dic in app.storage.general["overview_data"][project_name].values():
+                                    for class_dic in overview_data.values():
                                         for ver_dic in class_dic.values():
                                             select_activ_dic = ver_dic.get("select_activ_dic", {})
                                             if select_activ_dic:
@@ -1679,7 +1693,7 @@ def manage_page():
 # 需求界面路由
 # ======================
 @ui.page("/main/requirement")
-def requirement_page(type="", json_path="", project_name=""):
+async def requirement_page(type="", json_path="", project_name=""):
     ui.add_head_html("""
         <style>
             .q-btn{
@@ -2019,20 +2033,6 @@ def requirement_page(type="", json_path="", project_name=""):
             # 为了新建项目需求而弹窗，则调用新需求处理函数
             if key_str == "new":
                 ui.navigate.to(f"/main/requirement?type=requirement&project_name={target_project_name}")
-            # 不是为了新建项目需求而弹窗,且确实修改了项目名，则在保留需求配置内容情况下，初始化版本为0.0
-            # elif project_name != target_project_name:
-            # 改了名，版本就不要再延续旧项目的了，更新为新命名的项目的最高版本
-            # if app.storage.general.get("wait_review", {}):
-            #     ver_max = max(
-            #         [
-            #             int(float(v))
-            #             for v in app.storage.general["wait_review"].get(target_project_name, {"0.0": {}}).keys()
-            #         ]
-            #     )
-            #     # 更新
-            #     ver_str = f"{ver_max}.0"
-            # app.storage.client["target_version"] = ver_str
-            # app.storage.client["target_version"] = ""
 
         project_dialog.close()
 
@@ -2573,6 +2573,7 @@ def requirement_page(type="", json_path="", project_name=""):
             state_options: list = [],
             node_options: list = [],
             instrument_options: list = [],
+            temp_bool: bool = False,
             # delete_bool: bool = True,
         ):
             if processing_type not in ["text", "file", "image", "test"]:
@@ -2590,6 +2591,7 @@ def requirement_page(type="", json_path="", project_name=""):
             self.state_options = state_options
             self.node_options = node_options
             self.instrument_options = instrument_options
+            self.temp_bool = temp_bool
             # self.delete_bool = delete_bool
             self.offset = (0, 0)
             self.is_dragging = False
@@ -2606,8 +2608,8 @@ def requirement_page(type="", json_path="", project_name=""):
 
             # 为每个按钮实例在 app.storage.general 概述数据各项目字典里 以self.label作为键，后续保存用户输入
             # 初始化存储，如果 app.storage.general 中不存在对应的列表，则创建一个空列表
-            if self.label not in app.storage.general["overview_data"][self.project]:
-                app.storage.general["overview_data"][self.project][self.label] = dict()
+            # if self.label not in db_storage.get_item(f"{self.project}_over_data", {}):
+            #     await db_storage.set_deep_item([f"{self.project}_over_data", self.label], {})
 
             # 创建主按钮，并绑定点击事件
             ui.button(f"{self.title}：", on_click=self._handle_main_button_click).props("flat").classes(
@@ -2728,7 +2730,7 @@ def requirement_page(type="", json_path="", project_name=""):
             return select_dic
 
         # 当用户点击“添加”按钮时，将文本数据添加到共享存储中
-        def _add_text_chip_data(self):
+        async def _add_text_chip_data(self):
             text = self.chip_label.value
             notes = self.chip_notes.value
             if not text:
@@ -2750,7 +2752,7 @@ def requirement_page(type="", json_path="", project_name=""):
                     close_button="✖",
                 )
             elif text in [
-                d["content"] for d in app.storage.general["overview_data"][self.project][self.label].values()
+                d["content"] for d in db_storage.get_deep_item([f"{self.project}_over_data", self.label], {}).values()
             ]:
                 ui.notify(
                     "概述内容已存在。",
@@ -2788,7 +2790,8 @@ def requirement_page(type="", json_path="", project_name=""):
                 }
 
                 # 将新数据追加到 app.storage.general 的列表中
-                app.storage.general["overview_data"][self.project][self.label][chip_id] = chip_data
+                await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id], chip_data)
+                # app.storage.general["overview_data"][self.project][self.label][chip_id] = chip_data
                 # 清空文本框并关闭对话框
                 self.chip_label.value = ""
                 self.chip_notes.value = ""
@@ -2813,7 +2816,7 @@ def requirement_page(type="", json_path="", project_name=""):
             url_path = f"{FILES_URL_DIR}/{original_filename}"
             # 检查是否已存在该项里了
             if original_filename in [
-                d["filename"] for d in app.storage.general["overview_data"][self.project][self.label].values()
+                d["filename"] for d in db_storage.get_deep_item([f"{self.project}_over_data", self.label], {}).values()
             ]:
                 ui.notify(
                     f'文件 "{original_filename}" 无需重复提交!',
@@ -2886,7 +2889,7 @@ def requirement_page(type="", json_path="", project_name=""):
                 self.chip_notes.value = ""
                 self.chip_dialog.close()
                 # 将新数据追加到共享列表中
-                app.storage.general["overview_data"][self.project][self.label][chip_id] = chip_data
+                await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id], chip_data)
                 ui.notify(
                     f'文件 "{original_filename}" 上传成功!',
                     type="positive",
@@ -2897,7 +2900,7 @@ def requirement_page(type="", json_path="", project_name=""):
                 )
 
         # 显示服务器已有文件
-        def _show_have_file(self, original_filename, file_type, url_path):
+        async def _show_have_file(self, original_filename, file_type, url_path):
             # 准备要存储的 chip 数据
             file_icon = ""
             if self.processing_type == "file":
@@ -2934,7 +2937,7 @@ def requirement_page(type="", json_path="", project_name=""):
             self.chip_notes.value = ""
             self.chip_dialog.close()
             # 将新数据追加到共享列表中
-            app.storage.general["overview_data"][self.project][self.label][chip_id] = chip_data
+            await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id], chip_data)
             ui.notify(
                 f'文件 "{original_filename}" 显示成功!',
                 type="positive",
@@ -2945,7 +2948,7 @@ def requirement_page(type="", json_path="", project_name=""):
             )
 
         # 将测试项配置信息添加到共享储存中
-        def _add_test_chip_data(self, test_select_data):
+        async def _add_test_chip_data(self, test_select_data):
             text = self.chip_label.value
             notes = self.chip_notes.value
             # 判断是否存在选择“其它”但不写明特殊要求的情况
@@ -2992,7 +2995,7 @@ def requirement_page(type="", json_path="", project_name=""):
                 )
             elif (text, test_select_data) in [
                 (d["content"], d["test_select_data"])
-                for d in app.storage.general["overview_data"][self.project][self.label].values()
+                for d in db_storage.get_deep_item([f"{self.project}_over_data", self.label], {}).values()
             ]:
                 ui.notify(
                     "测试项内容标准已存在。",
@@ -3031,7 +3034,7 @@ def requirement_page(type="", json_path="", project_name=""):
                 }
 
                 # 将新数据追加到 app.storage.general 的列表中
-                app.storage.general["overview_data"][self.project][self.label][chip_id] = chip_data
+                await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id], chip_data)
                 # 清空文本框并关闭对话框
                 self.chip_notes.value = ""
                 self.chip_dialog.close()
@@ -3065,7 +3068,7 @@ def requirement_page(type="", json_path="", project_name=""):
             # 删除元素重新显示
             self.chip_container.clear()
             with self.chip_container:
-                for chip_info in app.storage.general["overview_data"][self.project][self.label].values():
+                for chip_info in db_storage.get_deep_item([f"{self.project}_over_data", self.label], {}).values():
                     self._create_chip_from_data(chip_info)
 
         # 同步UI显示与共享存储中的数据
@@ -3082,7 +3085,7 @@ def requirement_page(type="", json_path="", project_name=""):
                 # 获取当前UI上所有 chip 的ID
                 displayed_chip_ids = {child.props.get("data-chip-id") for child in self.chip_container}
                 # 获取共享存储中所有 chip 的ID
-                stored_chips_data = app.storage.general["overview_data"][self.project].get(self.label, {})
+                stored_chips_data = db_storage.get_deep_item([f"{self.project}_over_data", self.label], {})
                 stored_chip_ids = set(stored_chips_data.keys())
 
                 # 只有当UI和存储中的ID集合不一致时，才重新渲染，以提高效率
@@ -3205,29 +3208,41 @@ def requirement_page(type="", json_path="", project_name=""):
             # 这里的 f-string 会将 Python 变量值安全地嵌入到 JS 代码中
             text = ""
             if "content" in chip_data.keys():
-                text = chip_data["content"]
+                text = chip_data.get("content")
             elif "filename" in chip_data.keys():
-                text = chip_data["filename"]
+                text = chip_data.get("filename")
             js_code = f"navigator.clipboard.writeText('{text}');"
             ui.run_javascript(js_code)
             ui.notify("内容已复制到剪贴板！", type="positive", position="top")
 
         # <-----------------------------------------------------------------
         # 设置chip的激活状态
-        def _set_chip_activ(self, chip_id, old_chip_select_dic):
+        async def _set_chip_activ(self, chip_id, old_chip_select_dic):
             # chip以当前最新版本的设置为当前显示状态
             req_max_ver = app.storage.general["project_req_max_ver"][self.project]
-            if app.storage.general["overview_data"][self.project][self.label][chip_id]["select_activ_dic"][req_max_ver]:
+            if db_storage.get_deep_item(
+                [f"{self.project}_over_data", self.label, chip_id, "select_activ_dic", req_max_ver]
+            ):
                 # 激活chip
-                app.storage.general["overview_data"][self.project][self.label][chip_id]["enabled"] = True
-                if app.storage.general["overview_data"][self.project][self.label][chip_id]["type"] == "file":
-                    app.storage.general["overview_data"][self.project][self.label][chip_id]["icon"] = "attach_file"
+                # app.storage.general["overview_data"][self.project][self.label][chip_id]["enabled"] = True
+                await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "enabled"], True)
+                if db_storage.get_deep_item([f"{self.project}_over_data", self.label, chip_id, "type"]) == "file":
+                    # app.storage.general["overview_data"][self.project][self.label][chip_id]["icon"] = "attach_file"
+                    await db_storage.set_deep_item(
+                        [f"{self.project}_over_data", self.label, chip_id, "icon"], "attach_file"
+                    )
                 else:
-                    app.storage.general["overview_data"][self.project][self.label][chip_id]["icon"] = None
-                app.storage.general["overview_data"][self.project][self.label][chip_id]["bg_color"] = "bg-light-blue-1"
+                    # app.storage.general["overview_data"][self.project][self.label][chip_id]["icon"] = None
+                    await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "icon"], None)
+                # app.storage.general["overview_data"][self.project][self.label][chip_id]["bg_color"] = "bg-light-blue-1"
+                await db_storage.set_deep_item(
+                    [f"{self.project}_over_data", self.label, chip_id, "bg_color"], "bg-light-blue-1"
+                )
             # 防止chip状态None（null）被当成False，当用户在弹窗选择激活状态时不做选择动作，保持原有null状态chip被处理成False显示效果
             elif (
-                app.storage.general["overview_data"][self.project][self.label][chip_id]["select_activ_dic"][req_max_ver]
+                db_storage.get_deep_item(
+                    [f"{self.project}_over_data", self.label, chip_id, "select_activ_dic", req_max_ver]
+                )
                 is None
             ):
                 # 该情况意味着用户没有修改当前chip最新版本的null状态，看了一下而已
@@ -3239,26 +3254,42 @@ def requirement_page(type="", json_path="", project_name=""):
                 # app.storage.general["overview_data"][self.project][self.label][chip_id]["bg_color"] = "bg-amber-1"
             else:
                 # 失活chip
-                app.storage.general["overview_data"][self.project][self.label][chip_id]["enabled"] = False
-                app.storage.general["overview_data"][self.project][self.label][chip_id]["icon"] = "block"
-                app.storage.general["overview_data"][self.project][self.label][chip_id]["bg_color"] = "bg-grey-5"
+                # app.storage.general["overview_data"][self.project][self.label][chip_id]["enabled"] = False
+                await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "enabled"], False)
+                # app.storage.general["overview_data"][self.project][self.label][chip_id]["icon"] = "block"
+                await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "icon"], "block")
+                # app.storage.general["overview_data"][self.project][self.label][chip_id]["bg_color"] = "bg-grey-5"
+                await db_storage.set_deep_item(
+                    [f"{self.project}_over_data", self.label, chip_id, "bg_color"], "bg-grey-5"
+                )
 
             # 如果激活弹窗关闭时，检测到激活多选项发生了变化，则修改该chip的编辑人
-            if (
-                old_chip_select_dic
-                != app.storage.general["overview_data"][self.project][self.label][chip_id]["select_activ_dic"]
-            ):
-                select_activ_dic = app.storage.general["overview_data"][self.project][self.label][chip_id][
-                    "select_activ_dic"
-                ]
+            select_activ_dic = copy.deepcopy(
+                db_storage.get_deep_item([f"{self.project}_over_data", self.label, chip_id, "select_activ_dic"], {})
+            )
+            if old_chip_select_dic != select_activ_dic:
                 creator = app.storage.user.get("current_user", "匿名用户")
-                app.storage.general["overview_data"][self.project][self.label][chip_id]["creator"] = creator
-                app.storage.general["overview_data"][self.project][self.label][chip_id]["timestamp"][
-                    datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                ] = {
-                    "creator": creator,
-                    "select_activ_dic": select_activ_dic,
-                }
+                # app.storage.general["overview_data"][self.project][self.label][chip_id]["creator"] = creator
+                await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "creator"], creator)
+                # app.storage.general["overview_data"][self.project][self.label][chip_id]["timestamp"][
+                #     datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                # ] = {
+                #     "creator": creator,
+                #     "select_activ_dic": select_activ_dic,
+                # }
+                await db_storage.set_deep_item(
+                    [
+                        f"{self.project}_over_data",
+                        self.label,
+                        chip_id,
+                        "timestamp",
+                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    ],
+                    {
+                        "creator": creator,
+                        "select_activ_dic": select_activ_dic,
+                    },
+                )
             # 刷新chip容器内容
             self._refresh_chip_container()
             # 刷新概述负责人
@@ -3269,15 +3300,19 @@ def requirement_page(type="", json_path="", project_name=""):
             self.activ_dialog.clear()
             with self.activ_dialog, ui.card().classes("w-1/2"):
                 ui.label("选择概述生效的需求版本").classes("text-lg font-bold")
-                chip_select_dic = app.storage.general["overview_data"][self.project][self.label][chip_id].get(
-                    "select_activ_dic", {}
+                chip_select_dic = db_storage.get_deep_item(
+                    [f"{self.project}_over_data", self.label, chip_id, "select_activ_dic"], {}
                 )
                 old_chip_select_dic = copy.deepcopy(chip_select_dic)
                 with ui.grid(columns=6).classes("w-full gap-0"):
                     for select_label, val in chip_select_dic.items():
-                        ui.checkbox(text=select_label, value=val).bind_value(
-                            app.storage.general["overview_data"][self.project][self.label][chip_id]["select_activ_dic"],
-                            select_label,
+                        ui.checkbox(
+                            text=select_label,
+                            value=val,
+                            on_change=lambda e: db_storage.set_deep_item(
+                                [f"{self.project}_over_data", self.label, chip_id, "select_activ_dic", select_label],
+                                e.value,
+                            ),
                         )
                 with ui.row().classes("w-full justify-end"):
                     ui.label("注意以上改动是即时生效的").classes("text-lg font-bold")
@@ -3287,50 +3322,61 @@ def requirement_page(type="", json_path="", project_name=""):
             self.activ_dialog.open()
 
         # 删除或修改chip在app.storage.general对应的数据
-        def delete_chip_info(self, chip):
+        async def delete_chip_info(self, chip):
             # 如果用户具有编辑权限
             if self._edit_permission_judge():
                 if app.storage.user["current_user"] == "admin":
-                    del app.storage.general["overview_data"][self.project][self.label][chip.props["data-chip-id"]]
+                    # del app.storage.general["overview_data"][self.project][self.label][chip.props["data-chip-id"]]
+                    await db_storage.del_deep_item(
+                        [f"{self.project}_over_data", self.label, chip.props["data-chip-id"]]
+                    )
+
                 elif app.storage.user["current_user"] != "admin":
                     # app.storage.general["overview_data"][self.project][self.label][chip.props["data-chip-id"]]["removable"] = False
                     chip_id = chip.props["data-chip-id"]
                     self._select_activ_dialog(chip_id)
 
         # 删除或修改文件缩略图及其在app.storage.general的数据
-        def clear_thumbnail(self, thumbnail):
+        async def clear_thumbnail(self, thumbnail):
             # 如果用户具有编辑权限
             if self._edit_permission_judge():
                 if app.storage.user["current_user"] == "admin":
                     thumbnail.delete()
-                    del app.storage.general["overview_data"][self.project][self.label][thumbnail.props["data-chip-id"]]
+                    # del app.storage.general["overview_data"][self.project][self.label][thumbnail.props["data-chip-id"]]
+                    await db_storage.del_deep_item(
+                        [f"{self.project}_over_data", self.label, thumbnail.props["data-chip-id"]]
+                    )
                 elif app.storage.user["current_user"] != "admin":
                     chip_id = thumbnail.props["data-chip-id"]
                     self._select_activ_dialog(chip_id)
 
         # 将该项插入的chip里指定chip上移一个位置
-        def move_up_data(self, chip_data):
+        async def move_up_data(self, chip_data):
             # 如果用户具有编辑权限
             if self._edit_permission_judge():
                 temp_data = {}
-                old_data_keys = list(app.storage.general["overview_data"][self.project][self.label].keys())
+                old_data_keys = list(db_storage.get_deep_item([f"{self.project}_over_data", self.label], {}).keys())
                 new_data_keys = move_element(old_data_keys, chip_data["id"], -1)
                 for k in new_data_keys:
-                    temp_data[k] = app.storage.general["overview_data"][self.project][self.label][k]
-                app.storage.general["overview_data"][self.project][self.label] = temp_data
+                    # temp_data[k] = app.storage.general["overview_data"][self.project][self.label][k]
+                    temp_data[k] = db_storage.get_deep_item([f"{self.project}_over_data", self.label, k], {})
+                # app.storage.general["overview_data"][self.project][self.label] = temp_data
+                await db_storage.set_deep_item([f"{self.project}_over_data", self.label], temp_data)
                 # 刷新chip容器内容
                 self._refresh_chip_container()
 
         # 将该项插入的chip里指定chip上移一个位置
-        def move_down_data(self, chip_data):
+        async def move_down_data(self, chip_data):
             # 如果用户具有编辑权限
             if self._edit_permission_judge():
                 temp_data = {}
-                old_data_keys = list(app.storage.general["overview_data"][self.project][self.label].keys())
+                old_data_keys = list(db_storage.get_deep_item([f"{self.project}_over_data", self.label], {}).keys())
                 new_data_keys = move_element(old_data_keys, chip_data["id"], 1)
                 for k in new_data_keys:
-                    temp_data[k] = app.storage.general["overview_data"][self.project][self.label][k]
-                app.storage.general["overview_data"][self.project][self.label] = temp_data
+                    # temp_data[k] = app.storage.general["overview_data"][self.project][self.label][k]
+                    temp_data[k] = db_storage.get_deep_item([f"{self.project}_over_data", self.label, k], {})
+                # app.storage.general["overview_data"][self.project][self.label] = temp_data
+                await db_storage.set_deep_item([f"{self.project}_over_data", self.label], temp_data)
                 # 刷新chip容器内容
                 self._refresh_chip_container()
 
@@ -3345,27 +3391,26 @@ def requirement_page(type="", json_path="", project_name=""):
                 delete_icon = "close"
                 delete_bg = "bg-red text-white"
             else:
-                if chip_info["icon"] == "block":
+                if chip_info.get("icon") == "block":
                     delete_icon = "settings"  # 之前是check
                     delete_bg = "bg-white text-light-blue"
                 else:
                     delete_icon = "settings"  # 之前是block
                     delete_bg = "bg-white text-light-blue"  # 之前是text-grey-10
 
-            if chip_info["type"] in ["text", "file", "test"]:
+            if chip_info.get("type") in ["text", "file", "test"]:
                 # 根据chip类型配置文字标签内容
-                if chip_info["type"] in ["text", "test"]:
-                    chip_text = chip_info["content"]
+                if chip_info.get("type") in ["text", "test"]:
+                    chip_text = chip_info.get("content", "")
                 elif chip_info["type"] == "file":
-                    chip_text = chip_info["filename"]
+                    chip_text = chip_info.get("filename", "")
                     # 每次生成都用更新配置的路径
                     filepath = f"{self.upload_path}/{chip_text}"
                 # 创建 chip 并附加一个自定义属性 `data-chip-id` 用于后续的同步检查
-                chip_color = chip_info["bg_color"]
                 chip = (
-                    ui.chip(text=chip_text, removable=False, icon=chip_info["icon"])
-                    .props(f"data-chip-id={chip_info['id']} dense square")
-                    .classes(f"m-0 {chip_color}")
+                    ui.chip(text=chip_text, removable=False, icon=chip_info.get("icon"))
+                    .props(f"data-chip-id={chip_info.get('id')} dense square")
+                    .classes(f"m-0 {chip_info.get('bg_color')}")
                 )
                 # 创建chip元素的附属元素
                 with chip:
@@ -3414,23 +3459,23 @@ def requirement_page(type="", json_path="", project_name=""):
                 chip.on("mouseenter", lambda b=move_down_button: ui_show(b)).on(
                     "mouseleave", lambda b=move_down_button: ui_hide(b)
                 )
-                if chip_info["type"] == "text":
+                if chip_info.get("type") == "text":
                     pass
                     # chip.on_click(lambda: print(chip.value))
                     # chip.set_enabled(False)
-                elif chip_info["type"] == "file":
-                    app.add_static_file(local_file=filepath, url_path=chip_info["url_path"])
-                    if chip_info["file_type"] == "application/pdf":
+                elif chip_info.get("type") == "file":
+                    app.add_static_file(local_file=filepath, url_path=chip_info.get("url_path"))
+                    if chip_info.get("file_type") == "application/pdf":
                         # 使用浏览器打开则用open_pdf_in_browser()
-                        chip.on_click(lambda url_path=chip_info["url_path"]: self.open_pdf_in_browser(url_path))
+                        chip.on_click(lambda url_path=chip_info.get("url_path"): self.open_pdf_in_browser(url_path))
                     else:
                         chip.on_click(
                             lambda filepath=filepath, file_name=chip_text: self.check_and_download(filepath, file_name)
                         )
 
             # chip类型为缩略图
-            elif chip_info["type"] == "image":
-                image_name = chip_info["filename"]
+            elif chip_info.get("type") == "image":
+                image_name = chip_info.get("filename")
                 # 每次生成都用更新配置的路径
                 image_path = f"{self.upload_path}/{image_name}"
 
@@ -3440,15 +3485,17 @@ def requirement_page(type="", json_path="", project_name=""):
                 # 根据文件类型创建缩略图
                 thumbnail = (
                     ui.interactive_image(url_path)
-                    .props(f"data-chip-id={chip_info['id']}")
+                    .props(f"data-chip-id={chip_info.get('id')}")
                     .classes("h-10 cursor-pointer")
                 )
                 thumbnail.on("click", lambda url_path=url_path: self.show_fullscreen(url_path))
 
                 # 创建缩略图的附属元素
                 with thumbnail:
-                    if chip_info["icon"]:
-                        ui.icon(chip_info["icon"]).props("flat fab color=red").classes("absolute top-0 left-0 text-xl")
+                    if chip_info.get("icon"):
+                        ui.icon(chip_info.get("icon", "")).props("flat fab color=red").classes(
+                            "absolute top-0 left-0 text-xl"
+                        )
                     # 缩略图创建日期提示
                     tooltip_text = f"创建节点: 需求V{chip_info.get('req_ver')}后<br>创建者: {chip_info.get('creator')}<br>时间: {next(reversed(chip_info.get('timestamp', {})))}<br>注释: <br>{chip_info.get('notes', '').replace('\n', '<br>')}"
                     with ui.tooltip():
@@ -3681,9 +3728,19 @@ def requirement_page(type="", json_path="", project_name=""):
 
         # 判断当前用户是否具有编辑权限
         def _edit_permission_judge(self):
-            # 判断用户是否具有编辑权限
-            if app.storage.user["current_role"] in self.permission["edit_role"]:
+            # 判断用户是否具有编辑权限 且 不处于概述审核界面
+            if app.storage.user["current_role"] in self.permission["edit_role"] and not self.temp_bool:
                 return True
+            elif self.temp_bool:
+                ui.notify(
+                    "当前处于需求审核界面，概述内容锁定不可编辑!",
+                    type="info",
+                    position="bottom",
+                    timeout=1000,
+                    progress=True,
+                    close_button="✖",
+                )
+                return False
             else:
                 ui.notify(
                     "当前用户无该项编辑权限，请联系管理员申请!",
@@ -4541,7 +4598,7 @@ def requirement_page(type="", json_path="", project_name=""):
         return (new_data, file_counter)
 
     # 需求数据输出处理函数
-    def output_config_data(data, type):
+    async def output_config_data(data, type):
         change_name = False
         # 先复制整个数据
         data_json = data
@@ -4573,13 +4630,8 @@ def requirement_page(type="", json_path="", project_name=""):
 
             # 在没改名情况下，这两个状态是同一个项目的，改名了就不是
             review_state = ""
-            # target_review_state = ""
             if app.storage.general["wait_review"].get(project_name, {}):
                 review_state = app.storage.general["wait_review"][project_name].get(version, {"state": ""})["state"]
-            # if app.storage.general["wait_review"].get(target_project_name, {}):
-            #     target_review_state = app.storage.general["wait_review"][target_project_name].get(
-            #         target_version, {"state": ""}
-            #     )["state"]
 
             # 当前项目已审情况可正常更新参照项目名
             # 其它状态，比如待修改、初次提交，不动作就保持了原有数据；待审后面拦截不能导出和提交
@@ -4783,8 +4835,9 @@ def requirement_page(type="", json_path="", project_name=""):
                                 with open(copy_file_path, "w", encoding="utf-8") as f:
                                     f.write(old_json_str)
                                 # 成功复制参照项目需求文件后，马上复制该项目概述内容
-                                app.storage.general["overview_data"][target_project_name] = copy.deepcopy(
-                                    app.storage.general["overview_data"][project_name]
+                                overview_data = db_storage.get_item(f"{project_name}_over_data", {})
+                                await db_storage.set_item(
+                                    f"{target_project_name}_over_data", copy.deepcopy(overview_data)
                                 )
                                 ui.notify(
                                     "复制衍生临时项目需求文件成功。",
@@ -4804,7 +4857,7 @@ def requirement_page(type="", json_path="", project_name=""):
                             app.storage.client["original_project"] = target_project_name
                             app.storage.client["original_version"] = "1.0"
                             # 复制保存好旧版本临时需求配置文件后，接着处理一次
-                            output_config_data(data, type)
+                            await output_config_data(data, type)
                             return
                         # 排除其它项目衍生过来的情况，那种情况保持衍生的记录版本
                         else:
@@ -4826,9 +4879,13 @@ def requirement_page(type="", json_path="", project_name=""):
                     with open(file_path, "w", encoding="utf-8") as f:
                         f.write(json_str)
                     # 将该需求版本标记到待审字典里
-                    app.storage.general["wait_review"][target_project_name] = {
-                        new_version: {"state": "待审", "submitter": app.storage.user["current_user"]}
+                    if not app.storage.general["wait_review"].get(target_project_name, {}):
+                        app.storage.general["wait_review"][target_project_name] = {}
+                    app.storage.general["wait_review"][target_project_name][new_version] = {
+                        "state": "待审",
+                        "submitter": app.storage.user["current_user"],
                     }
+
                     # 将提交该需求的用户更新为该项目负责的销售员
                     app.storage.general["project_sale"][target_project_name] = app.storage.user.get("current_user")
                     ui.notify(
@@ -5023,7 +5080,7 @@ def requirement_page(type="", json_path="", project_name=""):
             if app.storage.general.get("wait_review", {}):
                 if app.storage.general["wait_review"].get(app.storage.client["project_name"], {}):
                     if app.storage.general["wait_review"][app.storage.client["project_name"]].get(
-                        app.storage.client["version"], ""
+                        app.storage.client["version"], {}
                     ):
                         if (
                             app.storage.general["wait_review"][app.storage.client["project_name"]][
@@ -5177,22 +5234,24 @@ def requirement_page(type="", json_path="", project_name=""):
         ui.badge(text=text_str, color=color_str).props("rounded").classes("p-1 text-[8px]/[8px]")
 
     # 需求显示界面框架构造函数
-    def overview_input_frame(json_data):
+    async def overview_input_frame(json_data, temp_bool):
         project_name = json_data["1.0"]["project_name"]
         # 获取当前需求最新版本值
         new_ver = int(float(json_data["version"]))
         # 判断服务器存存器概述数据字典里是否已经存在该项目键值对，没有则创建，用于后续储存该项目需求概述资料
-        if project_name not in app.storage.general["overview_data"]:
-            app.storage.general["overview_data"][project_name] = dict()
+        if not db_storage.get_item(f"{project_name}_over_data", {}):
+            await db_storage.set_item(f"{project_name}_over_data", {})
 
         # 按照需求概述资料里记录的需求最新版本，遍历处理服务器存储的该项目需求概述chip资料里的版本激活设置
         # 按照现有chip资料里的最高版本激活设置，生成更高版本设置
         # 如果服务器存储的概述资料里存在该项目对应数据
-        if app.storage.general["overview_data"][project_name]:
+        overview_data = copy.deepcopy(db_storage.get_item(f"{project_name}_over_data", {}))
+        # 数据存在 且 不是查看临时概述（审核需求）
+        if overview_data and not temp_bool:
             # 设置一个结束整个遍历的变量
             # break_bool = False
             # 遍历该项目概述内容，字典键为概述的各分类项，值为该项下chip字典
-            for chip_dic in app.storage.general["overview_data"][project_name].values():
+            for chip_dic in overview_data.values():
                 # 该项目的版本激活设置里已经存在于当前概述版本相同的版本设置，意味着不需要更新补充
                 # if break_bool:
                 #     break
@@ -5655,6 +5714,7 @@ def requirement_page(type="", json_path="", project_name=""):
                                                 processing_type=data["processing_type"],
                                                 dialog_placeholder=data["dialog_placeholder"],
                                                 permission=data["permission"],
+                                                temp_bool=temp_bool,
                                                 # delete_bool=False,
                                             )
                                         elif data["processing_type"] in ["file", "image"]:
@@ -5665,6 +5725,7 @@ def requirement_page(type="", json_path="", project_name=""):
                                                 label=data["label"],
                                                 processing_type=data["processing_type"],
                                                 permission=data["permission"],
+                                                temp_bool=temp_bool,
                                                 # upload_path=Path(""),
                                                 # delete_bool=False,
                                             )
@@ -5679,6 +5740,7 @@ def requirement_page(type="", json_path="", project_name=""):
                                                 state_options=data["state_options"],
                                                 node_options=data["node_options"],
                                                 instrument_options=data["instrument_options"],
+                                                temp_bool=temp_bool,
                                                 # upload_path=Path(""),
                                                 # delete_bool=False,
                                             )
@@ -5697,7 +5759,6 @@ def requirement_page(type="", json_path="", project_name=""):
     header = ui.header().classes("flex justify-between items-center bg-blue-500 h-12 px-4")
     # 如果跳转传入了json文件路径，则解析这个路径并借此生成界面
     if type == "requirement" and os.path.exists(json_path):
-        # header = ui.header().classes("flex justify-between items-center bg-blue-500 h-12 px-4")
         try:
             with open(json_path, "r", encoding="utf-8") as f:
                 # 使用 json.load() 读取文件内容并解析
@@ -5713,13 +5774,13 @@ def requirement_page(type="", json_path="", project_name=""):
         # 设置项目型号
         app.storage.client["project_name"] = project_name
         app.storage.client["target_project_name"] = project_name
-        # 新建需求界面，保证清除掉前面遗留的数据
-        # header = ui.header().classes("flex justify-between items-center bg-blue-500 h-12 px-4")
         # 客户端储存里数据初始化，调用requirement_input_frame()显示需求确认项
         new_requirement()
     # 如果跳转传入了json文件路径，则解析这个路径并借此生成界面
-    elif type == "overview" and os.path.exists(json_path):
-        # header = ui.header().classes("flex justify-between items-center bg-blue-500 h-12 px-4")
+    elif type in ["overview", "temp_overview"] and os.path.exists(json_path):
+        temp_bool = False
+        if type == "temp_overview":
+            temp_bool = True
         json_data = {}
         try:
             with open(json_path, "r", encoding="utf-8") as f:
@@ -5742,10 +5803,9 @@ def requirement_page(type="", json_path="", project_name=""):
                 "file_obj": file_thumbnail,
                 "file_information": v,
             }
-        overview_input_frame(json_data)
+        await overview_input_frame(json_data, temp_bool)
         # loads_overviews()
     else:
-        # header = ui.header().classes("flex justify-between items-center bg-blue-500 h-12 px-4")
         requirement_input_frame()
     # 添加全局键盘事件跟踪
     # ignore不设定默认导致键盘事件在'input', 'select', 'button', 'textarea'元素聚焦时被忽略

@@ -389,6 +389,7 @@
             "label": "product_size_diagram",
             "title": "产品尺寸图",
             "processing_type": "image",
+            "upload_path": "D:/Server/研发部（研发阶段）/",
             "permission": {
                 "read_role": [
                     "boss",
