@@ -1,0 +1,26 @@
+# -*- encoding: utf-8 -*-
+from nicegui import app, ui
+
+from ..config import IMG_DIR
+from ..utils import logout, updata_overview_config, update_config_service, update_users_data
+
+
+@ui.page("/manage")
+def manage_page():
+    # 管理员管理界面
+    if app.storage.user.get("current_user") != "admin":
+        ui.navigate.to("/main")  # 如果不是管理员，跳转到主界面
+        return
+    with ui.header().classes("flex justify-between items-center bg-blue-500 h-12 px-4"):
+        ui.image(f"{IMG_DIR}/Rayfine.png").classes("absolute w-20")
+        ui.label("系统管理员界面").classes("text-white text-lg absolute left-1/2 transform -translate-x-1/2")
+        with ui.button(icon="menu").props("flat round").classes("ml-auto -mt-3.5 h-4 text-sm/4 text-white"):  # 右侧对齐
+            with ui.menu() as menu:
+                ui.menu_item("返回主界面", on_click=lambda: ui.navigate.to("/main"))
+                ui.menu_item("注销登录", on_click=lambda: logout())
+                ui.separator().props("size=1px")
+                ui.menu_item("关闭菜单", menu.close)
+    with ui.column().classes("w-full h-[90vh] -space-y-2"):
+        ui.button("更新需求配置文件", on_click=lambda: update_config_service()).props("").classes("")
+        ui.button("更新概述项配置文件", on_click=lambda: updata_overview_config()).props("").classes("")
+        ui.button("更新用户配置数据", on_click=lambda: update_users_data()).props("").classes("")

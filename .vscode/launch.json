@@ -31,6 +31,17 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "Python: 运行 NiceGUI (模块模式)",
+            "type": "debugpy",
+            "request": "launch",
+            // 关键：告诉 VS Code 运行 "python -m src.main"
+            "module": "src.main",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            // 确保工作目录是项目根目录
+            "cwd": "${workspaceFolder}"
+        },
+        {
             "name": "Python: 当前文件（集成终端）",
             "type": "debugpy",
             "request": "launch",
