@@ -19,6 +19,7 @@ from ..components import ButtonUploader, FileThumbnail, InteractiveButton
 from ..config import IMG_DIR, REQ_DIR, UPLOAD_URL_DIR, UPLOADS_DIR
 from ..utils import (
     compare_configs_by_id,
+    edit_user_Information,
     find_files_with_prefix_and_version,
     find_key_position,
     get_max_numeric_key,
@@ -1730,12 +1731,19 @@ async def requirement_page(type="", json_path="", project_name=""):
             ).props("accept=.json")
             upload.set_visibility(False)  # 隐藏上传组件
             with (
-                ui.button(icon="menu").props("flat round").classes("ml-auto -mt-3.5 h-4 text-sm/4 text-white")
+                # ui.button(icon="menu").props("flat round").classes("ml-auto -mt-3.5 h-4 text-sm/4 text-white")
+                ui.avatar(size="lg").classes("cursor-pointer ml-auto -mt-3")
             ):  # 右侧对齐
+                ui.image(app.storage.user.get("avatar", "https://robohash.org/robot?bgset=bg2"))
                 with ui.menu().props("auto-close") as menu:
+                    ui.menu_item(f"你好, {app.storage.user.get('current_user', '匿名')}")
+                    ui.menu_item(
+                        "用户信息", on_click=lambda: edit_user_Information(app.storage.user.get("current_user"))
+                    )
+                    ui.menu_item("注销登录", on_click=lambda: logout())
+                    ui.separator().props("size=1px")
                     ui.menu_item("返回主界面", on_click=lambda: ui.navigate.to("/main"))
                     ui.menu_item("返回正式项目信息表", on_click=lambda: ui.navigate.to("/project_table"))
-                    ui.menu_item("注销登录", on_click=lambda: logout())
                     ui.separator().props("size=1px")
                     ui.menu_item("新建需求", on_click=lambda: get_project_dialog("new"))
                     ui.menu_item(
@@ -1750,121 +1758,124 @@ async def requirement_page(type="", json_path="", project_name=""):
                     ui.menu_item("从本地导入", on_click=lambda: import_config_data(upload))
                     ui.separator().props("size=1px")
                     ui.menu_item("关闭菜单", menu.close)
-            with ui.row().classes("font-sans h-[calc(100vh-9rem)] items-stretch flex-nowrap w-full text-black"):
-                with ui.column().classes("w-1/4 min-w-[400px] items-center justify-start overflow-y-auto"):
-                    with ui.row().classes("-space-x-2 items-center justify-center w-full"):
-                        ui.space()
-                        ui.label("确认项清单").classes("text-xl")
-                        ui.space()
-                        # 统计圆环
-                        circular_activ = (
-                            ui.circular_progress(size="md", color="green")
-                            .bind_value_from(app.storage.client, "req_activ_num")
-                            .props("rounded")
-                            .classes("")
-                        )
-                        with circular_activ:
-                            ui.tooltip("已选填")
-                        circular_not_activ = (
-                            ui.circular_progress(size="md", color="orange")
-                            .bind_value_from(app.storage.client, "req_not_activ_num")
-                            .props("rounded")
-                            .classes("")
-                        )
-                        with circular_not_activ:
-                            ui.tooltip("未选填")
-                        app.storage.client["page_elements"]["circular_activ"] = circular_activ
-                        app.storage.client["page_elements"]["circular_not_activ"] = circular_not_activ
+        # 需求行
+        with ui.row().classes("font-sans h-[calc(100vh-9rem)] items-stretch flex-nowrap w-full text-black"):
+            with ui.column().classes("w-1/4 min-w-[400px] items-center justify-start overflow-y-auto"):
+                with ui.row().classes("-space-x-2 items-center justify-center w-full"):
+                    ui.space()
+                    ui.label("确认项清单").classes("text-xl")
+                    ui.space()
+                    # 统计圆环
+                    circular_activ = (
+                        ui.circular_progress(size="md", color="green")
+                        .bind_value_from(app.storage.client, "req_activ_num")
+                        .props("rounded")
+                        .classes("")
+                    )
+                    with circular_activ:
+                        ui.tooltip("已选填")
+                    circular_not_activ = (
+                        ui.circular_progress(size="md", color="orange")
+                        .bind_value_from(app.storage.client, "req_not_activ_num")
+                        .props("rounded")
+                        .classes("")
+                    )
+                    with circular_not_activ:
+                        ui.tooltip("未选填")
+                    app.storage.client["page_elements"]["circular_activ"] = circular_activ
+                    app.storage.client["page_elements"]["circular_not_activ"] = circular_not_activ
 
-                    question_table = ui.column().classes("w-full items-center overflow-y-auto -space-y-3")
-                    with question_table:
-                        # 将新创建的 question_table 实例存入 user storage
-                        app.storage.client["page_elements"]["question_table"] = question_table
-                        # 初始化一次确认项列表
-                        set_question_list(0)
+                question_table = ui.column().classes("w-full items-center overflow-y-auto -space-y-3")
+                with question_table:
+                    # 将新创建的 question_table 实例存入 user storage
+                    app.storage.client["page_elements"]["question_table"] = question_table
+                    # 初始化一次确认项列表
+                    set_question_list(0)
 
-                ui.separator().props("vertical size=1px")
-                with ui.column().classes("relative w-3/4 min-w-[700px] items-center"):
-                    with ui.row().classes("relative w-full items-center justify-center"):
-                        with ui.column().classes("absolute left-0 -top-2 -space-y-5 items-center justify-left"):
-                            with ui.row().classes("-space-x-3 items-center justify-left w-full"):
-                                ui.label("型号设置").classes("text-base ")
-                                target_project_button = (
-                                    ui.button("", on_click=lambda: get_project_dialog())
-                                    .props("flat")
-                                    .classes("text-base text-amber-9 px-0")
-                                    .bind_text(app.storage.client, "target_project_name")
-                                )
-                                if app.storage.client["target_project_name"].strip() == "":
-                                    target_project_button.set_icon("quiz")
-                                app.storage.client["page_elements"]["target_project_button"] = target_project_button
-                            with ui.row().classes("-space-x-3 items-center justify-left w-full"):
-                                ui.label("版本查阅").classes("text-base ")
-                                ui.button(icon="list_alt", on_click=lambda: select_project_req()).props("flat").classes(
-                                    "text-base text-amber-9 px-0"
-                                )
-                                # .bind_text(app.storage.client, "target_version")
+            ui.separator().props("vertical size=1px")
+            with ui.column().classes("relative w-3/4 min-w-[700px] items-center"):
+                with ui.row().classes("relative w-full items-center justify-center"):
+                    with ui.column().classes("absolute left-0 -top-2 -space-y-5 items-center justify-left"):
+                        with ui.row().classes("-space-x-3 items-center justify-left w-full"):
+                            ui.label("型号设置").classes("text-base ")
+                            target_project_button = (
+                                ui.button("", on_click=lambda: get_project_dialog())
+                                .props("flat")
+                                .classes("text-base text-amber-9 px-0")
+                                .bind_text(app.storage.client, "target_project_name")
+                            )
+                            if app.storage.client["target_project_name"].strip() == "":
+                                target_project_button.set_icon("quiz")
+                            app.storage.client["page_elements"]["target_project_button"] = target_project_button
+                        with ui.row().classes("-space-x-3 items-center justify-left w-full"):
+                            ui.label("版本查阅").classes("text-base ")
+                            ui.button(icon="list_alt", on_click=lambda: select_project_req()).props("flat").classes(
+                                "text-base text-amber-9 px-0"
+                            )
+                            # .bind_text(app.storage.client, "target_version")
 
-                                # if app.storage.client["target_version"].strip() == "":
-                                # target_version_button.set_icon("quiz")
-                                # app.storage.client["page_elements"]["target_version_button"] = target_version_button
-                        with ui.row().classes("-space-x-3 items-center justify-center w-full "):
-                            ui.label("当前编辑需求：").classes("text-xl ")
-                            ui.label().classes("text-xl text-amber-8").bind_text(app.storage.client, "project_name")
-                            ui.label("_V").classes("text-xl text-amber-8")
-                            ui.label().classes("text-xl text-amber-8").bind_text(app.storage.client, "version")
+                            # if app.storage.client["target_version"].strip() == "":
+                            # target_version_button.set_icon("quiz")
+                            # app.storage.client["page_elements"]["target_version_button"] = target_version_button
+                    with ui.row().classes("-space-x-3 items-center justify-center w-full "):
+                        ui.label("当前编辑需求：").classes("text-xl ")
+                        ui.label().classes("text-xl text-amber-8").bind_text(app.storage.client, "project_name")
+                        ui.label("_V").classes("text-xl text-amber-8")
+                        ui.label().classes("text-xl text-amber-8").bind_text(app.storage.client, "version")
 
-                    with ui.column().classes(
-                        "mx-0 mt-10 px-22 gap-8 w-full items-center justify-start overflow-y-auto"
-                    ) as question_column:
-                        # --- 修改开始 ---
-                        # 将新创建的 question_column 实例存入 user storage
-                        app.storage.client["page_elements"]["question_column"] = question_column
-                        # --- 修改结束 ---
-                        app.storage.client["buttons_dic"]["1"].props(remove="disabled")  # 启用按钮
-                        question_display(None, "1")  # 触发点击事件
-            with ui.row().classes("fixed bottom-0 left-0 right-0 bg-sky-50 p-3 items-center shadow-inner"):
-                # 创建一个按钮组件，组件里有一个空白行，待后续往里面放缩略图
-                row_h = 9
-                get_img_group("上传", '"image/*, .pdf, .xlsx, .docx, .pptx"', row_h)
-                with ui.row().classes(f"h-{str(row_h + 1)}").classes("p-0 overflow-y-auto") as img_row:
-                    # 将新创建的 img_row 实例存入 user storage
-                    app.storage.client["page_elements"]["img_row"] = img_row
-                    # 检查缩略图对象存放字典，有对象则会创建缩略图
-                    req_thumbnail_display()
-            if app.storage.general.get("wait_review", {}):
-                if app.storage.general["wait_review"].get(app.storage.client["project_name"], {}):
-                    if app.storage.general["wait_review"][app.storage.client["project_name"]].get(
-                        app.storage.client["version"], {}
+                with ui.column().classes(
+                    "mx-0 mt-10 px-22 gap-8 w-full items-center justify-start overflow-y-auto"
+                ) as question_column:
+                    # --- 修改开始 ---
+                    # 将新创建的 question_column 实例存入 user storage
+                    app.storage.client["page_elements"]["question_column"] = question_column
+                    # --- 修改结束 ---
+                    app.storage.client["buttons_dic"]["1"].props(remove="disabled")  # 启用按钮
+                    question_display(None, "1")  # 触发点击事件
+        # 缩略图行
+        with ui.row().classes("fixed bottom-0 left-0 right-0 bg-sky-50 p-3 items-center shadow-inner"):
+            # 创建一个按钮组件，组件里有一个空白行，待后续往里面放缩略图
+            row_h = 9
+            get_img_group("上传", '"image/*, .pdf, .xlsx, .docx, .pptx"', row_h)
+            with ui.row().classes(f"h-{str(row_h + 1)}").classes("p-0 overflow-y-auto") as img_row:
+                # 将新创建的 img_row 实例存入 user storage
+                app.storage.client["page_elements"]["img_row"] = img_row
+                # 检查缩略图对象存放字典，有对象则会创建缩略图
+                req_thumbnail_display()
+        # 需求状态提醒
+        if app.storage.general.get("wait_review", {}):
+            if app.storage.general["wait_review"].get(app.storage.client["project_name"], {}):
+                if app.storage.general["wait_review"][app.storage.client["project_name"]].get(
+                    app.storage.client["version"], {}
+                ):
+                    if (
+                        app.storage.general["wait_review"][app.storage.client["project_name"]][
+                            app.storage.client["version"]
+                        ]["state"]
+                        == "待审"
                     ):
-                        if (
-                            app.storage.general["wait_review"][app.storage.client["project_name"]][
-                                app.storage.client["version"]
-                            ]["state"]
-                            == "待审"
-                        ):
-                            ui.notify(
-                                "当前需求处于待审状态，禁止导出和提交！",
-                                type="warning",
-                                position="center",
-                                timeout=0,
-                                progress=False,
-                                close_button="✖",
-                            )
-                        elif (
-                            app.storage.general["wait_review"][app.storage.client["project_name"]][
-                                app.storage.client["version"]
-                            ]["state"]
-                            == "待修改"
-                        ):
-                            ui.notify(
-                                "当前需求处于待修改状态，修改后可提交，但禁止导出！",
-                                type="warning",
-                                position="center",
-                                timeout=0,
-                                progress=False,
-                                close_button="✖",
-                            )
+                        ui.notify(
+                            "当前需求处于待审状态，禁止导出和提交！",
+                            type="warning",
+                            position="center",
+                            timeout=0,
+                            progress=False,
+                            close_button="✖",
+                        )
+                    elif (
+                        app.storage.general["wait_review"][app.storage.client["project_name"]][
+                            app.storage.client["version"]
+                        ]["state"]
+                        == "待修改"
+                    ):
+                        ui.notify(
+                            "当前需求处于待修改状态，修改后可提交，但禁止导出！",
+                            type="warning",
+                            position="center",
+                            timeout=0,
+                            progress=False,
+                            close_button="✖",
+                        )
         # ignore不设定默认导致键盘事件在'input', 'select', 'button', 'textarea'元素聚焦时被忽略
         ui.keyboard(on_key=requirement_handle_key, ignore=[])
 
@@ -2499,7 +2510,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                     # 检查缩略图对象存放字典，有对象则会创建缩略图
                     req_thumbnail_display()
 
-    header = ui.header().classes("flex justify-between items-center bg-blue-500 h-12 px-4")
+    header = ui.header(elevated=True).classes("flex justify-between items-center bg-blue-500 h-12 px-4")
     # 如果跳转传入了json文件路径，则解析这个路径并借此生成界面
     if type == "requirement" and os.path.exists(json_path):
         try:

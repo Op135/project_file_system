@@ -69,7 +69,7 @@ def information_page():
                     ).on("click", lambda bg=button_group, pn=project_name, v=ver: get_review_button(bg, pn, v)).props()
 
     # 主界面
-    header = ui.header().classes("flex justify-between items-center bg-blue-500 h-12 px-4")
+    header = ui.header(elevated=True).classes("flex justify-between items-center bg-blue-500 h-12 px-4")
     with header:
         ui.image(f"{IMG_DIR}/Rayfine.png").classes("absolute w-20")
         ui.label("项目信息").classes("text-white text-lg absolute left-1/2 transform -translate-x-1/2")  # 绝对定位居中

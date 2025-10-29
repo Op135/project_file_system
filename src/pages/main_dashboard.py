@@ -23,7 +23,7 @@ def main_page():
     ]
 
     # 主界面
-    with ui.header().classes("flex justify-between items-center bg-blue-500 h-12 px-4"):
+    with ui.header(elevated=True).classes("flex justify-between items-center bg-blue-500 h-12 px-4"):
         ui.image(f"{IMG_DIR}/Rayfine.png").classes("absolute w-20")
         ui.label("百炼光研发管理系统").classes(
             "text-white text-lg absolute left-1/2 transform -translate-x-1/2"

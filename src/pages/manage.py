@@ -11,7 +11,7 @@ def manage_page():
     if app.storage.user.get("current_user") != "admin":
         ui.navigate.to("/main")  # 如果不是管理员，跳转到主界面
         return
-    with ui.header().classes("flex justify-between items-center bg-blue-500 h-12 px-4"):
+    with ui.header(elevated=True).classes("flex justify-between items-center bg-blue-500 h-12 px-4"):
         ui.image(f"{IMG_DIR}/Rayfine.png").classes("absolute w-20")
         ui.label("系统管理员界面").classes("text-white text-lg absolute left-1/2 transform -translate-x-1/2")
         with ui.button(icon="menu").props("flat round").classes("ml-auto -mt-3.5 h-4 text-sm/4 text-white"):  # 右侧对齐

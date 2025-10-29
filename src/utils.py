@@ -16,6 +16,11 @@ from . import db_storage
 from .config import BASE_DIR, OVER_DIR, REQ_DIR
 
 
+# 编辑用户信息
+def edit_user_Information(user_name):
+    pass
+
+
 # 更新所有用户密码与角色数据
 def update_users_data():
     try:
