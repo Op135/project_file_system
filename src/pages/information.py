@@ -46,53 +46,69 @@ def information_page():
                     ui.button(
                         f"{project_name}_V{ver} 需求状态：「{review_str}」",
                         on_click=lambda p_name=project_name: get_overviow_page(p_name, True),
-                    )
+                    ).props("outline")
                     ui.button(
                         "审核通过",
                         color="green-8",
                         on_click=lambda p_name=project_name, v=ver: set_review_pass(p_name, v),
-                    ).on("click", lambda bg=button_group, pn=project_name, v=ver: get_review_button(bg, pn, v)).props()
+                    ).on("click", lambda bg=button_group, pn=project_name, v=ver: get_review_button(bg, pn, v)).props(
+                        ""
+                    )
                     ui.button(
                         "需修改",
                         color="amber-8",
                         on_click=lambda p_name=project_name, v=ver: set_review_revise(p_name, v),
-                    ).on("click", lambda bg=button_group, pn=project_name, v=ver: get_review_button(bg, pn, v)).props()
+                    ).on("click", lambda bg=button_group, pn=project_name, v=ver: get_review_button(bg, pn, v)).props(
+                        ""
+                    )
                 else:
                     ui.button(
                         f"{project_name}_V{ver} 需求状态：「{review_str}」",
                         on_click=lambda p_name=project_name, v=ver: get_requirement_page(p_name, v),
-                    )
+                    ).props("outline")
                     ui.button(
                         "修改",
                         color="amber-8",
                         on_click=lambda p_name=project_name, v=ver: set_review_revise(p_name, v),
-                    ).on("click", lambda bg=button_group, pn=project_name, v=ver: get_review_button(bg, pn, v)).props()
+                    ).on("click", lambda bg=button_group, pn=project_name, v=ver: get_review_button(bg, pn, v)).props(
+                        ""
+                    )
 
     # 主界面
     header = ui.header(elevated=True).classes("flex justify-between items-center bg-blue-500 h-12 px-4")
     with header:
         ui.image(f"{IMG_DIR}/Rayfine.png").classes("absolute w-20")
-        ui.label("项目信息").classes("text-white text-lg absolute left-1/2 transform -translate-x-1/2")  # 绝对定位居中
-        with ui.button(icon="menu").props("flat round").classes("ml-auto -mt-3.5 h-4 text-sm/4 text-white"):  # 右侧对齐
-            with ui.menu() as menu:
-                ui.menu_item("返回主界面", on_click=lambda: ui.navigate.to("/main"))
+        ui.label("状态与图表").classes(
+            "text-white text-lg absolute left-1/2 transform -translate-x-1/2"
+        )  # 绝对定位居中
+        with ui.avatar(size="lg").classes("cursor-pointer ml-auto -mt-3"):  # 右侧对齐
+            ui.image(
+                app.storage.general.get("user_preferences", {})
+                .get(app.storage.user.get("current_user"), {})
+                .get("avatar", f"{IMG_DIR}/avatars/avatar1.png")
+            )
+            with ui.menu().props("auto-close") as menu:
+                ui.menu_item(f"你好, {app.storage.user.get('current_user', '匿名')}").style("white-space: nowrap;")
                 ui.menu_item("注销登录", on_click=lambda: logout())
                 ui.separator().props("size=1px")
+                ui.menu_item("返回主界面", on_click=lambda: ui.navigate.to("/main"))
+                ui.separator().props("size=1px")
                 ui.menu_item("关闭菜单", menu.close)
-    review_column = ui.column()
-    with review_column:
-        # 如果用户是审核者，显示所有待审需求
-        if current_role in ["研发经理"] and app.storage.general.get("wait_review", {}):
-            for project_name, ver_dic in app.storage.general["wait_review"].items():
-                for ver, dic in ver_dic.items():
-                    # 如果当前项目的当前版本未审
-                    if dic["state"] != "已审":
-                        button_group = ui.button_group()
-                        get_review_button(button_group, project_name, ver)
-        # 用户不是审核者，且存在待审数据
-        elif app.storage.general.get("wait_review", {}):
-            for project_name, ver_dic in app.storage.general["wait_review"].items():
-                for ver, dic in ver_dic.items():
-                    if dic["state"] != "已审" and dic["submitter"] == current_user:
-                        button_group = ui.button_group()
-                        get_review_button(button_group, project_name, ver)
+    with ui.row():
+        with ui.card().classes("gap-2 p-2"):
+            ui.label("需求评审状态").classes("text-base")
+            # 如果用户是审核者，显示所有待审需求
+            if current_role in ["研发经理"] and app.storage.general.get("wait_review", {}):
+                for project_name, ver_dic in app.storage.general["wait_review"].items():
+                    for ver, dic in ver_dic.items():
+                        # 如果当前项目的当前版本未审
+                        if dic["state"] != "已审":
+                            button_group = ui.button_group().props("outline")
+                            get_review_button(button_group, project_name, ver)
+            # 用户不是审核者，且存在待审数据
+            elif app.storage.general.get("wait_review", {}):
+                for project_name, ver_dic in app.storage.general["wait_review"].items():
+                    for ver, dic in ver_dic.items():
+                        if dic["state"] != "已审" and dic["submitter"] == current_user:
+                            button_group = ui.button_group().props("outline")
+                            get_review_button(button_group, project_name, ver)

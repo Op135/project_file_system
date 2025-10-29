@@ -4,6 +4,55 @@ from nicegui import app, ui
 from ..utils import handle_key
 
 
+# 密码比对函数
+def _submit_new_password(dialog, new_pwd, confirm_pwd, target_username):
+    if new_pwd.value != confirm_pwd.value:
+        ui.notify(
+            "两次输入密码不一致", type="warning", position="bottom", timeout=1000, progress=True, close_button="✖"
+        )
+        return
+    try:
+        success = app.state.user_service.update_password(target_username, new_pwd.value)
+        if success:
+            ui.notify(
+                "密码设置成功，正在跳转...",
+                type="positive",
+                position="bottom",
+                timeout=1000,
+                progress=True,
+                close_button="✖",
+            )
+            dialog.close()  # 成功后关闭对话框
+    except Exception as e:
+        ui.notify(
+            f"密码设置失败: {str(e)}",
+            type="negative",
+            position="bottom",
+            timeout=1000,
+            progress=True,
+            close_button="✖",
+        )
+
+
+# 密码设置函数
+def create_password_dialog(target_username: str):
+    with (
+        ui.dialog().props("persistent w-full") as dialog,
+        ui.card().classes("w-1/4 p-4 bg-white shadow-md"),
+    ):
+        with ui.column().classes("w-full p-4"):
+            ui.label("请设置密码").classes("text-lg")
+            new_pwd = ui.input("新密码", password=True, password_toggle_button=True).props("autofocus")
+            confirm_pwd = ui.input("确认密码", password=True, password_toggle_button=True).props("")
+
+        with ui.row().classes("w-full p-4 flex-nowrap"):
+            ui.button(
+                "提交", on_click=lambda: _submit_new_password(dialog, new_pwd, confirm_pwd, target_username)
+            ).classes("w-1/2")
+            ui.button("取消", on_click=lambda: dialog.close()).classes("w-1/2")
+    dialog.open()
+
+
 @ui.page("/login")
 def login_page():
     # 用于记录键盘按键状态
@@ -59,7 +108,7 @@ def login_page():
 
             # 正常密码验证流程
             if str(user_info.get("password", "")) == input_password:
-                set_password(input_username)
+                create_password_dialog(input_username)
             else:
                 ui.notify("密码错误", type="negative", position="bottom", timeout=1000, progress=True, close_button="✖")
         except Exception as e:
@@ -71,52 +120,6 @@ def login_page():
                 progress=True,
                 close_button="✖",
             )
-
-    # 密码比对函数
-    def submit(new_pwd, confirm_pwd, target_username):
-        if new_pwd.value != confirm_pwd.value:
-            ui.notify(
-                "两次输入密码不一致", type="warning", position="bottom", timeout=1000, progress=True, close_button="✖"
-            )
-            return
-        try:
-            success = app.state.user_service.update_password(target_username, new_pwd.value)
-            if success:
-                ui.notify(
-                    "密码设置成功，正在跳转...",
-                    type="positive",
-                    position="bottom",
-                    timeout=1000,
-                    progress=True,
-                    close_button="✖",
-                )
-                # 跳转到登录页面
-                ui.navigate.to("/login")
-        except Exception as e:
-            ui.notify(
-                f"密码设置失败: {str(e)}",
-                type="negative",
-                position="bottom",
-                timeout=1000,
-                progress=True,
-                close_button="✖",
-            )
-
-    # 密码设置函数
-    def set_password(target_username: str):
-        with (
-            ui.dialog().props("persistent w-full") as dialog_set_password,
-            ui.card().classes("w-1/4 p-4 bg-white shadow-md"),
-        ):
-            with ui.column().classes("w-full p-4"):
-                ui.label("请设置密码").classes("text-lg")
-                new_pwd = ui.input("新密码", password=True).props("type=password autofocus")
-                confirm_pwd = ui.input("确认密码", password=True).props("type=password")
-
-            with ui.row().classes("w-full p-4 flex-nowrap"):
-                ui.button("提交", on_click=lambda: submit(new_pwd, confirm_pwd, target_username)).classes("w-1/2")
-                ui.button("取消", on_click=lambda: dialog_set_password.close()).classes("w-1/2")
-        dialog_set_password.open()
 
     # 返回用户是否为管理员的布尔值
     def check_admin_role(username: str) -> bool:
@@ -143,7 +146,7 @@ def login_page():
             user_info = app.state.user_service.get_user(input_username)
             # 条件1：用户存在且密码为空
             if user_info and user_info.get("password") is None:
-                set_password(input_username)  # 直接弹出密码设置
+                create_password_dialog(input_username)  # 直接弹出密码设置
         except Exception as e:
             ui.notify(
                 f"用户查询失败: {str(e)}",

@@ -19,7 +19,6 @@ from ..components import ButtonUploader, FileThumbnail, InteractiveButton
 from ..config import IMG_DIR, REQ_DIR, UPLOAD_URL_DIR, UPLOADS_DIR
 from ..utils import (
     compare_configs_by_id,
-    edit_user_Information,
     find_files_with_prefix_and_version,
     find_key_position,
     get_max_numeric_key,
@@ -1730,20 +1729,18 @@ async def requirement_page(type="", json_path="", project_name=""):
                 label="选择JSON文件",
             ).props("accept=.json")
             upload.set_visibility(False)  # 隐藏上传组件
-            with (
-                # ui.button(icon="menu").props("flat round").classes("ml-auto -mt-3.5 h-4 text-sm/4 text-white")
-                ui.avatar(size="lg").classes("cursor-pointer ml-auto -mt-3")
-            ):  # 右侧对齐
-                ui.image(app.storage.user.get("avatar", "https://robohash.org/robot?bgset=bg2"))
+            with ui.avatar(size="lg").classes("cursor-pointer ml-auto -mt-3"):  # 右侧对齐
+                ui.image(
+                    app.storage.general.get("user_preferences", {})
+                    .get(app.storage.user.get("current_user"), {})
+                    .get("avatar", f"{IMG_DIR}/avatars/avatar1.png")
+                )
                 with ui.menu().props("auto-close") as menu:
-                    ui.menu_item(f"你好, {app.storage.user.get('current_user', '匿名')}")
-                    ui.menu_item(
-                        "用户信息", on_click=lambda: edit_user_Information(app.storage.user.get("current_user"))
-                    )
+                    ui.menu_item(f"你好, {app.storage.user.get('current_user', '匿名')}").style("white-space: nowrap;")
                     ui.menu_item("注销登录", on_click=lambda: logout())
                     ui.separator().props("size=1px")
                     ui.menu_item("返回主界面", on_click=lambda: ui.navigate.to("/main"))
-                    ui.menu_item("返回正式项目信息表", on_click=lambda: ui.navigate.to("/project_table"))
+                    ui.menu_item("返回正式项目", on_click=lambda: ui.navigate.to("/project_table"))
                     ui.separator().props("size=1px")
                     ui.menu_item("新建需求", on_click=lambda: get_project_dialog("new"))
                     ui.menu_item(

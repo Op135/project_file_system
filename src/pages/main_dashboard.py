@@ -19,7 +19,7 @@ def main_page():
         ("assignment", "正式项目", "录入与查看正式项目信息", "/project_table"),
         ("history_edu", "临时项目", "录入与查看临时项目信息", "/main"),
         # ("manage_accounts", "XX", "XX", "/main"),
-        ("insert_chart", "消息图表", "查阅项目相关消息与统计图表", "/information"),
+        ("insert_chart", "状态图表", "查阅项目相关消息与统计图表", "/information"),
     ]
 
     # 主界面
@@ -28,10 +28,18 @@ def main_page():
         ui.label("百炼光研发管理系统").classes(
             "text-white text-lg absolute left-1/2 transform -translate-x-1/2"
         )  # 绝对定位居中
-        with ui.button(icon="menu").props("flat round").classes("ml-auto -mt-3.5 h-4 text-sm/4 text-white"):  # 右侧对齐
-            with ui.menu() as menu:
+        with ui.avatar(size="lg").classes("cursor-pointer ml-auto -mt-3"):  # 右侧对齐
+            ui.image(
+                app.storage.general.get("user_preferences", {})
+                .get(app.storage.user.get("current_user"), {})
+                .get("avatar", f"{IMG_DIR}/avatars/avatar1.png")
+            )
+            with ui.menu().props("auto-close") as menu:
+                ui.menu_item(f"你好, {app.storage.user.get('current_user', '匿名')}").style("white-space: nowrap;")
+                ui.menu_item("用户信息", on_click=lambda: ui.navigate.to("/profile"))
                 ui.menu_item("注销登录", on_click=lambda: logout())
                 if app.storage.user.get("current_user") == "admin":
+                    ui.separator().props("size=1px")
                     ui.menu_item("系统管理", on_click=lambda: ui.navigate.to("/manage"))
                 ui.separator().props("size=1px")
                 ui.menu_item("关闭菜单", menu.close)
