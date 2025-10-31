@@ -63,3 +63,4 @@ def main_page():
                     ui.label(title).classes("text-xl font-semibold")
                     # 模块描述
                     ui.label(subtitle).classes("text-center text-gray-500 text-sm mt-1")
+                    ui.badge("0", color="red").props("floating")
