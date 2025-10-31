@@ -137,7 +137,8 @@ def information_page():
 
     def get_review_button(button_group, project_name, ver):
         # 1. 总是先从 storage 获取最新的状态
-        review_str = app.storage.general["wait_review"][project_name][ver]["state"]
+        review_str = app.storage.general["wait_review"][project_name][ver].get("state")
+        submitter = app.storage.general["wait_review"][project_name][ver].get("submitter")
         # 2. 关键逻辑：检查新状态
         if review_str == "已审":
             # 3. 如果状态是 "已审"，删除这个按钮组
@@ -148,7 +149,7 @@ def information_page():
             with button_group:
                 if current_role in ["研发经理"]:
                     ui.button(
-                        f"{project_name}_V{ver} 需求状态：「{review_str}」",
+                        f"{submitter}提交：{project_name}_V{ver} 需求状态：「{review_str}」",
                         on_click=lambda p_name=project_name: get_overviow_page(p_name, True),
                     ).props("outline")
                     ui.button(
@@ -208,7 +209,7 @@ def information_page():
                 for project_name, ver_dic in app.storage.general["wait_review"].items():
                     for ver, dic in ver_dic.items():
                         # 如果当前项目的当前版本未审
-                        if dic["state"] != "已审":
+                        if dic.get("state") != "已审":
                             show_bool = True
                             button_group = ui.button_group().props("outline")
                             get_review_button(button_group, project_name, ver)
@@ -219,7 +220,7 @@ def information_page():
                 show_bool = False
                 for project_name, ver_dic in app.storage.general["wait_review"].items():
                     for ver, dic in ver_dic.items():
-                        if dic["state"] != "已审" and dic["submitter"] == current_user:
+                        if dic.get("state") != "已审" and dic.get("submitter") == current_user:
                             show_bool = True
                             button_group = ui.button_group().props("outline")
                             get_review_button(button_group, project_name, ver)

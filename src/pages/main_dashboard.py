@@ -13,6 +13,7 @@ def main_page():
         ui.navigate.to("/login")  # 如果未登录，跳转到登录页
         return
     current_user = app.storage.user.get("current_user")
+    current_role = app.storage.user.get("current_role")
     # 从全局存储中获取用户当前的头像设置
     # (在 main.py 中定义 "user_preferences")
     user_prefs = app.storage.general.get("user_preferences", {}).get(current_user, {})
@@ -47,6 +48,16 @@ def main_page():
     # b-classes: 应用于特定子元素的样式 (这里没用，但可以写 b-col-6 c-col-4 等)
     with ui.column().classes("w-full h-[calc(100vh-5rem)] items-center justify-center"):
         with ui.grid(columns=2).classes("w-[calc(70vw)] gap-4 h-[calc(30vh)]"):
+            state_num_sum = 0
+            state_num_user = 0
+            for project_name, ver_dic in app.storage.general["wait_review"].items():
+                for ver, dic in ver_dic.items():
+                    state = dic.get("state")
+                    submitter = dic.get("submitter")
+                    if state != "已审":
+                        state_num_sum += 1
+                        if submitter == current_user:
+                            state_num_user += 1
             for icon, title, subtitle, target in menu_items:
                 # 每个功能模块都用一个 ui.card 包裹
                 with ui.card().classes(
@@ -63,4 +74,8 @@ def main_page():
                     ui.label(title).classes("text-xl font-semibold")
                     # 模块描述
                     ui.label(subtitle).classes("text-center text-gray-500 text-sm mt-1")
-                    ui.badge("0", color="red").props("floating")
+                    if target == "/information":
+                        if current_role in ["研发经理"] and state_num_sum:
+                            ui.badge(str(state_num_sum), color="red").props("floating rounded transparent")
+                        elif state_num_user:
+                            ui.badge(str(state_num_user), color="red").props("floating rounded transparent")
