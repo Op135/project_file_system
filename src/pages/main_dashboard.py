@@ -46,7 +46,7 @@ def main_page():
     # a-classes: 应用于所有子元素的通用样式
     # b-classes: 应用于特定子元素的样式 (这里没用，但可以写 b-col-6 c-col-4 等)
     with ui.column().classes("w-full h-[calc(100vh-5rem)] items-center justify-center"):
-        with ui.grid(columns=3).classes("w-[calc(70vw)] gap-4 h-[calc(30vh)]"):
+        with ui.grid(columns=2).classes("w-[calc(70vw)] gap-4 h-[calc(30vh)]"):
             for icon, title, subtitle, target in menu_items:
                 # 每个功能模块都用一个 ui.card 包裹
                 with ui.card().classes(
