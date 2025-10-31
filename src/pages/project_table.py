@@ -1,10 +1,11 @@
 # -*- encoding: utf-8 -*-
+import copy
 import os
 
 from nicegui import app, ui
 
 from .. import db_storage  # 导入我们创建的模块
-from ..config import IMG_DIR, REQ_DIR
+from ..config import IMG_DIR, PRESET_AVATARS, REQ_DIR
 from ..utils import find_files_with_prefix_and_version, get_overviow_page, logout, project_summary_update
 
 
@@ -121,13 +122,21 @@ def project_table_page():
     if not app.storage.user.get("current_user"):
         ui.navigate.to("/login")  # 如果未登录，跳转到登录页
         return
+    current_user = app.storage.user.get("current_user")
+    # 从全局存储中获取用户当前的头像设置
+    # (在 main.py 中定义 "user_preferences")
+    user_prefs = app.storage.general.get("user_preferences", {}).get(current_user, {})
+    current_avatar_path = user_prefs.get("avatar", PRESET_AVATARS[0])  # 默认为第一个
 
     # 按照项目名里“-”符号切分为大类和小类，并输出二层结构的类别字典
     def get_select_dic(select_li):
+        # select_li为所有项目名列表：RFFM-1519-A
         select_li.sort()
         select_dic = {}
         # 单独加入一个所有大类，以供显示所有型号
         select_dic["所有"] = ["所有"]
+        # 现将临时项目加在靠前位置
+        select_dic["RFTS"] = ["所有"]
         for s in select_li:
             # 判断指定字符出现次数
             if s.count("-") >= 1:
@@ -186,11 +195,11 @@ def project_table_page():
                 s = select_sub_value["value"]
 
             # 遍历无分类行数据列表，将符合筛选条件的行数据找出来
-            for r in rows:
+            for row_data in rows:
                 # 如果匹配字符不为“-”且匹配字符串在项目名里（正常项目） 或 匹配字符为“-”且匹配字符不在项目名里（特殊项目）
-                if s != "-" and s in r["project"] or s == "-" and s not in r["project"]:
+                if s != "-" and s in row_data["project"] or s == "-" and s not in row_data["project"]:
                     # 获取当前行数据所属项目名
-                    project_name = r["sub_project"]
+                    project_name = row_data["sub_project"]
                     overview_data = db_storage.get_item(f"{project_name}_over_data", {})
                     # 如果服务器储存的概述数据里存在该当前项目对应概述资料
                     if overview_data:
@@ -233,7 +242,9 @@ def project_table_page():
                                                 else:
                                                     show_str = f"{show_str}，{text}"
                                 # 将处理完成的字符串作为该行数据对应项目简介项的显示内容
-                                r[pro_key] = show_str.strip("，").removeprefix("\n")  # removeprefix移除字符串前缀
+                                row_data[pro_key] = show_str.strip("，").removeprefix(
+                                    "\n"
+                                )  # removeprefix移除字符串前缀
                             # 处理负责人配置部分显示内容
                             elif (
                                 "charge" in pro_key
@@ -241,9 +252,10 @@ def project_table_page():
                                 and project_name in app.storage.general["overview_role"]
                                 and over_key_li in app.storage.general["overview_role"][project_name]
                             ):
-                                show_str = app.storage.general["overview_role"][project_name][over_key_li][
-                                    "latest_user"
-                                ]
+                                show_str = app.storage.general["overview_role"][project_name][over_key_li].get(
+                                    "latest_user", ""
+                                )
+
                                 show_str = show_str.split("：")[1] if show_str else ""
                                 if show_str:
                                     selected_bool = False
@@ -252,18 +264,19 @@ def project_table_page():
                                             select_activ_dic = ver_dic.get("select_activ_dic", {})
                                             if select_activ_dic:
                                                 max_ver = max([int(float(ver)) for ver in select_activ_dic.keys()])
+                                                # chip处于待选择激活状态下
                                                 if select_activ_dic[f"{max_ver}.0"] is None:
                                                     if over_key_li == ver_dic.get("role", ""):
                                                         selected_bool = True
                                     if selected_bool:
                                         show_str = f"待{show_str}\n选概述"
 
-                                r[pro_key] = show_str
+                                row_data[pro_key] = show_str
 
                     # 单独处理项目简介表里每行 负责销售 单元格的显示
-                    r["sale_charge"] = app.storage.general["project_sale"].get(project_name, "")
+                    row_data["sale_charge"] = app.storage.general["project_sale"].get(project_name, "")
                     # 将行数据加入待显示的符合选框的数据列表里
-                    rows_select.append(r)
+                    rows_select.append(row_data)
 
         # aggrid.run_grid_method("setRowData", rows_select)
         aggrid.options["rowData"] = rows_select
@@ -473,9 +486,9 @@ def project_table_page():
     # 将手动数据添加覆盖到服务器保存数据里
     project_summary_update()
     # 从服务器获取完整项目摘要
-    project_dic = app.storage.general["project_summary"]
+    copy_project_dic = copy.deepcopy(app.storage.general["project_summary"])
     # 抽取出无分类项目摘要列表
-    rows = list(project_dic.values())
+    rows = list(copy_project_dic.values())
     # 初始化表格行数据选项列表
     rows_select = []
     # 单独抽取出所有项目名，除重后生成列表
@@ -494,17 +507,13 @@ def project_table_page():
             "text-white text-lg absolute left-1/2 transform -translate-x-1/2"
         )  # 绝对定位居中
         with ui.avatar(size="lg").classes("cursor-pointer ml-auto -mt-3"):  # 右侧对齐
-            ui.image(
-                app.storage.general.get("user_preferences", {})
-                .get(app.storage.user.get("current_user"), {})
-                .get("avatar", f"{IMG_DIR}/avatars/avatar1.png")
-            )
+            ui.image(current_avatar_path)
             with ui.menu().props("auto-close") as menu:
                 ui.menu_item(f"你好, {app.storage.user.get('current_user', '匿名')}").style("white-space: nowrap;")
-                ui.menu_item("注销登录", on_click=lambda: logout())
                 ui.separator().props("size=1px")
                 ui.menu_item("返回主界面", on_click=lambda: ui.navigate.to("/main"))
                 ui.separator().props("size=1px")
+                ui.menu_item("注销登录", on_click=lambda: logout())
                 ui.menu_item("关闭菜单", menu.close)
     with ui.column().classes("w-full h-[88vh] -space-y-2"):
         with ui.row().classes("items-center -space-x-2") as tool_row:

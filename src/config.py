@@ -2,6 +2,8 @@
 import os
 from pathlib import Path
 
+from nicegui import app, events, ui
+
 # 从环境变量中读取密钥。如果找不到，则使用一个仅供本地开发的默认值。
 # 在生产环境中，必须设置环境变量，否则会使用不安全的默认值。
 ST = os.environ.get("STORAGE_SECRET", "this_is_not_a_secret_for_development_only")
@@ -13,15 +15,39 @@ UPLOADS_DIR = f"{BASE_DIR}/uploads"
 SUBMIT_FILES_DIR = Path(f"{BASE_DIR}/files")
 REQ_DIR = f"{BASE_DIR}/req"
 OVER_DIR = f"{BASE_DIR}/over"
+AVATAR_DIR = f"{UPLOADS_DIR}/avatars"
+# 默认头像路径
+PRESET_AVATARS = [
+    f"{IMG_DIR}/avatars/avatar1.png",
+    f"{IMG_DIR}/avatars/avatar2.png",
+    f"{IMG_DIR}/avatars/avatar3.png",
+    f"{IMG_DIR}/avatars/avatar4.png",
+    f"{IMG_DIR}/avatars/avatar5.png",
+    f"{IMG_DIR}/avatars/avatar6.png",
+    f"{IMG_DIR}/avatars/avatar7.png",
+    f"{IMG_DIR}/avatars/avatar8.png",
+    f"{IMG_DIR}/avatars/avatar9.png",
+    f"{IMG_DIR}/avatars/avatar10.png",
+    f"{IMG_DIR}/avatars/avatar11.png",
+    f"{IMG_DIR}/avatars/avatar12.png",
+    f"{IMG_DIR}/avatars/avatar13.png",
+    f"{IMG_DIR}/avatars/avatar14.png",
+    f"{IMG_DIR}/avatars/avatar15.png",
+]
 os.makedirs(IMG_DIR, exist_ok=True)
 os.makedirs(UPLOADS_DIR, exist_ok=True)
 os.makedirs(SUBMIT_FILES_DIR, exist_ok=True)
 os.makedirs(REQ_DIR, exist_ok=True)
 os.makedirs(OVER_DIR, exist_ok=True)
+os.makedirs(AVATAR_DIR, exist_ok=True)
+
 # URL路径设定
 UPLOAD_URL_DIR = "/uploads"
 FILES_URL_DIR = "/files"
+AVATAR_URL_DIR = "/uploads/avatars"
 
-
+# 定义头像处理后的最大尺寸
+AVATAR_MAX_SIZE = (190, 190)
 # ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "pdf"}
 # MAX_FILE_SIZE = 20 * 1024 * 1024
+app.add_static_files("/uploads", UPLOADS_DIR)

@@ -16,9 +16,10 @@ from nicegui.events import GenericEventArguments, KeyEventArguments, MouseEventA
 
 from .. import db_storage  # 导入我们创建的模块
 from ..components import ButtonUploader, FileThumbnail, InteractiveButton
-from ..config import IMG_DIR, REQ_DIR, UPLOAD_URL_DIR, UPLOADS_DIR
+from ..config import IMG_DIR, PRESET_AVATARS, REQ_DIR, UPLOAD_URL_DIR, UPLOADS_DIR
 from ..utils import (
     compare_configs_by_id,
+    copy_overview_data,
     find_files_with_prefix_and_version,
     find_key_position,
     get_max_numeric_key,
@@ -72,7 +73,11 @@ async def requirement_page(type="", json_path="", project_name=""):
     if not app.storage.user.get("current_user"):
         ui.navigate.to("/login")  # 如果未登录，跳转到登录页
         return
-
+    current_user = app.storage.user.get("current_user")
+    # 从全局存储中获取用户当前的头像设置
+    # (在 main.py 中定义 "user_preferences")
+    user_prefs = app.storage.general.get("user_preferences", {}).get(current_user, {})
+    current_avatar_path = user_prefs.get("avatar", PRESET_AVATARS[0])  # 默认为第一个
     # 存储用户层级需求相关数据的变量初始化
     # 用于记录键盘按键状态
     app.storage.client.setdefault("key_state", {})
@@ -358,6 +363,18 @@ async def requirement_page(type="", json_path="", project_name=""):
         ):
             ui.notify(
                 "非临时项目，又未正式立项，命名不可用，请重新命名！",
+                type="negative",
+                position="center",
+                timeout=0,
+                progress=False,
+                close_button="✖",
+            )
+            app.storage.client["target_project_name"] = app.storage.client["project_name"]
+        elif target_project_name.split("-")[0] == "RFTS" and not validate_format_regex(
+            target_project_name, r"^RFTS-\d{4}$"
+        ):
+            ui.notify(
+                "不符合临时项目号命名规则：RFTS-4位数字！",
                 type="negative",
                 position="center",
                 timeout=0,
@@ -1381,7 +1398,7 @@ async def requirement_page(type="", json_path="", project_name=""):
             data_json["file_counter"] = app.storage.client["file_counter"]
             data_json["files"] = app.storage.client["files"]
             data_json["deleted_files"] = app.storage.client["deleted_files"]
-            data_json["current_user"] = app.storage.user["current_user"]
+            data_json["current_user"] = current_user
 
             # 在没改名情况下，这两个状态是同一个项目的，改名了就不是
             review_state = ""
@@ -1407,15 +1424,15 @@ async def requirement_page(type="", json_path="", project_name=""):
 
             # 处理项目名的衍生记录
             # 没改名情况
-            if (
-                # 当前版本的参照版本为0.0版（新填 或 1.0版且没改名，改名时会将参照版本更新为当前版本）
-                original_version == "0.0"
-                or version != "0.0"  # 当前版本不为0.0即高版本 且 没有改名
-                and project_name == target_project_name
-            ):
-                pass
+            # if (
+            #     # 当前版本的参照版本为0.0版（新填 或 1.0版且没改名，改名时会将参照版本更新为当前版本）
+            #     original_version == "0.0"
+            #     or version != "0.0"  # 当前版本不为0.0即高版本 且 没有改名
+            #     and project_name == target_project_name
+            # ):
+            #     pass
             #  改了项目名
-            else:
+            if project_name != target_project_name:
                 change_name = True
 
             version_str_li = version.split(".")
@@ -1425,6 +1442,16 @@ async def requirement_page(type="", json_path="", project_name=""):
                 if review_state not in ["已审", ""]:
                     ui.notify(
                         "需求处于未审状态，不能导出到本地！",
+                        type="negative",
+                        position="center",
+                        timeout=0,
+                        progress=False,
+                        close_button="✖",
+                    )
+                    return
+                if project_name.split("-")[0] == "RFTS" and not validate_format_regex(project_name, r"^RFTS-\d{4}$"):
+                    ui.notify(
+                        "不符合临时项目号命名规则：RFTS-4位数字！",
                         type="negative",
                         position="center",
                         timeout=0,
@@ -1496,7 +1523,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                     return
                 if project_name.split("-")[0] == "RFTS" and not validate_format_regex(project_name, r"^RFTS-\d{4}$"):
                     ui.notify(
-                        "不符合临时项目号命名规则：RFTS-4位数字，不可提交服务器，只可导出到本地！",
+                        "不符合临时项目号命名规则：RFTS-4位数字！",
                         type="negative",
                         position="center",
                         timeout=0,
@@ -1569,7 +1596,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                             except Exception as e:
                                 print(f"读取文件时发生其他错误：{e}")
                             old_data_json["project_name"] = target_project_name
-                            old_data_json["current_user"] = app.storage.user["current_user"]
+                            old_data_json["current_user"] = current_user
                             old_data_json["original_project"] = project_name
                             old_data_json["version"] = "1.0"
                             old_data_json["original_version"] = version
@@ -1578,7 +1605,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                             # old_data_json["review_state"] = True
                             # 将该需求版本标记到待审字典里
                             app.storage.general["wait_review"][target_project_name] = {
-                                "1.0": {"state": "已审", "submitter": app.storage.user["current_user"]}
+                                "1.0": {"state": "已审", "submitter": current_user}
                             }
 
                             # 将字典转换为 JSON 字符串
@@ -1590,12 +1617,12 @@ async def requirement_page(type="", json_path="", project_name=""):
                                 with open(copy_file_path, "w", encoding="utf-8") as f:
                                     f.write(old_json_str)
                                 # 成功复制参照项目需求文件后，马上复制该项目概述内容
-                                overview_data = db_storage.get_item(f"{project_name}_over_data", {})
-                                await db_storage.set_item(
-                                    f"{target_project_name}_over_data", copy.deepcopy(overview_data)
-                                )
+                                await copy_overview_data(project_name, version, target_project_name)
+                                # 更新目标项目概述角色统计结果，以便第一时间在项目总表能看到统计结果和状态
+                                overview_role_update(target_project_name)
+                                overview_role_update(target_project_name)
                                 ui.notify(
-                                    "复制衍生临时项目需求文件成功。",
+                                    "复制衍生项目需求文件概述资料成功。",
                                     type="positive",
                                     position="bottom",
                                     timeout=2000,
@@ -1638,11 +1665,11 @@ async def requirement_page(type="", json_path="", project_name=""):
                         app.storage.general["wait_review"][target_project_name] = {}
                     app.storage.general["wait_review"][target_project_name][new_version] = {
                         "state": "待审",
-                        "submitter": app.storage.user["current_user"],
+                        "submitter": current_user,
                     }
 
                     # 将提交该需求的用户更新为该项目负责的销售员
-                    app.storage.general["project_sale"][target_project_name] = app.storage.user.get("current_user")
+                    app.storage.general["project_sale"][target_project_name] = current_user
                     ui.notify(
                         f"需求已提交，版本已迭代到: V{new_version}",
                         type="positive",
@@ -1730,30 +1757,25 @@ async def requirement_page(type="", json_path="", project_name=""):
             ).props("accept=.json")
             upload.set_visibility(False)  # 隐藏上传组件
             with ui.avatar(size="lg").classes("cursor-pointer ml-auto -mt-3"):  # 右侧对齐
-                ui.image(
-                    app.storage.general.get("user_preferences", {})
-                    .get(app.storage.user.get("current_user"), {})
-                    .get("avatar", f"{IMG_DIR}/avatars/avatar1.png")
-                )
+                ui.image(current_avatar_path)
                 with ui.menu().props("auto-close") as menu:
                     ui.menu_item(f"你好, {app.storage.user.get('current_user', '匿名')}").style("white-space: nowrap;")
-                    ui.menu_item("注销登录", on_click=lambda: logout())
                     ui.separator().props("size=1px")
                     ui.menu_item("返回主界面", on_click=lambda: ui.navigate.to("/main"))
-                    ui.menu_item("返回正式项目", on_click=lambda: ui.navigate.to("/project_table"))
+                    ui.menu_item("返回项目信息表", on_click=lambda: ui.navigate.to("/project_table"))
                     ui.separator().props("size=1px")
-                    ui.menu_item("新建需求", on_click=lambda: get_project_dialog("new"))
                     ui.menu_item(
                         "提交需求", on_click=lambda: output_config_data(app.storage.client["config_data"], "submit")
                     )
-                    ui.menu_item("对比需求", on_click=show_comparison_dialog)
-                    ui.separator().props("size=1px")
-                    # ui.menu_item("临时保存", on_click=lambda: save_config_data(app.storage.client["config_data"]))
                     ui.menu_item(
                         "导出到本地", on_click=lambda: output_config_data(app.storage.client["config_data"], "export")
                     )
                     ui.menu_item("从本地导入", on_click=lambda: import_config_data(upload))
                     ui.separator().props("size=1px")
+                    ui.menu_item("对比需求", on_click=show_comparison_dialog)
+                    ui.menu_item("新建需求", on_click=lambda: get_project_dialog("new"))
+                    ui.separator().props("size=1px")
+                    ui.menu_item("注销登录", on_click=lambda: logout())
                     ui.menu_item("关闭菜单", menu.close)
         # 需求行
         with ui.row().classes("font-sans h-[calc(100vh-9rem)] items-stretch flex-nowrap w-full text-black"):
@@ -1999,62 +2021,10 @@ async def requirement_page(type="", json_path="", project_name=""):
     # 需求显示界面框架构造函数
     async def overview_input_frame(json_data, temp_bool):
         project_name = json_data["1.0"]["project_name"]
-        # 获取当前需求最新版本值
-        new_ver = int(float(json_data["version"]))
+
         # 判断服务器存存器概述数据字典里是否已经存在该项目键值对，没有则创建，用于后续储存该项目需求概述资料
         if not db_storage.get_item(f"{project_name}_over_data", {}):
             await db_storage.set_item(f"{project_name}_over_data", {})
-
-        # 按照需求概述资料里记录的需求最新版本，遍历处理服务器存储的该项目需求概述chip资料里的版本激活设置
-        # 按照现有chip资料里的最高版本激活设置，生成更高版本设置
-        # 如果服务器存储的概述资料里存在该项目对应数据
-        overview_data = copy.deepcopy(db_storage.get_item(f"{project_name}_over_data", {}))
-        # 数据存在 且 不是查看临时概述（审核需求）
-        if overview_data and not temp_bool:
-            # 设置一个结束整个遍历的变量
-            # break_bool = False
-            # 遍历该项目概述内容，字典键为概述的各分类项，值为该项下chip字典
-            for chip_dic in overview_data.values():
-                # 该项目的版本激活设置里已经存在于当前概述版本相同的版本设置，意味着不需要更新补充
-                # if break_bool:
-                #     break
-                # 如果chip字典非空
-                if chip_dic:
-                    # 遍历各个chip数据
-                    for chip_data in chip_dic.values():
-                        # 将chip数据里的选项激活设置字典的键，也就是版本整理成列表
-                        activ_key_li = [int(float(k)) for k in chip_data.get("select_activ_dic", {}).keys()]
-                        # print(activ_key_li)
-                        # 如果列表非空
-                        if activ_key_li:
-                            # 获取选项激活设置里最大的版本值
-                            old_max_ver = max(activ_key_li)
-
-                            # 如果当前需求版本值大于激活设置的最大版本值
-                            if new_ver > old_max_ver:
-                                # 获取激活设置最大版本值对应的布尔设置值
-                                # activ_max_bool = chip_data["select_activ_dic"][f"{old_max_ver}.0"]
-                                # 从现有激活设置最大版本值+1到当前需求版本值开始生成键值对
-                                for key in range(old_max_ver + 1, new_ver + 1):
-                                    # 新版本值均设置为激活设置最大值一样的布尔值
-                                    # chip_data["select_activ_dic"][f"{key}.0"] = activ_max_bool
-                                    # 新版本值均设置为None，为第三状态值，待工程师处理
-                                    chip_data["select_activ_dic"][f"{key}.0"] = None
-                            # 如果是首次生成概述界面，且有服务器储存存在概述内容，则属于衍生项目且复制了概述内容
-                            # 最高版本的激活状态要改成None，让其黄色显示
-                            if json_data["first_create"]:
-                                chip_data["select_activ_dic"][f"{old_max_ver}.0"] = None
-                            # 如果当前需求版本值刚好等于激活设置的最大版本值，则提前终止整个遍历
-                            # elif new_ver == old_max_ver:
-                            #     break_bool = True
-                            #     break
-                            # 与上一elif判断语句块矛盾，不能同时存在才能发挥检查刷新所有chip待选择显示效果效果
-                            if chip_data["select_activ_dic"][f"{new_ver}.0"] is None:
-                                # 将这个存在未手动选择激活状态的chip的相关状态配置成特殊显示
-                                # 设置为None，这个chip的内容在项目总表展示时才会表明待选择处理
-                                chip_data["enabled"] = None
-                                chip_data["icon"] = "question_mark"
-                                chip_data["bg_color"] = "bg-amber-5"
 
         # 需求界面内容
         header.clear()
@@ -2065,12 +2035,13 @@ async def requirement_page(type="", json_path="", project_name=""):
                 "text-white text-lg absolute left-1/2 transform -translate-x-1/2"
             )  # 绝对定位居中
 
-            with (
-                ui.button(icon="menu").props("flat round").classes("ml-auto -mt-3.5 h-4 text-sm/4 text-white")
-            ):  # 右侧对齐
+            with ui.avatar(size="lg").classes("cursor-pointer ml-auto -mt-3"):  # 右侧对齐
+                ui.image(current_avatar_path)
                 with ui.menu().props("auto-close") as menu:
+                    ui.menu_item(f"你好, {app.storage.user.get('current_user', '匿名')}").style("white-space: nowrap;")
+                    ui.separator().props("size=1px")
                     ui.menu_item("返回主界面", on_click=lambda: ui.navigate.to("/main"))
-                    ui.menu_item("返回正式项目信息表", on_click=lambda: ui.navigate.to("/project_table"))
+                    ui.menu_item("返回项目信息表", on_click=lambda: ui.navigate.to("/project_table"))
                     ui.menu_item("注销登录", on_click=lambda: logout())
                     ui.separator().props("size=1px")
 
@@ -2225,7 +2196,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                                     # for version in version_keys:
                                     # version_data = json_data[version]
                                     # version_num = version_data.get("version", "N/A")
-                                    user = version_data.get("current_user", "N/A")
+                                    user = version_data.get("current_user", "")
                                     timestamp = version_data.get("req_timestamp", "N/A").replace("T", " ").split(".")[0]
 
                                     # 处理新增
@@ -2564,7 +2535,7 @@ async def requirement_page(type="", json_path="", project_name=""):
         await overview_input_frame(json_data, temp_bool)
         # loads_overviews()
     else:
-        requirement_input_frame()
+        new_requirement()
     # 添加全局键盘事件跟踪
     # ignore不设定默认导致键盘事件在'input', 'select', 'button', 'textarea'元素聚焦时被忽略
     ui.keyboard(on_key=handle_key)

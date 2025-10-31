@@ -31,7 +31,7 @@ class ButtonUploader(ui.element):
 
         # 创建隐藏的上传组件
         self.upload = ui.upload(on_upload=self.handle_upload, auto_upload=True, label=self.label).props(
-            f"accept={self.input_any_suffix} "
+            f"accept={self.input_any_suffix}"
         )
         # 隐藏upload元素
         self.upload.set_visibility(False)
@@ -1082,17 +1082,14 @@ class InteractiveButton:
             [f"{self.project}_over_data", self.label, chip_id, "select_activ_dic", req_max_ver]
         ):
             # 激活chip
-            # app.storage.general["overview_data"][self.project][self.label][chip_id]["enabled"] = True
+            # 修改这里要检查utils和information两个模块是否跟着改
             await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "enabled"], True)
             if db_storage.get_deep_item([f"{self.project}_over_data", self.label, chip_id, "type"]) == "file":
-                # app.storage.general["overview_data"][self.project][self.label][chip_id]["icon"] = "attach_file"
                 await db_storage.set_deep_item(
                     [f"{self.project}_over_data", self.label, chip_id, "icon"], "attach_file"
                 )
             else:
-                # app.storage.general["overview_data"][self.project][self.label][chip_id]["icon"] = None
                 await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "icon"], None)
-            # app.storage.general["overview_data"][self.project][self.label][chip_id]["bg_color"] = "bg-light-blue-1"
             await db_storage.set_deep_item(
                 [f"{self.project}_over_data", self.label, chip_id, "bg_color"], "bg-light-blue-1"
             )
@@ -1104,19 +1101,18 @@ class InteractiveButton:
             is None
         ):
             # 该情况意味着用户没有修改当前chip最新版本的null状态，看了一下而已
-            # 只要跳过这个情况不做任何修改即可；只单单修改当前一个chip状态，改需求所有类似状态的chip在概述框架渲染检测需求有没有新版本时统一设置了
+            # 只要跳过这个情况不做任何修改即可
             pass
             # 冗余设计，复用注意检查与整体刷新处设置是否一致
+            # 修改这里要检查utils和information两个模块是否跟着改
             # app.storage.general["overview_data"][self.project][self.label][chip_id]["enabled"] = None
             # app.storage.general["overview_data"][self.project][self.label][chip_id]["icon"] = "question_mark"
-            # app.storage.general["overview_data"][self.project][self.label][chip_id]["bg_color"] = "bg-amber-1"
+            # app.storage.general["overview_data"][self.project][self.label][chip_id]["bg_color"] = "bg-amber-5"
         else:
             # 失活chip
-            # app.storage.general["overview_data"][self.project][self.label][chip_id]["enabled"] = False
+            # 修改这里要检查utils和information两个模块是否跟着改
             await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "enabled"], False)
-            # app.storage.general["overview_data"][self.project][self.label][chip_id]["icon"] = "block"
             await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "icon"], "block")
-            # app.storage.general["overview_data"][self.project][self.label][chip_id]["bg_color"] = "bg-grey-5"
             await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "bg_color"], "bg-grey-5")
 
         # 如果激活弹窗关闭时，检测到激活多选项发生了变化，则修改该chip的编辑人
@@ -1125,14 +1121,7 @@ class InteractiveButton:
         )
         if old_chip_select_dic != select_activ_dic:
             creator = app.storage.user.get("current_user", "匿名用户")
-            # app.storage.general["overview_data"][self.project][self.label][chip_id]["creator"] = creator
             await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "creator"], creator)
-            # app.storage.general["overview_data"][self.project][self.label][chip_id]["timestamp"][
-            #     datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            # ] = {
-            #     "creator": creator,
-            #     "select_activ_dic": select_activ_dic,
-            # }
             await db_storage.set_deep_item(
                 [
                     f"{self.project}_over_data",

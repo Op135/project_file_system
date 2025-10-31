@@ -44,6 +44,7 @@ justify-items-center	# justify-items: center;
 justify-items-stretch	# justify-items: stretch;
 
 
+w-full justify-end # 先父级最宽，在让子级靠右
 # 沿容器主轴的定位方式
 justify-center # justify-content: center;
 # 子级元素左右水平居中(左右移动调整)

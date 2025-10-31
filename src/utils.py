@@ -1,6 +1,7 @@
 # -*- encoding: utf-8 -*-
 
 import asyncio
+import copy
 import hashlib
 import json
 import os
@@ -176,6 +177,54 @@ def project_summary_update():
             )
 
 
+async def copy_overview_data(project_name, version, target_project_name):
+    """
+    用于将某个项目某个版本的概述内容复制衍生成一个 “新项目的初版” 概述
+
+    Args:
+        project_name：概述来源项目名
+        version：概述来源版本
+        target_project_name：复制到的目标项目
+
+    """
+    overview_data = copy.deepcopy(db_storage.get_item(f"{project_name}_over_data", {}))
+    # 整理设置1.0版本概述激活状态，清空参照项目可能多出的版本激活记录，只复制参照版激活记录
+    for chip_dic in overview_data.values():
+        # 遍历各个chip数据
+        for chip_data in chip_dic.values():
+            # 获取参考版本记录的激活状态
+            reference_state = chip_data["select_activ_dic"][version]
+            # 清空激活状态字典
+            chip_data["select_activ_dic"] = {}
+            # 1.0版本概述状态保留参考项目概述的参考版本记录
+            chip_data["select_activ_dic"]["1.0"] = reference_state
+            # 获取参考版本激活修改记录最后一个记录
+            last_timestamp = chip_data["timestamp"].popitem()
+            # 将记录跟1.0版本记录对齐
+            last_timestamp[1]["select_activ_dic"] = {"1.0": reference_state}
+            # 清空激活状态修改记录
+            chip_data["timestamp"] = {}
+            chip_data["timestamp"][last_timestamp[0]] = last_timestamp[1]
+            # 对齐设置chip状态参数
+            if reference_state:
+                chip_data["enabled"] = True
+                if chip_data["type"] == "file":
+                    chip_data["icon"] = "attach_file"
+                else:
+                    chip_data["icon"] = None
+                chip_data["bg_color"] = "bg-light-blue-1"
+            elif reference_state is None:
+                chip_data["enabled"] = None
+                chip_data["icon"] = "question_mark"
+                chip_data["bg_color"] = "bg-amber-5"
+            else:
+                chip_data["enabled"] = False
+                chip_data["icon"] = "block"
+                chip_data["bg_color"] = "bg-grey-5"
+
+    await db_storage.set_item(f"{target_project_name}_over_data", overview_data)
+
+
 # 更新概述工程角色统计结果
 def overview_role_update(project_name):
     """
@@ -189,7 +238,7 @@ def overview_role_update(project_name):
     if project_name not in app.storage.general["overview_role"]:
         temp_dic = {}
         for over_class in app.state.over_config_data.keys():
-            temp_dic[over_class] = {}
+            temp_dic[over_class] = {"most_user": "", "latest_user": ""}
         app.storage.general["overview_role"][project_name] = temp_dic
     else:
         # 初始化概述角色字典
@@ -255,7 +304,7 @@ def overview_role_update(project_name):
                         over_role_dic[over_class]["latest_user"] = f"最近：{user}"
 
         # 将最终各角色模块找到的最多与最晚创建者字典更新到对应项目键值对里
-        app.storage.general["overview_role"][project_name] = over_role_dic
+        # app.storage.general["overview_role"][project_name] = over_role_dic
 
 
 # 在指定目录中查找包含特定前缀的文件名，并提取版本号
@@ -263,12 +312,12 @@ def find_files_with_prefix_and_version(directory, prefix):
     """
     在指定目录中查找包含特定前缀的文件名，并提取版本号
 
-    参数:
-    directory: 要搜索的目录路径
-    prefix: 文件名中需要包含的前缀字符串（如"RFFM-1519-A"）
+    Args:
+        directory: 要搜索的目录路径
+        prefix: 文件名中需要包含的前缀字符串（如"RFFM-1519-A"）
 
-    返回:
-    字典以完整版本为键，值为：{"name":文件名, "v_a":版本号整数部分, "v_b":版本号小数部分}
+    Returns:
+        字典以完整版本为键，值为：{"name":文件名, "v_a":版本号整数部分, "v_b":版本号小数部分}
     """
     result_dic = {}
 

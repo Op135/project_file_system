@@ -266,8 +266,8 @@
 		// 函数注释
 		"fileheader.cursorMode": {
 			"description": "", // 函数描述
-			"param": "", // 函数参数
-			"return": "" // 函数返回值
+			"param": "Args:", // 函数参数
+			"return": "Returns:" // 函数返回值
 		},
 		"editor.linkedEditing": true,
 		"editor.gotoLocation.multipleDefinitions": "goto",
