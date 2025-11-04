@@ -979,22 +979,29 @@ async def requirement_page(type="", json_path="", project_name=""):
             options_type in ["单选", "下拉单选"]
             and app.storage.client["config_data"]["data"][k]["user_must_out"]["value"] is not None
         ):
+            # print("单选", k, options_type, next)
             radio_bool = True
 
         # 多选，且用户做出勾选了其中某个选项
         elif options_type == "多选" and True in out_value:
             checkboxe_bool = True
-
+            # print("多选", k, options_type, next)
         # 本次处理的是输入框
         elif (
-            options_type in ["正整数", "多行文本", "单行文本"]
+            options_type
+            in [
+                "正整数",
+                "单行文本",
+                "多行文本",
+            ]  # 不能省略，省略在上面条件不成立情况下，会导致直接执行v.strip()报某种类型无.strip方法的错误
             and all(v.strip() != "" for v in out_value)
             and all(w.strip() != "" for w in out_tolerance_value)
+        ) and (
+            (options_type == "正整数" and all(v.isdigit() for v in out_value) and all(int(v) != 0 for v in out_value))
+            or (options_type in ["单行文本", "多行文本"])
         ):
-            if (
-                options_type == "正整数" and all(v.isdigit() for v in out_value) and all(int(v) != 0 for v in out_value)
-            ) or (options_type in ["单行文本", "多行文本"]):
-                input_bool = True
+            # print("输入", k, options_type, next)
+            input_bool = True
 
         # 以上必填项没有任意一项有填写则弹出提醒，禁止进入下一道确认项，但允许返回
         if not (radio_bool or checkboxe_bool or input_bool) and next == 1:
@@ -1975,7 +1982,10 @@ async def requirement_page(type="", json_path="", project_name=""):
                 for k in key_li:
                     content_li.append(
                         content.replace("{K}", f'<b><span style="color: #603d30;">{k}</span></b>')
-                        .replace("{V}", f'<b><span style="color: #603d30;">{str(user_out[k])}</span></b>')
+                        .replace(
+                            "{V}",
+                            f'<b><span style="color: #603d30;">{str(user_out[k]).replace("\n", "<br>")}</span></b>',
+                        )
                         .replace(
                             "{T}",
                             f'<b><span style="color: #603d30;">{str(tolerance_out[k]) if tolerance_out else "无"}</span></b>',
@@ -1985,7 +1995,10 @@ async def requirement_page(type="", json_path="", project_name=""):
             else:
                 result = (
                     show_template.replace("{K}", f'<b><span style="color: #603d30;">{key_li[0]}</span></b>')
-                    .replace("{V}", f'<b><span style="color: #603d30;">{str(user_out[key_li[0]])}</span></b>')
+                    .replace(
+                        "{V}",
+                        f'<b><span style="color: #603d30;">{str(user_out[key_li[0]]).replace("\n", "<br>")}</span></b>',
+                    )
                     .replace(
                         "{T}",
                         f'<b><span style="color: #603d30;">{str(tolerance_out[key_li[0]]) if tolerance_out else "无"}</span></b>',
