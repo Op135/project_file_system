@@ -1980,11 +1980,16 @@ async def requirement_page(type="", json_path="", project_name=""):
                 suffix = match.group(3)  # ] 之后的内容
                 # 键为1/2/3或用户起的多个名字
                 for k in key_li:
+                    # 必须填写的输入内容为多行文本，则默认在最前面加上换行标签，且内部\n统一替换成换行标签
+                    if answer_type == "多行文本":
+                        user_out_str = f"<br>{str(user_out[k]).replace('\n', '<br>')}"
+                    else:
+                        user_out_str = str(user_out[k])
                     content_li.append(
                         content.replace("{K}", f'<b><span style="color: #603d30;">{k}</span></b>')
                         .replace(
                             "{V}",
-                            f'<b><span style="color: #603d30;">{str(user_out[k]).replace("\n", "<br>")}</span></b>',
+                            f'<b><span style="color: #603d30;">{user_out_str}</span></b>',
                         )
                         .replace(
                             "{T}",
@@ -1993,11 +1998,16 @@ async def requirement_page(type="", json_path="", project_name=""):
                     )
                 result = f"{prefix}<br>{'<br>'.join(content_li)}<br>{suffix}"
             else:
+                # 必须填写的输入内容为多行文本，则默认在最前面加上换行标签，且内部\n统一替换成换行标签
+                if answer_type == "多行文本":
+                    user_out_str = f"<br>{str(user_out[key_li[0]]).replace('\n', '<br>')}"
+                else:
+                    user_out_str = str(user_out[key_li[0]])
                 result = (
                     show_template.replace("{K}", f'<b><span style="color: #603d30;">{key_li[0]}</span></b>')
                     .replace(
                         "{V}",
-                        f'<b><span style="color: #603d30;">{str(user_out[key_li[0]]).replace("\n", "<br>")}</span></b>',
+                        f'<b><span style="color: #603d30;">{user_out_str}</span></b>',
                     )
                     .replace(
                         "{T}",
@@ -2176,14 +2186,21 @@ async def requirement_page(type="", json_path="", project_name=""):
                                             ) as container:
                                                 # 将容器的可见性先设为False，有内容时再打开
                                                 container.visible = False
-                                                with ui.row().classes("items-center w-full gap-0") as old_row:
+                                                with ui.column().classes("items-start w-full gap-0") as old_column:
                                                     old_content = ui.markdown()
-                                                    old_ref_row = ui.row().classes("gap-0")
-                                                old_row.visible = False
-                                                with ui.row().classes("items-center w-full gap-0"):
+                                                    with ui.row().classes("items-start gap-0") as old_row:
+                                                        ui.label("引用文件：")
+                                                        old_ref_row = ui.row().classes("gap-0")
+                                                    old_row.visible = False
+                                                old_column.visible = False
+                                                with ui.row().classes("items-start w-full gap-0"):
                                                     version_badge = ui.badge().classes("my-1 mr-1")
-                                                    content = ui.markdown()
-                                                    ref_row = ui.row().classes("gap-0")
+                                                    with ui.column().classes("items-start gap-0"):
+                                                        content = ui.markdown()
+                                                        with ui.row().classes("items-start gap-0") as new_row:
+                                                            ui.label("引用文件：")
+                                                            ref_row = ui.row().classes("gap-0")
+                                                        new_row.visible = False
                                                     ui.space()
                                                     role_row = ui.row().classes("gap-0")
                                                 # history_container = ui.column().classes("w-full pl-4 gap-0")
@@ -2192,9 +2209,11 @@ async def requirement_page(type="", json_path="", project_name=""):
                                                 ui_elements[node_id] = {
                                                     "container": container,
                                                     "group_card": ui_cards[group_id],
-                                                    "old_row": old_row,
+                                                    "old_column": old_column,
                                                     "old_content": old_content,
                                                     "old_ref_row": old_ref_row,
+                                                    "new_row": new_row,
+                                                    "old_row": old_row,
                                                     "version_badge": version_badge,
                                                     "content": content,
                                                     "ref_row": ref_row,
@@ -2256,6 +2275,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                                                                 t_lab
                                                             ]["file_obj"]
                                                             add_overview_lab(thumbnail_obj)
+                                                    target["new_row"].visible = True
                                                 if item_data["option_view"]:
                                                     with target["role_badge"]:
                                                         for role in item_data["option_view"].split("+"):
@@ -2290,6 +2310,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                                                                 t_lab
                                                             ]["file_obj"]
                                                             add_overview_lab(thumbnail_obj)
+                                                    target["new_row"].visible = True
                                                 if item_data["option_view"]:
                                                     with target["role_badge"]:
                                                         for role in item_data["option_view"].split("+"):
@@ -2329,6 +2350,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                                                                     "file_thumbnail_dic"
                                                                 ][t_lab]["file_obj"]
                                                                 add_overview_lab(thumbnail_obj)
+                                                        target["new_row"].visible = True
                                                     if item_data["new_data"]["option_view"]:
                                                         with target["role_badge"]:
                                                             for role in item_data["new_data"]["option_view"].split("+"):
@@ -2369,7 +2391,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                                                 else:
                                                     target["container"].visible = True
                                                     target["group_card"].visible = True  # 填充内容，设为可见
-                                                    target["old_row"].visible = True
+                                                    target["old_column"].visible = True
                                                     target["old_content"].set_content(old_text)
                                                     if item_data["old_data"]["ref_out"]:
                                                         # 在引用行里添加于缩略图编号一致的数字引用按钮
@@ -2379,6 +2401,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                                                                     "file_thumbnail_dic"
                                                                 ][t_lab]["file_obj"]
                                                                 add_overview_lab(thumbnail_obj)
+                                                        target["old_row"].visible = True
                                                     target["version_badge"].set_text("更改为")
                                                     # 更新最新版模块版本标签
                                                     if node_id in ui_elements_latest.keys():
@@ -2401,6 +2424,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                                                                     "file_thumbnail_dic"
                                                                 ][t_lab]["file_obj"]
                                                                 add_overview_lab(thumbnail_obj)
+                                                        target["new_row"].visible = True
                                                     if item_data["new_data"]["option_view"]:
                                                         with target["role_badge"]:
                                                             for role in item_data["new_data"]["option_view"].split("+"):
