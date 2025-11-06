@@ -256,22 +256,42 @@ def project_table_page():
                                     "latest_user", ""
                                 )
 
-                                show_str = show_str.split("：")[1] if show_str else ""
-                                if show_str:
+                                charge_str = show_str.split("：")[1] if show_str else ""
+                                # 当前项目的当前over_key_li角色比如“光学”，存在最近编辑者
+                                if charge_str:
                                     selected_bool = False
+                                    break_bool = False
                                     for class_dic in overview_data.values():
+                                        if break_bool:
+                                            break
                                         for ver_dic in class_dic.values():
+                                            if break_bool:
+                                                break
                                             select_activ_dic = ver_dic.get("select_activ_dic", {})
                                             if select_activ_dic:
                                                 max_ver = max([int(float(ver)) for ver in select_activ_dic.keys()])
-                                                # chip处于待选择激活状态下
-                                                if select_activ_dic[f"{max_ver}.0"] is None:
-                                                    if over_key_li == ver_dic.get("role", ""):
-                                                        selected_bool = True
+                                                # chip处于待选择激活状态下 且 over_key_li角色比如“光学”和当前chip的编辑角色一致
+                                                if select_activ_dic[
+                                                    f"{max_ver}.0"
+                                                ] is None and over_key_li == ver_dic.get("role", ""):
+                                                    selected_bool = True
+                                                    # 查到一个需要改变角色显示状态的就不要再继续遍历了
+                                                    break_bool = True
                                     if selected_bool:
-                                        show_str = f"待{show_str}\n选概述"
+                                        # 向概述负责人待处理全局记录字典里添加负责人与项目信息
+                                        if charge_str not in app.storage.general["overview_charge_pending"]:
+                                            app.storage.general["overview_charge_pending"][charge_str] = []
+                                        elif (
+                                            project_name
+                                            not in app.storage.general["overview_charge_pending"][charge_str]
+                                        ):
+                                            app.storage.general["overview_charge_pending"][charge_str].append(
+                                                project_name
+                                            )
+                                        # 处理表格显示信息
+                                        charge_str = f"待{charge_str}\n选概述"
 
-                                row_data[pro_key] = show_str
+                                row_data[pro_key] = charge_str
 
                     # 单独处理项目简介表里每行 负责销售 单元格的显示
                     row_data["sale_charge"] = app.storage.general["project_sale"].get(project_name, "")

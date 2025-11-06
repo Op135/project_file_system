@@ -50,6 +50,8 @@ app.storage.general.setdefault("project_summary", {})
 app.storage.general.setdefault("project_overview_config", {})
 # 存储服务器层级 各项目各工程角色概述数据负责人 的变量初始化
 app.storage.general.setdefault("overview_role", {})
+# 存储服务器层级 各项目各工程角色概述数据负责人是否需要核对概述的记录信息
+app.storage.general.setdefault("overview_charge_pending", {})
 # 存储服务器层级 各项目负责销售 的变量初始化
 app.storage.general.setdefault("project_sale", {})
 # 储存服务器层级 等待审核的项目需求即待审版本

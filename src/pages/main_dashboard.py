@@ -50,6 +50,7 @@ def main_page():
         with ui.grid(columns=2).classes("w-[calc(70vw)] gap-4 h-[calc(30vh)]"):
             state_num_sum = 0
             state_num_user = 0
+            over_charge_num = 0
             for project_name, ver_dic in app.storage.general["wait_review"].items():
                 for ver, dic in ver_dic.items():
                     state = dic.get("state")
@@ -58,6 +59,9 @@ def main_page():
                         state_num_sum += 1
                         if submitter == current_user:
                             state_num_user += 1
+            if current_user in app.storage.general["overview_charge_pending"]:
+                over_charge_num = len(app.storage.general["overview_charge_pending"][current_user])
+
             for icon, title, subtitle, target in menu_items:
                 # 每个功能模块都用一个 ui.card 包裹
                 with ui.card().classes(
@@ -75,7 +79,11 @@ def main_page():
                     # 模块描述
                     ui.label(subtitle).classes("text-center text-gray-500 text-sm mt-1")
                     if target == "/information":
-                        if current_role in ["研发经理"] and state_num_sum:
-                            ui.badge(str(state_num_sum), color="red").props("floating rounded transparent")
-                        elif state_num_user:
-                            ui.badge(str(state_num_user), color="red").props("floating rounded transparent")
+                        if current_role in ["研发经理"] and (state_num_sum or over_charge_num):
+                            ui.badge(str(state_num_sum + over_charge_num), color="red").props(
+                                "floating rounded transparent"
+                            )
+                        elif state_num_user or over_charge_num:
+                            ui.badge(str(state_num_user + over_charge_num), color="red").props(
+                                "floating rounded transparent"
+                            )

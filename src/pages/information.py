@@ -6,7 +6,7 @@ import os
 from nicegui import app, ui
 
 from .. import db_storage
-from ..config import IMG_DIR, OVER_DIR, PRESET_AVATARS, REQ_DIR
+from ..config import BASE_DIR, IMG_DIR, OVER_DIR, PRESET_AVATARS, REQ_DIR
 from ..utils import delete_file, get_overviow_page, logout
 
 
@@ -22,6 +22,11 @@ def information_page():
     current_user = app.storage.user.get("current_user")
     is_admin = app.storage.user.get("is_admin")
     current_role = app.storage.user.get("current_role")
+
+    with open(f"{BASE_DIR}/information_module_show_role.json", "r", encoding="utf-8") as f:
+        # 使用 json.load() 读取文件内容并解析
+        module_show_data = json.load(f)
+
     # 从全局存储中获取用户当前的头像设置
     # (在 main.py 中定义 "user_preferences")
     user_prefs = app.storage.general.get("user_preferences", {}).get(current_user, {})
@@ -29,18 +34,6 @@ def information_page():
 
     async def set_overview_active_state(project_name, ver):
         req_ver = int(float(ver))
-        # req_path = os.path.join(REQ_DIR, f"{project_name}_需求配置_V{req_ver}.0.json")
-        # req_json = {}
-        # try:
-        #     # 每次都以配置文件为准，不以服务器现有数据为准
-        #     # 配置更新能直接呈现，但配置减项将导致原有数据不呈现
-        #     with open(req_path, "r", encoding="utf-8") as f:
-        #         # 使用 json.load() 读取文件内容并解析
-        #         req_json = json.load(f)
-        # except json.JSONDecodeError:
-        #     print(f"错误：文件 '{req_path}' 不是有效的 JSON 格式。")
-        # except Exception as e:
-        #     print(f"读取文件时发生其他错误：{e}")
 
         # 按照需求概述资料里记录的需求最新版本，遍历处理服务器存储的该项目需求概述chip资料里的版本激活设置
         # 按照现有chip资料里的最高版本激活设置，生成更高版本设置
@@ -60,7 +53,7 @@ def information_page():
 
                     # 适用于正常项目迭代，无论是原项目升版本疑惑其它项目衍生过来升版本，
                     # 概述内容不会复制，需求版本值肯定大于激活设置的最大版本值
-                    # 由1.0版本衍生到另外一个项目，需求版本2.0，概述复制了参照项目的1.0版本
+                    # 由指定版本衍生到另外一个新项目，需求版本2.0，概述复制了参照项目的指定版本激活设置，并先记录为目标项目1.0版本概述，需求版本值肯定大于激活设置的最大版本值
                     if req_ver > max_over_ver:
                         # 获取激活设置最大版本值对应的布尔设置值
                         # activ_max_bool = chip_data["select_activ_dic"][f"{max_over_ver}.0"]
@@ -81,14 +74,6 @@ def information_page():
                             progress=False,
                             close_button="✖",
                         )
-                        # 获取参考版本记录的激活状态（不一定是参考项目最高版本，因为可能用户选择了中间版本来参考衍生）
-                        # reference_state = chip_data["select_activ_dic"][req_json["original_version"]]
-                        # # 清空复位
-                        # chip_data["select_activ_dic"] = {}
-                        # # 1.0版本概述状态保留参考项目概述的参考版本记录
-                        # chip_data["select_activ_dic"]["1.0"] = reference_state
-                        # # 2.0版本固定位None
-                        # chip_data["select_activ_dic"]["2.0"] = None
 
                     if chip_data["select_activ_dic"][f"{req_ver}.0"] is None:
                         # 将这个存在未手动选择激活状态的chip的相关状态配置成特殊显示
@@ -201,28 +186,44 @@ def information_page():
                 ui.menu_item("注销登录", on_click=lambda: logout())
                 ui.menu_item("关闭菜单", menu.close)
     with ui.row():
-        with ui.card().classes("gap-2 p-2"):
-            ui.label("需求评审状态：").classes("text-base")
-            # 如果用户是审核者，显示所有待审需求
-            if current_role in ["研发经理"] and app.storage.general.get("wait_review", {}):
-                show_bool = False
-                for project_name, ver_dic in app.storage.general["wait_review"].items():
-                    for ver, dic in ver_dic.items():
-                        # 如果当前项目的当前版本未审
-                        if dic.get("state") != "已审":
-                            show_bool = True
-                            button_group = ui.button_group().props("outline")
-                            get_review_button(button_group, project_name, ver)
-                if not show_bool:
-                    ui.label("无待评审需求").classes("text-sm text-green-500")
-            # 用户不是审核者，且存在待审数据
-            elif app.storage.general.get("wait_review", {}):
-                show_bool = False
-                for project_name, ver_dic in app.storage.general["wait_review"].items():
-                    for ver, dic in ver_dic.items():
-                        if dic.get("state") != "已审" and dic.get("submitter") == current_user:
-                            show_bool = True
-                            button_group = ui.button_group().props("outline")
-                            get_review_button(button_group, project_name, ver)
-                if not show_bool:
-                    ui.label("无待评审需求").classes("text-sm text-green-500")
+        if current_role in module_show_data["wait_review_module"]:
+            with ui.card().classes("gap-2 p-2"):
+                ui.label("需求评审状态：").classes("text-base")
+                # 如果用户是审核者，显示所有待审需求
+                if current_role in ["研发经理"] and app.storage.general.get("wait_review", {}):
+                    show_bool = False
+                    for project_name, ver_dic in app.storage.general["wait_review"].items():
+                        for ver, dic in ver_dic.items():
+                            # 如果当前项目的当前版本未审
+                            if dic.get("state") != "已审":
+                                show_bool = True
+                                button_group = ui.button_group().props("outline")
+                                get_review_button(button_group, project_name, ver)
+                    if not show_bool:
+                        ui.label("无待评审需求").classes("text-sm text-green-500")
+                # 用户不是审核者，且存在待审数据
+                elif app.storage.general.get("wait_review", {}):
+                    show_bool = False
+                    for project_name, ver_dic in app.storage.general["wait_review"].items():
+                        for ver, dic in ver_dic.items():
+                            if dic.get("state") != "已审" and dic.get("submitter") == current_user:
+                                show_bool = True
+                                button_group = ui.button_group().props("outline")
+                                get_review_button(button_group, project_name, ver)
+                    if not show_bool:
+                        ui.label("无待评审需求").classes("text-sm text-green-500")
+        if current_role in module_show_data["overview_charge_pending_module"]:
+            with ui.card().classes("gap-2 p-2"):
+                ui.label("待判断概述的项目：").classes("text-base")
+                for user, project_list in app.storage.general["overview_charge_pending"].items():
+                    if user == current_user:
+                        for project_name in project_list:
+                            ui.button(
+                                f"点击更新{project_name}概述负责内容",
+                                on_click=lambda pn=project_name: get_overviow_page(pn, False),
+                            ).props("outline").on(
+                                "click",
+                                lambda pn=project_name, us=user: app.storage.general["overview_charge_pending"][
+                                    us
+                                ].remove(pn),
+                            )
