@@ -7,6 +7,7 @@ import json
 import os
 import re
 from datetime import datetime
+from pathlib import Path
 
 from nicegui import app, ui
 from nicegui.events import KeyEventArguments
@@ -14,7 +15,45 @@ from nicegui.events import KeyEventArguments
 from . import db_storage
 
 # import config
-from .config import BASE_DIR, OVER_DIR, REQ_DIR
+from .config import AVATAR_DIR, AVATAR_URL_DIR, BASE_DIR, IMG_DIR, IMG_URL_DIR, OVER_DIR, REQ_DIR
+
+
+# 新增一个辅助函数，用于头像的“缓存清除”
+def get_cache_busted_path(web_path: str) -> str:
+    """
+    根据文件的修改时间，为 web 路径添加 ?v=mtime 参数以清除缓存。
+    可以智能处理“预设头像”(IMG_DIR) 和“自定义头像”(AVATAR_DIR)。
+    """
+    if not web_path:
+        return web_path
+
+    # 移除可能存在的旧查询参数
+    clean_web_path = web_path.split("?")[0]
+
+    filesystem_path = None
+
+    try:
+        # 1. 检查是否是“自定义头像”
+        if clean_web_path.startswith(AVATAR_URL_DIR):
+            relative_path = clean_web_path[len(AVATAR_URL_DIR) :].lstrip("/")
+            filesystem_path = Path(AVATAR_DIR) / relative_path
+
+        # 2. 检查是否是“预设头像” (或其他 IMG 目录下的图片)
+        elif clean_web_path.startswith(IMG_URL_DIR):
+            relative_path = clean_web_path[len(IMG_URL_DIR) :].lstrip("/")
+            filesystem_path = Path(IMG_DIR) / relative_path
+
+        # 3. 如果路径都匹配不上，或者文件不存在
+        if filesystem_path is None or not filesystem_path.exists():
+            return web_path  # 返回原始路径
+
+        # 4. 获取文件修改时间并生成新 URL
+        mtime = filesystem_path.stat().st_mtime
+        return f"{clean_web_path}?v={mtime}"
+
+    except Exception as e:
+        print(f"Error generating cache-busted path for {web_path}: {e}")
+        return web_path  # 出错时返回原始路径
 
 
 # 更新所有用户密码与角色数据

@@ -6,7 +6,7 @@ from nicegui import app, ui
 
 from .. import db_storage  # 导入我们创建的模块
 from ..config import IMG_DIR, PRESET_AVATARS, REQ_DIR
-from ..utils import find_files_with_prefix_and_version, get_overviow_page, logout
+from ..utils import find_files_with_prefix_and_version, get_cache_busted_path, get_overviow_page, logout
 
 
 @ui.page("/project_table")
@@ -127,6 +127,8 @@ def project_table_page():
     # (在 main.py 中定义 "user_preferences")
     user_prefs = app.storage.general.get("user_preferences", {}).get(current_user, {})
     current_avatar_path = user_prefs.get("avatar", PRESET_AVATARS[0])  # 默认为第一个
+    # 在 *显示* 前，应用缓存清除
+    current_display_path = get_cache_busted_path(current_avatar_path)
 
     # 按照项目名里“-”符号切分为大类和小类，并输出二层结构的类别字典
     def get_select_dic(select_li):
@@ -525,7 +527,7 @@ def project_table_page():
             "text-white text-lg absolute left-1/2 transform -translate-x-1/2"
         )  # 绝对定位居中
         with ui.avatar(size="lg").classes("cursor-pointer ml-auto -mt-3"):  # 右侧对齐
-            ui.image(current_avatar_path)
+            ui.image(current_display_path)
             with ui.menu().props("auto-close") as menu:
                 ui.menu_item(f"你好, {app.storage.user.get('current_user', '匿名')}").style("white-space: nowrap;")
                 ui.separator().props("size=1px")

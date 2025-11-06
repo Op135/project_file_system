@@ -7,8 +7,14 @@ from nicegui import app, ui
 from nicegui.events import GenericEventArguments, KeyEventArguments, MouseEventArguments, UploadEventArguments
 from PIL import Image  # 导入 Pillow
 
-from ..config import AVATAR_DIR, AVATAR_MAX_SIZE, AVATAR_URL_DIR, IMG_DIR, PRESET_AVATARS  # 用于获取 IMG_DIR
-from ..utils import logout
+from ..config import (  # 用于获取 IMG_DIR
+    AVATAR_DIR,
+    AVATAR_MAX_SIZE,
+    AVATAR_URL_DIR,
+    IMG_DIR,
+    PRESET_AVATARS,
+)
+from ..utils import get_cache_busted_path, logout
 
 # 步骤 1: 从我们重构的 login.py 中导入可重用的函数
 from .login import create_password_dialog
@@ -20,11 +26,6 @@ def user_profile_page():
     if not (current_user := app.storage.user.get("current_user")):
         ui.navigate.to("/login")
         return
-
-    # 2. 从全局存储中获取用户当前的头像设置
-    # (在 main.py 中定义 "user_preferences")
-    user_prefs = app.storage.general.get("user_preferences", {}).get(current_user, {})
-    current_avatar_path = user_prefs.get("avatar", PRESET_AVATARS[0])  # 默认为第一个
 
     def pick_file(uploader):
         # 在上传新文件前，先清空upload列表，否则后续删除文件后，不能在重新插入
@@ -39,8 +40,10 @@ def user_profile_page():
         # 更新全局存储
         app.storage.general["user_preferences"][current_user]["avatar"] = avatar_path
         # 更新页面上显示的两个头像
-        current_avatar_display.set_source(avatar_path)
-        header_avatar_display.set_source(avatar_path)  # <-- 新增：更新顶部栏头像
+        # 步骤 3: 在 *更新显示* 时，应用缓存清除
+        display_path = get_cache_busted_path(avatar_path)
+        current_avatar_display.set_source(display_path)
+        header_avatar_display.set_source(display_path)
 
     # --- 新增：处理上传的函数 ---
     async def handle_upload(e: UploadEventArguments):
@@ -81,12 +84,19 @@ def user_profile_page():
             print(f"头像处理失败: {ex}")
             ui.notify(f"图片处理失败：{ex}", type="negative")
 
+    # 2. 从全局存储中获取用户当前的头像设置
+    # (在 main.py 中定义 "user_preferences")
+    user_prefs = app.storage.general.get("user_preferences", {}).get(current_user, {})
+    current_avatar_path = user_prefs.get("avatar", PRESET_AVATARS[0])  # 默认为第一个
+    # 在 *显示* 前，应用缓存清除
+    current_display_path = get_cache_busted_path(current_avatar_path)
+
     # --- 页面 UI 布局 ---
     with ui.header(elevated=True).classes("flex justify-between items-center bg-blue-500 h-12 px-4"):
         ui.image(f"{IMG_DIR}/Rayfine.png").classes("absolute w-20")
         ui.label("用户信息管理").classes("text-white text-lg absolute left-1/2 transform -translate-x-1/2")
         with ui.avatar(size="lg").classes("cursor-pointer ml-auto -mt-3"):  # 右侧对齐
-            header_avatar_display = ui.image(current_avatar_path)
+            header_avatar_display = ui.image(current_display_path)
             with ui.menu().props("auto-close flex-nowrap") as menu:
                 ui.menu_item(f"你好, {app.storage.user.get('current_user', '匿名')}").style("white-space: nowrap;")
                 ui.separator().props("size=1px")
@@ -100,7 +110,7 @@ def user_profile_page():
         ui.label("当前头像").classes("text-xl font-semibold")
 
         # ui.image 会自动处理本地文件路径的伺服
-        current_avatar_display = ui.image(current_avatar_path).classes(
+        current_avatar_display = ui.image(current_display_path).classes(
             "w-16 h-16 rounded-full self-center ring-4 ring-blue-500"
         )
 
@@ -123,7 +133,9 @@ def user_profile_page():
             ui.label("或选择以下预设头像：").classes("text-gray-500")
         with ui.row().classes("gap-2 flex-wrap justify-center"):
             for avatar_path in PRESET_AVATARS:
-                ui.image(avatar_path).classes(
+                # 步骤 6: 在循环预设头像时应用缓存清除
+                display_path = get_cache_busted_path(avatar_path)
+                ui.image(display_path).classes(
                     "w-16 h-16 rounded-full cursor-pointer hover:ring-4 hover:ring-blue-300"
                 ).on("click", lambda _, path=avatar_path: set_avatar(path))  # 关键：使用 lambda 捕获正确的 path
 

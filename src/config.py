@@ -16,24 +16,7 @@ SUBMIT_FILES_DIR = Path(f"{BASE_DIR}/files")
 REQ_DIR = f"{BASE_DIR}/req"
 OVER_DIR = f"{BASE_DIR}/over"
 AVATAR_DIR = f"{UPLOADS_DIR}/avatars"
-# 默认头像路径
-PRESET_AVATARS = [
-    f"{IMG_DIR}/avatars/avatar1.png",
-    f"{IMG_DIR}/avatars/avatar2.png",
-    f"{IMG_DIR}/avatars/avatar3.png",
-    f"{IMG_DIR}/avatars/avatar4.png",
-    f"{IMG_DIR}/avatars/avatar5.png",
-    f"{IMG_DIR}/avatars/avatar6.png",
-    f"{IMG_DIR}/avatars/avatar7.png",
-    f"{IMG_DIR}/avatars/avatar8.png",
-    f"{IMG_DIR}/avatars/avatar9.png",
-    f"{IMG_DIR}/avatars/avatar10.png",
-    f"{IMG_DIR}/avatars/avatar11.png",
-    f"{IMG_DIR}/avatars/avatar12.png",
-    f"{IMG_DIR}/avatars/avatar13.png",
-    f"{IMG_DIR}/avatars/avatar14.png",
-    f"{IMG_DIR}/avatars/avatar15.png",
-]
+
 os.makedirs(IMG_DIR, exist_ok=True)
 os.makedirs(UPLOADS_DIR, exist_ok=True)
 os.makedirs(SUBMIT_FILES_DIR, exist_ok=True)
@@ -45,9 +28,29 @@ os.makedirs(AVATAR_DIR, exist_ok=True)
 UPLOAD_URL_DIR = "/uploads"
 FILES_URL_DIR = "/files"
 AVATAR_URL_DIR = "/uploads/avatars"
+IMG_URL_DIR = "/img"
 
+# 默认头像路径
+PRESET_AVATARS = [
+    f"{IMG_URL_DIR}/avatars/avatar1.png",
+    f"{IMG_URL_DIR}/avatars/avatar2.png",
+    f"{IMG_URL_DIR}/avatars/avatar3.png",
+    f"{IMG_URL_DIR}/avatars/avatar4.png",
+    f"{IMG_URL_DIR}/avatars/avatar5.png",
+    f"{IMG_URL_DIR}/avatars/avatar6.png",
+    f"{IMG_URL_DIR}/avatars/avatar7.png",
+    f"{IMG_URL_DIR}/avatars/avatar8.png",
+    f"{IMG_URL_DIR}/avatars/avatar9.png",
+    f"{IMG_URL_DIR}/avatars/avatar10.png",
+    f"{IMG_URL_DIR}/avatars/avatar11.png",
+    f"{IMG_URL_DIR}/avatars/avatar12.png",
+    f"{IMG_URL_DIR}/avatars/avatar13.png",
+    f"{IMG_URL_DIR}/avatars/avatar14.png",
+    f"{IMG_URL_DIR}/avatars/avatar15.png",
+]
 # 定义头像处理后的最大尺寸
 AVATAR_MAX_SIZE = (190, 190)
 # ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "pdf"}
 # MAX_FILE_SIZE = 20 * 1024 * 1024
-app.add_static_files("/uploads", UPLOADS_DIR)
+app.add_static_files(UPLOAD_URL_DIR, UPLOADS_DIR)
+app.add_static_files(IMG_URL_DIR, IMG_DIR)
