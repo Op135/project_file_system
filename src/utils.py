@@ -153,28 +153,70 @@ def project_name_process_string(s: str) -> str:
         return s
 
 
+def project_overview_config_update():
+    try:
+        # 解析JSON数据
+        if os.path.exists(f"{BASE_DIR}/project_overview_config.json"):
+            with open(f"{BASE_DIR}/project_overview_config.json", "r", encoding="utf-8") as f:
+                app.storage.general["project_overview_config"] = json.load(f)
+        ui.notify(
+            "项目表滚动信息关联配置更新成功!",
+            type="positive",
+            position="bottom",
+            timeout=1000,
+            progress=True,
+            close_button="✖",
+        )
+    except Exception as e:
+        ui.notify(
+            f'项目表滚动信息关联配置更新出错： "{e}" ',
+            type="negative",
+            position="bottom",
+            timeout=0,
+            progress=False,
+            close_button="✖",
+        )
+
+
 # 将项目摘要里手动控制的数据，以最高优先级添加/覆盖到服务器自动保存数据里
 def project_summary_update():
-    # 解析JSON数据
-    if os.path.exists(f"{BASE_DIR}/project_summary.json"):
-        project_data = {}
-        with open(f"{BASE_DIR}/project_summary.json", "r", encoding="utf-8") as f:
-            project_data = json.load(f)
-        with open(f"{BASE_DIR}/project_overview_config.json", "r", encoding="utf-8") as f:
-            app.storage.general["project_overview_config"] = json.load(f)
-        for project_name, data in project_data.items():
-            app.storage.general["project_summary"].setdefault(project_name, {})
-            # 设置所有项目手动设置在json配置文件里的展示内容
-            app.storage.general["project_summary"][project_name].update(data)
-            # 设置所有项目均一致的展示内容
-            app.storage.general["project_summary"][project_name].update(
-                {
-                    "sub_project": project_name,
-                    "project": project_name_process_string(project_name),
-                    "requirement": "点击录入",
-                    "overview": "查阅整理",
-                }
-            )
+    try:
+        # 解析JSON数据
+        if os.path.exists(f"{BASE_DIR}/project_summary.json"):
+            project_data = {}
+            with open(f"{BASE_DIR}/project_summary.json", "r", encoding="utf-8") as f:
+                project_data = json.load(f)
+                app.storage.general["project_summary"] = copy.deepcopy(project_data)
+            for project_name, data in project_data.items():
+                # app.storage.general["project_summary"].setdefault(project_name, {})
+                # 设置所有项目手动设置在json配置文件里的展示内容
+                # app.storage.general["project_summary"][project_name].update(data)
+                # 设置所有项目均一致的展示内容
+                app.storage.general["project_summary"][project_name].update(
+                    {
+                        "sub_project": project_name,
+                        "project": project_name_process_string(project_name),
+                        "requirement": "点击录入",
+                        "overview": "查阅整理",
+                    }
+                )
+        ui.notify(
+            "项目列表更新成功!",
+            type="positive",
+            position="bottom",
+            timeout=1000,
+            progress=True,
+            close_button="✖",
+        )
+    except Exception as e:
+        ui.notify(
+            f'项目列表更新出错： "{e}" ',
+            type="negative",
+            position="bottom",
+            timeout=0,
+            progress=False,
+            close_button="✖",
+        )
 
 
 async def copy_overview_data(project_name, version, target_project_name):

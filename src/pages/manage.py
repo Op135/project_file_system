@@ -2,7 +2,14 @@
 from nicegui import app, ui
 
 from ..config import IMG_DIR, PRESET_AVATARS
-from ..utils import logout, updata_overview_config, update_config_service, update_users_data
+from ..utils import (
+    logout,
+    project_overview_config_update,
+    project_summary_update,
+    updata_overview_config,
+    update_config_service,
+    update_users_data,
+)
 
 
 @ui.page("/manage")
@@ -32,3 +39,5 @@ def manage_page():
         ui.button("更新需求配置文件", on_click=lambda: update_config_service()).props("").classes("")
         ui.button("更新概述项配置文件", on_click=lambda: updata_overview_config()).props("").classes("")
         ui.button("更新用户配置数据", on_click=lambda: update_users_data()).props("").classes("")
+        ui.button("更新项目列表(新增项目)", on_click=lambda: project_summary_update()).props("").classes("")
+        ui.button("更新项目表滚动信息关联配置", on_click=lambda: project_overview_config_update()).props("").classes("")

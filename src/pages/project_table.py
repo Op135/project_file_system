@@ -6,7 +6,7 @@ from nicegui import app, ui
 
 from .. import db_storage  # 导入我们创建的模块
 from ..config import IMG_DIR, PRESET_AVATARS, REQ_DIR
-from ..utils import find_files_with_prefix_and_version, get_overviow_page, logout, project_summary_update
+from ..utils import find_files_with_prefix_and_version, get_overviow_page, logout
 
 
 @ui.page("/project_table")
@@ -503,8 +503,6 @@ def project_table_page():
         }
         # col["cellClass"] = "ag-cell"
 
-    # 将手动数据添加覆盖到服务器保存数据里
-    project_summary_update()
     # 从服务器获取完整项目摘要
     copy_project_dic = copy.deepcopy(app.storage.general["project_summary"])
     # 抽取出无分类项目摘要列表
