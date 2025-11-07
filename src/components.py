@@ -4,6 +4,7 @@ import copy
 import io
 import math
 import os
+import time
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -463,6 +464,7 @@ class InteractiveButton:
         self.img_dialog = ui.dialog().props("maximized").classes("p-0")
         self.check_down_dialog = ui.dialog().classes("")
         self.activ_dialog = ui.dialog().props("persistent").classes("")
+
         # self.image_show = {"image_show": True}
         # self.chip_dialog.bind_value_to(self.image_show, "image_show")
 
@@ -484,6 +486,7 @@ class InteractiveButton:
             # 创建一个隐藏的 ui.upload 组件，我们将通过程序触发它
             self.uploader = ui.upload(
                 on_upload=self._handle_file_upload,
+                on_begin_upload=lambda: self.spinner.set_visibility(True),
                 auto_upload=True,
                 max_files=1,
             )
@@ -493,6 +496,7 @@ class InteractiveButton:
             # 创建一个隐藏的 ui.upload 组件，我们将通过程序触发它
             self.uploader = ui.upload(
                 on_upload=self._handle_file_upload,
+                on_begin_upload=lambda: self.spinner.set_visibility(True),
                 auto_upload=True,
                 max_files=1,
             )
@@ -679,6 +683,7 @@ class InteractiveButton:
                 progress=False,
                 close_button="✖",
             )
+            self.spinner.set_visibility(False)
             return
         elif self.processing_type == "image" and "image" not in file_type:
             ui.notify(
@@ -689,6 +694,7 @@ class InteractiveButton:
                 progress=False,
                 close_button="✖",
             )
+            self.spinner.set_visibility(False)
             return
         # 生成一个唯一的内部文件名以避免覆盖，但保留原始文件名用于显示
         # unique_filename = f"{uuid.uuid4().hex}{Path(original_filename).suffix}"
@@ -707,6 +713,7 @@ class InteractiveButton:
                 progress=True,
                 close_button="✖",
             )
+            self.spinner.set_visibility(False)
         # 检查服务器是否存在同名文件
         elif os.path.exists(filepath):
             # app.add_static_file(local_file=filepath, url_path=url_path)
@@ -724,6 +731,8 @@ class InteractiveButton:
                 with open(filepath, "wb") as f:
                     f.write(file_content_object.read())
                 # app.add_static_file(local_file=filepath, url_path=url_path)
+                # time.sleep(10)
+
             except Exception as ex:
                 print(f"上传处理失败: {ex}")  # 在服务器端打印错误详情
                 ui.notify(
@@ -1342,6 +1351,7 @@ class InteractiveButton:
         # chip类型为缩略图
         elif chip_info.get("type") == "image":
             image_name = chip_info.get("filename")
+
             # 每次生成都用更新配置的路径
             image_path = f"{self.upload_path}/{image_name}"
 
@@ -1363,7 +1373,7 @@ class InteractiveButton:
                         "absolute top-0 left-0 text-xl"
                     )
                 # 缩略图创建日期提示
-                tooltip_text = f"创建节点: 需求V{chip_info.get('req_ver')}后<br>创建者: {chip_info.get('creator')}<br>时间: {next(reversed(chip_info.get('timestamp', {})))}<br>注释: <br>{chip_info.get('notes', '').replace('\n', '<br>')}"
+                tooltip_text = f"创建节点: 需求V{chip_info.get('req_ver')}后<br>图片名: {image_name}<br>创建者: {chip_info.get('creator')}<br>时间: {next(reversed(chip_info.get('timestamp', {})))}<br>注释: <br>{chip_info.get('notes', '').replace('\n', '<br>')}"
                 with ui.tooltip():
                     ui.html(tooltip_text, sanitize=Sanitizer().sanitize)
 
@@ -1458,7 +1468,9 @@ class InteractiveButton:
                 .props("outlined")
                 .classes("w-full")
             )
-            with ui.row().classes("w-full justify-end"):
+            with ui.row().classes("w-full justify-end items-center"):
+                self.spinner = ui.spinner(type="hourglass", size="md", color="amber-8", thickness=8.0)
+                self.spinner.set_visibility(False)
                 ui.button("添加", on_click=self._get_file_upload)
         self.chip_dialog.open()
 
