@@ -16,7 +16,7 @@ from nicegui.events import GenericEventArguments, KeyEventArguments, MouseEventA
 
 from .. import db_storage  # 导入我们创建的模块
 from ..components import ButtonUploader, FileThumbnail, InteractiveButton
-from ..config import IMG_DIR, PRESET_AVATARS, REQ_DIR, UPLOAD_URL_DIR, UPLOADS_DIR
+from ..config import IMG_DIR, PRESET_AVATARS, REQ_DIR, REQ_UPLOADS_FILE_TYPE, UPLOAD_URL_DIR, UPLOADS_DIR
 from ..utils import (
     compare_configs_by_id,
     copy_overview_data,
@@ -542,6 +542,21 @@ async def requirement_page(type="", json_path="", project_name=""):
             # new_file_hash = ""
             # 使用 os.path.splitext 来更稳健地分离文件名和后缀
             file_name, file_suffix = os.path.splitext(e.file.name)
+            # 获取文件类型
+            file_type = e.file.content_type  # 图片类返回image/xxx，文件类返回application/xxx，文本类型text/xxx
+
+            # 如果是文件或文本类型，要检查后缀，图片类型不用检查
+            if ("application" in file_type or "text" in file_type) and file_suffix not in REQ_UPLOADS_FILE_TYPE:
+                ui.notify(
+                    f'文件 "{file_name}" 不是规定的：{", ".join(REQ_UPLOADS_FILE_TYPE)} 文件类型，无法上传!',
+                    type="warning",
+                    position="center",
+                    timeout=0,
+                    progress=False,
+                    close_button="✖",
+                )
+                return
+
             # 移除前导的点
             file_suffix = file_suffix.lstrip(".")
 
@@ -1865,7 +1880,7 @@ async def requirement_page(type="", json_path="", project_name=""):
             with ui.row().classes("fixed bottom-0 left-0 right-0 bg-sky-50 p-3 items-center shadow-inner"):
                 # 创建一个按钮组件，组件里有一个空白行，待后续往里面放缩略图
                 row_h = 9
-                get_img_group("上传", '"image/*, .pdf, .xlsx, .docx, .pptx"', row_h)
+                get_img_group("上传", "/*", row_h)
                 with ui.row().classes(f"h-{str(row_h + 1)}").classes("p-0 overflow-y-auto") as img_row:
                     # 将新创建的 img_row 实例存入 user storage
                     app.storage.client["page_elements"]["img_row"] = img_row
@@ -2511,7 +2526,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                 ui.label(text="参考文件：").classes("text-lg text-black m-0")
                 # 创建一个按钮组件，组件里有一个空白行，待后续往里面放缩略图
                 row_h = 9
-                # get_img_group("上传", '"image/*, .pdf, .xlsx, .docx, .pptx"', row_h)
+                # get_img_group("上传", "/*", row_h)
                 with ui.row().classes(f"h-{str(row_h + 1)}").classes("p-0 overflow-y-auto") as img_row:
                     # 将新创建的 img_row 实例存入 user storage
                     app.storage.client["page_elements"]["img_row"] = img_row

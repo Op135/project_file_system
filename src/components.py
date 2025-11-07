@@ -14,7 +14,7 @@ from nicegui import app, events, ui
 from nicegui.events import GenericEventArguments, MouseEventArguments
 
 from . import db_storage  # 导入我们创建的模块
-from .config import FILES_URL_DIR, IMG_DIR, SUBMIT_FILES_DIR, UPLOADS_DIR
+from .config import FILES_URL_DIR, IMG_DIR, OVER_UPLOADS_FILE_TYPE, SUBMIT_FILES_DIR, UPLOADS_DIR
 from .utils import get_time, move_element, overview_role_update, ui_hide, ui_show
 
 
@@ -486,7 +486,7 @@ class InteractiveButton:
                 on_upload=self._handle_file_upload,
                 auto_upload=True,
                 max_files=1,
-            ).props('accept="image/*"')
+            )
             # 隐藏upload元素
             self.uploader.set_visibility(False)
         else:
@@ -495,7 +495,7 @@ class InteractiveButton:
                 on_upload=self._handle_file_upload,
                 auto_upload=True,
                 max_files=1,
-            ).props('accept=".pdf, .xlsx, .docx, .pptx"')
+            )
             # 隐藏upload元素
             self.uploader.set_visibility(False)
         # 设置一个定时器，每隔0.5秒检查一次共享数据是否有变化，并更新UI
@@ -666,7 +666,30 @@ class InteractiveButton:
     # 处理文件/图片上传事件
     async def _handle_file_upload(self, e):
         original_filename = e.file.name
-        file_type = e.file.content_type
+        file_ext = os.path.splitext(original_filename)[1].lower()
+        file_type = e.file.content_type  # 图片类返回image/xxx，文件类返回application/xxx，文本类型text/xxx
+        # print(f"处理上传{file_type}类型文件")
+
+        if self.processing_type == "file" and file_ext not in OVER_UPLOADS_FILE_TYPE:
+            ui.notify(
+                f'文件 "{original_filename}" 不是规定的：{", ".join(OVER_UPLOADS_FILE_TYPE)} 文件类型，无法上传!',
+                type="warning",
+                position="center",
+                timeout=0,
+                progress=False,
+                close_button="✖",
+            )
+            return
+        elif self.processing_type == "image" and "image" not in file_type:
+            ui.notify(
+                f'文件 "{original_filename}" 不是图片类型，无法上传!',
+                type="warning",
+                position="center",
+                timeout=0,
+                progress=False,
+                close_button="✖",
+            )
+            return
         # 生成一个唯一的内部文件名以避免覆盖，但保留原始文件名用于显示
         # unique_filename = f"{uuid.uuid4().hex}{Path(original_filename).suffix}"
         # filepath = self.upload_path / unique_filename
@@ -679,8 +702,8 @@ class InteractiveButton:
             ui.notify(
                 f'文件 "{original_filename}" 无需重复提交!',
                 type="warning",
-                position="bottom",
-                timeout=1000,
+                position="center",
+                timeout=3000,
                 progress=True,
                 close_button="✖",
             )

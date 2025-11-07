@@ -914,6 +914,34 @@
             }
         },
         {
+            "label": "mechanical_assembly_details",
+            "title": "装配细节示意图",
+            "processing_type": "image",
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售总监",
+                    "销售",
+                    "客服主管",
+                    "客服",
+                    "研发助理",
+                    "研发电子主管",
+                    "研发硬件",
+                    "研发软件",
+                    "研发光学",
+                    "研发样品",
+                    "工程",
+                    "质量",
+                    "生产"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发结构"
+                ]
+            }
+        },
+        {
             "label": "mechanical_testing",
             "title": "机械结构测试项",
             "processing_type": "test",
