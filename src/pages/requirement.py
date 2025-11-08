@@ -55,6 +55,9 @@ async def requirement_page(type="", json_path="", project_name=""):
             .q-dialog__inner--minimized {
                 padding: 12px;
             }
+            .q-dialog__backdrop {
+                background-color: rgba(0, 0, 0, 0.8);
+            }
             .q-textarea textarea {
                 /* 1. 设置一个最小高度，而不是固定高度 */
                 height: 50px;

@@ -89,18 +89,22 @@ class FileThumbnail:
         self.delet_lab = delet_lab
         self.on_add_ref_click = on_add_ref_click
         self.on_question_display_click = on_question_display_click
-        self.dialog = ui.dialog().props("maximized").classes("p-0")
+        self.dialog = ui.dialog().props("").classes("p-0")
         if self.file_type.startswith("image/"):
             with self.dialog:
-                with (
-                    ui.card()
-                    .classes("relative h-full w-full overflow-hidden items-center justify-center")
-                    .style("background-color: rgba(0,0,0,0);")
-                ):
-                    ui.label("按ESC键退出图片查看界面").classes("absolute top-15 right-10 text-xl text-amber-9 z-999")
-                    self.image_big = ui.interactive_image(
+                # with (
+                #     ui.card()
+                #     .classes("relative overflow-hidden items-center justify-center")
+                #     .style("background-color: rgba(0,0,0,0);")
+                # ):
+                # ui.label("按ESC键退出图片查看界面").classes("absolute top-15 text-xl text-red-9 z-999")
+                self.image_big = (
+                    ui.interactive_image(
                         self.file_url,
-                    ).classes("cursor-grab")
+                    )
+                    .classes("cursor-grab")
+                    .style("overflow: hidden;")
+                )
                 # self.image_big.props("fit=contain")
                 # 绑定事件
                 self.image_big.on("mousedown", self.start_drag)
@@ -461,7 +465,7 @@ class InteractiveButton:
         self.image_y = 0.0
         # self.select_ver = {"value": None}
         self.chip_dialog = ui.dialog().classes("")
-        self.img_dialog = ui.dialog().props("maximized").classes("p-0")
+        self.img_dialog = ui.dialog().props("").classes("p-0")
         self.check_down_dialog = ui.dialog().classes("")
         self.activ_dialog = ui.dialog().props("persistent").classes("")
 
@@ -510,15 +514,19 @@ class InteractiveButton:
     def show_fullscreen(self, url_path):
         self.img_dialog.clear()
         with self.img_dialog:
-            with (
-                ui.card()
-                .classes("relative h-full w-full overflow-hidden items-center justify-center")
-                .style("background-color: rgba(0,0,0,0);")
-            ):
-                ui.label("按ESC键退出图片查看界面").classes("absolute top-15 right-10 text-xl text-amber-9 z-999")
-                self.image_big = ui.interactive_image(
+            # with (
+            #     ui.card()
+            #     .classes("relative overflow-hidden items-center justify-center")
+            #     .style("background-color: rgba(0,0,0,0);")
+            # ):
+            # ui.label("按ESC键退出图片查看界面").classes("absolute top-15 text-xl text-red-9 z-999")
+            self.image_big = (
+                ui.interactive_image(
                     url_path,
-                ).classes("cursor-grab")
+                )
+                .classes("cursor-grab")
+                .style("overflow: hidden;")
+            )
             # self.image_big.props("fit=contain")
             # 绑定事件
             self.image_big.on("mousedown", self.start_drag)

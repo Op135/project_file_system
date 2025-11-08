@@ -16,7 +16,7 @@ flex-nowrap
 overflow-x-auto
 # 自动横向滚动条
 overflow-hidden
-# 隐藏滚动条
+# 隐藏滚动条 无效用.style("overflow: hidden;")
 
 relative
 # 父级设置为自己浮动定位的参考
