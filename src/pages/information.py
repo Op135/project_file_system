@@ -2,12 +2,13 @@
 import copy
 import json
 import os
+from datetime import date
 
 from nicegui import app, ui
 
 from .. import db_storage
 from ..config import BASE_DIR, IMG_DIR, OVER_DIR, PRESET_AVATARS, REQ_DIR
-from ..utils import delete_file, get_cache_busted_path, get_overviow_page, logout
+from ..utils import delete_file, get_cache_busted_path, get_overviow_page, logout, project_summary_update
 
 
 @ui.page("/information")
@@ -89,11 +90,114 @@ def information_page():
         app.storage.general["wait_review"][p_name][v]["state"] = "待修改"
 
     async def set_review_pass(p_name, v):
+        app.storage.general["wait_review"][p_name][v]["state"] = "已审"
+        # 需求评审前，如果是衍生为新项目，概述已经复制，但待到需求评审通过了，才更新概述chip激活状态
+        await set_overview_active_state(p_name, v)
+        delete_file(f"{OVER_DIR}/{p_name}_概述整理_temp.json")
+        dialog.close()
+
+    async def set_temporary_project_review_pass(p_name, v, data):
+        if data.get("introduction").strip() and data.get("customer").strip():
+            temp_data = {
+                p_name: {
+                    "model_notes": data.get("notes").strip(),
+                    "creation_date": date.today(),
+                    "introduction": data.get("introduction").strip(),
+                    "customer": data.get("customer").strip(),
+                }
+            }
+            project_data = {}
+            with open(f"{BASE_DIR}/project_summary.json", "r", encoding="utf-8") as f:
+                project_data = json.load(f)
+            project_data.update(temp_data)
+            json_str = json.dumps(project_data, indent=4, ensure_ascii=False)
+            with open(f"{BASE_DIR}/project_summary.json", "w", encoding="utf-8") as f:
+                f.write(json_str)
+            # 将服务器json配置文件同步更新到服务器储存
+            project_summary_update()
+            await set_review_pass(p_name, v)
+        else:
+            ui.notify(
+                "项目简介与客户简称必须填写!",
+                type="warning",
+                position="center",
+                timeout=0,
+                progress=False,
+                close_button="✖",
+            )
+
+    async def set_temporary_project_dialog(p_name, v):
+        # 临时项目且为新建项目
+        if "RFTS" in p_name and p_name not in app.storage.general["project_summary"]:
+            dialog.clear()
+            with dialog, ui.card():
+                pro_data = {"notes": "", "introduction": "", "customer": ""}
+                ui.label("输入如下项目必要信息：")
+                input_notes = (
+                    ui.textarea(
+                        label="项目备注",
+                        placeholder="选填，填写特殊备注信息",
+                    )
+                    .props("outlined stack-label autogrow")
+                    .classes("w-full text-[14px]/[16px] w-full")
+                )
+                input_notes.bind_value(pro_data, "notes")
+                input_introduction = (
+                    ui.textarea(
+                        label="项目简介",
+                        placeholder="必填，填写简介，比如功能需求，定制要点等信息",
+                        validation={"不能空白": lambda value: value.strip() != ""},
+                    )
+                    .props("outlined stack-label autogrow")
+                    .classes("w-full text-[14px]/[16px] w-full")
+                )
+                input_introduction.bind_value(pro_data, "introduction")
+                input_customer = (
+                    ui.textarea(
+                        label="项目客户",
+                        placeholder="必填，填写客户简称，注意查重",
+                        validation={"不能空白": lambda value: value.strip() != ""},
+                    )
+                    .props("outlined stack-label autogrow")
+                    .classes("w-full text-[14px]/[16px] w-full")
+                )
+                input_customer.bind_value(pro_data, "customer")
+                with ui.row().classes("w-full justify-end"):
+                    ui.button(
+                        "确认",
+                        color="red-5",
+                        on_click=lambda pn=p_name, ver=v, data=pro_data: set_temporary_project_review_pass(
+                            pn, ver, data
+                        ),
+                    )
+                    ui.button("取消", on_click=lambda: dialog.close())
+            dialog.open()
+        # 正式项目 或 非新建临时项目，直接处理
+        else:
+            await set_review_pass(p_name, v)
+
+    # 提醒需求提交人发生变化
+    async def set_review_pass_dialog(p_name, v):
         if app.storage.general["wait_review"][p_name][v]["state"] == "待审":
-            app.storage.general["wait_review"][p_name][v]["state"] = "已审"
-            # 需求评审通过了才更新概述chip激活状态
-            await set_overview_active_state(p_name, v)
-            delete_file(f"{OVER_DIR}/{p_name}_概述整理_temp.json")
+            old_v = "1.0" if v == "1.0" else f"{int(float(v)) - 1}.0"
+            new_submitter = app.storage.general["wait_review"][p_name][v].get("submitter")
+            old_submitter = app.storage.general["wait_review"][p_name][old_v].get("submitter")
+            # 需求提交人新版发生了变化，弹窗提醒
+            if new_submitter != old_submitter:
+                dialog.clear()
+                with dialog, ui.card():
+                    ui.label(f"需求提交人有变：{old_submitter} ——> {new_submitter}，是否继续通过审核？")
+                    with ui.row().classes("w-full justify-end"):
+                        ui.button(
+                            "确认",
+                            color="red-5",
+                            on_click=lambda pn=p_name, ver=v: set_temporary_project_dialog(pn, ver),
+                        )
+                        ui.button("取消", on_click=lambda: dialog.close())
+                dialog.open()
+            # 需求提交人没有变化，直接调用下一步处理函数
+            else:
+                await set_temporary_project_dialog(p_name, v)
 
     def del_requirement_file(button_group, p_name, v):
         delete_file(f"{REQ_DIR}/{p_name}_需求配置_V{v}.json")
@@ -142,7 +246,7 @@ def information_page():
                     ui.button(
                         "审核通过",
                         color="green-8",
-                        on_click=lambda p_name=project_name, v=ver: set_review_pass(p_name, v),
+                        on_click=lambda p_name=project_name, v=ver: set_review_pass_dialog(p_name, v),
                     ).on("click", lambda bg=button_group, pn=project_name, v=ver: get_review_button(bg, pn, v)).props(
                         ""
                     )

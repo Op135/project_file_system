@@ -510,7 +510,7 @@ def project_table_page():
             "amber-text": "typeof x === 'string' && (x.includes('?') || x.includes('概述'))",
         }
         # col["cellClass"] = "ag-cell"
-
+    # 防止没有初始化导致报错
     if not app.storage.general["project_summary"]:
         project_summary_update()
     # 从服务器获取完整项目摘要
