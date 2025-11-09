@@ -7,6 +7,10 @@ on('click') 或 on('mouseenter') -> 传递 MouseEventArguments
 on('input') -> 传递 GenericEventArguments
 
 
+from datetime import datetime
+# 得指定格式的日期时间字符串
+datetime.now().strftime("%Y-%m-%d")
+
 import asyncio # 导入 asyncio 库
 # 必须将事件处理函数定义为 async def
 async def non_blocking_handler():
@@ -16,3 +20,4 @@ async def non_blocking_handler():
     await asyncio.sleep(5)
     
     ui.notify("操作结束！这期间UI一直是可交互的。")
+

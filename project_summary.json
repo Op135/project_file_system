@@ -2518,5 +2518,23 @@
         "creation_date": "2024-06-25",
         "introduction": "由RFFM-1121模组，仅修改光源为525nm单色光而来，驱动到50W，外壳需减短1.5mm",
         "customer": ""
+    },
+    "RFTS-0002": {
+        "model_notes": "",
+        "creation_date": "2025-11-08",
+        "introduction": "测试",
+        "customer": "SDF"
+    },
+    "RFTS-0003": {
+        "model_notes": "F",
+        "creation_date": "2025-11-09",
+        "introduction": "测试",
+        "customer": "SDGSFGDGH"
+    },
+    "RFTS-0004": {
+        "model_notes": "",
+        "creation_date": "2025-11-09",
+        "introduction": "SDFSDF",
+        "customer": "SDF"
     }
 }

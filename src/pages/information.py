@@ -2,7 +2,7 @@
 import copy
 import json
 import os
-from datetime import date
+from datetime import datetime
 
 from nicegui import app, ui
 
@@ -89,19 +89,21 @@ def information_page():
     def set_review_revise(p_name, v):
         app.storage.general["wait_review"][p_name][v]["state"] = "待修改"
 
-    async def set_review_pass(p_name, v):
+    async def set_review_pass(button_group, p_name, v):
         app.storage.general["wait_review"][p_name][v]["state"] = "已审"
         # 需求评审前，如果是衍生为新项目，概述已经复制，但待到需求评审通过了，才更新概述chip激活状态
         await set_overview_active_state(p_name, v)
         delete_file(f"{OVER_DIR}/{p_name}_概述整理_temp.json")
+        get_review_button(button_group, p_name, v)
         dialog.close()
 
-    async def set_temporary_project_review_pass(p_name, v, data):
+    # 处理新建临时项目情况
+    async def set_temporary_project_review_pass(button_group, p_name, v, data):
         if data.get("introduction").strip() and data.get("customer").strip():
             temp_data = {
                 p_name: {
                     "model_notes": data.get("notes").strip(),
-                    "creation_date": date.today(),
+                    "creation_date": datetime.now().strftime("%Y-%m-%d"),
                     "introduction": data.get("introduction").strip(),
                     "customer": data.get("customer").strip(),
                 }
@@ -115,7 +117,7 @@ def information_page():
                 f.write(json_str)
             # 将服务器json配置文件同步更新到服务器储存
             project_summary_update()
-            await set_review_pass(p_name, v)
+            await set_review_pass(button_group, p_name, v)
         else:
             ui.notify(
                 "项目简介与客户简称必须填写!",
@@ -126,11 +128,12 @@ def information_page():
                 close_button="✖",
             )
 
-    async def set_temporary_project_dialog(p_name, v):
+    # 判断是否为新建临时项目，分类处理
+    async def set_temporary_project_dialog(button_group, p_name, v):
         # 临时项目且为新建项目
         if "RFTS" in p_name and p_name not in app.storage.general["project_summary"]:
             dialog.clear()
-            with dialog, ui.card():
+            with dialog, ui.card().classes("w-1/3"):
                 pro_data = {"notes": "", "introduction": "", "customer": ""}
                 ui.label("输入如下项目必要信息：")
                 input_notes = (
@@ -166,18 +169,19 @@ def information_page():
                     ui.button(
                         "确认",
                         color="red-5",
-                        on_click=lambda pn=p_name, ver=v, data=pro_data: set_temporary_project_review_pass(
-                            pn, ver, data
-                        ),
+                        on_click=lambda bg=button_group,
+                        pn=p_name,
+                        ver=v,
+                        data=pro_data: set_temporary_project_review_pass(bg, pn, ver, data),
                     )
                     ui.button("取消", on_click=lambda: dialog.close())
             dialog.open()
         # 正式项目 或 非新建临时项目，直接处理
         else:
-            await set_review_pass(p_name, v)
+            await set_review_pass(button_group, p_name, v)
 
     # 提醒需求提交人发生变化
-    async def set_review_pass_dialog(p_name, v):
+    async def set_review_pass_dialog(button_group, p_name, v):
         if app.storage.general["wait_review"][p_name][v]["state"] == "待审":
             old_v = "1.0" if v == "1.0" else f"{int(float(v)) - 1}.0"
             new_submitter = app.storage.general["wait_review"][p_name][v].get("submitter")
@@ -191,13 +195,26 @@ def information_page():
                         ui.button(
                             "确认",
                             color="red-5",
-                            on_click=lambda pn=p_name, ver=v: set_temporary_project_dialog(pn, ver),
+                            on_click=lambda bg=button_group, pn=p_name, ver=v: set_temporary_project_dialog(
+                                bg, pn, ver
+                            ),
                         )
                         ui.button("取消", on_click=lambda: dialog.close())
                 dialog.open()
             # 需求提交人没有变化，直接调用下一步处理函数
             else:
-                await set_temporary_project_dialog(p_name, v)
+                await set_temporary_project_dialog(button_group, p_name, v)
+        # 待修改等非待审状态则更新按钮组
+        else:
+            ui.notify(
+                "需求非待审状态，不能通过审核，状态以刷新!",
+                type="info",
+                position="center",
+                timeout=1000,
+                progress=True,
+                close_button="✖",
+            )
+            get_review_button(button_group, p_name, v)
 
     def del_requirement_file(button_group, p_name, v):
         delete_file(f"{REQ_DIR}/{p_name}_需求配置_V{v}.json")
@@ -246,10 +263,8 @@ def information_page():
                     ui.button(
                         "审核通过",
                         color="green-8",
-                        on_click=lambda p_name=project_name, v=ver: set_review_pass_dialog(p_name, v),
-                    ).on("click", lambda bg=button_group, pn=project_name, v=ver: get_review_button(bg, pn, v)).props(
-                        ""
-                    )
+                        on_click=lambda bg=button_group, pn=project_name, v=ver: set_review_pass_dialog(bg, pn, v),
+                    ).props("")
                     ui.button(
                         "需修改",
                         color="amber-8",
