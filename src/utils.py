@@ -882,12 +882,12 @@ async def requirement_version_tidy(project_name, review: bool) -> str:
                 if review:
                     with open(overview_file_path_temp, "w", encoding="utf-8") as f:
                         f.write(overviow_str)
-                    print(f"临时概述文件新版内容写入成功：{overview_file_path_temp}")
+                    # print(f"临时概述文件新版内容写入成功：{overview_file_path_temp}")
                     return overview_file_path_temp
                 else:
                     with open(overview_file_path, "w", encoding="utf-8") as f:
                         f.write(overviow_str)
-                    print(f"概述文件新版内容写入成功：{overview_file_path}")
+                    # print(f"概述文件新版内容写入成功：{overview_file_path}")
                     return overview_file_path
 
             elif v_max == overviow_version:
@@ -929,12 +929,12 @@ async def requirement_version_tidy(project_name, review: bool) -> str:
             if review:
                 with open(overview_file_path_temp, "w", encoding="utf-8") as f:
                     f.write(overviow_str)
-                print(f"临时概述文件新版内容写入成功：{overview_file_path_temp}")
+                # print(f"临时概述文件新版内容写入成功：{overview_file_path_temp}")
                 return overview_file_path_temp
             else:
                 with open(overview_file_path, "w", encoding="utf-8") as f:
                     f.write(overviow_str)
-                print(f"概述文件新版内容写入成功：{overview_file_path}")
+                # print(f"概述文件新版内容写入成功：{overview_file_path}")
                 return overview_file_path
     else:
         ui.notify(
