@@ -339,7 +339,7 @@ async def requirement_page(type="", json_path="", project_name=""):
         app.storage.client["page_elements"].get("project_dialog").open()
         with project_card:
             ui.label("请输入项目号：").classes("text-xl font-bold")
-            ui.label("提交/导出需求或选择查阅版本时该设置才生效").classes("text-base text-red")
+            ui.label("提交需求或选择查阅版本时该设置才生效，导出需求不起效。").classes("text-base text-red")
             input_field = ui.input().classes("text-[20px]/[22px] w-full")
             # 写入的值绑定到目标项目名变量
             input_field.bind_value(app.storage.client, "target_project_name")
@@ -433,7 +433,7 @@ async def requirement_page(type="", json_path="", project_name=""):
         )
 
     # 解析json配置文件，并生成需求界面
-    def loads_requirements(json_data):
+    def loads_requirements(json_data, loads_bool: bool):
         # 获取文件缩略图字典内容，直接覆盖现有内容
         file_information = json_data["file_dic"]
         app.storage.client["file_thumbnail_dic"] = {}
@@ -462,9 +462,10 @@ async def requirement_page(type="", json_path="", project_name=""):
         app.storage.client["project_name"] = json_data["project_name"]
         app.storage.client["version"] = json_data["version"]
         # 设置提交目标名称与版本
-        app.storage.client["target_project_name"] = json_data["project_name"]
-        # app.storage.client["target_version"] = json_data["version"]
-        # app.storage.client["target_version"] = ""
+        if not loads_bool:
+            app.storage.client["target_project_name"] = json_data[
+                "project_name"
+            ]  # 导入需求则不设置，因为导入前都是先进入某个项目，即默认导入数据就是为了提交成这个项目
         # 将衍生自哪个项目的信息获取过来
         app.storage.client["original_project"] = json_data["original_project"]
         app.storage.client["original_version"] = json_data["original_version"]
@@ -515,7 +516,7 @@ async def requirement_page(type="", json_path="", project_name=""):
         try:
             # 解析JSON数据
             json_data = json.loads(content)
-            loads_requirements(json_data)
+            loads_requirements(json_data, True)
 
         except json.JSONDecodeError:
             ui.notify(
@@ -1397,9 +1398,16 @@ async def requirement_page(type="", json_path="", project_name=""):
 
         return (new_data, file_counter)
 
+    # def loads_change_name_out_config(data, type):
+    #     project_name = app.storage.client["project_name"].strip()
+    #     target_project_name = app.storage.client["target_project_name"].strip()
+    #     version = app.storage.client["version"]
+    #     version_str_li = version.split(".")
+    #     #  改了项目名 且
+    #     if project_name != target_project_name and int(version_str_li[1]) != 0:
+
     # 需求数据输出处理函数
     async def output_config_data(data, type):
-        change_name = False
         # 先复制整个数据
         data_json = data
         project_name = app.storage.client["project_name"].strip()
@@ -1408,314 +1416,371 @@ async def requirement_page(type="", json_path="", project_name=""):
         # target_version = app.storage.client["target_version"].strip()
         original_project = app.storage.client["original_project"]
         original_version = app.storage.client["original_version"]
+        version_str_li = version.split(".")
 
-        if target_project_name == "":
+        file_dic = {}
+        for k, v in app.storage.client["file_thumbnail_dic"].items():
+            file_dic[k] = v["file_information"]
+        data_json["file_dic"] = file_dic
+        data_json["file_counter"] = app.storage.client["file_counter"]
+        data_json["files"] = app.storage.client["files"]
+        data_json["deleted_files"] = app.storage.client["deleted_files"]
+        data_json["current_user"] = current_user
+
+        # 当前项目审核状态
+        review_state = ""
+        if app.storage.general["wait_review"].get(project_name, {}):
+            review_state = app.storage.general["wait_review"][project_name].get(version, {"state": ""})["state"]
+
+        # 当前需求待审状态，导出和提交均会被阻止
+        # 当前需求已审、查不到（初次、导出版本上再导出提交）状态的，可导出可提交
+        # 当前需求待修改状态，可提交
+        # 当前项目已审，可正常更新
+        if review_state == "已审":
+            # 记录项目名
+            data_json["project_name"] = target_project_name  # 该项操作导出时会被覆盖掉，不起效
+            # 记录参照当前版本
+            data_json["original_version"] = version
+            # 参照项目名为当前项目名
+            data_json["original_project"] = project_name
+        # 待修改，不动作就保持了原有数据；待审后面拦截不能导出和提交
+        elif review_state == "待修改":
+            # 记录项目名
+            data_json["project_name"] = project_name
+            # 记录参照当前版本
+            data_json["original_version"] = original_version
+            # 项目名相当于没变，接着记录
+            data_json["original_project"] = original_project
+        # 查不到待审状态（初次、导出版本上再导出提交）,及其它状态
+        # 项目名可迭代，参照信息不迭代
+        else:
+            # 记录项目名
+            data_json["project_name"] = target_project_name  # 该项操作导出时会被覆盖掉，不起效
+            # 初版或导出版本上输出，均保持参照版本记录不变
+            data_json["original_version"] = original_version
+            # 初版或导出版本上输出，均保持参照项目名记录不变
+            data_json["original_project"] = original_project
+
+        # 输出类型为导出到本地，导出不修改名称（目标项目名不起效），只迭代小数点后版本，更新时间戳
+        if type == "export":
+            # 禁止待审、待修改需求导出
+            if review_state not in ["已审", ""]:
+                ui.notify(
+                    "需求处于未审状态，不能导出到本地！",
+                    type="negative",
+                    position="center",
+                    timeout=0,
+                    progress=False,
+                    close_button="✖",
+                )
+                return
+            if project_name.split("-")[0] == "RFTS" and not validate_format_regex(project_name, r"^RFTS-\d{4}$"):
+                ui.notify(
+                    "不符合临时项目号命名规则：RFTS-4位数字！",
+                    type="negative",
+                    position="center",
+                    timeout=0,
+                    progress=False,
+                    close_button="✖",
+                )
+                return
+            # 记录衍生版本
+            # 如果不等，则以为这改名时将当前版本改成改后名的最高版本了，这里参照版本得用真真参照的版本
+            # if original_version != version:
+            #     data_json["original_version"] = original_version
+            # else:
+            #     data_json["original_version"] = version
+            # 将文件版本的小数点位加1
+            version_a_str = version_str_li[0]
+            # 注意出现3.11比3.2版本浮点数小，但是实际版本更高的影响
+            version_b_str = str(int(version_str_li[1]) + 1)
+            new_version = f"{version_a_str}.{version_b_str}"
+            app.storage.client["version"] = new_version
+            data_json["version"] = new_version
+            # 导出数据不迭代项目名称
+            data_json["project_name"] = project_name
+            # 导出时加入或更新时间戳
+            data_json["req_timestamp"] = datetime.now().isoformat()
+            # 1. 将字典转换为 JSON 字符串
+            json_str = json.dumps(data_json, indent=4, ensure_ascii=False)
+            # 2. 生成 JavaScript 下载代码
+            js_code = f"""
+                const blob = new Blob([{json.dumps(json_str)}], {{ type: 'application/json' }});
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'data.json';  // 下载文件名
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            """
+            # 3. 执行 JavaScript
+            ui.run_javascript(js_code)
+
             ui.notify(
-                "提交/导出必须给项目命名！",
-                type="negative",
+                f"需求已导出，版本已迭代到: V{version}，且导出时不会更改项目名称。",
+                type="positive",
                 position="bottom",
-                timeout=1000,
+                timeout=2000,
                 progress=True,
                 close_button="✖",
             )
-        else:
-            file_dic = {}
-            for k, v in app.storage.client["file_thumbnail_dic"].items():
-                file_dic[k] = v["file_information"]
-            data_json["file_dic"] = file_dic
-            data_json["file_counter"] = app.storage.client["file_counter"]
-            data_json["files"] = app.storage.client["files"]
-            data_json["deleted_files"] = app.storage.client["deleted_files"]
-            data_json["current_user"] = current_user
+        # 输出类型为提交到服务器
+        elif type == "submit":
+            if target_project_name == "":
+                ui.notify(
+                    "提交需求必须给项目命名！",
+                    type="negative",
+                    position="center",
+                    timeout=0,
+                    progress=False,
+                    close_button="✖",
+                )
+                return
+            if app.storage.user.get("current_role") not in ["销售", "销售总监", "admin"]:
+                ui.notify(
+                    "当前用户无权限提交需求，只能导出到本地！",
+                    type="negative",
+                    position="center",
+                    timeout=0,
+                    progress=False,
+                    close_button="✖",
+                )
+                return
+            if project_name.split("-")[0] != "RFTS" and project_name not in app.storage.general["project_summary"]:
+                ui.notify(
+                    "非临时项目，又未正式立项，不可提交服务器，只可导出到本地！",
+                    type="negative",
+                    position="center",
+                    timeout=0,
+                    progress=False,
+                    close_button="✖",
+                )
+                return
+            if project_name.split("-")[0] == "RFTS" and not validate_format_regex(project_name, r"^RFTS-\d{4}$"):
+                ui.notify(
+                    "不符合临时项目号命名规则：RFTS-4位数字！",
+                    type="negative",
+                    position="center",
+                    timeout=0,
+                    progress=False,
+                    close_button="✖",
+                )
+                return
+            # 如果最近一次需求配置文件还处于未审状态，本次需求还不能提交
+            if review_state == "待审":
+                ui.notify(
+                    "需求仍处于待审状态，不能继续提交需求！",
+                    type="negative",
+                    position="center",
+                    timeout=0,
+                    progress=False,
+                    close_button="✖",
+                )
+                return
 
-            # 在没改名情况下，这两个状态是同一个项目的，改名了就不是
-            review_state = ""
-            if app.storage.general["wait_review"].get(project_name, {}):
-                review_state = app.storage.general["wait_review"][project_name].get(version, {"state": ""})["state"]
-
-            # 当前项目已审情况可正常更新参照项目名
-            # 其它状态，比如待修改、初次提交，不动作就保持了原有数据；待审后面拦截不能导出和提交
-            if review_state in ["已审", ""]:
-                # 记录项目名
-                data_json["project_name"] = target_project_name
-                # 记录参照当前版本
-                data_json["original_version"] = version
-                # 项目名相当于没变，接着记录
-                data_json["original_project"] = project_name
-            else:
-                # 记录项目名
-                data_json["project_name"] = project_name
-                # 记录参照当前版本
-                data_json["original_version"] = original_version
-                # 项目名相当于没变，接着记录
-                data_json["original_project"] = original_project
-
-            # 处理项目名的衍生记录
-            # 没改名情况
-            # if (
-            #     # 当前版本的参照版本为0.0版（新填 或 1.0版且没改名，改名时会将参照版本更新为当前版本）
-            #     original_version == "0.0"
-            #     or version != "0.0"  # 当前版本不为0.0即高版本 且 没有改名
-            #     and project_name == target_project_name
-            # ):
-            #     pass
+            change_name = False
             #  改了项目名
             if project_name != target_project_name:
                 change_name = True
 
-            version_str_li = version.split(".")
-            # 输出类型为导出到本地
-            if type == "export":
-                # 禁止待审、待修改需求导出
-                if review_state not in ["已审", ""]:
-                    ui.notify(
-                        "需求处于未审状态，不能导出到本地！",
-                        type="negative",
-                        position="center",
-                        timeout=0,
-                        progress=False,
-                        close_button="✖",
-                    )
-                    return
-                if project_name.split("-")[0] == "RFTS" and not validate_format_regex(project_name, r"^RFTS-\d{4}$"):
-                    ui.notify(
-                        "不符合临时项目号命名规则：RFTS-4位数字！",
-                        type="negative",
-                        position="center",
-                        timeout=0,
-                        progress=False,
-                        close_button="✖",
-                    )
-                    return
-                # 记录衍生版本
-                # 如果不等，则以为这改名时将当前版本改成改后名的最高版本了，这里参照版本得用真真参照的版本
-                # if original_version != version:
-                #     data_json["original_version"] = original_version
-                # else:
-                #     data_json["original_version"] = version
-                # 将文件版本的小数点位加1
-                version_a_str = version_str_li[0]
-                # 注意出现3.11比3.2版本浮点数小，但是实际版本更高的影响
-                version_b_str = str(int(version_str_li[1]) + 1)
-                new_version = f"{version_a_str}.{version_b_str}"
-                app.storage.client["version"] = new_version
+            if data_json["entry_status"]:
+                new_version = version
+                # 迭代更新版本
+                version_a = int(version_str_li[0])
+
+                # 查找指定路径下，含有提供项目名的文件，得到一个字典，完整版本为键，值为：{"name":文件名, "v_a":版本号整数部分, "v_b":版本号小数部分}
+                project_exists_file = find_files_with_prefix_and_version(REQ_DIR, target_project_name)
+                # 服务器存在该项目配置，则需要升级版本
+                if project_exists_file:
+                    v_max = max([float(s) for s in project_exists_file.keys()])
+                    # 当前版本比服务器最高版本低 或 由其它项目衍生过来的，均按照本项目服务器最高版本来+1保存
+                    # if float(version) < v_max or change_name:
+                    version_a = int(project_exists_file[str(v_max)]["v_a"])
+                    # 已审状态才能升级版本, 待修改不升级
+                    if review_state in ["已审", ""]:
+                        new_version = f"{version_a + 1}.0"
+
+                    # 获取旧版最高版需求文件数据
+                    old_data_path = os.path.join(REQ_DIR, project_exists_file[str(v_max)]["name"])
+                    try:
+                        with open(old_data_path, "r", encoding="utf-8") as f:
+                            # 使用 json.load() 读取文件内容并解析
+                            old_data = json.load(f)
+
+                            # 处理新需求插入文件数字可能的与旧版本需求的冲突
+                            return_tuple = update_new_data_in_place(old_data, data_json)
+                            data_json = return_tuple[0]
+                            data_json["file_counter"] = return_tuple[1]
+                    except json.JSONDecodeError:
+                        ui.notify(
+                            f"项目旧版本需求文件查阅失败！错误：文件 '{old_data_path}' 不是有效的 JSON 格式。",
+                            type="negative",
+                            position="bottom",
+                            timeout=0,
+                            progress=False,
+                            close_button="✖",
+                        )
+                        return
+                    except Exception as e:
+                        ui.notify(
+                            f"项目旧版本需求文件查阅失败！错误：读取文件时发生其他错误：{e}",
+                            type="negative",
+                            position="bottom",
+                            timeout=0,
+                            progress=False,
+                            close_button="✖",
+                        )
+                        return
+
+                # 服务器不存在该项目配置文件
+                else:
+                    # 刚刚改了项目名，且不是导入需求后再次改名（这种情况应该复制参考项目的需求，而不是当前项目需求），临时项目与正式项目均先复制参考的项目需求
+                    if change_name:
+                        # 查阅服务器需求改名直接提交衍生新项目
+                        # if int(version_str_li[1]) == 0:
+                        copy_project_name = project_name
+                        copy_version = version
+                        # 导入外部需求改名提交衍生新项目
+                        # else:
+                        #     copy_project_name = original_project
+                        #     copy_version = original_version
+                        if float(copy_version) < 1.0:
+                            ui.notify(
+                                "复制衍生项目需求文件失败！参照的项目版本低于1.0。",
+                                type="negative",
+                                position="bottom",
+                                timeout=0,
+                                progress=False,
+                                close_button="✖",
+                            )
+                            return
+                        # 定义文件路径
+                        old_file_path = os.path.join(
+                            REQ_DIR, f"{copy_project_name}_需求配置_V{copy_version.split('.')[0]}.0.json"
+                        )
+                        old_data_json = {}
+                        try:
+                            # 每次都以配置文件为准，不以服务器现有数据为准
+                            # 配置更新能直接呈现，但配置减项将导致原有数据不呈现
+                            with open(old_file_path, "r", encoding="utf-8") as f:
+                                # 使用 json.load() 读取文件内容并解析
+                                old_data_json = json.load(f)
+                        except json.JSONDecodeError:
+                            ui.notify(
+                                f"复制衍生项目需求文件失败！错误：文件 '{old_file_path}' 不是有效的 JSON 格式。",
+                                type="negative",
+                                position="bottom",
+                                timeout=0,
+                                progress=False,
+                                close_button="✖",
+                            )
+                            return
+                        except Exception as e:
+                            ui.notify(
+                                f"复制衍生项目需求文件失败！错误：读取文件时发生其他错误：{e}",
+                                type="negative",
+                                position="bottom",
+                                timeout=0,
+                                progress=False,
+                                close_button="✖",
+                            )
+                            return
+                        old_data_json["project_name"] = target_project_name
+                        old_data_json["current_user"] = current_user
+                        old_data_json["original_project"] = copy_project_name
+                        old_data_json["version"] = "1.0"
+                        old_data_json["original_version"] = f"{copy_version.split('.')[0]}.0"
+                        old_data_json["req_timestamp"] = datetime.now().isoformat()
+                        # 衍生复制过来的需求，默认通过审核
+                        # old_data_json["review_state"] = True
+                        # 将该需求版本标记到待审字典里
+                        app.storage.general["wait_review"][target_project_name] = {
+                            "1.0": {"state": "已审", "submitter": current_user}
+                        }
+
+                        # 将字典转换为 JSON 字符串
+                        old_json_str = json.dumps(old_data_json, indent=4, ensure_ascii=False)
+                        # print(f"准备写入的 data 数据: {data}")
+                        # 写入文件
+                        copy_file_path = os.path.join(REQ_DIR, f"{target_project_name}_需求配置_V1.0.json")
+                        try:
+                            with open(copy_file_path, "w", encoding="utf-8") as f:
+                                f.write(old_json_str)
+                            # 成功复制参照项目需求文件后，马上复制该项目概述内容
+                            await copy_overview_data(
+                                copy_project_name, f"{copy_version.split('.')[0]}.0", target_project_name
+                            )
+                            # 更新目标项目概述角色统计结果，以便第一时间在项目总表能看到统计结果和状态
+                            overview_role_update(target_project_name)
+                            overview_role_update(target_project_name)
+                            ui.notify(
+                                "复制衍生项目需求文件概述资料成功。",
+                                type="positive",
+                                position="bottom",
+                                timeout=2000,
+                                progress=True,
+                                close_button="✖",
+                            )
+                        except Exception as e:
+                            print(f"复制修改衍生临时项目需求文件时发生其他错误：{e}")
+                        # 更新客户端数据
+                        app.storage.client["version"] = "1.0"
+                        app.storage.client["project_name"] = target_project_name
+                        app.storage.client["target_project_name"] = target_project_name
+                        app.storage.client["original_project"] = target_project_name
+                        app.storage.client["original_version"] = "1.0"
+                        # 复制保存好旧版本临时需求配置文件后，接着处理一次
+                        await output_config_data(data, type)
+                        return
+                    # 排除其它项目衍生过来的情况，那种情况保持衍生的记录版本
+                    else:
+                        original_version = "0.0"
+                        new_version = "1.0"
+
+                # 不管服务器有没有该项目需求配置文件
+                # app.storage.client["version"] = new_version
+                # app.storage.client["original_version"] = version
                 data_json["version"] = new_version
+
                 # 导出时加入或更新时间戳
                 data_json["req_timestamp"] = datetime.now().isoformat()
-                # 1. 将字典转换为 JSON 字符串
+                # 定义文件路径
+                file_path = os.path.join(REQ_DIR, f"{target_project_name}_需求配置_V{new_version}.json")
+                # 将字典转换为 JSON 字符串
                 json_str = json.dumps(data_json, indent=4, ensure_ascii=False)
-                # 2. 生成 JavaScript 下载代码
-                js_code = f"""
-                    const blob = new Blob([{json.dumps(json_str)}], {{ type: 'application/json' }});
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = 'data.json';  // 下载文件名
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
-                    URL.revokeObjectURL(url);
-                """
-                # 3. 执行 JavaScript
-                ui.run_javascript(js_code)
 
+                with open(file_path, "w", encoding="utf-8") as f:
+                    f.write(json_str)
+                # 将该需求版本标记到待审字典里
+                if not app.storage.general["wait_review"].get(target_project_name, {}):
+                    app.storage.general["wait_review"][target_project_name] = {}
+                app.storage.general["wait_review"][target_project_name][new_version] = {
+                    "state": "待审",
+                    "submitter": current_user,
+                }
+
+                # 将提交该需求的用户更新为该项目负责的销售员
+                app.storage.general["project_sale"][target_project_name] = current_user
                 ui.notify(
-                    f"需求已导出，版本已迭代到: V{version}",
+                    f"需求已提交，版本已迭代到: V{new_version}",
                     type="positive",
                     position="bottom",
                     timeout=2000,
                     progress=True,
                     close_button="✖",
                 )
-            # 输出类型为提交到服务器
-            elif type == "submit":
-                if app.storage.user.get("current_role") not in ["销售", "销售总监", "admin"]:
-                    ui.notify(
-                        "当前用户无权限提交需求，只能导出到本地！",
-                        type="negative",
-                        position="center",
-                        timeout=0,
-                        progress=False,
-                        close_button="✖",
-                    )
-                    return
-                if project_name.split("-")[0] != "RFTS" and project_name not in app.storage.general["project_summary"]:
-                    ui.notify(
-                        "非临时项目，又未正式立项，不可提交服务器，只可导出到本地！",
-                        type="negative",
-                        position="center",
-                        timeout=0,
-                        progress=False,
-                        close_button="✖",
-                    )
-                    return
-                if project_name.split("-")[0] == "RFTS" and not validate_format_regex(project_name, r"^RFTS-\d{4}$"):
-                    ui.notify(
-                        "不符合临时项目号命名规则：RFTS-4位数字！",
-                        type="negative",
-                        position="center",
-                        timeout=0,
-                        progress=False,
-                        close_button="✖",
-                    )
-                    return
-                # 如果最近一次需求配置文件还处于未审状态，本次需求还不能提交
-                if review_state == "待审":
-                    ui.notify(
-                        "需求仍处于待审状态，不能继续提交需求！",
-                        type="negative",
-                        position="center",
-                        timeout=0,
-                        progress=False,
-                        close_button="✖",
-                    )
-                    return
-                if data_json["entry_status"]:
-                    new_version = version
-                    # 迭代更新版本
-                    version_a = int(version_str_li[0])
-
-                    # 查找指定路径下，含有提供项目名的文件，得到一个字典，完整版本为键，值为：{"name":文件名, "v_a":版本号整数部分, "v_b":版本号小数部分}
-                    project_exists_file = find_files_with_prefix_and_version(REQ_DIR, target_project_name)
-                    # 服务器存在该项目配置，则需要升级版本
-                    if project_exists_file:
-                        v_max = max([float(s) for s in project_exists_file.keys()])
-                        # 当前版本比服务器最高版本低 或 由其它项目衍生过来的，均按照本项目服务器最高版本来+1保存
-                        # if float(version) < v_max or change_name:
-                        version_a = int(project_exists_file[str(v_max)]["v_a"])
-                        # 已审状态才能升级版本, 待修改不升级
-
-                        if review_state in ["已审", ""]:
-                            new_version = f"{version_a + 1}.0"
-
-                        try:
-                            # 获取旧版最高版需求文件数据
-                            old_data_path = os.path.join(REQ_DIR, project_exists_file[str(v_max)]["name"])
-                            with open(old_data_path, "r", encoding="utf-8") as f:
-                                # 使用 json.load() 读取文件内容并解析
-                                old_data = json.load(f)
-
-                                # 处理新需求插入文件数字可能的与旧版本需求的冲突
-                                return_tuple = update_new_data_in_place(old_data, data_json)
-                                data_json = return_tuple[0]
-                                data_json["file_counter"] = return_tuple[1]
-                        except json.JSONDecodeError:
-                            print(f"错误：文件 '{json_path}' 不是有效的 JSON 格式。")
-                        except Exception as e:
-                            print(f"读取文件时发生其他错误：{e}")
-
-                    # 服务器不存在该项目配置文件
-                    else:
-                        # 刚刚改了项目名,临时项目与正式项目均先复制参考的项目需求
-                        if change_name:
-                            # 定义文件路径
-                            old_file_path = os.path.join(
-                                REQ_DIR, f"{project_name}_需求配置_V{version.split('.')[0]}.0.json"
-                            )
-                            old_data_json = {}
-                            try:
-                                # 每次都以配置文件为准，不以服务器现有数据为准
-                                # 配置更新能直接呈现，但配置减项将导致原有数据不呈现
-                                with open(old_file_path, "r", encoding="utf-8") as f:
-                                    # 使用 json.load() 读取文件内容并解析
-                                    old_data_json = json.load(f)
-                            except json.JSONDecodeError:
-                                print(f"错误：文件 '{old_file_path}' 不是有效的 JSON 格式。")
-                            except Exception as e:
-                                print(f"读取文件时发生其他错误：{e}")
-                            old_data_json["project_name"] = target_project_name
-                            old_data_json["current_user"] = current_user
-                            old_data_json["original_project"] = project_name
-                            old_data_json["version"] = "1.0"
-                            old_data_json["original_version"] = version
-                            old_data_json["req_timestamp"] = datetime.now().isoformat()
-                            # 衍生复制过来的需求，默认通过审核
-                            # old_data_json["review_state"] = True
-                            # 将该需求版本标记到待审字典里
-                            app.storage.general["wait_review"][target_project_name] = {
-                                "1.0": {"state": "已审", "submitter": current_user}
-                            }
-
-                            # 将字典转换为 JSON 字符串
-                            old_json_str = json.dumps(old_data_json, indent=4, ensure_ascii=False)
-                            # print(f"准备写入的 data 数据: {data}")
-                            # 写入文件
-                            copy_file_path = os.path.join(REQ_DIR, f"{target_project_name}_需求配置_V1.0.json")
-                            try:
-                                with open(copy_file_path, "w", encoding="utf-8") as f:
-                                    f.write(old_json_str)
-                                # 成功复制参照项目需求文件后，马上复制该项目概述内容
-                                await copy_overview_data(project_name, version, target_project_name)
-                                # 更新目标项目概述角色统计结果，以便第一时间在项目总表能看到统计结果和状态
-                                overview_role_update(target_project_name)
-                                overview_role_update(target_project_name)
-                                ui.notify(
-                                    "复制衍生项目需求文件概述资料成功。",
-                                    type="positive",
-                                    position="bottom",
-                                    timeout=2000,
-                                    progress=True,
-                                    close_button="✖",
-                                )
-                            except Exception as e:
-                                print(f"复制修改衍生临时项目需求文件时发生其他错误：{e}")
-                            # 更新客户端数据
-                            app.storage.client["version"] = "1.0"
-                            app.storage.client["project_name"] = target_project_name
-                            app.storage.client["target_project_name"] = target_project_name
-                            # app.storage.client["target_version"] = ""
-                            app.storage.client["original_project"] = target_project_name
-                            app.storage.client["original_version"] = "1.0"
-                            # 复制保存好旧版本临时需求配置文件后，接着处理一次
-                            await output_config_data(data, type)
-                            return
-                        # 排除其它项目衍生过来的情况，那种情况保持衍生的记录版本
-                        else:
-                            original_version = "0.0"
-                            new_version = "1.0"
-
-                    # 不管服务器有没有该项目需求配置文件
-                    # app.storage.client["version"] = new_version
-                    # app.storage.client["original_version"] = version
-                    data_json["version"] = new_version
-
-                    # 导出时加入或更新时间戳
-                    data_json["req_timestamp"] = datetime.now().isoformat()
-                    # 定义文件路径
-                    file_path = os.path.join(REQ_DIR, f"{target_project_name}_需求配置_V{new_version}.json")
-                    # 将字典转换为 JSON 字符串
-                    json_str = json.dumps(data_json, indent=4, ensure_ascii=False)
-
-                    with open(file_path, "w", encoding="utf-8") as f:
-                        f.write(json_str)
-                    # 将该需求版本标记到待审字典里
-                    if not app.storage.general["wait_review"].get(target_project_name, {}):
-                        app.storage.general["wait_review"][target_project_name] = {}
-                    app.storage.general["wait_review"][target_project_name][new_version] = {
-                        "state": "待审",
-                        "submitter": current_user,
-                    }
-
-                    # 将提交该需求的用户更新为该项目负责的销售员
-                    app.storage.general["project_sale"][target_project_name] = current_user
-                    ui.notify(
-                        f"需求已提交，版本已迭代到: V{new_version}",
-                        type="positive",
-                        position="bottom",
-                        timeout=2000,
-                        progress=True,
-                        close_button="✖",
-                    )
-                    ui.navigate.to(f"/main/requirement?type=requirement&json_path={file_path}")
-                else:
-                    ui.notify(
-                        "需求确认项未全部选填完毕，不能提交！",
-                        type="negative",
-                        position="center",
-                        timeout=0,
-                        progress=False,
-                        close_button="✖",
-                    )
+                ui.navigate.to(f"/main/requirement?type=requirement&json_path={file_path}")
+            else:
+                ui.notify(
+                    "需求确认项未全部选填完毕，不能提交！",
+                    type="negative",
+                    position="center",
+                    timeout=0,
+                    progress=False,
+                    close_button="✖",
+                )
 
     def get_select_req(select_project_name):
         if select_project_name:
@@ -2138,24 +2203,28 @@ async def requirement_page(type="", json_path="", project_name=""):
                             original_project = version_data.get("original_project", "")
                             # 非全新配置需求
                             if original_project != "":
+                                # 处理项目名来源信息
                                 if original_project == project_name:
                                     original_str = f"修改自：{original_project}"
                                 elif version == "1.0":
                                     original_str = f"复制自：{original_project}"
                                 else:
                                     original_str = f"衍生自：{original_project}"
-                                # 不是汇总最新数据，且衍生自某个版本
+
+                                # 增加版本信息
+                                # 不是呈现最新版本栏，且衍生自某个版本
                                 if version != "0" and original_version != "0.0":
                                     original_str = f"{original_str}，V{original_version}"
-                                # 特殊情况，全新输入再提交前改了名字，依旧判定为全新
+                                # 双重保险，即使有参照项目名（参照自己），只要参照版本为0.0（参照别的项目不会是0.0），包括特殊情况（全新输入再提交前改了名字），依旧判定为全新
                                 elif version != "0" and original_version == "0.0":
                                     original_str = "全新配置需求"
-                                # 术语汇总最新数据的
+                                # 属于呈现最新版本栏
                                 else:
                                     original_str = ""
                             # 全新配置需求
                             else:
-                                if version != "0" and original_version == "0.0":
+                                # 不是呈现最新版本栏
+                                if version != "0":
                                     original_str = "全新配置需求"
 
                             # 处理需求内容标题内容
@@ -2544,7 +2613,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                 # 使用 json.load() 读取文件内容并解析
                 json_data = json.load(f)
                 # 将json_data数据更新到客户端储存里，调用requirement_input_frame()显示需求确认项
-                loads_requirements(json_data)
+                loads_requirements(json_data, False)
         except json.JSONDecodeError:
             print(f"错误：文件 '{json_path}' 不是有效的 JSON 格式。")
         except Exception as e:
