@@ -8,7 +8,13 @@
             "permission": {
                 "read_role": [
                     "boss",
-                    "销售总监"
+                    "销售总监",
+                    "研发助理",
+                    "研发电子主管",
+                    "研发硬件",
+                    "研发软件",
+                    "研发结构",
+                    "研发样品"
                 ],
                 "edit_role": [
                     "admin",
@@ -57,12 +63,9 @@
                     "销售",
                     "客服主管",
                     "客服",
-                    "研发助理",
                     "研发电子主管",
                     "研发硬件",
-                    "研发软件",
                     "研发结构",
-                    "研发样品",
                     "工程",
                     "质量"
                 ],
@@ -113,7 +116,6 @@
                     "销售",
                     "客服主管",
                     "客服",
-                    "研发助理",
                     "研发电子主管",
                     "研发硬件",
                     "研发软件",
@@ -141,7 +143,6 @@
                     "销售",
                     "客服主管",
                     "客服",
-                    "研发助理",
                     "研发电子主管",
                     "研发硬件",
                     "研发软件",
@@ -171,8 +172,6 @@
                     "客服",
                     "研发助理",
                     "研发电子主管",
-                    "研发硬件",
-                    "研发软件",
                     "研发结构",
                     "研发样品",
                     "工程",
@@ -197,7 +196,6 @@
                     "销售",
                     "客服主管",
                     "客服",
-                    "研发助理",
                     "研发电子主管",
                     "研发硬件",
                     "研发软件",
@@ -225,7 +223,6 @@
                     "销售",
                     "客服主管",
                     "客服",
-                    "研发助理",
                     "研发电子主管",
                     "研发硬件",
                     "研发软件",
@@ -281,7 +278,6 @@
                     "销售",
                     "客服主管",
                     "客服",
-                    "研发助理",
                     "研发电子主管",
                     "研发硬件",
                     "研发软件",
@@ -310,10 +306,35 @@
                     "客服主管",
                     "客服",
                     "研发助理",
-                    "研发电子主管",
-                    "研发硬件",
-                    "研发软件",
                     "研发结构",
+                    "研发样品",
+                    "工程",
+                    "质量"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发光学"
+                ]
+            }
+        },
+        {
+            "label": "specifications",
+            "title": "产品技术规格书",
+            "processing_type": "file",
+            "file_name_regular": [],
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售总监",
+                    "销售",
+                    "客服主管",
+                    "客服",
+                    "研发助理",
+                    "研发结构",
+                    "研发软件",
+                    "研发硬件",
+                    "研发电子主管",
                     "研发样品",
                     "工程",
                     "质量"
@@ -387,8 +408,9 @@
     "结构": [
         {
             "label": "product_size_diagram",
-            "title": "产品尺寸图",
-            "processing_type": "image",
+            "title": "产品2D尺寸图",
+            "processing_type": "file",
+            "file_name_regular": [],
             "upload_path": "D:/Server/研发部（研发阶段）/",
             "permission": {
                 "read_role": [
@@ -414,9 +436,57 @@
             }
         },
         {
+            "label": "product_simplify_diagram",
+            "title": "产品简化3D图",
+            "processing_type": "file",
+            "file_name_regular": [],
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售总监",
+                    "销售",
+                    "客服主管",
+                    "客服",
+                    "研发助理",
+                    "研发电子主管",
+                    "研发硬件",
+                    "研发光学",
+                    "研发样品",
+                    "工程",
+                    "质量"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发结构"
+                ]
+            }
+        },
+        {
+            "label": "product_complete_diagram",
+            "title": "产品完整3D图",
+            "processing_type": "file",
+            "file_name_regular": [],
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售总监",
+                    "研发助理",
+                    "研发电子主管",
+                    "研发光学"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发结构"
+                ]
+            }
+        },
+        {
             "label": "drive_size_diagram",
-            "title": "驱动板尺寸图",
-            "processing_type": "image",
+            "title": "PCBA 2D尺寸图",
+            "processing_type": "file",
+            "file_name_regular": [],
             "permission": {
                 "read_role": [
                     "boss",
@@ -441,6 +511,54 @@
             }
         },
         {
+            "label": "drive_simplify_diagram",
+            "title": "PCBA简化3D图",
+            "processing_type": "file",
+            "file_name_regular": [],
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售总监",
+                    "销售",
+                    "客服主管",
+                    "客服",
+                    "研发助理",
+                    "研发电子主管",
+                    "研发硬件",
+                    "研发光学",
+                    "研发样品",
+                    "工程",
+                    "质量"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发结构"
+                ]
+            }
+        },
+        {
+            "label": "drive_complete_diagram",
+            "title": "PCBA完整3D图",
+            "processing_type": "file",
+            "file_name_regular": [],
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售总监",
+                    "研发助理",
+                    "研发电子主管",
+                    "研发硬件",
+                    "研发光学"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发结构"
+                ]
+            }
+        },
+        {
             "label": "product_output_position",
             "title": "产品出光口位置图",
             "processing_type": "image",
@@ -451,7 +569,6 @@
                     "销售",
                     "客服主管",
                     "客服",
-                    "研发助理",
                     "研发电子主管",
                     "研发硬件",
                     "研发软件",
@@ -478,7 +595,6 @@
                     "销售",
                     "客服主管",
                     "客服",
-                    "研发助理",
                     "研发电子主管",
                     "研发硬件",
                     "研发软件",
@@ -505,7 +621,6 @@
                     "销售",
                     "客服主管",
                     "客服",
-                    "研发助理",
                     "研发电子主管",
                     "研发硬件",
                     "研发软件",
@@ -533,10 +648,8 @@
                     "销售",
                     "客服主管",
                     "客服",
-                    "研发助理",
                     "研发电子主管",
                     "研发硬件",
-                    "研发软件",
                     "研发光学",
                     "研发样品",
                     "工程",
@@ -561,10 +674,8 @@
                     "销售",
                     "客服主管",
                     "客服",
-                    "研发助理",
                     "研发电子主管",
                     "研发硬件",
-                    "研发软件",
                     "研发光学",
                     "研发样品",
                     "工程",
@@ -592,7 +703,6 @@
                     "研发助理",
                     "研发电子主管",
                     "研发硬件",
-                    "研发软件",
                     "研发光学",
                     "研发样品",
                     "工程",
@@ -645,7 +755,6 @@
                     "销售",
                     "客服主管",
                     "客服",
-                    "研发助理",
                     "研发电子主管",
                     "研发硬件",
                     "研发软件",
@@ -673,7 +782,6 @@
                     "销售",
                     "客服主管",
                     "客服",
-                    "研发助理",
                     "研发电子主管",
                     "研发硬件",
                     "研发软件",
@@ -701,7 +809,6 @@
                     "销售",
                     "客服主管",
                     "客服",
-                    "研发助理",
                     "研发电子主管",
                     "研发硬件",
                     "研发软件",
@@ -732,7 +839,6 @@
                     "研发助理",
                     "研发电子主管",
                     "研发硬件",
-                    "研发软件",
                     "研发光学",
                     "研发样品",
                     "工程",
@@ -785,10 +891,8 @@
                     "销售",
                     "客服主管",
                     "客服",
-                    "研发助理",
                     "研发电子主管",
                     "研发硬件",
-                    "研发软件",
                     "研发光学",
                     "研发样品",
                     "工程",
@@ -942,6 +1046,34 @@
             }
         },
         {
+            "label": "packing_list",
+            "title": "装箱清单",
+            "processing_type": "file",
+            "file_name_regular": [],
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售总监",
+                    "销售",
+                    "客服主管",
+                    "客服",
+                    "研发结构",
+                    "研发电子主管",
+                    "研发硬件",
+                    "研发软件",
+                    "研发光学",
+                    "研发样品",
+                    "工程",
+                    "质量"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发助理"
+                ]
+            }
+        },
+        {
             "label": "mechanical_testing",
             "title": "机械结构测试项",
             "processing_type": "test",
@@ -1078,7 +1210,6 @@
                     "销售",
                     "客服主管",
                     "客服",
-                    "研发助理",
                     "研发结构",
                     "研发软件",
                     "研发光学",
@@ -1235,8 +1366,122 @@
             }
         },
         {
+            "label": "pcb_principle",
+            "title": "PCB原理图",
+            "processing_type": "file",
+            "file_name_regular": [],
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售总监",
+                    "研发助理",
+                    "研发软件",
+                    "研发样品",
+                    "工程"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发硬件",
+                    "研发电子主管"
+                ]
+            }
+        },
+        {
+            "label": "pcb_silkscreen",
+            "title": "PCB丝印图",
+            "processing_type": "file",
+            "file_name_regular": [],
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售总监",
+                    "研发助理",
+                    "研发软件",
+                    "研发样品",
+                    "工程",
+                    "采购"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发硬件",
+                    "研发电子主管"
+                ]
+            }
+        },
+        {
+            "label": "pcb_process",
+            "title": "PCB加工工艺说明",
+            "processing_type": "file",
+            "file_name_regular": [],
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售总监",
+                    "研发助理",
+                    "研发软件",
+                    "研发样品",
+                    "工程",
+                    "采购"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发硬件",
+                    "研发电子主管"
+                ]
+            }
+        },
+        {
+            "label": "pcb_making",
+            "title": "PCB制板文件压缩包",
+            "processing_type": "file",
+            "file_name_regular": [],
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "研发助理",
+                    "采购"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发硬件",
+                    "研发电子主管"
+                ]
+            }
+        },
+        {
             "label": "drive_manual",
-            "title": "驱动板使用说明书",
+            "title": "硬件使用说明书",
+            "processing_type": "file",
+            "file_name_regular": [],
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售总监",
+                    "销售",
+                    "客服主管",
+                    "客服",
+                    "研发助理",
+                    "研发软件",
+                    "研发光学",
+                    "研发样品",
+                    "工程",
+                    "质量"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发硬件",
+                    "研发电子主管"
+                ]
+            }
+        },
+        {
+            "label": "wiring_manual",
+            "title": "产品接线说明书",
             "processing_type": "file",
             "file_name_regular": [],
             "permission": {
@@ -1366,7 +1611,7 @@
         },
         {
             "label": "software_manual",
-            "title": "固件说明书",
+            "title": "固件使用说明书",
             "processing_type": "file",
             "file_name_regular": [],
             "permission": {
@@ -1377,7 +1622,60 @@
                     "客服主管",
                     "客服",
                     "研发助理",
-                    "研发结构",
+                    "研发硬件",
+                    "研发光学",
+                    "研发样品",
+                    "工程",
+                    "质量"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发软件",
+                    "研发电子主管"
+                ]
+            }
+        },
+        {
+            "label": "software_protocol",
+            "title": "通讯协议文件",
+            "processing_type": "file",
+            "file_name_regular": [],
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售总监",
+                    "销售",
+                    "客服主管",
+                    "客服",
+                    "研发助理",
+                    "研发硬件",
+                    "研发光学",
+                    "研发样品",
+                    "工程",
+                    "质量"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发软件",
+                    "研发电子主管"
+                ]
+            }
+        },
+        {
+            "label": "software_xml",
+            "title": "XML协议文件",
+            "processing_type": "file",
+            "file_name_regular": [],
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售总监",
+                    "销售",
+                    "客服主管",
+                    "客服",
+                    "研发助理",
                     "研发硬件",
                     "研发光学",
                     "研发样品",
