@@ -1427,16 +1427,26 @@ async def requirement_page(type="", json_path="", project_name=""):
         data_json["deleted_files"] = app.storage.client["deleted_files"]
         data_json["current_user"] = current_user
 
-        # 当前项目审核状态
-        review_state = ""
+        # 参照项目的审核状态
+        original_review_state = ""
+        target_review_state = ""
         if app.storage.general["wait_review"].get(project_name, {}):
-            review_state = app.storage.general["wait_review"][project_name].get(version, {"state": ""})["state"]
-
+            original_review_state = app.storage.general["wait_review"][project_name].get(version, {"state": ""})[
+                "state"
+            ]
+        if app.storage.general["wait_review"].get(target_project_name, {}):
+            if app.storage.general["wait_review"][target_project_name].keys():
+                ver_max = (
+                    f"{int(max([float(v) for v in app.storage.general['wait_review'][target_project_name].keys()]))}.0"
+                )
+                target_review_state = app.storage.general["wait_review"][target_project_name].get(
+                    ver_max, {"state": ""}
+                )["state"]
         # 当前需求待审状态，导出和提交均会被阻止
         # 当前需求已审、查不到（初次、导出版本上再导出提交）状态的，可导出可提交
         # 当前需求待修改状态，可提交
         # 当前项目已审，可正常更新
-        if review_state == "已审":
+        if original_review_state == "已审":
             # 记录项目名
             data_json["project_name"] = target_project_name  # 该项操作导出时会被覆盖掉，不起效
             # 记录参照当前版本
@@ -1444,7 +1454,7 @@ async def requirement_page(type="", json_path="", project_name=""):
             # 参照项目名为当前项目名
             data_json["original_project"] = project_name
         # 待修改，不动作就保持了原有数据；待审后面拦截不能导出和提交
-        elif review_state == "待修改":
+        elif original_review_state == "待修改":
             # 记录项目名
             data_json["project_name"] = project_name
             # 记录参照当前版本
@@ -1464,7 +1474,7 @@ async def requirement_page(type="", json_path="", project_name=""):
         # 输出类型为导出到本地，导出不修改名称（目标项目名不起效），只迭代小数点后版本，更新时间戳
         if type == "export":
             # 禁止待审、待修改需求导出
-            if review_state not in ["已审", ""]:
+            if original_review_state not in ["已审", ""]:
                 ui.notify(
                     "需求处于未审状态，不能导出到本地！",
                     type="negative",
@@ -1569,9 +1579,9 @@ async def requirement_page(type="", json_path="", project_name=""):
                 )
                 return
             # 如果最近一次需求配置文件还处于未审状态，本次需求还不能提交
-            if review_state == "待审":
+            if original_review_state == "待审":
                 ui.notify(
-                    "需求仍处于待审状态，不能继续提交需求！",
+                    "参照项目的需求处于待审状态，禁止参照引用！",
                     type="negative",
                     position="center",
                     timeout=0,
@@ -1579,7 +1589,16 @@ async def requirement_page(type="", json_path="", project_name=""):
                     close_button="✖",
                 )
                 return
-
+            if target_review_state == "待审":
+                ui.notify(
+                    "目标项目的需求处于待审状态，禁止修改！",
+                    type="negative",
+                    position="center",
+                    timeout=0,
+                    progress=False,
+                    close_button="✖",
+                )
+                return
             change_name = False
             #  改了项目名
             if project_name != target_project_name:
@@ -1599,7 +1618,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                     # if float(version) < v_max or change_name:
                     version_a = int(project_exists_file[str(v_max)]["v_a"])
                     # 已审状态才能升级版本, 待修改不升级
-                    if review_state in ["已审", ""]:
+                    if original_review_state in ["已审", ""]:
                         new_version = f"{version_a + 1}.0"
 
                     # 获取旧版最高版需求文件数据
@@ -1694,7 +1713,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                         old_data_json["original_version"] = f"{copy_version.split('.')[0]}.0"
                         old_data_json["req_timestamp"] = datetime.now().isoformat()
                         # 衍生复制过来的需求，默认通过审核
-                        # old_data_json["review_state"] = True
+                        # old_data_json["original_review_state"] = True
                         # 将该需求版本标记到待审字典里
                         app.storage.general["wait_review"][target_project_name] = {
                             "1.0": {"state": "已审", "submitter": current_user}

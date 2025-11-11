@@ -58,6 +58,8 @@ app.storage.general.setdefault("project_sale", {})
 app.storage.general.setdefault("wait_review", {})
 # 储存服务器层级 用于存储用户偏好信息
 app.storage.general.setdefault("user_preferences", {})
+# 储存服务器层级 用于存储用户偏好信息
+app.storage.general.setdefault("custom_labels", {})
 
 
 # ======================

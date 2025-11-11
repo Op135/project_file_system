@@ -11,6 +11,7 @@ from ..utils import (
     get_cache_busted_path,
     get_overviow_page,
     logout,
+    project_overview_config_update,
     project_summary_update,
 )
 
@@ -213,8 +214,8 @@ def project_table_page():
                     if overview_data:
                         # 遍历服务器 项目简介与概述数据对照字典
                         for pro_key, over_key_li in app.storage.general["project_overview_config"].items():
-                            # 如果当前处理的不是负责人配置，且项目简介对照配置非空
-                            if "charge" not in pro_key and over_key_li != []:
+                            # 如果当前处理的不是负责人配置、且项目简介对照配置非空 或 是定制内容项
+                            if "charge" not in pro_key and over_key_li != [] or pro_key == "custom_labels":
                                 show_str = ""
                                 # 遍历对照配置列表（可能一个项目简介配置了多个对应的概述数据项）
                                 for over_key in over_key_li:
@@ -236,6 +237,7 @@ def project_table_page():
                                                 # 待定状态的概述内容串 加上特殊标记符号
                                                 if chip_data["enabled"] is None:
                                                     text = f"「{text}」?"
+
                                                 # 将文本拼接到待显示字符串上
                                                 # 这几类换行拼接
                                                 if pro_key in [
@@ -249,10 +251,17 @@ def project_table_page():
                                                     show_str = f"{show_str}\n{text}"
                                                 else:
                                                     show_str = f"{show_str}，{text}"
+
+                                # 定制内容列，则在概述内容基础上，拼接添加需求项输出标签内容
+                                if pro_key == "custom_labels":
+                                    label_list = app.storage.general["custom_labels"].get(project_name, [])
+                                    if label_list:
+                                        show_str = f"{show_str}，{'，'.join(label_list)}"
                                 # 将处理完成的字符串作为该行数据对应项目简介项的显示内容
                                 row_data[pro_key] = show_str.strip("，").removeprefix(
                                     "\n"
-                                )  # removeprefix移除字符串前缀
+                                )  # removeprefix移除字符串前缀，strip移除首尾指定字符
+
                             # 处理负责人配置部分显示内容
                             elif (
                                 "charge" in pro_key
@@ -513,6 +522,8 @@ def project_table_page():
     # 防止没有初始化导致报错
     if not app.storage.general["project_summary"]:
         project_summary_update()
+    if not app.storage.general["project_overview_config"]:
+        project_overview_config_update()
     # 从服务器获取完整项目摘要
     copy_project_dic = copy.deepcopy(app.storage.general["project_summary"])
     # 抽取出无分类项目摘要列表

@@ -2536,5 +2536,11 @@
         "creation_date": "2025-11-09",
         "introduction": "SDFSDF",
         "customer": "SDF"
+    },
+    "RFTS-0009": {
+        "model_notes": "",
+        "creation_date": "2025-11-11",
+        "introduction": "ZDG",
+        "customer": "DFG"
     }
 }

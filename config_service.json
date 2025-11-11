@@ -304,8 +304,8 @@
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
-                    "option_show": "导光束NA值：{V}",
-                    "option_label": ""
+                    "option_show": "导光束数值孔径：{V}",
+                    "option_label": "导光束数值孔径{V}"
                 }
             ]
         },
@@ -355,7 +355,7 @@
                     "option_out": "True",
                     "option_bold": "客户指定/提供",
                     "option_show": "{V}导光束做光参数测试",
-                    "option_label": "指定导光束测光"
+                    "option_label": "指定导光束测光参数"
                 },
                 {
                     "option_content": "否",
@@ -647,21 +647,21 @@
                     "option_out": "分拆同箱",
                     "option_bold": "分拆装同箱",
                     "option_show": "转接座与主体{V}",
-                    "option_label": "分拆同箱"
+                    "option_label": "转接座分拆同箱包装"
                 },
                 {
                     "option_content": "与产品主体“装一起”包装",
                     "option_out": "一体包装",
                     "option_bold": "装一起包装",
                     "option_show": "转接座与主体{V}",
-                    "option_label": "一体包装"
+                    "option_label": "转接座一体包装"
                 },
                 {
                     "option_content": "与产品主体“分箱”包装",
                     "option_out": "分箱包装",
                     "option_bold": "分箱包装",
                     "option_show": "转接座与主体{V}",
-                    "option_label": "分箱包装"
+                    "option_label": "转接座分箱包装"
                 }
             ]
         },
@@ -725,7 +725,7 @@
                     "option_out": "True",
                     "option_bold": "",
                     "option_show": "",
-                    "option_label": "导光束插拔有特殊逻辑"
+                    "option_label": "导光束插拔定制逻辑"
                 },
                 {
                     "option_content": "使所有光源亮灭",
@@ -782,7 +782,7 @@
                     "option_out": "True",
                     "option_bold": "单色光",
                     "option_show": "产品需输出{V}",
-                    "option_label": "单色光"
+                    "option_label": ""
                 },
                 {
                     "option_content": "否",
@@ -864,7 +864,7 @@
                     "option_out": "True",
                     "option_bold": "白光",
                     "option_show": "产品需输出{V}",
-                    "option_label": "白光"
+                    "option_label": ""
                 },
                 {
                     "option_content": "否",
@@ -896,7 +896,7 @@
                     "option_out": "True",
                     "option_bold": "特定混合光",
                     "option_show": "产品需输出{V}",
-                    "option_label": "特定混合光"
+                    "option_label": ""
                 },
                 {
                     "option_content": "否",
@@ -928,7 +928,7 @@
                     "option_out": "True",
                     "option_bold": "内窥镜领域",
                     "option_show": "产品属于{V}，需符合YY1081-2011标准要求",
-                    "option_label": "内窥镜光源"
+                    "option_label": ""
                 },
                 {
                     "option_content": "否",
@@ -2038,35 +2038,35 @@
                     "option_out": "红绿辐通量比",
                     "option_bold": "红绿辐通量比",
                     "option_show": "限制的内窥镜特有光参数：{V}",
-                    "option_label": "限制红绿比"
+                    "option_label": ""
                 },
                 {
                     "option_content": "蓝绿辐通量比",
                     "option_out": "蓝绿辐通量比",
                     "option_bold": "蓝绿辐通量比",
                     "option_show": "",
-                    "option_label": "限制蓝绿比"
+                    "option_label": ""
                 },
                 {
                     "option_content": "红外截止性能",
                     "option_out": "红外截止性能",
                     "option_bold": "红外截止性能",
                     "option_show": "",
-                    "option_label": "限制红外截止"
+                    "option_label": ""
                 },
                 {
                     "option_content": "光照均匀性",
                     "option_out": "光照均匀性",
                     "option_bold": "光照均匀性",
                     "option_show": "",
-                    "option_label": "限制光照均匀性"
+                    "option_label": ""
                 },
                 {
                     "option_content": "照度超限点",
                     "option_out": "照度超限点",
                     "option_bold": "照度超限点",
                     "option_show": "",
-                    "option_label": "限制超限点数"
+                    "option_label": ""
                 },
                 {
                     "option_content": "不限制",
@@ -2223,35 +2223,35 @@
                     "option_out": "50%光通量",
                     "option_bold": "光通量",
                     "option_show": "要求加测50%亮度档，并满足合格标准的光参数有{V}",
-                    "option_label": "测50%光通量"
+                    "option_label": ""
                 },
                 {
                     "option_content": "相对色温CCT",
                     "option_out": "50%CCT",
                     "option_bold": "CCT",
                     "option_show": "",
-                    "option_label": "测50%CCT"
+                    "option_label": ""
                 },
                 {
                     "option_content": "CRI显指Ra",
                     "option_out": "50%Ra",
                     "option_bold": "Ra",
                     "option_show": "",
-                    "option_label": "测50%Ra"
+                    "option_label": ""
                 },
                 {
                     "option_content": "红绿辐通量比",
                     "option_out": "50%红绿比",
                     "option_bold": "红绿辐通量比",
                     "option_show": "",
-                    "option_label": "测50%红绿比"
+                    "option_label": ""
                 },
                 {
                     "option_content": "蓝绿辐通量比",
                     "option_out": "50%蓝绿比",
                     "option_bold": "蓝绿辐通量比",
                     "option_show": "",
-                    "option_label": "测50%蓝绿比"
+                    "option_label": ""
                 },
                 {
                     "option_content": "不要求",
@@ -2753,7 +2753,7 @@
                     "option_out": "True",
                     "option_bold": "",
                     "option_show": "",
-                    "option_label": "指定外观颜色"
+                    "option_label": ""
                 },
                 {
                     "option_content": "否",
@@ -2867,7 +2867,7 @@
                     "option_out": "True",
                     "option_bold": "",
                     "option_show": "",
-                    "option_label": "限制重量"
+                    "option_label": ""
                 },
                 {
                     "option_content": "否",
@@ -3070,14 +3070,14 @@
                     "option_out": "直流输入",
                     "option_bold": "直流输入",
                     "option_show": "产品供电为{V}",
-                    "option_label": "直流输入"
+                    "option_label": ""
                 },
                 {
                     "option_content": "交流",
                     "option_out": "交流输入",
                     "option_bold": "交流输入",
                     "option_show": "产品供电为{V}",
-                    "option_label": "交流输入"
+                    "option_label": ""
                 }
             ]
         },
@@ -3173,7 +3173,7 @@
                     "option_out": "True",
                     "option_bold": "摄像系统",
                     "option_show": "客户有使用{V}进行成像拍摄",
-                    "option_label": "涉及摄像系统"
+                    "option_label": ""
                 },
                 {
                     "option_content": "否",
@@ -3269,7 +3269,7 @@
                     "option_out": "True",
                     "option_bold": "",
                     "option_show": "",
-                    "option_label": "限制功耗"
+                    "option_label": ""
                 },
                 {
                     "option_content": "否",
@@ -3326,7 +3326,7 @@
                     "option_out": "True",
                     "option_bold": "有限制",
                     "option_show": "驱动板外形或安装孔位尺寸{V}",
-                    "option_label": "限制驱动板外形与安装孔"
+                    "option_label": ""
                 },
                 {
                     "option_content": "否",
@@ -3358,7 +3358,7 @@
                     "option_out": "True",
                     "option_bold": "",
                     "option_show": "",
-                    "option_label": "指定接口"
+                    "option_label": "指定电气接口"
                 },
                 {
                     "option_content": "否",
@@ -3538,7 +3538,7 @@
                     "option_out": "True",
                     "option_bold": "",
                     "option_show": "",
-                    "option_label": "提供操控类配件"
+                    "option_label": "供操控类配件"
                 },
                 {
                     "option_content": "否",
@@ -3637,7 +3637,7 @@
                     "option_out": "True",
                     "option_bold": "",
                     "option_show": "",
-                    "option_label": "指定操控类配件型号"
+                    "option_label": ""
                 },
                 {
                     "option_content": "否",
@@ -3694,7 +3694,7 @@
                     "option_out": "True",
                     "option_bold": "状态显示界面",
                     "option_show": "产品需具备{V}",
-                    "option_label": "要状态显示"
+                    "option_label": ""
                 },
                 {
                     "option_content": "否",
@@ -3736,9 +3736,16 @@
                     "option_label": ""
                 },
                 {
-                    "option_content": "显示屏",
-                    "option_out": "显示屏",
-                    "option_bold": "显示屏",
+                    "option_content": "显示屏（仅显示）",
+                    "option_out": "显示屏（仅显示）",
+                    "option_bold": "显示屏（仅显示）",
+                    "option_show": "",
+                    "option_label": ""
+                },
+                {
+                    "option_content": "触控屏",
+                    "option_out": "触控屏",
+                    "option_bold": "触控屏",
                     "option_show": "",
                     "option_label": ""
                 }
@@ -3790,7 +3797,7 @@
                     "option_out": "True",
                     "option_bold": "",
                     "option_show": "",
-                    "option_label": "提供显示类配件"
+                    "option_label": "供显示类配件"
                 },
                 {
                     "option_content": "否",
@@ -3861,7 +3868,7 @@
                     "option_out": "True",
                     "option_bold": "",
                     "option_show": "",
-                    "option_label": "指定显示类配件型号"
+                    "option_label": ""
                 },
                 {
                     "option_content": "否",
@@ -3918,7 +3925,7 @@
                     "option_out": "True",
                     "option_bold": "需提供",
                     "option_show": "随货{V}输入配线",
-                    "option_label": "提供输入线材"
+                    "option_label": "供输入线材"
                 },
                 {
                     "option_content": "否",
@@ -3950,7 +3957,7 @@
                     "option_out": "True",
                     "option_bold": "需要具备",
                     "option_show": "产品{V}定期校正功能",
-                    "option_label": "具备定期校正功能"
+                    "option_label": "定期校正功能"
                 },
                 {
                     "option_content": "否",
@@ -4007,7 +4014,7 @@
                     "option_out": "True",
                     "option_bold": "需要具备",
                     "option_show": "产品{V}闭环反馈控制功能",
-                    "option_label": "具备闭环反馈控制"
+                    "option_label": "闭环反馈控制"
                 },
                 {
                     "option_content": "否",
@@ -4064,28 +4071,28 @@
                     "option_out": "EMC",
                     "option_bold": "EMC",
                     "option_show": "证书要求：{V}",
-                    "option_label": "EMC"
+                    "option_label": ""
                 },
                 {
                     "option_content": "RoHS",
                     "option_out": "RoHS",
                     "option_bold": "RoHS",
                     "option_show": "",
-                    "option_label": "RoHS"
+                    "option_label": ""
                 },
                 {
                     "option_content": "激光安全",
                     "option_out": "激光安全",
                     "option_bold": "激光安全",
                     "option_show": "",
-                    "option_label": "激光安全"
+                    "option_label": ""
                 },
                 {
                     "option_content": "光生物安全",
                     "option_out": "光生物安全",
                     "option_bold": "光生物安全",
                     "option_show": "",
-                    "option_label": "光生物安全"
+                    "option_label": ""
                 },
                 {
                     "option_content": "不要求",
@@ -4199,7 +4206,7 @@
                     "option_out": "True",
                     "option_bold": "频闪模式",
                     "option_show": "产品具备{V}",
-                    "option_label": "具备频闪功能"
+                    "option_label": "频闪功能"
                 },
                 {
                     "option_content": "否",
@@ -4352,13 +4359,45 @@
         "138": {
             "condition": "2any['光学']",
             "node_id": "138",
+            "guide_content": "是否补充光学需求",
+            "answer_type": "单选",
+            "input_num_accor": "",
+            "input_name_accor": "",
+            "input_tolerance": "",
+            "ref_config": "False",
+            "option_hint": "选择是否要继续补充光学需求。",
+            "option_group_id": "17",
+            "option_view": "光学+工艺+质量",
+            "user_must_out": {},
+            "option_tolerance_out": {},
+            "ref_out": [],
+            "options": [
+                {
+                    "option_content": "是",
+                    "option_out": "True",
+                    "option_bold": "",
+                    "option_show": "",
+                    "option_label": "光学有补充需求"
+                },
+                {
+                    "option_content": "否",
+                    "option_out": "False",
+                    "option_bold": "",
+                    "option_show": "无光学补充需求",
+                    "option_label": ""
+                }
+            ]
+        },
+        "139": {
+            "condition": "138==True",
+            "node_id": "139",
             "guide_content": "请提供剩余产品光学补充需求",
             "answer_type": "多行文本",
             "input_num_accor": "",
             "input_name_accor": "",
             "input_tolerance": "",
             "ref_config": "True",
-            "option_hint": "填写上面需求确认项无提及但客户有要求的光学内容，没有则写“无”。",
+            "option_hint": "填写上面需求确认项无提及但客户有要求的光学内容。",
             "option_group_id": "18",
             "option_view": "光学+工艺+质量",
             "user_must_out": {},
@@ -4374,16 +4413,48 @@
                 }
             ]
         },
-        "139": {
+        "140": {
             "condition": "2any['结构']",
-            "node_id": "139",
+            "node_id": "140",
+            "guide_content": "是否补充结构需求",
+            "answer_type": "单选",
+            "input_num_accor": "",
+            "input_name_accor": "",
+            "input_tolerance": "",
+            "ref_config": "False",
+            "option_hint": "选择是否要继续补充结构需求。",
+            "option_group_id": "17",
+            "option_view": "结构+工艺+质量",
+            "user_must_out": {},
+            "option_tolerance_out": {},
+            "ref_out": [],
+            "options": [
+                {
+                    "option_content": "是",
+                    "option_out": "True",
+                    "option_bold": "",
+                    "option_show": "",
+                    "option_label": "结构有补充需求"
+                },
+                {
+                    "option_content": "否",
+                    "option_out": "False",
+                    "option_bold": "",
+                    "option_show": "无结构补充需求",
+                    "option_label": ""
+                }
+            ]
+        },
+        "141": {
+            "condition": "140==True",
+            "node_id": "141",
             "guide_content": "请提供剩余产品结构补充需求",
             "answer_type": "多行文本",
             "input_num_accor": "",
             "input_name_accor": "",
             "input_tolerance": "",
             "ref_config": "True",
-            "option_hint": "填写上面需求确认项无提及但客户有要求的结构内容，没有则写“无”。",
+            "option_hint": "填写上面需求确认项无提及但客户有要求的结构内容。",
             "option_group_id": "18",
             "option_view": "结构+工艺+质量",
             "user_must_out": {},
@@ -4399,16 +4470,48 @@
                 }
             ]
         },
-        "140": {
+        "142": {
             "condition": "2any['硬件']",
-            "node_id": "140",
+            "node_id": "142",
+            "guide_content": "是否补充硬件需求",
+            "answer_type": "单选",
+            "input_num_accor": "",
+            "input_name_accor": "",
+            "input_tolerance": "",
+            "ref_config": "False",
+            "option_hint": "选择是否要继续补充硬件需求。",
+            "option_group_id": "17",
+            "option_view": "硬件+工艺+质量",
+            "user_must_out": {},
+            "option_tolerance_out": {},
+            "ref_out": [],
+            "options": [
+                {
+                    "option_content": "是",
+                    "option_out": "True",
+                    "option_bold": "",
+                    "option_show": "",
+                    "option_label": "硬件有补充需求"
+                },
+                {
+                    "option_content": "否",
+                    "option_out": "False",
+                    "option_bold": "",
+                    "option_show": "无硬件补充需求",
+                    "option_label": ""
+                }
+            ]
+        },
+        "143": {
+            "condition": "142==True",
+            "node_id": "143",
             "guide_content": "请提供剩余产品硬件补充需求",
             "answer_type": "多行文本",
             "input_num_accor": "",
             "input_name_accor": "",
             "input_tolerance": "",
             "ref_config": "True",
-            "option_hint": "填写上面需求确认项无提及但客户有要求的硬件内容，没有则写“无”。",
+            "option_hint": "填写上面需求确认项无提及但客户有要求的硬件内容。",
             "option_group_id": "18",
             "option_view": "硬件+工艺+质量",
             "user_must_out": {},
@@ -4424,16 +4527,48 @@
                 }
             ]
         },
-        "141": {
+        "144": {
             "condition": "2any['软件']",
-            "node_id": "141",
+            "node_id": "144",
+            "guide_content": "是否补充软件需求",
+            "answer_type": "单选",
+            "input_num_accor": "",
+            "input_name_accor": "",
+            "input_tolerance": "",
+            "ref_config": "False",
+            "option_hint": "选择是否要继续补充软件需求。",
+            "option_group_id": "17",
+            "option_view": "软件+工艺+质量",
+            "user_must_out": {},
+            "option_tolerance_out": {},
+            "ref_out": [],
+            "options": [
+                {
+                    "option_content": "是",
+                    "option_out": "True",
+                    "option_bold": "",
+                    "option_show": "",
+                    "option_label": "软件有补充需求"
+                },
+                {
+                    "option_content": "否",
+                    "option_out": "False",
+                    "option_bold": "",
+                    "option_show": "无软件补充需求",
+                    "option_label": ""
+                }
+            ]
+        },
+        "145": {
+            "condition": "144==True",
+            "node_id": "145",
             "guide_content": "请提供剩余产品软件补充需求",
             "answer_type": "多行文本",
             "input_num_accor": "",
             "input_name_accor": "",
             "input_tolerance": "",
             "ref_config": "True",
-            "option_hint": "填写上面需求确认项无提及但客户有要求的软件内容，没有则写“无”。",
+            "option_hint": "填写上面需求确认项无提及但客户有要求的软件内容。",
             "option_group_id": "18",
             "option_view": "软件+工艺+质量",
             "user_must_out": {},
@@ -4449,16 +4584,48 @@
                 }
             ]
         },
-        "142": {
+        "146": {
             "condition": "无条件",
-            "node_id": "142",
+            "node_id": "146",
+            "guide_content": "是否补充工艺需求",
+            "answer_type": "单选",
+            "input_num_accor": "",
+            "input_name_accor": "",
+            "input_tolerance": "",
+            "ref_config": "False",
+            "option_hint": "选择是否要继续补充工艺需求。",
+            "option_group_id": "17",
+            "option_view": "工艺+结构+质量",
+            "user_must_out": {},
+            "option_tolerance_out": {},
+            "ref_out": [],
+            "options": [
+                {
+                    "option_content": "是",
+                    "option_out": "True",
+                    "option_bold": "",
+                    "option_show": "",
+                    "option_label": "工艺有补充需求"
+                },
+                {
+                    "option_content": "否",
+                    "option_out": "False",
+                    "option_bold": "",
+                    "option_show": "无工艺补充需求",
+                    "option_label": ""
+                }
+            ]
+        },
+        "147": {
+            "condition": "146==True",
+            "node_id": "147",
             "guide_content": "最后请提供剩余产品工艺补充需求",
             "answer_type": "多行文本",
             "input_num_accor": "",
             "input_name_accor": "",
             "input_tolerance": "",
             "ref_config": "True",
-            "option_hint": "填写上面需求确认项无提及但客户有要求的工艺内容，没有则写“无”。",
+            "option_hint": "填写上面需求确认项无提及但客户有要求的工艺内容。",
             "option_group_id": "18",
             "option_view": "工艺+结构+质量",
             "user_must_out": {},
@@ -4475,7 +4642,7 @@
             ]
         }
     },
-    "config_timestamp": "2025-11-10T18:41:03.724525",
-    "excel_version_hash": "c82e9da0",
+    "config_timestamp": "2025-11-11T16:34:32.172632",
+    "excel_version_hash": "918e1944",
     "entry_status": false
 }

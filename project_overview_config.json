@@ -3,7 +3,9 @@
     "light_source": [
         "light_source"
     ],
-    "photometric": [],
+    "photometric": [
+        "optical_testing"
+    ],
     "target_distance": [
         "target_surface"
     ],

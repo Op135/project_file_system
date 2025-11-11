@@ -8,7 +8,15 @@ from nicegui import app, ui
 
 from .. import db_storage
 from ..config import BASE_DIR, IMG_DIR, OVER_DIR, PRESET_AVATARS, REQ_DIR
-from ..utils import delete_file, get_cache_busted_path, get_overviow_page, logout, project_summary_update
+from ..utils import (
+    delete_file,
+    get_cache_busted_path,
+    get_overviow_page,
+    logout,
+    project_summary_update,
+    requirement_version_tidy,
+    set_project_custom_labels,
+)
 
 
 @ui.page("/information")
@@ -93,7 +101,12 @@ def information_page():
         app.storage.general["wait_review"][p_name][v]["state"] = "已审"
         # 需求评审前，如果是衍生为新项目，概述已经复制，但待到需求评审通过了，才更新概述chip激活状态
         await set_overview_active_state(p_name, v)
+        # 删除评审时生成的临时概述整理文件
         delete_file(f"{OVER_DIR}/{p_name}_概述整理_temp.json")
+        # 生成正式概述整理文件，里面整理出来的最新需求配置内容，给其它函数整理出该项目的定制内容标签，以供总表显示
+        await requirement_version_tidy(p_name, False)
+        # 整理该项目需求定制内容标签
+        set_project_custom_labels(p_name)
         get_review_button(button_group, p_name, v)
         dialog.close()
 

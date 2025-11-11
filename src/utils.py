@@ -792,6 +792,47 @@ def find_key_position(dictionary, target_key):
     return -1
 
 
+# 查阅指定项目概述文件里的最新需求内容，整理待显示的定制内容标签为列表，保存到服务器层级储存里
+def set_project_custom_labels(project_name):
+    overview_file_path = os.path.join(OVER_DIR, f"{project_name}_概述整理.json")
+    overviow_data = {}
+    label_list = []
+    try:
+        with open(overview_file_path, "r", encoding="utf-8") as f:
+            # 使用 json.load() 读取文件内容并解析
+            overviow_data = json.load(f)
+    except json.JSONDecodeError:
+        print(f"错误：整理项目{project_name}的定制内容标签时，文件 '{overview_file_path}' 不是有效的 JSON 格式。")
+        return
+    except Exception as e:
+        print(f"整理项目{project_name}的定制内容标签时，读取文件时发生其他错误：{e}")
+        return
+    # 获取最新版需求配置文件内容
+    latest_data = overviow_data.get("0").get("added")
+    if not latest_data:
+        print(f"整理项目{project_name}的定制内容标签时，最新需求配置内容为空。")
+        return
+    for num, data in latest_data.items():
+        answer_type = data["answer_type"]
+        must_out_dic = data["user_must_out"]
+        options_list = data["options"]
+        # 该需求配置项存在输出标签配置
+        if any([op_dic["option_label"] for op_dic in options_list]):
+            for op_dic in options_list:
+                # 当前需求项里的这个选填项存在输出标签
+                if op_dic["option_label"]:
+                    # 如果是单选，且 用户选择的输出值与选项输出配置值匹配
+                    if "单选" in answer_type and op_dic["option_out"] == must_out_dic["value"]:
+                        label_list.append(op_dic["option_label"])
+                    # 如果是多选，且 该选填项对应显示值在用户选择的输出字典里对应的布尔值是true
+                    elif "多选" in answer_type and must_out_dic[op_dic["option_content"]]:
+                        label_list.append(op_dic["option_label"])
+                    # 如果是文本类型
+                    elif answer_type in ["正整数", "单行文本", "多行文本"]:
+                        label_list.append(op_dic["option_label"].replace("{V}", "，".join(must_out_dic.values())))
+    app.storage.general["custom_labels"][project_name] = label_list
+
+
 # 根据传入的需求配置文件清单，核对检查是否有新需求配置未更新到概述文件里，并做相应整理，更新概述整理文件
 async def requirement_version_tidy(project_name, review: bool) -> str:
     """
