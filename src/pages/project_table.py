@@ -210,105 +210,98 @@ def project_table_page():
                     # 获取当前行数据所属项目名
                     project_name = row_data["sub_project"]
                     overview_data = db_storage.get_item(f"{project_name}_over_data", {})
-                    # 如果服务器储存的概述数据里存在该当前项目对应概述资料
-                    if overview_data:
-                        # 遍历服务器 项目简介与概述数据对照字典
-                        for pro_key, over_key_li in app.storage.general["project_overview_config"].items():
-                            # 如果当前处理的不是负责人配置、且项目简介对照配置非空 或 是定制内容项
-                            if "charge" not in pro_key and over_key_li != [] or pro_key == "custom_labels":
-                                show_str = ""
-                                # 遍历对照配置列表（可能一个项目简介配置了多个对应的概述数据项）
-                                for over_key in over_key_li:
-                                    # 当前概述数据项label存在服务器概述数据对应项目里，说明可能存在概述内容
-                                    if over_key in overview_data:
-                                        chip_data_li = overview_data.get(over_key, {}).values()
-                                        # 遍历概述内容每个chip数据
-                                        for chip_data in chip_data_li:
-                                            # 该chip内容是激活 或者 待定状态 才显示
-                                            if chip_data["enabled"] or chip_data["enabled"] is None:
-                                                text = ""
-                                                # 如果有content键，则应该是文字型chip
-                                                if "content" in chip_data:
-                                                    text = chip_data["content"]
-                                                # 如果有filename键，则应该是文件或图片型chip
-                                                elif "filename" in chip_data:
-                                                    text = ".".join(chip_data["filename"].split(".")[:-1])
+                    # 遍历服务器 项目简介与概述数据对照字典
+                    for pro_key, over_key_li in app.storage.general["project_overview_config"].items():
+                        # 如果当前处理的不是负责人配置、且项目简介对照配置非空 或 是定制内容项
+                        if pro_key == "custom_labels" or "charge" not in pro_key and over_key_li != []:
+                            show_str = ""
+                            # 遍历对照配置列表（可能一个项目简介配置了多个对应的概述数据项）
+                            for over_key in over_key_li:
+                                # 当前概述数据项label存在服务器概述数据对应项目里，说明可能存在概述内容
+                                if over_key in overview_data:
+                                    chip_data_li = overview_data.get(over_key, {}).values()
+                                    # 遍历概述内容每个chip数据
+                                    for chip_data in chip_data_li:
+                                        # 该chip内容是激活 或者 待定状态 才显示
+                                        if chip_data["enabled"] or chip_data["enabled"] is None:
+                                            text = ""
+                                            # 如果有content键，则应该是文字型chip
+                                            if "content" in chip_data:
+                                                text = chip_data["content"]
+                                            # 如果有filename键，则应该是文件或图片型chip
+                                            elif "filename" in chip_data:
+                                                text = ".".join(chip_data["filename"].split(".")[:-1])
 
-                                                # 待定状态的概述内容串 加上特殊标记符号
-                                                if chip_data["enabled"] is None:
-                                                    text = f"「{text}」?"
+                                            # 待定状态的概述内容串 加上特殊标记符号
+                                            if chip_data["enabled"] is None:
+                                                text = f"「{text}」?"
 
-                                                # 将文本拼接到待显示字符串上
-                                                # 这几类换行拼接
-                                                if pro_key in [
-                                                    "light_source",
-                                                    "target_distance",
-                                                    "drive_pcb",
-                                                    "electronic_bom",
-                                                    "software_research",
-                                                    "software_mass",
-                                                ]:
-                                                    show_str = f"{show_str}\n{text}"
-                                                else:
-                                                    show_str = f"{show_str}，{text}"
+                                            # 将文本拼接到待显示字符串上
+                                            # 这几类换行拼接
+                                            if pro_key in [
+                                                "light_source",
+                                                "target_distance",
+                                                "drive_pcb",
+                                                "electronic_bom",
+                                                "software_research",
+                                                "software_mass",
+                                            ]:
+                                                show_str = f"{show_str}\n{text}"
+                                            else:
+                                                show_str = f"{show_str}，{text}"
 
-                                # 定制内容列，则在概述内容基础上，拼接添加需求项输出标签内容
-                                if pro_key == "custom_labels":
-                                    label_list = app.storage.general["custom_labels"].get(project_name, [])
-                                    if label_list:
-                                        show_str = f"{show_str}，{'，'.join(label_list)}"
-                                # 将处理完成的字符串作为该行数据对应项目简介项的显示内容
-                                row_data[pro_key] = show_str.strip("，").removeprefix(
-                                    "\n"
-                                )  # removeprefix移除字符串前缀，strip移除首尾指定字符
+                            # 定制内容列，则在概述内容基础上，拼接添加需求项输出标签内容
+                            if pro_key == "custom_labels":
+                                label_list = app.storage.general["custom_labels"].get(project_name, [])
+                                if label_list:
+                                    show_str = f"{show_str}，{'，'.join(label_list)}"
+                            # 将处理完成的字符串作为该行数据对应项目简介项的显示内容
+                            row_data[pro_key] = show_str.strip("，").removeprefix(
+                                "\n"
+                            )  # removeprefix移除字符串前缀，strip移除首尾指定字符
 
-                            # 处理负责人配置部分显示内容
-                            elif (
-                                "charge" in pro_key
-                                and over_key_li != ""
-                                and project_name in app.storage.general["overview_role"]
-                                and over_key_li in app.storage.general["overview_role"][project_name]
-                            ):
-                                show_str = app.storage.general["overview_role"][project_name][over_key_li].get(
-                                    "latest_user", ""
-                                )
+                        # 处理负责人配置部分显示内容
+                        elif (
+                            "charge" in pro_key
+                            and over_key_li != ""
+                            and project_name in app.storage.general["overview_role"]
+                            and over_key_li in app.storage.general["overview_role"][project_name]
+                        ):
+                            show_str = app.storage.general["overview_role"][project_name][over_key_li].get(
+                                "latest_user", ""
+                            )
 
-                                charge_str = show_str.split("：")[1] if show_str else ""
-                                # 当前项目的当前over_key_li角色比如“光学”，存在最近编辑者
-                                if charge_str:
-                                    selected_bool = False
-                                    break_bool = False
-                                    for class_dic in overview_data.values():
+                            charge_str = show_str.split("：")[1] if show_str else ""
+                            # 当前项目的当前over_key_li角色比如“光学”，存在最近编辑者
+                            if charge_str:
+                                selected_bool = False
+                                break_bool = False
+                                for class_dic in overview_data.values():
+                                    if break_bool:
+                                        break
+                                    for ver_dic in class_dic.values():
                                         if break_bool:
                                             break
-                                        for ver_dic in class_dic.values():
-                                            if break_bool:
-                                                break
-                                            select_activ_dic = ver_dic.get("select_activ_dic", {})
-                                            if select_activ_dic:
-                                                max_ver = max([int(float(ver)) for ver in select_activ_dic.keys()])
-                                                # chip处于待选择激活状态下 且 over_key_li角色比如“光学”和当前chip的编辑角色一致
-                                                if select_activ_dic[
-                                                    f"{max_ver}.0"
-                                                ] is None and over_key_li == ver_dic.get("role", ""):
-                                                    selected_bool = True
-                                                    # 查到一个需要改变角色显示状态的就不要再继续遍历了
-                                                    break_bool = True
-                                    if selected_bool:
-                                        # 向概述负责人待处理全局记录字典里添加负责人与项目信息
-                                        if charge_str not in app.storage.general["overview_charge_pending"]:
-                                            app.storage.general["overview_charge_pending"][charge_str] = []
-                                        elif (
-                                            project_name
-                                            not in app.storage.general["overview_charge_pending"][charge_str]
-                                        ):
-                                            app.storage.general["overview_charge_pending"][charge_str].append(
-                                                project_name
-                                            )
-                                        # 处理表格显示信息
-                                        charge_str = f"待{charge_str}\n选概述"
+                                        select_activ_dic = ver_dic.get("select_activ_dic", {})
+                                        if select_activ_dic:
+                                            max_ver = max([int(float(ver)) for ver in select_activ_dic.keys()])
+                                            # chip处于待选择激活状态下 且 over_key_li角色比如“光学”和当前chip的编辑角色一致
+                                            if select_activ_dic[f"{max_ver}.0"] is None and over_key_li == ver_dic.get(
+                                                "role", ""
+                                            ):
+                                                selected_bool = True
+                                                # 查到一个需要改变角色显示状态的就不要再继续遍历了
+                                                break_bool = True
+                                if selected_bool:
+                                    # 向概述负责人待处理全局记录字典里添加负责人与项目信息
+                                    if charge_str not in app.storage.general["overview_charge_pending"]:
+                                        app.storage.general["overview_charge_pending"][charge_str] = []
+                                    elif project_name not in app.storage.general["overview_charge_pending"][charge_str]:
+                                        app.storage.general["overview_charge_pending"][charge_str].append(project_name)
+                                    # 处理表格显示信息
+                                    charge_str = f"待{charge_str}\n选概述"
 
-                                row_data[pro_key] = charge_str
+                            row_data[pro_key] = charge_str
 
                     # 单独处理项目简介表里每行 负责销售 单元格的显示
                     row_data["sale_charge"] = app.storage.general["project_sale"].get(project_name, "")

@@ -50,8 +50,11 @@ def main_page():
     # b-classes: 应用于特定子元素的样式 (这里没用，但可以写 b-col-6 c-col-4 等)
     with ui.column().classes("w-full h-[calc(100vh-5rem)] items-center justify-center"):
         with ui.grid(columns=2).classes("w-[calc(70vw)] gap-4 h-[calc(30vh)]"):
+            # 所有非已审项目数量
             state_num_sum = 0
+            # 所有登录用户提交的非已审项目数量
             state_num_user = 0
+            # 所有登录用户负责的概述维护项目数量
             over_charge_num = 0
             for project_name, ver_dic in app.storage.general["wait_review"].items():
                 for ver, dic in ver_dic.items():
