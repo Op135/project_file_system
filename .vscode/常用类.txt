@@ -188,6 +188,12 @@ app.storage.client #（客户端存储）
 app.storage.user #（用户级存储），仅该策略有一个默认键值对，id:加密的 user_id（字符串），通过浏览器 Cookie 关联用户身份
 app.storage.general #（全局共享存储）服务器重启或崩溃将导致数据丢失，除非配置数据持久化：app = NiceGUI(storage_path='./storage')  # 数据保存到磁盘
 
+# 让ui.notify能识别\n而换行
+.q-notification__message {
+        padding: 8px 0;
+        white-space: pre-line;
+}
+# ui.notify设置参数：html=True, 显示内容<br>也可实现换行
 
 # css类
 overflow-wrap: break-word;

@@ -620,7 +620,7 @@ class InteractiveButton:
                         break_bool = True
                         break
             # 获取文件夹依赖标签里的chip数据
-            according_data = db_storage.get_deep_item([f"{self.project}_over_data", self.search_folder_according])
+            according_data = db_storage.get_deep_item([f"{self.project}_over_data", self.search_folder_according], {})
             for data in according_data.values():
                 # 将所有激活的chip对应的内容，也就是文件夹名保存起来
                 if data["enabled"]:
@@ -628,8 +628,8 @@ class InteractiveButton:
             # 如果少于一个有效文件夹名，即没有有效文件夹配置
             if len(according_folder_name) < 1:
                 ui.notify(
-                    f"{according_title}概述项无有效的记录，文件匹配根目录待定，无法提交!",
-                    type="negative",
+                    f"概述项{according_title}无有效配置，无法提交!",
+                    type="warning",
                     position="center",
                     timeout=0,
                     progress=False,
@@ -639,8 +639,8 @@ class InteractiveButton:
             # 如果超过一个有效文件夹名
             elif len(according_folder_name) > 1:
                 ui.notify(
-                    f"{according_title}概述项超过一个有效记录，文件匹配根目录待定，无法提交!",
-                    type="negative",
+                    f"概述项{according_title}有效配置不唯一，无法提交!",
+                    type="warning",
                     position="center",
                     timeout=0,
                     progress=False,
@@ -654,7 +654,7 @@ class InteractiveButton:
                 # 文件夹不存在
                 if not folder_according_li:
                     ui.notify(
-                        f"{according_title}概述项配置的文件夹不存在，无法提交!",
+                        f"{str(self.upload_path)}\n不存在目录{according_folder_name[0]}，无法提交!",
                         type="negative",
                         position="center",
                         timeout=0,
@@ -668,11 +668,10 @@ class InteractiveButton:
                         path_str = f"{path_str}\n{str(path)}"
                     ui.notify(
                         f"{according_title}概述项配置的文件夹存在多个:{path_str}\n无法提交!",
-                        type="negative",
+                        type="warning",
                         position="center",
                         timeout=0,
                         progress=False,
-                        multi_line=True,
                         close_button="✖",
                     )
                     return target_path
@@ -743,7 +742,6 @@ class InteractiveButton:
                         position="center",
                         timeout=0,
                         progress=False,
-                        multi_line=True,
                         close_button="✖",
                     )
                 elif len(files_li) > 1:
@@ -753,7 +751,6 @@ class InteractiveButton:
                         position="center",
                         timeout=0,
                         progress=False,
-                        multi_line=True,
                         close_button="✖",
                     )
                 else:
@@ -803,18 +800,17 @@ class InteractiveButton:
                         progress=True,
                         close_button="✖",
                     )
-        # 路径不存在或不完整，或不是文件夹路径
-        else:
-            ui.notify(
-                f"文件存放的路径：{str(Path(target_path))} 不存在或不完整，无法提交!",
-                type="negative",
-                position="center",
-                timeout=0,
-                progress=False,
-                multi_line=True,
-                close_button="✖",
-            )
-            return
+        # # 路径不存在或不完整，或不是文件夹路径
+        # else:
+        #     ui.notify(
+        #         f"文件存放路径：\n{target_path + '不存在' if target_path else conclusion} \n无法提交!",
+        #         type="warning",
+        #         position="center",
+        #         timeout=0,
+        #         progress=False,
+        #         close_button="✖",
+        #     )
+        #     return
 
     # 当用户点击“添加”按钮时，将文本数据添加到共享存储中
     async def _add_text_chip_data(self):
@@ -1598,7 +1594,7 @@ class InteractiveButton:
                             position="center",
                             timeout=0,
                             progress=False,
-                            multi_line=True,
+                            multi_line=False,
                             close_button="✖",
                         )
                     )

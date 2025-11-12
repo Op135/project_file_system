@@ -69,6 +69,10 @@ async def requirement_page(type="", json_path="", project_name=""):
                 /* 3. 当内容超出当前高度时，自动显示垂直滚动条 */
                 overflow-y: auto !important; /* Quasar 有时会设置 overflow:hidden, !important 确保覆盖 */
             }
+            .q-notification__message {
+                padding: 8px 0;
+                white-space: pre-line;
+            }
         </style>
     """)
 
