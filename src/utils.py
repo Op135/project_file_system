@@ -62,18 +62,25 @@ def find_files_pathlib(start_dir: str, filename: str) -> list[Path]:
 
 
 # 在传入路径上查找指定文件夹，返回匹配的所有Path对象列表
-def find_dirs_by_name_pathlib(start_dir: str, dir_name: str) -> list[Path]:
+def find_dirs_by_name_os_walk(start_dir: str, dir_name: str) -> list[Path]:
     """
-    使用 pathlib.rglob 查找所有匹配名称的 *目录*。
+    使用 os.walk 高效查找所有匹配名称的 *目录*。
     """
-    start_path = Path(start_dir)
     found_dirs = []
+    start_dir = str(start_dir)  # os.walk 倾向于使用字符串
 
-    # rglob 会匹配所有名为 dir_name 的路径（包括文件和目录）
-    for path in start_path.rglob(dir_name):
-        # 关键一步：检查这个路径是否确实是一个目录
-        if path.is_dir():
-            found_dirs.append(path)
+    # os.walk 会生成 (当前路径, 目录名列表, 文件名列表)
+    # dirpath: 当前正在遍历的目录的路径 (str)
+    # dirnames: 在 dirpath 中找到的 *子目录* 名称列表 (list[str])
+    # filenames: 在 dirpath 中找到的 *文件* 名称列表 (list[str])
+    for dirpath, dirnames, filenames in os.walk(start_dir, topdown=True):
+        # 核心优化：我们只检查 'dirnames' 列表。
+        # 如果 'dir_name' 在这个列表中，我们100%确定它是一个目录。
+        # 我们完全不需要调用 is_dir()，也不需要关心任何文件。
+        if dir_name in dirnames:
+            # 找到了，构建它的完整路径
+            # 注意：os.walk 默认使用字符串，我们将其转换回 Path 对象
+            found_dirs.append(Path(dirpath) / dir_name)
 
     return found_dirs
 
@@ -350,7 +357,7 @@ async def copy_overview_data(project_name, version, target_project_name):
             if reference_state:
                 chip_data["enabled"] = True
                 if chip_data["type"] == "file":
-                    chip_data["icon"] = "attach_file"
+                    chip_data["icon"] = "attachment"
                 else:
                     chip_data["icon"] = None
                 chip_data["bg_color"] = "bg-light-blue-1"

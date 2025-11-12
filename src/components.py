@@ -17,7 +17,7 @@ from nicegui.events import GenericEventArguments, MouseEventArguments
 from . import db_storage  # 导入我们创建的模块
 from .config import FILES_URL_DIR, IMG_DIR, OVER_UPLOADS_FILE_TYPE, SUBMIT_FILES_DIR, UPLOADS_DIR
 from .utils import (
-    find_dirs_by_name_pathlib,
+    find_dirs_by_name_os_walk,
     find_files_pathlib,
     get_file_type_by_extension,
     get_time,
@@ -650,7 +650,7 @@ class InteractiveButton:
             # 有且仅有一个有效文件夹配置
             else:
                 # 查找这个文件夹
-                folder_according_li = find_dirs_by_name_pathlib(str(self.upload_path), according_folder_name[0])
+                folder_according_li = find_dirs_by_name_os_walk(str(self.upload_path), according_folder_name[0])
                 # 文件夹不存在
                 if not folder_according_li:
                     ui.notify(
@@ -682,7 +682,7 @@ class InteractiveButton:
                     if self.search_hierarchy:
                         target_path = str(folder_according_li[0])
                         for h in self.search_hierarchy:
-                            target_path = f"{target_path}/{h}"
+                            target_path = f"{target_path}\\{h}"
                     # 就放在依赖文件夹
                     else:
                         target_path = str(folder_according_li[0])
@@ -692,7 +692,7 @@ class InteractiveButton:
             if self.search_hierarchy:
                 target_path = str(self.upload_path)
                 for h in self.search_hierarchy:
-                    target_path = f"{target_path}/{h}"
+                    target_path = f"{target_path}\\{h}"
             # 就放在顶层文件夹
             else:
                 target_path = str(self.upload_path)
@@ -704,7 +704,7 @@ class InteractiveButton:
         notes = self.chip_notes.value
         target_path = self._search_file_path()
         # 最终判断路径是否是文件夹且存在
-        if Path(target_path).is_dir():
+        if target_path and Path(target_path).is_dir():
             if not text:
                 ui.notify(
                     "引用文件名不能为空!",
@@ -768,7 +768,7 @@ class InteractiveButton:
                     chip_data = {
                         "id": chip_id,  # 使用UUID确保每个chip都有一个唯一的ID
                         "role": self.role,
-                        "icon": "search_check",
+                        "icon": "saved_search",
                         "enabled": True,  # 控制元素是否可点击，接着用来控制是否在项目表上显示
                         # "removable": False,  # 控制元素是否有删除按钮
                         "bg_color": "bg-light-blue-1",
@@ -806,7 +806,7 @@ class InteractiveButton:
         # 路径不存在或不完整，或不是文件夹路径
         else:
             ui.notify(
-                f"文件合法存放的路径：{str(Path(target_path))} 不存在或不完整，无法提交!",
+                f"文件存放的路径：{str(Path(target_path))} 不存在或不完整，无法提交!",
                 type="negative",
                 position="center",
                 timeout=0,
@@ -973,7 +973,7 @@ class InteractiveButton:
             # 文件类型的icon与图片的设置不一样
             if self.processing_type == "file":
                 # 文件类型才将icon设置为引用小图，图片类不设置
-                file_icon = "attach_file"
+                file_icon = "attachment"
             chip_id = str(uuid.uuid4())
             req_max_ver = app.storage.general["project_req_max_ver"][self.project]
             select_activ_dic = self._get_select_activ_dic(req_max_ver)
@@ -1021,7 +1021,7 @@ class InteractiveButton:
         file_icon = ""
         if self.processing_type == "file":
             # 文件类型才将icon设置为引用小图，图片类不设置
-            file_icon = "attach_file"
+            file_icon = "attachment"
         chip_id = str(uuid.uuid4())
         req_max_ver = app.storage.general["project_req_max_ver"][self.project]
         select_activ_dic = self._get_select_activ_dic(req_max_ver)
@@ -1184,9 +1184,15 @@ class InteractiveButton:
         # 删除元素重新显示
         self.chip_container.clear()
         with self.chip_container:
+            search_bool = False
+            target_path = ""
             for chip_info in db_storage.get_deep_item([f"{self.project}_over_data", self.label], {}).values():
                 if self.processing_type == "search":
-                    target_path = self._search_file_path()
+                    # 只找一次，不管找的结果
+                    if not search_bool:
+                        target_path = self._search_file_path()
+                    search_bool = True
+                    # target_path 可能是空、有效文件夹路径，长得像文件夹的文件路径
                     self._create_chip_from_data(chip_info, target_path)
                 else:
                     self._create_chip_from_data(chip_info, "")
@@ -1347,16 +1353,14 @@ class InteractiveButton:
             # 修改这里要检查utils和information两个模块是否跟着改
             await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "enabled"], True)
             if db_storage.get_deep_item([f"{self.project}_over_data", self.label, chip_id, "type"]) == "file":
-                await db_storage.set_deep_item(
-                    [f"{self.project}_over_data", self.label, chip_id, "icon"], "attach_file"
-                )
+                await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "icon"], "attachment")
             elif db_storage.get_deep_item([f"{self.project}_over_data", self.label, chip_id, "type"]) == "search":
                 target_path = self._search_file_path()
                 if target_path:
                     files_li = find_files_pathlib(target_path, chip_text)
                     if len(files_li) == 1:
                         await db_storage.set_deep_item(
-                            [f"{self.project}_over_data", self.label, chip_id, "icon"], "search_check"
+                            [f"{self.project}_over_data", self.label, chip_id, "icon"], "saved_search"
                         )
                     else:
                         await db_storage.set_deep_item(
@@ -1531,11 +1535,11 @@ class InteractiveButton:
                 # 以后改了文件夹配置，chip不会失效
                 app.add_static_file(local_file=filepath, url_path=chip_info.get("url_path"))
             elif chip_info["type"] == "search":
-                chip_text = chip_info.get("content", "")
+                file_name = chip_info.get("content", "")
                 # 每次生成都用更新配置的路径
-                # 判断路径是否是文件夹且存在
+                # 判断路径是否是文件夹且存在，target_path 可能是空、有效文件夹路径，长得像文件夹的文件路径
                 if target_path and Path(target_path).is_dir():
-                    files_li = find_files_pathlib(target_path, chip_text)
+                    files_li = find_files_pathlib(target_path, file_name)
                     if not files_li:
                         ui.notify(
                             f"引用文件不存在该路径下：\n{target_path}",
@@ -1571,16 +1575,20 @@ class InteractiveButton:
                 # chip.on_click(lambda: print(chip.value))
                 # chip.set_enabled(False)
             elif chip_info.get("type") in ["file", "search"]:
+                # 如果文件类型是pdf类型、且文件服务器路径非空、且存在，创建有效点击处理
                 if chip_info.get("file_type") == "application/pdf" and filepath and Path(filepath).exists():
                     # 使用浏览器打开则用open_pdf_in_browser()
                     chip.on_click(lambda url_path=chip_info.get("url_path"): self.open_pdf_in_browser(url_path))
+                # 如果文件类型是其它类型、且文件服务器路径非空、且存在，创建有效点击处理
                 elif filepath and Path(filepath).exists():
                     chip.on_click(
                         lambda filepath=filepath, file_name=chip_text: self.check_and_download(filepath, file_name)
                     )
+                # 文件服务器路径空或者不存在，创建点击警告提示栏
                 else:
+                    # 根据文件类型，修改文件icon为无效文件icon
                     if chip_info["type"] == "file":
-                        chip.set_icon("attach_file_off")
+                        chip.set_icon("link_off")
                     elif chip_info["type"] == "search":
                         chip.set_icon("search_off")
                     chip.on_click(
