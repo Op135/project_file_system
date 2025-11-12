@@ -2597,6 +2597,20 @@ async def requirement_page(type="", json_path="", project_name=""):
                                                 upload_path=Path(data["upload_path"]),
                                                 # delete_bool=False,
                                             )
+                                        elif data["processing_type"] in ["search"]:
+                                            InteractiveButton(
+                                                project=project_name,
+                                                role=role,
+                                                title=data["title"],
+                                                label=data["label"],
+                                                processing_type=data["processing_type"],
+                                                permission=data["permission"],
+                                                temp_bool=temp_bool,
+                                                upload_path=Path(data["upload_path"]),
+                                                search_folder_according=data["search_folder_according"],
+                                                search_hierarchy=data["search_hierarchy"],
+                                                # delete_bool=False,
+                                            )
                                         elif data["processing_type"] in ["test"]:
                                             InteractiveButton(
                                                 project=project_name,
