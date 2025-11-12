@@ -9,9 +9,32 @@ from nicegui import app, events, ui
 ST = os.environ.get("STORAGE_SECRET", "this_is_not_a_secret_for_development_only")
 
 # 概述可上传文件类型，除了图片，图片都可以
-OVER_UPLOADS_FILE_TYPE = {".pdf", ".xlsx", ".docx", ".pptx", ".txt", ".csv", ".hex", ".s19", ".bin", ".zip"}
+OVER_UPLOADS_FILE_TYPE = {
+    ".pdf",
+    ".xlsx",
+    ".docx",
+    ".pptx",
+    ".txt",
+    ".csv",
+    ".xml",
+    ".hex",
+    ".s19",
+    ".bin",
+    ".zip",
+    ".rar",
+}
 # 需求可上传文件类型，除了图片，图片都可以
-REQ_UPLOADS_FILE_TYPE = {".pdf", ".xlsx", ".docx", ".pptx", ".txt", ".csv", ".zip"}
+REQ_UPLOADS_FILE_TYPE = {
+    ".pdf",
+    ".xlsx",
+    ".docx",
+    ".pptx",
+    ".txt",
+    ".csv",
+    ".xml",
+    ".zip",
+    ".rar",
+}
 # 文件夹路径设定
 BASE_DIR = Path(__file__).parent.parent  # 项目根目录
 IMG_DIR = f"{BASE_DIR}/img"

@@ -4,6 +4,7 @@ import asyncio
 import copy
 import hashlib
 import json
+import mimetypes
 import os
 import re
 from datetime import datetime
@@ -16,6 +17,65 @@ from . import db_storage
 
 # import config
 from .config import AVATAR_DIR, AVATAR_URL_DIR, BASE_DIR, IMG_DIR, IMG_URL_DIR, OVER_DIR, REQ_DIR
+
+
+# 分析传入文件路径，文件的文件类型和编码方式
+def get_file_type_by_extension(file_path):
+    """
+    通过文件扩展名获取 MIME 类型。
+    """
+    p = Path(file_path)
+
+    # 确保路径存在
+    if not p.exists():
+        return f"文件不存在: {file_path}", None
+
+    # guess_type 返回一个元组 (type, encoding)，如 ('image/jpeg', None)
+    mime_type, encoding = mimetypes.guess_type(file_path, strict=True)
+
+    if mime_type:
+        print(f"✅ 通过扩展名推断的文件类型: {mime_type}")
+        return mime_type, encoding
+    else:
+        # 尝试通过文件扩展名本身作为类型
+        extension = p.suffix.lower().lstrip(".")
+        if extension:
+            print(f"⚠️ 无法推断 MIME 类型，但文件扩展名为: {extension}")
+            return f"extension/{extension}", None  # 格式化为非官方 MIME 类型
+        else:
+            print("❌ 路径无扩展名，无法推断类型。")
+            return "unknown/unknown", None
+
+
+# 在传入路径上查找指定文件，返回匹配的所有Path对象列表
+def find_files_pathlib(start_dir: str, filename: str) -> list[Path]:
+    """
+    使用 pathlib.rglob 查找所有匹配的文件。
+    返回一个 Path 对象的列表。
+    """
+    # 确保起始路径是一个 Path 对象
+    start_path = Path(start_dir)
+
+    # rglob 会递归地在 start_path 下查找所有匹配 filename 的项
+    # 我们使用 list() 来立即获取所有结果
+    return list(start_path.rglob(filename))
+
+
+# 在传入路径上查找指定文件夹，返回匹配的所有Path对象列表
+def find_dirs_by_name_pathlib(start_dir: str, dir_name: str) -> list[Path]:
+    """
+    使用 pathlib.rglob 查找所有匹配名称的 *目录*。
+    """
+    start_path = Path(start_dir)
+    found_dirs = []
+
+    # rglob 会匹配所有名为 dir_name 的路径（包括文件和目录）
+    for path in start_path.rglob(dir_name):
+        # 关键一步：检查这个路径是否确实是一个目录
+        if path.is_dir():
+            found_dirs.append(path)
+
+    return found_dirs
 
 
 # 新增一个辅助函数，用于头像的“缓存清除”

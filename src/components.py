@@ -16,7 +16,16 @@ from nicegui.events import GenericEventArguments, MouseEventArguments
 
 from . import db_storage  # 导入我们创建的模块
 from .config import FILES_URL_DIR, IMG_DIR, OVER_UPLOADS_FILE_TYPE, SUBMIT_FILES_DIR, UPLOADS_DIR
-from .utils import get_time, move_element, overview_role_update, ui_hide, ui_show
+from .utils import (
+    find_dirs_by_name_pathlib,
+    find_files_pathlib,
+    get_file_type_by_extension,
+    get_time,
+    move_element,
+    overview_role_update,
+    ui_hide,
+    ui_show,
+)
 
 
 # 自定义按钮上传文件元素，隐藏nicegui默认的ui.upload元素
@@ -433,6 +442,8 @@ class InteractiveButton:
         processing_type: str,
         permission: dict,
         upload_path: Path = SUBMIT_FILES_DIR,
+        search_folder_according: str = "",
+        search_hierarchy: list = [],
         dialog_label: str = "按规定格式输入",
         dialog_placeholder: str = "",
         state_options: list = [],
@@ -441,8 +452,8 @@ class InteractiveButton:
         temp_bool: bool = False,
         # delete_bool: bool = True,
     ):
-        if processing_type not in ["text", "file", "image", "test"]:
-            raise ValueError("processing_type 必须是 'text','file','image','test'")
+        if processing_type not in ["text", "file", "image", "test", "search"]:
+            raise ValueError("processing_type 必须是 'text','file','image','test','search'")
 
         self.role = role
         self.title = title
@@ -450,6 +461,8 @@ class InteractiveButton:
         self.project = project
         self.processing_type = processing_type
         self.upload_path = upload_path
+        self.search_folder_according = search_folder_according
+        self.search_hierarchy = search_hierarchy
         self.dialog_placeholder = dialog_placeholder
         self.dialog_label = dialog_label
         self.permission = permission
@@ -485,15 +498,16 @@ class InteractiveButton:
         # 创建一个行(row)容器，用于存放生成的所有 chip
         self.chip_container = ui.row().classes("w-full items-center gap-2 pl-8")
 
-        # 创建一个隐藏的 ui.upload 组件，我们将通过程序触发它
-        self.uploader = ui.upload(
-            on_upload=self._handle_file_upload,
-            on_begin_upload=lambda: self.spinner.set_visibility(True),
-            auto_upload=True,
-            max_files=1,
-        )
-        # 隐藏upload元素
-        self.uploader.set_visibility(False)
+        if self.processing_type in ["file", "image"]:
+            # 创建一个隐藏的 ui.upload 组件，我们将通过程序触发它
+            self.uploader = ui.upload(
+                on_upload=self._handle_file_upload,
+                on_begin_upload=lambda: self.spinner.set_visibility(True),
+                auto_upload=True,
+                max_files=1,
+            )
+            # 隐藏upload元素
+            self.uploader.set_visibility(False)
         # 设置一个定时器，每隔0.5秒检查一次共享数据是否有变化，并更新UI
         # 这是实现多用户实时同步的关键
         ui.timer(0.5, self._update_chip_display)
@@ -586,6 +600,221 @@ class InteractiveButton:
             else:
                 select_dic[select_label] = False
         return select_dic
+
+    # 查找合法路径是否存在且唯一，并返回合法路径
+    def _search_file_path(self) -> str:
+        target_path = ""
+        # 保存依赖文件夹所的概述配置项标签名
+        according_title = ""
+        # 保存找到的激活的依赖文件夹名
+        according_folder_name = []
+        # 有依赖文件夹配置，找依赖文件夹配置标签对应的标签标题名
+        if self.search_folder_according:
+            break_bool = False
+            for role, data_li in app.storage.general.get("over_config_data", {}).items():
+                if break_bool:
+                    break
+                for data in data_li:
+                    if data["label"] == self.search_folder_according:
+                        according_title = data["title"]
+                        break_bool = True
+                        break
+            # 获取文件夹依赖标签里的chip数据
+            according_data = db_storage.get_deep_item([f"{self.project}_over_data", self.search_folder_according])
+            for data in according_data.values():
+                # 将所有激活的chip对应的内容，也就是文件夹名保存起来
+                if data["enabled"]:
+                    according_folder_name.append(data["content"])
+            # 如果少于一个有效文件夹名，即没有有效文件夹配置
+            if len(according_folder_name) < 1:
+                ui.notify(
+                    f"{according_title}概述项无有效的记录，文件匹配根目录待定，无法提交!",
+                    type="negative",
+                    position="center",
+                    timeout=0,
+                    progress=False,
+                    close_button="✖",
+                )
+                return target_path
+            # 如果超过一个有效文件夹名
+            elif len(according_folder_name) > 1:
+                ui.notify(
+                    f"{according_title}概述项超过一个有效记录，文件匹配根目录待定，无法提交!",
+                    type="negative",
+                    position="center",
+                    timeout=0,
+                    progress=False,
+                    close_button="✖",
+                )
+                return target_path
+            # 有且仅有一个有效文件夹配置
+            else:
+                # 查找这个文件夹
+                folder_according_li = find_dirs_by_name_pathlib(str(self.upload_path), according_folder_name[0])
+                # 文件夹不存在
+                if not folder_according_li:
+                    ui.notify(
+                        f"{according_title}概述项配置的文件夹不存在，无法提交!",
+                        type="negative",
+                        position="center",
+                        timeout=0,
+                        progress=False,
+                        close_button="✖",
+                    )
+                    return target_path
+                elif len(folder_according_li) > 1:
+                    path_str = ""
+                    for path in folder_according_li:
+                        path_str = f"{path_str}\n{str(path)}"
+                    ui.notify(
+                        f"{according_title}概述项配置的文件夹存在多个:{path_str}\n无法提交!",
+                        type="negative",
+                        position="center",
+                        timeout=0,
+                        progress=False,
+                        multi_line=True,
+                        close_button="✖",
+                    )
+                    return target_path
+                # 有且存在唯一一个依赖文件夹
+                else:
+                    # 需要再深入层级
+                    if self.search_hierarchy:
+                        target_path = str(folder_according_li[0])
+                        for h in self.search_hierarchy:
+                            target_path = f"{target_path}/{h}"
+                    # 就放在依赖文件夹
+                    else:
+                        target_path = str(folder_according_li[0])
+        # 无依赖文件夹配置，直接上传到config配置的顶层文件夹
+        else:
+            # 需要再深入层级
+            if self.search_hierarchy:
+                target_path = str(self.upload_path)
+                for h in self.search_hierarchy:
+                    target_path = f"{target_path}/{h}"
+            # 就放在顶层文件夹
+            else:
+                target_path = str(self.upload_path)
+        return target_path
+
+    # 当用户点击“添加”按钮时，将文本数据添加到共享存储中
+    async def _add_search_chip_data(self):
+        text = self.chip_label.value
+        notes = self.chip_notes.value
+        target_path = self._search_file_path()
+        # 最终判断路径是否是文件夹且存在
+        if Path(target_path).is_dir():
+            if not text:
+                ui.notify(
+                    "引用文件名不能为空!",
+                    type="negative",
+                    position="center",
+                    timeout=1000,
+                    progress=True,
+                    close_button="✖",
+                )
+            elif not notes:
+                ui.notify(
+                    "注释不能为空!",
+                    type="negative",
+                    position="center",
+                    timeout=1000,
+                    progress=True,
+                    close_button="✖",
+                )
+            elif text in [
+                d["content"] for d in db_storage.get_deep_item([f"{self.project}_over_data", self.label], {}).values()
+            ]:
+                ui.notify(
+                    "引用文件名已添加过。",
+                    type="warning",
+                    position="center",
+                    timeout=1000,
+                    progress=True,
+                    close_button="✖",
+                )
+            else:
+                files_li = find_files_pathlib(target_path, text)
+                if not files_li:
+                    ui.notify(
+                        f"引用文件不存在该路径下：\n{target_path}",
+                        type="warning",
+                        position="center",
+                        timeout=0,
+                        progress=False,
+                        multi_line=True,
+                        close_button="✖",
+                    )
+                elif len(files_li) > 1:
+                    ui.notify(
+                        f"引用文件在该路径下：\n{target_path}\n存在多个同名文件（子文件夹里存在）",
+                        type="warning",
+                        position="center",
+                        timeout=0,
+                        progress=False,
+                        multi_line=True,
+                        close_button="✖",
+                    )
+                else:
+                    # 获取文件的MIME文件类型与编码方式
+                    file_type_set = get_file_type_by_extension(str(files_li[0]))
+                    # 准备要存储的 chip 数据
+                    chip_id = str(uuid.uuid4())
+                    req_max_ver = app.storage.general["project_req_max_ver"][self.project]
+                    select_activ_dic = self._get_select_activ_dic(req_max_ver)
+                    creator = app.storage.user.get("current_user", "匿名用户")
+                    url_path = f"{FILES_URL_DIR}/{text}"
+                    chip_data = {
+                        "id": chip_id,  # 使用UUID确保每个chip都有一个唯一的ID
+                        "role": self.role,
+                        "icon": "search_check",
+                        "enabled": True,  # 控制元素是否可点击，接着用来控制是否在项目表上显示
+                        # "removable": False,  # 控制元素是否有删除按钮
+                        "bg_color": "bg-light-blue-1",
+                        "type": "search",
+                        "file_type": file_type_set[0],
+                        "url_path": url_path,
+                        "content": text,
+                        "notes": notes,
+                        "creator": creator,
+                        "timestamp": {
+                            datetime.now().strftime("%Y-%m-%d %H:%M:%S"): {
+                                "creator": creator,
+                                "select_activ_dic": select_activ_dic,
+                            }
+                        },
+                        "req_ver": req_max_ver,
+                        "select_activ_dic": select_activ_dic,
+                    }
+
+                    # 将新数据追加到 app.storage.general 的列表中
+                    await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id], chip_data)
+                    # app.storage.general["overview_data"][self.project][self.label][chip_id] = chip_data
+                    # 清空文本框并关闭对话框
+                    self.chip_label.value = ""
+                    self.chip_notes.value = ""
+                    self.chip_dialog.close()
+                    ui.notify(
+                        "文件引用已添加。",
+                        type="positive",
+                        position="bottom",
+                        timeout=1000,
+                        progress=True,
+                        close_button="✖",
+                    )
+        # 路径不存在或不完整，或不是文件夹路径
+        else:
+            ui.notify(
+                f"文件合法存放的路径：{str(Path(target_path))} 不存在或不完整，无法提交!",
+                type="negative",
+                position="center",
+                timeout=0,
+                progress=False,
+                multi_line=True,
+                close_button="✖",
+            )
+            return
 
     # 当用户点击“添加”按钮时，将文本数据添加到共享存储中
     async def _add_text_chip_data(self):
@@ -956,7 +1185,11 @@ class InteractiveButton:
         self.chip_container.clear()
         with self.chip_container:
             for chip_info in db_storage.get_deep_item([f"{self.project}_over_data", self.label], {}).values():
-                self._create_chip_from_data(chip_info)
+                if self.processing_type == "search":
+                    target_path = self._search_file_path()
+                    self._create_chip_from_data(chip_info, target_path)
+                else:
+                    self._create_chip_from_data(chip_info, "")
 
     # 同步UI显示与共享存储中的数据
     def _update_chip_display(self):
@@ -1104,7 +1337,7 @@ class InteractiveButton:
 
     # <-----------------------------------------------------------------
     # 设置chip的激活状态
-    async def _set_chip_activ(self, chip_id, old_chip_select_dic):
+    async def _set_chip_activ(self, chip_id, old_chip_select_dic, chip_text):
         # chip以当前最新版本的设置为当前显示状态
         req_max_ver = app.storage.general["project_req_max_ver"][self.project]
         if db_storage.get_deep_item(
@@ -1117,6 +1350,22 @@ class InteractiveButton:
                 await db_storage.set_deep_item(
                     [f"{self.project}_over_data", self.label, chip_id, "icon"], "attach_file"
                 )
+            elif db_storage.get_deep_item([f"{self.project}_over_data", self.label, chip_id, "type"]) == "search":
+                target_path = self._search_file_path()
+                if target_path:
+                    files_li = find_files_pathlib(target_path, chip_text)
+                    if len(files_li) == 1:
+                        await db_storage.set_deep_item(
+                            [f"{self.project}_over_data", self.label, chip_id, "icon"], "search_check"
+                        )
+                    else:
+                        await db_storage.set_deep_item(
+                            [f"{self.project}_over_data", self.label, chip_id, "icon"], "search_off"
+                        )
+                else:
+                    await db_storage.set_deep_item(
+                        [f"{self.project}_over_data", self.label, chip_id, "icon"], "search_off"
+                    )
             else:
                 await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "icon"], None)
             await db_storage.set_deep_item(
@@ -1170,7 +1419,7 @@ class InteractiveButton:
         overview_role_update(self.project)
 
     # 创建用于让用户选择chip激活范围的弹窗
-    def _select_activ_dialog(self, chip_id):
+    def _select_activ_dialog(self, chip_id, chip_text=""):
         self.activ_dialog.clear()
         with self.activ_dialog, ui.card().classes("w-1/2"):
             ui.label("选择概述生效的需求版本").classes("text-lg font-bold")
@@ -1190,7 +1439,7 @@ class InteractiveButton:
                     )
             with ui.row().classes("w-full justify-end"):
                 ui.label("注意以上改动是即时生效的").classes("text-lg font-bold")
-                ui.button("关闭", on_click=lambda: self._set_chip_activ(chip_id, old_chip_select_dic)).on(
+                ui.button("关闭", on_click=lambda: self._set_chip_activ(chip_id, old_chip_select_dic, chip_text)).on(
                     "click", lambda: self.activ_dialog.close()
                 )
         self.activ_dialog.open()
@@ -1206,7 +1455,7 @@ class InteractiveButton:
             elif app.storage.user["current_user"] != "admin":
                 # app.storage.general["overview_data"][self.project][self.label][chip.props["data-chip-id"]]["removable"] = False
                 chip_id = chip.props["data-chip-id"]
-                self._select_activ_dialog(chip_id)
+                self._select_activ_dialog(chip_id, chip["text"])
 
     # 删除或修改文件缩略图及其在app.storage.general的数据
     async def clear_thumbnail(self, thumbnail):
@@ -1253,7 +1502,7 @@ class InteractiveButton:
             self._refresh_chip_container()
 
     # 根据字典数据创建一个具体的 ui.chip 组件。
-    def _create_chip_from_data(self, chip_info: dict):
+    def _create_chip_from_data(self, chip_info: dict, target_path: str):
         chip_text = ""
         filepath = ""
         delete_icon = ""
@@ -1270,24 +1519,87 @@ class InteractiveButton:
                 delete_icon = "settings"  # 之前是block
                 delete_bg = "bg-white text-light-blue"  # 之前是text-grey-10
 
-        if chip_info.get("type") in ["text", "file", "test"]:
+        if chip_info.get("type") in ["text", "file", "test", "search"]:
             # 根据chip类型配置文字标签内容
+            filepath = ""
             if chip_info.get("type") in ["text", "test"]:
                 chip_text = chip_info.get("content", "")
             elif chip_info["type"] == "file":
                 chip_text = chip_info.get("filename", "")
                 # 每次生成都用更新配置的路径
                 filepath = f"{self.upload_path}/{chip_text}"
+                # 以后改了文件夹配置，chip不会失效
+                app.add_static_file(local_file=filepath, url_path=chip_info.get("url_path"))
+            elif chip_info["type"] == "search":
+                chip_text = chip_info.get("content", "")
+                # 每次生成都用更新配置的路径
+                # 判断路径是否是文件夹且存在
+                if target_path and Path(target_path).is_dir():
+                    files_li = find_files_pathlib(target_path, chip_text)
+                    if not files_li:
+                        ui.notify(
+                            f"引用文件不存在该路径下：\n{target_path}",
+                            type="warning",
+                            position="center",
+                            timeout=0,
+                            progress=False,
+                            multi_line=True,
+                            close_button="✖",
+                        )
+                    elif len(files_li) > 1:
+                        ui.notify(
+                            f"引用文件在该路径下：\n{target_path}\n存在多个同名文件（子文件夹里存在）",
+                            type="warning",
+                            position="center",
+                            timeout=0,
+                            progress=False,
+                            multi_line=True,
+                            close_button="✖",
+                        )
+                    else:
+                        # 以后改了文件夹配置，chip不会失效
+                        filepath = str(files_li[0])
+                        app.add_static_file(local_file=filepath, url_path=chip_info.get("url_path"))
             # 创建 chip 并附加一个自定义属性 `data-chip-id` 用于后续的同步检查
             chip = (
                 ui.chip(text=chip_text, removable=False, icon=chip_info.get("icon"))
                 .props(f"data-chip-id={chip_info.get('id')} dense square")
                 .classes(f"m-0 {chip_info.get('bg_color')}")
             )
+            if chip_info.get("type") == "text":
+                pass
+                # chip.on_click(lambda: print(chip.value))
+                # chip.set_enabled(False)
+            elif chip_info.get("type") in ["file", "search"]:
+                if chip_info.get("file_type") == "application/pdf" and filepath and Path(filepath).exists():
+                    # 使用浏览器打开则用open_pdf_in_browser()
+                    chip.on_click(lambda url_path=chip_info.get("url_path"): self.open_pdf_in_browser(url_path))
+                elif filepath and Path(filepath).exists():
+                    chip.on_click(
+                        lambda filepath=filepath, file_name=chip_text: self.check_and_download(filepath, file_name)
+                    )
+                else:
+                    if chip_info["type"] == "file":
+                        chip.set_icon("attach_file_off")
+                    elif chip_info["type"] == "search":
+                        chip.set_icon("search_off")
+                    chip.on_click(
+                        lambda: ui.notify(
+                            "文件不存在服务器、路径失效、不唯一，点击不能打开或下载！",
+                            type="warning",
+                            position="center",
+                            timeout=0,
+                            progress=False,
+                            multi_line=True,
+                            close_button="✖",
+                        )
+                    )
+
             # 创建chip元素的附属元素
             with chip:
                 # 为 chip 添加 tooltip
                 tooltip_text = f"创建节点: 需求V{chip_info.get('req_ver')}后<br>创建者: {chip_info.get('creator')}<br>时间: {next(reversed(chip_info.get('timestamp', {})))}<br>注释: <br>{chip_info.get('notes', '').replace('\n', '<br>')}"
+
                 with ui.tooltip():
                     ui.html(tooltip_text, sanitize=Sanitizer().sanitize)
 
@@ -1331,19 +1643,6 @@ class InteractiveButton:
             chip.on("mouseenter", lambda b=move_down_button: ui_show(b)).on(
                 "mouseleave", lambda b=move_down_button: ui_hide(b)
             )
-            if chip_info.get("type") == "text":
-                pass
-                # chip.on_click(lambda: print(chip.value))
-                # chip.set_enabled(False)
-            elif chip_info.get("type") == "file":
-                app.add_static_file(local_file=filepath, url_path=chip_info.get("url_path"))
-                if chip_info.get("file_type") == "application/pdf":
-                    # 使用浏览器打开则用open_pdf_in_browser()
-                    chip.on_click(lambda url_path=chip_info.get("url_path"): self.open_pdf_in_browser(url_path))
-                else:
-                    chip.on_click(
-                        lambda filepath=filepath, file_name=chip_text: self.check_and_download(filepath, file_name)
-                    )
 
         # chip类型为缩略图
         elif chip_info.get("type") == "image":
@@ -1354,6 +1653,7 @@ class InteractiveButton:
 
             url_path = f"{FILES_URL_DIR}/{image_name}"
             # print(image_path, url_path)
+            # 以后改了文件夹配置，chip不会失效
             app.add_static_file(local_file=image_path, url_path=url_path)
             # 根据文件类型创建缩略图
             thumbnail = (
@@ -1432,6 +1732,29 @@ class InteractiveButton:
             )
             with ui.row().classes("w-full justify-end"):
                 ui.button("添加", on_click=self._add_text_chip_data)
+        self.chip_dialog.open()
+
+    # 创建用于搜寻文件类型chip的概述内容与注释的对话框
+    def _setup_search_chip_dialog(self):
+        self.chip_dialog.clear()
+        with self.chip_dialog, ui.card().classes("w-1/2"):
+            ui.label("添加新的文件引用概述内容").classes("text-lg font-bold")
+            self.chip_label = (
+                ui.input(label=self.dialog_label, placeholder="填入包括后缀的完整文件名")
+                .props("outlined")
+                .classes("w-full")
+            )
+            self.chip_notes = (
+                ui.textarea(
+                    label="针对该技术概述的注释（必填）",
+                    placeholder="首填/变更原因",
+                    validation={"不能空白": lambda value: value.strip() != ""},
+                )
+                .props("outlined")
+                .classes("w-full")
+            )
+            with ui.row().classes("w-full justify-end"):
+                ui.button("添加", on_click=self._add_search_chip_data)
         self.chip_dialog.open()
 
     # 触发文件上传界面，用于给用户选择文件，然后自动触发文件处理函数
@@ -1638,6 +1961,9 @@ class InteractiveButton:
             elif self.processing_type == "test":
                 # 设置文件类chip的弹窗格式
                 self._setup_test_chip_dialog()
+            elif self.processing_type == "search":
+                # 设置文件类chip的弹窗格式
+                self._setup_search_chip_dialog()
             else:
                 # 设置文件类chip的弹窗格式
                 self._setup_file_notes_dialog()
