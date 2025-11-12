@@ -99,7 +99,7 @@ def project_table_page():
             /* 文字自动换行样式 */
             .left-auto-break {
                 white-space: pre-wrap !important;
-                word-wrap: break-all;
+                word-break: break-all; /*overflow-wrap: break-word;*/
                 overflow: hidden;
                 text-align: left;
                 justify-content: left !important;
@@ -107,7 +107,7 @@ def project_table_page():
             /* 文字居中自动换行样式 */
             .center-auto-break {
                 white-space: pre-wrap !important;
-                word-wrap: break-all;
+                word-break: break-all; /*overflow-wrap: break-word;*/
                 overflow: hidden;
                 text-align: center;
             }
