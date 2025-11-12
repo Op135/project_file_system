@@ -485,27 +485,15 @@ class InteractiveButton:
         # 创建一个行(row)容器，用于存放生成的所有 chip
         self.chip_container = ui.row().classes("w-full items-center gap-2 pl-8")
 
-        # 根据处理类型，设置不同的交互逻辑
-        if self.processing_type == "image":
-            # 创建一个隐藏的 ui.upload 组件，我们将通过程序触发它
-            self.uploader = ui.upload(
-                on_upload=self._handle_file_upload,
-                on_begin_upload=lambda: self.spinner.set_visibility(True),
-                auto_upload=True,
-                max_files=1,
-            )
-            # 隐藏upload元素
-            self.uploader.set_visibility(False)
-        else:
-            # 创建一个隐藏的 ui.upload 组件，我们将通过程序触发它
-            self.uploader = ui.upload(
-                on_upload=self._handle_file_upload,
-                on_begin_upload=lambda: self.spinner.set_visibility(True),
-                auto_upload=True,
-                max_files=1,
-            )
-            # 隐藏upload元素
-            self.uploader.set_visibility(False)
+        # 创建一个隐藏的 ui.upload 组件，我们将通过程序触发它
+        self.uploader = ui.upload(
+            on_upload=self._handle_file_upload,
+            on_begin_upload=lambda: self.spinner.set_visibility(True),
+            auto_upload=True,
+            max_files=1,
+        )
+        # 隐藏upload元素
+        self.uploader.set_visibility(False)
         # 设置一个定时器，每隔0.5秒检查一次共享数据是否有变化，并更新UI
         # 这是实现多用户实时同步的关键
         ui.timer(0.5, self._update_chip_display)
@@ -751,6 +739,7 @@ class InteractiveButton:
                     progress=False,
                     close_button="✖",
                 )
+                return
             file_icon = ""
             # 文件类型的icon与图片的设置不一样
             if self.processing_type == "file":

@@ -323,6 +323,7 @@
             "title": "产品技术规格书",
             "processing_type": "file",
             "file_name_regular": [],
+            "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）",
             "permission": {
                 "read_role": [
                     "boss",
@@ -411,7 +412,7 @@
             "title": "产品2D尺寸图",
             "processing_type": "file",
             "file_name_regular": [],
-            "upload_path": "D:/Server/研发部（研发阶段）/",
+            "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）",
             "permission": {
                 "read_role": [
                     "boss",
@@ -440,6 +441,7 @@
             "title": "产品简化3D图",
             "processing_type": "file",
             "file_name_regular": [],
+            "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）",
             "permission": {
                 "read_role": [
                     "boss",
@@ -467,6 +469,7 @@
             "title": "产品完整3D图",
             "processing_type": "file",
             "file_name_regular": [],
+            "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）",
             "permission": {
                 "read_role": [
                     "boss",
@@ -487,6 +490,7 @@
             "title": "PCBA 2D尺寸图",
             "processing_type": "file",
             "file_name_regular": [],
+            "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）",
             "permission": {
                 "read_role": [
                     "boss",
@@ -515,6 +519,7 @@
             "title": "PCBA简化3D图",
             "processing_type": "file",
             "file_name_regular": [],
+            "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）",
             "permission": {
                 "read_role": [
                     "boss",
@@ -542,6 +547,7 @@
             "title": "PCBA完整3D图",
             "processing_type": "file",
             "file_name_regular": [],
+            "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）",
             "permission": {
                 "read_role": [
                     "boss",
@@ -562,6 +568,7 @@
             "label": "product_output_position",
             "title": "产品出光口位置图",
             "processing_type": "image",
+            "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）",
             "permission": {
                 "read_role": [
                     "boss",
@@ -588,6 +595,7 @@
             "label": "product_outlet_position",
             "title": "产品出线位置图",
             "processing_type": "image",
+            "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）",
             "permission": {
                 "read_role": [
                     "boss",
@@ -614,6 +622,7 @@
             "label": "product_wind_diagram",
             "title": "产品进出风示意图",
             "processing_type": "image",
+            "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）",
             "permission": {
                 "read_role": [
                     "boss",
@@ -994,6 +1003,7 @@
             "title": "其它特殊零件图纸",
             "processing_type": "file",
             "file_name_regular": [],
+            "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）",
             "permission": {
                 "read_role": [
                     "boss",
@@ -1021,6 +1031,7 @@
             "label": "mechanical_assembly_details",
             "title": "装配细节示意图",
             "processing_type": "image",
+            "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）",
             "permission": {
                 "read_role": [
                     "boss",
@@ -1050,6 +1061,7 @@
             "title": "装箱清单",
             "processing_type": "file",
             "file_name_regular": [],
+            "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）",
             "permission": {
                 "read_role": [
                     "boss",
@@ -1342,6 +1354,7 @@
             "title": "电子BOM",
             "processing_type": "file",
             "file_name_regular": [],
+            "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）",
             "permission": {
                 "read_role": [
                     "boss",
@@ -1370,6 +1383,7 @@
             "title": "PCB原理图",
             "processing_type": "file",
             "file_name_regular": [],
+            "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）",
             "permission": {
                 "read_role": [
                     "boss",
@@ -1392,6 +1406,7 @@
             "title": "PCB丝印图",
             "processing_type": "file",
             "file_name_regular": [],
+            "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）",
             "permission": {
                 "read_role": [
                     "boss",
@@ -1415,6 +1430,7 @@
             "title": "PCB加工工艺说明",
             "processing_type": "file",
             "file_name_regular": [],
+            "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）",
             "permission": {
                 "read_role": [
                     "boss",
@@ -1438,6 +1454,7 @@
             "title": "PCB制板文件压缩包",
             "processing_type": "file",
             "file_name_regular": [],
+            "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）",
             "permission": {
                 "read_role": [
                     "boss",
@@ -1457,6 +1474,7 @@
             "title": "硬件使用说明书",
             "processing_type": "file",
             "file_name_regular": [],
+            "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）",
             "permission": {
                 "read_role": [
                     "boss",
@@ -1484,6 +1502,7 @@
             "title": "产品接线说明书",
             "processing_type": "file",
             "file_name_regular": [],
+            "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）",
             "permission": {
                 "read_role": [
                     "boss",
@@ -1556,6 +1575,7 @@
             "file_name_regular": [
                 "RF[A-Z]{2}-\\d{4}[A-Z]*-F\\d{2}_V\\d*\\.\\d*"
             ],
+            "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）",
             "permission": {
                 "read_role": [
                     "boss",
@@ -1586,6 +1606,7 @@
             "file_name_regular": [
                 "RF[A-Z]{2}-\\d{4}[A-Z]*-F\\d{2}_V\\d*\\.\\d*"
             ],
+            "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）",
             "permission": {
                 "read_role": [
                     "boss",
@@ -1614,6 +1635,7 @@
             "title": "固件使用说明书",
             "processing_type": "file",
             "file_name_regular": [],
+            "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）",
             "permission": {
                 "read_role": [
                     "boss",
@@ -1641,6 +1663,7 @@
             "title": "通讯协议文件",
             "processing_type": "file",
             "file_name_regular": [],
+            "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）",
             "permission": {
                 "read_role": [
                     "boss",
@@ -1668,6 +1691,7 @@
             "title": "XML协议文件",
             "processing_type": "file",
             "file_name_regular": [],
+            "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）",
             "permission": {
                 "read_role": [
                     "boss",
@@ -1730,6 +1754,7 @@
             "file_name_regular": [
                 "RF[A-Z]{2}-\\d{4}[A-Z]*-F\\d{2}_V\\d*\\.\\d*"
             ],
+            "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）",
             "permission": {
                 "read_role": [
                     "boss",
@@ -1791,6 +1816,7 @@
             "title": "工艺文件",
             "processing_type": "file",
             "file_name_regular": [],
+            "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）",
             "permission": {
                 "read_role": [
                     "boss",

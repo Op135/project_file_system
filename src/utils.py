@@ -121,7 +121,7 @@ def updata_overview_config():
         # 配置更新能直接呈现，但配置减项将导致原有数据不呈现
         with open(f"{BASE_DIR}/overview_config.json", "r", encoding="utf-8") as f:
             # 使用 json.load() 读取文件内容并解析
-            app.state.over_config_data = json.load(f)
+            app.storage.general["over_config_data"] = json.load(f)
             ui.notify(
                 "概述项配置更新成功!",
                 type="positive",
@@ -318,14 +318,14 @@ def overview_role_update(project_name):
     # 如果项目名存在服务器概述数据的键里
     if project_name not in app.storage.general["overview_role"]:
         temp_dic = {}
-        for over_class in app.state.over_config_data.keys():
+        for over_class in app.storage.general["over_config_data"].keys():
             temp_dic[over_class] = {"most_user": "", "latest_user": ""}
         app.storage.general["overview_role"][project_name] = temp_dic
     else:
         # 初始化概述角色字典
         over_role_dic = app.storage.general["overview_role"][project_name]
         # 遍历概述配置字典，主要用里面的角色分类，如光学、结构等等，和概述配置里的label
-        for over_class, over_config_li in app.state.over_config_data.items():
+        for over_class, over_config_li in app.storage.general["over_config_data"].items():
             # 初始化临时保存概述里出现过的用户次数字典
             frequency_user_dic = {}
             # 初始化临时保存概述里出现过的用户最晚时间字典

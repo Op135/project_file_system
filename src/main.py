@@ -29,10 +29,10 @@ app.state.users_data = app.state.user_service.load_users()
 # 将config_service.json配置初始化到app.state.init_config_data
 app.state.config_service = ConfigService()
 app.state.init_config_data = app.state.config_service.load_config()
-# 将overview_config.json配置初始化到app.state.over_config_data
+# 将overview_config.json配置初始化到服务器储存over_config_data
 with open(f"{BASE_DIR}/overview_config.json", "r", encoding="utf-8") as f:
     # 使用 json.load() 读取文件内容并解析
-    app.state.over_config_data = json.load(f)
+    app.storage.general["over_config_data"] = json.load(f)
 
 # 注册 NiceGUI 的生命周期事件
 # 在服务器启动时调用 init_db

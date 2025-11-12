@@ -2557,7 +2557,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                         overview_role_update(project_name)
 
                         # 显示概述模块内容
-                        for role, over_data in app.state.over_config_data.items():
+                        for role, over_data in app.storage.general["over_config_data"].items():
                             with ui.card().classes("w-full px-3 gap-0"):
                                 with ui.row().classes("flex-nowrap -space-x-2 items-center"):
                                     ui.label(f"{role}概述：").classes("text-base text-left w-full px-1 font-bold")
@@ -2594,7 +2594,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                                                 processing_type=data["processing_type"],
                                                 permission=data["permission"],
                                                 temp_bool=temp_bool,
-                                                # upload_path=Path(""),
+                                                upload_path=Path(data["upload_path"]),
                                                 # delete_bool=False,
                                             )
                                         elif data["processing_type"] in ["test"]:
@@ -2609,7 +2609,6 @@ async def requirement_page(type="", json_path="", project_name=""):
                                                 node_options=data["node_options"],
                                                 instrument_options=data["instrument_options"],
                                                 temp_bool=temp_bool,
-                                                # upload_path=Path(""),
                                                 # delete_bool=False,
                                             )
 
