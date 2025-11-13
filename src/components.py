@@ -8,6 +8,7 @@ import time
 import uuid
 from datetime import datetime
 from pathlib import Path
+from typing import Final
 
 import wcwidth
 from html_sanitizer import Sanitizer
@@ -602,7 +603,8 @@ class InteractiveButton:
         return select_dic
 
     # 查找合法路径是否存在且唯一，并返回合法路径
-    def _search_file_path(self) -> str:
+    async def _search_file_path(self) -> str:
+        print(f"开始查找目标文件夹{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         target_path = ""
         # 保存依赖文件夹所的概述配置项标签名
         according_title = ""
@@ -628,7 +630,7 @@ class InteractiveButton:
             # 如果少于一个有效文件夹名，即没有有效文件夹配置
             if len(according_folder_name) < 1:
                 ui.notify(
-                    f"概述项{according_title}无有效配置，无法提交!",
+                    f"概述项{according_title}无有效配置，链接无效!",
                     type="warning",
                     position="center",
                     timeout=0,
@@ -639,7 +641,7 @@ class InteractiveButton:
             # 如果超过一个有效文件夹名
             elif len(according_folder_name) > 1:
                 ui.notify(
-                    f"概述项{according_title}有效配置不唯一，无法提交!",
+                    f"概述项{according_title}有效配置不唯一，链接无效!",
                     type="warning",
                     position="center",
                     timeout=0,
@@ -650,11 +652,15 @@ class InteractiveButton:
             # 有且仅有一个有效文件夹配置
             else:
                 # 查找这个文件夹
-                folder_according_li = find_dirs_by_name_os_walk(str(self.upload_path), according_folder_name[0])
+                search_target = according_folder_name[0].split("_")[0]
+                print(f"目标文件夹：{search_target}")
+                folder_according_li = await find_dirs_by_name_os_walk(
+                    f"{str(self.upload_path)}\\{search_target}", according_folder_name[0]
+                )
                 # 文件夹不存在
                 if not folder_according_li:
                     ui.notify(
-                        f"{str(self.upload_path)}\n不存在目录{according_folder_name[0]}，无法提交!",
+                        f"{str(self.upload_path)}\n不存在目录{according_folder_name[0]}，链接无效!",
                         type="negative",
                         position="center",
                         timeout=0,
@@ -667,7 +673,7 @@ class InteractiveButton:
                     for path in folder_according_li:
                         path_str = f"{path_str}\n{str(path)}"
                     ui.notify(
-                        f"{according_title}概述项配置的文件夹存在多个:{path_str}\n无法提交!",
+                        f"{according_title}概述项配置的文件夹存在多个:{path_str}\n链接无效!",
                         type="warning",
                         position="center",
                         timeout=0,
@@ -695,13 +701,14 @@ class InteractiveButton:
             # 就放在顶层文件夹
             else:
                 target_path = str(self.upload_path)
+        print(f"结束查找目标文件夹{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         return target_path
 
     # 当用户点击“添加”按钮时，将文本数据添加到共享存储中
     async def _add_search_chip_data(self):
         text = self.chip_label.value
         notes = self.chip_notes.value
-        target_path = self._search_file_path()
+        target_path = await self._search_file_path()
         # 最终判断路径是否是文件夹且存在
         if target_path and Path(target_path).is_dir():
             if not text:
@@ -1176,7 +1183,7 @@ class InteractiveButton:
                 ui.button("否", on_click=lambda: self.chip_dialog.close(), color="blue-grey-6")
 
     # 刷新chip容器
-    def _refresh_chip_container(self):
+    async def _refresh_chip_container(self):
         # 删除元素重新显示
         self.chip_container.clear()
         with self.chip_container:
@@ -1186,7 +1193,7 @@ class InteractiveButton:
                 if self.processing_type == "search":
                     # 只找一次，不管找的结果
                     if not search_bool:
-                        target_path = self._search_file_path()
+                        target_path = await self._search_file_path()
                     search_bool = True
                     # target_path 可能是空、有效文件夹路径，长得像文件夹的文件路径
                     self._create_chip_from_data(chip_info, target_path)
@@ -1194,7 +1201,7 @@ class InteractiveButton:
                     self._create_chip_from_data(chip_info, "")
 
     # 同步UI显示与共享存储中的数据
-    def _update_chip_display(self):
+    async def _update_chip_display(self):
         """
         同步UI显示与共享存储中的数据。
         这是由定时器调用的核心同步函数。
@@ -1213,7 +1220,7 @@ class InteractiveButton:
             # 只有当UI和存储中的ID集合不一致时，才重新渲染，以提高效率
             if displayed_chip_ids != stored_chip_ids:
                 # 刷新chip容器内容
-                self._refresh_chip_container()
+                await self._refresh_chip_container()
                 # 刷新角色负责用户数据
                 overview_role_update(self.project)
 
@@ -1338,20 +1345,21 @@ class InteractiveButton:
         ui.notify("内容已复制到剪贴板！", type="positive", position="top")
 
     # <-----------------------------------------------------------------
-    # 设置chip的激活状态
-    async def _set_chip_activ(self, chip_id, old_chip_select_dic, chip_text):
-        # chip以当前最新版本的设置为当前显示状态
+    # 以当前最新版本用户设置的激活状态，更新chip资料相应参数，如icon、enabled、bg_color等等
+    async def _set_chip_activ(self, chip_id, OLD_CHIP_SELECT_DIC, chip_text):
+        # 获取该项目最高版本
         req_max_ver = app.storage.general["project_req_max_ver"][self.project]
+
+        # 如果最高版本激活状态为True
         if db_storage.get_deep_item(
             [f"{self.project}_over_data", self.label, chip_id, "select_activ_dic", req_max_ver]
         ):
-            # 激活chip
             # 修改这里要检查utils和information两个模块是否跟着改
-            await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "enabled"], True)
+            # 更新icon参数
             if db_storage.get_deep_item([f"{self.project}_over_data", self.label, chip_id, "type"]) == "file":
                 await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "icon"], "attachment")
             elif db_storage.get_deep_item([f"{self.project}_over_data", self.label, chip_id, "type"]) == "search":
-                target_path = self._search_file_path()
+                target_path = await self._search_file_path()
                 if target_path:
                     files_li = find_files_pathlib(target_path, chip_text)
                     if len(files_li) == 1:
@@ -1368,6 +1376,9 @@ class InteractiveButton:
                     )
             else:
                 await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "icon"], None)
+            # 更新enabled参数
+            await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "enabled"], True)
+            # 更新bg_color参数
             await db_storage.set_deep_item(
                 [f"{self.project}_over_data", self.label, chip_id, "bg_color"], "bg-light-blue-1"
             )
@@ -1387,17 +1398,20 @@ class InteractiveButton:
             # app.storage.general["overview_data"][self.project][self.label][chip_id]["icon"] = "question_mark"
             # app.storage.general["overview_data"][self.project][self.label][chip_id]["bg_color"] = "bg-amber-5"
         else:
-            # 失活chip
             # 修改这里要检查utils和information两个模块是否跟着改
-            await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "enabled"], False)
+            # 更新icon参数
             await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "icon"], "block")
+            # 更新enabled参数
+            await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "enabled"], False)
+            # 更新bg_color参数
             await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "bg_color"], "bg-grey-5")
 
         # 如果激活弹窗关闭时，检测到激活多选项发生了变化，则修改该chip的编辑人
         select_activ_dic = copy.deepcopy(
             db_storage.get_deep_item([f"{self.project}_over_data", self.label, chip_id, "select_activ_dic"], {})
         )
-        if old_chip_select_dic != select_activ_dic:
+        # 激活状态发生变化，记录编辑人和编辑时间记录
+        if OLD_CHIP_SELECT_DIC != select_activ_dic:
             creator = app.storage.user.get("current_user", "匿名用户")
             await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "creator"], creator)
             await db_storage.set_deep_item(
@@ -1414,7 +1428,7 @@ class InteractiveButton:
                 },
             )
         # 刷新chip容器内容
-        self._refresh_chip_container()
+        await self._refresh_chip_container()
         # 刷新概述负责人
         overview_role_update(self.project)
 
@@ -1426,20 +1440,21 @@ class InteractiveButton:
             chip_select_dic = db_storage.get_deep_item(
                 [f"{self.project}_over_data", self.label, chip_id, "select_activ_dic"], {}
             )
-            old_chip_select_dic = copy.deepcopy(chip_select_dic)
+            OLD_CHIP_SELECT_DIC: Final[dict] = copy.deepcopy(chip_select_dic)
             with ui.grid(columns=6).classes("w-full gap-0"):
-                for select_label, val in chip_select_dic.items():
+                for select_label, val in OLD_CHIP_SELECT_DIC.items():
                     ui.checkbox(
                         text=select_label,
                         value=val,
-                        on_change=lambda e: db_storage.set_deep_item(
-                            [f"{self.project}_over_data", self.label, chip_id, "select_activ_dic", select_label],
+                        on_change=lambda e, sl=select_label: db_storage.set_deep_item(
+                            [f"{self.project}_over_data", self.label, chip_id, "select_activ_dic", sl],
                             e.value,
                         ),
+                        # on_change=lambda: print("激活状态变了"),
                     )
             with ui.row().classes("w-full justify-end"):
                 ui.label("注意以上改动是即时生效的").classes("text-lg font-bold")
-                ui.button("关闭", on_click=lambda: self._set_chip_activ(chip_id, old_chip_select_dic, chip_text)).on(
+                ui.button("关闭", on_click=lambda: self._set_chip_activ(chip_id, OLD_CHIP_SELECT_DIC, chip_text)).on(
                     "click", lambda: self.activ_dialog.close()
                 )
         self.activ_dialog.open()
@@ -1455,7 +1470,7 @@ class InteractiveButton:
             elif app.storage.user["current_user"] != "admin":
                 # app.storage.general["overview_data"][self.project][self.label][chip.props["data-chip-id"]]["removable"] = False
                 chip_id = chip.props["data-chip-id"]
-                self._select_activ_dialog(chip_id, chip["text"])
+                self._select_activ_dialog(chip_id, chip.text)
 
     # 删除或修改文件缩略图及其在app.storage.general的数据
     async def clear_thumbnail(self, thumbnail):
@@ -1471,35 +1486,36 @@ class InteractiveButton:
                 chip_id = thumbnail.props["data-chip-id"]
                 self._select_activ_dialog(chip_id)
 
+    def _move_data(self, old_data, chip_id, move_num):
+        temp_data = {}
+        old_data_keys = list(old_data.keys())
+        new_data_keys = move_element(old_data_keys, chip_id, move_num)
+        for k in new_data_keys:
+            # temp_data[k] = app.storage.general["overview_data"][self.project][self.label][k]
+            temp_data[k] = old_data.get(k, {})
+        return temp_data
+
     # 将该项插入的chip里指定chip上移一个位置
     async def move_up_data(self, chip_data):
         # 如果用户具有编辑权限
         if self._edit_permission_judge():
-            temp_data = {}
-            old_data_keys = list(db_storage.get_deep_item([f"{self.project}_over_data", self.label], {}).keys())
-            new_data_keys = move_element(old_data_keys, chip_data["id"], -1)
-            for k in new_data_keys:
-                # temp_data[k] = app.storage.general["overview_data"][self.project][self.label][k]
-                temp_data[k] = db_storage.get_deep_item([f"{self.project}_over_data", self.label, k], {})
-            # app.storage.general["overview_data"][self.project][self.label] = temp_data
-            await db_storage.set_deep_item([f"{self.project}_over_data", self.label], temp_data)
+            # 获取指定深度的字典数据，由_move_data函数处理，并给_move_data函数传入chip_data["id"], -1两个参数
+            await db_storage.atomic_deep_update(
+                [f"{self.project}_over_data", self.label], self._move_data, chip_data["id"], -1
+            )
             # 刷新chip容器内容
-            self._refresh_chip_container()
+            await self._refresh_chip_container()
 
     # 将该项插入的chip里指定chip上移一个位置
     async def move_down_data(self, chip_data):
         # 如果用户具有编辑权限
         if self._edit_permission_judge():
-            temp_data = {}
-            old_data_keys = list(db_storage.get_deep_item([f"{self.project}_over_data", self.label], {}).keys())
-            new_data_keys = move_element(old_data_keys, chip_data["id"], 1)
-            for k in new_data_keys:
-                # temp_data[k] = app.storage.general["overview_data"][self.project][self.label][k]
-                temp_data[k] = db_storage.get_deep_item([f"{self.project}_over_data", self.label, k], {})
-            # app.storage.general["overview_data"][self.project][self.label] = temp_data
-            await db_storage.set_deep_item([f"{self.project}_over_data", self.label], temp_data)
+            # 获取指定深度的字典数据，由_move_data函数处理，并给_move_data函数传入chip_data["id"], -1两个参数
+            await db_storage.atomic_deep_update(
+                [f"{self.project}_over_data", self.label], self._move_data, chip_data["id"], 1
+            )
             # 刷新chip容器内容
-            self._refresh_chip_container()
+            await self._refresh_chip_container()
 
     # 根据字典数据创建一个具体的 ui.chip 组件。
     def _create_chip_from_data(self, chip_info: dict, target_path: str):
@@ -1531,11 +1547,11 @@ class InteractiveButton:
                 # 以后改了文件夹配置，chip不会失效
                 app.add_static_file(local_file=filepath, url_path=chip_info.get("url_path"))
             elif chip_info["type"] == "search":
-                file_name = chip_info.get("content", "")
+                chip_text = chip_info.get("content", "")
                 # 每次生成都用更新配置的路径
                 # 判断路径是否是文件夹且存在，target_path 可能是空、有效文件夹路径，长得像文件夹的文件路径
                 if target_path and Path(target_path).is_dir():
-                    files_li = find_files_pathlib(target_path, file_name)
+                    files_li = find_files_pathlib(target_path, chip_text)
                     if not files_li:
                         ui.notify(
                             f"引用文件不存在该路径下：\n{target_path}",
@@ -1585,7 +1601,8 @@ class InteractiveButton:
                     # 根据文件类型，修改文件icon为无效文件icon
                     if chip_info["type"] == "file":
                         chip.set_icon("link_off")
-                    elif chip_info["type"] == "search":
+                    # 如果是待选择激活状态的chip，不修改其icon
+                    elif chip_info["type"] == "search" and chip.icon != "question_mark":
                         chip.set_icon("search_off")
                     chip.on_click(
                         lambda: ui.notify(

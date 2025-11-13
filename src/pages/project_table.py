@@ -255,6 +255,10 @@ def project_table_page():
                                 label_list = app.storage.general["custom_labels"].get(project_name, [])
                                 if label_list:
                                     show_str = f"{show_str}，{'，'.join(label_list)}"
+
+                            # 待确定的内容，统一更换仅显示一个?号
+                            # if "?" in show_str:
+                            #     show_str = "?"
                             # 将处理完成的字符串作为该行数据对应项目简介项的显示内容
                             row_data[pro_key] = show_str.strip("，").removeprefix(
                                 "\n"

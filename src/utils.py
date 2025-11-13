@@ -34,16 +34,16 @@ def get_file_type_by_extension(file_path):
     mime_type, encoding = mimetypes.guess_type(file_path, strict=True)
 
     if mime_type:
-        print(f"✅ 通过扩展名推断的文件类型: {mime_type}")
+        # print(f"✅ 通过扩展名推断的文件类型: {mime_type}")
         return mime_type, encoding
     else:
         # 尝试通过文件扩展名本身作为类型
         extension = p.suffix.lower().lstrip(".")
         if extension:
-            print(f"⚠️ 无法推断 MIME 类型，但文件扩展名为: {extension}")
+            # print(f"⚠️ 无法推断 MIME 类型，但文件扩展名为: {extension}")
             return f"extension/{extension}", None  # 格式化为非官方 MIME 类型
         else:
-            print("❌ 路径无扩展名，无法推断类型。")
+            # print("❌ 路径无扩展名，无法推断类型。")
             return "unknown/unknown", None
 
 
@@ -62,10 +62,11 @@ def find_files_pathlib(start_dir: str, filename: str) -> list[Path]:
 
 
 # 在传入路径上查找指定文件夹，返回匹配的所有Path对象列表
-def find_dirs_by_name_os_walk(start_dir: str, dir_name: str) -> list[Path]:
+async def find_dirs_by_name_os_walk(start_dir: str, dir_name: str) -> list[Path]:
     """
     使用 os.walk 高效查找所有匹配名称的 *目录*。
     """
+    print(f"内层开始查找目标文件夹{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     found_dirs = []
     start_dir = str(start_dir)  # os.walk 倾向于使用字符串
 
@@ -81,7 +82,7 @@ def find_dirs_by_name_os_walk(start_dir: str, dir_name: str) -> list[Path]:
             # 找到了，构建它的完整路径
             # 注意：os.walk 默认使用字符串，我们将其转换回 Path 对象
             found_dirs.append(Path(dirpath) / dir_name)
-
+    print(f"内层结束查找目标文件夹{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     return found_dirs
 
 

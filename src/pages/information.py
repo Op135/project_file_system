@@ -67,13 +67,21 @@ def information_page():
                     # 由指定版本衍生到另外一个新项目，需求版本2.0，概述复制了参照项目的指定版本激活设置，并先记录为目标项目1.0版本概述，需求版本值肯定大于激活设置的最大版本值
                     if req_ver > max_over_ver:
                         # 获取激活设置最大版本值对应的布尔设置值
-                        # activ_max_bool = chip_data["select_activ_dic"][f"{max_over_ver}.0"]
+                        activ_max_bool = chip_data["select_activ_dic"][f"{max_over_ver}.0"]
                         # 从现有激活设置最大版本值+1到当前需求版本值开始生成键值对
                         for key in range(max_over_ver + 1, req_ver + 1):
                             # 新版本值均设置为激活设置最大值一样的布尔值
                             # chip_data["select_activ_dic"][f"{key}.0"] = activ_max_bool
+
                             # 新版本值均设置为None，为第三状态值，待工程师处理
-                            chip_data["select_activ_dic"][f"{key}.0"] = None
+                            # chip_data["select_activ_dic"][f"{key}.0"] = None
+
+                            # 如果最大版本值为True，则新版本都设置为None
+                            if activ_max_bool:
+                                chip_data["select_activ_dic"][f"{key}.0"] = True
+                            # 如果最大版本值为False或者None，则新版本都设置为False
+                            else:
+                                chip_data["select_activ_dic"][f"{key}.0"] = None
                     # 衍生项目且复制了2.0及以上版本的概述内容
                     # 最高版本的激活状态要改成None，让其黄色显示
                     else:
@@ -197,8 +205,8 @@ def information_page():
     async def set_review_pass_dialog(button_group, p_name, v):
         if app.storage.general["wait_review"][p_name][v]["state"] == "待审":
             old_v = "1.0" if v == "1.0" else f"{int(float(v)) - 1}.0"
-            new_submitter = app.storage.general["wait_review"][p_name][v].get("submitter")
-            old_submitter = app.storage.general["wait_review"][p_name][old_v].get("submitter")
+            new_submitter = app.storage.general["wait_review"][p_name].get(v, {}).get("submitter")
+            old_submitter = app.storage.general["wait_review"][p_name].get(old_v, {}).get("submitter")
             # 需求提交人新版发生了变化，弹窗提醒
             if new_submitter != old_submitter:
                 dialog.clear()
