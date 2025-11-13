@@ -8,12 +8,12 @@ import time
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Final
+from typing import Callable, Final
 
 import wcwidth
 from html_sanitizer import Sanitizer
 from nicegui import app, events, ui
-from nicegui.events import GenericEventArguments, MouseEventArguments
+from nicegui.events import GenericEventArguments, MouseEventArguments, ValueChangeEventArguments
 
 from . import db_storage  # 导入我们创建的模块
 from .config import FILES_URL_DIR, IMG_DIR, OVER_UPLOADS_FILE_TYPE, SUBMIT_FILES_DIR, UPLOADS_DIR
@@ -706,7 +706,9 @@ class InteractiveButton:
         return target_path
 
     # 当用户点击“添加”按钮时，将文本数据添加到共享存储中
-    async def _add_search_chip_data(self):
+    async def _add_search_chip_data(self, ui_spinner):
+        # 开始显示漏斗
+        ui_spinner.set_visibility(True)
         text = self.chip_label.value
         notes = self.chip_notes.value
         target_path = await self._search_file_path()
@@ -799,6 +801,8 @@ class InteractiveButton:
                     # 清空文本框并关闭对话框
                     self.chip_label.value = ""
                     self.chip_notes.value = ""
+                    # 隐藏漏斗
+                    ui_spinner.set_visibility(False)
                     self.chip_dialog.close()
                     ui.notify(
                         "文件引用已添加。",
@@ -1440,6 +1444,23 @@ class InteractiveButton:
         # 刷新概述负责人
         overview_role_update(self.project)
 
+    async def handle_checkbox_change(self, e: ValueChangeEventArguments, ui_spinner, async_function: Callable):
+        try:
+            # 步骤 1: 立即显示 Spinner
+            ui_spinner.set_visibility(True)
+
+            # 步骤 2: 执行异步函数 并等待它完成
+            await async_function()
+
+        except Exception as ex:
+            # (可选) 处理错误
+            print(f"数据库更新失败: {ex}")
+            # ui.notify(f'错误: {ex}', type='negative')
+
+        finally:
+            # 步骤 3: 无论成功还是失败，都隐藏 Spinner
+            ui_spinner.set_visibility(False)
+
     # 创建用于让用户选择chip激活范围的弹窗
     def _select_set_activ_dialog(self, chip_id, chip_text=""):
         self.activ_dialog.clear()
@@ -1449,24 +1470,31 @@ class InteractiveButton:
             OLD_CHIP_SELECT_DIC: Final[dict] = copy.deepcopy(
                 db_storage.get_deep_item([f"{self.project}_over_data", self.label, chip_id, "select_activ_dic"], {})
             )
+            ui_spinner = ui.spinner(type="hourglass", size="md", color="amber-8", thickness=8.0)
+            ui_spinner.set_visibility(False)
             with ui.grid(columns=6).classes("w-full gap-0"):
                 for select_label, val in OLD_CHIP_SELECT_DIC.items():
                     ui.checkbox(
                         text=select_label,
                         value=val,
                         # 激活状态的变化，仅影响旧字典范围，并发其它用户的设置也会生效，可接受，反正最终关闭弹窗会看到大家并发处理的结果
-                        on_change=lambda e, sl=select_label: db_storage.set_deep_item(
-                            [f"{self.project}_over_data", self.label, chip_id, "select_activ_dic", sl],
-                            e.value,
+                        on_change=lambda e, sl=select_label: self.handle_checkbox_change(
+                            e,
+                            ui_spinner,
+                            lambda: db_storage.set_deep_item(
+                                [f"{self.project}_over_data", self.label, chip_id, "select_activ_dic", sl], e.value
+                            ),
                         ),
                     )
             with ui.row().classes("w-full justify-end"):
+                ui_spinner.move()
                 ui.label("注意以上改动是即时生效的").classes("text-lg font-bold")
                 # 关闭时，会以重新检测到的最高版本激活状态来更新chip相关参数，且是并发综合处理结果
                 # 甚至多了新的版本，但chip最终都以最高版本激活状态来正确显示
                 ui.button(
                     "关闭", on_click=lambda: self._update_chip_parameter(chip_id, OLD_CHIP_SELECT_DIC, chip_text)
                 ).on("click", lambda: self.activ_dialog.close())
+
         self.activ_dialog.open()
 
     # 删除或修改chip在app.storage.general对应的数据
@@ -1785,7 +1813,9 @@ class InteractiveButton:
                 .classes("w-full")
             )
             with ui.row().classes("w-full justify-end"):
-                ui.button("添加", on_click=self._add_search_chip_data)
+                ui_spinner = ui.spinner(type="hourglass", size="md", color="amber-8", thickness=8.0)
+                ui_spinner.set_visibility(False)
+                ui.button("添加", on_click=lambda: self._add_search_chip_data(ui_spinner))
         self.chip_dialog.open()
 
     # 触发文件上传界面，用于给用户选择文件，然后自动触发文件处理函数

@@ -235,7 +235,8 @@ async def set_deep_item(path: List[str], value: Any):
     if _db is None:
         print("错误: 数据库未初始化.")
         return
-
+    # 测试用
+    await asyncio.sleep(3)
     # 路径的第一个元素是顶层键
     top_key = path[0]
     deep_path = path[1:]
