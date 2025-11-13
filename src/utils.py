@@ -9,6 +9,7 @@ import os
 import re
 from datetime import datetime
 from pathlib import Path
+from typing import Final
 
 from nicegui import app, ui
 from nicegui.events import KeyEventArguments
@@ -380,7 +381,7 @@ def overview_role_update(project_name):
     app.storage.general["overview_role"][project_name]={"光学":{"most_user":"用户名","latest_user":"用户名"},...}
     """
     # 将服务器概述资料获取到
-    overview_data = db_storage.get_item(f"{project_name}_over_data", {})
+    OVERVIEW_DATA: Final[dict] = db_storage.get_item(f"{project_name}_over_data", {})
     # 设置时间对象识别格式
     format_string = "%Y-%m-%d %H:%M:%S"
     # 如果项目名存在服务器概述数据的键里
@@ -401,9 +402,9 @@ def overview_role_update(project_name):
             # 遍历当前角色分类，如光学下，概述配置的各项
             for over_config in over_config_li:
                 # 如果当前概述项的label存在服务器对应项目的概述数据字典键里
-                if over_config["label"] in overview_data and overview_data[over_config["label"]] != {}:
+                if over_config["label"] in OVERVIEW_DATA and OVERVIEW_DATA[over_config["label"]] != {}:
                     # 遍历当前label下用户添加过的多个概述数据
-                    for over_data in overview_data[over_config["label"]].values():
+                    for over_data in OVERVIEW_DATA[over_config["label"]].values():
                         # 如果数据的创建用户已经存在临时记录字典里
                         if over_data["creator"] in frequency_user_dic:
                             # 将该用户创建次数加1次

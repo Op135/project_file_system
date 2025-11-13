@@ -622,8 +622,9 @@ class InteractiveButton:
                         break_bool = True
                         break
             # 获取文件夹依赖标签里的chip数据
-            according_data = db_storage.get_deep_item([f"{self.project}_over_data", self.search_folder_according], {})
-            for data in according_data.values():
+            for data in db_storage.get_deep_item(
+                [f"{self.project}_over_data", self.search_folder_according], {}
+            ).values():
                 # 将所有激活的chip对应的内容，也就是文件夹名保存起来
                 if data["enabled"]:
                     according_folder_name.append(data["content"])
@@ -1214,8 +1215,7 @@ class InteractiveButton:
             # 获取当前UI上所有 chip 的ID
             displayed_chip_ids = {child.props.get("data-chip-id") for child in self.chip_container}
             # 获取共享存储中所有 chip 的ID
-            stored_chips_data = db_storage.get_deep_item([f"{self.project}_over_data", self.label], {})
-            stored_chip_ids = set(stored_chips_data.keys())
+            stored_chip_ids = set(db_storage.get_deep_item([f"{self.project}_over_data", self.label], {}).keys())
 
             # 只有当UI和存储中的ID集合不一致时，才重新渲染，以提高效率
             if displayed_chip_ids != stored_chip_ids:
@@ -1346,10 +1346,9 @@ class InteractiveButton:
 
     # <-----------------------------------------------------------------
     # 以当前最新版本用户设置的激活状态，更新chip资料相应参数，如icon、enabled、bg_color等等
-    async def _set_chip_activ(self, chip_id, OLD_CHIP_SELECT_DIC, chip_text):
+    async def _update_chip_parameter(self, chip_id, OLD_CHIP_SELECT_DIC, chip_text):
         # 获取该项目最高版本
         req_max_ver = app.storage.general["project_req_max_ver"][self.project]
-
         # 如果最高版本激活状态为True
         if db_storage.get_deep_item(
             [f"{self.project}_over_data", self.label, chip_id, "select_activ_dic", req_max_ver]
@@ -1411,7 +1410,16 @@ class InteractiveButton:
             db_storage.get_deep_item([f"{self.project}_over_data", self.label, chip_id, "select_activ_dic"], {})
         )
         # 激活状态发生变化，记录编辑人和编辑时间记录
-        if OLD_CHIP_SELECT_DIC != select_activ_dic:
+        if len(OLD_CHIP_SELECT_DIC) != len(select_activ_dic):
+            ui.notify(
+                "需求刚刚升级了，各项概述的激活配置需要重新确定！",
+                type="warning",
+                position="center",
+                timeout=0,
+                progress=False,
+                close_button="✖",
+            )
+        elif OLD_CHIP_SELECT_DIC != select_activ_dic:
             creator = app.storage.user.get("current_user", "匿名用户")
             await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "creator"], creator)
             await db_storage.set_deep_item(
@@ -1433,30 +1441,32 @@ class InteractiveButton:
         overview_role_update(self.project)
 
     # 创建用于让用户选择chip激活范围的弹窗
-    def _select_activ_dialog(self, chip_id, chip_text=""):
+    def _select_set_activ_dialog(self, chip_id, chip_text=""):
         self.activ_dialog.clear()
         with self.activ_dialog, ui.card().classes("w-1/2"):
             ui.label("选择概述生效的需求版本").classes("text-lg font-bold")
-            chip_select_dic = db_storage.get_deep_item(
-                [f"{self.project}_over_data", self.label, chip_id, "select_activ_dic"], {}
+            # 获取当前chip激活状态字典
+            OLD_CHIP_SELECT_DIC: Final[dict] = copy.deepcopy(
+                db_storage.get_deep_item([f"{self.project}_over_data", self.label, chip_id, "select_activ_dic"], {})
             )
-            OLD_CHIP_SELECT_DIC: Final[dict] = copy.deepcopy(chip_select_dic)
             with ui.grid(columns=6).classes("w-full gap-0"):
                 for select_label, val in OLD_CHIP_SELECT_DIC.items():
                     ui.checkbox(
                         text=select_label,
                         value=val,
+                        # 激活状态的变化，仅影响旧字典范围，并发其它用户的设置也会生效，可接受，反正最终关闭弹窗会看到大家并发处理的结果
                         on_change=lambda e, sl=select_label: db_storage.set_deep_item(
                             [f"{self.project}_over_data", self.label, chip_id, "select_activ_dic", sl],
                             e.value,
                         ),
-                        # on_change=lambda: print("激活状态变了"),
                     )
             with ui.row().classes("w-full justify-end"):
                 ui.label("注意以上改动是即时生效的").classes("text-lg font-bold")
-                ui.button("关闭", on_click=lambda: self._set_chip_activ(chip_id, OLD_CHIP_SELECT_DIC, chip_text)).on(
-                    "click", lambda: self.activ_dialog.close()
-                )
+                # 关闭时，会以重新检测到的最高版本激活状态来更新chip相关参数，且是并发综合处理结果
+                # 甚至多了新的版本，但chip最终都以最高版本激活状态来正确显示
+                ui.button(
+                    "关闭", on_click=lambda: self._update_chip_parameter(chip_id, OLD_CHIP_SELECT_DIC, chip_text)
+                ).on("click", lambda: self.activ_dialog.close())
         self.activ_dialog.open()
 
     # 删除或修改chip在app.storage.general对应的数据
@@ -1470,7 +1480,7 @@ class InteractiveButton:
             elif app.storage.user["current_user"] != "admin":
                 # app.storage.general["overview_data"][self.project][self.label][chip.props["data-chip-id"]]["removable"] = False
                 chip_id = chip.props["data-chip-id"]
-                self._select_activ_dialog(chip_id, chip.text)
+                self._select_set_activ_dialog(chip_id, chip.text)
 
     # 删除或修改文件缩略图及其在app.storage.general的数据
     async def clear_thumbnail(self, thumbnail):
@@ -1484,7 +1494,7 @@ class InteractiveButton:
                 )
             elif app.storage.user["current_user"] != "admin":
                 chip_id = thumbnail.props["data-chip-id"]
-                self._select_activ_dialog(chip_id)
+                self._select_set_activ_dialog(chip_id)
 
     def _move_data(self, old_data, chip_id, move_num):
         temp_data = {}
