@@ -1355,7 +1355,10 @@
             "processing_type": "search",
             "file_name_regular": [],
             "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
-            "search_folder_according": "drive_pcb",
+            "search_folder_according": [
+                "drive_pcb",
+                "^([^_]+)"
+            ],
             "search_hierarchy": [
                 "Files"
             ],

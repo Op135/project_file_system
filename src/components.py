@@ -4,6 +4,7 @@ import copy
 import io
 import math
 import os
+import re
 import time
 import uuid
 from datetime import datetime
@@ -444,7 +445,7 @@ class InteractiveButton:
         processing_type: str,
         permission: dict,
         upload_path: Path = SUBMIT_FILES_DIR,
-        search_folder_according: str = "",
+        search_folder_according: list = [],
         search_hierarchy: list = [],
         dialog_label: str = "按规定格式输入",
         dialog_placeholder: str = "",
@@ -612,19 +613,19 @@ class InteractiveButton:
         # 保存找到的激活的依赖文件夹名
         according_folder_name = []
         # 有依赖文件夹配置，找依赖文件夹配置标签对应的标签标题名
-        if self.search_folder_according:
+        if self.search_folder_according[0]:
             break_bool = False
             for role, data_li in app.storage.general.get("over_config_data", {}).items():
                 if break_bool:
                     break
                 for data in data_li:
-                    if data["label"] == self.search_folder_according:
+                    if data["label"] == self.search_folder_according[0]:
                         according_title = data["title"]
                         break_bool = True
                         break
             # 获取文件夹依赖标签里的chip数据
             for data in db_storage.get_deep_item(
-                [f"{self.project}_over_data", self.search_folder_according], {}
+                [f"{self.project}_over_data", self.search_folder_according[0]], {}
             ).values():
                 # 将所有激活的chip对应的内容，也就是文件夹名保存起来
                 if data["enabled"]:
@@ -656,16 +657,56 @@ class InteractiveButton:
             # 有且仅有一个有效文件夹配置
             else:
                 # 查找这个文件夹
-                search_target = according_folder_name[0].split("_")[0]
-                # print(f"目标文件夹：{search_target}")
-                folder_according_li = await find_dirs_by_name_os_walk(
-                    f"{str(self.upload_path)}\\{search_target}", according_folder_name[0]
-                )
-                # 文件夹不存在
-                if not folder_according_li:
+                print(according_folder_name[0], self.search_folder_according[1])
+                match = re.search(according_folder_name[0], rf"{self.search_folder_according[1]}")
+                if match:
+                    print(match.group(1))
+                    search_target = match.group(1)
+                    # search_target = according_folder_name[0].split("_")[0]
+                    # print(f"目标文件夹：{search_target}")
+                    folder_according_li = await find_dirs_by_name_os_walk(
+                        f"{str(self.upload_path)}\\{search_target}", according_folder_name[0]
+                    )
+                    # 文件夹不存在
+                    if not folder_according_li:
+                        if overview_state_show_judge(self.role):
+                            ui.notify(
+                                f"{str(self.upload_path)}\n不存在目录{according_folder_name[0]}，链接无效!",
+                                type="negative",
+                                position="center",
+                                timeout=0,
+                                progress=False,
+                                close_button="✖",
+                            )
+                        return target_path
+                    elif len(folder_according_li) > 1:
+                        if overview_state_show_judge(self.role):
+                            path_str = ""
+                            for path in folder_according_li:
+                                path_str = f"{path_str}\n{str(path)}"
+                            ui.notify(
+                                f"{according_title}概述项配置的文件夹存在多个:{path_str}\n链接无效!",
+                                type="warning",
+                                position="center",
+                                timeout=0,
+                                progress=False,
+                                close_button="✖",
+                            )
+                        return target_path
+                    # 有且存在唯一一个依赖文件夹
+                    else:
+                        # 需要再深入层级
+                        if self.search_hierarchy:
+                            target_path = str(folder_according_li[0])
+                            for h in self.search_hierarchy:
+                                target_path = f"{target_path}\\{h}"
+                        # 就放在依赖文件夹
+                        else:
+                            target_path = str(folder_according_li[0])
+                else:
                     if overview_state_show_judge(self.role):
                         ui.notify(
-                            f"{str(self.upload_path)}\n不存在目录{according_folder_name[0]}，链接无效!",
+                            f"文件夹{according_folder_name[0]}命名不符合规则!",
                             type="negative",
                             position="center",
                             timeout=0,
@@ -673,30 +714,6 @@ class InteractiveButton:
                             close_button="✖",
                         )
                     return target_path
-                elif len(folder_according_li) > 1:
-                    if overview_state_show_judge(self.role):
-                        path_str = ""
-                        for path in folder_according_li:
-                            path_str = f"{path_str}\n{str(path)}"
-                        ui.notify(
-                            f"{according_title}概述项配置的文件夹存在多个:{path_str}\n链接无效!",
-                            type="warning",
-                            position="center",
-                            timeout=0,
-                            progress=False,
-                            close_button="✖",
-                        )
-                    return target_path
-                # 有且存在唯一一个依赖文件夹
-                else:
-                    # 需要再深入层级
-                    if self.search_hierarchy:
-                        target_path = str(folder_according_li[0])
-                        for h in self.search_hierarchy:
-                            target_path = f"{target_path}\\{h}"
-                    # 就放在依赖文件夹
-                    else:
-                        target_path = str(folder_according_li[0])
         # 无依赖文件夹配置，直接上传到config配置的顶层文件夹
         else:
             # 需要再深入层级
