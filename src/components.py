@@ -657,10 +657,9 @@ class InteractiveButton:
             # 有且仅有一个有效文件夹配置
             else:
                 # 查找这个文件夹
-                print(according_folder_name[0], self.search_folder_according[1])
-                match = re.search(according_folder_name[0], rf"{self.search_folder_according[1]}")
+                match = re.search(self.search_folder_according[1], according_folder_name[0])
                 if match:
-                    print(match.group(1))
+                    # // "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
                     search_target = match.group(1)
                     # search_target = according_folder_name[0].split("_")[0]
                     # print(f"目标文件夹：{search_target}")
@@ -671,7 +670,7 @@ class InteractiveButton:
                     if not folder_according_li:
                         if overview_state_show_judge(self.role):
                             ui.notify(
-                                f"{str(self.upload_path)}\n不存在目录{according_folder_name[0]}，链接无效!",
+                                f"{str(self.upload_path)}\\{search_target}\n不存在目录{according_folder_name[0]}，链接无效!",
                                 type="negative",
                                 position="center",
                                 timeout=0,
@@ -734,7 +733,7 @@ class InteractiveButton:
         text = self.chip_label.value
         notes = self.chip_notes.value
         target_path = await self._search_file_path()
-        # 最终判断路径是否是文件夹且存在
+        # 有目标路径，且存在，且是文件夹路径
         if target_path and Path(target_path).is_dir():
             if not text:
                 ui.notify(
@@ -834,6 +833,17 @@ class InteractiveButton:
                         progress=True,
                         close_button="✖",
                     )
+        # 有目标路径，但路径不存在或不是文件夹路径
+        elif target_path:
+            if overview_state_show_judge(self.role):
+                ui.notify(
+                    f"路径：\n{target_path}\n不存在!",
+                    type="negative",
+                    position="center",
+                    timeout=0,
+                    progress=False,
+                    close_button="✖",
+                )
         # 隐藏漏斗
         ui_spinner.set_visibility(False)
 
