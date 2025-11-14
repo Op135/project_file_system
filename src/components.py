@@ -24,6 +24,7 @@ from .utils import (
     get_time,
     move_element,
     overview_role_update,
+    overview_state_show_judge,
     ui_hide,
     ui_show,
 )
@@ -604,7 +605,7 @@ class InteractiveButton:
 
     # 查找合法路径是否存在且唯一，并返回合法路径
     async def _search_file_path(self) -> str:
-        print(f"开始查找目标文件夹{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        # print(f"开始查找目标文件夹{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         target_path = ""
         # 保存依赖文件夹所的概述配置项标签名
         according_title = ""
@@ -630,57 +631,61 @@ class InteractiveButton:
                     according_folder_name.append(data["content"])
             # 如果少于一个有效文件夹名，即没有有效文件夹配置
             if len(according_folder_name) < 1:
-                ui.notify(
-                    f"概述项{according_title}无有效配置，链接无效!",
-                    type="warning",
-                    position="center",
-                    timeout=0,
-                    progress=False,
-                    close_button="✖",
-                )
-                return target_path
-            # 如果超过一个有效文件夹名
-            elif len(according_folder_name) > 1:
-                ui.notify(
-                    f"概述项{according_title}有效配置不唯一，链接无效!",
-                    type="warning",
-                    position="center",
-                    timeout=0,
-                    progress=False,
-                    close_button="✖",
-                )
-                return target_path
-            # 有且仅有一个有效文件夹配置
-            else:
-                # 查找这个文件夹
-                search_target = according_folder_name[0].split("_")[0]
-                print(f"目标文件夹：{search_target}")
-                folder_according_li = await find_dirs_by_name_os_walk(
-                    f"{str(self.upload_path)}\\{search_target}", according_folder_name[0]
-                )
-                # 文件夹不存在
-                if not folder_according_li:
+                if overview_state_show_judge(self.role):
                     ui.notify(
-                        f"{str(self.upload_path)}\n不存在目录{according_folder_name[0]}，链接无效!",
-                        type="negative",
-                        position="center",
-                        timeout=0,
-                        progress=False,
-                        close_button="✖",
-                    )
-                    return target_path
-                elif len(folder_according_li) > 1:
-                    path_str = ""
-                    for path in folder_according_li:
-                        path_str = f"{path_str}\n{str(path)}"
-                    ui.notify(
-                        f"{according_title}概述项配置的文件夹存在多个:{path_str}\n链接无效!",
+                        f"概述项{according_title}无有效配置，链接无效!",
                         type="warning",
                         position="center",
                         timeout=0,
                         progress=False,
                         close_button="✖",
                     )
+                return target_path
+            # 如果超过一个有效文件夹名
+            elif len(according_folder_name) > 1:
+                if overview_state_show_judge(self.role):
+                    ui.notify(
+                        f"概述项{according_title}有效配置不唯一，链接无效!",
+                        type="warning",
+                        position="center",
+                        timeout=0,
+                        progress=False,
+                        close_button="✖",
+                    )
+                return target_path
+            # 有且仅有一个有效文件夹配置
+            else:
+                # 查找这个文件夹
+                search_target = according_folder_name[0].split("_")[0]
+                # print(f"目标文件夹：{search_target}")
+                folder_according_li = await find_dirs_by_name_os_walk(
+                    f"{str(self.upload_path)}\\{search_target}", according_folder_name[0]
+                )
+                # 文件夹不存在
+                if not folder_according_li:
+                    if overview_state_show_judge(self.role):
+                        ui.notify(
+                            f"{str(self.upload_path)}\n不存在目录{according_folder_name[0]}，链接无效!",
+                            type="negative",
+                            position="center",
+                            timeout=0,
+                            progress=False,
+                            close_button="✖",
+                        )
+                    return target_path
+                elif len(folder_according_li) > 1:
+                    if overview_state_show_judge(self.role):
+                        path_str = ""
+                        for path in folder_according_li:
+                            path_str = f"{path_str}\n{str(path)}"
+                        ui.notify(
+                            f"{according_title}概述项配置的文件夹存在多个:{path_str}\n链接无效!",
+                            type="warning",
+                            position="center",
+                            timeout=0,
+                            progress=False,
+                            close_button="✖",
+                        )
                     return target_path
                 # 有且存在唯一一个依赖文件夹
                 else:
@@ -702,7 +707,7 @@ class InteractiveButton:
             # 就放在顶层文件夹
             else:
                 target_path = str(self.upload_path)
-        print(f"结束查找目标文件夹{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        # print(f"结束查找目标文件夹{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         return target_path
 
     # 当用户点击“添加”按钮时，将文本数据添加到共享存储中
@@ -812,20 +817,11 @@ class InteractiveButton:
                         progress=True,
                         close_button="✖",
                     )
-        # # 路径不存在或不完整，或不是文件夹路径
-        # else:
-        #     ui.notify(
-        #         f"文件存放路径：\n{target_path + '不存在' if target_path else conclusion} \n无法提交!",
-        #         type="warning",
-        #         position="center",
-        #         timeout=0,
-        #         progress=False,
-        #         close_button="✖",
-        #     )
-        #     return
+        # 隐藏漏斗
+        ui_spinner.set_visibility(False)
 
     # 当用户点击“添加”按钮时，将文本数据添加到共享存储中
-    async def _add_text_chip_data(self):
+    async def _add_text_chip_data(self, ui_spinner):
         text = self.chip_label.value
         notes = self.chip_notes.value
         if not text:
@@ -858,6 +854,8 @@ class InteractiveButton:
                 close_button="✖",
             )
         else:
+            # 显示漏斗
+            ui_spinner.set_visibility(True)
             # 准备要存储的 chip 数据
             chip_id = str(uuid.uuid4())
             req_max_ver = app.storage.general["project_req_max_ver"][self.project]
@@ -890,6 +888,8 @@ class InteractiveButton:
             # 清空文本框并关闭对话框
             self.chip_label.value = ""
             self.chip_notes.value = ""
+            # 隐藏漏斗
+            ui_spinner.set_visibility(False)
             self.chip_dialog.close()
             ui.notify(
                 "内容已添加。",
@@ -1486,8 +1486,8 @@ class InteractiveButton:
                             ),
                         ),
                     )
-            with ui.row().classes("w-full justify-end"):
-                ui_spinner.move()
+            with ui.row().classes("w-full justify-end items-center") as row:
+                ui_spinner.move(row, 1)
                 ui.label("注意以上改动是即时生效的").classes("text-lg font-bold")
                 # 关闭时，会以重新检测到的最高版本激活状态来更新chip相关参数，且是并发综合处理结果
                 # 甚至多了新的版本，但chip最终都以最高版本激活状态来正确显示
@@ -1591,25 +1591,27 @@ class InteractiveButton:
                 if target_path and Path(target_path).is_dir():
                     files_li = find_files_pathlib(target_path, chip_text)
                     if not files_li:
-                        ui.notify(
-                            f"引用文件不存在该路径下：\n{target_path}",
-                            type="warning",
-                            position="center",
-                            timeout=0,
-                            progress=False,
-                            multi_line=True,
-                            close_button="✖",
-                        )
+                        if overview_state_show_judge(self.role):
+                            ui.notify(
+                                f"引用文件不存在该路径下：\n{target_path}",
+                                type="warning",
+                                position="center",
+                                timeout=0,
+                                progress=False,
+                                multi_line=True,
+                                close_button="✖",
+                            )
                     elif len(files_li) > 1:
-                        ui.notify(
-                            f"引用文件在该路径下：\n{target_path}\n存在多个同名文件（子文件夹里存在）",
-                            type="warning",
-                            position="center",
-                            timeout=0,
-                            progress=False,
-                            multi_line=True,
-                            close_button="✖",
-                        )
+                        if overview_state_show_judge(self.role):
+                            ui.notify(
+                                f"引用文件在该路径下：\n{target_path}\n存在多个同名文件（子文件夹里存在）",
+                                type="warning",
+                                position="center",
+                                timeout=0,
+                                progress=False,
+                                multi_line=True,
+                                close_button="✖",
+                            )
                     else:
                         # 以后改了文件夹配置，chip不会失效
                         filepath = str(files_li[0])
@@ -1789,8 +1791,10 @@ class InteractiveButton:
                 .props("outlined")
                 .classes("w-full")
             )
-            with ui.row().classes("w-full justify-end"):
-                ui.button("添加", on_click=self._add_text_chip_data)
+            with ui.row().classes("w-full justify-end items-center"):
+                ui_spinner = ui.spinner(type="hourglass", size="md", color="amber-8", thickness=8.0)
+                ui_spinner.set_visibility(False)
+                ui.button("添加", on_click=lambda: self._add_text_chip_data(ui_spinner))
         self.chip_dialog.open()
 
     # 创建用于搜寻文件类型chip的概述内容与注释的对话框
@@ -1812,7 +1816,7 @@ class InteractiveButton:
                 .props("outlined")
                 .classes("w-full")
             )
-            with ui.row().classes("w-full justify-end"):
+            with ui.row().classes("w-full justify-end items-center"):
                 ui_spinner = ui.spinner(type="hourglass", size="md", color="amber-8", thickness=8.0)
                 ui_spinner.set_visibility(False)
                 ui.button("添加", on_click=lambda: self._add_search_chip_data(ui_spinner))

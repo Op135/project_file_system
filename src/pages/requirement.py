@@ -2188,8 +2188,6 @@ async def requirement_page(type="", json_path="", project_name=""):
                     with ui.column().classes("w-full overflow-y-auto p-1 gap-4"):
                         # === 步骤 1: 预处理 - 收集所有条目并获取其排序/分组信息 ===
                         version_keys = sorted([k for k in json_data if k.replace(".", "", 1).isdigit()], key=float)
-                        # 将项目需求的最高版本号更新记录到服务器级储存里，供后续使用
-                        app.storage.general["project_req_max_ver"][project_name] = max(version_keys)
                         # 储存最新版元素
                         ui_expansion = {}
                         ui_elements_latest = {}

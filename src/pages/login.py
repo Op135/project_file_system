@@ -79,7 +79,7 @@ def login_page():
                     {
                         "current_user": input_username,
                         "is_admin": check_admin_role(input_username),
-                        "current_role": user_info.get("role", "user"),
+                        "current_role": user_info.get("role", "anonymous"),
                     }
                 )
                 # 跳转到主界面

@@ -45,7 +45,7 @@ class UserService:
         users = self.load_users()
         user_info = users.get(username, {})
         # 转换 pandas NaN 为 None
-        # {"password": "xxx", "role": "user"}
+        # {"password": "xxx", "role": "匿名用户"}
         return {k: v if pd.notna(v) else None for k, v in user_info.items()}
 
     # 加载包含用户详情的数据
@@ -62,7 +62,7 @@ class UserService:
             return {
                 str(row["用户名"]): {  # 显式转换为Python字符串
                     "password": str(row["密码"]) if pd.notna(row["密码"]) else None,
-                    "role": str(row["角色"]) if pd.notna(row["角色"]) else "user",
+                    "role": str(row["角色"]) if pd.notna(row["角色"]) else "匿名用户",
                 }
                 # 遍历 DataFrame 的每一行，返回一个 (index, row) 的元组，其中：
                 # index 是行索引（在这个代码中没有使用，因此用 _ 占位

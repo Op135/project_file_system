@@ -20,6 +20,26 @@ from . import db_storage
 from .config import AVATAR_DIR, AVATAR_URL_DIR, BASE_DIR, IMG_DIR, IMG_URL_DIR, OVER_DIR, REQ_DIR
 
 
+# 判断传入的概述负责角色是否与当前登录的角色匹配
+def overview_state_show_judge(charge_role) -> bool:
+    # # 以下登录角色也要对所有概述状态进行了解
+    if app.storage.user.get("current_role", "匿名用户") in ["研发经理", "研发助理"]:
+        return True
+    # UI负责部分相当于软件负责
+    elif charge_role == "UI":
+        # 以下登录角色也要对UI概述状态进行了解
+        if app.storage.user.get("current_role", "匿名用户") in ["研发电子主管"]:
+            return True
+        else:
+            return "软件" in app.storage.user.get("current_role", "匿名用户")
+    else:
+        # 以下登录角色也要对硬件、软件的概述状态进行了解
+        if charge_role in ["硬件", "软件"] and app.storage.user.get("current_role", "匿名用户") in ["研发电子主管"]:
+            return True
+        else:
+            return charge_role in app.storage.user.get("current_role", "匿名用户")
+
+
 # 分析传入文件路径，文件的文件类型和编码方式
 def get_file_type_by_extension(file_path):
     """
@@ -67,7 +87,7 @@ async def find_dirs_by_name_os_walk(start_dir: str, dir_name: str) -> list[Path]
     """
     使用 os.walk 高效查找所有匹配名称的 *目录*。
     """
-    print(f"内层开始查找目标文件夹{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    # print(f"内层开始查找目标文件夹{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     found_dirs = []
     start_dir = str(start_dir)  # os.walk 倾向于使用字符串
 
@@ -83,7 +103,7 @@ async def find_dirs_by_name_os_walk(start_dir: str, dir_name: str) -> list[Path]
             # 找到了，构建它的完整路径
             # 注意：os.walk 默认使用字符串，我们将其转换回 Path 对象
             found_dirs.append(Path(dirpath) / dir_name)
-    print(f"内层结束查找目标文件夹{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    # print(f"内层结束查找目标文件夹{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     return found_dirs
 
 

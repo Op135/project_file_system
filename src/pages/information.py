@@ -78,10 +78,10 @@ def information_page():
 
                             # 如果最大版本值为True，则新版本都设置为None
                             if activ_max_bool:
-                                chip_data["select_activ_dic"][f"{key}.0"] = True
+                                chip_data["select_activ_dic"][f"{key}.0"] = None
                             # 如果最大版本值为False或者None，则新版本都设置为False
                             else:
-                                chip_data["select_activ_dic"][f"{key}.0"] = None
+                                chip_data["select_activ_dic"][f"{key}.0"] = False
                     # 衍生项目且复制了2.0及以上版本的概述内容
                     # 最高版本的激活状态要改成None，让其黄色显示
                     else:
@@ -107,6 +107,8 @@ def information_page():
 
     async def set_review_pass(button_group, p_name, v):
         app.storage.general["wait_review"][p_name][v]["state"] = "已审"
+        # 将项目需求的最高版本号更新记录到服务器级储存里，供后续使用
+        app.storage.general["project_req_max_ver"][p_name] = v
         # 需求评审前，如果是衍生为新项目，概述已经复制，但待到需求评审通过了，才更新概述chip激活状态
         await set_overview_active_state(p_name, v)
         # 删除评审时生成的临时概述整理文件
