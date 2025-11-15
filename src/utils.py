@@ -799,6 +799,71 @@ def get_file_hash(file_path, algorithm="md5"):
     return hash_obj.hexdigest()
 
 
+def move_file_with_timestamp_pathlib(source_file_path: str, destination_dir: str) -> str:
+    """
+    使用 pathlib 将文件移动到新目录，并在文件名（扩展名前）附加时间戳。
+    """
+    try:
+        source_path = Path(source_file_path)
+        dest_dir = Path(destination_dir)
+
+        # 1. 检查源文件
+        if not source_path.is_file():
+            raise FileNotFoundError(f"错误：源文件未找到: {source_path}")
+
+        # 2. 确保目标目录存在
+        dest_dir.mkdir(parents=True, exist_ok=True)
+
+        # 3. 生成时间戳
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+        # 4. 获取文件名部分
+        base_name = source_path.stem  # "my_data_file"
+        extension = source_path.suffix  # ".log"
+
+        # 5. 创建新文件名
+        new_filename = f"{base_name}_{timestamp}{extension}"
+
+        # 6. 创建完整目标路径
+        new_destination_path = dest_dir / new_filename
+
+        # 7. 执行移动（重命名）
+        # .replace() 在功能上等同于 os.rename() 或 shutil.move()
+        source_path.replace(new_destination_path)
+
+        ui.notify(
+            f"文件成功移动到: {new_destination_path}",
+            type="positive",
+            position="bottom",
+            timeout=2000,
+            progress=True,
+            close_button="✖",
+        )
+        return str(new_destination_path)  # 以字符串形式返回路径
+
+    except FileNotFoundError as e:
+        ui.notify(
+            f"错误: {e}",
+            type="warning",
+            position="bottom",
+            timeout=2000,
+            progress=True,
+            close_button="✖",
+        )
+        raise
+    except Exception as e:
+        ui.notify(
+            f"移动文件时发生未知错误: {e}",
+            type="warning",
+            position="bottom",
+            timeout=2000,
+            progress=True,
+            close_button="✖",
+        )
+        raise
+
+
+# 删除指定路径的文件
 def delete_file(file_path):
     try:
         # 2. 尝试删除文件

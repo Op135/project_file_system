@@ -38,6 +38,7 @@ REQ_UPLOADS_FILE_TYPE = {
 # 文件夹路径设定
 BASE_DIR = Path(__file__).parent.parent  # 项目根目录
 IMG_DIR = f"{BASE_DIR}/img"
+REQ_REMOVE_DIR = f"{BASE_DIR}/req/remove"
 UPLOADS_DIR = f"{BASE_DIR}/uploads"
 SUBMIT_FILES_DIR = Path(f"{BASE_DIR}/files")
 REQ_DIR = f"{BASE_DIR}/req"

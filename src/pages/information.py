@@ -7,12 +7,13 @@ from datetime import datetime
 from nicegui import app, ui
 
 from .. import db_storage
-from ..config import BASE_DIR, IMG_DIR, OVER_DIR, PRESET_AVATARS, REQ_DIR
+from ..config import BASE_DIR, IMG_DIR, OVER_DIR, PRESET_AVATARS, REQ_DIR, REQ_REMOVE_DIR
 from ..utils import (
     delete_file,
     get_cache_busted_path,
     get_overviow_page,
     logout,
+    move_file_with_timestamp_pathlib,
     project_summary_update,
     requirement_version_tidy,
     set_project_custom_labels,
@@ -239,23 +240,30 @@ def information_page():
             )
             get_review_button(button_group, p_name, v)
 
-    def del_requirement_file(button_group, p_name, v):
-        delete_file(f"{REQ_DIR}/{p_name}_需求配置_V{v}.json")
+    def remove_requirement_file(button_group, p_name, v):
+        # 将需求配置文件移除到指定文件夹
+        move_file_with_timestamp_pathlib(f"{REQ_DIR}/{p_name}_需求配置_V{v}.json", REQ_REMOVE_DIR)
+        # 删除需求配置文件
+        # delete_file(f"{REQ_DIR}/{p_name}_需求配置_V{v}.json")
+        # 删除临时概述整理文件
         delete_file(f"{OVER_DIR}/{p_name}_概述整理_temp.json")
+        # 删除需求待审核记录条目
         app.storage.general["wait_review"][p_name].pop(v, None)
+        # 删除按钮组件
         button_group.delete()
+        # 关闭弹窗
         dialog.close()
 
-    def del_requirement_dialog(button_group, p_name, v):
+    def remove_requirement_dialog(button_group, p_name, v):
         dialog.clear()
         with dialog, ui.card():
             with ui.column():
-                ui.label(f"确认删除{p_name}_需求配置_V{v}.json ？").classes("text-lg text-red-500")
+                ui.label(f"确认移除{p_name}_需求配置_V{v}.json ？").classes("text-lg text-red-500")
                 with ui.row().classes("w-full justify-end"):
                     ui.button(
                         "确认",
                         color="red-5",
-                        on_click=lambda bg=button_group, pro_name=p_name, ver=v: del_requirement_file(
+                        on_click=lambda bg=button_group, pro_name=p_name, ver=v: remove_requirement_file(
                             bg, pro_name, ver
                         ),
                     )
@@ -296,9 +304,9 @@ def information_page():
                         ""
                     )
                     ui.button(
-                        "删除",
+                        "移除",
                         color="red-8",
-                        on_click=lambda bg=button_group, pn=project_name, v=ver: del_requirement_dialog(bg, pn, v),
+                        on_click=lambda bg=button_group, pn=project_name, v=ver: remove_requirement_dialog(bg, pn, v),
                     ).props("")
                 else:
                     ui.button(

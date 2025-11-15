@@ -1060,8 +1060,8 @@ async def requirement_page(type="", json_path="", project_name=""):
         if index == len(app.storage.client["buttons_dic"].keys()):
             ui.notify(
                 "这是最后一个问题，检查所有问题都选填后即可提交需求。",
-                type="info",
-                position="bottom",
+                type="positive",
+                position="center",
                 timeout=3000,
                 progress=True,
                 close_button="✖",
