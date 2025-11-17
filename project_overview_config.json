@@ -28,11 +28,11 @@
     "guide_beam": [
         "guide_beam"
     ],
-    "drive_pcb": [
+    "pcb": [
         "drive_pcb"
     ],
     "electronic_bom": [
-        "electronic_bom"
+        "drive_electronic_bom"
     ],
     "software_research": [
         "software_research"

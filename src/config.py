@@ -8,6 +8,9 @@ from nicegui import app, events, ui
 # 在生产环境中，必须设置环境变量，否则会使用不安全的默认值。
 ST = os.environ.get("STORAGE_SECRET", "this_is_not_a_secret_for_development_only")
 
+SVN_USERNAME = "temp_t1"
+SVN_PASSWORD = "123456"
+
 # 概述可上传文件类型，除了图片，图片都可以
 OVER_UPLOADS_FILE_TYPE = {
     ".pdf",
@@ -40,7 +43,7 @@ BASE_DIR = Path(__file__).parent.parent  # 项目根目录
 IMG_DIR = f"{BASE_DIR}/img"
 REQ_REMOVE_DIR = f"{BASE_DIR}/req/remove"
 UPLOADS_DIR = f"{BASE_DIR}/uploads"
-SUBMIT_FILES_DIR = Path(f"{BASE_DIR}/files")
+SUBMIT_FILES_DIR = f"{BASE_DIR}/files"
 REQ_DIR = f"{BASE_DIR}/req"
 OVER_DIR = f"{BASE_DIR}/over"
 AVATAR_DIR = f"{UPLOADS_DIR}/avatars"
@@ -57,6 +60,10 @@ UPLOAD_URL_DIR = "/uploads"
 FILES_URL_DIR = "/files"
 AVATAR_URL_DIR = "/uploads/avatars"
 IMG_URL_DIR = "/img"
+
+# 创建一个全局的、内存中的缓存
+# 用它来临时存储 PDF 字节，完全绕过 JSON 序列化
+PDF_PREVIEW_CACHE = {}
 
 # 默认头像路径
 PRESET_AVATARS = [

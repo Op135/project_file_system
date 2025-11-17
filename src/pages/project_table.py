@@ -241,7 +241,7 @@ def project_table_page():
                                             if pro_key in [
                                                 "light_source",
                                                 "target_distance",
-                                                "drive_pcb",
+                                                "pcb",
                                                 "electronic_bom",
                                                 "software_research",
                                                 "software_mass",
@@ -408,8 +408,8 @@ def project_table_page():
                 "guide_beam",  # 导光束要求列
                 "adapter_options",  # 转接座选型列
                 "customer",  # 客户简称列
-                "drive_pcb",  # PCB规格
-                "electronic_bom",  # 电子BOM
+                "pcb",  # 驱动PCB规格
+                "electronic_bom",  # 驱动电子BOM
                 "software_research",  # 研发版软件
                 "software_mass",  # 量产版软件
             ],
@@ -456,7 +456,7 @@ def project_table_page():
         {"field": "output_mode", "headerName": "输出模式", "width": 100, "filter": "agTextColumnFilter"},
         {"field": "guide_beam", "headerName": "导光束要求", "width": 100},
         {
-            "field": "drive_pcb",
+            "field": "pcb",
             "headerName": "PCB规格",
             "width": 180,
             "autoHeight": True,

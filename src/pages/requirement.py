@@ -2596,10 +2596,10 @@ async def requirement_page(type="", json_path="", project_name=""):
                                                 processing_type=data["processing_type"],
                                                 permission=data["permission"],
                                                 temp_bool=temp_bool,
-                                                upload_path=Path(data["upload_path"]),
+                                                upload_path=data["upload_path"],
                                                 # delete_bool=False,
                                             )
-                                        elif data["processing_type"] in ["search"]:
+                                        elif data["processing_type"] in ["search", "svn"]:
                                             InteractiveButton(
                                                 project=project_name,
                                                 role=role,
@@ -2608,7 +2608,8 @@ async def requirement_page(type="", json_path="", project_name=""):
                                                 processing_type=data["processing_type"],
                                                 permission=data["permission"],
                                                 temp_bool=temp_bool,
-                                                upload_path=Path(data["upload_path"]),
+                                                upload_path=data["upload_path"],
+                                                search_scope_regular=data["search_scope_regular"],
                                                 search_folder_according=data["search_folder_according"],
                                                 search_hierarchy=data["search_hierarchy"],
                                                 # delete_bool=False,

@@ -543,28 +543,6 @@
             }
         },
         {
-            "label": "drive_complete_diagram",
-            "title": "PCBA完整3D图（stp）",
-            "processing_type": "file",
-            "file_name_regular": [],
-            "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）",
-            "permission": {
-                "read_role": [
-                    "boss",
-                    "销售总监",
-                    "研发助理",
-                    "研发电子主管",
-                    "研发硬件",
-                    "研发光学"
-                ],
-                "edit_role": [
-                    "admin",
-                    "研发经理",
-                    "研发结构"
-                ]
-            }
-        },
-        {
             "label": "product_output_position",
             "title": "产品出光口位置图",
             "processing_type": "image",
@@ -1238,6 +1216,850 @@
             }
         },
         {
+            "label": "drive_pcb",
+            "title": "驱动PCB裸板规格",
+            "processing_type": "text",
+            "dialog_placeholder": "如：RFFM-1121_DP24A_V02",
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售总监",
+                    "销售",
+                    "客服主管",
+                    "客服",
+                    "研发助理",
+                    "研发结构",
+                    "研发软件",
+                    "研发光学",
+                    "研发样品",
+                    "工程",
+                    "质量"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发硬件",
+                    "研发电子主管"
+                ]
+            }
+        },
+        {
+            "label": "drive_pcb_principle",
+            "title": "驱动PCB原理图（pdf）",
+            "processing_type": "search",
+            "file_name_regular": [],
+            "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
+            "search_scope_regular": "^([^_]+)",
+            "search_folder_according": "drive_pcb",
+            "search_hierarchy": [
+                "Files"
+            ],
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售总监",
+                    "研发助理",
+                    "研发软件",
+                    "研发样品",
+                    "工程"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发硬件",
+                    "研发电子主管"
+                ]
+            }
+        },
+        {
+            "label": "drive_pcb_silkscreen",
+            "title": "驱动PCB丝印图（pdf）",
+            "processing_type": "search",
+            "file_name_regular": [],
+            "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
+            "search_scope_regular": "^([^_]+)",
+            "search_folder_according": "drive_pcb",
+            "search_hierarchy": [
+                "Files"
+            ],
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售总监",
+                    "研发助理",
+                    "研发软件",
+                    "研发样品",
+                    "工程",
+                    "采购"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发硬件",
+                    "研发电子主管"
+                ]
+            }
+        },
+        {
+            "label": "drive_pcb_process",
+            "title": "驱动PCB加工工艺说明（xlsx）",
+            "processing_type": "search",
+            "file_name_regular": [],
+            "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
+            "search_scope_regular": "^([^_]+)",
+            "search_folder_according": "drive_pcb",
+            "search_hierarchy": [],
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售总监",
+                    "研发助理",
+                    "研发软件",
+                    "研发样品",
+                    "工程",
+                    "采购"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发硬件",
+                    "研发电子主管"
+                ]
+            }
+        },
+        {
+            "label": "drive_pcb_making",
+            "title": "驱动PCB制板文件压缩包",
+            "processing_type": "search",
+            "file_name_regular": [],
+            "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
+            "search_scope_regular": "^([^_]+)",
+            "search_folder_according": "drive_pcb",
+            "search_hierarchy": [],
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "研发助理",
+                    "采购"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发硬件",
+                    "研发电子主管"
+                ]
+            }
+        },
+        {
+            "label": "drive_complete_diagram",
+            "title": "驱动PCBA完整3D图（stp）",
+            "processing_type": "search",
+            "file_name_regular": [],
+            "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
+            "search_scope_regular": "^([^_]+)",
+            "search_folder_according": "drive_pcb",
+            "search_hierarchy": [
+                "Files"
+            ],
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售总监",
+                    "研发助理",
+                    "研发结构",
+                    "研发光学"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发硬件",
+                    "研发电子主管"
+                ]
+            }
+        },
+        {
+            "label": "drive_electronic_bom",
+            "title": "驱动板电子BOM（xlsx）",
+            "processing_type": "search",
+            "file_name_regular": [],
+            "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
+            "search_scope_regular": "^([^_]+)",
+            "search_folder_according": "drive_pcb",
+            "search_hierarchy": [
+                "Files"
+            ],
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售总监",
+                    "销售",
+                    "客服主管",
+                    "客服",
+                    "研发助理",
+                    "研发结构",
+                    "研发软件",
+                    "研发光学",
+                    "研发样品",
+                    "工程",
+                    "质量"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发硬件",
+                    "研发电子主管"
+                ]
+            }
+        },
+        {
+            "label": "control_pcb",
+            "title": "控制PCB裸板规格",
+            "processing_type": "text",
+            "dialog_placeholder": "如：RFFM-1121_CP24A_V02",
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售总监",
+                    "销售",
+                    "客服主管",
+                    "客服",
+                    "研发助理",
+                    "研发结构",
+                    "研发软件",
+                    "研发光学",
+                    "研发样品",
+                    "工程",
+                    "质量"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发硬件",
+                    "研发电子主管"
+                ]
+            }
+        },
+        {
+            "label": "control_pcb_principle",
+            "title": "控制PCB原理图（pdf）",
+            "processing_type": "search",
+            "file_name_regular": [],
+            "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
+            "search_scope_regular": "^([^_]+)",
+            "search_folder_according": "drive_pcb",
+            "search_hierarchy": [
+                "Files"
+            ],
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售总监",
+                    "研发助理",
+                    "研发软件",
+                    "研发样品",
+                    "工程"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发硬件",
+                    "研发电子主管"
+                ]
+            }
+        },
+        {
+            "label": "control_pcb_silkscreen",
+            "title": "控制PCB丝印图（pdf）",
+            "processing_type": "search",
+            "file_name_regular": [],
+            "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
+            "search_scope_regular": "^([^_]+)",
+            "search_folder_according": "drive_pcb",
+            "search_hierarchy": [
+                "Files"
+            ],
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售总监",
+                    "研发助理",
+                    "研发软件",
+                    "研发样品",
+                    "工程",
+                    "采购"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发硬件",
+                    "研发电子主管"
+                ]
+            }
+        },
+        {
+            "label": "control_pcb_process",
+            "title": "控制PCB加工工艺说明（xlsx）",
+            "processing_type": "search",
+            "file_name_regular": [],
+            "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
+            "search_scope_regular": "^([^_]+)",
+            "search_folder_according": "drive_pcb",
+            "search_hierarchy": [],
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售总监",
+                    "研发助理",
+                    "研发软件",
+                    "研发样品",
+                    "工程",
+                    "采购"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发硬件",
+                    "研发电子主管"
+                ]
+            }
+        },
+        {
+            "label": "control_pcb_making",
+            "title": "控制PCB制板文件压缩包",
+            "processing_type": "search",
+            "file_name_regular": [],
+            "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
+            "search_scope_regular": "^([^_]+)",
+            "search_folder_according": "drive_pcb",
+            "search_hierarchy": [],
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "研发助理",
+                    "采购"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发硬件",
+                    "研发电子主管"
+                ]
+            }
+        },
+        {
+            "label": "control_complete_diagram",
+            "title": "控制PCBA完整3D图（stp）",
+            "processing_type": "search",
+            "file_name_regular": [],
+            "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
+            "search_scope_regular": "^([^_]+)",
+            "search_folder_according": "drive_pcb",
+            "search_hierarchy": [
+                "Files"
+            ],
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售总监",
+                    "研发助理",
+                    "研发结构",
+                    "研发光学"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发硬件",
+                    "研发电子主管"
+                ]
+            }
+        },
+        {
+            "label": "control_electronic_bom",
+            "title": "控制板电子BOM（xlsx）",
+            "processing_type": "search",
+            "file_name_regular": [],
+            "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
+            "search_scope_regular": "^([^_]+)",
+            "search_folder_according": "drive_pcb",
+            "search_hierarchy": [
+                "Files"
+            ],
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售总监",
+                    "销售",
+                    "客服主管",
+                    "客服",
+                    "研发助理",
+                    "研发结构",
+                    "研发软件",
+                    "研发光学",
+                    "研发样品",
+                    "工程",
+                    "质量"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发硬件",
+                    "研发电子主管"
+                ]
+            }
+        },
+        {
+            "label": "transfer_pcb",
+            "title": "转接PCB裸板规格",
+            "processing_type": "text",
+            "dialog_placeholder": "如：RFFM-1121_OP24A_V02",
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售总监",
+                    "销售",
+                    "客服主管",
+                    "客服",
+                    "研发助理",
+                    "研发结构",
+                    "研发软件",
+                    "研发光学",
+                    "研发样品",
+                    "工程",
+                    "质量"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发硬件",
+                    "研发电子主管"
+                ]
+            }
+        },
+        {
+            "label": "transfer_pcb_principle",
+            "title": "转接PCB原理图（pdf）",
+            "processing_type": "search",
+            "file_name_regular": [],
+            "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
+            "search_scope_regular": "^([^_]+)",
+            "search_folder_according": "drive_pcb",
+            "search_hierarchy": [
+                "Files"
+            ],
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售总监",
+                    "研发助理",
+                    "研发软件",
+                    "研发样品",
+                    "工程"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发硬件",
+                    "研发电子主管"
+                ]
+            }
+        },
+        {
+            "label": "transfer_pcb_silkscreen",
+            "title": "转接PCB丝印图（pdf）",
+            "processing_type": "search",
+            "file_name_regular": [],
+            "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
+            "search_scope_regular": "^([^_]+)",
+            "search_folder_according": "drive_pcb",
+            "search_hierarchy": [
+                "Files"
+            ],
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售总监",
+                    "研发助理",
+                    "研发软件",
+                    "研发样品",
+                    "工程",
+                    "采购"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发硬件",
+                    "研发电子主管"
+                ]
+            }
+        },
+        {
+            "label": "transfer_pcb_process",
+            "title": "转接PCB加工工艺说明（xlsx）",
+            "processing_type": "search",
+            "file_name_regular": [],
+            "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
+            "search_scope_regular": "^([^_]+)",
+            "search_folder_according": "drive_pcb",
+            "search_hierarchy": [],
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售总监",
+                    "研发助理",
+                    "研发软件",
+                    "研发样品",
+                    "工程",
+                    "采购"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发硬件",
+                    "研发电子主管"
+                ]
+            }
+        },
+        {
+            "label": "transfer_pcb_making",
+            "title": "转接PCB制板文件压缩包",
+            "processing_type": "search",
+            "file_name_regular": [],
+            "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
+            "search_scope_regular": "^([^_]+)",
+            "search_folder_according": "drive_pcb",
+            "search_hierarchy": [],
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "研发助理",
+                    "采购"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发硬件",
+                    "研发电子主管"
+                ]
+            }
+        },
+        {
+            "label": "transfer_complete_diagram",
+            "title": "转接PCBA完整3D图（stp）",
+            "processing_type": "search",
+            "file_name_regular": [],
+            "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
+            "search_scope_regular": "^([^_]+)",
+            "search_folder_according": "drive_pcb",
+            "search_hierarchy": [
+                "Files"
+            ],
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售总监",
+                    "研发助理",
+                    "研发结构",
+                    "研发光学"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发硬件",
+                    "研发电子主管"
+                ]
+            }
+        },
+        {
+            "label": "transfer_electronic_bom",
+            "title": "转接板电子BOM（xlsx）",
+            "processing_type": "search",
+            "file_name_regular": [],
+            "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
+            "search_scope_regular": "^([^_]+)",
+            "search_folder_according": "drive_pcb",
+            "search_hierarchy": [
+                "Files"
+            ],
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售总监",
+                    "销售",
+                    "客服主管",
+                    "客服",
+                    "研发助理",
+                    "研发结构",
+                    "研发软件",
+                    "研发光学",
+                    "研发样品",
+                    "工程",
+                    "质量"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发硬件",
+                    "研发电子主管"
+                ]
+            }
+        },
+        {
+            "label": "light_pcb",
+            "title": "光源PCB裸板规格",
+            "processing_type": "text",
+            "dialog_placeholder": "如：RFFM-1121_LP24A_V02",
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售总监",
+                    "销售",
+                    "客服主管",
+                    "客服",
+                    "研发助理",
+                    "研发结构",
+                    "研发软件",
+                    "研发光学",
+                    "研发样品",
+                    "工程",
+                    "质量"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发硬件",
+                    "研发电子主管"
+                ]
+            }
+        },
+        {
+            "label": "light_pcb_principle",
+            "title": "光源PCB原理图（pdf）",
+            "processing_type": "search",
+            "file_name_regular": [],
+            "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
+            "search_scope_regular": "^([^_]+)",
+            "search_folder_according": "drive_pcb",
+            "search_hierarchy": [
+                "Files"
+            ],
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售总监",
+                    "研发助理",
+                    "研发软件",
+                    "研发样品",
+                    "工程"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发硬件",
+                    "研发电子主管"
+                ]
+            }
+        },
+        {
+            "label": "light_pcb_silkscreen",
+            "title": "光源PCB丝印图（pdf）",
+            "processing_type": "search",
+            "file_name_regular": [],
+            "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
+            "search_scope_regular": "^([^_]+)",
+            "search_folder_according": "drive_pcb",
+            "search_hierarchy": [
+                "Files"
+            ],
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售总监",
+                    "研发助理",
+                    "研发软件",
+                    "研发样品",
+                    "工程",
+                    "采购"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发硬件",
+                    "研发电子主管"
+                ]
+            }
+        },
+        {
+            "label": "light_pcb_process",
+            "title": "光源PCB加工工艺说明（xlsx）",
+            "processing_type": "search",
+            "file_name_regular": [],
+            "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
+            "search_scope_regular": "^([^_]+)",
+            "search_folder_according": "drive_pcb",
+            "search_hierarchy": [],
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售总监",
+                    "研发助理",
+                    "研发软件",
+                    "研发样品",
+                    "工程",
+                    "采购"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发硬件",
+                    "研发电子主管"
+                ]
+            }
+        },
+        {
+            "label": "light_pcb_making",
+            "title": "光源PCB制板文件压缩包",
+            "processing_type": "search",
+            "file_name_regular": [],
+            "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
+            "search_scope_regular": "^([^_]+)",
+            "search_folder_according": "drive_pcb",
+            "search_hierarchy": [],
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "研发助理",
+                    "采购"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发硬件",
+                    "研发电子主管"
+                ]
+            }
+        },
+        {
+            "label": "light_complete_diagram",
+            "title": "光源PCBA完整3D图（stp）",
+            "processing_type": "search",
+            "file_name_regular": [],
+            "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
+            "search_scope_regular": "^([^_]+)",
+            "search_folder_according": "drive_pcb",
+            "search_hierarchy": [
+                "Files"
+            ],
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售总监",
+                    "研发助理",
+                    "研发结构",
+                    "研发光学"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发硬件",
+                    "研发电子主管"
+                ]
+            }
+        },
+        {
+            "label": "light_electronic_bom",
+            "title": "光源板电子BOM（xlsx）",
+            "processing_type": "search",
+            "file_name_regular": [],
+            "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
+            "search_scope_regular": "^([^_]+)",
+            "search_folder_according": "drive_pcb",
+            "search_hierarchy": [
+                "Files"
+            ],
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售总监",
+                    "销售",
+                    "客服主管",
+                    "客服",
+                    "研发助理",
+                    "研发结构",
+                    "研发软件",
+                    "研发光学",
+                    "研发样品",
+                    "工程",
+                    "质量"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发硬件",
+                    "研发电子主管"
+                ]
+            }
+        },
+        {
+            "label": "drive_manual",
+            "title": "硬件使用说明书",
+            "processing_type": "search",
+            "file_name_regular": [],
+            "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\2.输出——研发流程输出文档\\★可发客户的资料\\产品使用说明\\1.硬件使用说明及图纸",
+            "search_scope_regular": "^([^_]+)",
+            "search_folder_according": "drive_pcb",
+            "search_hierarchy": [],
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售总监",
+                    "销售",
+                    "客服主管",
+                    "客服",
+                    "研发助理",
+                    "研发软件",
+                    "研发光学",
+                    "研发样品",
+                    "工程",
+                    "质量"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发硬件",
+                    "研发电子主管"
+                ]
+            }
+        },
+        {
+            "label": "wiring_manual",
+            "title": "产品接线说明书",
+            "processing_type": "file",
+            "file_name_regular": [],
+            "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\2.输出——研发流程输出文档\\★可发客户的资料\\产品使用说明\\6.接线说明",
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售总监",
+                    "销售",
+                    "客服主管",
+                    "客服",
+                    "研发助理",
+                    "研发结构",
+                    "研发软件",
+                    "研发光学",
+                    "研发样品",
+                    "工程",
+                    "质量"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发硬件",
+                    "研发电子主管"
+                ]
+            }
+        },
+        {
             "label": "display_accessories",
             "title": "显示类配件",
             "processing_type": "text",
@@ -1322,232 +2144,6 @@
             }
         },
         {
-            "label": "drive_pcb",
-            "title": "PCB裸板规格",
-            "processing_type": "text",
-            "dialog_placeholder": "如：RFFM-1121_DP24A_V02",
-            "permission": {
-                "read_role": [
-                    "boss",
-                    "销售总监",
-                    "销售",
-                    "客服主管",
-                    "客服",
-                    "研发助理",
-                    "研发结构",
-                    "研发软件",
-                    "研发光学",
-                    "研发样品",
-                    "工程",
-                    "质量"
-                ],
-                "edit_role": [
-                    "admin",
-                    "研发经理",
-                    "研发硬件",
-                    "研发电子主管"
-                ]
-            }
-        },
-        {
-            "label": "electronic_bom",
-            "title": "电子BOM（xlsx）",
-            "processing_type": "search",
-            "file_name_regular": [],
-            "upload_path": "E:\\文档",
-            "search_folder_according": [
-                "drive_pcb",
-                "^([^_]+)"
-            ],
-            "search_hierarchy": [
-                "Files"
-            ],
-            "permission": {
-                "read_role": [
-                    "boss",
-                    "销售总监",
-                    "销售",
-                    "客服主管",
-                    "客服",
-                    "研发助理",
-                    "研发结构",
-                    "研发软件",
-                    "研发光学",
-                    "研发样品",
-                    "工程",
-                    "质量"
-                ],
-                "edit_role": [
-                    "admin",
-                    "研发经理",
-                    "研发硬件",
-                    "研发电子主管"
-                ]
-            }
-        },
-        {
-            "label": "pcb_principle",
-            "title": "PCB原理图（pdf）",
-            "processing_type": "search",
-            "file_name_regular": [],
-            "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
-            "search_folder_according": "drive_pcb",
-            "search_hierarchy": [
-                "Files"
-            ],
-            "permission": {
-                "read_role": [
-                    "boss",
-                    "销售总监",
-                    "研发助理",
-                    "研发软件",
-                    "研发样品",
-                    "工程"
-                ],
-                "edit_role": [
-                    "admin",
-                    "研发经理",
-                    "研发硬件",
-                    "研发电子主管"
-                ]
-            }
-        },
-        {
-            "label": "pcb_silkscreen",
-            "title": "PCB丝印图（pdf）",
-            "processing_type": "search",
-            "file_name_regular": [],
-            "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
-            "search_folder_according": "drive_pcb",
-            "search_hierarchy": [
-                "Files"
-            ],
-            "permission": {
-                "read_role": [
-                    "boss",
-                    "销售总监",
-                    "研发助理",
-                    "研发软件",
-                    "研发样品",
-                    "工程",
-                    "采购"
-                ],
-                "edit_role": [
-                    "admin",
-                    "研发经理",
-                    "研发硬件",
-                    "研发电子主管"
-                ]
-            }
-        },
-        {
-            "label": "pcb_process",
-            "title": "PCB加工工艺说明（xlsx）",
-            "processing_type": "search",
-            "file_name_regular": [],
-            "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
-            "search_folder_according": "drive_pcb",
-            "search_hierarchy": [],
-            "permission": {
-                "read_role": [
-                    "boss",
-                    "销售总监",
-                    "研发助理",
-                    "研发软件",
-                    "研发样品",
-                    "工程",
-                    "采购"
-                ],
-                "edit_role": [
-                    "admin",
-                    "研发经理",
-                    "研发硬件",
-                    "研发电子主管"
-                ]
-            }
-        },
-        {
-            "label": "pcb_making",
-            "title": "PCB制板文件压缩包",
-            "processing_type": "search",
-            "file_name_regular": [],
-            "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
-            "search_folder_according": "drive_pcb",
-            "search_hierarchy": [],
-            "permission": {
-                "read_role": [
-                    "boss",
-                    "研发助理",
-                    "采购"
-                ],
-                "edit_role": [
-                    "admin",
-                    "研发经理",
-                    "研发硬件",
-                    "研发电子主管"
-                ]
-            }
-        },
-        {
-            "label": "drive_manual",
-            "title": "硬件使用说明书",
-            "processing_type": "search",
-            "file_name_regular": [],
-            "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\2.输出——研发流程输出文档\\★可发客户的资料\\产品使用说明\\1.硬件使用说明及图纸",
-            "search_folder_according": "drive_pcb",
-            "search_hierarchy": [],
-            "permission": {
-                "read_role": [
-                    "boss",
-                    "销售总监",
-                    "销售",
-                    "客服主管",
-                    "客服",
-                    "研发助理",
-                    "研发软件",
-                    "研发光学",
-                    "研发样品",
-                    "工程",
-                    "质量"
-                ],
-                "edit_role": [
-                    "admin",
-                    "研发经理",
-                    "研发硬件",
-                    "研发电子主管"
-                ]
-            }
-        },
-        {
-            "label": "wiring_manual",
-            "title": "产品接线说明书",
-            "processing_type": "file",
-            "file_name_regular": [],
-            "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\2.输出——研发流程输出文档\\★可发客户的资料\\产品使用说明\\6.接线说明",
-            "permission": {
-                "read_role": [
-                    "boss",
-                    "销售总监",
-                    "销售",
-                    "客服主管",
-                    "客服",
-                    "研发助理",
-                    "研发结构",
-                    "研发软件",
-                    "研发光学",
-                    "研发样品",
-                    "工程",
-                    "质量"
-                ],
-                "edit_role": [
-                    "admin",
-                    "研发经理",
-                    "研发硬件",
-                    "研发电子主管"
-                ]
-            }
-        },
-        {
             "label": "electronic_testing",
             "title": "硬件测试项",
             "processing_type": "test",
@@ -1592,11 +2188,14 @@
         {
             "label": "software_research",
             "title": "研发版固件执行文件",
-            "processing_type": "search",
+            "processing_type": "svn",
             "file_name_regular": [],
-            "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\2.输出——研发流程输出文档\\★可发客户的资料\\产品使用说明\\1.硬件使用说明及图纸",
+            "upload_path": "https://rayfine_server:8443/svn/Development",
+            "search_scope_regular": "^([A-Z]{4}-[A-Z0-9]{4,5})[-_]+",
             "search_folder_according": "",
-            "search_hierarchy": [],
+            "search_hierarchy": [
+                "src"
+            ],
             "permission": {
                 "read_role": [
                     "boss",
@@ -1623,11 +2222,14 @@
         {
             "label": "software_mass",
             "title": "量产版固件执行文件",
-            "processing_type": "file",
-            "file_name_regular": [
-                "RF[A-Z]{2}-\\d{4}[A-Z]*-F\\d{2}_V\\d*\\.\\d*"
+            "processing_type": "svn",
+            "file_name_regular": [],
+            "upload_path": "https://rayfine_server:8443/svn/Product",
+            "search_scope_regular": "^([A-Z]{4}-[A-Z0-9]{4,5})[-_]+",
+            "search_folder_according": "",
+            "search_hierarchy": [
+                "src"
             ],
-            "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）",
             "permission": {
                 "read_role": [
                     "boss",
@@ -1654,9 +2256,14 @@
         {
             "label": "software_manual",
             "title": "固件使用说明书",
-            "processing_type": "file",
+            "processing_type": "svn",
             "file_name_regular": [],
-            "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）",
+            "upload_path": "https://rayfine_server:8443/svn/Development",
+            "search_scope_regular": "^([A-Z]{4}-[A-Z0-9]{4,5})[-_]+",
+            "search_folder_according": "",
+            "search_hierarchy": [
+                "docs"
+            ],
             "permission": {
                 "read_role": [
                     "boss",
@@ -1682,9 +2289,14 @@
         {
             "label": "software_protocol",
             "title": "通讯协议文件",
-            "processing_type": "file",
+            "processing_type": "svn",
             "file_name_regular": [],
-            "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）",
+            "upload_path": "https://rayfine_server:8443/svn/Development",
+            "search_scope_regular": "^([A-Z]{4}-[A-Z0-9]{4,5})[-_]+",
+            "search_folder_according": "",
+            "search_hierarchy": [
+                "docs"
+            ],
             "permission": {
                 "read_role": [
                     "boss",
@@ -1710,9 +2322,14 @@
         {
             "label": "software_xml",
             "title": "XML协议文件",
-            "processing_type": "file",
+            "processing_type": "svn",
             "file_name_regular": [],
-            "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）",
+            "upload_path": "https://rayfine_server:8443/svn/Development",
+            "search_scope_regular": "^([A-Z]{4}-[A-Z0-9]{4,5})[-_]+",
+            "search_folder_according": "",
+            "search_hierarchy": [
+                "docs"
+            ],
             "permission": {
                 "read_role": [
                     "boss",
@@ -1770,12 +2387,49 @@
     "UI": [
         {
             "label": "ui_execute_file",
-            "title": "UI执行文件",
-            "processing_type": "file",
-            "file_name_regular": [
-                "RF[A-Z]{2}-\\d{4}[A-Z]*-F\\d{2}_V\\d*\\.\\d*"
+            "title": "UI执行文件压缩包",
+            "processing_type": "svn",
+            "file_name_regular": [],
+            "upload_path": "https://rayfine_server:8443/svn/Development",
+            "search_scope_regular": "^([A-Z]{4}-[A-Z0-9]{4,5})[-_]+",
+            "search_folder_according": "",
+            "search_hierarchy": [
+                "src"
             ],
-            "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）",
+            "permission": {
+                "read_role": [
+                    "boss",
+                    "销售总监",
+                    "销售",
+                    "客服主管",
+                    "客服",
+                    "研发助理",
+                    "研发结构",
+                    "研发硬件",
+                    "研发光学",
+                    "研发样品",
+                    "工程",
+                    "质量"
+                ],
+                "edit_role": [
+                    "admin",
+                    "研发经理",
+                    "研发软件",
+                    "研发电子主管"
+                ]
+            }
+        },
+        {
+            "label": "ui_execute_file",
+            "title": "UI执行文件压缩包",
+            "processing_type": "svn",
+            "file_name_regular": [],
+            "upload_path": "https://rayfine_server:8443/svn/Development",
+            "search_scope_regular": "^([A-Z]{4}-[A-Z0-9]{4,5})[-_]+",
+            "search_folder_according": "",
+            "search_hierarchy": [
+                "src"
+            ],
             "permission": {
                 "read_role": [
                     "boss",
@@ -1832,35 +2486,6 @@
         }
     ],
     "工艺": [
-        {
-            "label": "craft_file",
-            "title": "工艺文件",
-            "processing_type": "file",
-            "file_name_regular": [],
-            "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）",
-            "permission": {
-                "read_role": [
-                    "boss",
-                    "销售总监",
-                    "销售",
-                    "客服主管",
-                    "客服",
-                    "研发助理",
-                    "研发电子主管",
-                    "研发结构",
-                    "研发软件",
-                    "研发光学",
-                    "研发样品",
-                    "研发硬件",
-                    "质量"
-                ],
-                "edit_role": [
-                    "admin",
-                    "研发经理",
-                    "工程"
-                ]
-            }
-        },
         {
             "label": "craft_key_requirements",
             "title": "工艺重点要求",

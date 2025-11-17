@@ -3,17 +3,17 @@ import json
 import warnings
 
 from nicegui import app, ui
+from starlette.responses import Response
 
 # 关键：导入所有页面。这将自动注册所有 @ui.page 路由
 # 导入您已有的服务和新创建的模块
 # 注意：现在使用相对导入或确保 src 是 Python 路径的一部分
 # 导入新的配置和工具模块
 from . import (
-    config,  # 这将导入 src/config.py
     db_storage,
     pages,  # 这将执行 src/pages/__init__.py
 )
-from .config import BASE_DIR
+from .config import BASE_DIR, IMG_DIR, PDF_PREVIEW_CACHE, ST
 from .config_service import ConfigService
 from .user_service import UserService
 
@@ -62,6 +62,26 @@ app.storage.general.setdefault("user_preferences", {})
 app.storage.general.setdefault("custom_labels", {})
 
 
+@ui.page("/view/svn_pdf")
+async def get_svn_pdf_from_cache(id: str):  # <--- [修改] 接收 id 查询参数
+    """
+    一个专门的路由，用于从 *内存缓存* 中获取并返回 PDF 字节。
+    """
+    # !!! 关键修改：从 PDF_PREVIEW_CACHE 中读取 !!!
+    #    使用 .pop() 来获取数据并立即将其从缓存中删除 (自清理)
+    pdf_bytes = PDF_PREVIEW_CACHE.pop(id, None)
+
+    if not pdf_bytes:
+        return Response(content="PDF 数据未找到、已过期或会话已结束。", status_code=404)
+
+    # (这个返回部分保持不变)
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": 'inline; filename="document.pdf"'},
+    )
+
+
 # ======================
 # 登录界面
 # ======================
@@ -77,12 +97,12 @@ def root():
 if __name__ in {"__main__", "__mp_main__"}:
     ui.run(
         title="项目文件管理系统",
-        favicon=f"{config.IMG_DIR}/RFRF.png",
+        favicon=f"{IMG_DIR}/RFRF.png",
         # host='0.0.0.0' 允许来自局域网的任何IP访问
         host="0.0.0.0",
         # port=8080 是您选择的端口，可以自定义
         port=8080,
-        storage_secret=config.ST,  # 添加存储密钥
+        storage_secret=ST,  # 添加存储密钥
         dark=False,
         # 在生产环境中，必须禁用热重载功能，以获得更好的性能和稳定性
         # False 不自动重载，True自动重载
