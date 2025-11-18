@@ -16,7 +16,15 @@ from nicegui.events import GenericEventArguments, KeyEventArguments, MouseEventA
 
 from .. import db_storage  # 导入我们创建的模块
 from ..components import ButtonUploader, FileThumbnail, InteractiveButton
-from ..config import IMG_DIR, PRESET_AVATARS, REQ_DIR, REQ_UPLOADS_FILE_TYPE, UPLOAD_URL_DIR, UPLOADS_DIR
+from ..config import (
+    IMG_DIR,
+    PRESET_AVATARS,
+    PROJECT_STATE_LIST,
+    REQ_DIR,
+    REQ_UPLOADS_FILE_TYPE,
+    UPLOAD_URL_DIR,
+    UPLOADS_DIR,
+)
 from ..utils import (
     compare_configs_by_id,
     copy_overview_data,
@@ -27,6 +35,7 @@ from ..utils import (
     handle_key,
     logout,
     overview_role_update,
+    set_project_state,
     validate_format_regex,
 )
 
@@ -2185,7 +2194,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                     ui.separator().props("size=1px")
 
                     ui.menu_item("关闭菜单", menu.close)
-            with ui.row().classes("font-sans h-[calc(100vh-9rem)] items-stretch flex-nowrap w-full text-black"):
+            with ui.row().classes("font-sans h-[calc(100vh-9rem)] items-stretch flex-nowrap w-full mt-3 text-black"):
                 # 需求内容列
                 with ui.column().classes("w-1/2 min-w-[400px]"):
                     ui.label(f"{project_name} 需求内容").classes("text-xl text-center w-full")
@@ -2558,10 +2567,19 @@ async def requirement_page(type="", json_path="", project_name=""):
                 ui.separator().props("vertical size=1px")
                 # 概述内容列
                 with ui.column().classes("w-1/2 min-w-[400px] items-center"):
-                    ui.label(f"{project_name} 概述整理").classes("text-xl")
+                    with ui.row():
+                        project_state = (
+                            ui.select(
+                                PROJECT_STATE_LIST,
+                                on_change=lambda: set_project_state(project_name, project_state.value),
+                            )
+                            .bind_value_from(app.storage.general["project_summary"][project_name], "state")
+                            .props("outlined")
+                            .classes("")
+                        )
+                        ui.label(f"{project_name} 概述整理").classes("text-xl")
                     with ui.column().classes("w-full overflow-y-auto p-1 gap-2"):
                         overview_role_update(project_name)
-
                         # 显示概述模块内容
                         for role, over_data in app.storage.general["over_config_data"].items():
                             with ui.card().classes("w-full px-3 gap-0"):

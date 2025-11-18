@@ -1,5 +1,4 @@
 {
-    "state": [],
     "light_source": [
         "light_source"
     ],
@@ -29,10 +28,16 @@
         "guide_beam"
     ],
     "pcb": [
-        "drive_pcb"
+        "drive_pcb",
+        "control_pcb",
+        "light_pcb",
+        "other_pcb"
     ],
     "electronic_bom": [
-        "drive_electronic_bom"
+        "drive_electronic_bom",
+        "control_electronic_bom",
+        "light_electronic_bom",
+        "other_electronic_bom"
     ],
     "software_executable_file": [
         "software_executable_file"

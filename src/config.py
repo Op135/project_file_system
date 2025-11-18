@@ -65,6 +65,9 @@ IMG_URL_DIR = "/img"
 # 用它来临时存储 PDF 字节，完全绕过 JSON 序列化
 PDF_PREVIEW_CACHE = {}
 
+
+# 项目状态可选项
+PROJECT_STATE_LIST = ["作废", "待定", "研发", "转产", "量产"]
 # 默认头像路径
 PRESET_AVATARS = [
     f"{IMG_URL_DIR}/avatars/avatar1.png",

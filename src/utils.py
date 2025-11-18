@@ -306,6 +306,37 @@ def project_overview_config_update():
         )
 
 
+def set_project_state(project_name, state):
+    project_data = {}
+    with open(f"{BASE_DIR}/project_summary.json", "r", encoding="utf-8") as f:
+        project_data = json.load(f)
+        project_data[project_name]["state"] = state
+    # 将字典转换为 JSON 字符串
+    json_str = json.dumps(project_data, indent=4, ensure_ascii=False)
+    # 写入文件
+    try:
+        with open(f"{BASE_DIR}/project_summary.json", "w", encoding="utf-8") as f:
+            f.write(json_str)
+        app.storage.general["project_summary"][project_name]["state"] = state
+        ui.notify(
+            "修改项目状态成功。",
+            type="positive",
+            position="bottom",
+            timeout=1000,
+            progress=True,
+            close_button="✖",
+        )
+    except Exception as e:
+        ui.notify(
+            f"修改项目状态错误错误：{e}",
+            type="negative",
+            position="center",
+            timeout=0,
+            progress=False,
+            close_button="✖",
+        )
+
+
 # 将项目摘要里手动控制的数据，以最高优先级添加/覆盖到服务器自动保存数据里
 def project_summary_update():
     try:

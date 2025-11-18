@@ -429,7 +429,13 @@ def project_table_page():
         {"field": "model_notes", "headerName": "型号备注", "width": 150, "autoHeight": True},
         {"field": "state", "headerName": "产品状态", "width": 80, "filter": "agTextColumnFilter"},
         {"field": "creation_date", "headerName": "立项日期", "width": 100, "filter": "agDateColumnFilter"},
-        {"field": "introduction", "headerName": "产品简介", "width": 300, "autoHeight": True},
+        {
+            "field": "introduction",
+            "headerName": "产品简介",
+            "width": 400,
+            "autoHeight": True,
+            "filter": "agTextColumnFilter",
+        },
         {"field": "custom_labels", "headerName": "定制要点", "width": 400, "autoHeight": True},
         {
             "field": "light_source",
