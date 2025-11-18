@@ -17,6 +17,7 @@ from nicegui.events import GenericEventArguments, KeyEventArguments, MouseEventA
 from .. import db_storage  # 导入我们创建的模块
 from ..components import ButtonUploader, FileThumbnail, InteractiveButton
 from ..config import (
+    BASE_DIR,
     IMG_DIR,
     PRESET_AVATARS,
     PROJECT_STATE_LIST,
@@ -35,7 +36,6 @@ from ..utils import (
     handle_key,
     logout,
     overview_role_update,
-    set_project_state,
     validate_format_regex,
 )
 
@@ -56,6 +56,17 @@ async def requirement_page(type="", json_path="", project_name=""):
                 padding: 10px 16px;
                 color: inherit;
                 transition: color 0.3s,background-color 0.3s
+            }
+            /*控制下拉选框高度*/
+            .q-field--auto-height .q-field__control, .q-field--auto-height .q-field__native {
+                min-height: 30px;
+            }
+            .q-field--auto-height .q-field__control {
+                height: 30px;
+            }
+            .q-field__marginal {
+                height: 30px;
+                font-size: 24px;
             }
             /*.q-menu {
                 background-color:#efffff;
@@ -184,6 +195,46 @@ async def requirement_page(type="", json_path="", project_name=""):
             app.storage.client["key_state"]["arrowright"] = 0
 
             # app.storage.client["key_state"]["enter"] = 0
+
+    def set_project_state(project_name, state):
+        if app.storage.user.get("current_role") == "研发经理":
+            project_data = {}
+            with open(f"{BASE_DIR}/project_summary.json", "r", encoding="utf-8") as f:
+                project_data = json.load(f)
+                project_data[project_name]["state"] = state
+            # 将字典转换为 JSON 字符串
+            json_str = json.dumps(project_data, indent=4, ensure_ascii=False)
+            # 写入文件
+            try:
+                with open(f"{BASE_DIR}/project_summary.json", "w", encoding="utf-8") as f:
+                    f.write(json_str)
+                app.storage.general["project_summary"][project_name]["state"] = state
+                ui.notify(
+                    "修改项目状态成功。",
+                    type="positive",
+                    position="bottom",
+                    timeout=1000,
+                    progress=True,
+                    close_button="✖",
+                )
+            except Exception as e:
+                ui.notify(
+                    f"修改项目状态错误错误：{e}",
+                    type="negative",
+                    position="center",
+                    timeout=0,
+                    progress=False,
+                    close_button="✖",
+                )
+        else:
+            ui.notify(
+                "当前用户无权限修改项目状态！",
+                type="info",
+                position="center",
+                timeout=2000,
+                progress=True,
+                close_button="✖",
+            )
 
     # 显示传入数据的用户填写内容
     def show_user_output(data):
@@ -2567,7 +2618,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                 ui.separator().props("vertical size=1px")
                 # 概述内容列
                 with ui.column().classes("w-1/2 min-w-[400px] items-center"):
-                    with ui.row():
+                    with ui.row().classes("relative w-full items-center justify-center"):
                         project_state = (
                             ui.select(
                                 PROJECT_STATE_LIST,
@@ -2575,10 +2626,10 @@ async def requirement_page(type="", json_path="", project_name=""):
                             )
                             .bind_value_from(app.storage.general["project_summary"][project_name], "state")
                             .props("outlined")
-                            .classes("")
+                            .classes("absolute top-0 left-1")
                         )
                         ui.label(f"{project_name} 概述整理").classes("text-xl")
-                    with ui.column().classes("w-full overflow-y-auto p-1 gap-2"):
+                    with ui.column().classes("w-full overflow-y-auto p-1 gap-2 rounded"):
                         overview_role_update(project_name)
                         # 显示概述模块内容
                         for role, over_data in app.storage.general["over_config_data"].items():
