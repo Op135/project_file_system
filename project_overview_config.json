@@ -34,11 +34,8 @@
     "electronic_bom": [
         "drive_electronic_bom"
     ],
-    "software_research": [
-        "software_research"
-    ],
-    "software_mass": [
-        "software_mass"
+    "software_executable_file": [
+        "software_executable_file"
     ],
     "optics_charge": "光学",
     "structure_charge": "结构",

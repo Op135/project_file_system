@@ -929,14 +929,15 @@ class InteractiveButton:
         # 有依赖文件夹配置，找依赖文件夹配置标签对应的标签标题名
         if self.search_folder_according:
             break_bool = False
-            for role, data_li in app.storage.general.get("over_config_data", {}).items():
-                if break_bool:
-                    break
-                for data in data_li:
-                    if data["label"] == self.search_folder_according:
-                        according_title = data["title"]
-                        break_bool = True
+            for over_data in app.storage.general.get("over_config_data", {}).values():
+                for data_li in over_data.values():
+                    if break_bool:
                         break
+                    for data in data_li:
+                        if data["label"] == self.search_folder_according:
+                            according_title = data["title"]
+                            break_bool = True
+                            break
             # 获取文件夹依赖标签里的chip数据
             for data in db_storage.get_deep_item(
                 [f"{self.project}_over_data", self.search_folder_according], {}
@@ -1035,14 +1036,15 @@ class InteractiveButton:
         # 有依赖文件夹配置，找依赖文件夹配置标签对应的标签标题名
         if self.search_folder_according:
             break_bool = False
-            for role, data_li in app.storage.general.get("over_config_data", {}).items():
-                if break_bool:
-                    break
-                for data in data_li:
-                    if data["label"] == self.search_folder_according:
-                        according_title = data["title"]
-                        break_bool = True
+            for over_data in app.storage.general.get("over_config_data", {}).values():
+                for data_li in over_data.values():
+                    if break_bool:
                         break
+                    for data in data_li:
+                        if data["label"] == self.search_folder_according:
+                            according_title = data["title"]
+                            break_bool = True
+                            break
             # 获取文件夹依赖标签里的chip数据
             for data in db_storage.get_deep_item(
                 [f"{self.project}_over_data", self.search_folder_according], {}

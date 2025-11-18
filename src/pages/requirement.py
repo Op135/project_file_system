@@ -73,6 +73,10 @@ async def requirement_page(type="", json_path="", project_name=""):
                 padding: 8px 0;
                 white-space: pre-line;
             }
+            :root {
+                --nicegui-default-padding: 1rem;
+                --nicegui-default-gap: 0.3rem;
+            }
         </style>
     """)
 
@@ -2263,7 +2267,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                             if version == "0":
                                 ui_expansion["latest"] = exp
                             with exp:
-                                with ui.column().classes("w-full") as exp_content:
+                                with ui.column().classes("w-full gap-4") as exp_content:
                                     for item_info in sorted_items:
                                         # 获取需求ID
                                         node_id = item_info["node_id"]
@@ -2569,65 +2573,75 @@ async def requirement_page(type="", json_path="", project_name=""):
                                     ui.chip(icon="add_reaction", color="green-7").props("outline").classes(
                                         "text-xs"
                                     ).bind_text(app.storage.general["overview_role"][project_name][role], "latest_user")
-                                for data in over_data:
-                                    user_role = app.storage.user["current_role"]
-                                    if (
-                                        user_role in data["permission"]["read_role"]
-                                        or user_role in data["permission"]["edit_role"]
-                                    ):
-                                        if data["processing_type"] == "text":
-                                            InteractiveButton(
-                                                project=project_name,
-                                                role=role,
-                                                title=data["title"],
-                                                label=data["label"],
-                                                processing_type=data["processing_type"],
-                                                dialog_placeholder=data["dialog_placeholder"],
-                                                permission=data["permission"],
-                                                temp_bool=temp_bool,
-                                                # delete_bool=False,
-                                            )
-                                        elif data["processing_type"] in ["file", "image"]:
-                                            InteractiveButton(
-                                                project=project_name,
-                                                role=role,
-                                                title=data["title"],
-                                                label=data["label"],
-                                                processing_type=data["processing_type"],
-                                                permission=data["permission"],
-                                                temp_bool=temp_bool,
-                                                upload_path=data["upload_path"],
-                                                # delete_bool=False,
-                                            )
-                                        elif data["processing_type"] in ["search", "svn"]:
-                                            InteractiveButton(
-                                                project=project_name,
-                                                role=role,
-                                                title=data["title"],
-                                                label=data["label"],
-                                                processing_type=data["processing_type"],
-                                                permission=data["permission"],
-                                                temp_bool=temp_bool,
-                                                upload_path=data["upload_path"],
-                                                search_scope_regular=data["search_scope_regular"],
-                                                search_folder_according=data["search_folder_according"],
-                                                search_hierarchy=data["search_hierarchy"],
-                                                # delete_bool=False,
-                                            )
-                                        elif data["processing_type"] in ["test"]:
-                                            InteractiveButton(
-                                                project=project_name,
-                                                role=role,
-                                                title=data["title"],
-                                                label=data["label"],
-                                                processing_type=data["processing_type"],
-                                                permission=data["permission"],
-                                                state_options=data["state_options"],
-                                                node_options=data["node_options"],
-                                                instrument_options=data["instrument_options"],
-                                                temp_bool=temp_bool,
-                                                # delete_bool=False,
-                                            )
+                                for data_group, data_list in over_data.items():
+                                    exp = ui.expansion(
+                                        data_group,
+                                        icon="list",
+                                        value=False,
+                                        caption="",
+                                    ).classes("gap-1 w-full bg-gray-100/30 rounded")
+                                    exp.set_visibility(False)
+                                    with exp:
+                                        for data in data_list:
+                                            user_role = app.storage.user["current_role"]
+                                            if (
+                                                user_role in data["permission"]["read_role"]
+                                                or user_role in data["permission"]["edit_role"]
+                                            ):
+                                                exp.set_visibility(True)
+                                                if data["processing_type"] == "text":
+                                                    InteractiveButton(
+                                                        project=project_name,
+                                                        role=role,
+                                                        title=data["title"],
+                                                        label=data["label"],
+                                                        processing_type=data["processing_type"],
+                                                        dialog_placeholder=data["dialog_placeholder"],
+                                                        permission=data["permission"],
+                                                        temp_bool=temp_bool,
+                                                        # delete_bool=False,
+                                                    )
+                                                elif data["processing_type"] in ["file", "image"]:
+                                                    InteractiveButton(
+                                                        project=project_name,
+                                                        role=role,
+                                                        title=data["title"],
+                                                        label=data["label"],
+                                                        processing_type=data["processing_type"],
+                                                        permission=data["permission"],
+                                                        temp_bool=temp_bool,
+                                                        upload_path=data["upload_path"],
+                                                        # delete_bool=False,
+                                                    )
+                                                elif data["processing_type"] in ["search", "svn"]:
+                                                    InteractiveButton(
+                                                        project=project_name,
+                                                        role=role,
+                                                        title=data["title"],
+                                                        label=data["label"],
+                                                        processing_type=data["processing_type"],
+                                                        permission=data["permission"],
+                                                        temp_bool=temp_bool,
+                                                        upload_path=data["upload_path"],
+                                                        search_scope_regular=data["search_scope_regular"],
+                                                        search_folder_according=data["search_folder_according"],
+                                                        search_hierarchy=data["search_hierarchy"],
+                                                        # delete_bool=False,
+                                                    )
+                                                elif data["processing_type"] in ["test"]:
+                                                    InteractiveButton(
+                                                        project=project_name,
+                                                        role=role,
+                                                        title=data["title"],
+                                                        label=data["label"],
+                                                        processing_type=data["processing_type"],
+                                                        permission=data["permission"],
+                                                        state_options=data["state_options"],
+                                                        node_options=data["node_options"],
+                                                        instrument_options=data["instrument_options"],
+                                                        temp_bool=temp_bool,
+                                                        # delete_bool=False,
+                                                    )
 
             with ui.row().classes("fixed bottom-0 left-0 right-0 bg-sky-50 p-3 items-center shadow-inner"):
                 ui.label(text="参考文件：").classes("text-lg text-black m-0")

@@ -243,8 +243,7 @@ def project_table_page():
                                                 "target_distance",
                                                 "pcb",
                                                 "electronic_bom",
-                                                "software_research",
-                                                "software_mass",
+                                                "software_executable_file",
                                             ]:
                                                 show_str = f"{show_str}\n{text}"
                                             else:
@@ -410,8 +409,7 @@ def project_table_page():
                 "customer",  # 客户简称列
                 "pcb",  # 驱动PCB规格
                 "electronic_bom",  # 驱动电子BOM
-                "software_research",  # 研发版软件
-                "software_mass",  # 量产版软件
+                "software_executable_file",  # 研发版软件
             ],
             visible,
         )
@@ -470,15 +468,8 @@ def project_table_page():
             "filter": "agTextColumnFilter",
         },
         {
-            "field": "software_research",
-            "headerName": "研发版软件",
-            "width": 200,
-            "autoHeight": True,
-            "filter": "agTextColumnFilter",
-        },
-        {
-            "field": "software_mass",
-            "headerName": "量产版软件",
+            "field": "software_executable_file",
+            "headerName": "固件执行文件",
             "width": 200,
             "autoHeight": True,
             "filter": "agTextColumnFilter",
