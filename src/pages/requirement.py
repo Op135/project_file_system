@@ -2619,15 +2619,17 @@ async def requirement_page(type="", json_path="", project_name=""):
                 # 概述内容列
                 with ui.column().classes("w-1/2 min-w-[400px] items-center"):
                     with ui.row().classes("relative w-full items-center justify-center"):
-                        project_state = (
+                        if app.storage.user.get("current_role") == "研发经理":
                             ui.select(
                                 PROJECT_STATE_LIST,
-                                on_change=lambda: set_project_state(project_name, project_state.value),
-                            )
-                            .bind_value_from(app.storage.general["project_summary"][project_name], "state")
-                            .props("outlined")
-                            .classes("absolute top-0 left-1")
-                        )
+                                on_change=lambda e: set_project_state(project_name, e.value),
+                            ).bind_value_from(app.storage.general["project_summary"][project_name], "state").props(
+                                "outlined"
+                            ).classes("absolute top-0 left-1")
+                        else:
+                            ui.chip(icon="star", color="amber-7").props("outline").classes(
+                                "absolute top-0 left-1 text-xs"
+                            ).bind_text_from(app.storage.general["project_summary"][project_name], "state")
                         ui.label(f"{project_name} 概述整理").classes("text-xl")
                     with ui.column().classes("w-full overflow-y-auto p-1 gap-2 rounded"):
                         overview_role_update(project_name)

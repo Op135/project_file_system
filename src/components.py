@@ -919,7 +919,7 @@ class InteractiveButton:
             return False, None
 
     # 查找合法路径是否存在且唯一，并返回合法路径
-    def _splicing_file_url(self, chip_text) -> str:
+    def _splicing_svn_file_url(self, chip_text) -> str:
         # print(f"开始查找目标文件夹{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         target_url = ""
         # 保存依赖文件夹所的概述配置项标签名
@@ -1369,7 +1369,7 @@ class InteractiveButton:
                 close_button="✖",
             )
         else:
-            target_url = self._splicing_file_url(text)
+            target_url = self._splicing_svn_file_url(text)
             if target_url:
                 file_info = await self.get_url_file_info_async(target_url)
                 # 文件不存在，上面函数调用已提示，这里隐藏沙漏即可
@@ -1377,7 +1377,7 @@ class InteractiveButton:
                     ui_spinner.set_visibility(False)
                     return
             else:
-                # 拼接不成路径的异常情况已在_splicing_file_url函数里有弹出提示框
+                # 拼接不成路径的异常情况已在_splicing_svn_file_url函数里有弹出提示框
                 ui_spinner.set_visibility(False)
                 return
 
