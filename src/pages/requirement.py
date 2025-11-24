@@ -93,9 +93,8 @@ async def requirement_page(type="", json_path="", project_name=""):
                 padding: 8px 0;
                 white-space: pre-line;
             }
-            :root {
-                --nicegui-default-padding: 1rem;
-                --nicegui-default-gap: 0.3rem;
+            .nicegui-expansion .q-expansion-item__content {
+                gap: 4px
             }
         </style>
     """)

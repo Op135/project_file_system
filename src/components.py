@@ -808,7 +808,7 @@ class InteractiveButton:
         # else: get_svn_file_http_async 内部已经处理了错误通知
 
     # 检查给定 URL 的可访问性并获取其 MIME 文件类型
-    async def get_url_file_info_async(self, url: str, timeout: int = 5) -> Tuple[bool, Optional[str]]:
+    async def get_url_file_info_async(self, url: str, timeout: int = 15) -> Tuple[bool, Optional[str]]:
         """
         [异步版] 检查给定 URL 的可访问性并获取其 MIME 文件类型。
 
@@ -840,10 +840,26 @@ class InteractiveButton:
             auth = BasicAuth(SVN_USERNAME, SVN_PASSWORD)
 
         try:
-            # 3. !!! [关键修改] 在客户端上同时传入 verify 和 auth !!!
-            async with httpx.AsyncClient(follow_redirects=True, verify=ssl_context, auth=auth) as client:
-                # 使用 'stream=True' 模拟 requests 的行为
+            # 修改点 2：follow_redirects 改为 False 进行测试
+            # 为什么？如果服务器返回 302 跳转到登录页，我们希望立即捕获这个状态，而不是让代码傻傻地去下载登录页从而超时。
+            async with httpx.AsyncClient(follow_redirects=False, verify=ssl_context, auth=auth) as client:
+                # print(f"正在尝试连接: {url} (Timeout: {timeout}s)")
                 async with client.stream("GET", url, timeout=timeout, headers=headers) as response:
+                    # print(f"状态码: {response.status_code} | Headers: {response.headers}")
+
+                    # 处理重定向 (301, 302) - 这意味着 Basic Auth 失败了，被踢到了登录页
+                    if 300 <= response.status_code < 400:
+                        print(f"检测到重定向至: {response.headers.get('Location')}")
+                        # 可以在这里 return False 或者尝试进一步处理
+                        ui.notify(
+                            "认证失效，服务器要求重定向（可能是SSO或登录页）",
+                            type="warning",
+                            position="center",
+                            timeout=0,
+                            progress=False,
+                            close_button="✖",
+                        )
+                        return False, None
                     # 检查 URL 是否可访问 (状态码 < 400)
                     # print(response.status_code)
                     if response.status_code < 400:
@@ -854,6 +870,16 @@ class InteractiveButton:
                         else:
                             # URL 存在，但服务器未指定 MIME 类型
                             return True, None
+                    elif response.status_code == 401:
+                        ui.notify(
+                            "用户名或密码错误 (401)",
+                            type="negative",
+                            position="center",
+                            timeout=0,
+                            progress=False,
+                            close_button="✖",
+                        )
+                        return False, None
                     else:
                         # URL 不存在 (404) 或禁止访问 (403)
                         ui.notify(
@@ -867,7 +893,7 @@ class InteractiveButton:
                         return False, None
 
         except httpx.TimeoutException:
-            msg = f"网络超时: {url}"
+            msg = f"网络超时：({timeout}s)，链接：{url}；服务器响应过慢或正在尝试重定向。"
             print(msg)  # 保留 print
             ui.notify(
                 msg,

@@ -1610,7 +1610,7 @@
         "customer": "HKWS"
     },
     "RFFM-1732-B": {
-        "state": "研发",
+        "state": "转产",
         "model_notes": "",
         "creation_date": "2025-10-15",
         "introduction": "常规白光照明+荧光成像模式，无铜管散热器，白光常亮+高亮频闪，红外常亮+高亮频闪；",
