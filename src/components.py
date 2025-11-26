@@ -457,6 +457,7 @@ class InteractiveButton:
         processing_type: str,
         permission: dict,
         upload_path: str = SUBMIT_FILES_DIR,
+        state_path: dict = {},
         search_scope_regular: str = "",
         search_folder_according: str = "",
         search_hierarchy: list = [],
@@ -477,6 +478,7 @@ class InteractiveButton:
         self.project = project
         self.processing_type = processing_type
         self.upload_path = upload_path
+        self.state_path = state_path
         self.search_scope_regular = search_scope_regular
         self.search_folder_according = search_folder_according
         self.search_hierarchy = search_hierarchy
@@ -952,6 +954,21 @@ class InteractiveButton:
         according_title = ""
         # 保存找到的激活的依赖文件夹名
         according_folder_name = []
+        # 获取当前项目的状态
+        project_state = app.storage.general["project_summary"][self.project]["state"]
+        # 获取当前状态下，提交到svn的主文件夹
+        svn_main_folder = self.state_path.get(project_state)
+        if not svn_main_folder:
+            if overview_state_show_judge(self.role):
+                ui.notify(
+                    f"该项概述，在当前项目{project_state}状态下，无相应svn管控仓库配置，无法添加概述内容!",
+                    type="warning",
+                    position="center",
+                    timeout=0,
+                    progress=False,
+                    close_button="✖",
+                )
+                return target_url
         # 有依赖文件夹配置，找依赖文件夹配置标签对应的标签标题名
         if self.search_folder_according:
             break_bool = False
@@ -961,6 +978,7 @@ class InteractiveButton:
                         break
                     for data in data_li:
                         if data["label"] == self.search_folder_according:
+                            # 得到概述项标签名，用于后续提示用户使用
                             according_title = data["title"]
                             break_bool = True
                             break
@@ -1004,7 +1022,7 @@ class InteractiveButton:
                     match = re.search(self.search_scope_regular, according_folder_name[0])
                     if match:
                         search_target = match.group(1)
-                        target_url = f"{self.upload_path}/{search_target}/{according_folder_name[0]}"
+                        target_url = f"{self.upload_path}/{svn_main_folder}/{search_target}/{according_folder_name[0]}"
                     else:
                         if overview_state_show_judge(self.role):
                             ui.notify(
@@ -1018,7 +1036,7 @@ class InteractiveButton:
                         return target_url
                 # 没有缩小范围的正则表达式配置
                 else:
-                    target_url = f"{self.upload_path}/{according_folder_name[0]}"
+                    target_url = f"{self.upload_path}/{svn_main_folder}/{according_folder_name[0]}"
 
         # 无依赖文件夹配置，直接上传到config配置的顶层文件夹
         else:
@@ -1028,7 +1046,7 @@ class InteractiveButton:
                 match = re.search(self.search_scope_regular, chip_text)
                 if match:
                     search_target = match.group(1)
-                    target_url = f"{self.upload_path}/{search_target}"
+                    target_url = f"{self.upload_path}/{svn_main_folder}/{search_target}"
                 else:
                     if overview_state_show_judge(self.role):
                         ui.notify(
@@ -1042,7 +1060,7 @@ class InteractiveButton:
                     return target_url
             # 没有正则表达式缩小范围
             else:
-                target_url = f"{self.upload_path}"
+                target_url = f"{self.upload_path}/{svn_main_folder}"
 
         # 需要再深入层级
         if self.search_hierarchy:
@@ -1363,6 +1381,8 @@ class InteractiveButton:
         ui_spinner.set_visibility(True)
         text = self.chip_label.value
         notes = self.chip_notes.value
+        project_state = app.storage.general["project_summary"][self.project]["state"]
+        warehouse = self.state_path[project_state]
         file_info = (False, None)
 
         if not text:
@@ -1383,11 +1403,13 @@ class InteractiveButton:
                 progress=True,
                 close_button="✖",
             )
-        elif text in [
-            d["content"] for d in db_storage.get_deep_item([f"{self.project}_over_data", self.label], {}).values()
+        # chip内容和项目状态信息都一样情况下
+        elif (text, warehouse) in [
+            (d["content"], d["warehouse"])
+            for d in db_storage.get_deep_item([f"{self.project}_over_data", self.label], {}).values()
         ]:
             ui.notify(
-                "引用文件名已添加过。",
+                f"{warehouse}仓库下的相同引用文件名已添加过。",
                 type="warning",
                 position="center",
                 timeout=1000,
@@ -1427,6 +1449,7 @@ class InteractiveButton:
                 "file_type": file_type,  # 获取文件的MIME文件类型与编码方式
                 "url_path": target_url,
                 "content": text,
+                "warehouse": warehouse,
                 "notes": notes,
                 "creator": creator,
                 "timestamp": {
@@ -2356,7 +2379,10 @@ class InteractiveButton:
             # 创建chip元素的附属元素
             with chip:
                 # 为 chip 添加 tooltip
-                tooltip_text = f"创建节点: 需求V{chip_info.get('req_ver')}后<br>创建者: {chip_info.get('creator')}<br>时间: {next(reversed(chip_info.get('timestamp', {})))}<br>注释: <br>{chip_info.get('notes', '').replace('\n', '<br>')}"
+                if chip_info.get("type") in ["svn"]:
+                    tooltip_text = f"创建节点: 需求V{chip_info.get('req_ver')}后<br>创建者: {chip_info.get('creator')}<br>时间: {next(reversed(chip_info.get('timestamp', {})))}<br>仓库: {chip_info.get('warehouse', '')}<br>注释: <br>{chip_info.get('notes', '').replace('\n', '<br>')}"
+                else:
+                    tooltip_text = f"创建节点: 需求V{chip_info.get('req_ver')}后<br>创建者: {chip_info.get('creator')}<br>时间: {next(reversed(chip_info.get('timestamp', {})))}<br>注释: <br>{chip_info.get('notes', '').replace('\n', '<br>')}"
 
                 with ui.tooltip():
                     ui.html(tooltip_text, sanitize=Sanitizer().sanitize)
@@ -2739,6 +2765,16 @@ class InteractiveButton:
 
     # 处理主按钮的点击事件
     def _handle_main_button_click(self):
+        if app.storage.general["project_summary"][self.project]["state"] not in ["研发", "转产", "量产"]:
+            ui.notify(
+                "项目当前状态禁止添加概述!",
+                type="info",
+                position="bottom",
+                timeout=1000,
+                progress=True,
+                close_button="✖",
+            )
+            return
         # 如果用户具有编辑权限
         if self._edit_permission_judge():
             # 根据处理类型，设置不同的交互逻辑

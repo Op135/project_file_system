@@ -2235,7 +2235,12 @@
                 "title": "固件执行文件",
                 "processing_type": "svn",
                 "file_name_regular": [],
-                "upload_path": "https://rayfine_server:8443/svn/Development",
+                "upload_path": "https://rayfine_server:8443/svn",
+                "state_path": {
+                    "研发": "Development",
+                    "转产": "Product",
+                    "量产": "Product"
+                },
                 "search_scope_regular": "^([A-Z]{4}-[A-Z0-9]{4,5})[-_]+",
                 "search_folder_according": "",
                 "search_hierarchy": [
@@ -2271,7 +2276,12 @@
                 "title": "固件使用说明书",
                 "processing_type": "svn",
                 "file_name_regular": [],
-                "upload_path": "https://rayfine_server:8443/svn/Development",
+                "upload_path": "https://rayfine_server:8443/svn",
+                "state_path": {
+                    "研发": "Development",
+                    "转产": "Product",
+                    "量产": "Product"
+                },
                 "search_scope_regular": "^([A-Z]{4}-[A-Z0-9]{4,5})[-_]+",
                 "search_folder_according": "",
                 "search_hierarchy": [
@@ -2304,7 +2314,12 @@
                 "title": "通讯协议文件",
                 "processing_type": "svn",
                 "file_name_regular": [],
-                "upload_path": "https://rayfine_server:8443/svn/Development",
+                "upload_path": "https://rayfine_server:8443/svn",
+                "state_path": {
+                    "研发": "Development",
+                    "转产": "Product",
+                    "量产": "Product"
+                },
                 "search_scope_regular": "^([A-Z]{4}-[A-Z0-9]{4,5})[-_]+",
                 "search_folder_according": "",
                 "search_hierarchy": [
@@ -2337,7 +2352,12 @@
                 "title": "XML协议文件",
                 "processing_type": "svn",
                 "file_name_regular": [],
-                "upload_path": "https://rayfine_server:8443/svn/Development",
+                "upload_path": "https://rayfine_server:8443/svn",
+                "state_path": {
+                    "研发": "Development",
+                    "转产": "Product",
+                    "量产": "Product"
+                },
                 "search_scope_regular": "^([A-Z]{4}-[A-Z0-9]{4,5})[-_]+",
                 "search_folder_according": "",
                 "search_hierarchy": [
@@ -2405,7 +2425,12 @@
                 "title": "UI执行文件压缩包",
                 "processing_type": "svn",
                 "file_name_regular": [],
-                "upload_path": "https://rayfine_server:8443/svn/Development",
+                "upload_path": "https://rayfine_server:8443/svn",
+                "state_path": {
+                    "研发": "Development",
+                    "转产": "Product",
+                    "量产": "Product"
+                },
                 "search_scope_regular": "^([A-Z]{4}-[A-Z0-9]{4,5})[-_]+",
                 "search_folder_according": "",
                 "search_hierarchy": [

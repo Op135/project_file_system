@@ -2683,7 +2683,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                                                         upload_path=data["upload_path"],
                                                         # delete_bool=False,
                                                     )
-                                                elif data["processing_type"] in ["search", "svn"]:
+                                                elif data["processing_type"] in ["search"]:
                                                     InteractiveButton(
                                                         project=project_name,
                                                         role=role,
@@ -2693,6 +2693,22 @@ async def requirement_page(type="", json_path="", project_name=""):
                                                         permission=data["permission"],
                                                         temp_bool=temp_bool,
                                                         upload_path=data["upload_path"],
+                                                        search_scope_regular=data["search_scope_regular"],
+                                                        search_folder_according=data["search_folder_according"],
+                                                        search_hierarchy=data["search_hierarchy"],
+                                                        # delete_bool=False,
+                                                    )
+                                                elif data["processing_type"] in ["svn"]:
+                                                    InteractiveButton(
+                                                        project=project_name,
+                                                        role=role,
+                                                        title=data["title"],
+                                                        label=data["label"],
+                                                        processing_type=data["processing_type"],
+                                                        permission=data["permission"],
+                                                        temp_bool=temp_bool,
+                                                        upload_path=data["upload_path"],
+                                                        state_path=data["state_path"],
                                                         search_scope_regular=data["search_scope_regular"],
                                                         search_folder_according=data["search_folder_according"],
                                                         search_hierarchy=data["search_hierarchy"],
