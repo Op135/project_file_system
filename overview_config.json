@@ -2237,7 +2237,7 @@
                 "file_name_regular": [],
                 "upload_path": "https://rayfine_server:8443/svn",
                 "state_path": {
-                    "研发": "Development",
+                    "研发": "Control/Controlled",
                     "转产": "Product",
                     "量产": "Product"
                 },
@@ -2278,7 +2278,7 @@
                 "file_name_regular": [],
                 "upload_path": "https://rayfine_server:8443/svn",
                 "state_path": {
-                    "研发": "Development",
+                    "研发": "Control/Controlled",
                     "转产": "Product",
                     "量产": "Product"
                 },
@@ -2316,7 +2316,7 @@
                 "file_name_regular": [],
                 "upload_path": "https://rayfine_server:8443/svn",
                 "state_path": {
-                    "研发": "Development",
+                    "研发": "Control/Controlled",
                     "转产": "Product",
                     "量产": "Product"
                 },
@@ -2354,7 +2354,7 @@
                 "file_name_regular": [],
                 "upload_path": "https://rayfine_server:8443/svn",
                 "state_path": {
-                    "研发": "Development",
+                    "研发": "Control/Controlled",
                     "转产": "Product",
                     "量产": "Product"
                 },
@@ -2427,7 +2427,7 @@
                 "file_name_regular": [],
                 "upload_path": "https://rayfine_server:8443/svn",
                 "state_path": {
-                    "研发": "Development",
+                    "研发": "Control/Controlled",
                     "转产": "Product",
                     "量产": "Product"
                 },
