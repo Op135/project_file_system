@@ -2621,6 +2621,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                         if app.storage.user.get("current_role") == "研发经理":
                             ui.select(
                                 PROJECT_STATE_LIST,
+                                value=app.storage.general["project_summary"][project_name].get("state"),
                                 on_change=lambda e: set_project_state(project_name, e.value),
                             ).bind_value_from(app.storage.general["project_summary"][project_name], "state").props(
                                 "outlined"
