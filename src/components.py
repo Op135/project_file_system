@@ -1858,12 +1858,14 @@ class InteractiveButton:
             search_bool = False
             target_path = ""
             for chip_info in db_storage.get_deep_item([f"{self.project}_over_data", self.label], {}).values():
+                if not app.storage.client.get("record_switch") and not chip_info.get("enabled"):
+                    continue
                 if self.processing_type == "search":
-                    # 只找一次，不管找的结果
+                    # 只找一次概述项配置的文件路径在不在，不管找的结果
                     if not search_bool:
                         target_path = await self._search_file_path(chip_info["content"])
                     search_bool = True
-                    # target_path 可能是空、有效文件夹路径，长得像文件夹的文件路径
+                    # target_path 可能是空、有效文件夹路径，长得像文件夹的文件路径，调用函数会针对情况处理
                     await self._create_chip_from_data(chip_info, target_path)
                 else:
                     await self._create_chip_from_data(chip_info, "")
@@ -1874,7 +1876,7 @@ class InteractiveButton:
         同步UI显示与共享存储中的数据。
         这是由定时器调用的核心同步函数。
         """
-        # 在用户打开了大图的情况下，不刷对应条目下的缩略图元素
+        # 在用户打开了特定弹窗的情况下，不刷对应条目下的缩略图元素
         if not (self.chip_dialog.value or self.check_down_dialog.value or self.activ_dialog.value):
             # if self.processing_type == "image":
             #     print(self.chip_dialog.value, self.title)
@@ -1882,7 +1884,20 @@ class InteractiveButton:
             # 获取当前UI上所有 chip 的ID
             displayed_chip_ids = {child.props.get("data-chip-id") for child in self.chip_container}
             # 获取共享存储中所有 chip 的ID
-            stored_chip_ids = set(db_storage.get_deep_item([f"{self.project}_over_data", self.label], {}).keys())
+            # 用户打开开关，想看全部记录情况下
+            if app.storage.client.get("record_switch"):
+                stored_chip_ids = set(db_storage.get_deep_item([f"{self.project}_over_data", self.label], {}).keys())
+            # 关闭开关，只看激活chip记录情况下
+            else:
+                stored_chip_ids = set(
+                    [
+                        id
+                        for id, chip_dic in db_storage.get_deep_item(
+                            [f"{self.project}_over_data", self.label], {}
+                        ).items()
+                        if chip_dic.get("enabled")
+                    ]
+                )
 
             # 只有当UI和存储中的ID集合不一致时，才重新渲染，以提高效率
             if displayed_chip_ids != stored_chip_ids:
@@ -2098,6 +2113,7 @@ class InteractiveButton:
                 progress=False,
                 close_button="✖",
             )
+            self._select_set_activ_dialog(chip_id, chip_text)
         elif OLD_CHIP_SELECT_DIC != select_activ_dic:
             creator = app.storage.user.get("current_user", "匿名用户")
             await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "creator"], creator)
@@ -2202,6 +2218,27 @@ class InteractiveButton:
     def _move_data(self, old_data, chip_id, move_num):
         temp_data = {}
         old_data_keys = list(old_data.keys())
+        # 当用户只看激活chip时
+        if not app.storage.client.get("record_switch"):
+            num = move_num
+            # 计算带方向的移动单位
+            step = int(move_num / abs(move_num))
+            # 获取当前chip的下标
+            current_index = old_data_keys.index(chip_id)
+            # 计算跳过非激活chip情况下的正确移动步距
+            # num迭代到0则找到等数量的想移动的激活chip，结束循环
+            while num != 0 and (
+                # 将下标迭代到边缘时，意味着没必要继续迭代，迭代目标超过了边缘，按照移动到边缘处理
+                (step < 0 and current_index != 0) or (step > 0 and current_index != len(old_data_keys) - 1)
+            ):
+                current_index += step
+                # chip激活这扣除移动目标步距1个单位
+                if old_data[old_data_keys[current_index]].get("enabled"):
+                    num -= step
+                # 每次迭代累加一个单位
+                move_num += step
+            # 回拨一个单位
+            move_num -= step
         new_data_keys = move_element(old_data_keys, chip_id, move_num)
         for k in new_data_keys:
             # temp_data[k] = app.storage.general["overview_data"][self.project][self.label][k]
@@ -2212,7 +2249,7 @@ class InteractiveButton:
     async def move_up_data(self, chip_data):
         # 如果用户具有编辑权限
         if self._edit_permission_judge():
-            # 获取指定深度的字典数据，由_move_data函数处理，并给_move_data函数传入chip_data["id"], -1两个参数
+            # 处理指定深度的字典数据，由_move_data函数处理，并给_move_data函数传入chip_data["id"], -1两个参数
             await db_storage.atomic_deep_update(
                 [f"{self.project}_over_data", self.label], self._move_data, chip_data["id"], -1
             )
@@ -2223,7 +2260,7 @@ class InteractiveButton:
     async def move_down_data(self, chip_data):
         # 如果用户具有编辑权限
         if self._edit_permission_judge():
-            # 获取指定深度的字典数据，由_move_data函数处理，并给_move_data函数传入chip_data["id"], -1两个参数
+            # 处理指定深度的字典数据，由_move_data函数处理，并给_move_data函数传入chip_data["id"], -1两个参数
             await db_storage.atomic_deep_update(
                 [f"{self.project}_over_data", self.label], self._move_data, chip_data["id"], 1
             )

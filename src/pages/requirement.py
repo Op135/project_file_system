@@ -2631,6 +2631,13 @@ async def requirement_page(type="", json_path="", project_name=""):
                                 "absolute top-0 left-1 text-xs"
                             ).bind_text_from(app.storage.general["project_summary"][project_name], "state")
                         ui.label(f"{project_name} 概述整理").classes("text-xl")
+                        if (
+                            "研发" in app.storage.user.get("current_role", "")
+                            or app.storage.user.get("current_role", "") == "admin"
+                        ):
+                            ui.switch("查阅失活概述").classes("absolute top-0 right-5 text-xs").bind_value(
+                                app.storage.client, "record_switch"
+                            )
                     with ui.column().classes("w-full overflow-y-auto p-1 gap-2 rounded"):
                         overview_role_update(project_name)
                         # 显示概述模块内容
