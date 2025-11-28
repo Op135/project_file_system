@@ -1852,6 +1852,8 @@ class InteractiveButton:
 
     # 刷新chip容器
     async def _refresh_chip_container(self):
+        # 获取该项目最高版本
+        req_max_ver = app.storage.general["project_req_max_ver"][self.project]
         # 删除元素重新显示
         self.chip_container.clear()
         with self.chip_container:
@@ -1866,9 +1868,9 @@ class InteractiveButton:
                         target_path = await self._search_file_path(chip_info["content"])
                     search_bool = True
                     # target_path 可能是空、有效文件夹路径，长得像文件夹的文件路径，调用函数会针对情况处理
-                    await self._create_chip_from_data(chip_info, target_path)
+                    await self._create_chip_from_data(chip_info, target_path, req_max_ver)
                 else:
-                    await self._create_chip_from_data(chip_info, "")
+                    await self._create_chip_from_data(chip_info, "", req_max_ver)
 
     # 同步UI显示与共享存储中的数据
     async def _update_chip_display(self):
@@ -1905,6 +1907,11 @@ class InteractiveButton:
                 await self._refresh_chip_container()
                 # 刷新角色负责用户数据
                 overview_role_update(self.project)
+            elif app.storage.general["special_refresh"].get(self.project):
+                # 刷新chip容器内容
+                await self._refresh_chip_container()
+                # 失活概述特殊刷新标记
+                app.storage.general["special_refresh"][self.project] = False
 
     # 打开文件
     # def open_file(self, filepath):
@@ -2027,77 +2034,33 @@ class InteractiveButton:
         ui.notify("内容已复制到剪贴板！", type="positive", position="top")
 
     # <-----------------------------------------------------------------
+
     # 以当前最新版本用户设置的激活状态，更新chip资料相应参数，如icon、enabled、bg_color等等
-    async def _update_chip_parameter(self, chip_id, OLD_CHIP_SELECT_DIC, chip_text):
+    async def _update_chip_creator(self, chip_id, OLD_CHIP_SELECT_DIC, chip_text):
         # 获取该项目最高版本
-        req_max_ver = app.storage.general["project_req_max_ver"][self.project]
-        # 如果最高版本激活状态为True
-        if db_storage.get_deep_item(
-            [f"{self.project}_over_data", self.label, chip_id, "select_activ_dic", req_max_ver]
-        ):
-            # 修改这里要检查utils和information两个模块是否跟着改
-            # 更新icon参数
-            if db_storage.get_deep_item([f"{self.project}_over_data", self.label, chip_id, "type"]) == "file":
-                await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "icon"], "attachment")
-            elif db_storage.get_deep_item([f"{self.project}_over_data", self.label, chip_id, "type"]) == "search":
-                target_path = await self._search_file_path(chip_text)
-                if target_path:
-                    files_li = find_files_pathlib(target_path, chip_text)
-                    if len(files_li) == 1:
-                        await db_storage.set_deep_item(
-                            [f"{self.project}_over_data", self.label, chip_id, "icon"], "saved_search"
-                        )
-                    else:
-                        await db_storage.set_deep_item(
-                            [f"{self.project}_over_data", self.label, chip_id, "icon"], "search_off"
-                        )
-                else:
-                    await db_storage.set_deep_item(
-                        [f"{self.project}_over_data", self.label, chip_id, "icon"], "search_off"
-                    )
-            elif db_storage.get_deep_item([f"{self.project}_over_data", self.label, chip_id, "type"]) == "svn":
-                file_info = await self.get_url_file_info_async(
-                    db_storage.get_deep_item([f"{self.project}_over_data", self.label, chip_id, "url_path"])
-                )
-                if file_info[0]:
-                    await db_storage.set_deep_item(
-                        [f"{self.project}_over_data", self.label, chip_id, "icon"], "saved_search"
-                    )
-                else:
-                    await db_storage.set_deep_item(
-                        [f"{self.project}_over_data", self.label, chip_id, "icon"], "search_off"
-                    )
-            else:
-                await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "icon"], None)
-            # 更新enabled参数
-            await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "enabled"], True)
-            # 更新bg_color参数
-            await db_storage.set_deep_item(
-                [f"{self.project}_over_data", self.label, chip_id, "bg_color"], "bg-light-blue-1"
-            )
-        # 防止chip状态None（null）被当成False，当用户在弹窗选择激活状态时不做选择动作，保持原有null状态chip被处理成False显示效果
-        elif (
-            db_storage.get_deep_item(
-                [f"{self.project}_over_data", self.label, chip_id, "select_activ_dic", req_max_ver]
-            )
-            is None
-        ):
-            # 该情况意味着用户没有修改当前chip最新版本的null状态，看了一下而已
-            # 只要跳过这个情况不做任何修改即可
-            pass
-            # 冗余设计，复用注意检查与整体刷新处设置是否一致
-            # 修改这里要检查utils和information两个模块是否跟着改
-            # app.storage.general["overview_data"][self.project][self.label][chip_id]["enabled"] = None
-            # app.storage.general["overview_data"][self.project][self.label][chip_id]["icon"] = "question_mark"
-            # app.storage.general["overview_data"][self.project][self.label][chip_id]["bg_color"] = "bg-amber-5"
-        else:
-            # 修改这里要检查utils和information两个模块是否跟着改
-            # 更新icon参数
-            await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "icon"], "block")
-            # 更新enabled参数
-            await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "enabled"], False)
-            # 更新bg_color参数
-            await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "bg_color"], "bg-grey-5")
+        # req_max_ver = app.storage.general["project_req_max_ver"][self.project]
+        # # 如果最高版本激活状态为True
+        # if db_storage.get_deep_item(
+        #     [f"{self.project}_over_data", self.label, chip_id, "select_activ_dic", req_max_ver]
+        # ):
+        #     await self._update_chip_active_parameter(chip_id, chip_text)
+        # # 防止chip状态None（null）被当成False，当用户在弹窗选择激活状态时不做选择动作，保持原有null状态chip被处理成False显示效果
+        # elif (
+        #     db_storage.get_deep_item(
+        #         [f"{self.project}_over_data", self.label, chip_id, "select_activ_dic", req_max_ver]
+        #     )
+        #     is None
+        # ):
+        #     # 该情况意味着用户没有修改当前chip最新版本的null状态，看了一下而已
+        #     # 只要跳过这个情况不做任何修改即可
+        #     pass
+        #     # 冗余设计，复用注意检查与整体刷新处设置是否一致
+        #     # 修改这里要检查utils和information两个模块是否跟着改
+        #     # app.storage.general["overview_data"][self.project][self.label][chip_id]["enabled"] = None
+        #     # app.storage.general["overview_data"][self.project][self.label][chip_id]["icon"] = "question_mark"
+        #     # app.storage.general["overview_data"][self.project][self.label][chip_id]["bg_color"] = "bg-amber-5"
+        # else:
+        #     await self._update_chip_block_parameter(chip_id)
 
         # 如果激活弹窗关闭时，检测到激活多选项发生了变化，则修改该chip的编辑人
         select_activ_dic = copy.deepcopy(
@@ -2183,7 +2146,7 @@ class InteractiveButton:
                 # 关闭时，会以重新检测到的最高版本激活状态来更新chip相关参数，且是并发综合处理结果
                 # 甚至多了新的版本，但chip最终都以最高版本激活状态来正确显示
                 ui.button(
-                    "关闭", on_click=lambda: self._update_chip_parameter(chip_id, OLD_CHIP_SELECT_DIC, chip_text)
+                    "关闭", on_click=lambda: self._update_chip_creator(chip_id, OLD_CHIP_SELECT_DIC, chip_text)
                 ).on("click", lambda: self.activ_dialog.close())
 
         self.activ_dialog.open()
@@ -2267,8 +2230,57 @@ class InteractiveButton:
             # 刷新chip容器内容
             await self._refresh_chip_container()
 
+    # 更新失活chip资料相应参数，如icon、enabled、bg_color等等
+    async def _update_chip_block_parameter(self, chip_id):
+        # 修改这里要检查utils和information两个模块是否跟着改
+        # 更新icon参数
+        await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "icon"], "block")
+        # 更新enabled参数
+        await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "enabled"], False)
+        # 更新bg_color参数
+        await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "bg_color"], "bg-grey-5")
+
+    # 更新激活chip资料相应参数，如icon、enabled、bg_color等等
+    async def _update_chip_active_parameter(self, chip_id, chip_text):
+        # 修改这里要检查utils和information两个模块是否跟着改
+        # 更新icon参数
+        if db_storage.get_deep_item([f"{self.project}_over_data", self.label, chip_id, "type"]) == "file":
+            await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "icon"], "attachment")
+        elif db_storage.get_deep_item([f"{self.project}_over_data", self.label, chip_id, "type"]) == "search":
+            target_path = await self._search_file_path(chip_text)
+            if target_path:
+                files_li = find_files_pathlib(target_path, chip_text)
+                if len(files_li) == 1:
+                    await db_storage.set_deep_item(
+                        [f"{self.project}_over_data", self.label, chip_id, "icon"], "saved_search"
+                    )
+                else:
+                    await db_storage.set_deep_item(
+                        [f"{self.project}_over_data", self.label, chip_id, "icon"], "search_off"
+                    )
+            else:
+                await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "icon"], "search_off")
+        elif db_storage.get_deep_item([f"{self.project}_over_data", self.label, chip_id, "type"]) == "svn":
+            file_info = await self.get_url_file_info_async(
+                db_storage.get_deep_item([f"{self.project}_over_data", self.label, chip_id, "url_path"])
+            )
+            if file_info[0]:
+                await db_storage.set_deep_item(
+                    [f"{self.project}_over_data", self.label, chip_id, "icon"], "saved_search"
+                )
+            else:
+                await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "icon"], "search_off")
+        else:
+            await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "icon"], None)
+        # 更新enabled参数
+        await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "enabled"], True)
+        # 更新bg_color参数
+        await db_storage.set_deep_item(
+            [f"{self.project}_over_data", self.label, chip_id, "bg_color"], "bg-light-blue-1"
+        )
+
     # 根据字典数据创建一个具体的 ui.chip 组件。
-    async def _create_chip_from_data(self, chip_info: dict, target_path: str):
+    async def _create_chip_from_data(self, chip_info: dict, target_path: str, req_max_ver: str):
         chip_text = ""
         filepath = ""
         delete_icon = ""
@@ -2342,6 +2354,24 @@ class InteractiveButton:
                         progress=True,
                         close_button="✖",
                     )
+
+            # 创建前核对与chip激活状态相关的参数是否正确配置，不正确则更新
+            if chip_info["select_activ_dic"].get(req_max_ver) != chip_info["enabled"]:
+                # 如果最高版本激活状态为True
+                if chip_info["select_activ_dic"].get(req_max_ver):
+                    await self._update_chip_active_parameter(chip_info["id"], chip_text)
+                # 防止chip状态None（null）被当成False，当用户在弹窗选择激活状态时不做选择动作，保持原有null状态chip被处理成False显示效果
+                elif chip_info["select_activ_dic"].get(req_max_ver) is None:
+                    # 该情况意味着用户没有修改当前chip最新版本的null状态，看了一下而已
+                    # 只要跳过这个情况不做任何修改即可
+                    pass
+                    # 冗余设计，复用注意检查与整体刷新处设置是否一致
+                    # 修改这里要检查utils和information两个模块是否跟着改
+                    # app.storage.general["overview_data"][self.project][self.label][chip_id]["enabled"] = None
+                    # app.storage.general["overview_data"][self.project][self.label][chip_id]["icon"] = "question_mark"
+                    # app.storage.general["overview_data"][self.project][self.label][chip_id]["bg_color"] = "bg-amber-5"
+                else:
+                    await self._update_chip_block_parameter(chip_info["id"])
             # 创建 chip 并附加一个自定义属性 `data-chip-id` 用于后续的同步检查
             chip = (
                 ui.chip(text=chip_text, removable=False, icon=chip_info.get("icon"))

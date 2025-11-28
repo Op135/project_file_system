@@ -195,7 +195,23 @@ async def requirement_page(type="", json_path="", project_name=""):
 
             # app.storage.client["key_state"]["enter"] = 0
 
-    def set_project_state(project_name, state):
+    # 遍历传入的整个概述资料，找到svn类型chip，如果其最高版本激活状态不是False，则将其设置成False
+    def set_overview_data_svn_block(over_data):
+        for label, label_dic in over_data.items():
+            for id, chip_dic in label_dic.items():
+                # 只处理svn类型
+                if chip_dic.get("type") == "svn":
+                    req_max_ver = app.storage.general["project_req_max_ver"][project_name]
+                    select_activ_state = chip_dic.get("select_activ_dic", {}).get(req_max_ver)
+                    # 最高激活状态不是False
+                    if select_activ_state or select_activ_state is None:
+                        over_data[label][id]["select_activ_dic"][req_max_ver] = False
+        return over_data
+
+    # 修改项目状态
+    async def set_project_state(project_name, e):
+        state = e.value
+        previous_state = e.previous_value
         if app.storage.user.get("current_role") == "研发经理":
             project_data = {}
             with open(f"{BASE_DIR}/project_summary.json", "r", encoding="utf-8") as f:
@@ -225,6 +241,13 @@ async def requirement_page(type="", json_path="", project_name=""):
                     progress=False,
                     close_button="✖",
                 )
+
+            # 如果是从研发状态改为转产或量产，将所有svn概述全部失活掉，然后进行特殊刷新
+            if previous_state == "研发" and state in ["转产", "量产"]:
+                await db_storage.atomic_deep_update([f"{project_name}_over_data"], set_overview_data_svn_block)
+                # 必须在数据修改完成后，再激活概述特殊刷新标记
+                app.storage.general["special_refresh"][project_name] = True
+
         else:
             ui.notify(
                 "当前用户无权限修改项目状态！",
@@ -2622,7 +2645,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                             ui.select(
                                 PROJECT_STATE_LIST,
                                 value=app.storage.general["project_summary"][project_name].get("state"),
-                                on_change=lambda e: set_project_state(project_name, e.value),
+                                on_change=lambda e: set_project_state(project_name, e),
                             ).bind_value_from(app.storage.general["project_summary"][project_name], "state").props(
                                 "outlined"
                             ).classes("absolute top-0 left-1")
