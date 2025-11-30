@@ -105,6 +105,7 @@ async def requirement_page(type="", json_path="", project_name=""):
         ui.navigate.to("/login")  # 如果未登录，跳转到登录页
         return
     current_user = app.storage.user.get("current_user")
+    current_role = app.storage.user.get("current_role")
     # 从全局存储中获取用户当前的头像设置
     # (在 main.py 中定义 "user_preferences")
     user_prefs = app.storage.general.get("user_preferences", {}).get(current_user, {})
@@ -159,6 +160,9 @@ async def requirement_page(type="", json_path="", project_name=""):
     # 创建用于选择需求版本的对话框
     with ui.dialog().classes("") as req_version_dialog:
         version_card = ui.card().classes("w-1/4")
+
+    with ui.dialog().classes("") as over_dialog:
+        over_card = ui.card().classes("w-1/4")
     # 存储对话框引用
     app.storage.client["page_elements"]["project_card"] = project_card
     app.storage.client["page_elements"]["project_dialog"] = project_dialog
@@ -211,53 +215,72 @@ async def requirement_page(type="", json_path="", project_name=""):
                         over_data[label][id]["bg_color"] = "bg-grey-5"
         return over_data
 
+    # 编辑project_summary json文件
+    def edit_project_summary(project_name, state):
+        project_data = {}
+        with open(f"{BASE_DIR}/project_summary.json", "r", encoding="utf-8") as f:
+            project_data = json.load(f)
+            project_data[project_name]["state"] = state
+        # 将字典转换为 JSON 字符串
+        json_str = json.dumps(project_data, indent=4, ensure_ascii=False)
+        # 写入文件
+        try:
+            with open(f"{BASE_DIR}/project_summary.json", "w", encoding="utf-8") as f:
+                f.write(json_str)
+            app.storage.general["project_summary"][project_name]["state"] = state
+            ui.notify(
+                "修改项目状态成功。",
+                type="positive",
+                position="bottom",
+                timeout=1000,
+                progress=True,
+                close_button="✖",
+            )
+        except Exception as e:
+            ui.notify(
+                f"修改项目状态错误错误：{e}",
+                type="negative",
+                position="center",
+                timeout=0,
+                progress=False,
+                close_button="✖",
+            )
+
+    async def set_conversion_svn_chip(project_name, state):
+        # 先编辑json文件
+        edit_project_summary(project_name, state)
+        # 将该项目所有svn类的chip失活
+        await db_storage.atomic_deep_update([f"{project_name}_over_data"], set_overview_data_svn_block)
+        # 必须在数据修改完成后，再激活概述特殊刷新标记
+        app.storage.general["conversion_refresh"][project_name] = True
+        # 0.8秒比概述定时0.5秒刷新稍长情况下，关闭特殊刷新开关
+        ui.timer(0.8, lambda: close_conversion_refresh(project_name), once=True)
+        over_dialog.close()
+
+    def set_project_state_dialog(project_name, state):
+        over_card.clear()
+        with project_card:
+            ui.label("是否确认项目转产，所有svn概述项将设置为失活状态？").classes("text-base text-red")
+            with ui.row().classes("w-full justify-end"):
+                ui.button("确认", on_click=lambda: set_conversion_svn_chip(project_name, state))
+                ui.button("取消", on_click=lambda: over_dialog.close())
+        over_dialog.open()
+
     # 关闭项目概述特殊刷新标记
-    def close_special_refresh(project_name):
-        app.storage.general["special_refresh"][project_name] = False
+    def close_conversion_refresh(project_name):
+        app.storage.general["conversion_refresh"][project_name] = False
 
     # 修改项目状态
     async def set_project_state(project_name, e):
         state = e.value
         previous_state = e.previous_value
-        if app.storage.user.get("current_role") == "研发经理":
-            project_data = {}
-            with open(f"{BASE_DIR}/project_summary.json", "r", encoding="utf-8") as f:
-                project_data = json.load(f)
-                project_data[project_name]["state"] = state
-            # 将字典转换为 JSON 字符串
-            json_str = json.dumps(project_data, indent=4, ensure_ascii=False)
-            # 写入文件
-            try:
-                with open(f"{BASE_DIR}/project_summary.json", "w", encoding="utf-8") as f:
-                    f.write(json_str)
-                app.storage.general["project_summary"][project_name]["state"] = state
-                ui.notify(
-                    "修改项目状态成功。",
-                    type="positive",
-                    position="bottom",
-                    timeout=1000,
-                    progress=True,
-                    close_button="✖",
-                )
-            except Exception as e:
-                ui.notify(
-                    f"修改项目状态错误错误：{e}",
-                    type="negative",
-                    position="center",
-                    timeout=0,
-                    progress=False,
-                    close_button="✖",
-                )
 
+        if current_role == "研发经理":
             # 如果是从研发状态改为转产或量产，将所有svn概述全部失活掉，然后进行特殊刷新
             if previous_state == "研发" and state in ["转产", "量产"]:
-                # 将该项目所有svn类的chip失活
-                await db_storage.atomic_deep_update([f"{project_name}_over_data"], set_overview_data_svn_block)
-                # 必须在数据修改完成后，再激活概述特殊刷新标记
-                app.storage.general["special_refresh"][project_name] = True
-                # 0.8秒比概述定时0.5秒刷新稍长情况下，关闭特殊刷新开关
-                ui.timer(0.8, lambda: close_special_refresh(project_name), once=True)
-
+                set_project_state_dialog(project_name, state)
+            else:
+                edit_project_summary(project_name, state)
         else:
             ui.notify(
                 "当前用户无权限修改项目状态！",
@@ -1648,7 +1671,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                     close_button="✖",
                 )
                 return
-            if app.storage.user.get("current_role") not in ["销售", "销售总监", "admin"]:
+            if current_role not in ["销售", "销售总监", "admin"]:
                 ui.notify(
                     "当前用户无权限提交需求，只能导出到本地！",
                     type="negative",
@@ -2249,7 +2272,6 @@ async def requirement_page(type="", json_path="", project_name=""):
     # 需求显示界面框架构造函数
     async def overview_input_frame(json_data, temp_bool):
         project_name = json_data["1.0"]["project_name"]
-
         # 判断服务器存存器概述数据字典里是否已经存在该项目键值对，没有则创建，用于后续储存该项目需求概述资料
         if not db_storage.get_item(f"{project_name}_over_data", {}):
             await db_storage.set_item(f"{project_name}_over_data", {})
@@ -2651,7 +2673,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                 # 概述内容列
                 with ui.column().classes("w-1/2 min-w-[400px] items-center"):
                     with ui.row().classes("relative w-full items-center justify-center"):
-                        if app.storage.user.get("current_role") == "研发经理":
+                        if current_role == "研发经理":
                             ui.select(
                                 PROJECT_STATE_LIST,
                                 value=app.storage.general["project_summary"][project_name].get("state"),

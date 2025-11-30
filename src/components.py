@@ -1906,7 +1906,7 @@ class InteractiveButton:
             # 用户打开开关，想看全部记录情况下
             if app.storage.client.get("record_switch"):
                 # 如果研发转产标记激活，则排除掉svn类且失活的chip
-                if app.storage.general["special_refresh"].get(self.project):
+                if app.storage.general["conversion_refresh"].get(self.project):
                     # 抽取所有非svn类型的chip，及 svn类但激活的chip
                     stored_chip_ids = set(
                         [
