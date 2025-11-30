@@ -289,7 +289,7 @@ class FileThumbnail:
             # print(f"尝试打开PDF：{encoded_url}")
 
         # 启动异步任务
-        ui.timer(0.1, lambda: open_pdf(), once=True)
+        ui.timer(0.2, lambda: open_pdf(), once=True)
 
     def trigger_download(self, on_complete=None):
         """专门负责触发下载的辅助函数"""
@@ -1905,7 +1905,23 @@ class InteractiveButton:
             # 获取共享存储中所有 chip 的ID
             # 用户打开开关，想看全部记录情况下
             if app.storage.client.get("record_switch"):
-                stored_chip_ids = set(db_storage.get_deep_item([f"{self.project}_over_data", self.label], {}).keys())
+                # 如果研发转产标记激活，则排除掉svn类且失活的chip
+                if app.storage.general["special_refresh"].get(self.project):
+                    # 抽取所有非svn类型的chip，及 svn类但激活的chip
+                    stored_chip_ids = set(
+                        [
+                            id
+                            for id, chip_dic in db_storage.get_deep_item(
+                                [f"{self.project}_over_data", self.label], {}
+                            ).items()
+                            if chip_dic.get("type") != "svn" or chip_dic.get("enabled")
+                        ]
+                    )
+                else:
+                    # 所有chip均显示
+                    stored_chip_ids = set(
+                        db_storage.get_deep_item([f"{self.project}_over_data", self.label], {}).keys()
+                    )
             # 关闭开关，只看激活chip记录情况下
             else:
                 stored_chip_ids = set(
@@ -1924,12 +1940,6 @@ class InteractiveButton:
                 await self._refresh_chip_container()
                 # 刷新角色负责用户数据
                 overview_role_update(self.project)
-            elif app.storage.general["special_refresh"].get(self.project):
-                await db_storage.atomic_deep_update([f"{self.project}_over_data"], self.set_overview_data_svn_block)
-                # 刷新chip容器内容
-                await self._refresh_chip_container()
-                # 失活概述特殊刷新标记
-                app.storage.general["special_refresh"][self.project] = False
 
     # 打开文件
     # def open_file(self, filepath):
@@ -1969,7 +1979,7 @@ class InteractiveButton:
             # print(f"尝试打开PDF：{encoded_url}")
 
         # 启动异步任务
-        ui.timer(0.1, lambda: open_pdf(), once=True)
+        ui.timer(0.2, lambda: open_pdf(), once=True)
 
     def trigger_download(self, filepath, file_name, on_complete=None):
         """专门负责触发下载的辅助函数"""
