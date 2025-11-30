@@ -1921,7 +1921,6 @@ class InteractiveButton:
             # 只有当UI和存储中的ID集合不一致时，才重新渲染，以提高效率
             if displayed_chip_ids != stored_chip_ids:
                 # 刷新chip容器内容
-                print(f"{self.title}定时更新，开始刷新chip容器")
                 await self._refresh_chip_container()
                 # 刷新角色负责用户数据
                 overview_role_update(self.project)
@@ -2081,7 +2080,6 @@ class InteractiveButton:
         select_activ_dic = copy.deepcopy(
             db_storage.get_deep_item([f"{self.project}_over_data", self.label, chip_id, "select_activ_dic"], {})
         )
-        print(OLD_CHIP_SELECT_DIC, select_activ_dic)
         # 激活状态发生变化，记录编辑人和编辑时间记录
         if len(OLD_CHIP_SELECT_DIC) != len(select_activ_dic):
             ui.notify(
@@ -2110,7 +2108,6 @@ class InteractiveButton:
                 },
             )
         # 刷新chip容器内容
-        print("激活窗口，开始刷新chip容器")
         await self._refresh_chip_container()
         # 刷新概述负责人
         overview_role_update(self.project)
