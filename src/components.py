@@ -600,8 +600,14 @@ class InteractiveButton:
         #     await db_storage.set_deep_item([f"{self.project}_over_data", self.label], {})
 
         # 创建主按钮，并绑定点击事件
+        if self.processing_type in ["file", "image"]:
+            text_color = "text-orange-7"
+        elif self.processing_type == "test":
+            text_color = "text-deep-purple-7"
+        else:
+            text_color = "text-blue-7"
         ui.button(f"{self.title}：", on_click=self._handle_main_button_click).props("flat").classes(
-            "p-1 text-[14px]/[14px] mt-2 font-semibold"
+            f"p-1 text-[14px]/[14px] {text_color} mt-2 font-semibold"
         )
 
         # 创建一个行(row)容器，用于存放生成的所有 chip
@@ -1337,8 +1343,8 @@ class InteractiveButton:
     async def _add_search_chip_data(self, ui_spinner):
         # 开始显示漏斗
         ui_spinner.set_visibility(True)
-        text = self.chip_label.value
-        notes = self.chip_notes.value
+        text = self.chip_label.value.strip()
+        notes = self.chip_notes.value.strip()
         target_path = await self._search_file_path(text)
         # 有目标路径，且存在，且是文件夹路径
         if target_path and Path(target_path).is_dir():
@@ -1458,8 +1464,8 @@ class InteractiveButton:
     async def _add_svn_chip_data(self, ui_spinner):
         # 开始显示漏斗
         ui_spinner.set_visibility(True)
-        text = self.chip_label.value
-        notes = self.chip_notes.value
+        text = self.chip_label.value.strip()
+        notes = self.chip_notes.value.strip()
         project_state = app.storage.general["project_summary"][self.project]["state"]
         warehouse = self.state_path[project_state]
         file_info = (False, None)
@@ -1564,8 +1570,8 @@ class InteractiveButton:
 
     # 当用户点击“添加”按钮时，将文本数据添加到共享存储中
     async def _add_text_chip_data(self, ui_spinner):
-        text = self.chip_label.value
-        notes = self.chip_notes.value
+        text = self.chip_label.value.strip()
+        notes = self.chip_notes.value.strip()
         if not text:
             ui.notify(
                 "概述内容不能为空!",
@@ -1814,8 +1820,8 @@ class InteractiveButton:
 
     # 将测试项配置信息添加到共享储存中
     async def _add_test_chip_data(self, test_select_data):
-        text = self.chip_label.value
-        notes = self.chip_notes.value
+        text = self.chip_label.value.strip()
+        notes = self.chip_notes.value.strip()
         # 判断是否存在选择“其它”但不写明特殊要求的情况
         other_bool = False
         if test_select_data["state_select"] == "其它" and not test_select_data["state_other_text"]:
@@ -2678,6 +2684,7 @@ class InteractiveButton:
         self.chip_dialog.clear()
         with self.chip_dialog, ui.card().classes("w-1/2"):
             ui.label("添加新的文件引用概述内容").classes("text-lg font-bold")
+            ui.label(f"搜寻根目录：{self.upload_path}").classes("text-xs text-brown-7")
             self.chip_label = (
                 ui.input(label=self.dialog_label, placeholder="填入包括后缀的完整文件名")
                 .props("outlined")
@@ -2745,6 +2752,7 @@ class InteractiveButton:
         self.chip_dialog.clear()
         with self.chip_dialog, ui.card().classes("w-1/2"):
             ui.label("添加上传文件的注释").classes("text-lg font-bold")
+            ui.label(f"保存根目录：{self.upload_path}").classes("text-xs text-brown-7")
             self.chip_notes = (
                 ui.textarea(
                     label="针对该文件的注释（必填）",

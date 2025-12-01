@@ -42,7 +42,7 @@ with open(f"{BASE_DIR}/overview_config.json", "r", encoding="utf-8") as f:
 def setup_logging():
     # 1. 创建 Logger
     logger = logging.getLogger()
-    logger.setLevel(logging.WARNING)
+    logger.setLevel(logging.INFO)
 
     # 2. 定义格式
     formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")

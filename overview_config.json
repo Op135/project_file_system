@@ -482,7 +482,7 @@
                 "title": "产品完整3D图（stp）",
                 "processing_type": "file",
                 "file_name_regular": [],
-                "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）",
+                "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\2.输出——研发流程输出文档\\产品完整3D图",
                 "permission": {
                     "read_role": [
                         "boss",
@@ -558,12 +558,12 @@
                 }
             }
         ],
-        "结构重点特征位置图": [
+        "结构重点特征示意图": [
             {
                 "label": "product_output_position",
-                "title": "产品出光口位置图",
+                "title": "产品出光口位置示意图",
                 "processing_type": "image",
-                "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）",
+                "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\2.输出——研发流程输出文档\\产品示意图\\产品出光口位置示意图",
                 "permission": {
                     "read_role": [
                         "boss",
@@ -588,9 +588,9 @@
             },
             {
                 "label": "product_outlet_position",
-                "title": "产品出线位置图",
+                "title": "产品出线位置示意图",
                 "processing_type": "image",
-                "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）",
+                "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\2.输出——研发流程输出文档\\产品示意图\\产品出线位置示意图",
                 "permission": {
                     "read_role": [
                         "boss",
@@ -615,9 +615,9 @@
             },
             {
                 "label": "product_wind_diagram",
-                "title": "产品进出风示意图",
+                "title": "产品风道示意图",
                 "processing_type": "image",
-                "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）",
+                "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\2.输出——研发流程输出文档\\产品示意图\\产品风道示意图",
                 "permission": {
                     "read_role": [
                         "boss",
@@ -632,6 +632,35 @@
                         "研发样品",
                         "工程",
                         "质量"
+                    ],
+                    "edit_role": [
+                        "admin",
+                        "研发经理",
+                        "研发结构"
+                    ]
+                }
+            },
+            {
+                "label": "mechanical_assembly_details",
+                "title": "重点装配细节示意图",
+                "processing_type": "image",
+                "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\2.输出——研发流程输出文档\\产品示意图\\重点装配细节示意图",
+                "permission": {
+                    "read_role": [
+                        "boss",
+                        "销售总监",
+                        "销售",
+                        "客服主管",
+                        "客服",
+                        "研发助理",
+                        "研发电子主管",
+                        "研发硬件",
+                        "研发软件",
+                        "研发光学",
+                        "研发样品",
+                        "工程",
+                        "质量",
+                        "生产"
                     ],
                     "edit_role": [
                         "admin",
@@ -1004,11 +1033,11 @@
         ],
         "补充图档": [
             {
-                "label": "other_parts_drawings",
-                "title": "其它特殊零件图纸",
+                "label": "other_drawings",
+                "title": "其它图纸",
                 "processing_type": "file",
                 "file_name_regular": [],
-                "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）",
+                "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\2.输出——研发流程输出文档\\其它图纸",
                 "permission": {
                     "read_role": [
                         "boss",
@@ -1031,35 +1060,6 @@
                         "研发结构"
                     ]
                 }
-            },
-            {
-                "label": "mechanical_assembly_details",
-                "title": "装配细节示意图",
-                "processing_type": "image",
-                "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）",
-                "permission": {
-                    "read_role": [
-                        "boss",
-                        "销售总监",
-                        "销售",
-                        "客服主管",
-                        "客服",
-                        "研发助理",
-                        "研发电子主管",
-                        "研发硬件",
-                        "研发软件",
-                        "研发光学",
-                        "研发样品",
-                        "工程",
-                        "质量",
-                        "生产"
-                    ],
-                    "edit_role": [
-                        "admin",
-                        "研发经理",
-                        "研发结构"
-                    ]
-                }
             }
         ],
         "文档标准": [
@@ -1068,7 +1068,7 @@
                 "title": "装箱清单（xlsx）",
                 "processing_type": "file",
                 "file_name_regular": [],
-                "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）",
+                "upload_path": "\\\\192.168.1.102\\Server\\研发部（量产阶段）\\★装箱清单",
                 "permission": {
                     "read_role": [
                         "boss",
