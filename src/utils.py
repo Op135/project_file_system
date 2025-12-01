@@ -161,9 +161,9 @@ def update_users_data():
         ui.notify(
             f'用户配置数据更新出错： "{e}" ',
             type="negative",
-            position="bottom",
-            timeout=1000,
-            progress=True,
+            position="center",
+            timeout=0,
+            progress=False,
             close_button="✖",
         )
 
@@ -196,9 +196,9 @@ def update_config_service():
         ui.notify(
             f'需求配置文件更新出错： "{e}" ',
             type="negative",
-            position="bottom",
-            timeout=1000,
-            progress=True,
+            position="center",
+            timeout=0,
+            progress=False,
             close_button="✖",
         )
 
@@ -223,9 +223,9 @@ def updata_overview_config():
         ui.notify(
             f'概述项配置文件更新出错： "{e}" ',
             type="negative",
-            position="bottom",
-            timeout=1000,
-            progress=True,
+            position="center",
+            timeout=0,
+            progress=False,
             close_button="✖",
         )
 
@@ -299,7 +299,7 @@ def project_overview_config_update():
         ui.notify(
             f'项目表滚动信息关联配置更新出错： "{e}" ',
             type="negative",
-            position="bottom",
+            position="center",
             timeout=0,
             progress=False,
             close_button="✖",
@@ -340,7 +340,7 @@ def project_summary_update():
         ui.notify(
             f'项目列表更新出错： "{e}" ',
             type="negative",
-            position="bottom",
+            position="center",
             timeout=0,
             progress=False,
             close_button="✖",
@@ -625,10 +625,10 @@ async def extract_requirement(over_data_file_dic, file_path) -> dict:
             while not os.path.exists(old_file_path) and version_a > 0:
                 ui.notify(
                     f"上一个版本V{version_a}.0的需求配置文件可能丢失，将与更早版本做对比记录！",
-                    type="negative",
+                    type="warning",
                     position="bottom",
-                    timeout=0,
-                    progress=False,
+                    timeout=3000,
+                    progress=True,
                     close_button="✖",
                 )
                 await asyncio.sleep(2)
@@ -640,10 +640,10 @@ async def extract_requirement(over_data_file_dic, file_path) -> dict:
             else:
                 ui.notify(
                     "完全找不到任何低版本需求配置文件，只能将本次需求作为全新记录！",
-                    type="negative",
+                    type="warning",
                     position="bottom",
-                    timeout=0,
-                    progress=False,
+                    timeout=3000,
+                    progress=True,
                     close_button="✖",
                 )
                 await asyncio.sleep(2)
@@ -653,7 +653,7 @@ async def extract_requirement(over_data_file_dic, file_path) -> dict:
                 "本次处理需求为初版，将做第一次记录！",
                 type="info",
                 position="bottom",
-                timeout=1000,
+                timeout=2000,
                 progress=True,
                 close_button="✖",
             )
@@ -667,16 +667,23 @@ async def extract_requirement(over_data_file_dic, file_path) -> dict:
         else:
             ui.notify(
                 "本次处理处理的需求配置文件未找到，无法处理！",
-                type="negative",
+                type="warning",
                 position="bottom",
-                timeout=1000,
+                timeout=3000,
                 progress=True,
                 close_button="✖",
             )
             await asyncio.sleep(2)
             return {}
     except Exception as e:
-        ui.notify(f"读取或解析文件时出错: {e}", color="negative")
+        ui.notify(
+            f"读取或解析文件时出错: {e}",
+            type="negative",
+            position="center",
+            timeout=0,
+            progress=False,
+            close_button="✖",
+        )
         await asyncio.sleep(2)
         return {}
 
@@ -834,7 +841,7 @@ def move_file_with_timestamp_pathlib(source_file_path: str, destination_dir: str
             f"文件成功移动到: {new_destination_path}",
             type="positive",
             position="bottom",
-            timeout=2000,
+            timeout=1000,
             progress=True,
             close_button="✖",
         )
@@ -843,20 +850,20 @@ def move_file_with_timestamp_pathlib(source_file_path: str, destination_dir: str
     except FileNotFoundError as e:
         ui.notify(
             f"错误: {e}",
-            type="warning",
-            position="bottom",
-            timeout=2000,
-            progress=True,
+            type="negative",
+            position="center",
+            timeout=0,
+            progress=False,
             close_button="✖",
         )
         raise
     except Exception as e:
         ui.notify(
             f"移动文件时发生未知错误: {e}",
-            type="warning",
-            position="bottom",
-            timeout=2000,
-            progress=True,
+            type="negative",
+            position="center",
+            timeout=0,
+            progress=False,
             close_button="✖",
         )
         raise
@@ -871,7 +878,7 @@ def delete_file(file_path):
             f"文件 '{file_path}' 已成功删除。",
             type="positive",
             position="bottom",
-            timeout=2000,
+            timeout=1000,
             progress=True,
             close_button="✖",
         )
@@ -879,30 +886,30 @@ def delete_file(file_path):
         # 3. 处理文件不存在的错误
         ui.notify(
             f"错误：文件 '{file_path}' 未找到。",
-            type="warning",
-            position="bottom",
-            timeout=2000,
-            progress=True,
+            type="negative",
+            position="center",
+            timeout=0,
+            progress=False,
             close_button="✖",
         )
     except PermissionError:
         # 4. 处理权限不足的错误
         ui.notify(
             f"错误：没有权限删除文件 '{file_path}'。",
-            type="warning",
-            position="bottom",
-            timeout=2000,
-            progress=True,
+            type="negative",
+            position="center",
+            timeout=0,
+            progress=False,
             close_button="✖",
         )
     except IsADirectoryError:
         # 5. 处理试图删除目录的错误
         ui.notify(
             f"错误：'{file_path}' 是一个目录，不能使用 os.remove() 删除。",
-            type="warning",
-            position="bottom",
-            timeout=2000,
-            progress=True,
+            type="negative",
+            position="center",
+            timeout=0,
+            progress=False,
             close_button="✖",
         )
         # (注意：删除空目录请使用 os.rmdir(), 删除非空目录请使用 shutil.rmtree())
@@ -910,10 +917,10 @@ def delete_file(file_path):
         # 6. 捕获其他可能的异常
         ui.notify(
             f"删除文件时发生未知错误: {e}",
-            type="warning",
-            position="bottom",
-            timeout=2000,
-            progress=True,
+            type="negative",
+            position="center",
+            timeout=0,
+            progress=False,
             close_button="✖",
         )
 
@@ -1085,36 +1092,43 @@ async def requirement_version_tidy(project_name, review: bool) -> str:
                         overviow_data["0"] = temp_dict["latest"]
                         overviow_data["version"] = str(pro_ver)
                         overviow_data["first_create"] = False
-                # 将字典转换为 JSON 字符串
-                overviow_str = json.dumps(overviow_data, indent=4, ensure_ascii=False)
-                # 写入文
-                if review:
-                    with open(overview_file_path_temp, "w", encoding="utf-8") as f:
-                        f.write(overviow_str)
-                    return overview_file_path_temp
-                else:
-                    with open(overview_file_path, "w", encoding="utf-8") as f:
-                        f.write(overviow_str)
-                    return overview_file_path
-
+                try:
+                    # 将字典转换为 JSON 字符串
+                    overviow_str = json.dumps(overviow_data, indent=4, ensure_ascii=False)
+                    # 写入文
+                    if review:
+                        with open(overview_file_path_temp, "w", encoding="utf-8") as f:
+                            f.write(overviow_str)
+                        return overview_file_path_temp
+                    else:
+                        with open(overview_file_path, "w", encoding="utf-8") as f:
+                            f.write(overviow_str)
+                        return overview_file_path
+                except Exception:
+                    logger.error("写入概述文件时发生错误", exc_info=True)
+                    return ""
             elif v_max == overviow_version:
                 # 虽然需求没有新版本，但概述文件已经不是第一次创建
                 # 也需将标记改为False，防止初版概述chip激活状态修改记录被抹除
                 if overviow_data["first_create"]:
                     overviow_data["first_create"] = False
-                    # 将字典转换为 JSON 字符串
-                    overviow_str = json.dumps(overviow_data, indent=4, ensure_ascii=False)
-                    # 写入文件
-                    with open(overview_file_path, "w", encoding="utf-8") as f:
-                        f.write(overviow_str)
+                    try:
+                        # 将字典转换为 JSON 字符串
+                        overviow_str = json.dumps(overviow_data, indent=4, ensure_ascii=False)
+                        # 写入文件
+                        with open(overview_file_path, "w", encoding="utf-8") as f:
+                            f.write(overviow_str)
+                    except Exception:
+                        logger.error("写入概述文件时发生错误", exc_info=True)
+                        return ""
                 return overview_file_path
             else:
                 ui.notify(
                     "出现需求配置丢失现象，请联系管理员处理，否则该项目资料将一直无法展示！",
                     type="warning",
-                    position="center",
-                    timeout=0,
-                    progress=False,
+                    position="bottom",
+                    timeout=3000,
+                    progress=True,
                     close_button="✖",
                 )
                 return ""
@@ -1130,22 +1144,26 @@ async def requirement_version_tidy(project_name, review: bool) -> str:
                     overviow_data["0"] = temp_dict["latest"]
                     overviow_data["version"] = str(pro_ver)
                     overviow_data["first_create"] = True
-            # 将字典转换为 JSON 字符串
-            overviow_str = json.dumps(overviow_data, indent=4, ensure_ascii=False)
-            if review:
-                with open(overview_file_path_temp, "w", encoding="utf-8") as f:
-                    f.write(overviow_str)
-                return overview_file_path_temp
-            else:
-                with open(overview_file_path, "w", encoding="utf-8") as f:
-                    f.write(overviow_str)
-                return overview_file_path
+            try:
+                # 将字典转换为 JSON 字符串
+                overviow_str = json.dumps(overviow_data, indent=4, ensure_ascii=False)
+                if review:
+                    with open(overview_file_path_temp, "w", encoding="utf-8") as f:
+                        f.write(overviow_str)
+                    return overview_file_path_temp
+                else:
+                    with open(overview_file_path, "w", encoding="utf-8") as f:
+                        f.write(overviow_str)
+                    return overview_file_path
+            except Exception:
+                logger.error("写入概述文件时发生错误", exc_info=True)
+                return ""
     else:
         ui.notify(
             "无该项目需求配置文件，无法整理。",
             type="warning",
             position="bottom",
-            timeout=1000,
+            timeout=3000,
             progress=True,
             close_button="✖",
         )

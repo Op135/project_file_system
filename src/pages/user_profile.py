@@ -52,12 +52,18 @@ def user_profile_page():
 
     # --- 新增：处理上传的函数 ---
     async def handle_upload(e: UploadEventArguments):
-        file_content = await e.file.read()
-        if not file_content:
-            ui.notify("未选择文件", type="warning")
-            return
-
         try:
+            file_content = await e.file.read()
+            if not file_content:
+                ui.notify(
+                    "未选择文件",
+                    type="warning",
+                    position="bottom",
+                    timeout=3000,
+                    progress=True,
+                    close_button="✖",
+                )
+                return
             img = Image.open(io.BytesIO(file_content))
 
             # 2. 核心处理：调整图片大小
@@ -91,15 +97,14 @@ def user_profile_page():
                 progress=True,
                 close_button="✖",
             )
-
         except Exception as ex:
-            logger.error("头像处理失败", exc_info=True)
+            logger.error("头像上传处理失败", exc_info=True)  # 在服务器端打印错误详情
             ui.notify(
-                f"图片处理失败：{ex}",
+                f"上传文件 '{e.file.name}' 失败: {str(ex)}",
                 type="negative",
-                position="bottom",
-                timeout=2000,
-                progress=True,
+                position="center",
+                timeout=0,
+                progress=False,
                 close_button="✖",
             )
 

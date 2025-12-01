@@ -136,9 +136,12 @@ class ConfigService:
             "excel_version_hash": hashlib.md5(self.excel_path.read_bytes()).hexdigest()[:8],
             "entry_status": False,  # 初始化录入状态，默认没有录完
         }
-        with open(f"{self.base_dir}/config_service.json", "w", encoding="utf-8") as f:
-            json.dump(self._cache, f, ensure_ascii=False, indent=4)
-        return self._cache
+        try:
+            with open(f"{self.base_dir}/config_service.json", "w", encoding="utf-8") as f:
+                json.dump(self._cache, f, ensure_ascii=False, indent=4)
+            return self._cache
+        except Exception:
+            logger.error("上传处理失败", exc_info=True)  # 在服务器端打印错误详情
 
     @staticmethod
     def clean_text(text):

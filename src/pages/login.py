@@ -14,7 +14,12 @@ logger = logging.getLogger(__name__)
 def _submit_new_password(dialog, new_pwd, confirm_pwd, target_username):
     if new_pwd.value != confirm_pwd.value:
         ui.notify(
-            "两次输入密码不一致", type="warning", position="bottom", timeout=1000, progress=True, close_button="✖"
+            "两次输入密码不一致",
+            type="warning",
+            position="bottom",
+            timeout=3000,
+            progress=True,
+            close_button="✖",
         )
         return
     try:
@@ -33,9 +38,9 @@ def _submit_new_password(dialog, new_pwd, confirm_pwd, target_username):
         ui.notify(
             f"密码设置失败: {str(e)}",
             type="negative",
-            position="bottom",
-            timeout=1000,
-            progress=True,
+            position="center",
+            timeout=0,
+            progress=False,
             close_button="✖",
         )
 
@@ -75,7 +80,12 @@ def login_page():
             user_info = app.state.user_service.get_user(input_username)
             if not user_info:
                 ui.notify(
-                    "用户不存在", type="warning", position="bottom", timeout=1000, progress=True, close_button="✖"
+                    "用户不存在",
+                    type="warning",
+                    position="bottom",
+                    timeout=3000,
+                    progress=True,
+                    close_button="✖",
                 )
                 return
 
@@ -91,10 +101,22 @@ def login_page():
                 # 跳转到主界面
                 ui.navigate.to("/main")
             else:
-                ui.notify("密码错误", type="negative", position="bottom", timeout=1000, progress=True, close_button="✖")
+                ui.notify(
+                    "密码错误",
+                    type="warning",
+                    position="bottom",
+                    timeout=3000,
+                    progress=True,
+                    close_button="✖",
+                )
         except Exception as e:
             ui.notify(
-                f"登录失败: {str(e)}", type="negative", position="bottom", timeout=1000, progress=True, close_button="✖"
+                f"登录失败: {str(e)}",
+                type="negative",
+                position="center",
+                timeout=0,
+                progress=False,
+                close_button="✖",
             )
 
     # 修改密码处理函数
@@ -108,7 +130,12 @@ def login_page():
             user_info = app.state.user_service.get_user(input_username)
             if not user_info:
                 ui.notify(
-                    "用户不存在", type="warning", position="bottom", timeout=1000, progress=True, close_button="✖"
+                    "用户不存在",
+                    type="warning",
+                    position="bottom",
+                    timeout=3000,
+                    progress=True,
+                    close_button="✖",
                 )
                 return
 
@@ -116,14 +143,21 @@ def login_page():
             if str(user_info.get("password", "")) == input_password:
                 create_password_dialog(input_username)
             else:
-                ui.notify("密码错误", type="negative", position="bottom", timeout=1000, progress=True, close_button="✖")
+                ui.notify(
+                    "密码错误",
+                    type="warning",
+                    position="bottom",
+                    timeout=3000,
+                    progress=True,
+                    close_button="✖",
+                )
         except Exception as e:
             ui.notify(
                 f"密码修改触发失败: {str(e)}",
                 type="negative",
-                position="bottom",
-                timeout=1000,
-                progress=True,
+                position="center",
+                timeout=0,
+                progress=False,
                 close_button="✖",
             )
 
@@ -135,9 +169,9 @@ def login_page():
             ui.notify(
                 f"权限验证失败: {str(e)}",
                 type="negative",
-                position="bottom",
-                timeout=1000,
-                progress=True,
+                position="center",
+                timeout=0,
+                progress=False,
                 close_button="✖",
             )
             return False
@@ -157,9 +191,9 @@ def login_page():
             ui.notify(
                 f"用户查询失败: {str(e)}",
                 type="negative",
-                position="bottom",
-                timeout=1000,
-                progress=True,
+                position="center",
+                timeout=0,
+                progress=False,
                 close_button="✖",
             )
 

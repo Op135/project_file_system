@@ -180,10 +180,24 @@ async def requirement_page(type="", json_path="", project_name=""):
     try:
         config_files = [f.name for f in Path(REQ_DIR).glob("*.json") if f.is_file()]
         if not config_files:
-            ui.notify("系统初始化，目录下未找到任何JSON配置文件。", color="info")
+            ui.notify(
+                "系统初始化，目录下未找到任何JSON配置文件。",
+                type="info",
+                position="bottom",
+                timeout=2000,
+                progress=True,
+                close_button="✖",
+            )
             config_files = []
     except Exception as e:
-        ui.notify(f"读取配置文件目录时出错: {e}", color="negative")
+        ui.notify(
+            f"读取配置文件目录时出错: {e}",
+            type="negative",
+            position="center",
+            timeout=0,
+            progress=False,
+            close_button="✖",
+        )
         config_files = []
 
     # 键盘事件跟踪处理函数
@@ -299,7 +313,7 @@ async def requirement_page(type="", json_path="", project_name=""):
             ui.notify(
                 "当前用户无权限修改项目状态！",
                 type="info",
-                position="center",
+                position="bottom",
                 timeout=2000,
                 progress=True,
                 close_button="✖",
@@ -397,11 +411,25 @@ async def requirement_page(type="", json_path="", project_name=""):
             new_file = select2.value
 
             if not old_file or not new_file:
-                ui.notify("请选择两个需要对比的配置文件。", color="warning")
+                ui.notify(
+                    "请选择两个需要对比的配置文件。",
+                    type="warning",
+                    position="bottom",
+                    timeout=3000,
+                    progress=True,
+                    close_button="✖",
+                )
                 return
 
             if old_file == new_file:
-                ui.notify("请选择两个不同的配置文件进行对比。", color="warning")
+                ui.notify(
+                    "请选择两个不同的配置文件进行对比。",
+                    type="warning",
+                    position="bottom",
+                    timeout=3000,
+                    progress=True,
+                    close_button="✖",
+                )
                 return
 
             # 读取和解析JSON文件
@@ -414,7 +442,14 @@ async def requirement_page(type="", json_path="", project_name=""):
                     new_data = json.load(f)
 
             except Exception as e:
-                ui.notify(f"读取或解析文件时出错: {e}", color="negative")
+                ui.notify(
+                    f"读取或解析文件时出错: {e}",
+                    type="negative",
+                    position="center",
+                    timeout=0,
+                    progress=False,
+                    close_button="✖",
+                )
                 return
 
             # 调用对比函数
@@ -493,9 +528,9 @@ async def requirement_page(type="", json_path="", project_name=""):
         if target_project_name == "":
             ui.notify(
                 "请输入非空名称！",
-                type="negative",
+                type="warning",
                 position="bottom",
-                timeout=1000,
+                timeout=3000,
                 progress=True,
                 close_button="✖",
             )
@@ -506,10 +541,10 @@ async def requirement_page(type="", json_path="", project_name=""):
         ):
             ui.notify(
                 "非临时项目，又未正式立项，命名不可用，请重新命名！",
-                type="negative",
-                position="center",
-                timeout=0,
-                progress=False,
+                type="warning",
+                position="bottom",
+                timeout=3000,
+                progress=True,
                 close_button="✖",
             )
             app.storage.client["target_project_name"] = app.storage.client["project_name"]
@@ -518,10 +553,10 @@ async def requirement_page(type="", json_path="", project_name=""):
         ):
             ui.notify(
                 "不符合临时项目号命名规则：RFTS-4位数字！",
-                type="negative",
-                position="center",
-                timeout=0,
-                progress=False,
+                type="warning",
+                position="bottom",
+                timeout=3000,
+                progress=True,
                 close_button="✖",
             )
             app.storage.client["target_project_name"] = app.storage.client["project_name"]
@@ -647,10 +682,10 @@ async def requirement_page(type="", json_path="", project_name=""):
     # json数据导入处理函数——处理数据
     async def json_handle_upload(e: events.UploadEventArguments):
         """处理上传的JSON文件"""
-        # 获取上传的文件内容
-        content_obj = await e.file.read()
-        content = content_obj.decode("utf-8")
         try:
+            # 获取上传的文件内容
+            content_obj = await e.file.read()
+            content = content_obj.decode("utf-8")
             # 解析JSON数据
             json_data = json.loads(content)
             loads_requirements(json_data, True)
@@ -659,9 +694,19 @@ async def requirement_page(type="", json_path="", project_name=""):
             ui.notify(
                 "文件上传失败",
                 type="negative",
-                position="bottom",
-                timeout=2000,
-                progress=True,
+                position="center",
+                timeout=0,
+                progress=False,
+                close_button="✖",
+            )
+        except Exception as ex:
+            logger.error("上传处理失败", exc_info=True)  # 在服务器端打印错误详情
+            ui.notify(
+                f"上传文件 '{e.file.name}' 失败: {str(ex)}",
+                type="negative",
+                position="center",
+                timeout=0,
+                progress=False,
                 close_button="✖",
             )
 
@@ -691,9 +736,9 @@ async def requirement_page(type="", json_path="", project_name=""):
                 ui.notify(
                     f'文件 "{file_name}" 不是规定的：{", ".join(REQ_UPLOADS_FILE_TYPE)} 文件类型，无法上传!',
                     type="warning",
-                    position="center",
-                    timeout=0,
-                    progress=False,
+                    position="bottom",
+                    timeout=3000,
+                    progress=True,
                     close_button="✖",
                 )
                 return
@@ -724,7 +769,6 @@ async def requirement_page(type="", json_path="", project_name=""):
                 with open(new_file_path, "wb") as f:
                     while chunk := file_content_object.read(4096):  # <--- 重要：循环读取和写入
                         f.write(chunk)
-                # ui.notify(f"文件 {e.file.name} 已上传并保存到 {file_path}")
 
             # 将文件路径映射为可访问的 URL
             url_path = f"{UPLOAD_URL_DIR}/{file_name_hash}"
@@ -739,7 +783,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                     f"文件已存在: {str(e.file.name)}",
                     type="warning",
                     position="bottom",
-                    timeout=1000,
+                    timeout=3000,
                     progress=True,
                     close_button="✖",
                 )
@@ -786,7 +830,7 @@ async def requirement_page(type="", json_path="", project_name=""):
             ui.notify(
                 f"上传文件 '{e.file.name}' 失败: {str(ex)}",
                 type="negative",
-                position="bottom",
+                position="center",
                 timeout=0,
                 progress=False,
                 close_button="✖",
@@ -1165,7 +1209,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                 "请选填",
                 type="warning",
                 position="bottom",
-                timeout=1000,
+                timeout=3000,
                 progress=True,
                 close_button="✖",
             )
@@ -1176,7 +1220,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                 "这已经是第一个问题了",
                 type="warning",
                 position="bottom",
-                timeout=1000,
+                timeout=3000,
                 progress=True,
                 close_button="✖",
             )
@@ -1191,8 +1235,8 @@ async def requirement_page(type="", json_path="", project_name=""):
             ui.notify(
                 "这是最后一个问题，检查所有问题都选填后即可提交需求。",
                 type="positive",
-                position="center",
-                timeout=3000,
+                position="bottom",
+                timeout=1000,
                 progress=True,
                 close_button="✖",
             )
@@ -1216,7 +1260,14 @@ async def requirement_page(type="", json_path="", project_name=""):
         # 而不是使用闭包捕获的旧变量
         current_question_column = app.storage.client["page_elements"].get("question_column")
         if not current_question_column:
-            ui.notify("无法找到问题显示区域，请刷新页面重试。", type="negative")
+            ui.notify(
+                "无法找到问题显示区域，请刷新页面重试。",
+                type="warning",
+                position="bottom",
+                timeout=3000,
+                progress=True,
+                close_button="✖",
+            )
             return
         # --- 修改结束 ---
         question = app.storage.client["config_data"]["data"][k]["guide_content"]
@@ -1440,7 +1491,14 @@ async def requirement_page(type="", json_path="", project_name=""):
         # 而不是使用闭包捕获的旧变量
         current_img_row = app.storage.client["page_elements"].get("img_row")
         if not current_img_row:
-            ui.notify("无法找到文件缩略图显示区域，请刷新页面重试。", type="negative")
+            ui.notify(
+                "无法找到文件缩略图显示区域，请刷新页面重试。",
+                type="warning",
+                position="bottom",
+                timeout=3000,
+                progress=True,
+                close_button="✖",
+            )
             return
         current_img_row.clear()
         with current_img_row:
@@ -1610,20 +1668,20 @@ async def requirement_page(type="", json_path="", project_name=""):
             if original_review_state not in ["已审", ""]:
                 ui.notify(
                     "需求处于未审状态，不能导出到本地！",
-                    type="negative",
-                    position="center",
-                    timeout=0,
-                    progress=False,
+                    type="warning",
+                    position="bottom",
+                    timeout=3000,
+                    progress=True,
                     close_button="✖",
                 )
                 return
             if project_name.split("-")[0] == "RFTS" and not validate_format_regex(project_name, r"^RFTS-\d{4}$"):
                 ui.notify(
                     "不符合临时项目号命名规则：RFTS-4位数字！",
-                    type="negative",
-                    position="center",
-                    timeout=0,
-                    progress=False,
+                    type="warning",
+                    position="bottom",
+                    timeout=3000,
+                    progress=True,
                     close_button="✖",
                 )
                 return
@@ -1665,7 +1723,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                 f"需求已导出，版本已迭代到: V{version}，且导出时不会更改项目名称。",
                 type="positive",
                 position="bottom",
-                timeout=2000,
+                timeout=1000,
                 progress=True,
                 close_button="✖",
             )
@@ -1674,40 +1732,40 @@ async def requirement_page(type="", json_path="", project_name=""):
             if target_project_name == "":
                 ui.notify(
                     "提交需求必须给项目命名！",
-                    type="negative",
-                    position="center",
-                    timeout=0,
-                    progress=False,
+                    type="warning",
+                    position="bottom",
+                    timeout=3000,
+                    progress=True,
                     close_button="✖",
                 )
                 return
             if current_role not in ["销售", "销售总监", "admin"]:
                 ui.notify(
                     "当前用户无权限提交需求，只能导出到本地！",
-                    type="negative",
-                    position="center",
-                    timeout=0,
-                    progress=False,
+                    type="warning",
+                    position="bottom",
+                    timeout=3000,
+                    progress=True,
                     close_button="✖",
                 )
                 return
             if project_name.split("-")[0] != "RFTS" and project_name not in app.storage.general["project_summary"]:
                 ui.notify(
                     "非临时项目，又未正式立项，不可提交服务器，只可导出到本地！",
-                    type="negative",
-                    position="center",
-                    timeout=0,
-                    progress=False,
+                    type="warning",
+                    position="bottom",
+                    timeout=3000,
+                    progress=True,
                     close_button="✖",
                 )
                 return
             if project_name.split("-")[0] == "RFTS" and not validate_format_regex(project_name, r"^RFTS-\d{4}$"):
                 ui.notify(
                     "不符合临时项目号命名规则：RFTS-4位数字！",
-                    type="negative",
-                    position="center",
-                    timeout=0,
-                    progress=False,
+                    type="warning",
+                    position="bottom",
+                    timeout=3000,
+                    progress=True,
                     close_button="✖",
                 )
                 return
@@ -1715,20 +1773,20 @@ async def requirement_page(type="", json_path="", project_name=""):
             if original_review_state == "待审":
                 ui.notify(
                     "参照项目的需求处于待审状态，禁止参照引用！",
-                    type="negative",
-                    position="center",
-                    timeout=0,
-                    progress=False,
+                    type="warning",
+                    position="bottom",
+                    timeout=3000,
+                    progress=True,
                     close_button="✖",
                 )
                 return
             if target_review_state == "待审":
                 ui.notify(
                     "目标项目的需求处于待审状态，禁止修改！",
-                    type="negative",
-                    position="center",
-                    timeout=0,
-                    progress=False,
+                    type="warning",
+                    position="bottom",
+                    timeout=3000,
+                    progress=True,
                     close_button="✖",
                 )
                 return
@@ -1769,7 +1827,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                         ui.notify(
                             f"项目旧版本需求文件查阅失败！错误：文件 '{old_data_path}' 不是有效的 JSON 格式。",
                             type="negative",
-                            position="bottom",
+                            position="center",
                             timeout=0,
                             progress=False,
                             close_button="✖",
@@ -1779,7 +1837,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                         ui.notify(
                             f"项目旧版本需求文件查阅失败！错误：读取文件时发生其他错误：{e}",
                             type="negative",
-                            position="bottom",
+                            position="center",
                             timeout=0,
                             progress=False,
                             close_button="✖",
@@ -1801,10 +1859,10 @@ async def requirement_page(type="", json_path="", project_name=""):
                         if float(copy_version) < 1.0:
                             ui.notify(
                                 "复制衍生项目需求文件失败！参照的项目版本低于1.0。",
-                                type="negative",
+                                type="warning",
                                 position="bottom",
-                                timeout=0,
-                                progress=False,
+                                timeout=3000,
+                                progress=True,
                                 close_button="✖",
                             )
                             return
@@ -1823,7 +1881,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                             ui.notify(
                                 f"复制衍生项目需求文件失败！错误：文件 '{old_file_path}' 不是有效的 JSON 格式。",
                                 type="negative",
-                                position="bottom",
+                                position="center",
                                 timeout=0,
                                 progress=False,
                                 close_button="✖",
@@ -1833,7 +1891,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                             ui.notify(
                                 f"复制衍生项目需求文件失败！错误：读取文件时发生其他错误：{e}",
                                 type="negative",
-                                position="bottom",
+                                position="center",
                                 timeout=0,
                                 progress=False,
                                 close_button="✖",
@@ -1870,7 +1928,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                                 "复制衍生项目需求文件概述资料成功。",
                                 type="positive",
                                 position="bottom",
-                                timeout=2000,
+                                timeout=1000,
                                 progress=True,
                                 close_button="✖",
                             )
@@ -1878,7 +1936,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                             logger.error("复制修改衍生临时项目需求文件时发生其他错误", exc_info=True)
                             ui.notify(
                                 f"复制衍生项目需求文件概述资料出错：{e}",
-                                type="warning",
+                                type="negative",
                                 position="center",
                                 timeout=0,
                                 progress=False,
@@ -1926,7 +1984,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                     f"需求已提交，版本已迭代到: V{new_version}",
                     type="positive",
                     position="bottom",
-                    timeout=2000,
+                    timeout=1000,
                     progress=True,
                     close_button="✖",
                 )
@@ -1934,10 +1992,10 @@ async def requirement_page(type="", json_path="", project_name=""):
             else:
                 ui.notify(
                     "需求确认项未全部选填完毕，不能提交！",
-                    type="negative",
-                    position="center",
-                    timeout=0,
-                    progress=False,
+                    type="warning",
+                    position="bottom",
+                    timeout=3000,
+                    progress=True,
                     close_button="✖",
                 )
 
@@ -1955,8 +2013,8 @@ async def requirement_page(type="", json_path="", project_name=""):
             ui.notify(
                 "项目名或需求版本获取失败，无法响应！",
                 type="warning",
-                position="center",
-                timeout=1000,
+                position="bottom",
+                timeout=3000,
                 progress=True,
                 close_button="✖",
             )
@@ -1987,7 +2045,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                 "该项目当前没有其它需求配置！",
                 type="info",
                 position="bottom",
-                timeout=1000,
+                timeout=2000,
                 progress=True,
                 close_button="✖",
             )
@@ -2128,9 +2186,9 @@ async def requirement_page(type="", json_path="", project_name=""):
                             ui.notify(
                                 "当前需求处于待审状态，禁止导出和提交！",
                                 type="warning",
-                                position="center",
-                                timeout=0,
-                                progress=False,
+                                position="bottom",
+                                timeout=3000,
+                                progress=True,
                                 close_button="✖",
                             )
                         elif (
@@ -2142,9 +2200,9 @@ async def requirement_page(type="", json_path="", project_name=""):
                             ui.notify(
                                 "当前需求处于待修改状态，修改后可提交，但禁止导出！",
                                 type="warning",
-                                position="center",
-                                timeout=0,
-                                progress=False,
+                                position="bottom",
+                                timeout=3000,
+                                progress=True,
                                 close_button="✖",
                             )
             # ignore不设定默认导致键盘事件在'input', 'select', 'button', 'textarea'元素聚焦时被忽略

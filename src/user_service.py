@@ -34,7 +34,7 @@ class UserService:
             try:
                 num = float(s)
                 return f"{int(num)}" if num.is_integer() else f"{num}"
-            except:
+            except Exception:
                 return s
 
         # 处理浮点尾数

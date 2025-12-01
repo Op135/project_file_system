@@ -26,6 +26,40 @@ async def non_blocking_handler():
     ui.notify("操作结束！这期间UI一直是可交互的。")
 
 
+ui.notify(
+    f'需求配置文件更新出错： "{e}" ',
+    type="negative",
+    position="center",
+    timeout=0,
+    progress=False,
+    close_button="✖",
+)
+ui.notify(
+    "该文件已被销售删除，虽可查看，但谨慎参考！",
+    type="warning",
+    position="bottom",
+    timeout=3000,
+    progress=True,
+    close_button="✖",
+)
+ui.notify(
+    f"开始下载文件: {self.file_neme_suffix}",
+    type="info",
+    position="bottom",
+    timeout=2000,
+    progress=True,
+    close_button="✖",
+)
+ui.notify(
+    "修改项目状态成功。",
+    type="positive",
+    position="bottom",
+    timeout=1000,
+    progress=True,
+    close_button="✖",
+)
+
+
 s = "RFFM-1730_OP12F_V02"
 # 定义正则表达式
 # 方案1：匹配到第一个下划线之前的部分

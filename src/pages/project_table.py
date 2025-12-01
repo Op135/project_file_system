@@ -344,9 +344,9 @@ def project_table_page():
             ui.notify(
                 f"获取列状态失败: {e}",
                 type="negative",
-                position="bottom",
-                timeout=2000,
-                progress=True,
+                position="center",
+                timeout=0,
+                progress=False,
                 close_button="✖",
             )
             return

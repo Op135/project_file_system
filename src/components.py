@@ -388,7 +388,7 @@ class FileThumbnail:
             f"开始下载文件: {self.file_neme_suffix}",
             type="info",
             position="bottom",
-            timeout=1000,
+            timeout=2000,
             progress=True,
             close_button="✖",
         )
@@ -438,26 +438,6 @@ class FileThumbnail:
             # b. 通过JavaScript在客户端设置标记
             await ui.run_javascript(f'sessionStorage.setItem("{storage_key}", "true")')
 
-    # 打开其它文件，废弃，服务器不能命令本地电脑直接打开文件
-    # def open_other_file(self):
-    #     # 获取操作系统类型
-    #     os_type = sys.platform
-    #     if os_type == "win32":
-    #         # os.startfile(f"{UPLOADS_DIR}/{self.file_neme_suffix}")
-    #         os.startfile(self.local_file_path)
-    #     elif os_type == "darwin":
-    #         # subprocess.run(["open", f"{UPLOADS_DIR}/{self.file_neme_suffix}"])
-    #         subprocess.run(["open", self.local_file_path])
-    #     else:
-    #         ui.notify(
-    #             "未适配当前操作系统，不能直接打开。",
-    #             type="info",
-    #             position="bottom",
-    #             timeout=1000,
-    #             progress=True,
-    #             close_button="✖",
-    #         )
-
     # 处理数字链接的点击事件
     async def handle_index_click(self):
         # if self.file_neme_hash in app.storage.client["deleted_files"]:
@@ -465,9 +445,9 @@ class FileThumbnail:
             ui.notify(
                 "该文件已被销售删除，虽可查看，但谨慎参考！",
                 type="warning",
-                position="center",
-                timeout=0,
-                progress=False,
+                position="bottom",
+                timeout=3000,
+                progress=True,
                 close_button="✖",
             )
             await asyncio.sleep(3)
@@ -765,7 +745,6 @@ class InteractiveButton:
         """
         [新的异步版本] 从 SVN 获取文件内容，并使用 ui.download 发送给客户端。
         """
-        # ui.notify(f"正在从 SVN 获取 {file_name}...", spinner=True)
 
         # 1. (!!! 关键: 使用 await 调用新的异步 http 函数 !!!)
         svn_filename_from_url, content = await self.get_svn_file_http_async(
@@ -872,7 +851,14 @@ class InteractiveButton:
         [已更新为异步] 从 SVN 获取 PDF，将其存储在会话中，
         并打开 /view/svn_pdf 路由在新标签页中显示它。
         """
-        ui.notify(f"正在从 SVN 准备预览 {file_name}...", type="info", spinner=True)
+        ui.notify(
+            f"正在从 SVN 准备预览 {file_name}...",
+            type="info",
+            position="bottom",
+            timeout=2000,
+            progress=True,
+            close_button="✖",
+        )
 
         # 2. (!!! 关键: 使用 await 调用新的异步 http 函数 !!!)
         _, pdf_bytes = await self.get_svn_file_http_async(
@@ -897,6 +883,7 @@ class InteractiveButton:
             ui.notify(
                 f"已在新标签页中打开: {file_name}",
                 type="positive",
+                position="bottom",
                 timeout=1000,
                 progress=True,
                 close_button="✖",
@@ -948,9 +935,9 @@ class InteractiveButton:
                         ui.notify(
                             "认证失效，服务器要求重定向（可能是SSO或登录页）",
                             type="warning",
-                            position="center",
-                            timeout=0,
-                            progress=False,
+                            position="bottom",
+                            timeout=3000,
+                            progress=True,
                             close_button="✖",
                         )
                         return False, None
@@ -966,10 +953,10 @@ class InteractiveButton:
                     elif response.status_code == 401:
                         ui.notify(
                             "用户名或密码错误 (401)",
-                            type="negative",
-                            position="center",
-                            timeout=0,
-                            progress=False,
+                            type="warning",
+                            position="bottom",
+                            timeout=3000,
+                            progress=True,
                             close_button="✖",
                         )
                         return False, None
@@ -977,10 +964,10 @@ class InteractiveButton:
                         # URL 不存在 (404) 或禁止访问 (403)
                         ui.notify(
                             "引用文件不存在，请检查文件命名或SVN路径是否正确!",
-                            type="negative",
-                            position="center",
-                            timeout=0,
-                            progress=False,
+                            type="warning",
+                            position="bottom",
+                            timeout=3000,
+                            progress=True,
                             close_button="✖",
                         )
                         return False, None
@@ -1053,9 +1040,9 @@ class InteractiveButton:
                 ui.notify(
                     f"该项概述，在当前项目{project_state}状态下，无相应svn管控仓库配置，无法添加概述内容!",
                     type="warning",
-                    position="center",
-                    timeout=0,
-                    progress=False,
+                    position="bottom",
+                    timeout=3000,
+                    progress=True,
                     close_button="✖",
                 )
                 return target_url
@@ -1086,9 +1073,9 @@ class InteractiveButton:
                     ui.notify(
                         f"概述项{according_title}无有效配置，链接无效!",
                         type="warning",
-                        position="center",
-                        timeout=0,
-                        progress=False,
+                        position="bottom",
+                        timeout=3000,
+                        progress=True,
                         close_button="✖",
                     )
                 return target_url
@@ -1098,9 +1085,9 @@ class InteractiveButton:
                     ui.notify(
                         f"概述项{according_title}有效配置不唯一，链接无效!",
                         type="warning",
-                        position="center",
-                        timeout=0,
-                        progress=False,
+                        position="bottom",
+                        timeout=3000,
+                        progress=True,
                         close_button="✖",
                     )
                 return target_url
@@ -1117,10 +1104,10 @@ class InteractiveButton:
                         if overview_state_show_judge(self.role):
                             ui.notify(
                                 f"文件夹{according_folder_name[0]}命名不符合规则!",
-                                type="negative",
-                                position="center",
-                                timeout=0,
-                                progress=False,
+                                type="warning",
+                                position="bottom",
+                                timeout=3000,
+                                progress=True,
                                 close_button="✖",
                             )
                         return target_url
@@ -1141,10 +1128,10 @@ class InteractiveButton:
                     if overview_state_show_judge(self.role):
                         ui.notify(
                             f"文件{chip_text}命名不符合规则!",
-                            type="negative",
-                            position="center",
-                            timeout=0,
-                            progress=False,
+                            type="warning",
+                            position="bottom",
+                            timeout=3000,
+                            progress=True,
                             close_button="✖",
                         )
                     return target_url
@@ -1191,9 +1178,9 @@ class InteractiveButton:
                     ui.notify(
                         f"概述项{according_title}无有效配置，链接无效!",
                         type="warning",
-                        position="center",
-                        timeout=0,
-                        progress=False,
+                        position="bottom",
+                        timeout=3000,
+                        progress=True,
                         close_button="✖",
                     )
                 return target_path
@@ -1203,9 +1190,9 @@ class InteractiveButton:
                     ui.notify(
                         f"概述项{according_title}有效配置不唯一，链接无效!",
                         type="warning",
-                        position="center",
-                        timeout=0,
-                        progress=False,
+                        position="bottom",
+                        timeout=3000,
+                        progress=True,
                         close_button="✖",
                     )
                 return target_path
@@ -1226,10 +1213,10 @@ class InteractiveButton:
                             if overview_state_show_judge(self.role):
                                 ui.notify(
                                     f"{self.upload_path}\\{search_target}\n不存在目录{according_folder_name[0]}，链接无效!",
-                                    type="negative",
-                                    position="center",
-                                    timeout=0,
-                                    progress=False,
+                                    type="warning",
+                                    position="bottom",
+                                    timeout=3000,
+                                    progress=True,
                                     close_button="✖",
                                 )
                             return target_path
@@ -1237,10 +1224,10 @@ class InteractiveButton:
                         if overview_state_show_judge(self.role):
                             ui.notify(
                                 f"文件夹{according_folder_name[0]}命名不符合规则!",
-                                type="negative",
-                                position="center",
-                                timeout=0,
-                                progress=False,
+                                type="warning",
+                                position="bottom",
+                                timeout=3000,
+                                progress=True,
                                 close_button="✖",
                             )
                         return target_path
@@ -1254,10 +1241,10 @@ class InteractiveButton:
                         if overview_state_show_judge(self.role):
                             ui.notify(
                                 f"{self.upload_path}\n不存在目录{according_folder_name[0]}，链接无效!",
-                                type="negative",
-                                position="center",
-                                timeout=0,
-                                progress=False,
+                                type="warning",
+                                position="bottom",
+                                timeout=3000,
+                                progress=True,
                                 close_button="✖",
                             )
                         return target_path
@@ -1270,9 +1257,9 @@ class InteractiveButton:
                         ui.notify(
                             f"{according_title}概述项配置的文件夹存在多个:{path_str}\n链接无效!",
                             type="warning",
-                            position="center",
-                            timeout=0,
-                            progress=False,
+                            position="bottom",
+                            timeout=3000,
+                            progress=True,
                             close_button="✖",
                         )
                     return target_path
@@ -1295,10 +1282,10 @@ class InteractiveButton:
                         if overview_state_show_judge(self.role):
                             ui.notify(
                                 f"{self.upload_path}\n不存在目录{search_target}，链接无效!",
-                                type="negative",
-                                position="center",
-                                timeout=0,
-                                progress=False,
+                                type="warning",
+                                position="bottom",
+                                timeout=3000,
+                                progress=True,
                                 close_button="✖",
                             )
                         return target_path
@@ -1310,9 +1297,9 @@ class InteractiveButton:
                             ui.notify(
                                 f"{according_title}概述项配置的文件夹存在多个:{path_str}\n链接无效!",
                                 type="warning",
-                                position="center",
-                                timeout=0,
-                                progress=False,
+                                position="bottom",
+                                timeout=3000,
+                                progress=True,
                                 close_button="✖",
                             )
                         return target_path
@@ -1322,10 +1309,10 @@ class InteractiveButton:
                     if overview_state_show_judge(self.role):
                         ui.notify(
                             f"文件{chip_text}命名不符合规则!",
-                            type="negative",
-                            position="center",
-                            timeout=0,
-                            progress=False,
+                            type="warning",
+                            position="bottom",
+                            timeout=3000,
+                            progress=True,
                             close_button="✖",
                         )
                     return target_path
@@ -1351,18 +1338,18 @@ class InteractiveButton:
             if not text:
                 ui.notify(
                     "引用文件名不能为空!",
-                    type="negative",
-                    position="center",
-                    timeout=1000,
+                    type="warning",
+                    position="bottom",
+                    timeout=3000,
                     progress=True,
                     close_button="✖",
                 )
             elif not notes:
                 ui.notify(
                     "注释不能为空!",
-                    type="negative",
-                    position="center",
-                    timeout=1000,
+                    type="warning",
+                    position="bottom",
+                    timeout=3000,
                     progress=True,
                     close_button="✖",
                 )
@@ -1372,8 +1359,8 @@ class InteractiveButton:
                 ui.notify(
                     "引用文件名已添加过。",
                     type="warning",
-                    position="center",
-                    timeout=1000,
+                    position="bottom",
+                    timeout=3000,
                     progress=True,
                     close_button="✖",
                 )
@@ -1383,18 +1370,18 @@ class InteractiveButton:
                     ui.notify(
                         f"引用文件不存在该路径下：\n{target_path}",
                         type="warning",
-                        position="center",
-                        timeout=0,
-                        progress=False,
+                        position="bottom",
+                        timeout=3000,
+                        progress=True,
                         close_button="✖",
                     )
                 elif len(files_li) > 1:
                     ui.notify(
                         f"引用文件在该路径下：\n{target_path}\n存在多个同名文件（子文件夹里存在）",
                         type="warning",
-                        position="center",
-                        timeout=0,
-                        progress=False,
+                        position="bottom",
+                        timeout=3000,
+                        progress=True,
                         close_button="✖",
                     )
                 else:
@@ -1451,10 +1438,10 @@ class InteractiveButton:
             if overview_state_show_judge(self.role):
                 ui.notify(
                     f"路径：\n{target_path}\n不存在!",
-                    type="negative",
-                    position="center",
-                    timeout=0,
-                    progress=False,
+                    type="warning",
+                    position="bottom",
+                    timeout=3000,
+                    progress=True,
                     close_button="✖",
                 )
         # 隐藏漏斗
@@ -1473,18 +1460,18 @@ class InteractiveButton:
         if not text:
             ui.notify(
                 "引用文件名不能为空!",
-                type="negative",
-                position="center",
-                timeout=1000,
+                type="warning",
+                position="bottom",
+                timeout=3000,
                 progress=True,
                 close_button="✖",
             )
         elif not notes:
             ui.notify(
                 "注释不能为空!",
-                type="negative",
-                position="center",
-                timeout=1000,
+                type="warning",
+                position="bottom",
+                timeout=3000,
                 progress=True,
                 close_button="✖",
             )
@@ -1496,8 +1483,8 @@ class InteractiveButton:
             ui.notify(
                 f"{warehouse}仓库下的相同引用文件名已添加过。",
                 type="warning",
-                position="center",
-                timeout=1000,
+                position="bottom",
+                timeout=3000,
                 progress=True,
                 close_button="✖",
             )
@@ -1575,18 +1562,18 @@ class InteractiveButton:
         if not text:
             ui.notify(
                 "概述内容不能为空!",
-                type="negative",
+                type="warning",
                 position="bottom",
-                timeout=1000,
+                timeout=3000,
                 progress=True,
                 close_button="✖",
             )
         elif not notes:
             ui.notify(
                 "注释不能为空!",
-                type="negative",
+                type="warning",
                 position="bottom",
-                timeout=1000,
+                timeout=3000,
                 progress=True,
                 close_button="✖",
             )
@@ -1597,7 +1584,7 @@ class InteractiveButton:
                 "概述内容已存在。",
                 type="warning",
                 position="bottom",
-                timeout=1000,
+                timeout=3000,
                 progress=True,
                 close_button="✖",
             )
@@ -1658,9 +1645,9 @@ class InteractiveButton:
             ui.notify(
                 f'文件 "{original_filename}" 不是规定的：{", ".join(OVER_UPLOADS_FILE_TYPE)} 文件类型，无法上传!',
                 type="warning",
-                position="center",
-                timeout=0,
-                progress=False,
+                position="bottom",
+                timeout=3000,
+                progress=True,
                 close_button="✖",
             )
             self.spinner.set_visibility(False)
@@ -1669,9 +1656,9 @@ class InteractiveButton:
             ui.notify(
                 f'文件 "{original_filename}" 不是图片类型，无法上传!',
                 type="warning",
-                position="center",
-                timeout=0,
-                progress=False,
+                position="bottom",
+                timeout=3000,
+                progress=True,
                 close_button="✖",
             )
             self.spinner.set_visibility(False)
@@ -1688,7 +1675,7 @@ class InteractiveButton:
             ui.notify(
                 f'文件 "{original_filename}" 无需重复提交!',
                 type="warning",
-                position="center",
+                position="bottom",
                 timeout=3000,
                 progress=True,
                 close_button="✖",
@@ -1718,7 +1705,7 @@ class InteractiveButton:
                 ui.notify(
                     f"上传文件 '{original_filename}' 失败: {str(ex)}",
                     type="negative",
-                    position="bottom",
+                    position="center",
                     timeout=0,
                     progress=False,
                     close_button="✖",
@@ -1840,27 +1827,27 @@ class InteractiveButton:
         ):
             ui.notify(
                 "测试项内容及选项必须填写和选择!",
-                type="negative",
+                type="warning",
                 position="bottom",
-                timeout=1000,
+                timeout=3000,
                 progress=True,
                 close_button="✖",
             )
         elif not notes:
             ui.notify(
                 "注释不能为空!",
-                type="negative",
+                type="warning",
                 position="bottom",
-                timeout=1000,
+                timeout=3000,
                 progress=True,
                 close_button="✖",
             )
         elif other_bool:
             ui.notify(
                 "特殊要求不能为空!",
-                type="negative",
+                type="warning",
                 position="bottom",
-                timeout=1000,
+                timeout=3000,
                 progress=True,
                 close_button="✖",
             )
@@ -1872,7 +1859,7 @@ class InteractiveButton:
                 "测试项内容标准已存在。",
                 type="warning",
                 position="bottom",
-                timeout=1000,
+                timeout=3000,
                 progress=True,
                 close_button="✖",
             )
@@ -2022,25 +2009,6 @@ class InteractiveButton:
                 # 刷新角色负责用户数据
                 overview_role_update(self.project)
 
-    # 打开文件
-    # def open_file(self, filepath):
-    #     # 获取操作系统类型
-    #     os_type = sys.platform
-    #     if os_type == "win32":
-    #         # os.startfile(f"{UPLOADS_DIR}/{self.file_neme_suffix}")
-    #         os.startfile(filepath)
-    #     elif os_type == "darwin":
-    #         # subprocess.run(["open", f"{UPLOADS_DIR}/{self.file_neme_suffix}"])
-    #         subprocess.run(["open", filepath])
-    #     else:
-    #         ui.notify(
-    #             "未适配当前操作系统，不能直接打开。",
-    #             type="info",
-    #             position="bottom",
-    #             timeout=1000,
-    #             progress=True,
-    #             close_button="✖",
-    #         )
     # pdf文件打开函数
     def open_pdf_in_browser(self, url_path):
         # 在浏览器中打开 PDF 文件
@@ -2067,7 +2035,7 @@ class InteractiveButton:
             f"开始下载文件: {file_name}",
             type="info",
             position="bottom",
-            timeout=1000,
+            timeout=2000,
             progress=True,
             close_button="✖",
         )
@@ -2139,7 +2107,14 @@ class InteractiveButton:
             text = chip_data.get("filename")
         js_code = f"navigator.clipboard.writeText('{text}');"
         ui.run_javascript(js_code)
-        ui.notify("内容已复制到剪贴板！", type="positive", position="top")
+        ui.notify(
+            "内容已复制到剪贴板！",
+            type="positive",
+            position="bottom",
+            timeout=1000,
+            progress=True,
+            close_button="✖",
+        )
 
     # <-----------------------------------------------------------------
 
@@ -2175,9 +2150,9 @@ class InteractiveButton:
             ui.notify(
                 "需求刚刚升级了，各项概述的激活配置需要重新确定！",
                 type="warning",
-                position="center",
-                timeout=0,
-                progress=False,
+                position="bottom",
+                timeout=3000,
+                progress=True,
                 close_button="✖",
             )
             self._select_set_activ_dialog(chip_id, chip_text)
@@ -2216,9 +2191,9 @@ class InteractiveButton:
             ui.notify(
                 f"错误: {ex}",
                 type="negative",
-                position="bottom",
-                timeout=2000,
-                progress=True,
+                position="center",
+                timeout=0,
+                progress=False,
                 close_button="✖",
             )
 
@@ -2432,10 +2407,9 @@ class InteractiveButton:
                             ui.notify(
                                 f"引用文件不存在该路径下：\n{target_path}",
                                 type="warning",
-                                position="center",
-                                timeout=0,
-                                progress=False,
-                                multi_line=True,
+                                position="bottom",
+                                timeout=3000,
+                                progress=True,
                                 close_button="✖",
                             )
                     elif len(files_li) > 1:
@@ -2443,10 +2417,9 @@ class InteractiveButton:
                             ui.notify(
                                 f"引用文件在该路径下：\n{target_path}\n存在多个同名文件（子文件夹里存在）",
                                 type="warning",
-                                position="center",
-                                timeout=0,
-                                progress=False,
-                                multi_line=True,
+                                position="bottom",
+                                timeout=3000,
+                                progress=True,
                                 close_button="✖",
                             )
                     else:
@@ -2460,9 +2433,9 @@ class InteractiveButton:
                 if not file_info[0]:
                     ui.notify(
                         f"引用文件：{chip_text}，已丢失!",
-                        type="negative",
-                        position="center",
-                        timeout=2000,
+                        type="warning",
+                        position="bottom",
+                        timeout=3000,
                         progress=True,
                         close_button="✖",
                     )
@@ -2497,10 +2470,9 @@ class InteractiveButton:
                         lambda: ui.notify(
                             "文件不存在服务器、路径失效、不唯一，点击不能打开或下载！",
                             type="warning",
-                            position="center",
-                            timeout=0,
-                            progress=False,
-                            multi_line=False,
+                            position="bottom",
+                            timeout=3000,
+                            progress=True,
                             close_button="✖",
                         )
                     )
@@ -2529,10 +2501,9 @@ class InteractiveButton:
                         lambda: ui.notify(
                             f"SVN文件：\n{chip_info.get('url_path')}\n已丢失，点击不能打开或下载！",
                             type="warning",
-                            position="center",
-                            timeout=0,
-                            progress=False,
-                            multi_line=False,
+                            position="bottom",
+                            timeout=3000,
+                            progress=True,
                             close_button="✖",
                         )
                     )
@@ -2735,9 +2706,9 @@ class InteractiveButton:
         if not self.chip_notes.value:
             ui.notify(
                 "注释不能为空!",
-                type="negative",
+                type="warning",
                 position="bottom",
-                timeout=1000,
+                timeout=3000,
                 progress=True,
                 close_button="✖",
             )
@@ -2908,7 +2879,7 @@ class InteractiveButton:
                 "当前处于需求审核界面，概述内容锁定不可编辑!",
                 type="info",
                 position="bottom",
-                timeout=1000,
+                timeout=2000,
                 progress=True,
                 close_button="✖",
             )
@@ -2918,7 +2889,7 @@ class InteractiveButton:
                 "当前用户无该项编辑权限，请联系管理员申请!",
                 type="info",
                 position="bottom",
-                timeout=1000,
+                timeout=2000,
                 progress=True,
                 close_button="✖",
             )
@@ -2931,7 +2902,7 @@ class InteractiveButton:
                 "项目当前状态禁止添加概述!",
                 type="info",
                 position="bottom",
-                timeout=1000,
+                timeout=2000,
                 progress=True,
                 close_button="✖",
             )

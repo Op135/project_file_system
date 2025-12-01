@@ -33,10 +33,18 @@ app.state.users_data = app.state.user_service.load_users()
 # 将config_service.json配置初始化到app.state.init_config_data
 app.state.config_service = ConfigService()
 app.state.init_config_data = app.state.config_service.load_config()
-# 将overview_config.json配置初始化到服务器储存over_config_data
-with open(f"{BASE_DIR}/overview_config.json", "r", encoding="utf-8") as f:
-    # 使用 json.load() 读取文件内容并解析
-    app.storage.general["over_config_data"] = json.load(f)
+
+
+# 获取一个以此模块命名的 logger
+# 比如：如果你的文件是 src/components.py，这个 logger 的名字就会是 "src.components"
+logger = logging.getLogger(__name__)
+try:
+    # 将overview_config.json配置初始化到服务器储存over_config_data
+    with open(f"{BASE_DIR}/overview_config.json", "r", encoding="utf-8") as f:
+        # 使用 json.load() 读取文件内容并解析
+        app.storage.general["over_config_data"] = json.load(f)
+except Exception:
+    logger.error("上传处理失败", exc_info=True)  # 在服务器端打印错误详情
 
 
 def setup_logging():

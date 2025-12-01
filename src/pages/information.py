@@ -93,9 +93,9 @@ def information_page():
                         ui.notify(
                             f"出现需求版本{req_ver}不大于概述激活记录最高版本{max_over_ver}的情况。",
                             type="warning",
-                            position="center",
-                            timeout=0,
-                            progress=False,
+                            position="bottom",
+                            timeout=3000,
+                            progress=True,
                             close_button="✖",
                         )
 
@@ -150,9 +150,9 @@ def information_page():
             ui.notify(
                 "项目简介与客户简称必须填写!",
                 type="warning",
-                position="center",
-                timeout=0,
-                progress=False,
+                position="bottom",
+                timeout=3000,
+                progress=True,
                 close_button="✖",
             )
 
@@ -236,9 +236,9 @@ def information_page():
         else:
             ui.notify(
                 "需求非待审状态，不能通过审核，状态以刷新!",
-                type="info",
-                position="center",
-                timeout=1000,
+                type="warning",
+                position="bottom",
+                timeout=3000,
                 progress=True,
                 close_button="✖",
             )
