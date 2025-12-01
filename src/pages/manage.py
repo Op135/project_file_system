@@ -1,9 +1,10 @@
 # -*- encoding: utf-8 -*-
 import logging
+import os
 
 from nicegui import app, ui
 
-from ..config import IMG_DIR, PRESET_AVATARS
+from ..config import BASE_DIR, IMG_DIR, PRESET_AVATARS
 from ..utils import (
     get_cache_busted_path,
     logout,
@@ -32,6 +33,7 @@ def manage_page():
     current_avatar_path = user_prefs.get("avatar", PRESET_AVATARS[0])  # 默认为第一个
     # 在 *显示* 前，应用缓存清除
     current_display_path = get_cache_busted_path(current_avatar_path)
+
     with ui.header(elevated=True).classes("flex justify-between items-center bg-blue-500 h-12 px-4"):
         ui.image(f"{IMG_DIR}/Rayfine.png").classes("absolute w-20")
         ui.label("系统管理员界面").classes("text-white text-lg absolute left-1/2 transform -translate-x-1/2")
@@ -44,15 +46,102 @@ def manage_page():
                 ui.separator().props("size=1px")
                 ui.menu_item("注销登录", on_click=lambda: logout())
                 ui.menu_item("关闭菜单", menu.close)
-    with ui.column().classes("w-full h-[90vh] -space-y-2"):
-        ui.button("从excel更新需求配置文件到json", on_click=lambda: update_config_service()).props("").classes("")
-        ui.button("从json更新概述项配置数据到服务器general储存", on_click=lambda: updata_overview_config()).props(
-            ""
-        ).classes("")
-        ui.button("从json更新用户配置数据到服务器内存", on_click=lambda: update_users_data()).props("").classes("")
-        ui.button("从json更新项目列表(新增项目)到服务器general储存", on_click=lambda: project_summary_update()).props(
-            ""
-        ).classes("")
-        ui.button(
-            "从json更新项目表滚动信息关联配置到服务器general储存", on_click=lambda: project_overview_config_update()
-        ).props("").classes("")
+    with ui.column().classes("w-full h-calc(100vh-9rem) -space-y-2"):
+        with ui.card().classes("w-full -space-y-2"):
+            ui.label("系统配置更新").classes("text-lg font-bold mb-2")
+            with ui.row().classes("gap-4"):
+                ui.button("更新需求配置(excel->json)", on_click=lambda: update_config_service()).props("").classes("")
+                ui.button("更新概述配置(JSON->General)", on_click=lambda: updata_overview_config()).props("").classes(
+                    ""
+                )
+                ui.button("更新用户数据(JSON->内存)", on_click=lambda: update_users_data()).props("").classes("")
+                ui.button("更新项目列表(JSON->General)", on_click=lambda: project_summary_update()).props("").classes(
+                    ""
+                )
+                ui.button("更新滚动信息配置(JSON->General)", on_click=lambda: project_overview_config_update()).props(
+                    ""
+                ).classes("")
+        # 日志监控区域
+        with ui.card().classes("w-full -space-y-2 overflow-hidden"):
+            # 日志标题栏
+            with ui.row().classes("w-full bg-gray-100 p-2 items-center justify-between border-b"):
+                with ui.row().classes("items-center gap-2"):
+                    ui.icon("terminal", size="sm")
+                    ui.label("系统实时日志 (logs/app.log)").classes("font-bold text-gray-700")
+
+                # 添加控制按钮
+                with ui.row():
+                    # 强制刷新按钮：不仅仅是清屏，而是重新读取最后一段日志
+                    ui.button("重载日志", on_click=lambda: reload_logs(), icon="refresh").props("flat").classes(
+                        "text-sm"
+                    )
+                    ui.button("清屏", on_click=lambda: log_view.clear(), icon="block").props("flat color=red").classes(
+                        "text-sm"
+                    )
+
+            # 日志显示组件 (ui.log)
+            # max_lines 防止浏览器内存溢出
+            log_view = ui.log(max_lines=2000).classes(
+                "w-full h-90 bg-[#1e1e1e] text-green-400 font-mono text-sm p-2 overflow-y-auto"
+            )
+    # --- 日志读取逻辑 ---
+    log_file_path = os.path.join(BASE_DIR, "logs", "app.log")
+    file_cursor = 0  # 文件指针，记录读取到了哪里
+
+    def init_log_cursor():
+        """初始化文件指针，只读取最后 5KB，避免卡顿"""
+        nonlocal file_cursor
+        if os.path.exists(log_file_path):
+            size = os.path.getsize(log_file_path)
+            # 如果文件大于 5KB，则从最后 5KB 开始读
+            file_cursor = max(0, size - 5120)
+        else:
+            file_cursor = 0
+
+    async def read_logs():
+        nonlocal file_cursor
+        if not os.path.exists(log_file_path):
+            return
+
+        try:
+            # 获取当前文件大小
+            current_size = os.path.getsize(log_file_path)
+
+            # 如果当前文件比上次记录的指针还要小，说明发生了日志轮转(Rotating)，或者是新文件
+            # 此时重置指针从头读取
+            if current_size < file_cursor:
+                file_cursor = 0
+
+            # 如果没有新内容，直接返回
+            if current_size == file_cursor:
+                return
+
+            with open(log_file_path, "r", encoding="utf-8", errors="ignore") as f:
+                f.seek(file_cursor)
+                # 读取所有新行
+                new_lines = f.readlines()
+                # 更新指针位置
+                file_cursor = f.tell()
+
+                if new_lines:
+                    # 将新行推送到 UI
+                    for line in new_lines:
+                        # 去掉末尾换行符，因为 log.push 会自动换行
+                        log_view.push(line.rstrip())
+
+        except Exception as e:
+            # 避免日志读取逻辑本身报错导致崩坏，简单打印即可
+            logger.error(f"Error reading logs: {e}")
+
+    async def reload_logs():
+        """手动重载：清屏并重新初始化读取"""
+        log_view.clear()
+        init_log_cursor()
+        # 立即触发一次读取
+        await read_logs()
+
+    # 初始化并启动定时器
+    init_log_cursor()
+    # 稍微延迟启动第一次读取，确保UI已渲染
+    ui.timer(0.1, read_logs, once=True)
+    ui.timer(1.5, read_logs)  # 之后每1.5秒轮询
