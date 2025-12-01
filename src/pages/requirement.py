@@ -205,7 +205,7 @@ async def requirement_page(type="", json_path="", project_name=""):
             # app.storage.client["key_state"]["enter"] = 0
 
     # 遍历传入的整个概述资料，找到svn类型chip，如果其最高版本激活状态不是False，则将其设置成False
-    def set_overview_data_svn_block(over_data):
+    def set_overview_data_svn_block(over_data, project_name):
         for label, label_dic in over_data.items():
             for id, chip_dic in label_dic.items():
                 # 只处理svn类型
@@ -255,7 +255,7 @@ async def requirement_page(type="", json_path="", project_name=""):
         # 先编辑json文件
         edit_project_summary(project_name, state)
         # 将该项目所有svn类的chip失活
-        await db_storage.atomic_deep_update([f"{project_name}_over_data"], set_overview_data_svn_block)
+        await db_storage.atomic_deep_update([f"{project_name}_over_data"], set_overview_data_svn_block, project_name)
         # 必须在数据修改完成后，再激活概述特殊刷新标记
         app.storage.general["conversion_refresh"][project_name] = True
         # 0.8秒比概述定时0.5秒刷新稍长情况下，关闭特殊刷新开关

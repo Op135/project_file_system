@@ -41,8 +41,16 @@ with open(f"{BASE_DIR}/overview_config.json", "r", encoding="utf-8") as f:
 
 def setup_logging():
     # 1. 创建 Logger
+    # 获取根记录器
     logger = logging.getLogger()
+    # 设置全局最低门槛：只有 INFO 及以上才会处理
     logger.setLevel(logging.INFO)
+    # openpyxl 解析 Excel 时如果表格有样式兼容问题，会疯狂报 Warning，屏蔽掉
+    logging.getLogger("openpyxl").setLevel(logging.ERROR)
+    # httpx (NiceGUI 内部使用) 的请求日志太多，屏蔽掉
+    logging.getLogger("httpx").setLevel(logging.ERROR)
+    # 还可以屏蔽 watchfiles (如果你不想看文件变动的监控日志)
+    logging.getLogger("watchfiles").setLevel(logging.WARNING)
 
     # 2. 定义格式
     formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -60,6 +68,8 @@ def setup_logging():
     file_handler = RotatingFileHandler(f"{log_dir}/app.log", maxBytes=1024 * 1024, backupCount=5, encoding="utf-8")
     file_handler.setFormatter(formatter)
     logger.addHandler(file_handler)
+
+    logging.info("日志系统初始化完成 (Console + File)")
 
 
 # 在 main.py 最开始调用
@@ -164,6 +174,10 @@ if __name__ in {"__main__", "__mp_main__"}:
         # 在生产环境中，必须禁用热重载功能，以获得更好的性能和稳定性
         # False 不自动重载，True自动重载
         reload=True,
+        # 【关键修改 1】让父进程闭嘴
+        # 将 Uvicorn 自身的日志级别设为 warning，
+        # 这样它就不会打印 "changes detected" 这种 INFO 级别的废话了
+        uvicorn_logging_level="warning",
         # 添加排除项：忽略以 .json 结尾的文件，忽略 backups 文件夹，忽略数据库文件
-        uvicorn_reload_excludes=".nicegui/*",
+        uvicorn_reload_excludes="logs,backups,.nicegui,*.json,*.db,*.log,*.txt",
     )
