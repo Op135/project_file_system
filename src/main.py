@@ -1,6 +1,9 @@
 # -*- encoding: utf-8 -*-
 import json
+import logging
+import os
 import warnings
+from logging.handlers import RotatingFileHandler
 
 from nicegui import app, ui
 from starlette.responses import Response
@@ -13,6 +16,7 @@ from . import (
     db_storage,
     pages,  # 这将执行 src/pages/__init__.py
 )
+from .components import StorageBackupManager
 from .config import BASE_DIR, IMG_DIR, PDF_PREVIEW_CACHE, ST
 from .config_service import ConfigService
 from .user_service import UserService
@@ -34,10 +38,61 @@ with open(f"{BASE_DIR}/overview_config.json", "r", encoding="utf-8") as f:
     # 使用 json.load() 读取文件内容并解析
     app.storage.general["over_config_data"] = json.load(f)
 
-# 注册 NiceGUI 的生命周期事件
-# 在服务器启动时调用 init_db
+
+def setup_logging():
+    # 1. 创建 Logger
+    logger = logging.getLogger()
+    logger.setLevel(logging.WARNING)
+
+    # 2. 定义格式
+    formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+
+    # 3. 处理器 A：控制台 (让开发者看到)
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
+
+    # 4. 处理器 B：文件 (作为黑匣子存档)
+    # 使用 RotatingFileHandler 可以防止日志文件无限膨胀
+    # maxBytes=1MB, backupCount=5 表示：文件写满 1MB 后自动切割，最多保留 5 个旧文件
+    log_dir = f"{BASE_DIR}/logs"
+    os.makedirs(log_dir, exist_ok=True)
+    file_handler = RotatingFileHandler(f"{log_dir}/app.log", maxBytes=1024 * 1024, backupCount=5, encoding="utf-8")
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
+
+
+# 在 main.py 最开始调用
+setup_logging()
+
+
+# ==========================================
+# ### 备份服务初始化函数
+# ==========================================
+def init_backup_service():
+    """初始化备份管理器并启动定时任务"""
+    # 1. 实例化管理器
+    # storage_file: NiceGUI 默认生成的通用存储文件名为 'storage-general.json'
+    # backup_dir: 建议将备份放在 BASE_DIR 下的 backups 文件夹中
+    backup_dir = os.path.join(BASE_DIR, "backups")
+
+    manager = StorageBackupManager(storage_file=f"{BASE_DIR}/.nicegui/storage-general.json", backup_dir=backup_dir)
+
+    # 2. 启动每日定时任务 (例如：每日凌晨 18:30 进行备份)
+    manager.start_daily_schedule(hour=18, minute=30)
+
+    # 3. 将实例挂载到 app.state
+    # 作用：防止实例被垃圾回收，且允许在其他页面通过 app.state.backup_manager 调用手动备份
+    app.state.backup_manager = manager
+
+
+# ==========================================
+# 生命周期事件注册
+# ==========================================
 app.on_startup(db_storage.init_db)
-# 在服务器关闭时调用 close_db
+# 注册备份初始化
+app.on_startup(init_backup_service)
+
 app.on_shutdown(db_storage.close_db)
 
 # 存储服务器层级 概述数据 的变量初始化
@@ -109,4 +164,6 @@ if __name__ in {"__main__", "__mp_main__"}:
         # 在生产环境中，必须禁用热重载功能，以获得更好的性能和稳定性
         # False 不自动重载，True自动重载
         reload=True,
+        # 添加排除项：忽略以 .json 结尾的文件，忽略 backups 文件夹，忽略数据库文件
+        uvicorn_reload_excludes=".nicegui/*",
     )

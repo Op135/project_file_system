@@ -1,4 +1,6 @@
 # -*- encoding: utf-8 -*-
+import logging
+
 from nicegui import app, ui
 
 from ..config import IMG_DIR, PRESET_AVATARS
@@ -11,6 +13,10 @@ from ..utils import (
     update_config_service,
     update_users_data,
 )
+
+# 获取一个以此模块命名的 logger
+# 比如：如果你的文件是 src/components.py，这个 logger 的名字就会是 "src.components"
+logger = logging.getLogger(__name__)
 
 
 @ui.page("/manage")

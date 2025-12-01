@@ -1,14 +1,18 @@
 # -*- encoding: utf-8 -*-
 import asyncio
+import atexit
 import copy
 import io
+import logging
 import math
 import os
 import re
+import shutil
 import ssl
+import sys
 import time
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Callable, Final, Optional, Tuple
 
@@ -41,6 +45,94 @@ from .utils import (
     ui_hide,
     ui_show,
 )
+
+# 获取一个以此模块命名的 logger
+# 比如：如果你的文件是 src/components.py，这个 logger 的名字就会是 "src.components"
+logger = logging.getLogger(__name__)
+
+
+class StorageBackupManager:
+    def __init__(self, storage_file: str = "storage-general.json", backup_dir: str = "backups"):
+        """
+        初始化备份管理器
+        :param storage_file: NiceGUI生成的存储文件名
+        :param backup_dir: 备份存放目录
+        """
+        self.storage_file = Path(storage_file)
+        self.backup_dir = Path(backup_dir)
+        self.backup_dir.mkdir(exist_ok=True)  # 自动创建备份文件夹（如果不存在）
+
+        # 确保在初始化时绑定钩子,一启动就挂载监听钩子,让该管理器立即开始监听系统的生与死
+        self._register_hooks()
+
+    def perform_backup(self, trigger_type: str):
+        """
+        执行文件备份的核心逻辑
+        :param trigger_type: 触发备份的类型 (Normal, Crash, Daily)
+        """
+        if not self.storage_file.exists():
+            logger.warning(f"[{trigger_type}] 源文件 {self.storage_file} 不存在，跳过备份。")
+            return
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        # 备份文件名格式为 原文件名_触发类型_时间戳.json
+        backup_name = f"{self.storage_file.stem}_{trigger_type}_{timestamp}{self.storage_file.suffix}"
+        target_path = self.backup_dir / backup_name
+
+        try:
+            # 不仅仅是复制文件内容，还保留了文件的元数据（如创建时间、最后修改时间），这对于数据恢复时的判断非常重要
+            shutil.copy2(self.storage_file, target_path)
+            logger.info(f"[{trigger_type}] 备份成功: {target_path}")
+        except Exception:
+            logger.error(f"[{trigger_type}] 备份失败", exc_info=True)
+
+    def _register_hooks(self):
+        """
+        注册系统级和框架级钩子
+        """
+        # 1. 正常关闭 (NiceGUI Lifecycle)
+        app.on_shutdown(lambda: self.perform_backup("SHUTDOWN_NORMAL"))
+
+        # 2. 异常崩溃 (Unhandled Exception Hook)
+        # 注意：这里我们保留原有的 hook，以免破坏其他库的异常处理
+        original_excepthook = sys.excepthook
+
+        def custom_excepthook(exc_type, exc_value, exc_traceback):
+            logger.critical("检测到未捕获异常，正在尝试紧急备份...")
+            self.perform_backup("CRASH_EXCEPTION")  # 崩溃前抢救
+            # 调用原始的 hook 打印错误堆栈并退出
+            original_excepthook(exc_type, exc_value, exc_traceback)  # 恢复原本的报错流程
+
+        # “劫持”了 Python 默认的报错机制。
+        # 当代码里出现未捕获的错误导致程序要崩溃时，它会先执行备份，然后再让程序崩溃并打印错误日志
+        sys.excepthook = custom_excepthook
+
+    def start_daily_schedule(self, hour: int = 2, minute: int = 0):
+        """
+        启动每日定时备份任务
+        :param hour: 24小时制的小时
+        :param minute: 分钟
+        """
+        now = datetime.now()
+        target_time = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+
+        # 如果目标时间已过，推迟到明天
+        if target_time <= now:
+            target_time += timedelta(days=1)
+
+        # 计算当前时间到下一个指定时间点的秒数差
+        delay_seconds = (target_time - now).total_seconds()
+
+        logger.info(f"每日备份计划已设定。将在 {delay_seconds:.1f} 秒后 ({target_time}) 执行首次备份。")
+
+        # 定义递归函数来处理循环
+        def run_schedule():
+            self.perform_backup("DAILY_SCHEDULE")
+            # 执行完后，设定下一次24小时后的任务
+            app.timer(86400, run_schedule, once=True)
+
+        # 设定首次执行
+        app.timer(delay_seconds, run_schedule, once=True)
 
 
 # 自定义按钮上传文件元素，隐藏nicegui默认的ui.upload元素
@@ -77,7 +169,7 @@ class ButtonUploader(ui.element):
         if self.on_upload:
             await self.on_upload(e, self.parents_h)
         else:
-            print("上传文件无绑定回调函数")
+            logger.info("上传文件无绑定回调函数")
 
 
 # 文件缩略图对象，点击可以展示大图，并可进行拖动和缩放
@@ -286,7 +378,6 @@ class FileThumbnail:
             encoded_url = full_url.replace(" ", "%20")
             # 3. 打开新窗口
             ui.run_javascript(f'window.open("{encoded_url}", "_blank");')
-            # print(f"尝试打开PDF：{encoded_url}")
 
         # 启动异步任务
         ui.timer(0.2, lambda: open_pdf(), once=True)
@@ -369,7 +460,6 @@ class FileThumbnail:
 
     # 处理数字链接的点击事件
     async def handle_index_click(self):
-        # print(self.file_neme_hash, app.storage.client["deleted_files"])
         # if self.file_neme_hash in app.storage.client["deleted_files"]:
         if app.storage.client["file_thumbnail_dic"][self.file_index]["file_information"]["file_del_bool"]:
             ui.notify(
@@ -558,7 +648,6 @@ class InteractiveButton:
             self.image_big.on("wheel", self.handle_zoom)
         # 打开弹窗
         self.img_dialog.open()
-        # print(self.chip_dialog.value)
         # 复位图片
         self.reset_transform()
 
@@ -744,7 +833,7 @@ class InteractiveButton:
                 progress=False,
                 close_button="✖",
             )
-            print(f"SVN HTTP 错误: {e}")
+            logger.error("SVN HTTP 错误", exc_info=True)
             return None, None
         except httpx.RequestError as e:
             # 对应 requests.exceptions.RequestException (包含连接、超时等)
@@ -756,7 +845,7 @@ class InteractiveButton:
                 progress=False,
                 close_button="✖",
             )
-            print(f"SVN 请求异常: {e}")
+            logger.error("SVN 请求异常", exc_info=True)
             return None, None
         except Exception as e:
             # 捕获其他意外错误
@@ -768,7 +857,7 @@ class InteractiveButton:
                 progress=False,
                 close_button="✖",
             )
-            print(f"发生未知错误: {e}")
+            logger.error("发生未知错误", exc_info=True)
             return None, None
 
     # 从 SVN 获取 PDF，将其存储在会话中
@@ -845,13 +934,10 @@ class InteractiveButton:
             # 修改点 2：follow_redirects 改为 False 进行测试
             # 为什么？如果服务器返回 302 跳转到登录页，我们希望立即捕获这个状态，而不是让代码傻傻地去下载登录页从而超时。
             async with httpx.AsyncClient(follow_redirects=False, verify=ssl_context, auth=auth) as client:
-                # print(f"正在尝试连接: {url} (Timeout: {timeout}s)")
                 async with client.stream("GET", url, timeout=timeout, headers=headers) as response:
-                    # print(f"状态码: {response.status_code} | Headers: {response.headers}")
-
                     # 处理重定向 (301, 302) - 这意味着 Basic Auth 失败了，被踢到了登录页
                     if 300 <= response.status_code < 400:
-                        print(f"检测到重定向至: {response.headers.get('Location')}")
+                        logger.info(f"检测到重定向至: {response.headers.get('Location')}")
                         # 可以在这里 return False 或者尝试进一步处理
                         ui.notify(
                             "认证失效，服务器要求重定向（可能是SSO或登录页）",
@@ -863,7 +949,6 @@ class InteractiveButton:
                         )
                         return False, None
                     # 检查 URL 是否可访问 (状态码 < 400)
-                    # print(response.status_code)
                     if response.status_code < 400:
                         content_type = response.headers.get("Content-Type")
                         if content_type:
@@ -896,7 +981,7 @@ class InteractiveButton:
 
         except httpx.TimeoutException:
             msg = f"网络超时：({timeout}s)，链接：{url}；服务器响应过慢或正在尝试重定向。"
-            print(msg)  # 保留 print
+            logger.error(msg, exc_info=True)
             ui.notify(
                 msg,
                 type="negative",
@@ -909,7 +994,7 @@ class InteractiveButton:
 
         except httpx.ConnectError:
             msg = f"连接错误: {url} (请检查网络或域名)"
-            print(msg)  # 保留 print
+            logger.error(msg, exc_info=True)
             ui.notify(
                 msg,
                 type="negative",
@@ -920,9 +1005,9 @@ class InteractiveButton:
             )
             return False, None
 
-        except httpx.RequestError as e:
+        except httpx.RequestError:
             # 捕获所有其他的 httpx 异常 (例如 URL 格式错误)
-            print(f"请求发生错误: {url}\n{e}")  # 保留 print
+            logger.error(f"请求发生错误: {url}", exc_info=True)
             ui.notify(
                 f"请求发生错误: {url}",
                 type="negative",
@@ -935,7 +1020,7 @@ class InteractiveButton:
 
         except Exception as e:
             # 捕获其他意外错误
-            print(f"发生未知错误: {e}")  # 保留 print
+            logger.error("发生未知错误", exc_info=True)
             ui.notify(
                 f"发生未知错误: {e}",
                 type="negative",
@@ -948,7 +1033,6 @@ class InteractiveButton:
 
     # 查找合法路径是否存在且唯一，并返回合法路径
     def _splicing_svn_file_url(self, chip_text) -> str:
-        # print(f"开始查找目标文件夹{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         target_url = ""
         # 保存依赖文件夹所的概述配置项标签名
         according_title = ""
@@ -1066,12 +1150,10 @@ class InteractiveButton:
         if self.search_hierarchy:
             for h in self.search_hierarchy:
                 target_url = f"{target_url}/{h}"
-        # print(f"结束查找目标文件夹{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         return f"{target_url}/{chip_text}"
 
     # 查找合法路径是否存在且唯一，并返回合法路径
     async def _search_file_path(self, chip_text) -> str:
-        # print(f"开始查找目标文件夹{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         target_path = ""
         # 保存依赖文件夹所的概述配置项标签名
         according_title = ""
@@ -1130,7 +1212,6 @@ class InteractiveButton:
                     if match:
                         search_target = match.group(1)
                         # search_target = according_folder_name[0].split("_")[0]
-                        # print(f"目标文件夹：{search_target}")
                         folder_according_li = await find_dirs_by_name_os_walk(
                             f"{self.upload_path}\\{search_target}", according_folder_name[0]
                         )
@@ -1202,7 +1283,6 @@ class InteractiveButton:
                 if match:
                     search_target = match.group(1)
                     # search_target = according_folder_name[0].split("_")[0]
-                    # print(f"目标文件夹：{search_target}")
                     folder_according_li = await find_dirs_by_name_os_walk(f"{self.upload_path}", search_target)
                     # 文件夹不存在
                     if not folder_according_li:
@@ -1251,7 +1331,6 @@ class InteractiveButton:
         if self.search_hierarchy:
             for h in self.search_hierarchy:
                 target_path = f"{target_path}\\{h}"
-        # print(f"结束查找目标文件夹{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         return target_path
 
     # 当用户点击“添加”按钮时，将服务器文件引用数据添加到共享存储中
@@ -1568,7 +1647,6 @@ class InteractiveButton:
         original_filename = e.file.name
         file_ext = os.path.splitext(original_filename)[1].lower()
         file_type = e.file.content_type  # 图片类返回image/xxx，文件类返回application/xxx，文本类型text/xxx
-        # print(f"处理上传{file_type}类型文件")
 
         if self.processing_type == "file" and file_ext not in OVER_UPLOADS_FILE_TYPE:
             ui.notify(
@@ -1630,7 +1708,7 @@ class InteractiveButton:
                 # time.sleep(10)
 
             except Exception as ex:
-                print(f"上传处理失败: {ex}")  # 在服务器端打印错误详情
+                logger.error("上传处理失败", exc_info=True)  # 在服务器端打印错误详情
                 ui.notify(
                     f"上传文件 '{original_filename}' 失败: {str(ex)}",
                     type="negative",
@@ -1897,9 +1975,6 @@ class InteractiveButton:
         """
         # 在用户打开了特定弹窗的情况下，不刷对应条目下的缩略图元素
         if not (self.chip_dialog.value or self.check_down_dialog.value or self.activ_dialog.value):
-            # if self.processing_type == "image":
-            #     print(self.chip_dialog.value, self.title)
-
             # 获取当前UI上所有 chip 的ID
             displayed_chip_ids = {child.props.get("data-chip-id") for child in self.chip_container}
             # 获取共享存储中所有 chip 的ID
@@ -1976,7 +2051,6 @@ class InteractiveButton:
             encoded_url = full_url.replace(" ", "%20")
             # 3. 打开新窗口
             ui.run_javascript(f'window.open("{encoded_url}", "_blank");')
-            # print(f"尝试打开PDF：{encoded_url}")
 
         # 启动异步任务
         ui.timer(0.2, lambda: open_pdf(), once=True)
@@ -2132,8 +2206,15 @@ class InteractiveButton:
 
         except Exception as ex:
             # (可选) 处理错误
-            print(f"数据库更新失败: {ex}")
-            # ui.notify(f'错误: {ex}', type='negative')
+            logger.error("数据库更新失败", exc_info=True)
+            ui.notify(
+                f"错误: {ex}",
+                type="negative",
+                position="bottom",
+                timeout=2000,
+                progress=True,
+                close_button="✖",
+            )
 
         finally:
             # 步骤 3: 无论成功还是失败，都隐藏 Spinner
@@ -2388,8 +2469,6 @@ class InteractiveButton:
             )
             if chip_info.get("type") == "text":
                 pass
-                # chip.on_click(lambda: print(chip.value))
-                # chip.set_enabled(False)
             elif chip_info.get("type") in ["file", "search"]:
                 # 如果文件类型是pdf类型、且文件服务器路径非空、且存在，创建有效点击处理
                 if chip_info.get("file_type") == "application/pdf" and filepath and Path(filepath).exists():
@@ -2511,7 +2590,6 @@ class InteractiveButton:
             image_path = f"{self.upload_path}/{image_name}"
 
             url_path = f"{FILES_URL_DIR}/{image_name}"
-            # print(image_path, url_path)
             # 以后改了文件夹配置，chip不会失效
             app.add_static_file(local_file=image_path, url_path=url_path)
             # 根据文件类型创建缩略图

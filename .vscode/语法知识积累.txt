@@ -36,3 +36,13 @@ match = re.search(pattern, s)
 if match:
     # 提取第一个捕获组 (圆括号内的内容)
     result = match.group(1)
+
+
+
+logging 按照严重程度将信息分为 5 个等级。你可以设置“门槛”，只有高于门槛的信息才会被记录。
+级别        对应函数            数值        适用场景
+DEBUG       logging.debug()     10      调试细节。比如：“变量 x 的当前值是 5”，“正在尝试连接数据库...”。生产环境通常不开启。
+INFO        logging.info()      20      正常运行确认。比如：“服务器启动成功”，“用户 A 已登录”，“备份任务已完成”。(你之前的代码主要用这个)。
+WARNING     logging.warning()   30      潜在问题。程序还在跑，但有隐患。比如：“磁盘空间不足 10%”，“使用了过期的 API”。
+ERROR       logging.error()     40      发生错误。某个功能失败了，但程序没崩。比如：“文件写入失败”，“数据库连接超时”。
+CRITICAL    logging.critical()  50      严重故障。程序可能无法继续运行。比如：“内存溢出”，“核心配置文件丢失”。

@@ -1,5 +1,6 @@
 # -*- encoding: utf-8 -*-
 import copy
+import logging
 import os
 
 from nicegui import app, ui
@@ -14,6 +15,10 @@ from ..utils import (
     project_overview_config_update,
     project_summary_update,
 )
+
+# 获取一个以此模块命名的 logger
+# 比如：如果你的文件是 src/components.py，这个 logger 的名字就会是 "src.components"
+logger = logging.getLogger(__name__)
 
 
 @ui.page("/project_table")
@@ -336,7 +341,14 @@ def project_table_page():
         try:
             all_columns_state = await grid.run_grid_method("getColumnState")
         except Exception as e:
-            ui.notify(f"获取状态失败: {e}", type="negative")
+            ui.notify(
+                f"获取列状态失败: {e}",
+                type="negative",
+                position="bottom",
+                timeout=2000,
+                progress=True,
+                close_button="✖",
+            )
             return
 
         # 2. 在内存中计算哪些列需要显示，哪些需要隐藏
@@ -357,11 +369,9 @@ def project_table_page():
         # 3. 分批次更新，减少与前端的通信次数
         if cols_to_show:
             grid.run_grid_method("setColumnsVisible", cols_to_show, True)
-            # ui.notify(f"已显示列: {', '.join(cols_to_show)}")
 
         if cols_to_hide:
             grid.run_grid_method("setColumnsVisible", cols_to_hide, False)
-            # ui.notify(f"已隐藏列: {', '.join(cols_to_hide)}")
         # 刷新 Ag-Grid
         # grid.update()
 
@@ -570,10 +580,6 @@ def project_table_page():
                 "enableCellTextSelection": True,
             }
         ).classes("ag-theme-alpine ag-header-cell-resize::after h-full")
-        # min-width: 1000px;       /* 防止宽度过小 */
-        # overflow-x: auto;        /* 启用水平滚动 */
-        # aggrid.run_grid_method("domLayout", "print")
-        # aggrid.style("text-align:center;width: 150%;")
 
         # 按照两个选项的值，更新表格行数据，将概述填写内容同步到简介表，刷新表格显示
         select_major.on_value_change(lambda select_sub=select_sub: update_sub_select(select_sub))

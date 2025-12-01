@@ -1,7 +1,12 @@
+import logging
 from pathlib import Path
 from typing import Any, Dict
 
 import pandas as pd
+
+# 获取一个以此模块命名的 logger
+# 比如：如果你的文件是 src/components.py，这个 logger 的名字就会是 "src.components"
+logger = logging.getLogger(__name__)
 
 
 class UserService:
@@ -86,8 +91,8 @@ class UserService:
             df.loc[df["用户名"] == username, "密码"] = str(new_password)
             df.to_excel(self.excel_path, index=False, engine="openpyxl")
             return True
-        except Exception as e:
-            print(f"Excel更新失败: {str(e)}")
+        except Exception:
+            logger.error("Excel更新失败", exc_info=True)
             return False
         finally:
             self._lock = False

@@ -4,6 +4,7 @@ import asyncio
 import copy
 import hashlib
 import json
+import logging
 import mimetypes
 import os
 import re
@@ -18,6 +19,10 @@ from . import db_storage
 
 # import config
 from .config import AVATAR_DIR, AVATAR_URL_DIR, BASE_DIR, IMG_DIR, IMG_URL_DIR, OVER_DIR, REQ_DIR
+
+# 获取一个以此模块命名的 logger
+# 比如：如果你的文件是 src/components.py，这个 logger 的名字就会是 "src.components"
+logger = logging.getLogger(__name__)
 
 
 # 判断传入的概述负责角色是否与当前登录的角色匹配
@@ -55,16 +60,13 @@ def get_file_type_by_extension(file_path):
     mime_type, encoding = mimetypes.guess_type(file_path, strict=True)
 
     if mime_type:
-        # print(f"✅ 通过扩展名推断的文件类型: {mime_type}")
         return mime_type, encoding
     else:
         # 尝试通过文件扩展名本身作为类型
         extension = p.suffix.lower().lstrip(".")
         if extension:
-            # print(f"⚠️ 无法推断 MIME 类型，但文件扩展名为: {extension}")
             return f"extension/{extension}", None  # 格式化为非官方 MIME 类型
         else:
-            # print("❌ 路径无扩展名，无法推断类型。")
             return "unknown/unknown", None
 
 
@@ -87,7 +89,6 @@ async def find_dirs_by_name_os_walk(start_dir: str, dir_name: str) -> list[Path]
     """
     使用 os.walk 高效查找所有匹配名称的 *目录*。
     """
-    # print(f"内层开始查找目标文件夹{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     found_dirs = []
     start_dir = str(start_dir)  # os.walk 倾向于使用字符串
 
@@ -103,7 +104,6 @@ async def find_dirs_by_name_os_walk(start_dir: str, dir_name: str) -> list[Path]
             # 找到了，构建它的完整路径
             # 注意：os.walk 默认使用字符串，我们将其转换回 Path 对象
             found_dirs.append(Path(dirpath) / dir_name)
-    # print(f"内层结束查找目标文件夹{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     return found_dirs
 
 
@@ -140,8 +140,8 @@ def get_cache_busted_path(web_path: str) -> str:
         mtime = filesystem_path.stat().st_mtime
         return f"{clean_web_path}?v={mtime}"
 
-    except Exception as e:
-        print(f"Error generating cache-busted path for {web_path}: {e}")
+    except Exception:
+        logger.error(f"Error generating cache-busted path for {web_path}", exc_info=True)
         return web_path  # 出错时返回原始路径
 
 
@@ -494,10 +494,10 @@ def find_files_with_prefix_and_version(directory, prefix):
 
     # 验证目录是否存在
     if not os.path.exists(directory):
-        print(f"错误：目录 {directory} 不存在")
+        logger.info(f"错误：目录 {directory} 不存在")
         return result_dic
     if not prefix:
-        print(f"错误项目名： {prefix} ")
+        logger.info(f"错误项目名： {prefix} ")
         return result_dic
 
     # 编译正则表达式：匹配前缀 + 提取版本号
@@ -717,17 +717,15 @@ def move_element(lst, element, step: int):
         list: 移动后的新列表。如果元素不存在或已经在最前面，则返回原列表。
     """
     if element not in lst:
-        print(f"警告：'{element}' 不存在于列表中。")
+        logger.info(f"警告：'{element}' 不存在于列表中。")
         return lst
 
     current_index = lst.index(element)
 
     # 如果元素已经是第一个，则不能再向前移动
     if step < 0 and current_index == 0:
-        # print(f"'{element}' 已在最前面，无法再向前移动。")
         return lst
     elif step > 1 and current_index == len(lst) - 1:
-        # print(f"'{element}' 已在最后面，无法再向后移动。")
         return lst
 
     # 弹出元素
@@ -957,15 +955,18 @@ def set_project_custom_labels(project_name):
             # 使用 json.load() 读取文件内容并解析
             overviow_data = json.load(f)
     except json.JSONDecodeError:
-        print(f"错误：整理项目{project_name}的定制内容标签时，文件 '{overview_file_path}' 不是有效的 JSON 格式。")
+        logger.error(
+            f"错误：整理项目{project_name}的定制内容标签时，文件 '{overview_file_path}' 不是有效的 JSON 格式。",
+            exc_info=True,
+        )
         return
-    except Exception as e:
-        print(f"整理项目{project_name}的定制内容标签时，读取文件时发生其他错误：{e}")
+    except Exception:
+        logger.error(f"整理项目{project_name}的定制内容标签时，读取文件时发生其他错误", exc_info=True)
         return
     # 获取最新版需求配置文件内容
     latest_data = overviow_data.get("0").get("added")
     if not latest_data:
-        print(f"整理项目{project_name}的定制内容标签时，最新需求配置内容为空。")
+        logger.info(f"整理项目{project_name}的定制内容标签时，最新需求配置内容为空。")
         return
     for num, data in latest_data.items():
         answer_type = data["answer_type"]
@@ -1061,10 +1062,10 @@ async def requirement_version_tidy(project_name, review: bool) -> str:
                     # 使用 json.load() 读取文件内容并解析
                     overviow_data = json.load(f)
             except json.JSONDecodeError:
-                print(f"错误：文件 '{overview_file_path}' 不是有效的 JSON 格式。")
+                logger.error(f"错误：文件 '{overview_file_path}' 不是有效的 JSON 格式。", exc_info=True)
                 return ""
-            except Exception as e:
-                print(f"读取文件时发生其他错误：{e}")
+            except Exception:
+                logger.error("读取文件时发生其他错误", exc_info=True)
                 return ""
             overviow_version = float(overviow_data["version"])
             # 可追加情况
@@ -1090,12 +1091,10 @@ async def requirement_version_tidy(project_name, review: bool) -> str:
                 if review:
                     with open(overview_file_path_temp, "w", encoding="utf-8") as f:
                         f.write(overviow_str)
-                    # print(f"临时概述文件新版内容写入成功：{overview_file_path_temp}")
                     return overview_file_path_temp
                 else:
                     with open(overview_file_path, "w", encoding="utf-8") as f:
                         f.write(overviow_str)
-                    # print(f"概述文件新版内容写入成功：{overview_file_path}")
                     return overview_file_path
 
             elif v_max == overviow_version:
@@ -1133,16 +1132,13 @@ async def requirement_version_tidy(project_name, review: bool) -> str:
                     overviow_data["first_create"] = True
             # 将字典转换为 JSON 字符串
             overviow_str = json.dumps(overviow_data, indent=4, ensure_ascii=False)
-            # print(f"准备写入的 data 数据: {data}")
             if review:
                 with open(overview_file_path_temp, "w", encoding="utf-8") as f:
                     f.write(overviow_str)
-                # print(f"临时概述文件新版内容写入成功：{overview_file_path_temp}")
                 return overview_file_path_temp
             else:
                 with open(overview_file_path, "w", encoding="utf-8") as f:
                     f.write(overviow_str)
-                # print(f"概述文件新版内容写入成功：{overview_file_path}")
                 return overview_file_path
     else:
         ui.notify(

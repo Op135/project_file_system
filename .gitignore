@@ -1,4 +1,6 @@
 db/
+backups/
+logs/
 files/
 over/
 req/

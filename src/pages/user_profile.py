@@ -1,5 +1,6 @@
 # -*- encoding: utf-8 -*-
 import io
+import logging
 import uuid  # 用于生成唯一文件名
 from pathlib import Path
 
@@ -18,6 +19,10 @@ from ..utils import get_cache_busted_path, logout
 
 # 步骤 1: 从我们重构的 login.py 中导入可重用的函数
 from .login import create_password_dialog
+
+# 获取一个以此模块命名的 logger
+# 比如：如果你的文件是 src/components.py，这个 logger 的名字就会是 "src.components"
+logger = logging.getLogger(__name__)
 
 
 @ui.page("/profile")
@@ -78,11 +83,25 @@ def user_profile_page():
             # 7. 调用现有的 set_avatar 函数
             set_avatar(web_path)
 
-            ui.notify("自定义头像设置成功！", type="positive")
+            ui.notify(
+                "自定义头像设置成功！",
+                type="positive",
+                position="bottom",
+                timeout=1000,
+                progress=True,
+                close_button="✖",
+            )
 
         except Exception as ex:
-            print(f"头像处理失败: {ex}")
-            ui.notify(f"图片处理失败：{ex}", type="negative")
+            logger.error("头像处理失败", exc_info=True)
+            ui.notify(
+                f"图片处理失败：{ex}",
+                type="negative",
+                position="bottom",
+                timeout=2000,
+                progress=True,
+                close_button="✖",
+            )
 
     # 2. 从全局存储中获取用户当前的头像设置
     # (在 main.py 中定义 "user_preferences")

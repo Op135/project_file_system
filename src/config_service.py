@@ -1,10 +1,15 @@
 # -*- encoding: utf-8 -*-
 import hashlib
 import json
+import logging
 from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
+
+# 获取一个以此模块命名的 logger
+# 比如：如果你的文件是 src/components.py，这个 logger 的名字就会是 "src.components"
+logger = logging.getLogger(__name__)
 
 
 class ConfigService:
@@ -64,7 +69,7 @@ class ConfigService:
 
             # 跳过无效行（处理空值）
             if pd.isnull(self.clean_text(row.节点序号).strip()):
-                print(f"警告：第{excel_row_num}行缺少节点序号，已跳过")
+                logger.info(f"警告：第{excel_row_num}行缺少节点序号，已跳过")
                 continue
             temp_dic = {
                 "option_content": self.clean_text(row.选项).strip(),
@@ -111,7 +116,7 @@ class ConfigService:
                     "options": option_list,
                 }
             else:
-                print(f"警告：第{excel_row_num}行录入失败，已跳过")
+                logger.info(f"警告：第{excel_row_num}行录入失败，已跳过")
         return config
 
     def load_config(self, force_reload=False):

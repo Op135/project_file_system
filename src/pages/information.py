@@ -1,6 +1,7 @@
 # -*- encoding: utf-8 -*-
 import copy
 import json
+import logging
 import os
 from datetime import datetime
 
@@ -18,6 +19,10 @@ from ..utils import (
     requirement_version_tidy,
     set_project_custom_labels,
 )
+
+# 获取一个以此模块命名的 logger
+# 比如：如果你的文件是 src/components.py，这个 logger 的名字就会是 "src.components"
+logger = logging.getLogger(__name__)
 
 
 @ui.page("/information")
@@ -57,7 +62,6 @@ def information_page():
             for chip_data in chip_dic.values():
                 # 将chip数据里的选项激活设置字典的键，也就是版本整理成列表
                 over_chip_ver_li = [int(float(k)) for k in chip_data.get("select_activ_dic", {}).keys()]
-                # print(over_chip_ver_li)
                 # 如果列表非空
                 if over_chip_ver_li:
                     # 获取选项激活设置里最大的版本值

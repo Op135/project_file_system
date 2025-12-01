@@ -1,11 +1,15 @@
 import asyncio
 import copy
 import json
+import logging
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 import aiosqlite
 
+# 获取一个以此模块命名的 logger
+# 比如：如果你的文件是 src/components.py，这个 logger 的名字就会是 "src.components"
+logger = logging.getLogger(__name__)
 # 文件夹路径设定
 BASE_DIR = Path(__file__).parent.parent  # 项目根目录
 DB_PATH = f"{BASE_DIR}/db/nicegui_storage.db"  # 数据库文件名
@@ -47,20 +51,20 @@ async def init_db():
     await _db.commit()
 
     # 从数据库加载所有现有数据到内存缓存
-    print(f"从数据库{DB_PATH}加载所有现有数据到内存缓存...")
+    logger.info(f"从数据库{DB_PATH}加载所有现有数据到内存缓存...")
     async with _db.execute(f"SELECT key, value FROM {TABLE_NAME}") as cursor:
         async for row in cursor:
             key, value_json = row
             try:
                 _data_cache[key] = json.loads(value_json)
             except json.JSONDecodeError:
-                print(f"警告: 不能从键'{key}'中解码json数据")
+                logger.error(f"警告: 不能从键'{key}'中解码json数据", exc_info=True)
                 _data_cache[key] = None  # 或 other default
 
-    print(f"装载{len(_data_cache)}条数据到缓存中.")
+    logger.info(f"装载{len(_data_cache)}条数据到缓存中.")
     # 通知所有等待者，初始化已完成
     _init_done.set()
-    print("数据库初始化完成，缓存已就绪。")
+    logger.info("数据库初始化完成，缓存已就绪。")
 
 
 async def close_db():
@@ -69,7 +73,7 @@ async def close_db():
     """
     if _db:
         await _db.close()
-        print("数据库连接关闭.")
+        logger.info("数据库连接关闭.")
 
 
 async def _internal_set(key: str, value: Any):
@@ -78,7 +82,7 @@ async def _internal_set(key: str, value: Any):
     只执行数据库和缓存的写入操作。
     """
     if _db is None:
-        print("错误: 数据库未初始化.")
+        logger.info("错误: 数据库未初始化.")
         return
     try:
         # 将 Python 对象序列化为 JSON 字符串
@@ -98,9 +102,9 @@ async def _internal_set(key: str, value: Any):
         #    对象是一个全新的、无引用的副本，与数据库100%一致。
         _data_cache[key] = json.loads(value_json)
         # 好处 2（深拷贝）： json.loads(value_json) 创建了一个 100% 干净的、与数据库内容完全一致的深拷贝副本，从而解决了您担心的浅引用问题。
-    except Exception as e:
+    except Exception:
         # 在实际的锁持有函数中处理这个异常
-        print(f"错误：内部写入失败：'{key}': {e}")
+        logger.error(f"错误：内部写入失败：'{key}'", exc_info=True)
         raise  # 抛出异常，让外层函数知道失败了
 
 
@@ -110,7 +114,7 @@ async def _internal_remove(key: str):
     只执行数据库和缓存的删除操作。
     """
     if _db is None:
-        print("错误: 数据库未初始化.")
+        logger.info("错误: 数据库未初始化.")
         return
     try:
         # 3. 从数据库删除
@@ -120,8 +124,8 @@ async def _internal_remove(key: str):
         # 4. 从缓存删除
         if key in _data_cache:
             del _data_cache[key]
-    except Exception as e:
-        print(f"错误：内部删除失败：'{key}': {e}")
+    except Exception:
+        logger.error(f"错误：内部删除失败：'{key}'", exc_info=True)
         raise  # 抛出异常
 
 
@@ -148,7 +152,7 @@ async def set_item(key: str, value: Any):
     # 1. 等待初始化完成
     await _init_done.wait()
     if _db is None:
-        print("错误: 数据库未初始化.")
+        logger.info("错误: 数据库未初始化.")
         return
 
     # 2. 获取唯一的写入锁，代码块执行完就还回去
@@ -168,7 +172,7 @@ async def remove_item(key: str) -> bool:
     # 1. 等待初始化完成
     await _init_done.wait()
     if _db is None:
-        print("错误: 数据库未初始化.")
+        logger.info("错误: 数据库未初始化.")
         return False
 
     # 2. 获取唯一的写入锁，代码块执行完就还回去
@@ -233,7 +237,7 @@ async def set_deep_item(path: List[str], value: Any):
     # 1. 等待初始化完成
     await _init_done.wait()
     if _db is None:
-        print("错误: 数据库未初始化.")
+        logger.info("错误: 数据库未初始化.")
         return
     # 测试用
     # await asyncio.sleep(3)
@@ -297,13 +301,13 @@ async def del_deep_item(path: List[str]) -> bool:
     :param path: 键的路径列表，第一个必须是第一层键， 例如 ['overview_data', 'project_A', 'chip_1']
     """
     if not path:
-        print("路径列表 'path' 不能为空")
+        logger.info("路径列表 'path' 不能为空")
         return False
 
     # 1. 等待初始化完成
     await _init_done.wait()
     if _db is None:
-        print("错误: 数据库未初始化.")
+        logger.info("错误: 数据库未初始化.")
         return False
 
     top_key = path[0]
@@ -384,7 +388,7 @@ async def atomic_deep_update(path: List[str], update_function: Callable, *args, 
     # 1. 等待初始化并检查数据库
     await _init_done.wait()
     if _db is None:
-        print("错误: 数据库未初始化.")
+        logger.info("错误: 数据库未初始化.")
         return False
 
     top_key = path[0]
@@ -443,6 +447,6 @@ async def atomic_deep_update(path: List[str], update_function: Callable, *args, 
             await _internal_set(top_key, top_level_data_copy)
             return True
 
-        except Exception as e:
-            print(f"错误: 深度原子更新失败 '{path}': {e}")
+        except Exception:
+            logger.error(f"错误: 深度原子更新失败 '{path}'", exc_info=True)
             return False

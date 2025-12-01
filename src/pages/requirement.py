@@ -5,6 +5,7 @@ import hashlib
 import io
 import itertools
 import json
+import logging
 import os
 import re
 from datetime import datetime
@@ -38,6 +39,10 @@ from ..utils import (
     overview_role_update,
     validate_format_regex,
 )
+
+# 获取一个以此模块命名的 logger
+# 比如：如果你的文件是 src/components.py，这个 logger 的名字就会是 "src.components"
+logger = logging.getLogger(__name__)
 
 
 @ui.page("/main/requirement")
@@ -601,7 +606,7 @@ async def requirement_page(type="", json_path="", project_name=""):
         # 将衍生自哪个项目的信息获取过来
         app.storage.client["original_project"] = json_data["original_project"]
         app.storage.client["original_version"] = json_data["original_version"]
-        # print(app.storage.client["original_version"])
+
         # 将剩余配置与用户填写记录信息覆盖现有配置
         app.storage.client["config_data"] = json_data
         # 遍历配置信息，抽取引用信息，重新恢复引用_确认项记录
@@ -723,13 +728,13 @@ async def requirement_page(type="", json_path="", project_name=""):
 
             # 将文件路径映射为可访问的 URL
             url_path = f"{UPLOAD_URL_DIR}/{file_name_hash}"
-            # print(new_file_path, url_path)
+
             app.add_static_file(local_file=new_file_path, url_path=url_path)
             if (
                 file_name_hash in app.storage.client["files"]
                 and file_name_hash not in app.storage.client["deleted_files"]
             ):
-                print("文件已存在")
+                logger.info("文件已存在")
                 ui.notify(
                     f"文件已存在: {str(e.file.name)}",
                     type="warning",
@@ -777,7 +782,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                     # 显示缩略图
                     file_thumbnail.thumbnail
         except Exception as ex:
-            print(f"上传处理失败: {ex}")  # 在服务器端打印错误详情
+            logger.error("上传处理失败", exc_info=True)
             ui.notify(
                 f"上传文件 '{e.file.name}' 失败: {str(ex)}",
                 type="negative",
@@ -905,7 +910,6 @@ async def requirement_page(type="", json_path="", project_name=""):
         # 先排查用户是否存在未选择的节点，如有则不满足处理条件，退出
         # 遍历该节点条件里涉及的条件序号
         for c_id in cond_id_list:
-            # print(f"处理节点序号{k}的逻辑")
             op_user_out = dict(app.storage.client["config_data"]["data"][c_id]["user_must_out"])
             # 如果依赖的节点还没有用户做选填操作
             if op_user_out == {}:
@@ -966,12 +970,12 @@ async def requirement_page(type="", json_path="", project_name=""):
                 elif "!=" in p:  #  and (isinstance(op_user_out, list) or op_user_out == [])
                     bool_list.append(op_user_out_list[0] != cond_result[1].strip() if op_user_out_list != [] else False)
                 else:
-                    print(f"节点{k}激活条件逻辑不符合语法")
+                    logger.info(f"节点{k}激活条件逻辑不符合语法")
                     continue
 
         result_str = "".join(f"{x} {y} " for x, y in itertools.zip_longest(bool_list, separators, fillvalue=""))
         logic_out_bool = eval(result_str)
-        # print(f"节点{k}处理完毕，返回：{result_str}，判定为：{logic_out_bool}")
+
         return logic_out_bool
 
     # 问题列表展示函数
@@ -1019,7 +1023,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                     app.storage.client["buttons_dic"][k] = button
                 # 处理遇到节点序号条件为空的异常
                 elif v["condition"] == "":
-                    print(f"配置表节点序号为{k}的配置项激活条件为空，无法处理！")
+                    logger.info(f"配置表节点序号为{k}的配置项激活条件为空，无法处理！")
                 # 逻辑处理
                 else:
                     # cond_id_list = v["condition_id"].split("&")
@@ -1133,13 +1137,12 @@ async def requirement_page(type="", json_path="", project_name=""):
             options_type in ["单选", "下拉单选"]
             and app.storage.client["config_data"]["data"][k]["user_must_out"]["value"] is not None
         ):
-            # print("单选", k, options_type, next)
             radio_bool = True
 
         # 多选，且用户做出勾选了其中某个选项
         elif options_type == "多选" and True in out_value:
             checkboxe_bool = True
-            # print("多选", k, options_type, next)
+
         # 本次处理的是输入框
         elif (
             options_type
@@ -1154,7 +1157,6 @@ async def requirement_page(type="", json_path="", project_name=""):
             (options_type == "正整数" and all(v.isdigit() for v in out_value) and all(int(v) != 0 for v in out_value))
             or (options_type in ["单行文本", "多行文本"])
         ):
-            # print("输入", k, options_type, next)
             input_bool = True
 
         # 以上必填项没有任意一项有填写则弹出提醒，禁止进入下一道确认项，但允许返回
@@ -1225,7 +1227,6 @@ async def requirement_page(type="", json_path="", project_name=""):
         # user_out_list = []
         # 清空元素的子元素
         current_question_column.clear()
-        # print(f"处理节点序号{k}的显示:{app.storage.client['config_data']['data'][k]['user_must_out']}")
         with current_question_column:
             ui.label(question).classes("text-2xl text-black")
             ui.label(option_hint).classes("text-base text-grey-8 max-w-full")
@@ -1853,7 +1854,6 @@ async def requirement_page(type="", json_path="", project_name=""):
 
                         # 将字典转换为 JSON 字符串
                         old_json_str = json.dumps(old_data_json, indent=4, ensure_ascii=False)
-                        # print(f"准备写入的 data 数据: {data}")
                         # 写入文件
                         copy_file_path = os.path.join(REQ_DIR, f"{target_project_name}_需求配置_V1.0.json")
                         try:
@@ -1875,7 +1875,15 @@ async def requirement_page(type="", json_path="", project_name=""):
                                 close_button="✖",
                             )
                         except Exception as e:
-                            print(f"复制修改衍生临时项目需求文件时发生其他错误：{e}")
+                            logger.error("复制修改衍生临时项目需求文件时发生其他错误", exc_info=True)
+                            ui.notify(
+                                f"复制衍生项目需求文件概述资料出错：{e}",
+                                type="warning",
+                                position="center",
+                                timeout=0,
+                                progress=False,
+                                close_button="✖",
+                            )
                         # 更新客户端数据
                         app.storage.client["version"] = "1.0"
                         app.storage.client["project_name"] = target_project_name
@@ -2690,14 +2698,14 @@ async def requirement_page(type="", json_path="", project_name=""):
                             ).props("outlined").classes("absolute top-0 left-1")
                         else:
                             ui.chip(icon="star", color="amber-7").props("outline").classes(
-                                "absolute top-0 left-1 text-xs"
+                                "absolute top-0 left-1 text-sm"
                             ).bind_text_from(app.storage.general["project_summary"][project_name], "state")
                         ui.label(f"{project_name} 概述整理").classes("text-xl")
                         if (
                             "研发" in app.storage.user.get("current_role", "")
                             or app.storage.user.get("current_role", "") == "admin"
                         ):
-                            ui.switch("查阅失活概述").classes("absolute top-0 right-5 text-xs").bind_value(
+                            ui.switch("查阅失活概述").classes("absolute top-0 right-5 text-sm").bind_value(
                                 app.storage.client, "record_switch"
                             )
                     with ui.column().classes("w-full overflow-y-auto p-1 gap-2 rounded"):
@@ -2820,9 +2828,9 @@ async def requirement_page(type="", json_path="", project_name=""):
                 # 将json_data数据更新到客户端储存里，调用requirement_input_frame()显示需求确认项
                 loads_requirements(json_data, False)
         except json.JSONDecodeError:
-            print(f"错误：文件 '{json_path}' 不是有效的 JSON 格式。")
-        except Exception as e:
-            print(f"读取文件时发生其他错误：{e}")
+            logger.error(f"错误：文件 '{json_path}' 不是有效的 JSON 格式。", exc_info=True)
+        except Exception:
+            logger.error("读取需求文件时发生其他错误", exc_info=True)
     # 如果跳转传入的仅为项目名，则意味着服务器没有改项目配置文件，新建项目
     elif type == "requirement" and project_name:
         # 设置项目型号
@@ -2841,9 +2849,9 @@ async def requirement_page(type="", json_path="", project_name=""):
                 # 使用 json.load() 读取文件内容并解析
                 json_data = json.load(f)
         except json.JSONDecodeError:
-            print(f"错误：文件 '{json_path}' 不是有效的 JSON 格式。")
-        except Exception as e:
-            print(f"读取文件时发生其他错误：{e}")
+            logger.error(f"错误：文件 '{json_path}' 不是有效的 JSON 格式。", exc_info=True)
+        except Exception:
+            logger.error("读取概述文件时发生其他错误", exc_info=True)
         # 获取概述文件里，版本最高的文件缩略图字典内容，复现文件缩略图
         file_information = json_data[get_max_numeric_key(json_data)]["file_dic"]
         app.storage.client["deleted_files"] = json_data[get_max_numeric_key(json_data)]["deleted_files"]

@@ -1,9 +1,13 @@
 # -*- encoding: utf-8 -*-
+import logging
 import os
 from pathlib import Path
 
 from nicegui import app, events, ui
 
+# 获取一个以此模块命名的 logger
+# 比如：如果你的文件是 src/components.py，这个 logger 的名字就会是 "src.components"
+logger = logging.getLogger(__name__)
 # 从环境变量中读取密钥。如果找不到，则使用一个仅供本地开发的默认值。
 # 在生产环境中，必须设置环境变量，否则会使用不安全的默认值。
 ST = os.environ.get("STORAGE_SECRET", "this_is_not_a_secret_for_development_only")
