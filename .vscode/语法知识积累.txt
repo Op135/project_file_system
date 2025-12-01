@@ -6,6 +6,10 @@ on('keydown') 或 on('keyup') -> 传递 KeyEventArguments
 on('click') 或 on('mouseenter') -> 传递 MouseEventArguments
 on('input') -> 传递 GenericEventArguments
 
+事件调用的函数：
+带括号()是“立即执行”，为了传参；
+不带括号是“传递引用”。自动由事件触发才执行；
+带括号加上lambda是创建一个“稍后执行”的包裹，满足传参需求同时由事件触发才执行。
 
 from datetime import datetime
 # 得指定格式的日期时间字符串

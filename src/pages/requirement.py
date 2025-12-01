@@ -257,13 +257,13 @@ async def requirement_page(type="", json_path="", project_name=""):
         ui.timer(0.8, lambda: close_conversion_refresh(project_name), once=True)
         over_dialog.close()
 
-    def set_project_state_dialog(project_name, state):
+    def set_project_state_dialog(project_name, state, on_cancel_action):
         over_card.clear()
-        with project_card:
+        with over_card:
             ui.label("是否确认项目转产，所有svn概述项将设置为失活状态？").classes("text-base text-red")
             with ui.row().classes("w-full justify-end"):
                 ui.button("确认", on_click=lambda: set_conversion_svn_chip(project_name, state))
-                ui.button("取消", on_click=lambda: over_dialog.close())
+                ui.button("取消", on_click=on_cancel_action)
         over_dialog.open()
 
     # 关闭项目概述特殊刷新标记
@@ -273,15 +273,24 @@ async def requirement_page(type="", json_path="", project_name=""):
     # 修改项目状态
     async def set_project_state(project_name, e):
         state = e.value
-        previous_state = e.previous_value
+        # 获取下拉框组件对象，用于后续如果取消了，把值改回去
+        select_element = e.sender
+        previous_state = app.storage.general["project_summary"][project_name].get("state")
+
+        # 定义一个取消时的回调函数：把下拉框的值改回旧状态，并关闭弹窗
+        def on_cancel_action():
+            select_element.value = previous_state  # 视觉上改回旧值
+            over_dialog.close()
 
         if current_role == "研发经理":
             # 如果是从研发状态改为转产或量产，将所有svn概述全部失活掉，然后进行特殊刷新
             if previous_state == "研发" and state in ["转产", "量产"]:
-                set_project_state_dialog(project_name, state)
+                set_project_state_dialog(project_name, state, on_cancel_action)
             else:
                 edit_project_summary(project_name, state)
         else:
+            # 无权限时，也要把界面改回去
+            select_element.value = previous_state
             ui.notify(
                 "当前用户无权限修改项目状态！",
                 type="info",
@@ -2678,9 +2687,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                                 PROJECT_STATE_LIST,
                                 value=app.storage.general["project_summary"][project_name].get("state"),
                                 on_change=lambda e: set_project_state(project_name, e),
-                            ).bind_value_from(app.storage.general["project_summary"][project_name], "state").props(
-                                "outlined"
-                            ).classes("absolute top-0 left-1")
+                            ).props("outlined").classes("absolute top-0 left-1")
                         else:
                             ui.chip(icon="star", color="amber-7").props("outline").classes(
                                 "absolute top-0 left-1 text-xs"
