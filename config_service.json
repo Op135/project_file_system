@@ -235,8 +235,72 @@
             ]
         },
         "7": {
-            "condition": "5==True or 4any['CDC','CD','DCD','CDCD','DCDCD']",
+            "condition": "6==True",
             "node_id": "7",
+            "guide_content": "配不配我司默认转接座旋帽",
+            "answer_type": "单选",
+            "input_num_accor": "",
+            "input_name_accor": "",
+            "input_tolerance": "",
+            "ref_config": "False",
+            "option_hint": "我司转接座默认有旋帽，转接座装到客户机箱上以后，相当于外露在机箱面板前，询问客户用我司默认旋帽、还是自己做、还是定制。",
+            "option_group_id": "2",
+            "option_view": "结构+工艺+质量",
+            "user_must_out": {},
+            "option_tolerance_out": {},
+            "ref_out": [],
+            "options": [
+                {
+                    "option_content": "配(默认)",
+                    "option_out": "配",
+                    "option_bold": "配",
+                    "option_show": "{V}我司默认转接座旋帽",
+                    "option_label": ""
+                },
+                {
+                    "option_content": "不配",
+                    "option_out": "不配",
+                    "option_bold": "不配",
+                    "option_show": "{V}我司默认转接座旋帽",
+                    "option_label": "不配旋帽"
+                },
+                {
+                    "option_content": "定制旋帽",
+                    "option_out": "定制",
+                    "option_bold": "定制",
+                    "option_show": "{V}转接座旋帽",
+                    "option_label": "定制旋帽"
+                }
+            ]
+        },
+        "8": {
+            "condition": "7==定制",
+            "node_id": "8",
+            "guide_content": "填写旋帽具体定制要求",
+            "answer_type": "多行文本",
+            "input_num_accor": "",
+            "input_name_accor": "",
+            "input_tolerance": "",
+            "ref_config": "True",
+            "option_hint": "填写客户对转接座旋帽形状尺寸要求，最好附上图纸说明。",
+            "option_group_id": "2",
+            "option_view": "结构+工艺+质量",
+            "user_must_out": {},
+            "option_tolerance_out": {},
+            "ref_out": [],
+            "options": [
+                {
+                    "option_content": "",
+                    "option_out": "字典",
+                    "option_bold": "",
+                    "option_show": "转接座旋帽定制要求：{V}",
+                    "option_label": ""
+                }
+            ]
+        },
+        "9": {
+            "condition": "5==True or 4any['CDC','CD','DCD','CDCD','DCDCD']",
+            "node_id": "9",
             "guide_content": "导光束输入端通光口径",
             "answer_type": "单行文本",
             "input_num_accor": "",
@@ -259,9 +323,9 @@
                 }
             ]
         },
-        "8": {
+        "10": {
             "condition": "5==True or 4any['DC','CDC','DCD','CDCD','DCDCD']",
-            "node_id": "8",
+            "node_id": "10",
             "guide_content": "导光束输出端通光口径",
             "answer_type": "单行文本",
             "input_num_accor": "",
@@ -284,9 +348,9 @@
                 }
             ]
         },
-        "9": {
+        "11": {
             "condition": "3==True",
-            "node_id": "9",
+            "node_id": "11",
             "guide_content": "导光束NA值",
             "answer_type": "单行文本",
             "input_num_accor": "",
@@ -309,16 +373,16 @@
                 }
             ]
         },
-        "10": {
-            "condition": "5==True or 6==True or 4any['CDC','DC','DCD','CDCD']",
-            "node_id": "10",
-            "guide_content": "导光束外形尺寸",
+        "12": {
+            "condition": "3==True",
+            "node_id": "12",
+            "guide_content": "导光束品牌、规格、尺寸",
             "answer_type": "多行文本",
             "input_num_accor": "",
             "input_name_accor": "",
             "input_tolerance": "",
             "ref_config": "True",
-            "option_hint": "按产品配合所需，提供导光束外形尺寸信息或要求，主要有：输入端头部尺寸、输出端头部尺寸、总长度，建议提供图纸，单位统一为：mm。",
+            "option_hint": "按产品配合所需，提供导光束规格型号或外形尺寸要求，品牌如Wolf、Storz、Olympus等，注意每种品牌里可能有多种规格尺寸，最好直接提供：输入端头部尺寸、输出端头部尺寸、总长度，建议提供图纸，单位统一为：mm。",
             "option_group_id": "2",
             "option_view": "光学+结构+工艺+质量",
             "user_must_out": {},
@@ -330,63 +394,6 @@
                     "option_out": "字典",
                     "option_bold": "",
                     "option_show": "导光束外形尺寸要求：{V}",
-                    "option_label": ""
-                }
-            ]
-        },
-        "11": {
-            "condition": "3==True",
-            "node_id": "11",
-            "guide_content": "是否指定或提供导光束做出厂光参数测试",
-            "answer_type": "单选",
-            "input_num_accor": "",
-            "input_name_accor": "",
-            "input_tolerance": "",
-            "ref_config": "False",
-            "option_hint": "产品生产出来后，在做光参数测试时，客户是否指定或提供导光束来测，而不是由我司自行决定？",
-            "option_group_id": "3",
-            "option_view": "光学+结构+工艺+质量",
-            "user_must_out": {},
-            "option_tolerance_out": {},
-            "ref_out": [],
-            "options": [
-                {
-                    "option_content": "是",
-                    "option_out": "True",
-                    "option_bold": "客户指定/提供",
-                    "option_show": "{V}导光束做光参数测试",
-                    "option_label": "指定导光束测光参数"
-                },
-                {
-                    "option_content": "否",
-                    "option_out": "False",
-                    "option_bold": "",
-                    "option_show": "{V}光参数测试工具",
-                    "option_label": ""
-                }
-            ]
-        },
-        "12": {
-            "condition": "11==True",
-            "node_id": "12",
-            "guide_content": "指定或提供的导光束检测哪些光参数",
-            "answer_type": "多行文本",
-            "input_num_accor": "",
-            "input_name_accor": "",
-            "input_tolerance": "",
-            "ref_config": "True",
-            "option_hint": "填写客户指定的导光束及测试参数，例如：客供3米导光束测：光通量，显色指数；其余光参数用我司1米导光束测试。",
-            "option_group_id": "3",
-            "option_view": "光学+工艺+质量",
-            "user_must_out": {},
-            "option_tolerance_out": {},
-            "ref_out": [],
-            "options": [
-                {
-                    "option_content": "",
-                    "option_out": "字典",
-                    "option_bold": "",
-                    "option_show": "导光束限定要求：{V}",
                     "option_label": ""
                 }
             ]
@@ -411,7 +418,7 @@
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "",
-                    "option_show": "",
+                    "option_show": "{V}转接座材料与表面工艺",
                     "option_label": "定制转接座材质表面"
                 },
                 {
@@ -468,7 +475,7 @@
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "",
-                    "option_show": "",
+                    "option_show": "{V}转接座外形尺寸",
                     "option_label": "定制转接座尺寸"
                 },
                 {
@@ -540,95 +547,6 @@
         "18": {
             "condition": "6==True",
             "node_id": "18",
-            "guide_content": "是否提供导光束做转接座拉力出厂测试",
-            "answer_type": "单选",
-            "input_num_accor": "",
-            "input_name_accor": "",
-            "input_tolerance": "",
-            "ref_config": "False",
-            "option_hint": "我司默认使用自己的导光束头部治具做插拔拉力测试，如果客户对导光束插拔力要求较高，则需要客户提供导光束做专门的拉力测试。",
-            "option_group_id": "3",
-            "option_view": "结构+工艺+质量",
-            "user_must_out": {},
-            "option_tolerance_out": {},
-            "ref_out": [],
-            "options": [
-                {
-                    "option_content": "是",
-                    "option_out": "True",
-                    "option_bold": "客供",
-                    "option_show": "使用{V}导光束做拉力测试",
-                    "option_label": "客供导光束测拉力"
-                },
-                {
-                    "option_content": "否",
-                    "option_out": "False",
-                    "option_bold": "",
-                    "option_show": "使用{V}导光束做拉力测试",
-                    "option_label": ""
-                }
-            ]
-        },
-        "19": {
-            "condition": "6==True",
-            "node_id": "19",
-            "guide_content": "是否指定转接座拉力测试合格标准",
-            "answer_type": "单选",
-            "input_num_accor": "",
-            "input_name_accor": "",
-            "input_tolerance": "",
-            "ref_config": "False",
-            "option_hint": "我司默认的拉力合格标准为：11~15N，如果客户需要指定合格标准，请选“是”。",
-            "option_group_id": "3",
-            "option_view": "结构+工艺+质量",
-            "user_must_out": {},
-            "option_tolerance_out": {},
-            "ref_out": [],
-            "options": [
-                {
-                    "option_content": "是",
-                    "option_out": "True",
-                    "option_bold": "指定拉力标准",
-                    "option_show": "转接座拉力测试{V}",
-                    "option_label": "指定拉力标准"
-                },
-                {
-                    "option_content": "否",
-                    "option_out": "False",
-                    "option_bold": "",
-                    "option_show": "转接座拉力测试{V}",
-                    "option_label": ""
-                }
-            ]
-        },
-        "20": {
-            "condition": "19==True",
-            "node_id": "20",
-            "guide_content": "客户要求的转接座拉力测试合格标准",
-            "answer_type": "单行文本",
-            "input_num_accor": "",
-            "input_name_accor": "",
-            "input_tolerance": "正负",
-            "ref_config": "True",
-            "option_hint": "填写客户指定的转接座插拔拉力合格标准。",
-            "option_group_id": "3",
-            "option_view": "结构+工艺+质量",
-            "user_must_out": {},
-            "option_tolerance_out": {},
-            "ref_out": [],
-            "options": [
-                {
-                    "option_content": "",
-                    "option_out": "字典",
-                    "option_bold": "",
-                    "option_show": "要求的转接座拉力测试合格标准为：典型值{V}，公差{T}",
-                    "option_label": ""
-                }
-            ]
-        },
-        "21": {
-            "condition": "6==True",
-            "node_id": "21",
             "guide_content": "导光束转接座包装要求",
             "answer_type": "单选",
             "input_num_accor": "",
@@ -665,9 +583,9 @@
                 }
             ]
         },
-        "22": {
+        "19": {
             "condition": "6==True",
-            "node_id": "22",
+            "node_id": "19",
             "guide_content": "导光束转接座是否要求具备插拔检测功能",
             "answer_type": "单选",
             "input_num_accor": "",
@@ -704,9 +622,9 @@
                 }
             ]
         },
-        "23": {
-            "condition": "2any['硬件'] and 22any['悬臂','接近开关']",
-            "node_id": "23",
+        "20": {
+            "condition": "2any['硬件'] and 19any['悬臂','接近开关']",
+            "node_id": "20",
             "guide_content": "导光束插拔影响的光源与处理逻辑",
             "answer_type": "单选",
             "input_num_accor": "",
@@ -724,7 +642,7 @@
                     "option_content": "有特殊逻辑",
                     "option_out": "True",
                     "option_bold": "",
-                    "option_show": "",
+                    "option_show": "导光束{V}",
                     "option_label": "导光束插拔定制逻辑"
                 },
                 {
@@ -736,9 +654,9 @@
                 }
             ]
         },
-        "24": {
-            "condition": "23==True",
-            "node_id": "24",
+        "21": {
+            "condition": "20==True",
+            "node_id": "21",
             "guide_content": "导光束插拔处理逻辑",
             "answer_type": "多行文本",
             "input_num_accor": "",
@@ -761,9 +679,155 @@
                 }
             ]
         },
+        "22": {
+            "condition": "3==True",
+            "node_id": "22",
+            "guide_content": "是否指定或提供导光束做出厂光参数测试",
+            "answer_type": "单选",
+            "input_num_accor": "",
+            "input_name_accor": "",
+            "input_tolerance": "",
+            "ref_config": "False",
+            "option_hint": "产品生产出来后，在做光参数测试时，客户是否指定或提供导光束来测，而不是由我司自行决定？",
+            "option_group_id": "3",
+            "option_view": "光学+结构+工艺+质量",
+            "user_must_out": {},
+            "option_tolerance_out": {},
+            "ref_out": [],
+            "options": [
+                {
+                    "option_content": "是",
+                    "option_out": "True",
+                    "option_bold": "客户指定/提供",
+                    "option_show": "{V}导光束做光参数测试",
+                    "option_label": "指定导光束测光参数"
+                },
+                {
+                    "option_content": "否",
+                    "option_out": "False",
+                    "option_bold": "",
+                    "option_show": "{V}导光束做光参数测试",
+                    "option_label": ""
+                }
+            ]
+        },
+        "23": {
+            "condition": "22==True",
+            "node_id": "23",
+            "guide_content": "指定或提供的导光束检测哪些光参数",
+            "answer_type": "多行文本",
+            "input_num_accor": "",
+            "input_name_accor": "",
+            "input_tolerance": "",
+            "ref_config": "True",
+            "option_hint": "填写客户指定的导光束及测试参数，例如：客供3米导光束测：光通量，显色指数；其余光参数用我司1米导光束测试。",
+            "option_group_id": "3",
+            "option_view": "光学+工艺+质量",
+            "user_must_out": {},
+            "option_tolerance_out": {},
+            "ref_out": [],
+            "options": [
+                {
+                    "option_content": "",
+                    "option_out": "字典",
+                    "option_bold": "",
+                    "option_show": "导光束限定要求：{V}",
+                    "option_label": ""
+                }
+            ]
+        },
+        "24": {
+            "condition": "6==True",
+            "node_id": "24",
+            "guide_content": "是否提供导光束做转接座拉力出厂测试",
+            "answer_type": "单选",
+            "input_num_accor": "",
+            "input_name_accor": "",
+            "input_tolerance": "",
+            "ref_config": "False",
+            "option_hint": "我司默认使用自己的导光束头部治具做插拔拉力测试，如果客户对导光束插拔力要求较高，则需要客户提供导光束做专门的拉力测试。",
+            "option_group_id": "3",
+            "option_view": "结构+工艺+质量",
+            "user_must_out": {},
+            "option_tolerance_out": {},
+            "ref_out": [],
+            "options": [
+                {
+                    "option_content": "是",
+                    "option_out": "True",
+                    "option_bold": "客供",
+                    "option_show": "使用{V}导光束做拉力测试",
+                    "option_label": "客供导光束测拉力"
+                },
+                {
+                    "option_content": "否",
+                    "option_out": "False",
+                    "option_bold": "",
+                    "option_show": "使用{V}导光束做拉力测试",
+                    "option_label": ""
+                }
+            ]
+        },
         "25": {
-            "condition": "2any['光学']",
+            "condition": "6==True",
             "node_id": "25",
+            "guide_content": "是否指定转接座拉力测试合格标准",
+            "answer_type": "单选",
+            "input_num_accor": "",
+            "input_name_accor": "",
+            "input_tolerance": "",
+            "ref_config": "False",
+            "option_hint": "我司默认的拉力合格标准为：11~15N，如果客户需要指定合格标准，请选“是”。",
+            "option_group_id": "3",
+            "option_view": "结构+工艺+质量",
+            "user_must_out": {},
+            "option_tolerance_out": {},
+            "ref_out": [],
+            "options": [
+                {
+                    "option_content": "是",
+                    "option_out": "True",
+                    "option_bold": "指定拉力标准",
+                    "option_show": "转接座拉力测试{V}",
+                    "option_label": "指定拉力标准"
+                },
+                {
+                    "option_content": "否",
+                    "option_out": "False",
+                    "option_bold": "",
+                    "option_show": "转接座拉力测试{V}",
+                    "option_label": ""
+                }
+            ]
+        },
+        "26": {
+            "condition": "25==True",
+            "node_id": "26",
+            "guide_content": "客户要求的转接座拉力测试合格标准",
+            "answer_type": "单行文本",
+            "input_num_accor": "",
+            "input_name_accor": "",
+            "input_tolerance": "正负",
+            "ref_config": "True",
+            "option_hint": "填写客户指定的转接座插拔拉力合格标准。",
+            "option_group_id": "3",
+            "option_view": "结构+工艺+质量",
+            "user_must_out": {},
+            "option_tolerance_out": {},
+            "ref_out": [],
+            "options": [
+                {
+                    "option_content": "",
+                    "option_out": "字典",
+                    "option_bold": "",
+                    "option_show": "要求的转接座拉力测试合格标准为：典型值{V}，公差{T}",
+                    "option_label": ""
+                }
+            ]
+        },
+        "27": {
+            "condition": "2any['光学']",
+            "node_id": "27",
             "guide_content": "产品是否需要输出单色光",
             "answer_type": "单选",
             "input_num_accor": "",
@@ -793,9 +857,9 @@
                 }
             ]
         },
-        "26": {
-            "condition": "25==True",
-            "node_id": "26",
+        "28": {
+            "condition": "27==True",
+            "node_id": "28",
             "guide_content": "产品需要多少个单色光输出",
             "answer_type": "正整数",
             "input_num_accor": "",
@@ -818,12 +882,12 @@
                 }
             ]
         },
-        "27": {
-            "condition": "25==True",
-            "node_id": "27",
+        "29": {
+            "condition": "27==True",
+            "node_id": "29",
             "guide_content": "请给各输出单色光取名",
             "answer_type": "单行文本",
-            "input_num_accor": "26",
+            "input_num_accor": "28",
             "input_name_accor": "",
             "input_tolerance": "",
             "ref_config": "False",
@@ -843,9 +907,9 @@
                 }
             ]
         },
-        "28": {
+        "30": {
             "condition": "2any['光学']",
-            "node_id": "28",
+            "node_id": "30",
             "guide_content": "产品是否需要输出白光",
             "answer_type": "单选",
             "input_num_accor": "",
@@ -875,9 +939,9 @@
                 }
             ]
         },
-        "29": {
+        "31": {
             "condition": "2any['光学']",
-            "node_id": "29",
+            "node_id": "31",
             "guide_content": "产品是否需要输出特定混合光",
             "answer_type": "单选",
             "input_num_accor": "",
@@ -907,9 +971,9 @@
                 }
             ]
         },
-        "30": {
-            "condition": "28==True",
-            "node_id": "30",
+        "32": {
+            "condition": "30==True",
+            "node_id": "32",
             "guide_content": "产品是否属于内窥镜冷光源",
             "answer_type": "单选",
             "input_num_accor": "",
@@ -939,9 +1003,9 @@
                 }
             ]
         },
-        "31": {
-            "condition": "28==True or 29==True",
-            "node_id": "31",
+        "33": {
+            "condition": "30==True or 31==True",
+            "node_id": "33",
             "guide_content": "产品需要多少个白光或特定混合光输出",
             "answer_type": "正整数",
             "input_num_accor": "",
@@ -964,12 +1028,12 @@
                 }
             ]
         },
-        "32": {
-            "condition": "28==True or 29==True",
-            "node_id": "32",
+        "34": {
+            "condition": "30==True or 31==True",
+            "node_id": "34",
             "guide_content": "请给各输出白光或特定混合光取名",
             "answer_type": "单行文本",
-            "input_num_accor": "31",
+            "input_num_accor": "33",
             "input_name_accor": "",
             "input_tolerance": "",
             "ref_config": "False",
@@ -989,9 +1053,9 @@
                 }
             ]
         },
-        "33": {
-            "condition": "25==True",
-            "node_id": "33",
+        "35": {
+            "condition": "27==True",
+            "node_id": "35",
             "guide_content": "下列哪些单色光参数客户进行限制",
             "answer_type": "多选",
             "input_num_accor": "",
@@ -1105,13 +1169,13 @@
                 }
             ]
         },
-        "34": {
-            "condition": "33any['峰值波长']",
-            "node_id": "34",
+        "36": {
+            "condition": "35any['峰值波长']",
+            "node_id": "36",
             "guide_content": "峰值波长要求",
             "answer_type": "单行文本",
-            "input_num_accor": "26",
-            "input_name_accor": "27",
+            "input_num_accor": "28",
+            "input_name_accor": "29",
             "input_tolerance": "正负",
             "ref_config": "True",
             "option_hint": "填写该项要求的典型值与公差范围，单位统一为：nm。",
@@ -1130,13 +1194,13 @@
                 }
             ]
         },
-        "35": {
-            "condition": "33any['主波长']",
-            "node_id": "35",
+        "37": {
+            "condition": "35any['主波长']",
+            "node_id": "37",
             "guide_content": "主波长要求",
             "answer_type": "单行文本",
-            "input_num_accor": "26",
-            "input_name_accor": "27",
+            "input_num_accor": "28",
+            "input_name_accor": "29",
             "input_tolerance": "正负",
             "ref_config": "True",
             "option_hint": "填写该项要求的典型值与公差范围，单位统一为：nm。",
@@ -1155,13 +1219,13 @@
                 }
             ]
         },
-        "36": {
-            "condition": "33any['半峰全宽']",
-            "node_id": "36",
+        "38": {
+            "condition": "35any['半峰全宽']",
+            "node_id": "38",
             "guide_content": "半峰全宽要求",
             "answer_type": "单行文本",
-            "input_num_accor": "26",
-            "input_name_accor": "27",
+            "input_num_accor": "28",
+            "input_name_accor": "29",
             "input_tolerance": "正负",
             "ref_config": "True",
             "option_hint": "填写该项要求的典型值与公差范围，单位统一为：nm。",
@@ -1180,13 +1244,13 @@
                 }
             ]
         },
-        "37": {
-            "condition": "33any['光通量']",
-            "node_id": "37",
+        "39": {
+            "condition": "35any['光通量']",
+            "node_id": "39",
             "guide_content": "光通量要求",
             "answer_type": "单行文本",
-            "input_num_accor": "26",
-            "input_name_accor": "27",
+            "input_num_accor": "28",
+            "input_name_accor": "29",
             "input_tolerance": "正负",
             "ref_config": "True",
             "option_hint": "填写该项要求的典型值与公差范围，单位统一为：lm。",
@@ -1205,13 +1269,13 @@
                 }
             ]
         },
-        "38": {
-            "condition": "33any['光功率']",
-            "node_id": "38",
+        "40": {
+            "condition": "35any['光功率']",
+            "node_id": "40",
             "guide_content": "光功率要求",
             "answer_type": "单行文本",
-            "input_num_accor": "26",
-            "input_name_accor": "27",
+            "input_num_accor": "28",
+            "input_name_accor": "29",
             "input_tolerance": "正负",
             "ref_config": "True",
             "option_hint": "填写该项要求的典型值与公差范围，单位统一为：mW。",
@@ -1230,13 +1294,13 @@
                 }
             ]
         },
-        "39": {
-            "condition": "33any['照度']",
-            "node_id": "39",
+        "41": {
+            "condition": "35any['照度']",
+            "node_id": "41",
             "guide_content": "照度要求",
             "answer_type": "单行文本",
-            "input_num_accor": "26",
-            "input_name_accor": "27",
+            "input_num_accor": "28",
+            "input_name_accor": "29",
             "input_tolerance": "正负",
             "ref_config": "True",
             "option_hint": "填写该项要求的典型值与公差范围，单位统一为：Lux。",
@@ -1255,13 +1319,13 @@
                 }
             ]
         },
-        "40": {
-            "condition": "33any['辐照度']",
-            "node_id": "40",
+        "42": {
+            "condition": "35any['辐照度']",
+            "node_id": "42",
             "guide_content": "辐照度要求",
             "answer_type": "单行文本",
-            "input_num_accor": "26",
-            "input_name_accor": "27",
+            "input_num_accor": "28",
+            "input_name_accor": "29",
             "input_tolerance": "正负",
             "ref_config": "True",
             "option_hint": "填写该项要求的典型值与公差范围，单位统一为：mW/cm²。",
@@ -1280,13 +1344,13 @@
                 }
             ]
         },
-        "41": {
-            "condition": "33any['光斑尺寸']",
-            "node_id": "41",
+        "43": {
+            "condition": "35any['光斑尺寸']",
+            "node_id": "43",
             "guide_content": "光斑尺寸要求",
             "answer_type": "单行文本",
-            "input_num_accor": "26",
-            "input_name_accor": "27",
+            "input_num_accor": "28",
+            "input_name_accor": "29",
             "input_tolerance": "正负",
             "ref_config": "True",
             "option_hint": "填写该项要求的典型值与公差范围，单位统一为：mm。",
@@ -1305,13 +1369,13 @@
                 }
             ]
         },
-        "42": {
-            "condition": "33any['光斑均匀性']",
-            "node_id": "42",
+        "44": {
+            "condition": "35any['光斑均匀性']",
+            "node_id": "44",
             "guide_content": "光斑均匀性要求",
             "answer_type": "多行文本",
-            "input_num_accor": "26",
-            "input_name_accor": "27",
+            "input_num_accor": "28",
+            "input_name_accor": "29",
             "input_tolerance": "",
             "ref_config": "True",
             "option_hint": "填写该项要求的合格标准，并写明均匀性定义或计算公式；我司默认定义为平面照度分布的50%峰值构成的区域直径与10%峰值构成的区域直径的比值，即D50/D10。",
@@ -1330,13 +1394,13 @@
                 }
             ]
         },
-        "43": {
-            "condition": "33any['光强']",
-            "node_id": "43",
+        "45": {
+            "condition": "35any['光强']",
+            "node_id": "45",
             "guide_content": "光强要求",
             "answer_type": "单行文本",
-            "input_num_accor": "26",
-            "input_name_accor": "27",
+            "input_num_accor": "28",
+            "input_name_accor": "29",
             "input_tolerance": "正负",
             "ref_config": "True",
             "option_hint": "填写该项要求的典型值与公差范围，单位统一为：cd。",
@@ -1355,13 +1419,13 @@
                 }
             ]
         },
-        "44": {
-            "condition": "33any['辐射强度']",
-            "node_id": "44",
+        "46": {
+            "condition": "35any['辐射强度']",
+            "node_id": "46",
             "guide_content": "辐射强度要求",
             "answer_type": "单行文本",
-            "input_num_accor": "26",
-            "input_name_accor": "27",
+            "input_num_accor": "28",
+            "input_name_accor": "29",
             "input_tolerance": "正负",
             "ref_config": "True",
             "option_hint": "填写该项要求的典型值与公差范围，单位统一为：mW/sr。",
@@ -1380,13 +1444,13 @@
                 }
             ]
         },
-        "45": {
-            "condition": "33any['亮度']",
-            "node_id": "45",
+        "47": {
+            "condition": "35any['亮度']",
+            "node_id": "47",
             "guide_content": "亮度要求",
             "answer_type": "单行文本",
-            "input_num_accor": "26",
-            "input_name_accor": "27",
+            "input_num_accor": "28",
+            "input_name_accor": "29",
             "input_tolerance": "正负",
             "ref_config": "True",
             "option_hint": "填写该项要求的典型值与公差范围，单位统一为：cd/m²。",
@@ -1405,13 +1469,13 @@
                 }
             ]
         },
-        "46": {
-            "condition": "33any['光束全角']",
-            "node_id": "46",
+        "48": {
+            "condition": "35any['光束全角']",
+            "node_id": "48",
             "guide_content": "光束全角要求",
             "answer_type": "单行文本",
-            "input_num_accor": "26",
-            "input_name_accor": "27",
+            "input_num_accor": "28",
+            "input_name_accor": "29",
             "input_tolerance": "正负",
             "ref_config": "True",
             "option_hint": "填写该项要求的典型值与公差范围，单位统一为：°。注意光束全角指的是光强为法线光强的50%处、法线两边形成的夹角。",
@@ -1430,13 +1494,13 @@
                 }
             ]
         },
-        "47": {
-            "condition": "33any['视场全角']",
-            "node_id": "47",
+        "49": {
+            "condition": "35any['视场全角']",
+            "node_id": "49",
             "guide_content": "视场全角要求",
             "answer_type": "单行文本",
-            "input_num_accor": "26",
-            "input_name_accor": "27",
+            "input_num_accor": "28",
+            "input_name_accor": "29",
             "input_tolerance": "正负",
             "ref_config": "True",
             "option_hint": "填写该项要求的典型值与公差范围，单位统一为：°。注意光束全角指的是光强为法线光强的10%处、法线两边形成的夹角。",
@@ -1455,9 +1519,9 @@
                 }
             ]
         },
-        "48": {
-            "condition": "28==True",
-            "node_id": "48",
+        "50": {
+            "condition": "30==True",
+            "node_id": "50",
             "guide_content": "下列哪些白光或混合光参数客户进行限制",
             "answer_type": "多选",
             "input_num_accor": "",
@@ -1592,13 +1656,13 @@
                 }
             ]
         },
-        "49": {
-            "condition": "48any['CCT']",
-            "node_id": "49",
+        "51": {
+            "condition": "50any['CCT']",
+            "node_id": "51",
             "guide_content": "相关色温CCT要求",
             "answer_type": "单行文本",
-            "input_num_accor": "31",
-            "input_name_accor": "32",
+            "input_num_accor": "33",
+            "input_name_accor": "34",
             "input_tolerance": "正负",
             "ref_config": "True",
             "option_hint": "填写该项要求的典型值与公差范围，单位统一为：K。",
@@ -1617,13 +1681,13 @@
                 }
             ]
         },
-        "50": {
-            "condition": "48any['Ra']",
-            "node_id": "50",
+        "52": {
+            "condition": "50any['Ra']",
+            "node_id": "52",
             "guide_content": "CRI显指Ra要求",
             "answer_type": "单行文本",
-            "input_num_accor": "31",
-            "input_name_accor": "32",
+            "input_num_accor": "33",
+            "input_name_accor": "34",
             "input_tolerance": "下限",
             "ref_config": "True",
             "option_hint": "填写该项要求的下限值，无单位。",
@@ -1642,13 +1706,13 @@
                 }
             ]
         },
-        "51": {
-            "condition": "48any['R9']",
-            "node_id": "51",
+        "53": {
+            "condition": "50any['R9']",
+            "node_id": "53",
             "guide_content": "CRI显指R9要求",
             "answer_type": "单行文本",
-            "input_num_accor": "31",
-            "input_name_accor": "32",
+            "input_num_accor": "33",
+            "input_name_accor": "34",
             "input_tolerance": "下限",
             "ref_config": "True",
             "option_hint": "填写该项要求的下限值，无单位。",
@@ -1667,13 +1731,13 @@
                 }
             ]
         },
-        "52": {
-            "condition": "48any['CIExy']",
-            "node_id": "52",
+        "54": {
+            "condition": "50any['CIExy']",
+            "node_id": "54",
             "guide_content": "色坐标CIExy要求",
             "answer_type": "多行文本",
-            "input_num_accor": "31",
-            "input_name_accor": "32",
+            "input_num_accor": "33",
+            "input_name_accor": "34",
             "input_tolerance": "",
             "ref_config": "True",
             "option_hint": "填写该项要求的合格范围，无单位；通常为一个平面范围，意味着需要四个色坐标点来定义合格范围；或者一个中心色坐标点加上一个椭圆范围。注意该项定义的是CIE 1931 xy 色度图坐标。",
@@ -1692,13 +1756,13 @@
                 }
             ]
         },
-        "53": {
-            "condition": "48any['CIEuv']",
-            "node_id": "53",
+        "55": {
+            "condition": "50any['CIEuv']",
+            "node_id": "55",
             "guide_content": "色坐标CIEuv要求",
             "answer_type": "多行文本",
-            "input_num_accor": "31",
-            "input_name_accor": "32",
+            "input_num_accor": "33",
+            "input_name_accor": "34",
             "input_tolerance": "",
             "ref_config": "True",
             "option_hint": "填写该项要求的合格范围，无单位；通常为一个平面范围，意味着需要四个色坐标点来定义合格范围；或者一个中心色坐标点加上一个椭圆范围。注意该项定义的是CIE 1960 uv 色度图坐标。",
@@ -1717,13 +1781,13 @@
                 }
             ]
         },
-        "54": {
-            "condition": "48any['光谱峰值比']",
-            "node_id": "54",
+        "56": {
+            "condition": "50any['光谱峰值比']",
+            "node_id": "56",
             "guide_content": "光谱峰值比要求",
             "answer_type": "单行文本",
-            "input_num_accor": "31",
-            "input_name_accor": "32",
+            "input_num_accor": "33",
+            "input_name_accor": "34",
             "input_tolerance": "正负",
             "ref_config": "True",
             "option_hint": "填写该项要求的典型值与公差范围，无单位。例如：典型值：1:0.5:0.3；公差：±10%",
@@ -1742,13 +1806,13 @@
                 }
             ]
         },
-        "55": {
-            "condition": "48any['光通量']",
-            "node_id": "55",
+        "57": {
+            "condition": "50any['光通量']",
+            "node_id": "57",
             "guide_content": "光通量要求",
             "answer_type": "单行文本",
-            "input_num_accor": "31",
-            "input_name_accor": "32",
+            "input_num_accor": "33",
+            "input_name_accor": "34",
             "input_tolerance": "正负",
             "ref_config": "True",
             "option_hint": "填写该项要求的典型值与公差范围，单位统一为：lm。",
@@ -1767,13 +1831,13 @@
                 }
             ]
         },
-        "56": {
-            "condition": "48any['光功率']",
-            "node_id": "56",
+        "58": {
+            "condition": "50any['光功率']",
+            "node_id": "58",
             "guide_content": "光功率要求",
             "answer_type": "单行文本",
-            "input_num_accor": "31",
-            "input_name_accor": "32",
+            "input_num_accor": "33",
+            "input_name_accor": "34",
             "input_tolerance": "正负",
             "ref_config": "True",
             "option_hint": "填写该项要求的典型值与公差范围，单位统一为：mW。",
@@ -1792,13 +1856,13 @@
                 }
             ]
         },
-        "57": {
-            "condition": "48any['照度']",
-            "node_id": "57",
+        "59": {
+            "condition": "50any['照度']",
+            "node_id": "59",
             "guide_content": "照度要求",
             "answer_type": "单行文本",
-            "input_num_accor": "31",
-            "input_name_accor": "32",
+            "input_num_accor": "33",
+            "input_name_accor": "34",
             "input_tolerance": "正负",
             "ref_config": "True",
             "option_hint": "填写该项要求的典型值与公差范围，单位统一为：Lux。",
@@ -1817,13 +1881,13 @@
                 }
             ]
         },
-        "58": {
-            "condition": "48any['辐照度']",
-            "node_id": "58",
+        "60": {
+            "condition": "50any['辐照度']",
+            "node_id": "60",
             "guide_content": "辐照度要求",
             "answer_type": "单行文本",
-            "input_num_accor": "31",
-            "input_name_accor": "32",
+            "input_num_accor": "33",
+            "input_name_accor": "34",
             "input_tolerance": "正负",
             "ref_config": "True",
             "option_hint": "填写该项要求的典型值与公差范围，单位统一为：mW/cm²。",
@@ -1842,13 +1906,13 @@
                 }
             ]
         },
-        "59": {
-            "condition": "48any['光斑尺寸']",
-            "node_id": "59",
+        "61": {
+            "condition": "50any['光斑尺寸']",
+            "node_id": "61",
             "guide_content": "光斑尺寸要求",
             "answer_type": "单行文本",
-            "input_num_accor": "31",
-            "input_name_accor": "32",
+            "input_num_accor": "33",
+            "input_name_accor": "34",
             "input_tolerance": "正负",
             "ref_config": "True",
             "option_hint": "填写该项要求的典型值与公差范围，单位统一为：mm。",
@@ -1867,13 +1931,13 @@
                 }
             ]
         },
-        "60": {
-            "condition": "48any['光斑均匀性']",
-            "node_id": "60",
+        "62": {
+            "condition": "50any['光斑均匀性']",
+            "node_id": "62",
             "guide_content": "光斑均匀性要求",
             "answer_type": "多行文本",
-            "input_num_accor": "31",
-            "input_name_accor": "32",
+            "input_num_accor": "33",
+            "input_name_accor": "34",
             "input_tolerance": "",
             "ref_config": "True",
             "option_hint": "填写该项要求的合格标准，并写明均匀性定义或计算公式；我司默认定义为平面照度分布的50%峰值构成的区域直径与10%峰值构成的区域直径的比值，即D50/D10。",
@@ -1892,13 +1956,13 @@
                 }
             ]
         },
-        "61": {
-            "condition": "48any['光强']",
-            "node_id": "61",
+        "63": {
+            "condition": "50any['光强']",
+            "node_id": "63",
             "guide_content": "光强要求",
             "answer_type": "单行文本",
-            "input_num_accor": "31",
-            "input_name_accor": "32",
+            "input_num_accor": "33",
+            "input_name_accor": "34",
             "input_tolerance": "正负",
             "ref_config": "True",
             "option_hint": "填写该项要求的典型值与公差范围，单位统一为：cd。",
@@ -1917,13 +1981,13 @@
                 }
             ]
         },
-        "62": {
-            "condition": "48any['辐射强度']",
-            "node_id": "62",
+        "64": {
+            "condition": "50any['辐射强度']",
+            "node_id": "64",
             "guide_content": "辐射强度要求",
             "answer_type": "单行文本",
-            "input_num_accor": "31",
-            "input_name_accor": "32",
+            "input_num_accor": "33",
+            "input_name_accor": "34",
             "input_tolerance": "正负",
             "ref_config": "True",
             "option_hint": "填写该项要求的典型值与公差范围，单位统一为：mW/sr。",
@@ -1942,13 +2006,13 @@
                 }
             ]
         },
-        "63": {
-            "condition": "48any['亮度']",
-            "node_id": "63",
+        "65": {
+            "condition": "50any['亮度']",
+            "node_id": "65",
             "guide_content": "亮度要求",
             "answer_type": "单行文本",
-            "input_num_accor": "31",
-            "input_name_accor": "32",
+            "input_num_accor": "33",
+            "input_name_accor": "34",
             "input_tolerance": "正负",
             "ref_config": "True",
             "option_hint": "填写该项要求的典型值与公差范围，单位统一为：cd/m²。",
@@ -1967,13 +2031,13 @@
                 }
             ]
         },
-        "64": {
-            "condition": "48any['光束全角']",
-            "node_id": "64",
+        "66": {
+            "condition": "50any['光束全角']",
+            "node_id": "66",
             "guide_content": "光束全角要求",
             "answer_type": "单行文本",
-            "input_num_accor": "31",
-            "input_name_accor": "32",
+            "input_num_accor": "33",
+            "input_name_accor": "34",
             "input_tolerance": "正负",
             "ref_config": "True",
             "option_hint": "填写该项要求的典型值与公差范围，单位统一为：°。注意光束全角指的是光强为法线光强的50%处、法线两边形成的夹角。",
@@ -1992,13 +2056,13 @@
                 }
             ]
         },
-        "65": {
-            "condition": "48any['视场全角']",
-            "node_id": "65",
+        "67": {
+            "condition": "50any['视场全角']",
+            "node_id": "67",
             "guide_content": "视场全角要求",
             "answer_type": "单行文本",
-            "input_num_accor": "31",
-            "input_name_accor": "32",
+            "input_num_accor": "33",
+            "input_name_accor": "34",
             "input_tolerance": "正负",
             "ref_config": "True",
             "option_hint": "填写该项要求的典型值与公差范围，单位统一为：°。注意光束全角指的是光强为法线光强的10%处、法线两边形成的夹角。",
@@ -2017,9 +2081,9 @@
                 }
             ]
         },
-        "66": {
-            "condition": "30==True",
-            "node_id": "66",
+        "68": {
+            "condition": "32==True",
+            "node_id": "68",
             "guide_content": "下列哪些内窥镜冷光源特有光参数客户进行限制",
             "answer_type": "多选",
             "input_num_accor": "",
@@ -2077,13 +2141,13 @@
                 }
             ]
         },
-        "67": {
-            "condition": "66any['红绿辐通量比']",
-            "node_id": "67",
+        "69": {
+            "condition": "68any['红绿辐通量比']",
+            "node_id": "69",
             "guide_content": "红绿辐通量比要求",
             "answer_type": "单行文本",
-            "input_num_accor": "31",
-            "input_name_accor": "32",
+            "input_num_accor": "33",
+            "input_name_accor": "34",
             "input_tolerance": "正负",
             "ref_config": "False",
             "option_hint": "填写该项要求的典型值与公差范围，无单位；推荐YY1081-2011标准默认公差±20%。",
@@ -2102,13 +2166,13 @@
                 }
             ]
         },
-        "68": {
-            "condition": "66any['蓝绿辐通量比']",
-            "node_id": "68",
+        "70": {
+            "condition": "68any['蓝绿辐通量比']",
+            "node_id": "70",
             "guide_content": "蓝绿辐通量比要求",
             "answer_type": "单行文本",
-            "input_num_accor": "31",
-            "input_name_accor": "32",
+            "input_num_accor": "33",
+            "input_name_accor": "34",
             "input_tolerance": "正负",
             "ref_config": "False",
             "option_hint": "填写该项要求的典型值与公差范围，无单位；推荐YY1081-2011标准默认公差±20%。",
@@ -2127,13 +2191,13 @@
                 }
             ]
         },
-        "69": {
-            "condition": "66any['红外截止性能']",
-            "node_id": "69",
+        "71": {
+            "condition": "68any['红外截止性能']",
+            "node_id": "71",
             "guide_content": "红外截止性能要求",
             "answer_type": "单行文本",
-            "input_num_accor": "31",
-            "input_name_accor": "32",
+            "input_num_accor": "33",
+            "input_name_accor": "34",
             "input_tolerance": "上限",
             "ref_config": "False",
             "option_hint": "填写该项要求的上限值，默认单位：mW/lm；推荐YY1081-2011标准上限6mW/lm。",
@@ -2152,13 +2216,13 @@
                 }
             ]
         },
-        "70": {
-            "condition": "66any['光照均匀性']",
-            "node_id": "70",
+        "72": {
+            "condition": "68any['光照均匀性']",
+            "node_id": "72",
             "guide_content": "光照均匀性要求",
             "answer_type": "单行文本",
-            "input_num_accor": "31",
-            "input_name_accor": "32",
+            "input_num_accor": "33",
+            "input_name_accor": "34",
             "input_tolerance": "上限",
             "ref_config": "False",
             "option_hint": "填写该项要求的上限值，无单位，客户要求≤0.5则我司部分产品不满足。",
@@ -2177,13 +2241,13 @@
                 }
             ]
         },
-        "71": {
-            "condition": "66any['照度超限点']",
-            "node_id": "71",
+        "73": {
+            "condition": "68any['照度超限点']",
+            "node_id": "73",
             "guide_content": "照度超限点要求",
             "answer_type": "单行文本",
-            "input_num_accor": "31",
-            "input_name_accor": "32",
+            "input_num_accor": "33",
+            "input_name_accor": "34",
             "input_tolerance": "上限",
             "ref_config": "False",
             "option_hint": "填写该项要求的上限值，无单位；推荐YY1081-2011标准上限值2。",
@@ -2202,9 +2266,9 @@
                 }
             ]
         },
-        "72": {
-            "condition": "30==True",
-            "node_id": "72",
+        "74": {
+            "condition": "32==True",
+            "node_id": "74",
             "guide_content": "50%亮度要测的光参数有哪些",
             "answer_type": "多选",
             "input_num_accor": "",
@@ -2262,9 +2326,9 @@
                 }
             ]
         },
-        "73": {
+        "75": {
             "condition": "无条件",
-            "node_id": "73",
+            "node_id": "75",
             "guide_content": "是否限定产品工作环境温度",
             "answer_type": "单选",
             "input_num_accor": "",
@@ -2294,9 +2358,9 @@
                 }
             ]
         },
-        "74": {
-            "condition": "73==True",
-            "node_id": "74",
+        "76": {
+            "condition": "75==True",
+            "node_id": "76",
             "guide_content": "产品工作环境温度要求",
             "answer_type": "单行文本",
             "input_num_accor": "",
@@ -2319,9 +2383,9 @@
                 }
             ]
         },
-        "75": {
+        "77": {
             "condition": "无条件",
-            "node_id": "75",
+            "node_id": "77",
             "guide_content": "是否限定产品工作环境相对湿度",
             "answer_type": "单选",
             "input_num_accor": "",
@@ -2351,9 +2415,9 @@
                 }
             ]
         },
-        "76": {
-            "condition": "75==True",
-            "node_id": "76",
+        "78": {
+            "condition": "77==True",
+            "node_id": "78",
             "guide_content": "产品工作环境相对湿度要求",
             "answer_type": "单行文本",
             "input_num_accor": "",
@@ -2376,9 +2440,9 @@
                 }
             ]
         },
-        "77": {
+        "79": {
             "condition": "2any['光学','结构']",
-            "node_id": "77",
+            "node_id": "79",
             "guide_content": "是否限定产品工作时的噪声",
             "answer_type": "单选",
             "input_num_accor": "",
@@ -2408,9 +2472,9 @@
                 }
             ]
         },
-        "78": {
-            "condition": "77==True",
-            "node_id": "78",
+        "80": {
+            "condition": "79==True",
+            "node_id": "80",
             "guide_content": "产品工作时噪声的限定要求",
             "answer_type": "单行文本",
             "input_num_accor": "",
@@ -2433,9 +2497,9 @@
                 }
             ]
         },
-        "79": {
+        "81": {
             "condition": "2any['光学','硬件']",
-            "node_id": "79",
+            "node_id": "81",
             "guide_content": "是否限定产品外表面或器件的温升/温度",
             "answer_type": "单选",
             "input_num_accor": "",
@@ -2465,9 +2529,9 @@
                 }
             ]
         },
-        "80": {
-            "condition": "79==True",
-            "node_id": "80",
+        "82": {
+            "condition": "81==True",
+            "node_id": "82",
             "guide_content": "产品外表面温升/温度要求",
             "answer_type": "单行文本",
             "input_num_accor": "",
@@ -2490,9 +2554,9 @@
                 }
             ]
         },
-        "81": {
+        "83": {
             "condition": "2any['结构','硬件']",
-            "node_id": "81",
+            "node_id": "83",
             "guide_content": "是否限定产品IP防护等级",
             "answer_type": "单选",
             "input_num_accor": "",
@@ -2522,9 +2586,9 @@
                 }
             ]
         },
-        "82": {
-            "condition": "81==True",
-            "node_id": "82",
+        "84": {
+            "condition": "83==True",
+            "node_id": "84",
             "guide_content": "IP防护等级要求",
             "answer_type": "单行文本",
             "input_num_accor": "",
@@ -2547,9 +2611,9 @@
                 }
             ]
         },
-        "83": {
+        "85": {
             "condition": "2any['结构']",
-            "node_id": "83",
+            "node_id": "85",
             "guide_content": "是否限制产品外形尺寸或安装孔位",
             "answer_type": "单选",
             "input_num_accor": "",
@@ -2579,9 +2643,9 @@
                 }
             ]
         },
-        "84": {
+        "86": {
             "condition": "2any['光学','结构']",
-            "node_id": "84",
+            "node_id": "86",
             "guide_content": "是否限制产品出光口位置",
             "answer_type": "单选",
             "input_num_accor": "",
@@ -2611,9 +2675,9 @@
                 }
             ]
         },
-        "85": {
+        "87": {
             "condition": "2any['结构']",
-            "node_id": "85",
+            "node_id": "87",
             "guide_content": "是否限制产品出线位置",
             "answer_type": "单选",
             "input_num_accor": "",
@@ -2643,10 +2707,10 @@
                 }
             ]
         },
-        "86": {
+        "88": {
             "condition": "2any['结构']",
-            "node_id": "86",
-            "guide_content": "是否限制产品进出风位置与方向",
+            "node_id": "88",
+            "guide_content": "是否限制产品风道",
             "answer_type": "单选",
             "input_num_accor": "",
             "input_name_accor": "",
@@ -2675,9 +2739,9 @@
                 }
             ]
         },
-        "87": {
+        "89": {
             "condition": "2any['结构']",
-            "node_id": "87",
+            "node_id": "89",
             "guide_content": "是否定制产品出线线长或连接器规格",
             "answer_type": "单选",
             "input_num_accor": "",
@@ -2707,9 +2771,9 @@
                 }
             ]
         },
-        "88": {
-            "condition": "87==True",
-            "node_id": "88",
+        "90": {
+            "condition": "89==True",
+            "node_id": "90",
             "guide_content": "详细的线长或连接器规格要求",
             "answer_type": "多行文本",
             "input_num_accor": "",
@@ -2732,9 +2796,9 @@
                 }
             ]
         },
-        "89": {
+        "91": {
             "condition": "2any['结构']",
-            "node_id": "89",
+            "node_id": "91",
             "guide_content": "是否指定产品外观颜色",
             "answer_type": "单选",
             "input_num_accor": "",
@@ -2764,9 +2828,9 @@
                 }
             ]
         },
-        "90": {
-            "condition": "89==True",
-            "node_id": "90",
+        "92": {
+            "condition": "91==True",
+            "node_id": "92",
             "guide_content": "产品外观颜色要求",
             "answer_type": "多行文本",
             "input_num_accor": "",
@@ -2789,9 +2853,9 @@
                 }
             ]
         },
-        "91": {
+        "93": {
             "condition": "2any['结构']",
-            "node_id": "91",
+            "node_id": "93",
             "guide_content": "是否指定产品表面工艺",
             "answer_type": "单选",
             "input_num_accor": "",
@@ -2821,9 +2885,9 @@
                 }
             ]
         },
-        "92": {
-            "condition": "91==True",
-            "node_id": "92",
+        "94": {
+            "condition": "93==True",
+            "node_id": "94",
             "guide_content": "产品表面工艺要求",
             "answer_type": "多行文本",
             "input_num_accor": "",
@@ -2846,9 +2910,9 @@
                 }
             ]
         },
-        "93": {
+        "95": {
             "condition": "2any['结构']",
-            "node_id": "93",
+            "node_id": "95",
             "guide_content": "是否限制产品重量",
             "answer_type": "单选",
             "input_num_accor": "",
@@ -2878,9 +2942,9 @@
                 }
             ]
         },
-        "94": {
-            "condition": "93==True",
-            "node_id": "94",
+        "96": {
+            "condition": "95==True",
+            "node_id": "96",
             "guide_content": "产品重量要求",
             "answer_type": "单行文本",
             "input_num_accor": "",
@@ -2903,9 +2967,9 @@
                 }
             ]
         },
-        "95": {
+        "97": {
             "condition": "2any['结构']",
-            "node_id": "95",
+            "node_id": "97",
             "guide_content": "是否指定产品必须使用调速风扇",
             "answer_type": "单选",
             "input_num_accor": "",
@@ -2935,9 +2999,9 @@
                 }
             ]
         },
-        "96": {
+        "98": {
             "condition": "2any['结构']",
-            "node_id": "96",
+            "node_id": "98",
             "guide_content": "是否指定产品风扇类型、规格、数量、线长、连接器",
             "answer_type": "单选",
             "input_num_accor": "",
@@ -2967,9 +3031,9 @@
                 }
             ]
         },
-        "97": {
-            "condition": "96==True",
-            "node_id": "97",
+        "99": {
+            "condition": "98==True",
+            "node_id": "99",
             "guide_content": "具体风扇规格、数量、线长、连接器要求",
             "answer_type": "多行文本",
             "input_num_accor": "",
@@ -2992,9 +3056,9 @@
                 }
             ]
         },
-        "98": {
+        "100": {
             "condition": "2any['结构']",
-            "node_id": "98",
+            "node_id": "100",
             "guide_content": "是否限定产品散热器类型与尺寸",
             "answer_type": "单选",
             "input_num_accor": "",
@@ -3024,9 +3088,9 @@
                 }
             ]
         },
-        "99": {
-            "condition": "98==True",
-            "node_id": "99",
+        "101": {
+            "condition": "100==True",
+            "node_id": "101",
             "guide_content": "具体的散热器技术要求",
             "answer_type": "多行文本",
             "input_num_accor": "",
@@ -3049,9 +3113,9 @@
                 }
             ]
         },
-        "100": {
+        "102": {
             "condition": "2any['硬件']",
-            "node_id": "100",
+            "node_id": "102",
             "guide_content": "产品电源输入类型",
             "answer_type": "单选",
             "input_num_accor": "",
@@ -3081,9 +3145,9 @@
                 }
             ]
         },
-        "101": {
-            "condition": "100any['直流输入']",
-            "node_id": "101",
+        "103": {
+            "condition": "102any['直流输入']",
+            "node_id": "103",
             "guide_content": "请选择直流输入电压",
             "answer_type": "单选",
             "input_num_accor": "",
@@ -3127,9 +3191,9 @@
                 }
             ]
         },
-        "102": {
-            "condition": "100any['交流输入']",
-            "node_id": "102",
+        "104": {
+            "condition": "102any['交流输入']",
+            "node_id": "104",
             "guide_content": "请确认交流输入电压",
             "answer_type": "单选",
             "input_num_accor": "",
@@ -3152,9 +3216,9 @@
                 }
             ]
         },
-        "103": {
+        "105": {
             "condition": "2any['硬件']",
-            "node_id": "103",
+            "node_id": "105",
             "guide_content": "客户成像端是否有摄像系统参与",
             "answer_type": "单选",
             "input_num_accor": "",
@@ -3184,9 +3248,9 @@
                 }
             ]
         },
-        "104": {
-            "condition": "103==True",
-            "node_id": "104",
+        "106": {
+            "condition": "105==True",
+            "node_id": "106",
             "guide_content": "驱动板采用模拟输出方案，客户是否接受",
             "answer_type": "单选",
             "input_num_accor": "",
@@ -3216,16 +3280,16 @@
                 }
             ]
         },
-        "105": {
-            "condition": "103!=True",
-            "node_id": "105",
+        "107": {
+            "condition": "105!=True",
+            "node_id": "107",
             "guide_content": "驱动板采用PWM输出方案，客户是否接受",
             "answer_type": "单选",
             "input_num_accor": "",
             "input_name_accor": "",
             "input_tolerance": "",
             "ref_config": "False",
-            "option_hint": "驱动板PWM输出将可使色温随调光档位变化很小，但遇到摄像系统成像时将出现条纹问题，除非使用场景只用人眼观察；如果拒绝该方案，将采用模拟输出方案，客户得接受附带出现的色温随调光档位变化明显的问题。",
+            "option_hint": "驱动板PWM输出将可使色温随调光档位变化很小，但遇到摄像系统成像时将出现条纹问题，除非使用场景只用人眼观察，频率低于20KHz人耳会听到啸叫；如果拒绝该方案，将采用模拟输出方案，客户得接受附带出现的色温随调光档位变化明显的问题。",
             "option_group_id": "13",
             "option_view": "光学+硬件+软件+工艺",
             "user_must_out": {},
@@ -3248,9 +3312,9 @@
                 }
             ]
         },
-        "106": {
+        "108": {
             "condition": "2any['光学','硬件']",
-            "node_id": "106",
+            "node_id": "108",
             "guide_content": "是否限制产品整体功耗",
             "answer_type": "单选",
             "input_num_accor": "",
@@ -3280,9 +3344,9 @@
                 }
             ]
         },
-        "107": {
-            "condition": "106==True",
-            "node_id": "107",
+        "109": {
+            "condition": "108==True",
+            "node_id": "109",
             "guide_content": "产品功耗要求",
             "answer_type": "单行文本",
             "input_num_accor": "",
@@ -3305,9 +3369,9 @@
                 }
             ]
         },
-        "108": {
+        "110": {
             "condition": "2any['硬件']",
-            "node_id": "108",
+            "node_id": "110",
             "guide_content": "是否限制驱动控制板外形尺寸与安装孔位",
             "answer_type": "单选",
             "input_num_accor": "",
@@ -3337,9 +3401,9 @@
                 }
             ]
         },
-        "109": {
+        "111": {
             "condition": "2any['硬件']",
-            "node_id": "109",
+            "node_id": "111",
             "guide_content": "是否指定产品/驱动板接口类型或规格",
             "answer_type": "单选",
             "input_num_accor": "",
@@ -3369,9 +3433,9 @@
                 }
             ]
         },
-        "110": {
-            "condition": "109==True",
-            "node_id": "110",
+        "112": {
+            "condition": "111==True",
+            "node_id": "112",
             "guide_content": "产品/驱动板接口要求",
             "answer_type": "多行文本",
             "input_num_accor": "",
@@ -3394,9 +3458,9 @@
                 }
             ]
         },
-        "111": {
+        "113": {
             "condition": "2any['硬件']",
-            "node_id": "111",
+            "node_id": "113",
             "guide_content": "请选择产品控制模式",
             "answer_type": "多选",
             "input_num_accor": "",
@@ -3446,6 +3510,13 @@
                     "option_label": ""
                 },
                 {
+                    "option_content": "外部触发(频闪)",
+                    "option_out": "外部触发",
+                    "option_bold": "外部触发",
+                    "option_show": "",
+                    "option_label": ""
+                },
+                {
                     "option_content": "IIC",
                     "option_out": "IIC",
                     "option_bold": "IIC",
@@ -3470,6 +3541,13 @@
                     "option_content": "CAN",
                     "option_out": "CAN",
                     "option_bold": "CAN",
+                    "option_show": "",
+                    "option_label": ""
+                },
+                {
+                    "option_content": "以太网",
+                    "option_out": "以太网",
+                    "option_bold": "以太网",
                     "option_show": "",
                     "option_label": ""
                 },
@@ -3517,9 +3595,41 @@
                 }
             ]
         },
-        "112": {
+        "114": {
+            "condition": "113any['以太网']",
+            "node_id": "114",
+            "guide_content": "选择产品的网络角色",
+            "answer_type": "多选",
+            "input_num_accor": "",
+            "input_name_accor": "",
+            "input_tolerance": "",
+            "ref_config": "False",
+            "option_hint": "产品在网络通信中扮演的逻辑角色与功能实现，是属于服务端还是客户端、异或两种都是。",
+            "option_group_id": "15",
+            "option_view": "硬件+软件+工艺+质量",
+            "user_must_out": {},
+            "option_tolerance_out": {},
+            "ref_out": [],
+            "options": [
+                {
+                    "option_content": "服务端",
+                    "option_out": "服务端",
+                    "option_bold": "服务端",
+                    "option_show": "需扮演{V}功能角色",
+                    "option_label": ""
+                },
+                {
+                    "option_content": "客户端",
+                    "option_out": "客户端",
+                    "option_bold": "客户端",
+                    "option_show": "",
+                    "option_label": ""
+                }
+            ]
+        },
+        "115": {
             "condition": "2any['硬件']",
-            "node_id": "112",
+            "node_id": "115",
             "guide_content": "供货是否包含操控类配件",
             "answer_type": "单选",
             "input_num_accor": "",
@@ -3549,9 +3659,9 @@
                 }
             ]
         },
-        "113": {
-            "condition": "112==True",
-            "node_id": "113",
+        "116": {
+            "condition": "115==True",
+            "node_id": "116",
             "guide_content": "以下哪些操控类配件需要随货提供",
             "answer_type": "多选",
             "input_num_accor": "",
@@ -3616,9 +3726,9 @@
                 }
             ]
         },
-        "114": {
-            "condition": "112==True",
-            "node_id": "114",
+        "117": {
+            "condition": "115==True",
+            "node_id": "117",
             "guide_content": "是否指定操控类配件的选型规格参数",
             "answer_type": "单选",
             "input_num_accor": "",
@@ -3648,9 +3758,9 @@
                 }
             ]
         },
-        "115": {
-            "condition": "114==True",
-            "node_id": "115",
+        "118": {
+            "condition": "117==True",
+            "node_id": "118",
             "guide_content": "具体的操控类配件选型规格要求",
             "answer_type": "多行文本",
             "input_num_accor": "",
@@ -3673,9 +3783,9 @@
                 }
             ]
         },
-        "116": {
+        "119": {
             "condition": "2any['硬件']",
-            "node_id": "116",
+            "node_id": "119",
             "guide_content": "是否要求具备状态显示界面",
             "answer_type": "单选",
             "input_num_accor": "",
@@ -3705,9 +3815,9 @@
                 }
             ]
         },
-        "117": {
-            "condition": "116==True",
-            "node_id": "117",
+        "120": {
+            "condition": "119==True",
+            "node_id": "120",
             "guide_content": "产品要求哪些状态显示方式",
             "answer_type": "多选",
             "input_num_accor": "",
@@ -3751,9 +3861,9 @@
                 }
             ]
         },
-        "118": {
-            "condition": "116==True",
-            "node_id": "118",
+        "121": {
+            "condition": "119==True",
+            "node_id": "121",
             "guide_content": "具体的状态显示UI与逻辑要求",
             "answer_type": "多行文本",
             "input_num_accor": "",
@@ -3776,9 +3886,9 @@
                 }
             ]
         },
-        "119": {
-            "condition": "116==True",
-            "node_id": "119",
+        "122": {
+            "condition": "119==True",
+            "node_id": "122",
             "guide_content": "供货是否包含显示类配件",
             "answer_type": "单选",
             "input_num_accor": "",
@@ -3808,9 +3918,9 @@
                 }
             ]
         },
-        "120": {
-            "condition": "119==True",
-            "node_id": "120",
+        "123": {
+            "condition": "122==True",
+            "node_id": "123",
             "guide_content": "以下哪些显示类配件需要随货提供",
             "answer_type": "多选",
             "input_num_accor": "",
@@ -3847,9 +3957,9 @@
                 }
             ]
         },
-        "121": {
-            "condition": "119==True",
-            "node_id": "121",
+        "124": {
+            "condition": "122==True",
+            "node_id": "124",
             "guide_content": "是否指定显示类配件的选型规格参数",
             "answer_type": "单选",
             "input_num_accor": "",
@@ -3879,9 +3989,9 @@
                 }
             ]
         },
-        "122": {
-            "condition": "121==True",
-            "node_id": "122",
+        "125": {
+            "condition": "124==True",
+            "node_id": "125",
             "guide_content": "具体的显示类配件选型规格要求",
             "answer_type": "多行文本",
             "input_num_accor": "",
@@ -3904,9 +4014,9 @@
                 }
             ]
         },
-        "123": {
+        "126": {
             "condition": "2any['硬件']",
-            "node_id": "123",
+            "node_id": "126",
             "guide_content": "是否要求随货提供输入配线",
             "answer_type": "单选",
             "input_num_accor": "",
@@ -3936,9 +4046,9 @@
                 }
             ]
         },
-        "124": {
-            "condition": "2any['软件']",
-            "node_id": "124",
+        "127": {
+            "condition": "2any['硬件']",
+            "node_id": "127",
             "guide_content": "是否要求产品具备定期校正功能",
             "answer_type": "单选",
             "input_num_accor": "",
@@ -3968,9 +4078,9 @@
                 }
             ]
         },
-        "125": {
-            "condition": "124==True",
-            "node_id": "125",
+        "128": {
+            "condition": "127==True",
+            "node_id": "128",
             "guide_content": "客户对定期校正功能的要求",
             "answer_type": "多行文本",
             "input_num_accor": "",
@@ -3993,9 +4103,9 @@
                 }
             ]
         },
-        "126": {
-            "condition": "2any['软件']",
-            "node_id": "126",
+        "129": {
+            "condition": "2any['硬件']",
+            "node_id": "129",
             "guide_content": "是否要求产品具备闭环反馈控制功能",
             "answer_type": "单选",
             "input_num_accor": "",
@@ -4025,9 +4135,9 @@
                 }
             ]
         },
-        "127": {
-            "condition": "126==True",
-            "node_id": "127",
+        "130": {
+            "condition": "129==True",
+            "node_id": "130",
             "guide_content": "客户对闭环反馈控制功能的要求",
             "answer_type": "多行文本",
             "input_num_accor": "",
@@ -4050,9 +4160,9 @@
                 }
             ]
         },
-        "128": {
+        "131": {
             "condition": "无条件",
-            "node_id": "128",
+            "node_id": "131",
             "guide_content": "以下哪些认证/测试客户要求提供",
             "answer_type": "多选",
             "input_num_accor": "",
@@ -4103,9 +4213,9 @@
                 }
             ]
         },
-        "129": {
+        "132": {
             "condition": "2any['硬件']",
-            "node_id": "129",
+            "node_id": "132",
             "guide_content": "是否指定产品调光范围或步距",
             "answer_type": "单选",
             "input_num_accor": "",
@@ -4135,9 +4245,9 @@
                 }
             ]
         },
-        "130": {
-            "condition": "129==True",
-            "node_id": "130",
+        "133": {
+            "condition": "132==True",
+            "node_id": "133",
             "guide_content": "具体的调光范围要求",
             "answer_type": "多行文本",
             "input_num_accor": "",
@@ -4160,9 +4270,9 @@
                 }
             ]
         },
-        "131": {
-            "condition": "129==True",
-            "node_id": "131",
+        "134": {
+            "condition": "132==True",
+            "node_id": "134",
             "guide_content": "具体的调光步距要求",
             "answer_type": "多行文本",
             "input_num_accor": "",
@@ -4185,9 +4295,9 @@
                 }
             ]
         },
-        "132": {
+        "135": {
             "condition": "2any['硬件']",
-            "node_id": "132",
+            "node_id": "135",
             "guide_content": "是否要求产品具备频闪功能",
             "answer_type": "单选",
             "input_num_accor": "",
@@ -4217,9 +4327,9 @@
                 }
             ]
         },
-        "133": {
-            "condition": "132==True",
-            "node_id": "133",
+        "136": {
+            "condition": "135==True",
+            "node_id": "136",
             "guide_content": "具体的频闪技术要求",
             "answer_type": "多行文本",
             "input_num_accor": "",
@@ -4242,9 +4352,9 @@
                 }
             ]
         },
-        "134": {
-            "condition": "95==True",
-            "node_id": "134",
+        "137": {
+            "condition": "97==True",
+            "node_id": "137",
             "guide_content": "是否指定产品调速风扇的工作逻辑",
             "answer_type": "单选",
             "input_num_accor": "",
@@ -4274,9 +4384,9 @@
                 }
             ]
         },
-        "135": {
-            "condition": "134==True",
-            "node_id": "135",
+        "138": {
+            "condition": "137==True",
+            "node_id": "138",
             "guide_content": "具体的调速风扇工作逻辑要求",
             "answer_type": "多行文本",
             "input_num_accor": "",
@@ -4299,9 +4409,9 @@
                 }
             ]
         },
-        "136": {
+        "139": {
             "condition": "2any['硬件']",
-            "node_id": "136",
+            "node_id": "139",
             "guide_content": "是否指定产品超温报警温度与保护逻辑",
             "answer_type": "单选",
             "input_num_accor": "",
@@ -4331,9 +4441,9 @@
                 }
             ]
         },
-        "137": {
-            "condition": "136==True",
-            "node_id": "137",
+        "140": {
+            "condition": "139==True",
+            "node_id": "140",
             "guide_content": "具体的超温报警温度与保护逻辑要求",
             "answer_type": "多行文本",
             "input_num_accor": "",
@@ -4356,9 +4466,9 @@
                 }
             ]
         },
-        "138": {
+        "141": {
             "condition": "2any['光学']",
-            "node_id": "138",
+            "node_id": "141",
             "guide_content": "是否补充光学需求",
             "answer_type": "单选",
             "input_num_accor": "",
@@ -4388,9 +4498,9 @@
                 }
             ]
         },
-        "139": {
-            "condition": "138==True",
-            "node_id": "139",
+        "142": {
+            "condition": "141==True",
+            "node_id": "142",
             "guide_content": "请提供剩余产品光学补充需求",
             "answer_type": "多行文本",
             "input_num_accor": "",
@@ -4413,9 +4523,9 @@
                 }
             ]
         },
-        "140": {
+        "143": {
             "condition": "2any['结构']",
-            "node_id": "140",
+            "node_id": "143",
             "guide_content": "是否补充结构需求",
             "answer_type": "单选",
             "input_num_accor": "",
@@ -4445,9 +4555,9 @@
                 }
             ]
         },
-        "141": {
-            "condition": "140==True",
-            "node_id": "141",
+        "144": {
+            "condition": "143==True",
+            "node_id": "144",
             "guide_content": "请提供剩余产品结构补充需求",
             "answer_type": "多行文本",
             "input_num_accor": "",
@@ -4470,9 +4580,9 @@
                 }
             ]
         },
-        "142": {
+        "145": {
             "condition": "2any['硬件']",
-            "node_id": "142",
+            "node_id": "145",
             "guide_content": "是否补充硬件需求",
             "answer_type": "单选",
             "input_num_accor": "",
@@ -4502,9 +4612,9 @@
                 }
             ]
         },
-        "143": {
-            "condition": "142==True",
-            "node_id": "143",
+        "146": {
+            "condition": "145==True",
+            "node_id": "146",
             "guide_content": "请提供剩余产品硬件补充需求",
             "answer_type": "多行文本",
             "input_num_accor": "",
@@ -4527,9 +4637,9 @@
                 }
             ]
         },
-        "144": {
+        "147": {
             "condition": "2any['软件']",
-            "node_id": "144",
+            "node_id": "147",
             "guide_content": "是否补充软件需求",
             "answer_type": "单选",
             "input_num_accor": "",
@@ -4559,9 +4669,9 @@
                 }
             ]
         },
-        "145": {
-            "condition": "144==True",
-            "node_id": "145",
+        "148": {
+            "condition": "147==True",
+            "node_id": "148",
             "guide_content": "请提供剩余产品软件补充需求",
             "answer_type": "多行文本",
             "input_num_accor": "",
@@ -4584,9 +4694,9 @@
                 }
             ]
         },
-        "146": {
+        "149": {
             "condition": "无条件",
-            "node_id": "146",
+            "node_id": "149",
             "guide_content": "是否补充工艺需求",
             "answer_type": "单选",
             "input_num_accor": "",
@@ -4616,9 +4726,9 @@
                 }
             ]
         },
-        "147": {
-            "condition": "146==True",
-            "node_id": "147",
+        "150": {
+            "condition": "149==True",
+            "node_id": "150",
             "guide_content": "最后请提供剩余产品工艺补充需求",
             "answer_type": "多行文本",
             "input_num_accor": "",
@@ -4642,7 +4752,7 @@
             ]
         }
     },
-    "config_timestamp": "2025-12-02T14:40:38.919892",
-    "excel_version_hash": "918e1944",
+    "config_timestamp": "2025-12-02T18:51:11.770990",
+    "excel_version_hash": "e69ce5bd",
     "entry_status": false
 }
