@@ -52,54 +52,146 @@ logger = logging.getLogger(__name__)
 
 
 class StorageBackupManager:
-    def __init__(self, storage_file: str = "storage-general.json", backup_dir: str = "backups"):
+    def __init__(
+        self, json_storage_file: str = "storage-general.json", backup_dir: str = "backups", retention_days: int = 30
+    ):
         """
-        初始化备份管理器
-        :param storage_file: NiceGUI生成的存储文件名
-        :param backup_dir: 备份存放目录
+        混合备份管理器：同时负责 JSON 文件和 SQLite 数据库的备份。
+
+        :param json_storage_file: 原有的 JSON 存储文件名
+        :param backup_dir: 备份存放目录 (相对于项目根目录)
+        :param retention_days: 备份保留天数
         """
-        self.storage_file = Path(storage_file)
-        self.backup_dir = Path(backup_dir)
-        self.backup_dir.mkdir(exist_ok=True)  # 自动创建备份文件夹（如果不存在）
+        # --- 1. JSON 文件配置 ---
+        self.json_file = Path(json_storage_file)
+
+        # --- 2. SQLite 数据库配置 ---
+        # 直接引用 db_storage 中的路径配置，确保一致性
+        self.db_path = Path(db_storage.DB_PATH)
+
+        # --- 3. 公共配置 ---
+        self.backup_dir_name = backup_dir
+        # 构造备份文件夹的绝对路径
+        self.backup_dir_path = db_storage.BASE_DIR / backup_dir
+        self.retention_days = retention_days
+
+        # 创建目录
+        self.backup_dir_path.mkdir(parents=True, exist_ok=True)  # 自动创建备份文件夹（如果不存在）
 
         # 确保在初始化时绑定钩子,一启动就挂载监听钩子,让该管理器立即开始监听系统的生与死
         self._register_hooks()
+        logger.info(f"备份管理器已启动. 监控目标: JSON={self.json_file.name}, DB={self.db_path.name}")
 
-    def perform_backup(self, trigger_type: str):
+    async def run_safe_backup(self, trigger_type: str):
         """
-        执行文件备份的核心逻辑
-        :param trigger_type: 触发备份的类型 (Normal, Crash, Daily)
+        【安全模式 - 异步】
+        适用于：定时任务、正常关机、手动触发。
         """
-        if not self.storage_file.exists():
-            logger.warning(f"[{trigger_type}] 源文件 {self.storage_file} 不存在，跳过备份。")
-            return
-
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        # 备份文件名格式为 原文件名_触发类型_时间戳.json
-        backup_name = f"{self.storage_file.stem}_{trigger_type}_{timestamp}{self.storage_file.suffix}"
-        target_path = self.backup_dir / backup_name
+        logger.info(f"[{trigger_type}] 开始执行全量安全备份...")
+
+        # --- 任务 A: 备份 JSON 文件 (原有逻辑) ---
+        self._backup_json_file(trigger_type, timestamp)
+
+        # --- 任务 B: 备份 SQLite 数据库 (新逻辑 - 异步) ---
+        try:
+            # 调用 db_storage 的原生接口，它处理了锁和 WAL 刷新
+            saved_db_path = await db_storage.backup_db(
+                backup_dir=self.backup_dir_name, retention_days=self.retention_days
+            )
+            if saved_db_path:
+                logger.info(f"[{trigger_type}] SQLite 数据库备份成功")
+        except Exception:
+            logger.error(f"[{trigger_type}] SQLite 数据库备份失败", exc_info=True)
+
+    def run_emergency_backup(self, trigger_type: str):
+        """
+        【紧急模式 - 同步】
+        适用于：系统崩溃 (Crash)。
+        强制拷贝所有文件，不等待异步锁。
+        """
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        logger.critical(f"[{trigger_type}] 正在执行紧急备份 (Crash Dump)...")
+
+        # --- 任务 A: 备份 JSON 文件 ---
+        self._backup_json_file(trigger_type, timestamp)
+
+        # --- 任务 B: 备份 SQLite 数据库 (强制文件拷贝) ---
+        self._backup_sqlite_force(trigger_type, timestamp)
+
+    def _backup_json_file(self, trigger_type: str, timestamp: str):
+        """内部辅助：复制 JSON 文件"""
+        if not self.json_file.exists():
+            return  # 文件不存在则跳过
 
         try:
+            # 备份文件名格式为 原文件名_触发类型_时间戳.json
+            target_name = f"{self.json_file.stem}_{trigger_type}_{timestamp}{self.json_file.suffix}"
+            target_path = self.backup_dir_path / target_name
             # 不仅仅是复制文件内容，还保留了文件的元数据（如创建时间、最后修改时间），这对于数据恢复时的判断非常重要
-            shutil.copy2(self.storage_file, target_path)
-            logger.info(f"[{trigger_type}] 备份成功: {target_path}")
+            shutil.copy2(self.json_file, target_path)
+            logger.info(f"[{trigger_type}] JSON 备份成功: {target_name}")
         except Exception:
-            logger.error(f"[{trigger_type}] 备份失败", exc_info=True)
+            logger.error(f"[{trigger_type}] JSON 备份失败", exc_info=True)
+
+    def _backup_sqlite_force(self, trigger_type: str, timestamp: str):
+        """内部辅助：强制复制 SQLite 文件 (包含 WAL/SHM)"""
+        if not self.db_path.exists():
+            return
+
+        try:
+            # 1. 拷贝 .db 主文件
+            base_name = f"{self.db_path.stem}_EMERGENCY_{trigger_type}_{timestamp}"
+            shutil.copy2(self.db_path, self.backup_dir_path / f"{base_name}.db")
+
+            # 2. 拷贝 .db-wal (预写日志) - 崩溃恢复的关键
+            wal_path = self.db_path.with_suffix(".db-wal")
+            if wal_path.exists():
+                shutil.copy2(wal_path, self.backup_dir_path / f"{base_name}.db-wal")
+
+            # 3. 拷贝 .db-shm (共享内存)
+            shm_path = self.db_path.with_suffix(".db-shm")
+            if shm_path.exists():
+                shutil.copy2(shm_path, self.backup_dir_path / f"{base_name}.db-shm")
+
+            logger.info(f"[{trigger_type}] DB 紧急文件已保存 (包含WAL日志)")
+        except Exception:
+            logger.error(f"[{trigger_type}] DB 紧急备份失败", exc_info=True)
 
     def _register_hooks(self):
         """
-        注册系统级和框架级钩子
+        注册系统级和框架级钩子 (修复版)
         """
-        # 1. 正常关闭 (NiceGUI Lifecycle)
-        app.on_shutdown(lambda: self.perform_backup("SHUTDOWN_NORMAL"))
 
+        # -------------------------------------------------------
+        # 1. 正常关闭 (NiceGUI Lifecycle) - 修复 RuntimeWarning
+        # -------------------------------------------------------
+        async def shutdown_handler():
+            # 这里必须是一个 async 函数，NiceGUI 才能识别并 await 它
+            try:
+                await self.run_safe_backup("SHUTDOWN_NORMAL")
+            except Exception:
+                logger.error("关闭时备份失败", exc_info=True)
+
+        # 直接传入这个 async 函数，不要用 lambda
+        app.on_shutdown(shutdown_handler)
+
+        # -------------------------------------------------------
         # 2. 异常崩溃 (Unhandled Exception Hook)
-        # 注意：这里我们保留原有的 hook，以免破坏其他库的异常处理
+        # -------------------------------------------------------
+        # 保留原始钩子，防止覆盖其他库的逻辑
         original_excepthook = sys.excepthook
 
         def custom_excepthook(exc_type, exc_value, exc_traceback):
-            logger.critical("检测到未捕获异常，正在尝试紧急备份...")
-            self.perform_backup("CRASH_EXCEPTION")  # 崩溃前抢救
+            # 调试信息：确保钩子真的被触发了
+            print(f"\n!!! 检测到崩溃: {exc_type.__name__}: {exc_value} !!!", file=sys.stderr)
+
+            # 过滤掉键盘中断 (Ctrl+C)，通常这是用户手动停止，不算崩溃
+            # 除非你希望 Ctrl+C 也触发紧急备份，可以去掉这个判断
+            if not issubclass(exc_type, KeyboardInterrupt):
+                logger.critical("检测到未捕获异常，正在尝试紧急备份...", exc_info=(exc_type, exc_value, exc_traceback))
+                # 调用同步的紧急备份
+                self.run_emergency_backup("CRASH_EXCEPTION")
             # 调用原始的 hook 打印错误堆栈并退出
             original_excepthook(exc_type, exc_value, exc_traceback)  # 恢复原本的报错流程
 
@@ -116,22 +208,18 @@ class StorageBackupManager:
         now = datetime.now()
         target_time = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
 
-        # 如果目标时间已过，推迟到明天
         if target_time <= now:
             target_time += timedelta(days=1)
 
-        # 计算当前时间到下一个指定时间点的秒数差
         delay_seconds = (target_time - now).total_seconds()
+        logger.info(f"每日备份计划已设定: {target_time}")
 
-        logger.info(f"每日备份计划已设定。将在 {delay_seconds:.1f} 秒后 ({target_time}) 执行首次备份。")
-
-        # 定义递归函数来处理循环
-        def run_schedule():
-            self.perform_backup("DAILY_SCHEDULE")
-            # 执行完后，设定下一次24小时后的任务
+        # 包装器：确保在 timer 中可以调用 async 函数
+        async def run_schedule():
+            await self.run_safe_backup("DAILY_SCHEDULE")
+            # 重新调度下一次 (24小时后)
             app.timer(86400, run_schedule, once=True)
 
-        # 设定首次执行
         app.timer(delay_seconds, run_schedule, once=True)
 
 

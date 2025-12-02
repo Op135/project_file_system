@@ -1,5 +1,6 @@
 import asyncio
 import copy
+import datetime
 import json
 import logging
 from pathlib import Path
@@ -450,3 +451,81 @@ async def atomic_deep_update(path: List[str], update_function: Callable, *args, 
         except Exception:
             logger.error(f"错误: 深度原子更新失败 '{path}'", exc_info=True)
             return False
+
+
+async def backup_db(backup_dir: str = "backups", retention_days: int = 30) -> str:
+    """
+    执行数据库热备份 (Hot Backup)。
+
+    优势：
+    1. 安全：使用 SQLite 原生 backup API，完美兼容 WAL 模式。
+    2. 在线：不需要停止服务或关闭数据库连接。
+    3. 维护：包含自动清理旧备份的逻辑。
+
+    :param backup_dir: 备份文件夹名称 (相对于 BASE_DIR)
+    :param retention_days: 保留多少天内的备份，超过的会自动删除。设为 0 不删除。
+    :return: 成功生成的备份文件绝对路径
+    """
+    # 1. 检查初始化状态
+    await _init_done.wait()
+    if _db is None:
+        logger.error("备份失败: 数据库未初始化")
+        return ""
+
+    try:
+        # 2. 准备备份路径
+        # 结构: /项目根目录/backups/
+        target_dir = BASE_DIR / backup_dir
+        target_dir.mkdir(parents=True, exist_ok=True)
+
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup_filename = f"storage_backup_{timestamp}.db"
+        backup_path = target_dir / backup_filename
+
+        logger.info(f"开始数据库备份: {backup_path}")
+
+        # 3. 执行热备份
+        # 注意：这里虽然 SQLite backup API 本身处理了文件锁，
+        # 但为了保证“业务逻辑”的一致性（防止备份到写了一半的复杂逻辑状态），
+        # 我们依然获取 _write_lock。这会短暂阻塞写入，但保证备份数据的完整性。
+        async with _write_lock:
+            # 创建一个新的连接指向备份文件
+            async with aiosqlite.connect(backup_path) as dest_db:
+                # 使用 aiosqlite 的 backup 方法将当前 _db 复制到 dest_db
+                # pages=0 表示一步完成，也可以设置为正整数来分块备份以减少阻塞
+                await _db.backup(dest_db)
+
+        logger.info(f"数据库备份成功: {backup_path}")
+
+        # 4. 执行备份轮转 (清理旧文件)
+        if retention_days > 0:
+            await _rotate_backups(target_dir, retention_days)
+
+        return str(backup_path)
+
+    except Exception:
+        logger.error("数据库备份过程中发生严重错误", exc_info=True)
+        return ""
+
+
+async def _rotate_backups(backup_dir: Path, retention_days: int):
+    """
+    内部辅助函数：清理超过指定天数的旧备份文件。
+    """
+    try:
+        cutoff_date = datetime.datetime.now() - datetime.timedelta(days=retention_days)
+
+        # 遍历目录下所有 .db 文件
+        for file_path in backup_dir.glob("storage_backup_*.db"):
+            # 获取文件修改时间
+            mtime = datetime.datetime.fromtimestamp(file_path.stat().st_mtime)
+
+            if mtime < cutoff_date:
+                try:
+                    file_path.unlink()  # 删除文件
+                    logger.info(f"已清理过期备份: {file_path.name}")
+                except Exception as e:
+                    logger.warning(f"清理文件失败 {file_path.name}: {e}")
+
+    except Exception:
+        logger.error("执行备份轮转清理时出错", exc_info=True)

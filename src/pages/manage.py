@@ -34,6 +34,32 @@ def manage_page():
     # 在 *显示* 前，应用缓存清除
     current_display_path = get_cache_busted_path(current_avatar_path)
 
+    # --- 定义备份处理函数 ---
+    async def handle_manual_backup():
+        # 1. 获取 main.py 中初始化的管理器实例
+        manager = getattr(app.state, "backup_manager", None)
+
+        if not manager:
+            ui.notify("错误：备份服务未初始化，请检查服务器启动日志", type="negative")
+            return
+
+        # 2. 显示正在处理的提示 (spinner=True)
+        notification = ui.notification("正在执行全量备份 (JSON + SQLite)...", timeout=None, spinner=True)
+
+        try:
+            # 3. 调用安全备份方法 (注意要用 await)
+            # 传入触发类型 "MANUAL_ADMIN" 以便在日志中区分
+            await manager.run_safe_backup("MANUAL_ADMIN")
+
+            # 4. 成功反馈
+            notification.dismiss()  # 关闭加载提示
+            ui.notify("备份成功！文件已保存至 backups 目录", type="positive", icon="check_circle")
+
+        except Exception as e:
+            # 5. 失败反馈
+            notification.dismiss()
+            ui.notify(f"备份失败: {str(e)}", type="negative")
+
     with ui.header(elevated=True).classes("flex justify-between items-center bg-blue-500 h-12 px-4"):
         ui.image(f"{IMG_DIR}/Rayfine.png").classes("absolute w-20")
         ui.label("系统管理员界面").classes("text-white text-lg absolute left-1/2 transform -translate-x-1/2")
@@ -84,17 +110,24 @@ def manage_page():
             log_view = ui.log(max_lines=2000).classes(
                 "w-full h-90 bg-[#1e1e1e] text-green-400 font-mono text-sm p-2 overflow-y-auto"
             )
+        with ui.card().classes("w-full q-pa-md"):
+            ui.label("数据安全与维护").classes("text-h6 q-mb-md")
+
+            # --- 添加备份按钮 ---
+            ui.button("立即备份所有数据", on_click=handle_manual_backup).props("icon=save color=primary").tooltip(
+                "同时备份 storage-general.json 和 SQLite 数据库"
+            )
     # --- 日志读取逻辑 ---
     log_file_path = os.path.join(BASE_DIR, "logs", "app.log")
     file_cursor = 0  # 文件指针，记录读取到了哪里
 
     def init_log_cursor():
-        """初始化文件指针，只读取最后 5KB，避免卡顿"""
+        """初始化文件指针，只读取最后 10KB，避免卡顿"""
         nonlocal file_cursor
         if os.path.exists(log_file_path):
             size = os.path.getsize(log_file_path)
-            # 如果文件大于 5KB，则从最后 5KB 开始读
-            file_cursor = max(0, size - 5120)
+            # 如果文件大于 10KB，则从最后 10KB 开始读
+            file_cursor = max(0, size - 10240)
         else:
             file_cursor = 0
 

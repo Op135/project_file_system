@@ -94,7 +94,7 @@ def init_backup_service():
     # backup_dir: 建议将备份放在 BASE_DIR 下的 backups 文件夹中
     backup_dir = os.path.join(BASE_DIR, "backups")
 
-    manager = StorageBackupManager(storage_file=f"{BASE_DIR}/.nicegui/storage-general.json", backup_dir=backup_dir)
+    manager = StorageBackupManager(json_storage_file=f"{BASE_DIR}/.nicegui/storage-general.json", backup_dir=backup_dir)
 
     # 2. 启动每日定时任务 (例如：每日凌晨 18:30 进行备份)
     manager.start_daily_schedule(hour=18, minute=30)
@@ -102,6 +102,11 @@ def init_backup_service():
     # 3. 将实例挂载到 app.state
     # 作用：防止实例被垃圾回收，且允许在其他页面通过 app.state.backup_manager 调用手动备份
     app.state.backup_manager = manager
+    # 4. 【关键修改】将数据库关闭注册移到这里！
+    # 因为代码是从上往下执行的，先执行了 manager 的初始化（注册了备份），
+    # 再执行这一行（注册关闭数据库）。
+    # 这样关机列表就是：[1.备份, 2.关库]。
+    app.on_shutdown(db_storage.close_db)
 
 
 # ==========================================
@@ -110,8 +115,8 @@ def init_backup_service():
 app.on_startup(db_storage.init_db)
 # 注册备份初始化
 app.on_startup(init_backup_service)
-
-app.on_shutdown(db_storage.close_db)
+# 为了能在系统关闭时顺利执行备份，需将这里外部注册关闭数据库移到init_backup_service函数内部最后
+# app.on_shutdown(db_storage.close_db)
 
 # 存储服务器层级 概述数据 的变量初始化
 # app.storage.general.setdefault("overview_data", {})
@@ -166,6 +171,9 @@ def root():
     ui.navigate.to("/login")  # 自动跳转至登录页
 
 
+# 【测试代码】人为制造崩溃
+# logger.info("准备测试崩溃备份...")
+# raise RuntimeError("启动阶段的致命错误测试！")
 # ======================
 # 运行程序
 # ======================
