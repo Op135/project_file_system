@@ -90,6 +90,8 @@ PRESET_AVATARS = [
     f"{IMG_URL_DIR}/avatars/avatar14.png",
     f"{IMG_URL_DIR}/avatars/avatar15.png",
 ]
+# 配置临时项目号长度
+TEMP_PROJECT_NUM_LENGTH = 4
 # 定义头像处理后的最大尺寸
 AVATAR_MAX_SIZE = (190, 190)
 # ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "gif", "pdf"}

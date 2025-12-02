@@ -140,6 +140,8 @@ app.storage.general.setdefault("user_preferences", {})
 app.storage.general.setdefault("custom_labels", {})
 # 储存服务器层级 用于标记项目概述是否要因转产而刷新
 app.storage.general.setdefault("conversion_refresh", {})
+# 储存服务器层级 用于记录已经存在的临时项目号
+app.storage.general.setdefault("temp_project_name", [])
 
 
 @ui.page("/view/svn_pdf")

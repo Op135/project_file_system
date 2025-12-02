@@ -315,6 +315,7 @@ def project_summary_update():
             with open(f"{BASE_DIR}/project_summary.json", "r", encoding="utf-8") as f:
                 project_data = json.load(f)
                 app.storage.general["project_summary"] = copy.deepcopy(project_data)
+                app.storage.general["temp_project_name"] = []
             for project_name, data in project_data.items():
                 # app.storage.general["project_summary"].setdefault(project_name, {})
                 # 设置所有项目手动设置在json配置文件里的展示内容
@@ -328,6 +329,9 @@ def project_summary_update():
                         "overview": "查阅整理",
                     }
                 )
+                # 将临时项目号增加到专门记录临时项目的服务器存储里
+                if "RFTS" in project_name:
+                    app.storage.general["temp_project_name"].append(project_name)
         ui.notify(
             "项目列表更新成功!",
             type="positive",

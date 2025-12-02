@@ -130,6 +130,7 @@ def information_page():
         if data.get("introduction").strip() and data.get("customer").strip():
             temp_data = {
                 p_name: {
+                    "state": "研发",
                     "model_notes": data.get("notes").strip(),
                     "creation_date": datetime.now().strftime("%Y-%m-%d"),
                     "introduction": data.get("introduction").strip(),
@@ -143,7 +144,7 @@ def information_page():
             json_str = json.dumps(project_data, indent=4, ensure_ascii=False)
             with open(f"{BASE_DIR}/project_summary.json", "w", encoding="utf-8") as f:
                 f.write(json_str)
-            # 将服务器json配置文件同步更新到服务器储存
+            # 将服务器json配置文件同步更新到服务器储存，包括正式项目与临时项目记录
             project_summary_update()
             await set_review_pass(button_group, p_name, v)
         else:

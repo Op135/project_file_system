@@ -24,6 +24,7 @@ from ..config import (
     PROJECT_STATE_LIST,
     REQ_DIR,
     REQ_UPLOADS_FILE_TYPE,
+    TEMP_PROJECT_NUM_LENGTH,
     UPLOAD_URL_DIR,
     UPLOADS_DIR,
 )
@@ -510,8 +511,11 @@ async def requirement_page(type="", json_path="", project_name=""):
         app.storage.client["page_elements"].get("project_dialog").props("persistent")
         app.storage.client["page_elements"].get("project_dialog").open()
         with project_card:
-            ui.label("请输入项目号：").classes("text-xl font-bold")
-            ui.label("提交需求或选择查阅版本时该设置才生效，导出需求不起效。").classes("text-base text-red")
+            with ui.column().classes("-space-y-4"):
+                ui.label("请输入项目号：").classes("text-xl font-bold")
+                ui.label("1. 提交需求或选择查阅版本时该设置才生效，导出需求不起效。").classes("text-base text-red")
+                ui.label("2. 新建临时项目输入RFTS即可，系统自动顺延产生项目号。").classes("text-base text-red")
+                ui.label("3. 输入完整临时项目号，存在则属于升级版本，不存在则无效。").classes("text-base text-red")
             input_field = ui.input().classes("text-[20px]/[22px] w-full")
             # 写入的值绑定到目标项目名变量
             input_field.bind_value(app.storage.client, "target_project_name")
@@ -548,11 +552,27 @@ async def requirement_page(type="", json_path="", project_name=""):
                 close_button="✖",
             )
             app.storage.client["target_project_name"] = app.storage.client["project_name"]
-        elif target_project_name.split("-")[0] == "RFTS" and not validate_format_regex(
-            target_project_name, r"^RFTS-\d{4}$"
+        elif (
+            target_project_name != "RFTS"
+            and target_project_name.split("-")[0] == "RFTS"
+            and not validate_format_regex(target_project_name, r"^RFTS-\d{4}$")
         ):
             ui.notify(
                 "不符合临时项目号命名规则：RFTS-4位数字！",
+                type="warning",
+                position="bottom",
+                timeout=3000,
+                progress=True,
+                close_button="✖",
+            )
+            app.storage.client["target_project_name"] = app.storage.client["project_name"]
+        elif (
+            target_project_name != "RFTS"
+            and target_project_name.split("-")[0] == "RFTS"
+            and target_project_name not in app.storage.general["temp_project_name"]
+        ):
+            ui.notify(
+                "不能指定临时项目号进行新建项目，请输入“RFTS”进行新建！",
                 type="warning",
                 position="bottom",
                 timeout=3000,
@@ -1609,6 +1629,27 @@ async def requirement_page(type="", json_path="", project_name=""):
         original_version = app.storage.client["original_version"]
         version_str_li = version.split(".")
 
+        # 如果目标项目名只有RFTS，则需要推算临时项目的顺延项目号
+        new_temp_project_bool = False
+        if target_project_name == "RFTS":
+            # 存在临时项目了
+            if app.storage.general.get("temp_project_name", []):
+                # 找到临时项目号存在的最大值
+                project_num_max = max([int(k.split("-")[1]) for k in app.storage.general.get("temp_project_name", [])])
+                # 如果加一后的项目号长度短于常量设置值，则在其左边用0字符补充到指定长度
+                target_project_name = f"RFTS-{str(project_num_max + 1).rjust(TEMP_PROJECT_NUM_LENGTH, '0')}"
+                # 先占个位置
+                app.storage.general["temp_project_name"].append(target_project_name)
+            # 不存在临时项目
+            else:
+                target_project_name = "RFTS-0001"
+                # 先占个位置
+                app.storage.general["temp_project_name"].append(target_project_name)
+            # 如果当前项目名与目标项目名一样都是RFTS，则需要同步更新，防止后续按照衍生项目情况处理
+            if project_name == "RFTS":
+                project_name = target_project_name
+            new_temp_project_bool = True
+
         file_dic = {}
         for k, v in app.storage.client["file_thumbnail_dic"].items():
             file_dic[k] = v["file_information"]
@@ -1748,8 +1789,14 @@ async def requirement_page(type="", json_path="", project_name=""):
                     progress=True,
                     close_button="✖",
                 )
+                # 如果属于新创建临时项目，失败则删除占位的临时项目号
+                if new_temp_project_bool:
+                    app.storage.general["temp_project_name"].remove(target_project_name)
                 return
-            if project_name.split("-")[0] != "RFTS" and project_name not in app.storage.general["project_summary"]:
+            if (
+                target_project_name.split("-")[0] != "RFTS"
+                and target_project_name not in app.storage.general["project_summary"]
+            ):
                 ui.notify(
                     "非临时项目，又未正式立项，不可提交服务器，只可导出到本地！",
                     type="warning",
@@ -1759,7 +1806,10 @@ async def requirement_page(type="", json_path="", project_name=""):
                     close_button="✖",
                 )
                 return
-            if project_name.split("-")[0] == "RFTS" and not validate_format_regex(project_name, r"^RFTS-\d{4}$"):
+            print(target_project_name)
+            if target_project_name.split("-")[0] == "RFTS" and not validate_format_regex(
+                target_project_name, r"^RFTS-\d{4}$"
+            ):
                 ui.notify(
                     "不符合临时项目号命名规则：RFTS-4位数字！",
                     type="warning",
@@ -1779,6 +1829,9 @@ async def requirement_page(type="", json_path="", project_name=""):
                     progress=True,
                     close_button="✖",
                 )
+                # 如果属于新创建临时项目，失败则删除占位的临时项目号
+                if new_temp_project_bool:
+                    app.storage.general["temp_project_name"].remove(target_project_name)
                 return
             if target_review_state == "待审":
                 ui.notify(
@@ -1865,6 +1918,9 @@ async def requirement_page(type="", json_path="", project_name=""):
                                 progress=True,
                                 close_button="✖",
                             )
+                            # 如果属于新创建临时项目，失败则删除占位的临时项目号
+                            if new_temp_project_bool:
+                                app.storage.general["temp_project_name"].remove(target_project_name)
                             return
                         # 定义文件路径
                         old_file_path = os.path.join(
@@ -1886,6 +1942,9 @@ async def requirement_page(type="", json_path="", project_name=""):
                                 progress=False,
                                 close_button="✖",
                             )
+                            # 如果属于新创建临时项目，失败则删除占位的临时项目号
+                            if new_temp_project_bool:
+                                app.storage.general["temp_project_name"].remove(target_project_name)
                             return
                         except Exception as e:
                             ui.notify(
@@ -1896,6 +1955,9 @@ async def requirement_page(type="", json_path="", project_name=""):
                                 progress=False,
                                 close_button="✖",
                             )
+                            # 如果属于新创建临时项目，失败则删除占位的临时项目号
+                            if new_temp_project_bool:
+                                app.storage.general["temp_project_name"].remove(target_project_name)
                             return
                         old_data_json["project_name"] = target_project_name
                         old_data_json["current_user"] = current_user
@@ -1932,25 +1994,32 @@ async def requirement_page(type="", json_path="", project_name=""):
                                 progress=True,
                                 close_button="✖",
                             )
+                            # 复制旧版本概述成功后，更新客户端数据
+                            app.storage.client["version"] = "1.0"
+                            app.storage.client["project_name"] = target_project_name
+                            app.storage.client["target_project_name"] = target_project_name
+                            app.storage.client["original_project"] = target_project_name
+                            app.storage.client["original_version"] = "1.0"
+                            # 复制保存好旧版本临时需求配置文件后，接着处理一次
+                            await output_config_data(data, type)
+                            return
                         except Exception as e:
-                            logger.error("复制修改衍生临时项目需求文件时发生其他错误", exc_info=True)
+                            logger.error("复制衍生项目需求与概述时发生其他错误", exc_info=True)
                             ui.notify(
-                                f"复制衍生项目需求文件概述资料出错：{e}",
+                                f"复制衍生项目需求与概述资料出错：{e}",
                                 type="negative",
                                 position="center",
                                 timeout=0,
                                 progress=False,
                                 close_button="✖",
                             )
-                        # 更新客户端数据
-                        app.storage.client["version"] = "1.0"
-                        app.storage.client["project_name"] = target_project_name
-                        app.storage.client["target_project_name"] = target_project_name
-                        app.storage.client["original_project"] = target_project_name
-                        app.storage.client["original_version"] = "1.0"
-                        # 复制保存好旧版本临时需求配置文件后，接着处理一次
-                        await output_config_data(data, type)
-                        return
+                            # 不知失败，要清掉可能生成的需求文件与概述复制内容
+                            if os.path.exists(copy_file_path):
+                                os.remove(copy_file_path)
+                            await db_storage.set_item(f"{target_project_name}_over_data", {})
+                            # 如果属于新创建临时项目，失败则删除占位的临时项目号
+                            if new_temp_project_bool:
+                                app.storage.general["temp_project_name"].remove(target_project_name)
                     # 排除其它项目衍生过来的情况，那种情况保持衍生的记录版本
                     else:
                         original_version = "0.0"
@@ -2584,6 +2653,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                                                     with target["role_badge"]:
                                                         for role in item_data["option_view"].split("+"):
                                                             add_role_badge(role)
+
                                     # 处理删除
                                     for node_id, item_data in version_data.get("deleted", {}).items():
                                         if node_id in ui_elements:
@@ -2733,6 +2803,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                                                         with target["role_badge"]:
                                                             for role in item_data["new_data"]["option_view"].split("+"):
                                                                 add_role_badge(role)
+
                             # 只给显示出来的card进行间隔上色
                             n = 1
                             for child in exp_content.default_slot.children:
@@ -2745,19 +2816,21 @@ async def requirement_page(type="", json_path="", project_name=""):
                                     child.classes("bg-amber-100/40 shadow-xs shadow-amber-300/30")
                                     n = 1
                 ui.separator().props("vertical size=1px")
+
                 # 概述内容列
                 with ui.column().classes("w-1/2 min-w-[400px] items-center"):
                     with ui.row().classes("relative w-full items-center justify-center"):
-                        if current_role == "研发经理":
-                            ui.select(
-                                PROJECT_STATE_LIST,
-                                value=app.storage.general["project_summary"][project_name].get("state"),
-                                on_change=lambda e: set_project_state(project_name, e),
-                            ).props("outlined").classes("absolute top-0 left-1")
-                        else:
-                            ui.chip(icon="star", color="amber-7").props("outline").classes(
-                                "absolute top-0 left-1 text-sm"
-                            ).bind_text_from(app.storage.general["project_summary"][project_name], "state")
+                        if not temp_bool:
+                            if current_role == "研发经理":
+                                ui.select(
+                                    PROJECT_STATE_LIST,
+                                    value=app.storage.general["project_summary"][project_name].get("state"),
+                                    on_change=lambda e: set_project_state(project_name, e),
+                                ).props("outlined").classes("absolute top-0 left-1")
+                            else:
+                                ui.chip(icon="star", color="amber-7").props("outline").classes(
+                                    "absolute top-0 left-1 text-sm"
+                                ).bind_text_from(app.storage.general["project_summary"][project_name], "state")
                         ui.label(f"{project_name} 概述整理").classes("text-xl")
                         if (
                             "研发" in app.storage.user.get("current_role", "")
@@ -2910,6 +2983,7 @@ async def requirement_page(type="", json_path="", project_name=""):
             logger.error(f"错误：文件 '{json_path}' 不是有效的 JSON 格式。", exc_info=True)
         except Exception:
             logger.error("读取概述文件时发生其他错误", exc_info=True)
+
         # 获取概述文件里，版本最高的文件缩略图字典内容，复现文件缩略图
         file_information = json_data[get_max_numeric_key(json_data)]["file_dic"]
         app.storage.client["deleted_files"] = json_data[get_max_numeric_key(json_data)]["deleted_files"]
@@ -2930,6 +3004,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                 "file_obj": file_thumbnail,
                 "file_information": v,
             }
+
         await overview_input_frame(json_data, temp_bool)
         # loads_overviews()
     else:

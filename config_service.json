@@ -4163,6 +4163,63 @@
         "131": {
             "condition": "无条件",
             "node_id": "131",
+            "guide_content": "是否对ESD(静电放电)作具体要求",
+            "answer_type": "单选",
+            "input_num_accor": "",
+            "input_name_accor": "",
+            "input_tolerance": "",
+            "ref_config": "False",
+            "option_hint": "在产品ESD(静电放电)方面，客户有没有提出具体的要求，比如放电速度等。",
+            "option_group_id": "999",
+            "option_view": "结构+硬件+软件+工艺+质量",
+            "user_must_out": {},
+            "option_tolerance_out": {},
+            "ref_out": [],
+            "options": [
+                {
+                    "option_content": "是",
+                    "option_out": "True",
+                    "option_bold": "",
+                    "option_show": "",
+                    "option_label": ""
+                },
+                {
+                    "option_content": "否",
+                    "option_out": "False",
+                    "option_bold": "无",
+                    "option_show": "产品{V}具体ESD要求",
+                    "option_label": ""
+                }
+            ]
+        },
+        "132": {
+            "condition": "131==True",
+            "node_id": "132",
+            "guide_content": "填写具体的ESD(静电放电)要求",
+            "answer_type": "多行文本",
+            "input_num_accor": "",
+            "input_name_accor": "",
+            "input_tolerance": "",
+            "ref_config": "True",
+            "option_hint": "填写具体ESD要求，可附上文件进行说明。",
+            "option_group_id": "999",
+            "option_view": "光学+硬件+软件+工艺+质量",
+            "user_must_out": {},
+            "option_tolerance_out": {},
+            "ref_out": [],
+            "options": [
+                {
+                    "option_content": "",
+                    "option_out": "字典",
+                    "option_bold": "",
+                    "option_show": "ESD具体要求：{V}",
+                    "option_label": ""
+                }
+            ]
+        },
+        "133": {
+            "condition": "无条件",
+            "node_id": "133",
             "guide_content": "以下哪些认证/测试客户要求提供",
             "answer_type": "多选",
             "input_num_accor": "",
@@ -4213,9 +4270,9 @@
                 }
             ]
         },
-        "132": {
+        "134": {
             "condition": "2any['硬件']",
-            "node_id": "132",
+            "node_id": "134",
             "guide_content": "是否指定产品调光范围或步距",
             "answer_type": "单选",
             "input_num_accor": "",
@@ -4245,9 +4302,9 @@
                 }
             ]
         },
-        "133": {
-            "condition": "132==True",
-            "node_id": "133",
+        "135": {
+            "condition": "134==True",
+            "node_id": "135",
             "guide_content": "具体的调光范围要求",
             "answer_type": "多行文本",
             "input_num_accor": "",
@@ -4270,9 +4327,9 @@
                 }
             ]
         },
-        "134": {
-            "condition": "132==True",
-            "node_id": "134",
+        "136": {
+            "condition": "134==True",
+            "node_id": "136",
             "guide_content": "具体的调光步距要求",
             "answer_type": "多行文本",
             "input_num_accor": "",
@@ -4295,9 +4352,9 @@
                 }
             ]
         },
-        "135": {
+        "137": {
             "condition": "2any['硬件']",
-            "node_id": "135",
+            "node_id": "137",
             "guide_content": "是否要求产品具备频闪功能",
             "answer_type": "单选",
             "input_num_accor": "",
@@ -4327,9 +4384,9 @@
                 }
             ]
         },
-        "136": {
-            "condition": "135==True",
-            "node_id": "136",
+        "138": {
+            "condition": "137==True",
+            "node_id": "138",
             "guide_content": "具体的频闪技术要求",
             "answer_type": "多行文本",
             "input_num_accor": "",
@@ -4352,9 +4409,9 @@
                 }
             ]
         },
-        "137": {
+        "139": {
             "condition": "97==True",
-            "node_id": "137",
+            "node_id": "139",
             "guide_content": "是否指定产品调速风扇的工作逻辑",
             "answer_type": "单选",
             "input_num_accor": "",
@@ -4384,9 +4441,9 @@
                 }
             ]
         },
-        "138": {
-            "condition": "137==True",
-            "node_id": "138",
+        "140": {
+            "condition": "139==True",
+            "node_id": "140",
             "guide_content": "具体的调速风扇工作逻辑要求",
             "answer_type": "多行文本",
             "input_num_accor": "",
@@ -4409,9 +4466,9 @@
                 }
             ]
         },
-        "139": {
+        "141": {
             "condition": "2any['硬件']",
-            "node_id": "139",
+            "node_id": "141",
             "guide_content": "是否指定产品超温报警温度与保护逻辑",
             "answer_type": "单选",
             "input_num_accor": "",
@@ -4441,9 +4498,9 @@
                 }
             ]
         },
-        "140": {
-            "condition": "139==True",
-            "node_id": "140",
+        "142": {
+            "condition": "141==True",
+            "node_id": "142",
             "guide_content": "具体的超温报警温度与保护逻辑要求",
             "answer_type": "多行文本",
             "input_num_accor": "",
@@ -4466,9 +4523,9 @@
                 }
             ]
         },
-        "141": {
+        "143": {
             "condition": "2any['光学']",
-            "node_id": "141",
+            "node_id": "143",
             "guide_content": "是否补充光学需求",
             "answer_type": "单选",
             "input_num_accor": "",
@@ -4498,9 +4555,9 @@
                 }
             ]
         },
-        "142": {
-            "condition": "141==True",
-            "node_id": "142",
+        "144": {
+            "condition": "143==True",
+            "node_id": "144",
             "guide_content": "请提供剩余产品光学补充需求",
             "answer_type": "多行文本",
             "input_num_accor": "",
@@ -4523,9 +4580,9 @@
                 }
             ]
         },
-        "143": {
+        "145": {
             "condition": "2any['结构']",
-            "node_id": "143",
+            "node_id": "145",
             "guide_content": "是否补充结构需求",
             "answer_type": "单选",
             "input_num_accor": "",
@@ -4555,9 +4612,9 @@
                 }
             ]
         },
-        "144": {
-            "condition": "143==True",
-            "node_id": "144",
+        "146": {
+            "condition": "145==True",
+            "node_id": "146",
             "guide_content": "请提供剩余产品结构补充需求",
             "answer_type": "多行文本",
             "input_num_accor": "",
@@ -4580,9 +4637,9 @@
                 }
             ]
         },
-        "145": {
+        "147": {
             "condition": "2any['硬件']",
-            "node_id": "145",
+            "node_id": "147",
             "guide_content": "是否补充硬件需求",
             "answer_type": "单选",
             "input_num_accor": "",
@@ -4612,9 +4669,9 @@
                 }
             ]
         },
-        "146": {
-            "condition": "145==True",
-            "node_id": "146",
+        "148": {
+            "condition": "147==True",
+            "node_id": "148",
             "guide_content": "请提供剩余产品硬件补充需求",
             "answer_type": "多行文本",
             "input_num_accor": "",
@@ -4637,9 +4694,9 @@
                 }
             ]
         },
-        "147": {
+        "149": {
             "condition": "2any['软件']",
-            "node_id": "147",
+            "node_id": "149",
             "guide_content": "是否补充软件需求",
             "answer_type": "单选",
             "input_num_accor": "",
@@ -4669,9 +4726,9 @@
                 }
             ]
         },
-        "148": {
-            "condition": "147==True",
-            "node_id": "148",
+        "150": {
+            "condition": "149==True",
+            "node_id": "150",
             "guide_content": "请提供剩余产品软件补充需求",
             "answer_type": "多行文本",
             "input_num_accor": "",
@@ -4694,9 +4751,9 @@
                 }
             ]
         },
-        "149": {
+        "151": {
             "condition": "无条件",
-            "node_id": "149",
+            "node_id": "151",
             "guide_content": "是否补充工艺需求",
             "answer_type": "单选",
             "input_num_accor": "",
@@ -4726,9 +4783,9 @@
                 }
             ]
         },
-        "150": {
-            "condition": "149==True",
-            "node_id": "150",
+        "152": {
+            "condition": "151==True",
+            "node_id": "152",
             "guide_content": "最后请提供剩余产品工艺补充需求",
             "answer_type": "多行文本",
             "input_num_accor": "",
@@ -4752,7 +4809,7 @@
             ]
         }
     },
-    "config_timestamp": "2025-12-02T18:51:11.770990",
-    "excel_version_hash": "e69ce5bd",
+    "config_timestamp": "2025-12-02T23:52:07.459225",
+    "excel_version_hash": "96b9e9ce",
     "entry_status": false
 }
