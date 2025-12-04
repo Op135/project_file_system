@@ -1098,6 +1098,13 @@
         "introduction": "常规白光照明，出线方向与散热器出风方向垂直",
         "customer": "JXYS"
     },
+    "RFFM-1519-SE": {
+        "state": "转产",
+        "model_notes": "",
+        "creation_date": "2025-12-04",
+        "introduction": "常规白光照明，出线方向与散热器出风方向垂直",
+        "customer": "NY"
+    },
     "RFFM-1520-A": {
         "state": "量产",
         "model_notes": "",
