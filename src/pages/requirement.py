@@ -223,8 +223,8 @@ async def requirement_page(type="", json_path="", project_name=""):
     def set_overview_data_svn_block(over_data, project_name):
         for label, label_dic in over_data.items():
             for id, chip_dic in label_dic.items():
-                # 只处理svn类型
-                if chip_dic.get("type") == "svn":
+                # 只处理svn类型 且 非放在产品仓库的 chip
+                if chip_dic.get("type") == "svn" and chip_dic.get("warehouse") != "Product":
                     req_max_ver = app.storage.general["project_req_max_ver"][project_name]
                     select_activ_state = chip_dic.get("select_activ_dic", {}).get(req_max_ver)
                     # 最高激活状态不是False

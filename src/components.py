@@ -2020,7 +2020,7 @@ class InteractiveButton:
             target_path = ""
             for chip_info in db_storage.get_deep_item([f"{self.project}_over_data", self.label], {}).values():
                 # 如果打开显示所有记录的开关，失活chip不显示，跳过
-                if not app.storage.client.get("record_switch") and not chip_info.get("enabled"):
+                if not app.storage.client.get("record_switch") and chip_info.get("enabled") is False:
                     continue
                 if self.processing_type == "search":
                     # 只找一次概述项配置的文件路径在不在，不管找的结果
@@ -2061,7 +2061,7 @@ class InteractiveButton:
             # 获取共享存储中所有 chip 的ID
             # 用户打开开关，想看全部记录情况下
             if app.storage.client.get("record_switch"):
-                # 如果研发转产标记激活，则排除掉svn类且失活的chip
+                # 如果研发转产标记激活，则比较数据库与已显示异同时，排除掉svn类且失活的chip，使得研发切换为转产时，所有人会刷新一下
                 if app.storage.general["conversion_refresh"].get(self.project):
                     # 抽取所有非svn类型的chip，及 svn类但激活的chip
                     stored_chip_ids = set(
@@ -2070,7 +2070,7 @@ class InteractiveButton:
                             for id, chip_dic in db_storage.get_deep_item(
                                 [f"{self.project}_over_data", self.label], {}
                             ).items()
-                            if chip_dic.get("type") != "svn" or chip_dic.get("enabled")
+                            if chip_dic.get("type") != "svn" or chip_dic.get("enabled") in [True, None]
                         ]
                     )
                 else:
@@ -2086,7 +2086,7 @@ class InteractiveButton:
                         for id, chip_dic in db_storage.get_deep_item(
                             [f"{self.project}_over_data", self.label], {}
                         ).items()
-                        if chip_dic.get("enabled")
+                        if chip_dic.get("enabled") in [True, None]
                     ]
                 )
 
@@ -2370,7 +2370,7 @@ class InteractiveButton:
             ):
                 current_index += step
                 # chip激活这扣除移动目标步距1个单位
-                if old_data[old_data_keys[current_index]].get("enabled"):
+                if old_data[old_data_keys[current_index]].get("enabled") in [True, None]:
                     num -= step
                 # 每次迭代累加一个单位
                 move_num += step
