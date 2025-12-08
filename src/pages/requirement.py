@@ -236,7 +236,12 @@ async def requirement_page(type="", json_path="", project_name=""):
         return over_data
 
     # 编辑project_summary json文件
-    def edit_project_summary(project_name, state):
+    def edit_project_summary(project_name, state, recovery_bool):
+        # 如果是恢复项目的操作附带导致该函数被调取，不用操作，跳过
+        if recovery_bool:
+            # 复位标记
+            app.storage.client["recovery_bool"] = False
+            return
         project_data = {}
         with open(f"{BASE_DIR}/project_summary.json", "r", encoding="utf-8") as f:
             project_data = json.load(f)
@@ -268,7 +273,7 @@ async def requirement_page(type="", json_path="", project_name=""):
 
     async def set_conversion_svn_chip(project_name, state):
         # 先编辑json文件
-        edit_project_summary(project_name, state)
+        edit_project_summary(project_name, state, app.storage.client.get("recovery_bool", False))
         # 将该项目所有svn类的chip失活
         await db_storage.atomic_deep_update([f"{project_name}_over_data"], set_overview_data_svn_block, project_name)
         # 必须在数据修改完成后，再激活概述特殊刷新标记
@@ -280,7 +285,7 @@ async def requirement_page(type="", json_path="", project_name=""):
     def set_project_state_dialog(project_name, state, on_cancel_action):
         over_card.clear()
         with over_card:
-            ui.label("是否确认项目转产，所有svn概述项将设置为失活状态？").classes("text-base text-red")
+            ui.label("是否确认项目转产，所有svn概述项将设置为失活状态，且切换不可逆！").classes("text-base text-red")
             with ui.row().classes("w-full justify-end"):
                 ui.button("确认", on_click=lambda: set_conversion_svn_chip(project_name, state))
                 ui.button("取消", on_click=on_cancel_action)
@@ -299,15 +304,42 @@ async def requirement_page(type="", json_path="", project_name=""):
 
         # 定义一个取消时的回调函数：把下拉框的值改回旧状态，并关闭弹窗
         def on_cancel_action():
+            # 恢复标记打开，防止状态改回时按照正常修改状态操作文件和弹出提示信息
+            app.storage.client["recovery_bool"] = True
             select_element.value = previous_state  # 视觉上改回旧值
             over_dialog.close()
 
         if current_role == "研发经理":
+            if previous_state in ["转产", "量产"] and state in ["研发", "待定", "作废"]:
+                # 恢复标记打开，防止状态改回时按照正常修改状态操作文件和弹出提示信息
+                app.storage.client["recovery_bool"] = True
+                select_element.value = previous_state
+                ui.notify(
+                    "无法将项目从转产后状态(转产/量产)更改为转产前状态(作废/待定/研发)！",
+                    type="warning",
+                    position="bottom",
+                    timeout=3000,
+                    progress=True,
+                    close_button="✖",
+                )
+            elif previous_state in ["作废", "待定"] and state in ["转产", "量产"]:
+                # 恢复标记打开，防止状态改回时按照正常修改状态操作文件和弹出提示信息
+                app.storage.client["recovery_bool"] = True
+                select_element.value = previous_state
+                ui.notify(
+                    "无法将项目从作废/待定状态直接更改为转产/量产状态！",
+                    type="warning",
+                    position="bottom",
+                    timeout=3000,
+                    progress=True,
+                    close_button="✖",
+                )
             # 如果是从研发状态改为转产或量产，将所有svn概述全部失活掉，然后进行特殊刷新
-            if previous_state == "研发" and state in ["转产", "量产"]:
+            elif previous_state == "研发" and state in ["转产", "量产"]:
                 set_project_state_dialog(project_name, state, on_cancel_action)
             else:
-                edit_project_summary(project_name, state)
+                edit_project_summary(project_name, state, app.storage.client.get("recovery_bool", False))
+
         else:
             # 无权限时，也要把界面改回去
             select_element.value = previous_state
