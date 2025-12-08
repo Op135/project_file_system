@@ -239,7 +239,7 @@
             ]
         },
         "8": {
-            "condition": "1==模组 and 7any['结构']",
+            "condition": "5==模组 and 7any['结构']",
             "node_id": "8",
             "guide_content": "产品在终端用户使用时是否有外露部分",
             "answer_type": "单选",
@@ -324,7 +324,7 @@
             ]
         },
         "11": {
-            "condition": "8==True or 1==整机",
+            "condition": "8==True or 5==整机",
             "node_id": "11",
             "guide_content": "客户提供的品质要求",
             "answer_type": "多行文本",
@@ -350,7 +350,7 @@
             ]
         },
         "12": {
-            "condition": "1==模组 and 7any['硬件']",
+            "condition": "5==模组 and 7any['硬件']",
             "node_id": "12",
             "guide_content": "驱动板与灯头主体采用哪种布局方案",
             "answer_type": "单选",
@@ -3465,7 +3465,7 @@
             ]
         },
         "110": {
-            "condition": "1==整机 and 8any['结构']",
+            "condition": "5==整机 and 7any['结构']",
             "node_id": "110",
             "guide_content": "是否指定产品面板的界面菜单内容或工艺",
             "answer_type": "单选",
@@ -6634,7 +6634,7 @@
             ]
         }
     },
-    "config_timestamp": "2025-12-08T14:36:17.709137",
-    "excel_version_hash": "83f74ddd",
+    "config_timestamp": "2025-12-08T19:32:16.356653",
+    "excel_version_hash": "ed68f3d6",
     "entry_status": false
 }

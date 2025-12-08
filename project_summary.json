@@ -1,13 +1,13 @@
 {
     "RFFM-1001-A": {
-        "state": "转产",
+        "state": "待定",
         "model_notes": "",
         "creation_date": "2020-03-04",
         "introduction": "常规白光照明+荧光成像模式，内置驱动板",
         "customer": ""
     },
     "RFFM-1002-A": {
-        "state": "转产",
+        "state": "待定",
         "model_notes": "",
         "creation_date": "2021-05-11",
         "introduction": "常规白光照明+窄带成像模式，1009灯头尺寸",
@@ -1960,7 +1960,7 @@
         "customer": "HKSZ"
     },
     "RFIL-1402-A": {
-        "state": "研发",
+        "state": "作废",
         "model_notes": "",
         "creation_date": "2024-07-11",
         "introduction": "四分区环形光源",
@@ -2027,6 +2027,20 @@
         "model_notes": "",
         "creation_date": "2025-02-14",
         "introduction": "显微镜环形光源",
+        "customer": "HKSZ"
+    },
+    "RFIL-8301-A": {
+        "state": "研发",
+        "model_notes": "",
+        "creation_date": "2025-12-08",
+        "introduction": "显微镜分层环形光源",
+        "customer": "HKSZ"
+    },
+    "RFIL-8302-A": {
+        "state": "研发",
+        "model_notes": "",
+        "creation_date": "2025-12-08",
+        "introduction": "显微镜分层环形光源",
         "customer": "HKSZ"
     },
     "RFIR-8083-A": {

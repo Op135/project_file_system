@@ -25,7 +25,7 @@ def convert_excel_to_json(excel_path, json_path, sheet_name=0):
         for col in datetime_cols:
             # 将该列中有效的日期时间值转换为字符串格式
             # 此操作会将该列中的空值（NaT）变为 NaN
-            df[col] = df[col].dt.strftime("%Y-%m-%d")
+            df[col] = df[col].dt.strftime("%Y-%m-%d")  # type: ignore
 
         # --- 逻辑顺序调整：步骤二 ---
         # 然后，在全局范围内将所有剩余的空值（NaN/None）替换为空字符串 ""
