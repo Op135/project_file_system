@@ -279,9 +279,10 @@ def project_table_page():
                                 "latest_user", ""
                             )
 
-                            charge_str = show_str.split("：")[1] if show_str else ""
+                            # 获取负责人名
+                            charge_person = show_str.split("：")[1] if show_str else ""
                             # 当前项目的当前over_key_li角色比如“光学”，存在最近编辑者
-                            if charge_str:
+                            if charge_person:
                                 selected_bool = False
                                 break_bool = False
                                 for class_dic in overview_data.values():
@@ -302,14 +303,19 @@ def project_table_page():
                                                 break_bool = True
                                 if selected_bool:
                                     # 向概述负责人待处理全局记录字典里添加负责人与项目信息
-                                    if charge_str not in app.storage.general["overview_charge_pending"]:
-                                        app.storage.general["overview_charge_pending"][charge_str] = []
-                                    elif project_name not in app.storage.general["overview_charge_pending"][charge_str]:
-                                        app.storage.general["overview_charge_pending"][charge_str].append(project_name)
+                                    if charge_person not in app.storage.general["overview_charge_pending"]:
+                                        app.storage.general["overview_charge_pending"][charge_person] = []
+                                    elif (
+                                        project_name
+                                        not in app.storage.general["overview_charge_pending"][charge_person]
+                                    ):
+                                        app.storage.general["overview_charge_pending"][charge_person].append(
+                                            project_name
+                                        )
                                     # 处理表格显示信息
-                                    charge_str = f"待{charge_str}\n选概述"
+                                    charge_person = f"待{charge_person}\n选概述"
 
-                            row_data[pro_key] = charge_str
+                            row_data[pro_key] = charge_person
 
                     # 单独处理项目简介表里每行 负责销售 单元格的显示
                     row_data["sale_charge"] = app.storage.general["project_sale"].get(project_name, "")

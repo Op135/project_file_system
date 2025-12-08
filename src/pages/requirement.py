@@ -2885,14 +2885,19 @@ async def requirement_page(type="", json_path="", project_name=""):
                         # 显示概述模块内容
                         for role, over_data in app.storage.general["over_config_data"].items():
                             with ui.card().classes("w-full px-3 gap-0"):
-                                with ui.row().classes("flex-nowrap -space-x-2 items-center"):
-                                    ui.label(f"{role}概述：").classes("text-base text-left w-full px-1 font-bold")
+                                # 创建一个空列表，用于存储当前分组下的所有 expansion 对象
+                                current_role_expansions = []
+                                with ui.row().classes("relative flex-nowrap -space-x-2 items-center w-full"):
+                                    ui.label(f"{role}概述：").classes("text-base text-left px-1 font-bold")
                                     ui.chip(icon="history", color="brown-7").props("outline").classes(
                                         "text-xs"
                                     ).bind_text(app.storage.general["overview_role"][project_name][role], "most_user")
                                     ui.chip(icon="add_reaction", color="green-7").props("outline").classes(
                                         "text-xs"
                                     ).bind_text(app.storage.general["overview_role"][project_name][role], "latest_user")
+                                    ui.switch("全展开").classes("absolute -top-2 right-2 text-sm").on_value_change(
+                                        lambda e, exps=current_role_expansions: [exp.set_value(e.value) for exp in exps]
+                                    )
                                 for data_group, data_list in over_data.items():
                                     exp = ui.expansion(
                                         data_group,
@@ -2900,6 +2905,8 @@ async def requirement_page(type="", json_path="", project_name=""):
                                         value=False,
                                         caption="",
                                     ).classes("gap-1 w-full bg-gray-100/30 rounded")
+                                    # 将生成的 expansion 对象添加到列表中
+                                    current_role_expansions.append(exp)
                                     exp.set_visibility(False)
                                     with exp:
                                         for data in data_list:
