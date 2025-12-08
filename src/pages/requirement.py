@@ -971,6 +971,8 @@ async def requirement_page(type="", json_path="", project_name=""):
             # 将整条逻辑语句里的涉及的前置条件节点序号提取出来
             cond_id = cond_result[0].replace("not", "").strip()
             cond_id_list.append(cond_id)
+        # 去重，否则后面如果遇到条件里，and/or处理的是同个序号的条件，将引发bool_list倍数增加，result_str拼接过长，如：True and True  True  True
+        cond_id_list = list(set(cond_id_list))
         # 先排查用户是否存在未选择的节点，如有则不满足处理条件，退出
         # 遍历该节点条件里涉及的条件序号
         for c_id in cond_id_list:
@@ -994,6 +996,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                 # 如果条件序号与条件语句匹配
                 # 获取条件节点的用户选填结果
                 op_user_out = dict(app.storage.client["config_data"]["data"][c_id]["user_must_out"])
+                # 用户选择的选项输出值构成的列表
                 op_user_out_list = []
                 if len(op_user_out.keys()) > 1:
                     for op_key, op_value in op_user_out.items():
@@ -1038,6 +1041,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                     continue
 
         result_str = "".join(f"{x} {y} " for x, y in itertools.zip_longest(bool_list, separators, fillvalue=""))
+        # print(k, cond_lgoic_str, result_str)
         logic_out_bool = eval(result_str)
 
         return logic_out_bool
@@ -1331,6 +1335,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                     dropdown.bind_value(app.storage.client["config_data"]["data"][k]["user_must_out"], "value")
 
                 elif options_type in ["正整数", "单行文本", "多行文本"]:
+                    placeholder = input_num_accor = app.storage.client["config_data"]["data"][k]["placeholder"]
                     # 根据依据获取用户在输入框填入的数量，输入项有名称则名称为健，没有则用数字字符
                     input_num_accor = app.storage.client["config_data"]["data"][k]["input_num_accor"]
                     input_num = (
@@ -1369,7 +1374,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                                 # 可能是数字123也可能是前置依赖的客户输出识别字符串
                                 input_label_key = list(input_name_dic.values())[n]
 
-                                label_1 = "值"
+                                label_1 = "内容"
                                 label_2 = ""
                                 if input_tolerance_bool == "正负":
                                     label_1 = "典型值"
@@ -1395,7 +1400,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                                     input_field = (
                                         ui.input(
                                             label=input_label,
-                                            placeholder="",
+                                            placeholder=placeholder,
                                             validation={"必须是整数": lambda value: value.isdigit()},
                                         )
                                         .props("outlined stack-label")
@@ -1408,7 +1413,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                                         input_tolerance = (
                                             ui.input(
                                                 label=input_tolerance_label,
-                                                placeholder="",
+                                                placeholder=placeholder,
                                                 validation={"不能空白": lambda value: value.strip() != ""},
                                             )
                                             .props("outlined stack-label")
@@ -1423,7 +1428,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                                     input_field = (
                                         ui.input(
                                             label=input_label,
-                                            placeholder="",
+                                            placeholder=placeholder,
                                             validation={"不能空白": lambda value: value.strip() != ""},
                                         )
                                         .props("outlined stack-label")
@@ -1436,7 +1441,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                                         input_tolerance = (
                                             ui.input(
                                                 label=input_tolerance_label,
-                                                placeholder="",
+                                                placeholder=placeholder,
                                                 validation={"不能空白": lambda value: value.strip() != ""},
                                             )
                                             .props("outlined stack-label")
@@ -1451,7 +1456,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                                     input_field = (
                                         ui.textarea(
                                             label=input_label,
-                                            placeholder="",
+                                            placeholder=placeholder,
                                             validation={"不能空白": lambda value: value.strip() != ""},
                                         )
                                         .props("outlined stack-label autogrow")
@@ -1806,7 +1811,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                     close_button="✖",
                 )
                 return
-            print(target_project_name)
+            # print(target_project_name)
             if target_project_name.split("-")[0] == "RFTS" and not validate_format_regex(
                 target_project_name, r"^RFTS-\d{4}$"
             ):
@@ -2333,6 +2338,8 @@ async def requirement_page(type="", json_path="", project_name=""):
 
         # 3. 处理文本输入类型 (单行/多行)
         elif answer_type in ["单行文本", "多行文本", "正整数"]:
+            key_color = "#126bae"
+            text_color = "#603d30"
             # 替换 {V}, {K}, {T}
             content_li = []
             # 键为1/2/3或用户起的多个名字
@@ -2345,6 +2352,7 @@ async def requirement_page(type="", json_path="", project_name=""):
             show_template = option_li[0]["option_show"]
             pattern = r"(.*?)(?:\[(.*?)\])(.*)"
             match = re.search(pattern, show_template)
+            # 匹配得上，则意味着有多项输入内容
             if match:
                 # 提取并打印所有捕获组的内容
                 prefix = match.group(1)  # [ 之前的内容
@@ -2358,17 +2366,18 @@ async def requirement_page(type="", json_path="", project_name=""):
                     else:
                         user_out_str = str(user_out[k])
                     content_li.append(
-                        content.replace("{K}", f'<b><span style="color: #603d30;">{k}</span></b>')
+                        content.replace("{K}", f'<b><span style="color: {key_color};">{k}</span></b>')
                         .replace(
                             "{V}",
-                            f'<b><span style="color: #603d30;">{user_out_str}</span></b>',
+                            f'<b><span style="color: {text_color};">{user_out_str}</span></b>',
                         )
                         .replace(
                             "{T}",
-                            f'<b><span style="color: #603d30;">{str(tolerance_out[k]) if tolerance_out else "无"}</span></b>',
+                            f'<b><span style="color: {text_color};">{str(tolerance_out[k]) if tolerance_out else "无"}</span></b>',
                         )
                     )
                 result = f"{prefix}<br>{'<br>'.join(content_li)}<br>{suffix}"
+            # 只有一项输入内容
             else:
                 # 必须填写的输入内容为多行文本，则默认在最前面加上换行标签，且内部\n统一替换成换行标签
                 if answer_type == "多行文本":
@@ -2376,14 +2385,14 @@ async def requirement_page(type="", json_path="", project_name=""):
                 else:
                     user_out_str = str(user_out[key_li[0]])
                 result = (
-                    show_template.replace("{K}", f'<b><span style="color: #603d30;">{key_li[0]}</span></b>')
+                    show_template.replace("{K}", f'<b><span style="color: {key_color};">{key_li[0]}</span></b>')
                     .replace(
                         "{V}",
-                        f'<b><span style="color: #603d30;">{user_out_str}</span></b>',
+                        f'<b><span style="color: {text_color};">{user_out_str}</span></b>',
                     )
                     .replace(
                         "{T}",
-                        f'<b><span style="color: #603d30;">{str(tolerance_out[key_li[0]]) if tolerance_out else "无"}</span></b>',
+                        f'<b><span style="color: {text_color};">{str(tolerance_out[key_li[0]]) if tolerance_out else "无"}</span></b>',
                     )
                 )
             return result
