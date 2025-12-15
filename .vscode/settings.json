@@ -54,7 +54,7 @@
     // 启用后，搜索时会自动使用当前选择的内容作为搜索字符串
     "editor.find.seedSearchStringFromSelection": "always",
     // 启用悬停提示
-    "editor.hover.enabled": true,
+    "editor.hover.enabled": "on",
     // 启用后，悬停提示会保持显示直到手动关闭
     "editor.hover.sticky": true,
     // 启用编辑器中的链接功能

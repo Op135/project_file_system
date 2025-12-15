@@ -2722,6 +2722,13 @@
         "introduction": "50mm，配特殊导光束\n焦距23.6mm，接近开关检测，阳极氧化，线长50cm\n客户定制设计，三个波珠螺丝夹紧，无卡位，配RFFM-1723C-Q",
         "customer": ""
     },
+    "RFAD-5004-C": {
+        "state": "研发",
+        "model_notes": "",
+        "creation_date": "2025-12-09",
+        "introduction": "50mm，配特殊导光束\n焦距23.6mm，接近开关检测，阳极氧化，线长50cm\n仅适配开立特定导光束",
+        "customer": ""
+    },
     "RFAD-5005-A": {
         "state": "量产",
         "model_notes": "",

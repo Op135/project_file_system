@@ -2,10 +2,13 @@
 import hashlib
 import json
 import logging
+import os
 from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
+
+from .components import ConfigValidator
 
 # 获取一个以此模块命名的 logger
 # 比如：如果你的文件是 src/components.py，这个 logger 的名字就会是 "src.components"
@@ -142,9 +145,38 @@ class ConfigService:
         try:
             with open(f"{self.base_dir}/config_service.json", "w", encoding="utf-8") as f:
                 json.dump(self._cache, f, ensure_ascii=False, indent=4)
+            # 检查临时配置文件是否存在，存在则删除
+            if os.path.exists(f"{self.base_dir}/config_service_temp.json"):
+                # 文件存在，执行删除操作
+                try:
+                    os.remove(f"{self.base_dir}/config_service_temp.json")
+                except OSError:
+                    # 捕获权限或其他系统错误
+                    logger.error(f"无法删除文件{f'{self.base_dir}/config_service_temp.json'}", exc_info=True)
             return self._cache
         except Exception:
             logger.error("上传处理失败", exc_info=True)  # 在服务器端打印错误详情
+
+    def get_temp_config(self):
+        """生成临时需求配置文件，以供逻辑检查"""
+        # 配置文件修改 或 缓存为空 或 管理员点击重载按钮情况下，重新装载更新数据
+        raw_df = pd.read_excel(self.excel_path, engine="openpyxl")
+        processed = self._process_data(raw_df)
+
+        # 更新缓存数据
+        data = {
+            "data": processed,
+            "config_timestamp": datetime.now().isoformat(),
+            "excel_version_hash": hashlib.md5(self.excel_path.read_bytes()).hexdigest()[:8],
+            "entry_status": False,  # 初始化录入状态，默认没有录完
+        }
+        try:
+            with open(f"{self.base_dir}/config_service_temp.json", "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=4)
+            validator = ConfigValidator(f"{self.base_dir}/config_service_temp.json")
+            validator.run_validation()
+        except Exception:
+            logger.error("需求文件处理失败", exc_info=True)  # 在服务器端打印错误详情
 
     @staticmethod
     def clean_text(text):

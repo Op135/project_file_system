@@ -203,6 +203,29 @@ def update_config_service():
         )
 
 
+# 更新需求配置文件，供后续管理员调用
+def get_temp_config_service():
+    try:
+        app.state.config_service.get_temp_config()
+        ui.notify(
+            "临时需求配置文件生成校验完成!",
+            type="positive",
+            position="bottom",
+            timeout=1000,
+            progress=True,
+            close_button="✖",
+        )
+    except Exception as e:
+        ui.notify(
+            f'临时需求配置文件生成校验出错： "{e}" ',
+            type="negative",
+            position="center",
+            timeout=0,
+            progress=False,
+            close_button="✖",
+        )
+
+
 # 更新概述概述项配置设置
 def updata_overview_config():
     try:
