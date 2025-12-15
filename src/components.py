@@ -361,7 +361,7 @@ class FileThumbnail:
                     .on("click", self.open_pdf_in_browser)  # 使用浏览器打开则用.open_pdf_in_browser
                 )
                 ui.label(self.file_neme).classes(
-                    f"h-full w-[{str(label_w)}px] text-[{str(font_px)}px]/[{str(font_px)}px] break-words text-black p-0 m-0 bg-white-500"
+                    f"h-full w-[{str(label_w)}px] text-[{str(font_px)}px]/[{str(font_px)}px] break-all text-black p-0 m-0 bg-white-500 "
                 )
         else:
             with ui.row().classes(f"h-{str(self.parents_h)} flex-nowrap gap-1") as self.other_row:
@@ -372,7 +372,7 @@ class FileThumbnail:
                     .on("click", self.check_and_download)
                 )
                 ui.label(self.file_neme).classes(
-                    f"h-full w-[{str(label_w)}px] text-[{str(font_px)}px]/[{str(font_px)}px] break-words text-black p-0 m-0 bg-white-500"
+                    f"h-full w-[{str(label_w)}px] text-[{str(font_px)}px]/[{str(font_px)}px] break-all text-black p-0 m-0 bg-white-500"
                 )
                 with self.thumbnail:
                     bg_color = "amber-600"

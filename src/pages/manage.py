@@ -77,12 +77,13 @@ def manage_page():
         with ui.card().classes("w-full -space-y-2"):
             ui.label("系统配置更新").classes("text-lg font-bold mb-2")
             with ui.row().classes("gap-4"):
-                ui.button("生成临时需求配置并校验(excel->json)", on_click=lambda: get_temp_config_service()).props(
+                ui.button("①生成临时需求配置并校验(excel->json)", on_click=lambda: get_temp_config_service()).props(
                     ""
-                ).classes("")
-                ui.button("更新加载需求配置(excel->json)", on_click=lambda: update_config_service()).props("").classes(
-                    ""
+                ).classes("bg-amber-7")
+                ui.button("②更新加载需求配置(excel->json)", on_click=lambda: update_config_service()).props("").classes(
+                    "bg-amber-7"
                 )
+                ui.separator().props("size=1px")
                 ui.button("更新概述配置(JSON->General)", on_click=lambda: updata_overview_config()).props("").classes(
                     ""
                 )
