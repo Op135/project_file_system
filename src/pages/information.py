@@ -105,7 +105,8 @@ def information_page():
                         chip_data["enabled"] = None
                         chip_data["icon"] = "question_mark"
                         chip_data["bg_color"] = "bg-amber-5"
-        await db_storage.set_item(f"{project_name}_over_data", overview_data)
+        if overview_data:
+            await db_storage.set_item(f"{project_name}_over_data", overview_data)
 
     def set_review_revise(p_name, v):
         app.storage.general["wait_review"][p_name][v]["state"] = "待修改"

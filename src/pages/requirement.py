@@ -659,24 +659,18 @@ async def requirement_page(type="", json_path="", project_name=""):
 
     # 解析json配置文件，并生成需求界面
     def loads_requirements(json_data, loads_bool: bool):
-        # --- 新增步骤：读取本地最新的 config_service.json ---
-        # try:
-        # 假设 config_service.json 就在 REQ_DIR 下，或者你知道确切路径
-        # 注意：需确保 config_service.json 的路径正确
-        # 这里为了演示，假设只有一个主要的 config 模板，或者你需要逻辑判断用哪个模板
-        # template_path = os.path.join(BASE_DIR, "config_service.json")
+        # --- 修改开始：使用内存中的全局配置 ---
+        try:
+            # 直接从全局状态获取最新的配置模版 (假设你在 main.py 启动时已经加载了它)
+            template_data = app.state.init_config_data
 
-        # with open(template_path, "r", encoding="utf-8") as f:
-        #     template_data = json.load(f)
+            # 这里的 template_data 传进去后，merge 函数内部第一行必须是 deepcopy
+            final_config_data = merge_data_with_template(json_data, template_data)
 
-        # 执行合并：用新模版清洗旧数据
-        # 注意：只有当 json_data 是用户保存的数据(含有 user_must_out)时才合并
-        # 如果 json_data 本身就是个纯模版（没有答案），合并也没副作用
-        final_config_data = merge_data_with_template(json_data, app.state.init_config_data)
-
-        # except Exception as e:
-        #     logger.error(f"合并最新模版失败，回退到使用文件原数据: {e}")
-        # final_config_data = json_data
+        except Exception as e:
+            logger.error(f"合并最新模版失败，回退到使用文件原数据: {e}", exc_info=True)
+            final_config_data = json_data
+        # --- 修改结束 ---
         # -----------------------------------------------
         # 获取文件缩略图字典内容，直接覆盖现有内容
         # file_information = json_data["file_dic"]
@@ -1406,6 +1400,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                     # 格式化显示旧数据内容
                     main_val = old_data_ref.get("main", {})
                     tol_val = old_data_ref.get("tolerance", {})
+                    ref_val = old_data_ref.get("ref", [])
 
                     with ui.column().classes("ml-7 gap-1"):
                         if isinstance(main_val, dict):
@@ -1427,6 +1422,9 @@ async def requirement_page(type="", json_path="", project_name=""):
                             vals = [f"{k}: {v}" for k, v in tol_val.items() if v]
                             if vals:
                                 ui.label(f"原公差: {', '.join(vals)}").classes("text-gray-500 text-xs font-mono")
+
+                        if isinstance(ref_val, list) and ref_val:
+                            ui.label(f"原引用文件编号: {', '.join(ref_val)}").classes("text-gray-500 text-xs font-mono")
             # === 新增代码结束 ===
 
             with ui.column().classes("m-0 gap-8 w-full items-center justify-start overflow-auto"):
@@ -1459,7 +1457,7 @@ async def requirement_page(type="", json_path="", project_name=""):
 
                 elif options_type in ["正整数", "单行文本", "多行文本"]:
                     placeholder = input_num_accor = app.storage.client["config_data"]["data"][k]["placeholder"]
-                    # 根据依据获取用户在输入框填入的数量，输入项有名称则名称为健，没有则用数字字符
+                    # 根据依据，获取用户在输入框填入的数量，输入项有名称则名称为健，没有则用数字字符
                     input_num_accor = app.storage.client["config_data"]["data"][k]["input_num_accor"]
                     input_num = (
                         1
@@ -1469,11 +1467,13 @@ async def requirement_page(type="", json_path="", project_name=""):
                         )
                     )
 
-                    # 根据依据获取用户在输入框填入的输入项名称
+                    # 根据依据，获取用户在输入框填入的输入项名称
                     input_name_accor = app.storage.client["config_data"]["data"][k]["input_name_accor"]
                     if input_name_accor == "":
+                        # 新需求{} 或 升级需求{"1":"XXXX", "2":"XXXX"}
                         input_name_storage_dic = dict(app.storage.client["config_data"]["data"][k]["user_must_out"])
                     else:
+                        # {"1":"XXXX", "2":"XXXX"}
                         input_name_storage_dic = dict(
                             app.storage.client["config_data"]["data"][input_name_accor]["user_must_out"]
                         )
@@ -1490,6 +1490,41 @@ async def requirement_page(type="", json_path="", project_name=""):
                     if input_name_dic == {}:
                         for i in range(input_num):
                             input_name_dic[str(i + 1)] = str(i + 1)
+
+                    # ===【新增代码开始】：检测并显示“隐形/孤儿”数据 ===
+                    # 1. 获取当前页面要求的有效键列表
+                    active_keys = list(input_name_dic.values())[
+                        :input_num
+                    ]  # 客户来回改数量，导致前面填的多出来了，要截取
+
+                    # 2. 获取存储里的所有键
+                    stored_data = app.storage.client["config_data"]["data"][k]["user_must_out"]
+                    stored_keys = list(stored_data.keys())
+
+                    # 3. 找出“存储里有，但当前界面没用到”的键 (即失效的旧键名)
+                    orphaned_items = {}
+                    for sk in stored_keys:
+                        # 注意：stored_data 中的 value 可能为空字符串，这种不算有效丢失
+                        if sk not in active_keys and str(stored_data[sk]).strip() != "":
+                            orphaned_items[sk] = stored_data[sk]
+
+                    # 4. 如果发现孤儿数据，且没有结构性快照(ref_old_data)，则显示黄色警告框
+                    # (如果有 ref_old_data，说明已经强制重置了，那边会显示，这里不用重复)
+                    if orphaned_items and not app.storage.client["config_data"]["data"][k].get("ref_old_data"):
+                        with ui.card().classes("w-full bg-amber-50 border-l-4 border-amber-500 p-3 mb-2 shadow-sm"):
+                            with ui.row().classes("items-center mb-1"):
+                                ui.icon("link_off", color="amber-9").classes("text-xl mr-2")
+                                ui.label("检测到关联项变更，以下旧数据已失效，请确认是否需要迁移：").classes(
+                                    "text-amber-9 font-bold text-sm"
+                                )
+
+                            with ui.column().classes("ml-7 gap-1"):
+                                vals = [f"{k}: {v}" for k, v in orphaned_items.items()]
+                                ui.label(f"失效内容: {', '.join(vals)}").classes(
+                                    "text-gray-700 text-xs font-mono bg-white px-1 rounded border border-gray-200"
+                                )
+                    # ===【新增代码结束】===
+
                     # 获取可能的已有用户输入内容
                     with ui.column().classes("min-w-1/4 -space-y-2"):
                         for n in range(input_num):
@@ -1749,6 +1784,62 @@ async def requirement_page(type="", json_path="", project_name=""):
     async def output_config_data(data, type):
         # 先复制整个数据
         data_json = data
+
+        # === 新增代码开始：提交/导出前自动清理孤儿数据 ===
+        # 遍历所有节点，专门清洗输入类题目中因依赖变更产生的失效数据
+        for k, v in data_json["data"].items():
+            if v["answer_type"] in ["正整数", "单行文本", "多行文本"]:
+                # 1. 计算当前有效的输入数量 (input_num)
+                input_num_accor = v.get("input_num_accor", "")
+                input_num = 1
+                if input_num_accor:
+                    # 查找数量依赖项
+                    dep_node = data_json["data"].get(input_num_accor)
+                    if dep_node and dep_node.get("user_must_out"):
+                        try:
+                            # 获取依赖项填写的数字，默认为键"1"的值
+                            val = dep_node["user_must_out"].get("1", "1")
+                            input_num = int(float(val))
+                        except (ValueError, TypeError):
+                            input_num = 1
+
+                # 2. 计算当前有效的键名列表 (valid_keys)
+                input_name_accor = v.get("input_name_accor", "")
+                valid_keys = []
+
+                if input_name_accor == "":
+                    # 如果没有名称依赖，键名就是 "1", "2", "3"...
+                    valid_keys = [str(i + 1) for i in range(input_num)]
+                else:
+                    # 如果有名称依赖，去取依赖项填写的“值”作为本题的“键”
+                    dep_node = data_json["data"].get(input_name_accor)
+                    if dep_node and dep_node.get("user_must_out"):
+                        # 取前 input_num 个值作为有效键
+                        # 注意：这里假设依赖项的值顺序是固定的 (Python 3.7+ 字典有序)
+                        dep_values = list(dep_node["user_must_out"].values())
+                        # 截取有效数量
+                        valid_keys = dep_values[:input_num]
+                    else:
+                        # 依赖项缺失的兜底
+                        valid_keys = [str(i + 1) for i in range(input_num)]
+
+                # 3. 执行清理：只保留在 valid_keys 里的数据
+                # 清理主要内容 user_must_out
+                if v.get("user_must_out"):
+                    original_keys = list(v["user_must_out"].keys())
+                    for old_key in original_keys:
+                        if old_key not in valid_keys:
+                            # 确实是孤儿数据，删除
+                            del v["user_must_out"][old_key]
+
+                # 清理公差内容 option_tolerance_out
+                if v.get("option_tolerance_out"):
+                    original_tol_keys = list(v["option_tolerance_out"].keys())
+                    for old_key in original_tol_keys:
+                        if old_key not in valid_keys:
+                            del v["option_tolerance_out"][old_key]
+        # === 新增代码结束 ===
+
         project_name = app.storage.client["project_name"].strip()
         version = app.storage.client["version"]
         target_project_name = app.storage.client["target_project_name"].strip()
