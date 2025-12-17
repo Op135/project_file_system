@@ -18,6 +18,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "我司设计与生产",
                     "option_out": "设计生产",
                     "option_bold": "设计与生产",
@@ -25,6 +26,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "我司仅设计",
                     "option_out": "设计",
                     "option_bold": "设计",
@@ -32,6 +34,7 @@
                     "option_label": "仅设计"
                 },
                 {
+                    "option_id": "opt_3",
                     "option_content": "我司代工",
                     "option_out": "代工",
                     "option_bold": "代工",
@@ -58,6 +61,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -84,6 +88,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -110,6 +115,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -136,6 +142,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "整机",
                     "option_out": "整机",
                     "option_bold": "整机",
@@ -143,6 +150,7 @@
                     "option_label": "整机"
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "模组",
                     "option_out": "模组",
                     "option_bold": "模组",
@@ -169,6 +177,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "有",
                     "option_out": "True",
                     "option_bold": "提供",
@@ -176,6 +185,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "无",
                     "option_out": "False",
                     "option_bold": "无",
@@ -202,6 +212,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "光处理",
                     "option_out": "光学",
                     "option_bold": "光学",
@@ -209,6 +220,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "机械结构",
                     "option_out": "结构",
                     "option_bold": "结构",
@@ -216,6 +228,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_3",
                     "option_content": "光源",
                     "option_out": "光源",
                     "option_bold": "光源",
@@ -223,6 +236,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_4",
                     "option_content": "硬件控制",
                     "option_out": "硬件",
                     "option_bold": "硬件",
@@ -230,9 +244,10 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_5",
                     "option_content": "软件控制",
-                    "option_out": "软件",
-                    "option_bold": "软件",
+                    "option_out": "固件",
+                    "option_bold": "固件",
                     "option_show": "",
                     "option_label": ""
                 }
@@ -256,6 +271,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "有",
                     "option_out": "True",
                     "option_bold": "有",
@@ -263,6 +279,7 @@
                     "option_label": "外显产品"
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "无",
                     "option_out": "False",
                     "option_bold": "无",
@@ -289,6 +306,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -315,6 +333,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -341,6 +360,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -367,6 +387,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "内置一体式",
                     "option_out": "内置",
                     "option_bold": "内置",
@@ -374,6 +395,7 @@
                     "option_label": "内置一体式"
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "外露固定式",
                     "option_out": "外露固定",
                     "option_bold": "外露固定",
@@ -381,6 +403,7 @@
                     "option_label": "外露固定式"
                 },
                 {
+                    "option_id": "opt_3",
                     "option_content": "分体安装式",
                     "option_out": "分体安装",
                     "option_bold": "分体安装",
@@ -407,6 +430,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "涉及",
@@ -414,6 +438,7 @@
                     "option_label": "涉及导光束"
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "不涉及",
@@ -440,6 +465,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "导光束→产品",
                     "option_out": "DC",
                     "option_bold": "导光束→产品",
@@ -447,6 +473,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "产品→导光束",
                     "option_out": "CD",
                     "option_bold": "产品→导光束",
@@ -454,6 +481,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_3",
                     "option_content": "产品→导光束→产品",
                     "option_out": "CDC",
                     "option_bold": "产品→导光束→产品",
@@ -461,6 +489,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_4",
                     "option_content": "导光束→产品→导光束",
                     "option_out": "DCD",
                     "option_bold": "导光束→产品→导光束",
@@ -468,6 +497,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_5",
                     "option_content": "产品→导光束→产品→导光束",
                     "option_out": "CDCD",
                     "option_bold": "产品→导光束→产品→导光束",
@@ -475,6 +505,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_6",
                     "option_content": "导光束→产品→导光束→产品→导光束",
                     "option_out": "DCDCD",
                     "option_bold": "导光束→产品→导光束→产品→导光束",
@@ -501,6 +532,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "我司",
@@ -508,6 +540,7 @@
                     "option_label": "配导光束"
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "客户",
@@ -534,6 +567,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -560,6 +594,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -586,6 +621,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -612,6 +648,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -638,6 +675,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "购买我司",
@@ -645,6 +683,7 @@
                     "option_label": "配转接座"
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "客户自制",
@@ -671,6 +710,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "",
@@ -678,6 +718,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "不指定",
@@ -704,6 +745,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -730,6 +772,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "配(默认)",
                     "option_out": "配",
                     "option_bold": "配",
@@ -737,6 +780,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "不配",
                     "option_out": "不配",
                     "option_bold": "不配",
@@ -744,6 +788,7 @@
                     "option_label": "不配旋帽"
                 },
                 {
+                    "option_id": "opt_3",
                     "option_content": "定制旋帽",
                     "option_out": "定制",
                     "option_bold": "定制",
@@ -770,6 +815,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -796,6 +842,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "",
@@ -803,6 +850,7 @@
                     "option_label": "定制转接座材质表面"
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "不指定",
@@ -829,6 +877,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -855,6 +904,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "",
@@ -862,6 +912,7 @@
                     "option_label": "定制转接座尺寸"
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "不限定",
@@ -888,6 +939,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -914,6 +966,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "",
@@ -921,6 +974,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "由我司自行设计",
@@ -947,6 +1001,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -973,6 +1028,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "",
@@ -980,6 +1036,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "不点胶",
@@ -1006,6 +1063,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "与产品主体“分拆”装同箱",
                     "option_out": "分拆同箱",
                     "option_bold": "分拆装同箱",
@@ -1013,6 +1071,7 @@
                     "option_label": "转接座分拆同箱包装"
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "与产品主体“装一起”包装",
                     "option_out": "一体包装",
                     "option_bold": "装一起包装",
@@ -1020,6 +1079,7 @@
                     "option_label": "转接座一体包装"
                 },
                 {
+                    "option_id": "opt_3",
                     "option_content": "与产品主体“分箱”包装",
                     "option_out": "分箱包装",
                     "option_bold": "分箱包装",
@@ -1046,6 +1106,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "机械悬臂检测",
                     "option_out": "悬臂",
                     "option_bold": "悬臂检测",
@@ -1053,6 +1114,7 @@
                     "option_label": "悬臂检测"
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "接近开关检测",
                     "option_out": "接近开关",
                     "option_bold": "接近开关检测",
@@ -1060,6 +1122,7 @@
                     "option_label": "接近开关检测"
                 },
                 {
+                    "option_id": "opt_3",
                     "option_content": "普通无检测",
                     "option_out": "普通",
                     "option_bold": "普通无检测",
@@ -1086,6 +1149,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "有特殊逻辑",
                     "option_out": "True",
                     "option_bold": "",
@@ -1093,6 +1157,7 @@
                     "option_label": "导光束插拔定制逻辑"
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "使所有光源亮灭",
                     "option_out": "False",
                     "option_bold": "插拔使所有光源亮灭",
@@ -1119,6 +1184,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -1145,6 +1211,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "客户指定/提供",
@@ -1152,6 +1219,7 @@
                     "option_label": "指定导光束测光参数"
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "",
@@ -1178,6 +1246,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -1204,6 +1273,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "客供",
@@ -1211,6 +1281,7 @@
                     "option_label": "客供导光束测拉力"
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "",
@@ -1237,6 +1308,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "指定拉力标准",
@@ -1244,6 +1316,7 @@
                     "option_label": "指定拉力标准"
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "",
@@ -1270,6 +1343,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -1296,6 +1370,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "多种光色输出",
@@ -1303,6 +1378,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "单种光色输出",
@@ -1329,6 +1405,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -1355,6 +1432,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "单色光",
@@ -1362,6 +1440,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "",
@@ -1388,6 +1467,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -1414,6 +1494,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -1440,6 +1521,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "白光",
@@ -1447,6 +1529,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "",
@@ -1473,6 +1556,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "特定混合光",
@@ -1480,6 +1564,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "",
@@ -1506,6 +1591,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -1532,6 +1618,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -1558,6 +1645,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "峰值波长",
                     "option_out": "峰值波长",
                     "option_bold": "峰值波长",
@@ -1565,6 +1653,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "主波长（可见光范围适用）",
                     "option_out": "主波长",
                     "option_bold": "主波长",
@@ -1572,6 +1661,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_3",
                     "option_content": "半峰全宽",
                     "option_out": "半峰全宽",
                     "option_bold": "半峰全宽",
@@ -1579,6 +1669,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_4",
                     "option_content": "光通量",
                     "option_out": "光通量",
                     "option_bold": "光通量",
@@ -1586,6 +1677,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_5",
                     "option_content": "光功率",
                     "option_out": "光功率",
                     "option_bold": "光功率",
@@ -1593,6 +1685,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_6",
                     "option_content": "照度",
                     "option_out": "照度",
                     "option_bold": "照度",
@@ -1600,6 +1693,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_7",
                     "option_content": "辐照度",
                     "option_out": "辐照度",
                     "option_bold": "辐照度",
@@ -1607,6 +1701,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_8",
                     "option_content": "光斑尺寸",
                     "option_out": "光斑尺寸",
                     "option_bold": "光斑尺寸",
@@ -1614,6 +1709,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_9",
                     "option_content": "光斑均匀性",
                     "option_out": "光斑均匀性",
                     "option_bold": "光斑均匀性",
@@ -1621,6 +1717,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_10",
                     "option_content": "光强",
                     "option_out": "光强",
                     "option_bold": "光强",
@@ -1628,6 +1725,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_11",
                     "option_content": "辐射强度",
                     "option_out": "辐射强度",
                     "option_bold": "辐射强度",
@@ -1635,6 +1733,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_12",
                     "option_content": "亮度",
                     "option_out": "亮度",
                     "option_bold": "亮度",
@@ -1642,6 +1741,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_13",
                     "option_content": "光束全角",
                     "option_out": "光束全角",
                     "option_bold": "光束全角",
@@ -1649,6 +1749,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_14",
                     "option_content": "视场全角",
                     "option_out": "视场全角",
                     "option_bold": "视场全角",
@@ -1675,6 +1776,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -1701,6 +1803,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -1727,6 +1830,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -1753,6 +1857,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -1779,6 +1884,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -1805,6 +1911,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -1831,6 +1938,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -1857,6 +1965,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -1883,6 +1992,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -1909,6 +2019,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -1935,6 +2046,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -1961,6 +2073,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -1987,6 +2100,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -2013,6 +2127,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -2039,6 +2154,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "相关色温CCT",
                     "option_out": "CCT",
                     "option_bold": "CCT",
@@ -2046,6 +2162,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "CRI显指Ra",
                     "option_out": "Ra",
                     "option_bold": "Ra",
@@ -2053,6 +2170,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_3",
                     "option_content": "CRI显指R9",
                     "option_out": "R9",
                     "option_bold": "R9",
@@ -2060,6 +2178,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_4",
                     "option_content": "色坐标CIExy",
                     "option_out": "CIExy",
                     "option_bold": "CIExy",
@@ -2067,6 +2186,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_5",
                     "option_content": "色坐标CIEuv",
                     "option_out": "CIEuv",
                     "option_bold": "CIEuv",
@@ -2074,6 +2194,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_6",
                     "option_content": "光谱峰值比",
                     "option_out": "光谱峰值比",
                     "option_bold": "光谱峰值比",
@@ -2081,6 +2202,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_7",
                     "option_content": "光通量",
                     "option_out": "光通量",
                     "option_bold": "光通量",
@@ -2088,6 +2210,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_8",
                     "option_content": "光功率",
                     "option_out": "光功率",
                     "option_bold": "光功率",
@@ -2095,6 +2218,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_9",
                     "option_content": "照度",
                     "option_out": "照度",
                     "option_bold": "照度",
@@ -2102,6 +2226,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_10",
                     "option_content": "辐照度",
                     "option_out": "辐照度",
                     "option_bold": "辐照度",
@@ -2109,6 +2234,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_11",
                     "option_content": "光斑尺寸",
                     "option_out": "光斑尺寸",
                     "option_bold": "光斑尺寸",
@@ -2116,6 +2242,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_12",
                     "option_content": "光斑均匀性",
                     "option_out": "光斑均匀性",
                     "option_bold": "光斑均匀性",
@@ -2123,6 +2250,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_13",
                     "option_content": "光强",
                     "option_out": "光强",
                     "option_bold": "光强",
@@ -2130,6 +2258,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_14",
                     "option_content": "辐射强度",
                     "option_out": "辐射强度",
                     "option_bold": "辐射强度",
@@ -2137,6 +2266,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_15",
                     "option_content": "亮度",
                     "option_out": "亮度",
                     "option_bold": "亮度",
@@ -2144,6 +2274,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_16",
                     "option_content": "光束全角",
                     "option_out": "光束全角",
                     "option_bold": "光束全角",
@@ -2151,6 +2282,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_17",
                     "option_content": "视场全角",
                     "option_out": "视场全角",
                     "option_bold": "视场全角",
@@ -2177,6 +2309,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -2203,6 +2336,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -2229,6 +2363,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -2255,6 +2390,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -2281,6 +2417,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -2307,6 +2444,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -2333,6 +2471,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -2359,6 +2498,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -2385,6 +2525,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -2411,6 +2552,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -2437,6 +2579,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -2463,6 +2606,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -2489,6 +2633,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -2515,6 +2660,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -2541,6 +2687,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -2567,6 +2714,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -2593,6 +2741,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -2619,6 +2768,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "内窥镜领域",
@@ -2626,6 +2776,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "",
@@ -2652,6 +2803,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "软式内窥镜",
                     "option_out": "软镜",
                     "option_bold": "软式内窥镜",
@@ -2659,6 +2811,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "硬式内窥镜",
                     "option_out": "硬镜",
                     "option_bold": "硬式内窥镜",
@@ -2685,6 +2838,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "红绿辐通量比",
                     "option_out": "红绿辐通量比",
                     "option_bold": "红绿辐通量比",
@@ -2692,6 +2846,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "蓝绿辐通量比",
                     "option_out": "蓝绿辐通量比",
                     "option_bold": "蓝绿辐通量比",
@@ -2699,6 +2854,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_3",
                     "option_content": "红外截止性能",
                     "option_out": "红外截止性能",
                     "option_bold": "红外截止性能",
@@ -2706,6 +2862,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_4",
                     "option_content": "光照均匀性",
                     "option_out": "光照均匀性",
                     "option_bold": "光照均匀性",
@@ -2713,6 +2870,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_5",
                     "option_content": "照度超限点",
                     "option_out": "照度超限点",
                     "option_bold": "照度超限点",
@@ -2720,6 +2878,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_6",
                     "option_content": "不限制",
                     "option_out": "不限制",
                     "option_bold": "不限制",
@@ -2746,6 +2905,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -2772,6 +2932,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -2798,6 +2959,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -2824,6 +2986,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -2850,6 +3013,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -2876,6 +3040,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "光通量",
                     "option_out": "50%光通量",
                     "option_bold": "光通量",
@@ -2883,6 +3048,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "相对色温CCT",
                     "option_out": "50%CCT",
                     "option_bold": "CCT",
@@ -2890,6 +3056,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_3",
                     "option_content": "CRI显指Ra",
                     "option_out": "50%Ra",
                     "option_bold": "Ra",
@@ -2897,6 +3064,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_4",
                     "option_content": "红绿辐通量比",
                     "option_out": "50%红绿比",
                     "option_bold": "红绿辐通量比",
@@ -2904,6 +3072,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_5",
                     "option_content": "蓝绿辐通量比",
                     "option_out": "50%蓝绿比",
                     "option_bold": "蓝绿辐通量比",
@@ -2911,6 +3080,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_6",
                     "option_content": "不要求",
                     "option_out": "不要求",
                     "option_bold": "不要求",
@@ -2937,6 +3107,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "",
@@ -2944,6 +3115,7 @@
                     "option_label": "限环境温度"
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "不限定",
@@ -2970,6 +3142,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -2996,6 +3169,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "",
@@ -3003,6 +3177,7 @@
                     "option_label": "限环境湿度"
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "不限定",
@@ -3029,6 +3204,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -3055,6 +3231,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "",
@@ -3062,6 +3239,7 @@
                     "option_label": "限噪声"
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "不限定",
@@ -3088,6 +3266,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -3114,6 +3293,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "",
@@ -3121,6 +3301,7 @@
                     "option_label": "限表面温度"
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "不限定",
@@ -3147,6 +3328,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -3173,6 +3355,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "",
@@ -3180,6 +3363,7 @@
                     "option_label": "限IP防护等级"
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "不限定",
@@ -3206,6 +3390,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -3232,6 +3417,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "有限制",
@@ -3239,6 +3425,7 @@
                     "option_label": "限产品外形与安装孔"
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "由我司自行设计",
@@ -3265,6 +3452,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "有限制",
@@ -3272,6 +3460,7 @@
                     "option_label": "限出光口位置"
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "由我司自行设计",
@@ -3298,6 +3487,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "有限制",
@@ -3305,6 +3495,7 @@
                     "option_label": "限出线位置"
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "由我司自行设计",
@@ -3331,6 +3522,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "有限制",
@@ -3338,6 +3530,7 @@
                     "option_label": "限进出风道"
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "由我司自行设计",
@@ -3364,6 +3557,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "",
@@ -3371,6 +3565,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "由我司自行设计",
@@ -3397,6 +3592,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -3423,6 +3619,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "",
@@ -3430,6 +3627,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "由我司自行设计",
@@ -3456,6 +3654,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -3482,6 +3681,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "",
@@ -3489,6 +3689,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "由我司自行设计",
@@ -3515,6 +3716,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -3541,6 +3743,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "",
@@ -3548,6 +3751,7 @@
                     "option_label": "指定产品表面工艺"
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "由我司自行设计",
@@ -3574,6 +3778,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -3600,6 +3805,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "",
@@ -3607,6 +3813,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "不限定",
@@ -3633,6 +3840,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -3659,6 +3867,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "",
@@ -3666,6 +3875,7 @@
                     "option_label": "定制灯头/驱动板输出线材"
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "由我司自行设计",
@@ -3692,6 +3902,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -3718,6 +3929,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "调速风扇",
@@ -3725,6 +3937,7 @@
                     "option_label": "规定使用调速风扇"
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "由我司自行决定",
@@ -3751,6 +3964,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "",
@@ -3758,6 +3972,7 @@
                     "option_label": "指定风扇"
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "自行选型",
@@ -3784,6 +3999,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -3810,6 +4026,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "",
@@ -3817,6 +4034,7 @@
                     "option_label": "定制散热器"
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "自行设计",
@@ -3843,6 +4061,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -3869,6 +4088,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "",
@@ -3876,6 +4096,7 @@
                     "option_label": "装载指定部件"
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "无",
@@ -3902,6 +4123,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "不拆",
                     "option_out": "不拆",
                     "option_bold": "不拆卸",
@@ -3909,6 +4131,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "低频拆装",
                     "option_out": "低频拆装",
                     "option_bold": "低频拆装",
@@ -3916,6 +4139,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_3",
                     "option_content": "频繁拆装",
                     "option_out": "频繁拆装",
                     "option_bold": "频繁拆装",
@@ -3942,6 +4166,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "有需要运动的",
@@ -3949,6 +4174,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "不需运动",
@@ -3975,6 +4201,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -4001,6 +4228,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "客供",
                     "option_out": "客供",
                     "option_bold": "客供",
@@ -4008,6 +4236,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "我司设计客户生产",
                     "option_out": "我司设计客户生产",
                     "option_bold": "我司设计客户生产",
@@ -4015,6 +4244,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_3",
                     "option_content": "客户设计我司生产",
                     "option_out": "客户设计我司生产",
                     "option_bold": "客户设计我司生产",
@@ -4022,6 +4252,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_4",
                     "option_content": "我司设计与生产",
                     "option_out": "我司设计与生产",
                     "option_bold": "我司设计与生产",
@@ -4048,6 +4279,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -4074,6 +4306,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -4100,6 +4333,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "",
@@ -4107,6 +4341,7 @@
                     "option_label": "定制标签"
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "由我司自行设计",
@@ -4133,6 +4368,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -4159,6 +4395,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "中性包装",
@@ -4166,6 +4403,7 @@
                     "option_label": "中性包装"
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "无中性要求",
@@ -4192,6 +4430,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -4218,6 +4457,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "直流",
                     "option_out": "直流输入",
                     "option_bold": "直流输入",
@@ -4225,6 +4465,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "交流",
                     "option_out": "交流输入",
                     "option_bold": "交流输入",
@@ -4251,6 +4492,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "DC12V",
                     "option_out": "12V",
                     "option_bold": "12V",
@@ -4258,6 +4500,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "DC24V",
                     "option_out": "24V",
                     "option_bold": "24V",
@@ -4265,6 +4508,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_3",
                     "option_content": "DC36V",
                     "option_out": "36V",
                     "option_bold": "36V",
@@ -4272,6 +4516,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_4",
                     "option_content": "DC48V",
                     "option_out": "48V",
                     "option_bold": "48V",
@@ -4298,6 +4543,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "AC90~264V",
                     "option_out": "90~264V",
                     "option_bold": "90~264V",
@@ -4324,6 +4570,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "",
@@ -4331,6 +4578,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "无要求",
@@ -4357,6 +4605,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -4383,6 +4632,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "摄像系统",
@@ -4390,6 +4640,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "人眼",
@@ -4416,6 +4667,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "模拟输出",
@@ -4423,6 +4675,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "不接受",
@@ -4449,6 +4702,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "PWM输出",
@@ -4456,6 +4710,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "不接受",
@@ -4482,6 +4737,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "有限制",
@@ -4489,6 +4745,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "由我司自行设计",
@@ -4515,6 +4772,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "",
@@ -4522,6 +4780,7 @@
                     "option_label": "指定电气接口"
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "无要求",
@@ -4548,6 +4807,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -4574,6 +4834,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "",
@@ -4581,6 +4842,7 @@
                     "option_label": "要求光电响应速度"
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "不要求",
@@ -4607,6 +4869,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -4633,6 +4896,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "",
@@ -4640,6 +4904,7 @@
                     "option_label": "在线升级"
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "不需要",
@@ -4666,6 +4931,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -4692,6 +4958,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "",
@@ -4699,6 +4966,7 @@
                     "option_label": "提供状态报警信号"
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "不需要",
@@ -4725,6 +4993,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -4751,6 +5020,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "TTL",
                     "option_out": "TTL",
                     "option_bold": "TTL",
@@ -4758,6 +5028,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "PWM",
                     "option_out": "PWM",
                     "option_bold": "PWM",
@@ -4765,6 +5036,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_3",
                     "option_content": "RS232",
                     "option_out": "RS232",
                     "option_bold": "RS232",
@@ -4772,6 +5044,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_4",
                     "option_content": "RS422",
                     "option_out": "RS422",
                     "option_bold": "RS422",
@@ -4779,6 +5052,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_5",
                     "option_content": "RS485",
                     "option_out": "RS485",
                     "option_bold": "RS485",
@@ -4786,6 +5060,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_6",
                     "option_content": "外部触发(频闪)",
                     "option_out": "外部触发",
                     "option_bold": "外部触发",
@@ -4793,6 +5068,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_7",
                     "option_content": "IIC",
                     "option_out": "IIC",
                     "option_bold": "IIC",
@@ -4800,6 +5076,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_8",
                     "option_content": "SPI",
                     "option_out": "SPI",
                     "option_bold": "SPI",
@@ -4807,6 +5084,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_9",
                     "option_content": "USB",
                     "option_out": "USB",
                     "option_bold": "USB",
@@ -4814,6 +5092,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_10",
                     "option_content": "CAN",
                     "option_out": "CAN",
                     "option_bold": "CAN",
@@ -4821,6 +5100,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_11",
                     "option_content": "以太网",
                     "option_out": "以太网",
                     "option_bold": "以太网",
@@ -4828,6 +5108,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_12",
                     "option_content": "LAN",
                     "option_out": "LAN",
                     "option_bold": "LAN",
@@ -4835,6 +5116,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_13",
                     "option_content": "按键开关",
                     "option_out": "按键开关",
                     "option_bold": "按键开关",
@@ -4842,6 +5124,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_14",
                     "option_content": "电位器",
                     "option_out": "电位器",
                     "option_bold": "电位器",
@@ -4849,6 +5132,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_15",
                     "option_content": "编码器",
                     "option_out": "编码器",
                     "option_bold": "编码器",
@@ -4856,6 +5140,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_16",
                     "option_content": "触控屏",
                     "option_out": "触控屏",
                     "option_bold": "触控屏",
@@ -4863,6 +5148,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_17",
                     "option_content": "踏板",
                     "option_out": "踏板",
                     "option_bold": "踏板",
@@ -4889,6 +5175,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "服务端",
                     "option_out": "服务端",
                     "option_bold": "服务端",
@@ -4896,6 +5183,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "客户端",
                     "option_out": "客户端",
                     "option_bold": "客户端",
@@ -4922,6 +5210,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -4948,6 +5237,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -4974,6 +5264,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -5000,6 +5291,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "",
@@ -5007,6 +5299,7 @@
                     "option_label": "指定通讯协议"
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "不指定",
@@ -5033,6 +5326,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -5059,6 +5353,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "9600",
                     "option_out": "9600",
                     "option_bold": "9600",
@@ -5066,6 +5361,7 @@
                     "option_label": "波特率9600"
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "19200",
                     "option_out": "19200",
                     "option_bold": "19200",
@@ -5073,6 +5369,7 @@
                     "option_label": "波特率19200"
                 },
                 {
+                    "option_id": "opt_3",
                     "option_content": "115200",
                     "option_out": "115200",
                     "option_bold": "115200",
@@ -5099,6 +5396,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -5125,6 +5423,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -5151,6 +5450,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -5177,6 +5477,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -5203,6 +5504,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -5229,6 +5531,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -5255,6 +5558,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -5281,6 +5585,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -5307,6 +5612,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "",
@@ -5314,6 +5620,7 @@
                     "option_label": "供操控类配件"
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "无需提供",
@@ -5340,6 +5647,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "按键开关",
                     "option_out": "按键开关",
                     "option_bold": "按键开关",
@@ -5347,6 +5655,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "电位器",
                     "option_out": "电位器",
                     "option_bold": "电位器",
@@ -5354,6 +5663,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_3",
                     "option_content": "编码器",
                     "option_out": "编码器",
                     "option_bold": "编码器",
@@ -5361,6 +5671,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_4",
                     "option_content": "触控屏",
                     "option_out": "触控屏",
                     "option_bold": "触控屏",
@@ -5368,6 +5679,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_5",
                     "option_content": "钥匙开关",
                     "option_out": "钥匙开关",
                     "option_bold": "钥匙开关",
@@ -5375,6 +5687,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_6",
                     "option_content": "急停开关",
                     "option_out": "急停开关",
                     "option_bold": "急停开关",
@@ -5382,6 +5695,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_7",
                     "option_content": "踏板",
                     "option_out": "踏板",
                     "option_bold": "踏板",
@@ -5408,6 +5722,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "",
@@ -5415,6 +5730,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "由我司选型决定",
@@ -5441,6 +5757,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -5467,6 +5784,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "状态显示界面",
@@ -5474,6 +5792,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "",
@@ -5500,6 +5819,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "LED指示灯",
                     "option_out": "LED指示灯",
                     "option_bold": "LED指示灯",
@@ -5507,6 +5827,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "数码管",
                     "option_out": "数码管",
                     "option_bold": "数码管",
@@ -5514,6 +5835,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_3",
                     "option_content": "显示屏（仅显示）",
                     "option_out": "显示屏（仅显示）",
                     "option_bold": "显示屏（仅显示）",
@@ -5521,6 +5843,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_4",
                     "option_content": "触控屏",
                     "option_out": "触控屏",
                     "option_bold": "触控屏",
@@ -5547,6 +5870,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -5573,6 +5897,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "",
@@ -5580,6 +5905,7 @@
                     "option_label": "供显示类配件"
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "无需提供",
@@ -5606,6 +5932,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "LED指示灯",
                     "option_out": "LED指示灯",
                     "option_bold": "LED指示灯",
@@ -5613,6 +5940,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "数码管",
                     "option_out": "数码管",
                     "option_bold": "数码管",
@@ -5620,6 +5948,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_3",
                     "option_content": "显示屏",
                     "option_out": "显示屏",
                     "option_bold": "显示屏",
@@ -5646,6 +5975,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "",
@@ -5653,6 +5983,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "由我司选型决定",
@@ -5679,6 +6010,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -5705,6 +6037,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "提供默认输入线",
                     "option_out": "供默认",
                     "option_bold": "提供默认",
@@ -5712,6 +6045,7 @@
                     "option_label": "供默认输入线"
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "提供定制输入线",
                     "option_out": "供定制",
                     "option_bold": "提供定制",
@@ -5719,6 +6053,7 @@
                     "option_label": "供定制输入线"
                 },
                 {
+                    "option_id": "opt_3",
                     "option_content": "无需提供",
                     "option_out": "不供",
                     "option_bold": "无需提供",
@@ -5745,6 +6080,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -5771,6 +6107,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "",
@@ -5778,6 +6115,7 @@
                     "option_label": "特定调光要求"
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "由我司自行设计",
@@ -5804,6 +6142,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -5830,6 +6169,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -5856,6 +6196,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "需要具备",
@@ -5863,6 +6204,7 @@
                     "option_label": "定期校正功能"
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "不用",
@@ -5889,6 +6231,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -5915,6 +6258,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "软件系统",
                     "option_out": "软件系统",
                     "option_bold": "软件系统",
@@ -5922,6 +6266,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "校正治具",
                     "option_out": "校正治具",
                     "option_bold": "校正治具",
@@ -5948,6 +6293,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "需要具备",
@@ -5955,6 +6301,7 @@
                     "option_label": "闭环反馈控制"
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "不用",
@@ -5981,6 +6328,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -6007,6 +6355,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "频闪模式",
@@ -6014,6 +6363,7 @@
                     "option_label": "频闪功能"
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "无需频闪",
@@ -6040,6 +6390,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -6066,6 +6417,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "",
@@ -6073,6 +6425,7 @@
                     "option_label": "指定风扇调速逻辑"
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "由我司自行设计",
@@ -6099,6 +6452,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -6125,6 +6479,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "",
@@ -6132,6 +6487,7 @@
                     "option_label": "指定超温报警温度与逻辑"
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "由我司自行设计",
@@ -6158,6 +6514,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -6184,6 +6541,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "EMC",
                     "option_out": "EMC",
                     "option_bold": "EMC",
@@ -6191,6 +6549,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "RoHS",
                     "option_out": "RoHS",
                     "option_bold": "RoHS",
@@ -6198,6 +6557,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_3",
                     "option_content": "激光安全",
                     "option_out": "激光安全",
                     "option_bold": "激光安全",
@@ -6205,6 +6565,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_4",
                     "option_content": "光生物安全",
                     "option_out": "光生物安全",
                     "option_bold": "光生物安全",
@@ -6212,6 +6573,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_5",
                     "option_content": "不要求",
                     "option_out": "不要求",
                     "option_bold": "不要求",
@@ -6238,6 +6600,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "",
@@ -6245,6 +6608,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "无",
@@ -6271,6 +6635,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -6297,6 +6662,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "",
@@ -6304,6 +6670,7 @@
                     "option_label": ""
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "无",
@@ -6330,6 +6697,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -6356,6 +6724,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "",
@@ -6363,6 +6732,7 @@
                     "option_label": "光学有补充需求"
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "",
@@ -6389,6 +6759,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -6415,6 +6786,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "",
@@ -6422,6 +6794,7 @@
                     "option_label": "结构有补充需求"
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "",
@@ -6448,6 +6821,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -6474,6 +6848,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "",
@@ -6481,6 +6856,7 @@
                     "option_label": "硬件有补充需求"
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "",
@@ -6507,6 +6883,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -6533,6 +6910,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "",
@@ -6540,6 +6918,7 @@
                     "option_label": "软件有补充需求"
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "",
@@ -6566,6 +6945,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -6592,6 +6972,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "",
@@ -6599,6 +6980,7 @@
                     "option_label": "工艺有补充需求"
                 },
                 {
+                    "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "",
@@ -6625,6 +7007,7 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_1",
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
@@ -6634,7 +7017,7 @@
             ]
         }
     },
-    "config_timestamp": "2025-12-15T14:27:37.208058",
-    "excel_version_hash": "9db80063",
+    "config_timestamp": "2025-12-17T15:40:36.837571",
+    "excel_version_hash": "94606b84",
     "entry_status": false
 }

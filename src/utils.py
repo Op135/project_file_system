@@ -180,10 +180,170 @@ def handle_key(e: KeyEventArguments):
         # app.storage.client["key_state"]["enter"] = 0
 
 
+def validate_user_output(new_item_config, old_item_data):
+    """
+    智能迁移函数：
+    利用旧配置中的 option_id 作为桥梁，将旧答案“翻译”为新模版对应的答案。
+    """
+    old_user_out = old_item_data.get("user_must_out", {})
+    if not old_user_out:
+        return {}
+
+    answer_type = new_item_config.get("answer_type")
+
+    # 获取旧配置里的选项列表（用于查 ID）
+    # 注意：这里假设 old_item_data 是完整的旧节点数据，包含当时的 options
+    old_options = old_item_data.get("options", [])
+    # 获取新配置里的选项列表（用于查新值）
+    new_options = new_item_config.get("options", [])
+
+    # 建立新模版查找表：{option_id: new_option_obj}
+    new_opt_map = {opt.get("option_id"): opt for opt in new_options if opt.get("option_id")}
+
+    # 建立旧数据反查表：
+    # 1. 旧值 -> ID (用于单选)
+    old_val_to_id = {str(opt.get("option_out")): opt.get("option_id") for opt in old_options}
+    # 2. 旧文案 -> ID (用于多选)
+    old_content_to_id = {str(opt.get("option_content")): opt.get("option_id") for opt in old_options}
+
+    # --- 1. 单选/下拉单选逻辑 ---
+    if answer_type in ["单选", "下拉单选"]:
+        old_val = str(old_user_out.get("value"))
+
+        # 步骤A: 尝试通过旧值找到 ID
+        target_id = old_val_to_id.get(old_val)
+
+        # 步骤B: 如果找到了 ID，且该 ID 在新模版里也存在
+        if target_id and target_id in new_opt_map:
+            # 【关键】：返回新模版里的 option_out，实现值自动升级
+            return {"value": new_opt_map[target_id].get("option_out")}
+
+        # 兜底：如果 ID 匹配失败（比如以前没 ID），尝试直接匹配值
+        # 遍历新选项，看有没有值一样的
+        for opt in new_options:
+            if str(opt.get("option_out")) == old_val:
+                return old_user_out  # 值没变，直接返回
+
+        return {"value": None}  # 彻底匹配不上，置空
+
+    # --- 2. 多选逻辑 ---
+    elif answer_type == "多选":
+        # 【关键修改】：初始化字典，先把新模版里所有的选项都填进去，默认值为 False
+        # 这样就保证了 bind_value 时所有的 key 都在，不会报错
+        cleaned = {opt.get("option_content"): False for opt in new_options}
+
+        # 新模版里所有合法的 Content 集合（用于兜底校验）
+        new_valid_contents = set(opt.get("option_content") for opt in new_options)
+
+        for old_k, old_v in old_user_out.items():
+            # 只有当旧值为 True 时才需要迁移，False 的话保持默认即可
+            if old_v:
+                # 步骤A: 找到旧文字对应的 ID
+                target_id = old_content_to_id.get(str(old_k))
+
+                # 步骤B: 如果通过 ID 找到了新模版里的选项
+                if target_id and target_id in new_opt_map:
+                    # 使用新模版里的 option_content 作为 Key，设为 True
+                    new_content_key = new_opt_map[target_id].get("option_content")
+                    cleaned[new_content_key] = True
+                    continue
+
+            # 兜底：如果没 ID 或 ID 匹配不上，尝试直接匹配文字
+            if old_k in new_valid_contents:
+                cleaned[old_k] = old_v
+
+        return cleaned
+
+    # --- 3. 输入类 ---
+    # 输入类的 options 只是展示模版，不影响数据结构，直接保留旧数据
+    elif answer_type in ["正整数", "单行文本", "多行文本"]:
+        return old_user_out
+
+    return {}
+
+
+def merge_data_with_template(user_data_full, template_data_full):
+    """
+    核心合并函数：
+    1. 以新模版为基准。
+    2. 检查结构性变更 (answer_type, accor, tolerance)。
+    3. 若结构变更，废弃旧数据并存入 ref_old_data 快照。
+    4. 若结构未变，执行 validate_user_output 清洗数据。
+    """
+    # 深拷贝新模版，确保逻辑和文字是最新的
+    merged_data = copy.deepcopy(template_data_full)
+
+    # 建立旧数据索引 (node_id -> data)
+    old_data_map = {}
+    if user_data_full.get("data"):
+        for k, v in user_data_full["data"].items():
+            node_id = v.get("node_id")
+            if node_id:
+                old_data_map[str(node_id)] = v
+
+    # 定义结构性字段，一旦这些变化，视为题目性质改变，必须重填
+    structural_keys = ["answer_type", "input_num_accor", "input_name_accor", "input_tolerance"]
+
+    for new_key, new_item in merged_data["data"].items():
+        nid = str(new_item.get("node_id"))
+
+        if nid in old_data_map:
+            old_item = old_data_map[nid]
+
+            # --- 判断结构是否发生变化 ---
+            structure_changed = False
+            for key in structural_keys:
+                if str(new_item.get(key)) != str(old_item.get(key)):
+                    structure_changed = True
+                    break
+
+            if structure_changed:
+                # 结构变了：强制重填，并创建快照
+                new_item["user_must_out"] = {}
+                new_item["option_tolerance_out"] = {}
+
+                # 检查旧数据是否有实质内容，有则保存快照
+                has_content = False
+                if old_item.get("user_must_out"):
+                    # 判断 value 是否非空，或 字典values是否包含True/非空字符
+                    check_val = old_item["user_must_out"].get("value")
+                    if (check_val is not None and str(check_val) != "") or any(old_item["user_must_out"].values()):
+                        has_content = True
+
+                if has_content:
+                    new_item["ref_old_data"] = {
+                        "main": old_item.get("user_must_out"),
+                        "tolerance": old_item.get("option_tolerance_out"),
+                        "reason": "配置结构变更，请核对后重新录入",
+                    }
+            else:
+                # 结构没变：清洗并保留数据
+                new_item["user_must_out"] = validate_user_output(new_item, old_item)
+                # 公差数据直接保留（因为前面已经校验过 input_tolerance 类型没变）
+                new_item["option_tolerance_out"] = old_item.get("option_tolerance_out", {})
+
+            # 引用文件通常不受结构变化影响，保留
+            if old_item.get("ref_out"):
+                new_item["ref_out"] = old_item.get("ref_out")
+
+    # 迁移非结构性的项目元数据
+    merged_data["file_dic"] = user_data_full.get("file_dic", {})
+    merged_data["files"] = user_data_full.get("files", [])
+    merged_data["deleted_files"] = user_data_full.get("deleted_files", [])
+    merged_data["file_counter"] = user_data_full.get("file_counter", 0)
+    merged_data["project_name"] = user_data_full.get("project_name", "")
+    merged_data["version"] = user_data_full.get("version", "0.0")
+    merged_data["original_project"] = user_data_full.get("original_project", "")
+    merged_data["original_version"] = user_data_full.get("original_version", "0.0")
+    merged_data["entry_status"] = user_data_full.get("entry_status", False)
+
+    return merged_data
+
+
 # 更新需求配置文件，供后续管理员调用
 def update_config_service():
     try:
-        app.state.init_config_data = app.state.config_service.load_config()
+        app.state.init_config_data = app.state.config_service.load_config(force_reload=True)  # True表示强制重载需求文件
         ui.notify(
             "需求配置文件更新成功!",
             type="positive",

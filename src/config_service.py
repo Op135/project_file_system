@@ -49,6 +49,7 @@ class ConfigService:
             "答案类型",
             "文件引用配置",
             "选项",
+            "选项ID",
             "选项输出值",
             "选项重点值",
             "输入项数量依据",
@@ -75,6 +76,7 @@ class ConfigService:
                 logger.info(f"警告：第{excel_row_num}行缺少节点序号，已跳过")
                 continue
             temp_dic = {
+                "option_id": f"opt_{self.clean_text(row.选项ID).strip()}",
                 "option_content": self.clean_text(row.选项).strip(),
                 "option_out": self.clean_text(row.选项输出值).strip(),
                 "option_bold": self.clean_text(row.选项重点值).strip(),
@@ -159,7 +161,6 @@ class ConfigService:
 
     def get_temp_config(self):
         """生成临时需求配置文件，以供逻辑检查"""
-        # 配置文件修改 或 缓存为空 或 管理员点击重载按钮情况下，重新装载更新数据
         raw_df = pd.read_excel(self.excel_path, engine="openpyxl")
         processed = self._process_data(raw_df)
 
@@ -173,6 +174,7 @@ class ConfigService:
         try:
             with open(f"{self.base_dir}/config_service_temp.json", "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=4)
+            # 检查配置文件语法
             validator = ConfigValidator(f"{self.base_dir}/config_service_temp.json")
             validator.run_validation()
         except Exception:

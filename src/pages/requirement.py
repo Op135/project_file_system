@@ -37,6 +37,7 @@ from ..utils import (
     get_max_numeric_key,
     handle_key,
     logout,
+    merge_data_with_template,
     overview_role_update,
     validate_format_regex,
 )
@@ -658,8 +659,28 @@ async def requirement_page(type="", json_path="", project_name=""):
 
     # 解析json配置文件，并生成需求界面
     def loads_requirements(json_data, loads_bool: bool):
+        # --- 新增步骤：读取本地最新的 config_service.json ---
+        # try:
+        # 假设 config_service.json 就在 REQ_DIR 下，或者你知道确切路径
+        # 注意：需确保 config_service.json 的路径正确
+        # 这里为了演示，假设只有一个主要的 config 模板，或者你需要逻辑判断用哪个模板
+        # template_path = os.path.join(BASE_DIR, "config_service.json")
+
+        # with open(template_path, "r", encoding="utf-8") as f:
+        #     template_data = json.load(f)
+
+        # 执行合并：用新模版清洗旧数据
+        # 注意：只有当 json_data 是用户保存的数据(含有 user_must_out)时才合并
+        # 如果 json_data 本身就是个纯模版（没有答案），合并也没副作用
+        final_config_data = merge_data_with_template(json_data, app.state.init_config_data)
+
+        # except Exception as e:
+        #     logger.error(f"合并最新模版失败，回退到使用文件原数据: {e}")
+        # final_config_data = json_data
+        # -----------------------------------------------
         # 获取文件缩略图字典内容，直接覆盖现有内容
-        file_information = json_data["file_dic"]
+        # file_information = json_data["file_dic"]
+        file_information = final_config_data.get("file_dic", {})
         app.storage.client["file_thumbnail_dic"] = {}
         for k, v in file_information.items():
             app.add_static_file(local_file=f"{UPLOADS_DIR}/{v['file_name_hash']}", url_path=v["file_url"])
@@ -678,30 +699,64 @@ async def requirement_page(type="", json_path="", project_name=""):
                 "file_obj": file_thumbnail,
                 "file_information": v,
             }
-        # 恢复文件状态记录
-        app.storage.client["files"] = json_data["files"]
-        app.storage.client["deleted_files"] = json_data["deleted_files"]
-        app.storage.client["file_counter"] = json_data["file_counter"]
+        # # 恢复文件状态记录
+        # app.storage.client["files"] = json_data["files"]
+        # app.storage.client["deleted_files"] = json_data["deleted_files"]
+        # app.storage.client["file_counter"] = json_data["file_counter"]
+        # # 恢复项目名称与版本
+        # app.storage.client["project_name"] = json_data["project_name"]
+        # app.storage.client["version"] = json_data["version"]
+        # # 设置提交目标名称与版本
+        # if not loads_bool:
+        #     app.storage.client["target_project_name"] = json_data[
+        #         "project_name"
+        #     ]  # 导入需求则不设置，因为导入前都是先进入某个项目，即默认导入数据就是为了提交成这个项目
+        # # 将衍生自哪个项目的信息获取过来
+        # app.storage.client["original_project"] = json_data["original_project"]
+        # app.storage.client["original_version"] = json_data["original_version"]
+
+        # # 将剩余配置与用户填写记录信息覆盖现有配置
+        # app.storage.client["config_data"] = json_data
+        # # 遍历配置信息，抽取引用信息，重新恢复引用_确认项记录
+        # app.storage.client["ref_question_dic"] = {}  # 先清空
+        # for k, v in json_data["data"].items():
+        #     question_k = k
+        #     question = v["guide_content"]
+        #     if v["ref_out"]:
+        #         for ref in v["ref_out"]:
+        #             if ref in app.storage.client["ref_question_dic"].keys():
+        #                 app.storage.client["ref_question_dic"][ref].append([question_k, question])
+        #             else:
+        #                 app.storage.client["ref_question_dic"][ref] = [
+        #                     [question_k, question],
+        #                 ]
+
+        # 恢复状态记录 (从 final_config_data 读取)
+        app.storage.client["files"] = final_config_data.get("files", [])
+        app.storage.client["deleted_files"] = final_config_data.get("deleted_files", [])
+        app.storage.client["file_counter"] = final_config_data.get("file_counter", 0)
+
         # 恢复项目名称与版本
-        app.storage.client["project_name"] = json_data["project_name"]
-        app.storage.client["version"] = json_data["version"]
+        app.storage.client["project_name"] = final_config_data.get("project_name", "")
+        app.storage.client["version"] = final_config_data.get("version", "0.0")
+
         # 设置提交目标名称与版本
         if not loads_bool:
-            app.storage.client["target_project_name"] = json_data[
-                "project_name"
-            ]  # 导入需求则不设置，因为导入前都是先进入某个项目，即默认导入数据就是为了提交成这个项目
-        # 将衍生自哪个项目的信息获取过来
-        app.storage.client["original_project"] = json_data["original_project"]
-        app.storage.client["original_version"] = json_data["original_version"]
+            app.storage.client["target_project_name"] = final_config_data.get("project_name", "")
 
-        # 将剩余配置与用户填写记录信息覆盖现有配置
-        app.storage.client["config_data"] = json_data
-        # 遍历配置信息，抽取引用信息，重新恢复引用_确认项记录
-        app.storage.client["ref_question_dic"] = {}  # 先清空
-        for k, v in json_data["data"].items():
+        # 衍生信息
+        app.storage.client["original_project"] = final_config_data.get("original_project", "")
+        app.storage.client["original_version"] = final_config_data.get("original_version", "0.0")
+
+        # 将合并后的配置赋值给 storage
+        app.storage.client["config_data"] = final_config_data
+
+        # 恢复引用 (逻辑不变，但在 final_config_data 上操作)
+        app.storage.client["ref_question_dic"] = {}
+        for k, v in final_config_data["data"].items():
             question_k = k
             question = v["guide_content"]
-            if v["ref_out"]:
+            if v.get("ref_out"):  # 使用 get 防止 key 缺失
                 for ref in v["ref_out"]:
                     if ref in app.storage.client["ref_question_dic"].keys():
                         app.storage.client["ref_question_dic"][ref].append([question_k, question])
@@ -1337,6 +1392,42 @@ async def requirement_page(type="", json_path="", project_name=""):
         with current_question_column:
             ui.label(question).classes("text-2xl text-black")
             ui.label(option_hint).classes("text-base text-grey-8 max-w-full")
+
+            # === 新增代码开始：显示失效的旧数据快照 ===
+            old_data_ref = app.storage.client["config_data"]["data"][k].get("ref_old_data")
+            if old_data_ref:
+                with ui.card().classes("w-full bg-amber-50 border-l-4 border-amber-500 p-3 mb-2 shadow-sm"):
+                    with ui.row().classes("items-center mb-1"):
+                        ui.icon("warning", color="amber-9").classes("text-xl mr-2")
+                        ui.label("注意：配置项结构已升级，旧数据已失效，请参考原内容重新选填：").classes(
+                            "text-amber-9 font-bold text-sm"
+                        )
+
+                    # 格式化显示旧数据内容
+                    main_val = old_data_ref.get("main", {})
+                    tol_val = old_data_ref.get("tolerance", {})
+
+                    with ui.column().classes("ml-7 gap-1"):
+                        if isinstance(main_val, dict):
+                            # 单选 {"value": "xxx"}
+                            if "value" in main_val:
+                                if main_val["value"]:
+                                    ui.label(f"原选择: {main_val['value']}").classes(
+                                        "text-gray-700 text-xs font-mono bg-white px-1 rounded border border-gray-200"
+                                    )
+                            # 多选/输入类
+                            else:
+                                vals = [f"{k}: {v}" for k, v in main_val.items() if v]
+                                if vals:
+                                    ui.label(f"原内容: {', '.join(vals)}").classes(
+                                        "text-gray-700 text-xs font-mono bg-white px-1 rounded border border-gray-200"
+                                    )
+
+                        if isinstance(tol_val, dict) and tol_val:
+                            vals = [f"{k}: {v}" for k, v in tol_val.items() if v]
+                            if vals:
+                                ui.label(f"原公差: {', '.join(vals)}").classes("text-gray-500 text-xs font-mono")
+            # === 新增代码结束 ===
 
             with ui.column().classes("m-0 gap-8 w-full items-center justify-start overflow-auto"):
                 if options_type == "单选":
