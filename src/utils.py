@@ -231,27 +231,32 @@ def validate_user_output(new_item_config, old_item_data):
     elif answer_type == "多选":
         # 【关键修改】：初始化字典，先把新模版里所有的选项都填进去，默认值为 False
         # 这样就保证了 bind_value 时所有的 key 都在，不会报错
-        cleaned = {opt.get("option_content"): False for opt in new_options}
+        cleaned = {opt.get("option_out"): False for opt in new_options}
 
-        # 新模版里所有合法的 Content 集合（用于兜底校验）
-        new_valid_contents = set(opt.get("option_content") for opt in new_options)
+        # 新模版里所有合法的 option_out 集合（用于兜底校验）
+        new_valid_outs = set(opt.get("option_out") for opt in new_options)
 
         for old_k, old_v in old_user_out.items():
-            # 只有当旧值为 True 时才需要迁移，False 的话保持默认即可
             if old_v:
-                # 步骤A: 找到旧文字对应的 ID；{option_content: option_id}
-                target_id = old_content_to_id.get(str(old_k))
+                # 假设旧数据可能存的是 ID，也可能存的是 Content，甚至可能是 Out
+                # 我们统一尝试转换
 
-                # 步骤B: 如果通过 ID 找到了新模版里的选项
-                if target_id and target_id in new_opt_map:
-                    # 使用新模版里的 option_content 作为 Key，设为 True
-                    new_content_key = new_opt_map[target_id].get("option_content")
-                    cleaned[new_content_key] = True
+                # 路径 A: old_k 是 option_id? (未来扩展)
+                if old_k in new_opt_map:
+                    target_out = new_opt_map[old_k].get("option_out")
+                    cleaned[target_out] = True
                     continue
 
-            # 兜底：如果没 ID 或 ID 匹配不上，尝试直接匹配文字
-            if old_k in new_valid_contents:
-                cleaned[old_k] = old_v
+                # 路径 B: old_k 是 Content? (旧有的文字数据) -> 转 ID -> 转 Out
+                target_id = old_content_to_id.get(str(old_k))
+                if target_id and target_id in new_opt_map:
+                    target_out = new_opt_map[target_id].get("option_out")
+                    cleaned[target_out] = True
+                    continue
+
+                # 路径 C: old_k 已经是 Out? (直接匹配)
+                if old_k in new_valid_outs:
+                    cleaned[old_k] = True
 
         return cleaned
 
@@ -1193,7 +1198,7 @@ def set_project_custom_labels(project_name):
                     # 如果是多选，且 该选填项对应显示值在用户选择的输出字典里对应的布尔值是true
                     elif (
                         "多选" in answer_type
-                        and must_out_dic.get(op_dic["option_content"])
+                        and must_out_dic.get(op_dic["option_out"])
                         and op_dic["option_label"] not in label_list
                     ):
                         label_list.append(op_dic["option_label"])

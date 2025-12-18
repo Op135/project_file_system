@@ -1658,6 +1658,13 @@
         "introduction": "常规白光照明+荧光成像模式，无铜管散热器",
         "customer": "HKY"
     },
+    "RFFM-1750-A": {
+        "state": "研发",
+        "model_notes": "",
+        "creation_date": "2025-12-18",
+        "introduction": "常规白光照明+荧光成像模式，铜管散热器，属于RM5000内部光源模组",
+        "customer": "HKY"
+    },
     "RFFM-2121-A": {
         "state": "待定",
         "model_notes": "",
@@ -2971,6 +2978,13 @@
         "state": "研发",
         "model_notes": "",
         "creation_date": "2024-06-25",
+        "introduction": "自研光源整机，钣金式外壳\n适配Stroz多款导光束，外观Stroz风格",
+        "customer": "Stroz"
+    },
+    "RM5000": {
+        "state": "研发",
+        "model_notes": "",
+        "creation_date": "2025-12-18",
         "introduction": "自研光源整机，钣金式外壳\n适配Stroz多款导光束，外观Stroz风格",
         "customer": "Stroz"
     },

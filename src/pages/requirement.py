@@ -1062,68 +1062,147 @@ async def requirement_page(type="", json_path="", project_name=""):
             if op_user_out == {}:
                 # 先结束判断，返回该节点激活条件不够
                 return logic_out_bool
+            # 特殊检查：如果是单选且value为None，视为未填
+            if app.storage.client["config_data"]["data"][c_id]["answer_type"] in ["单选", "下拉单选"]:
+                if op_user_out.get("value") is None:
+                    return logic_out_bool
         # 如果该节点的前提条件都有输出了，再详细判断
         # 复杂逻辑，处理本次条件节点序号用户输出在条件逻辑里出现的地方的运算情况
         # 遍历分割出来的单个逻辑语句块，4any['硬件'] 和 17==True
-        for p in elements:
-            # 将条件语句按照条件逻辑字符串进行切分
-            # 4 和 ['硬件']
-            cond_result = re.split(cond_pattern, p)
-            # 遍历涉及的条件序号
-            for c_id in cond_id_list:
-                # 跳过条件序号与条件语句不匹配的
-                if c_id != cond_result[0].strip():
-                    continue
-                # 如果条件序号与条件语句匹配
-                # 获取条件节点的用户选填结果
-                op_user_out = dict(app.storage.client["config_data"]["data"][c_id]["user_must_out"])
-                # 用户选择的选项输出值构成的列表
-                op_user_out_list = []
-                if len(op_user_out.keys()) > 1:
-                    for op_key, op_value in op_user_out.items():
-                        if op_value:
-                            for op in app.storage.client["config_data"]["data"][c_id]["options"]:
-                                if op["option_content"] == op_key:
-                                    op_user_out_list.append(op["option_out"])
-                else:
-                    op_user_out_list = list(op_user_out.values())
-                # 对比用户多选项列表与条件列表之间是否存在相同元素
-                # isinstance判断变量是否为某个数据类型
-                if "any" in p:  # and (isinstance(op_user_out, list) or op_user_out == [])
-                    # ast.literal_eval 用于安全地解析和评估字符串中的字面量表达式
-                    # ['硬件']
-                    condition = ast.literal_eval(cond_result[1].strip())
-                    # 判断用户选择项列表元素是否有任意一个在条件项列表里，并插入到判断结果列表里
-                    if "not" in p:
-                        # 看当前激活条件列表里，全部都跟条件节点用户输出匹配不上，返回false
-                        bool_list.append(not any(item in condition for item in op_user_out_list))
-                    else:
-                        # 看当前激活条件列表里，只要有一个跟条件节点用户输出匹配上，返true
-                        bool_list.append(any(item in condition for item in op_user_out_list))
-                # 对比用户多选项列表是否是条件列表的子集
-                elif "all" in p:  #  and (isinstance(op_user_out, list) or op_user_out == [])
-                    # ['硬件']
-                    condition = ast.literal_eval(cond_result[1].strip())
-                    op_user_set = set(op_user_out_list)
-                    cond_set = set(condition)
-                    # 判断用户选择项集合是否为条件项集合的子集，并插入到判断结果列表里
-                    if "not" in p:
-                        bool_list.append(not op_user_set.issubset(cond_set))
-                    else:
-                        bool_list.append(op_user_set.issubset(cond_set))
-                # 对比用户单选项是否与条件一致
-                elif "==" in p:  #  and (isinstance(op_user_out, list) or op_user_out == [])
-                    bool_list.append(op_user_out_list[0] == cond_result[1].strip() if op_user_out_list != [] else False)
-                # 对比用户单选项是否与条件不一致
-                elif "!=" in p:  #  and (isinstance(op_user_out, list) or op_user_out == [])
-                    bool_list.append(op_user_out_list[0] != cond_result[1].strip() if op_user_out_list != [] else False)
-                else:
-                    logger.info(f"节点{k}激活条件逻辑不符合语法")
-                    continue
+        # for p in elements:
+        #     # 将条件语句按照条件逻辑字符串进行切分
+        #     # 4 和 ['硬件']
+        #     cond_result = re.split(cond_pattern, p)
+        #     # 遍历涉及的条件序号
+        #     for c_id in cond_id_list:
+        #         # 跳过条件序号与条件语句不匹配的
+        #         if c_id != cond_result[0].strip():
+        #             continue
+        #         # 如果条件序号与条件语句匹配
+        #         # 获取条件节点的用户选填结果
+        #         op_user_out = dict(app.storage.client["config_data"]["data"][c_id]["user_must_out"])
+        #         # 用户选择的选项输出值构成的列表
+        #         op_user_out_list = []
+        #         if len(op_user_out.keys()) > 1:
+        #             for op_key, op_value in op_user_out.items():
+        #                 if op_value:
+        #                     for op in app.storage.client["config_data"]["data"][c_id]["options"]:
+        #                         if op["option_content"] == op_key:
+        #                             op_user_out_list.append(op["option_out"])
+        #         else:
+        #             op_user_out_list = list(op_user_out.values())
+        #         # 对比用户多选项列表与条件列表之间是否存在相同元素
+        #         # isinstance判断变量是否为某个数据类型
+        #         if "any" in p:  # and (isinstance(op_user_out, list) or op_user_out == [])
+        #             # ast.literal_eval 用于安全地解析和评估字符串中的字面量表达式
+        #             # ['硬件']
+        #             condition = ast.literal_eval(cond_result[1].strip())
+        #             # 判断用户选择项列表元素是否有任意一个在条件项列表里，并插入到判断结果列表里
+        #             if "not" in p:
+        #                 # 看当前激活条件列表里，全部都跟条件节点用户输出匹配不上，返回false
+        #                 bool_list.append(not any(item in condition for item in op_user_out_list))
+        #             else:
+        #                 # 看当前激活条件列表里，只要有一个跟条件节点用户输出匹配上，返true
+        #                 bool_list.append(any(item in condition for item in op_user_out_list))
+        #         # 对比用户多选项列表是否是条件列表的子集
+        #         elif "all" in p:  #  and (isinstance(op_user_out, list) or op_user_out == [])
+        #             # ['硬件']
+        #             condition = ast.literal_eval(cond_result[1].strip())
+        #             op_user_set = set(op_user_out_list)
+        #             cond_set = set(condition)
+        #             # 判断用户选择项集合是否为条件项集合的子集，并插入到判断结果列表里
+        #             if "not" in p:
+        #                 bool_list.append(not op_user_set.issubset(cond_set))
+        #             else:
+        #                 bool_list.append(op_user_set.issubset(cond_set))
+        #         # 对比用户单选项是否与条件一致
+        #         elif "==" in p:  #  and (isinstance(op_user_out, list) or op_user_out == [])
+        #             bool_list.append(op_user_out_list[0] == cond_result[1].strip() if op_user_out_list != [] else False)
+        #         # 对比用户单选项是否与条件不一致
+        #         elif "!=" in p:  #  and (isinstance(op_user_out, list) or op_user_out == [])
+        #             bool_list.append(op_user_out_list[0] != cond_result[1].strip() if op_user_out_list != [] else False)
+        #         else:
+        #             logger.info(f"节点{k}激活条件逻辑不符合语法")
+        #             continue
 
+        # result_str = "".join(f"{x} {y} " for x, y in itertools.zip_longest(bool_list, separators, fillvalue=""))
+        # # print(k, cond_lgoic_str, result_str)
+        # logic_out_bool = eval(result_str)
+
+        # 3. 逻辑计算
+        for p in elements:
+            cond_result = re.split(cond_pattern, p)
+            # 获取本次判断涉及的 ID
+            current_c_id = cond_result[0].replace("not", "").strip()
+
+            # 获取该 ID 的数据和类型
+            node_data = app.storage.client["config_data"]["data"][current_c_id]
+            user_out = node_data.get("user_must_out", {})
+            answer_type = node_data.get("answer_type")
+
+            # === 【核心修改点】简化数据提取 ===
+            # 直接提取存储的值，不再需要去 options 里反查
+            op_user_out_list = []
+
+            if answer_type == "多选":
+                # 多选存储结构：{"Red": True, "Blue": False} -> 提取 ["Red"]
+                op_user_out_list = [k for k, v in user_out.items() if v]
+
+            elif answer_type in ["单选", "下拉单选"]:
+                # 单选存储结构：{"value": "Red"} -> 提取 ["Red"]
+                val = user_out.get("value")
+                if val is not None:
+                    op_user_out_list = [str(val)]  # 确保转为字符串比较
+
+            elif answer_type in ["正整数", "单行文本", "多行文本"]:
+                # 输入类存储结构：{"1": "val1", "2": "val2"} -> 提取 ["val1", "val2"]
+                op_user_out_list = [str(v) for v in user_out.values()]
+
+            # === 逻辑比对 (保持原有逻辑，稍作优化) ===
+            try:
+                target_val_str = cond_result[1].strip()
+
+                # 处理 any / all (列表包含关系)
+                if "any" in p or "all" in p:
+                    # 解析条件列表，例如 "['Hardware', 'Software']" -> list
+                    condition = ast.literal_eval(target_val_str)
+
+                    if "any" in p:
+                        res = any(str(item) in condition for item in op_user_out_list)
+                    else:
+                        op_user_set = set(op_user_out_list)
+                        cond_set = set(str(i) for i in condition)  # 确保类型一致
+                        res = op_user_set.issubset(cond_set)
+
+                    if "not" in p:
+                        bool_list.append(not res)
+                    else:
+                        bool_list.append(res)
+
+                # 处理 == (单值相等)
+                elif "==" in p:
+                    # 如果用户选了多个（理论上单值比较只用于单选/输入），取第一个比较
+                    user_val = op_user_out_list[0] if op_user_out_list else None
+                    # 注意：target_val_str 可能是 'True' 字符串，需要注意类型
+                    # 你的配置里 True/False 通常存的是字符串 "True"/"False" 还是布尔值?
+                    # 假设是字符串比较，直接比
+                    bool_list.append(str(user_val) == str(target_val_str))
+
+                # 处理 != (单值不等)
+                elif "!=" in p:
+                    user_val = op_user_out_list[0] if op_user_out_list else None
+                    bool_list.append(str(user_val) != str(target_val_str))
+
+            except Exception as e:
+                logger.error(f"逻辑计算错误: ID={current_c_id}, 表达式={p}, 错误={e}")
+                bool_list.append(False)  # 出错默认 False
+
+        # 拼接并执行最终逻辑
         result_str = "".join(f"{x} {y} " for x, y in itertools.zip_longest(bool_list, separators, fillvalue=""))
-        # print(k, cond_lgoic_str, result_str)
-        logic_out_bool = eval(result_str)
+        try:
+            logic_out_bool = eval(result_str)
+        except Exception:
+            logic_out_bool = False
 
         return logic_out_bool
 
@@ -1390,7 +1469,7 @@ async def requirement_page(type="", json_path="", project_name=""):
             # === 新增代码开始：显示失效的旧数据快照 ===
             old_data_ref = app.storage.client["config_data"]["data"][k].get("ref_old_data")
             if old_data_ref:
-                with ui.card().classes("w-full bg-amber-50 border-l-4 border-amber-500 p-3 mb-2 shadow-sm"):
+                with ui.card().classes("bg-amber-50 border-l-4 border-amber-500 p-3 mb-2 shadow-sm"):
                     with ui.row().classes("items-center mb-1"):
                         ui.icon("warning", color="amber-9").classes("text-xl mr-2")
                         ui.label("注意：配置项结构已升级，旧数据已失效，请参考原内容重新选填：").classes(
@@ -1407,24 +1486,27 @@ async def requirement_page(type="", json_path="", project_name=""):
                             # 单选 {"value": "xxx"}
                             if "value" in main_val:
                                 if main_val["value"]:
-                                    ui.label(f"原选择: {main_val['value']}").classes(
-                                        "text-gray-700 text-xs font-mono bg-white px-1 rounded border border-gray-200"
-                                    )
+                                    ui.label(f"原选择: {main_val['value']}").classes("text-gray-700 text-xs font-mono")
                             # 多选/输入类
                             else:
-                                vals = [f"{k}: {v}" for k, v in main_val.items() if v]
+                                vals = []
+                                for vk, v in main_val.items():
+                                    # 多选类
+                                    if isinstance(v, bool) and v:
+                                        vals.append(f"{vk}: √")
+                                    # 输入类
+                                    else:
+                                        vals.append(f"{vk}: {v}")
                                 if vals:
-                                    ui.label(f"原内容: {', '.join(vals)}").classes(
-                                        "text-gray-700 text-xs font-mono bg-white px-1 rounded border border-gray-200"
-                                    )
+                                    ui.label(f"原内容: {'; '.join(vals)}").classes("text-gray-700 text-xs font-mono")
 
                         if isinstance(tol_val, dict) and tol_val:
                             vals = [f"{k}: {v}" for k, v in tol_val.items() if v]
                             if vals:
-                                ui.label(f"原公差: {', '.join(vals)}").classes("text-gray-500 text-xs font-mono")
+                                ui.label(f"原公差: {'; '.join(vals)}").classes("text-gray-500 text-xs font-mono")
 
                         if isinstance(ref_val, list) and ref_val:
-                            ui.label(f"原引用文件编号: {', '.join(ref_val)}").classes("text-gray-500 text-xs font-mono")
+                            ui.label(f"原引用文件编号: {'; '.join(ref_val)}").classes("text-gray-500 text-xs font-mono")
             # === 新增代码结束 ===
 
             with ui.column().classes("m-0 gap-8 w-full items-center justify-start overflow-auto"):
@@ -1443,7 +1525,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                             checkbox = ui.checkbox(op_dic["option_content"]).classes("")
                             # 绑定复选框的值到列表
                             checkbox.bind_value(
-                                app.storage.client["config_data"]["data"][k]["user_must_out"], op_dic["option_content"]
+                                app.storage.client["config_data"]["data"][k]["user_must_out"], op_dic["option_out"]
                             )
 
                 elif options_type == "下拉单选":
@@ -2532,11 +2614,10 @@ async def requirement_page(type="", json_path="", project_name=""):
             selec_show = []
             # 遍历所有多选项配置
             for option in item.get("options", []):
-                # 遍历用户选择的选项的展示内容构成的列表
-                for selec_cont in selected_options:
-                    # 如果当前选项展示内容与用户选择的选项展示内容匹配上
-                    if selec_cont == option["option_content"]:
-                        selec_show.append(option["option_bold"])
+                if option["option_out"] in selected_options:
+                    # 优先用 option_bold，没有则用 option_content
+                    text = option.get("option_bold") or option.get("option_content")
+                    selec_show.append(text)
                 # 只认改确认项选项配置里，靠最前的选型展示语句
                 if option["option_show"] and not show_bool:
                     show_template = option["option_show"]

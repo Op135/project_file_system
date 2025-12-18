@@ -213,25 +213,25 @@
             "options": [
                 {
                     "option_id": "opt_1",
-                    "option_content": "光处理",
-                    "option_out": "光学",
-                    "option_bold": "光学",
+                    "option_content": "光源",
+                    "option_out": "光源",
+                    "option_bold": "光源",
                     "option_show": "由{V}，共{N}个功能模块组成",
                     "option_label": ""
                 },
                 {
                     "option_id": "opt_2",
-                    "option_content": "机械结构",
-                    "option_out": "结构",
-                    "option_bold": "结构",
+                    "option_content": "光学处理",
+                    "option_out": "光学",
+                    "option_bold": "光学",
                     "option_show": "",
                     "option_label": ""
                 },
                 {
                     "option_id": "opt_3",
-                    "option_content": "光源",
-                    "option_out": "光源",
-                    "option_bold": "光源",
+                    "option_content": "机械结构",
+                    "option_out": "结构",
+                    "option_bold": "结构",
                     "option_show": "",
                     "option_label": ""
                 },
@@ -246,8 +246,8 @@
                 {
                     "option_id": "opt_5",
                     "option_content": "软件控制",
-                    "option_out": "固件",
-                    "option_bold": "固件",
+                    "option_out": "软件",
+                    "option_bold": "软件",
                     "option_show": "",
                     "option_label": ""
                 }
@@ -1334,7 +1334,7 @@
             "input_name_accor": "",
             "input_tolerance": "正负",
             "ref_config": "True",
-            "option_hint": "填写客户指定的转接座插拔拉力合格标准。",
+            "option_hint": "填写客户指定的转接座插拔拉力合格标准，公差示例：±5N，+0/-5N，+5N/-0。",
             "placeholder": "",
             "option_group_id": "3",
             "option_view": "结构+工艺+质量",
@@ -1649,7 +1649,7 @@
                     "option_content": "峰值波长",
                     "option_out": "峰值波长",
                     "option_bold": "峰值波长",
-                    "option_show": "单色光对{V}等光参数进行了限制",
+                    "option_show": "单色光对{V}光参数进行了限制",
                     "option_label": ""
                 },
                 {
@@ -1767,7 +1767,7 @@
             "input_name_accor": "45",
             "input_tolerance": "正负",
             "ref_config": "True",
-            "option_hint": "填写该项要求的典型值与公差范围。",
+            "option_hint": "填写该项要求的典型值与公差范围，公差示例：±5nm，+0/-5nm，+5/-0nm。",
             "placeholder": "单位提示：nm",
             "option_group_id": "4",
             "option_view": "光学+工艺+质量",
@@ -1794,7 +1794,7 @@
             "input_name_accor": "45",
             "input_tolerance": "正负",
             "ref_config": "True",
-            "option_hint": "填写该项要求的典型值与公差范围。",
+            "option_hint": "填写该项要求的典型值与公差范围，公差示例：±5nm，+0/-5nm，+5/-0nm。",
             "placeholder": "单位提示：nm",
             "option_group_id": "4",
             "option_view": "光学+工艺+质量",
@@ -1821,7 +1821,7 @@
             "input_name_accor": "45",
             "input_tolerance": "正负",
             "ref_config": "True",
-            "option_hint": "填写该项要求的典型值与公差范围。",
+            "option_hint": "填写该项要求的典型值与公差范围，公差示例：±5nm，+0/-5nm，+5/-0nm。",
             "placeholder": "单位提示：nm",
             "option_group_id": "4",
             "option_view": "光学+工艺+质量",
@@ -1848,7 +1848,7 @@
             "input_name_accor": "45",
             "input_tolerance": "正负",
             "ref_config": "True",
-            "option_hint": "填写该项要求的典型值与公差范围。",
+            "option_hint": "填写该项要求的典型值与公差范围，公差示例：±10%，+0/-10%，+10%/-0。",
             "placeholder": "单位提示：lm",
             "option_group_id": "4",
             "option_view": "光学+工艺+质量",
@@ -1875,7 +1875,7 @@
             "input_name_accor": "45",
             "input_tolerance": "正负",
             "ref_config": "True",
-            "option_hint": "填写该项要求的典型值与公差范围。",
+            "option_hint": "填写该项要求的典型值与公差范围，公差示例：±10%，+0/-10%，+10%/-0。",
             "placeholder": "单位提示：mW",
             "option_group_id": "4",
             "option_view": "光学+工艺+质量",
@@ -2037,7 +2037,7 @@
             "input_name_accor": "45",
             "input_tolerance": "正负",
             "ref_config": "True",
-            "option_hint": "填写该项要求的典型值与公差范围。",
+            "option_hint": "填写该项要求的典型值与公差范围，公差示例：±10%，+0/-10%，+10%/-0。",
             "placeholder": "单位提示：cd",
             "option_group_id": "4",
             "option_view": "光学+工艺+质量",
@@ -2064,7 +2064,7 @@
             "input_name_accor": "45",
             "input_tolerance": "正负",
             "ref_config": "True",
-            "option_hint": "填写该项要求的典型值与公差范围。",
+            "option_hint": "填写该项要求的典型值与公差范围，公差示例：±10%，+0/-10%，+10%/-0。",
             "placeholder": "单位提示：mW/sr",
             "option_group_id": "4",
             "option_view": "光学+工艺+质量",
@@ -2091,7 +2091,7 @@
             "input_name_accor": "45",
             "input_tolerance": "正负",
             "ref_config": "True",
-            "option_hint": "填写该项要求的典型值与公差范围。注意光束全角指的是光强为法线光强的50%处、法线两边形成的夹角。",
+            "option_hint": "填写该项要求的典型值与公差范围。注意光束全角指的是光强为法线光强的50%处、法线两边形成的夹角，公差示例：±5°，+0/-5°，+5°/-0。",
             "placeholder": "单位提示：°",
             "option_group_id": "4",
             "option_view": "光学+工艺+质量",
@@ -2118,7 +2118,7 @@
             "input_name_accor": "45",
             "input_tolerance": "正负",
             "ref_config": "True",
-            "option_hint": "填写该项要求的典型值与公差范围。注意光束全角指的是光强为法线光强的10%处、法线两边形成的夹角。",
+            "option_hint": "填写该项要求的典型值与公差范围。注意光束全角指的是光强为法线光强的10%处、法线两边形成的夹角，公差示例：±5°，+0/-5°，+5°/-0。",
             "placeholder": "单位提示：°",
             "option_group_id": "4",
             "option_view": "光学+工艺+质量",
@@ -2158,7 +2158,7 @@
                     "option_content": "相关色温CCT",
                     "option_out": "CCT",
                     "option_bold": "CCT",
-                    "option_show": "白光或混合光对{V}等光参数进行了限制",
+                    "option_show": "白光或混合光对{V}光参数进行了限制",
                     "option_label": ""
                 },
                 {
@@ -2300,7 +2300,7 @@
             "input_name_accor": "49",
             "input_tolerance": "正负",
             "ref_config": "True",
-            "option_hint": "填写该项要求的典型值与公差范围。",
+            "option_hint": "填写该项要求的典型值与公差范围，公差示例：±500K，+0/-500K，+500K/-0。",
             "placeholder": "单位提示：K",
             "option_group_id": "4",
             "option_view": "光学+工艺+质量",
@@ -2435,7 +2435,7 @@
             "input_name_accor": "49",
             "input_tolerance": "正负",
             "ref_config": "True",
-            "option_hint": "填写该项要求的典型值与公差范围。例如：典型值：1:0.5:0.3；公差：±10%",
+            "option_hint": "填写该项要求的典型值与公差范围。例如：典型值：1:0.5:0.3；公差示例：±10%，+0/-10%，+10%/-0",
             "placeholder": "无单位",
             "option_group_id": "4",
             "option_view": "光学+工艺+质量",
@@ -2462,7 +2462,7 @@
             "input_name_accor": "49",
             "input_tolerance": "正负",
             "ref_config": "True",
-            "option_hint": "填写该项要求的典型值与公差范围。",
+            "option_hint": "填写该项要求的典型值与公差范围，公差示例：±10%，+0/-10%，+10%/-0。",
             "placeholder": "单位提示：lm",
             "option_group_id": "4",
             "option_view": "光学+工艺+质量",
@@ -2489,7 +2489,7 @@
             "input_name_accor": "49",
             "input_tolerance": "正负",
             "ref_config": "True",
-            "option_hint": "填写该项要求的典型值与公差范围。",
+            "option_hint": "填写该项要求的典型值与公差范围，公差示例：±10%，+0/-10%，+10%/-0。",
             "placeholder": "单位提示：mW",
             "option_group_id": "4",
             "option_view": "光学+工艺+质量",
@@ -2651,7 +2651,7 @@
             "input_name_accor": "49",
             "input_tolerance": "正负",
             "ref_config": "True",
-            "option_hint": "填写该项要求的典型值与公差范围。",
+            "option_hint": "填写该项要求的典型值与公差范围，±10%，+0/-10%，+10%/-0。",
             "placeholder": "单位提示：cd",
             "option_group_id": "4",
             "option_view": "光学+工艺+质量",
@@ -2678,7 +2678,7 @@
             "input_name_accor": "49",
             "input_tolerance": "正负",
             "ref_config": "True",
-            "option_hint": "填写该项要求的典型值与公差范围。",
+            "option_hint": "填写该项要求的典型值与公差范围，±10%，+0/-10%，+10%/-0。",
             "placeholder": "单位提示：mW/sr",
             "option_group_id": "4",
             "option_view": "光学+工艺+质量",
@@ -2705,7 +2705,7 @@
             "input_name_accor": "49",
             "input_tolerance": "正负",
             "ref_config": "True",
-            "option_hint": "填写该项要求的典型值与公差范围。注意光束全角指的是光强为法线光强的50%处、法线两边形成的夹角。",
+            "option_hint": "填写该项要求的典型值与公差范围。注意光束全角指的是光强为法线光强的50%处、法线两边形成的夹角，公差示例：±5°，+0/-5°，+5°/-0。",
             "placeholder": "单位提示：°",
             "option_group_id": "4",
             "option_view": "光学+工艺+质量",
@@ -2732,7 +2732,7 @@
             "input_name_accor": "49",
             "input_tolerance": "正负",
             "ref_config": "True",
-            "option_hint": "填写该项要求的典型值与公差范围。注意光束全角指的是光强为法线光强的10%处、法线两边形成的夹角。",
+            "option_hint": "填写该项要求的典型值与公差范围。注意光束全角指的是光强为法线光强的10%处、法线两边形成的夹角，公差示例：±5°，+0/-5°，+5°/-0。",
             "placeholder": "单位提示：°",
             "option_group_id": "4",
             "option_view": "光学+工艺+质量",
@@ -3604,7 +3604,7 @@
         "108": {
             "condition": "7any['结构']",
             "node_id": "108",
-            "guide_content": "是否指定产品外表Logo",
+            "guide_content": "是否要求产品外表呈现指定Logo",
             "answer_type": "单选",
             "input_num_accor": "",
             "input_name_accor": "",
@@ -3850,7 +3850,7 @@
             ]
         },
         "116": {
-            "condition": "7any['硬件']",
+            "condition": "7any['结构'] and 7any['光源'] or 7any['硬件']",
             "node_id": "116",
             "guide_content": "是否定制灯头/驱动板输出配线",
             "answer_type": "单选",
@@ -3885,7 +3885,7 @@
             ]
         },
         "117": {
-            "condition": "7any['结构'] and 7any['光源'] or 7any['硬件']",
+            "condition": "116==True",
             "node_id": "117",
             "guide_content": "填写灯头/驱动板输出配线的定制要求",
             "answer_type": "多行文本",
@@ -5651,7 +5651,7 @@
                     "option_content": "按键开关",
                     "option_out": "按键开关",
                     "option_bold": "按键开关",
-                    "option_show": "随货提供{V}等操控类配件",
+                    "option_show": "随货提供{V}操控类配件",
                     "option_label": ""
                 },
                 {
@@ -5823,7 +5823,7 @@
                     "option_content": "LED指示灯",
                     "option_out": "LED指示灯",
                     "option_bold": "LED指示灯",
-                    "option_show": "采用{V}等方式做状态显示设计",
+                    "option_show": "采用{V}方式做状态显示设计",
                     "option_label": ""
                 },
                 {
@@ -5936,7 +5936,7 @@
                     "option_content": "LED指示灯",
                     "option_out": "LED指示灯",
                     "option_bold": "LED指示灯",
-                    "option_show": "随货提供{V}等显示类配件",
+                    "option_show": "随货提供{V}显示类配件",
                     "option_label": ""
                 },
                 {
@@ -7017,7 +7017,7 @@
             ]
         }
     },
-    "config_timestamp": "2025-12-17T15:40:36.837571",
-    "excel_version_hash": "94606b84",
+    "config_timestamp": "2025-12-18T12:21:49.552871",
+    "excel_version_hash": "64048734",
     "entry_status": false
 }

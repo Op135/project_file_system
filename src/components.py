@@ -3137,121 +3137,147 @@ class ConfigValidator:
     # 之前的核心逻辑函数 (逻辑运算)
     # -------------------------------------------------------------------------
     def logic_out(self, k, cond_logic_str, mock_data_snapshot):
-        # ... (保持原样，或者直接复制上一版的代码) ...
-        # 为了节省篇幅，这里假设 logic_out 和 get_dependent_ids, generate_permutations
-        # 与上一版代码完全一致 (修复了正则 bug 的版本)
-
-        # 复制逻辑函数开始
+        """
+        验证器专用逻辑运算函数
+        Args:
+            k: 当前节点ID (仅用于日志)
+            cond_logic_str: 条件字符串 (e.g. "1==True and 2any['A']")
+            mock_data_snapshot: 模拟的运行时数据快照
+        """
+        # 初始化默认返回值
         logic_out_bool = False
+
+        # 设定多条件逻辑分隔字符串列表
         logic_delimiters = ["and", "or"]
+        # 设定条件逻辑分隔字符串列表
         cond_delimiters = ["any", "all", "==", "!="]
 
-        if cond_logic_str == "无条件":
+        # 如果无条件，默认为 True
+        if not cond_logic_str or cond_logic_str == "无条件":
             return True
 
+        # 构造正则表达式
         logic_pattern = "|".join(f"({re.escape(delimiter)})" for delimiter in logic_delimiters)
         cond_pattern = "|".join(map(re.escape, cond_delimiters))
 
+        # 1. 拆分顶层逻辑 (and/or)
         logic_result = re.split(logic_pattern, cond_logic_str)
+        # 过滤空字符串
         logic_result = [s for s in logic_result if s]
 
+        # 分离条件表达式和逻辑连接符
         elements = [s for s in logic_result if s.strip() not in logic_delimiters]
         separators = [s for s in logic_result if s.strip() in logic_delimiters]
 
         bool_list = []
-        cond_id_list = []
 
-        # 这里的正则提取逻辑保持修复后的版本
-        id_pattern = r"(\d+)\s*(?:==|!=|any|all)"
+        # 2. 遍历每个单项条件进行计算
         for p in elements:
             if not p.strip():
                 continue
-            # 提取依赖ID
-            ids = re.findall(id_pattern, p)
-            if ids:
-                cond_id_list.extend(ids)
-            else:
-                # 这种在 validate_syntax 会被捕获，这里可以选择跳过或报错
-                pass
 
-        cond_id_list = list(set(cond_id_list))
-
-        for c_id in cond_id_list:
-            if c_id not in mock_data_snapshot:
-                # 这种情况在 validate_syntax 已经处理，这里为了运行安全直接返回False
-                return False
-            op_user_out = dict(mock_data_snapshot[c_id].get("user_must_out", {}))
-            if not op_user_out:
-                return False
-
-        for p in elements:
-            if not p.strip():
-                continue
+            # 拆分 ID、操作符、值
             cond_result = re.split(cond_pattern, p)
 
-            # 提取当前片段的ID
+            # 提取依赖项 ID (cond_result[0] 可能是 "not 4" 或 "4")
             match = re.search(r"\d+", cond_result[0])
             if not match:
+                # 语法错误已在 validate_syntax 处理，这里默认 False 防止崩溃
+                bool_list.append(False)
                 continue
+
             current_cond_id = match.group()
 
-            if current_cond_id not in cond_id_list:
-                continue
+            # --- 数据获取 ---
+            # 检查模拟数据中是否存在该依赖项
+            if current_cond_id not in mock_data_snapshot:
+                # 依赖项不存在（可能是被过滤掉或ID错误），视为条件不满足
+                return False
 
-            op_user_out = dict(mock_data_snapshot[current_cond_id].get("user_must_out", {}))
+            # 获取模拟的用户填写数据
+            user_out = mock_data_snapshot[current_cond_id].get("user_must_out", {})
+            # 获取依赖项的静态配置（用于判断类型）
+            # 注意：优先从 mock 取类型（因为 generate_permutations 塞进去了），没有则去 self.data 取
+            answer_type = mock_data_snapshot[current_cond_id].get("answer_type") or self.data[current_cond_id].get(
+                "answer_type", ""
+            )
+
+            # --- 数据提取 (核心修改：直接提取 option_out) ---
             op_user_out_list = []
-            target_node_options = mock_data_snapshot[current_cond_id].get("options", [])
 
-            if len(op_user_out.keys()) > 0:
-                for op_key, op_value in op_user_out.items():
-                    if op_value:
-                        found = False
-                        for op in target_node_options:
-                            if op["option_content"] == op_key:
-                                op_user_out_list.append(op["option_out"])
-                                found = True
-                                break
-                        if not found and not target_node_options:
-                            pass
+            # 情况 A: 多选 (结构: {"Red": True, "Blue": False}) -> 提取 ["Red"]
+            if "多选" in answer_type:
+                op_user_out_list = [str(key) for key, val in user_out.items() if val]
 
+            # 情况 B: 单选/下拉单选 (结构: {"value": "Red"}) -> 提取 ["Red"]
+            elif answer_type in ["单选", "下拉单选"]:
+                val = user_out.get("value")
+                if val is not None:
+                    op_user_out_list = [str(val)]
+                else:
+                    # 单选没填值，视为空列表
+                    pass
+
+            # 情况 C: 输入类 (结构: {"1": "100", "2": "200"}) -> 提取 ["100", "200"]
+            else:
+                op_user_out_list = [str(v) for v in user_out.values()]
+
+            # --- 逻辑比对 ---
             try:
+                # 解析条件值 (e.g. "['A', 'B']" -> list, "True" -> True/str)
                 raw_val = cond_result[1].strip()
                 try:
-                    condition_val = ast.literal_eval(raw_val)
-                except Exception:
-                    condition_val = raw_val
-            except Exception as e:
-                # 这种错误现在会在 validate_syntax 中被详细报告
-                raise ValueError(f"Value Parse Error: {e}")
+                    target_val = ast.literal_eval(raw_val)
+                except (ValueError, SyntaxError):
+                    # 解析失败通常意味着它是纯字符串 (如: 代工)
+                    target_val = raw_val
 
-            try:
+                # 1. ANY 逻辑 (列表交集)
                 if "any" in p:
-                    # 容错：如果 condition_val 不是 list，尝试转 list
-                    c_val = condition_val if isinstance(condition_val, (list, tuple)) else [condition_val]
-                    res = any(item in c_val for item in op_user_out_list)
+                    # 容错：确保 target_val 是列表
+                    c_val = target_val if isinstance(target_val, (list, tuple)) else [target_val]
+                    # 转字符串比较，防止类型不匹配
+                    c_val_str = [str(i) for i in c_val]
+
+                    res = any(item in c_val_str for item in op_user_out_list)
                     bool_list.append(not res if "not" in p else res)
+
+                # 2. ALL 逻辑 (子集)
                 elif "all" in p:
-                    c_val = condition_val if isinstance(condition_val, (list, tuple)) else [condition_val]
+                    c_val = target_val if isinstance(target_val, (list, tuple)) else [target_val]
+                    c_val_str = [str(i) for i in c_val]
+
                     op_user_set = set(op_user_out_list)
-                    cond_set = set(c_val)
+                    cond_set = set(c_val_str)
+
                     res = op_user_set.issubset(cond_set)
                     bool_list.append(not res if "not" in p else res)
-                elif "==" in p:
-                    val = op_user_out_list[0] if op_user_out_list else None
-                    bool_list.append(val == condition_val)
-                elif "!=" in p:
-                    val = op_user_out_list[0] if op_user_out_list else None
-                    bool_list.append(val != condition_val)
-                else:
-                    bool_list.append(False)
-            except Exception as e:
-                raise RuntimeError(f"Logic Error: {e}")
 
+                # 3. == (相等)
+                elif "==" in p:
+                    # 取用户填写的第一个值进行比较
+                    user_val = op_user_out_list[0] if op_user_out_list else "None"
+                    bool_list.append(str(user_val) == str(target_val))
+
+                # 4. != (不等)
+                elif "!=" in p:
+                    user_val = op_user_out_list[0] if op_user_out_list else "None"
+                    bool_list.append(str(user_val) != str(target_val))
+
+                else:
+                    logger.warning(f"未知操作符 in expression: {p}")
+                    bool_list.append(False)
+
+            except Exception:
+                # 逻辑计算出错时，为了不中断验证流程，记为 False 并记录
+                # logger.debug(f"逻辑计算异常: {e}")
+                bool_list.append(False)
+
+        # 4. 拼接最终结果并执行 (True and False or True...)
         result_str = "".join(f"{str(x)} {y} " for x, y in itertools.zip_longest(bool_list, separators, fillvalue=""))
 
         try:
-            allowed_names = {"True": True, "False": False}
-            code = compile(result_str, "<string>", "eval")
+            # 使用 eval 计算布尔表达式
             logic_out_bool = eval(result_str)
         except Exception:
             return False
@@ -3275,20 +3301,36 @@ class ConfigValidator:
             options = node_config.get("options", [])
             answer_type = node_config.get("answer_type", "")
             node_states = []
-            node_states.append({})
+            # 情况 0: 没有任何选项 (纯文本输入类)，模拟有值和无值
             if not options:
-                node_states.append({"mock_text": "True"})
+                node_states.append({})  # 空
+                node_states.append({"1": "100"})  # 模拟填了一个值
             else:
-                content_list = [opt["option_content"] for opt in options if opt["option_content"]]
-                if "单选" in answer_type:
-                    for c in content_list:
-                        node_states.append({c: True})
+                # --- 【核心修改】：提取 option_out 而不是 option_content ---
+                # 转字符串以防万一
+                out_list = [str(opt["option_out"]) for opt in options if "option_out" in opt]
+
+                # 情况 A: 单选/下拉单选 -> 结构 {"value": "XXX"}
+                if answer_type in ["单选", "下拉单选"]:
+                    node_states.append({"value": None})  # 未选状态
+                    for out_val in out_list:
+                        node_states.append({"value": out_val})
+
+                # 情况 B: 多选 -> 结构 {"XXX": True}
                 elif "多选" in answer_type:
-                    for c in content_list:
-                        node_states.append({c: True})
-                    all_selected = {c: True for c in content_list}
+                    node_states.append({})  # 全不选
+                    # 单个选中
+                    for out_val in out_list:
+                        node_states.append({out_val: True})
+                    # 全选 (测试 all 逻辑)
+                    all_selected = {out_val: True for out_val in out_list}
                     if all_selected:
                         node_states.append(all_selected)
+
+                # 情况 C: 其他情况兜底
+                else:
+                    node_states.append({})
+
             possibilities[nid] = node_states
 
         keys = list(possibilities.keys())
