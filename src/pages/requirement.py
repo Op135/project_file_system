@@ -1464,7 +1464,8 @@ async def requirement_page(type="", json_path="", project_name=""):
         current_question_column.clear()
         with current_question_column:
             ui.label(question).classes("text-2xl text-black")
-            ui.label(option_hint).classes("text-base text-grey-8 max-w-full")
+            # 需求填写提示
+            ui.label(option_hint).classes("text-sm/6 text-brown-6 max-w-2/3 whitespace-pre-wrap")
 
             # === 新增代码开始：显示失效的旧数据快照 ===
             old_data_ref = app.storage.client["config_data"]["data"][k].get("ref_old_data")
@@ -1608,7 +1609,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                     # ===【新增代码结束】===
 
                     # 获取可能的已有用户输入内容
-                    with ui.column().classes("min-w-1/4 -space-y-2"):
+                    with ui.column().classes("min-w-1/3 -space-y-2"):
                         for n in range(input_num):
                             with ui.row().classes("justify-center flex-nowrap items-stretch w-full"):
                                 # 可能是数字123也可能是前置依赖的客户输出识别字符串
@@ -1685,7 +1686,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                                                 validation={"不能空白": lambda value: value.strip() != ""},
                                             )
                                             .props("outlined stack-label")
-                                            .classes("w-full text-[14px]/[16px] w-full")
+                                            .classes("w-full text-[14px]/[16px]")
                                         )
                                         input_tolerance.bind_value(
                                             app.storage.client["config_data"]["data"][k]["option_tolerance_out"],
@@ -1700,7 +1701,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                                             validation={"不能空白": lambda value: value.strip() != ""},
                                         )
                                         .props("outlined stack-label autogrow")
-                                        .classes("w-full text-[14px]/[16px] w-full")
+                                        .classes("w-full text-[14px]/[16px]")
                                     )
                                     input_field.bind_value(
                                         app.storage.client["config_data"]["data"][k]["user_must_out"], input_label_key
@@ -2523,7 +2524,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                             ui.label().classes("text-xl text-amber-8").bind_text(app.storage.client, "version")
 
                     with ui.column().classes(
-                        "mx-0 mt-10 px-22 gap-8 w-full items-center justify-start overflow-y-auto"
+                        "mx-0 mt-10 px-22 gap-6 w-full items-center justify-start overflow-y-auto"
                     ) as question_column:
                         # --- 修改开始 ---
                         # 将新创建的 question_column 实例存入 user storage

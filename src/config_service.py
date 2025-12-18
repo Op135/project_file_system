@@ -184,7 +184,6 @@ class ConfigService:
     def clean_text(text):
         """处理特殊字符：换行符转义、防御XSS"""
         return (
-            str(text)
-            .replace("\\", "\\\\")  # 先处理反斜杠
-            .replace("\n", "\\n")
+            str(text).replace("\\", "\\\\")  # 先处理反斜杠
+            # .replace("\n", "\\n")
         )
