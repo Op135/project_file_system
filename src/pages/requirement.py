@@ -1130,7 +1130,9 @@ async def requirement_page(type="", json_path="", project_name=""):
         # logic_out_bool = eval(result_str)
 
         # 3. 逻辑计算
+        # 遍历分割开出来的各个条件，如：4any['硬件'] 或 17==True 等
         for p in elements:
+            # 将逻辑语句按 any|all|==|!= 切分开来
             cond_result = re.split(cond_pattern, p)
             # 获取本次判断涉及的 ID
             current_c_id = cond_result[0].replace("not", "").strip()
@@ -1172,6 +1174,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                     else:
                         op_user_set = set(op_user_out_list)
                         cond_set = set(str(i) for i in condition)  # 确保类型一致
+                        # op_user_set 集合的所有元素是否都包含在 cond_set 集合中，如果是则返回 True，否则返回 False
                         res = op_user_set.issubset(cond_set)
 
                     if "not" in p:
@@ -1194,6 +1197,14 @@ async def requirement_page(type="", json_path="", project_name=""):
                     bool_list.append(str(user_val) != str(target_val_str))
 
             except Exception as e:
+                ui.notify(
+                    f"需求项激活逻辑计算出错: ID={current_c_id}, 表达式={p}, 错误={e}, 导出需求，联系管理员处理。",
+                    type="negative",
+                    position="center",
+                    timeout=0,
+                    progress=False,
+                    close_button="✖",
+                )
                 logger.error(f"逻辑计算错误: ID={current_c_id}, 表达式={p}, 错误={e}")
                 bool_list.append(False)  # 出错默认 False
 
@@ -1251,6 +1262,14 @@ async def requirement_page(type="", json_path="", project_name=""):
                     app.storage.client["buttons_dic"][k] = button
                 # 处理遇到节点序号条件为空的异常
                 elif v["condition"] == "":
+                    ui.notify(
+                        f"需求节点序号为{k}的激活条件为空，无法处理，请导出需求，联系管理员处理后再继续。",
+                        type="negative",
+                        position="center",
+                        timeout=0,
+                        progress=False,
+                        close_button="✖",
+                    )
                     logger.info(f"配置表节点序号为{k}的配置项激活条件为空，无法处理！")
                 # 逻辑处理
                 else:
