@@ -221,7 +221,7 @@
                 },
                 {
                     "option_id": "opt_2",
-                    "option_content": "光学处理",
+                    "option_content": "光学器件",
                     "option_out": "光学",
                     "option_bold": "光学",
                     "option_show": "",
@@ -256,13 +256,13 @@
         "8": {
             "condition": "5==模组 and 7any['结构']",
             "node_id": "8",
-            "guide_content": "产品在终端用户使用时是否有外露部分",
+            "guide_content": "产品是否会被终端用户观察到",
             "answer_type": "单选",
             "input_num_accor": "",
             "input_name_accor": "",
             "input_tolerance": "",
             "ref_config": "False",
-            "option_hint": "询问客户我司产品在终端用户使用时，会不会被明显看到。\n如果有外露部分，外观部件具体品质要求需要仔细核对。",
+            "option_hint": "询问客户我司产品在终端用户使用时，会不会被明显看到。\n如果有外露部分，外观部件具体品质要求需要跟客户仔细确定。",
             "placeholder": "",
             "option_group_id": "1",
             "option_view": "全员",
@@ -272,18 +272,18 @@
             "options": [
                 {
                     "option_id": "opt_1",
-                    "option_content": "有",
+                    "option_content": "会",
                     "option_out": "True",
-                    "option_bold": "有",
-                    "option_show": "产品在终端用户使用时{V}外露部分",
+                    "option_bold": "会",
+                    "option_show": "产品在终端用户使用时{V}被观察到",
                     "option_label": "外显产品"
                 },
                 {
                     "option_id": "opt_2",
-                    "option_content": "无",
+                    "option_content": "不会",
                     "option_out": "False",
-                    "option_bold": "无",
-                    "option_show": "产品在终端用户使用时{V}外露部分",
+                    "option_bold": "不会",
+                    "option_show": "产品在终端用户使用时{V}被观察到",
                     "option_label": "内置产品"
                 }
             ]
@@ -324,7 +324,7 @@
             "input_name_accor": "",
             "input_tolerance": "上限",
             "ref_config": "False",
-            "option_hint": "填写产品物料成本限制，设计方案将基于该限制酌情考虑，\n在预估明显超过的情况下会反馈给销售。",
+            "option_hint": "填写产品物料成本限制，设计方案将基于该限制酌情考虑，\n研发在预估明显超过成本限制的情况下会反馈给销售。",
             "placeholder": "",
             "option_group_id": "1",
             "option_view": "结构+光学+硬件",
@@ -846,7 +846,7 @@
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "",
-                    "option_show": "{V}转接座材料与表面工艺",
+                    "option_show": "",
                     "option_label": "定制转接座材质表面"
                 },
                 {
@@ -908,7 +908,7 @@
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "",
-                    "option_show": "{V}转接座外形尺寸",
+                    "option_show": "",
                     "option_label": "定制转接座尺寸"
                 },
                 {
@@ -1032,7 +1032,7 @@
                     "option_content": "是",
                     "option_out": "True",
                     "option_bold": "",
-                    "option_show": "转接座旋帽{V}",
+                    "option_show": "",
                     "option_label": ""
                 },
                 {
@@ -1188,7 +1188,7 @@
                     "option_content": "有特殊逻辑",
                     "option_out": "True",
                     "option_bold": "",
-                    "option_show": "导光束{V}",
+                    "option_show": "",
                     "option_label": "导光束插拔定制逻辑"
                 },
                 {
@@ -1258,7 +1258,7 @@
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "",
-                    "option_show": "{V}导光束做光参数测试",
+                    "option_show": "",
                     "option_label": ""
                 }
             ]
@@ -1320,7 +1320,7 @@
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "",
-                    "option_show": "使用{V}导光束做拉力测试",
+                    "option_show": "",
                     "option_label": ""
                 }
             ]
@@ -1355,7 +1355,7 @@
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "",
-                    "option_show": "转接座拉力测试{V}",
+                    "option_show": "",
                     "option_label": ""
                 }
             ]
@@ -6770,7 +6770,7 @@
                     "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
-                    "option_bold": "",
+                    "option_bold": "无",
                     "option_show": "无光学补充需求",
                     "option_label": ""
                 }
@@ -6832,7 +6832,7 @@
                     "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
-                    "option_bold": "",
+                    "option_bold": "无",
                     "option_show": "无结构补充需求",
                     "option_label": ""
                 }
@@ -6894,7 +6894,7 @@
                     "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
-                    "option_bold": "",
+                    "option_bold": "无",
                     "option_show": "无硬件补充需求",
                     "option_label": ""
                 }
@@ -6956,7 +6956,7 @@
                     "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
-                    "option_bold": "",
+                    "option_bold": "无",
                     "option_show": "无软件补充需求",
                     "option_label": ""
                 }
@@ -7018,7 +7018,7 @@
                     "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
-                    "option_bold": "",
+                    "option_bold": "无",
                     "option_show": "无工艺补充需求",
                     "option_label": ""
                 }
@@ -7052,7 +7052,7 @@
             ]
         }
     },
-    "config_timestamp": "2025-12-19T17:19:12.426227",
-    "excel_version_hash": "2a71e8c2",
+    "config_timestamp": "2025-12-19T22:37:23.423218",
+    "excel_version_hash": "84b20862",
     "entry_status": false
 }

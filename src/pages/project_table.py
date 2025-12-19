@@ -439,6 +439,7 @@ def project_table_page():
             "field": "sub_project",
             "headerName": "内部产品型号",
             "width": 140,
+            "filter": "agTextColumnFilter",
             "pinned": "left",  # 固定到左侧
         },
         {"field": "project", "headerName": "对外产品型号", "width": 120},
@@ -584,6 +585,10 @@ def project_table_page():
                 "suppressRowVirtualisation": True,
                 # 允许单元格文本选择
                 "enableCellTextSelection": True,
+                # 分页相关设置
+                "pagination": True,  # 开启分页
+                "paginationPageSize": 20,  # 每页显示 10 行
+                "paginationPageSizeSelector": [10, 20, 30, 40, 50],  # (可选) 允许用户在底部选择每页行数
             }
         ).classes("ag-theme-alpine ag-header-cell-resize::after h-full")
 
