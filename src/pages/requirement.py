@@ -1463,10 +1463,19 @@ async def requirement_page(type="", json_path="", project_name=""):
         # 清空元素的子元素
         current_question_column.clear()
         with current_question_column:
-            ui.label(question).classes("text-2xl text-black")
+            ui.label(question).classes("text-3xl text-black")
             # 需求填写提示
-            ui.label(option_hint).classes("text-sm/6 text-brown-6 max-w-2/3 whitespace-pre-wrap")
-
+            # ui.label(option_hint).classes("text-sm/6 text-brown-6 max-w-2/3 whitespace-pre-wrap")
+            if option_hint.strip():
+                with ui.row().classes(
+                    "w-full bg-blue-50 border-l-4 border-blue-400 p-3 my-2 rounded-r shadow-sm items-start gap-3"
+                ):
+                    # 左侧图标
+                    ui.icon("lightbulb", color="blue").classes("text-xl mt-0.5")
+                    # 右侧文字容器
+                    with ui.column().classes("gap-1 flex-1"):
+                        ui.label("填写说明:").classes("text-sm font-bold text-blue-800")
+                        ui.label(option_hint).classes("text-sm text-gray-700 leading-relaxed whitespace-pre-wrap")
             # === 新增代码开始：显示失效的旧数据快照 ===
             old_data_ref = app.storage.client["config_data"]["data"][k].get("ref_old_data")
             if old_data_ref:
