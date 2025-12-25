@@ -622,6 +622,13 @@
         "introduction": "常规白光照明",
         "customer": "GY"
     },
+    "RFFM-1121-KB": {
+        "state": "量产",
+        "model_notes": "",
+        "creation_date": "2025-12-24",
+        "introduction": "常规白光照明",
+        "customer": "MYQD"
+    },
     "RFFM-1122-A": {
         "state": "量产",
         "model_notes": "",
@@ -1868,6 +1875,13 @@
         "introduction": "白+紫光+近红外 复合光源模组",
         "customer": "HNK"
     },
+    "RFFM-16I3-A": {
+        "state": "待定",
+        "model_notes": "",
+        "creation_date": "2025-12-25",
+        "introduction": "白+3路近红外LED 复合光源模组",
+        "customer": "HHJY"
+    },
     "RFFM-16N1-A": {
         "state": "转产",
         "model_notes": "",
@@ -1972,6 +1986,13 @@
         "creation_date": "2024-07-11",
         "introduction": "四分区环形光源",
         "customer": "HKSZ"
+    },
+    "RFIL-1500-A": {
+        "state": "研发",
+        "model_notes": "",
+        "creation_date": "2025-12-25",
+        "introduction": "工业光源机箱，使用RFFM-1519模组，内含转轮切换滤光片",
+        "customer": "QS"
     },
     "RFIL-3202-A": {
         "state": "研发",
