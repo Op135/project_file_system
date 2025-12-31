@@ -1,4 +1,6 @@
 {
+    "custom_labels": [],
+    "requirement": [],
     "light_source": [
         "light_source"
     ],
@@ -11,7 +13,6 @@
     "adapter_options": [
         "adapter_options"
     ],
-    "custom_labels": [],
     "color": [
         "product_color"
     ],

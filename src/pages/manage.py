@@ -9,8 +9,8 @@ from ..utils import (
     get_cache_busted_path,
     get_temp_config_service,
     logout,
-    project_overview_config_update,
     project_summary_update,
+    project_table_update_config_update,
     updata_overview_config,
     update_config_service,
     update_users_data,
@@ -91,9 +91,9 @@ def manage_page():
                 ui.button("更新项目列表(JSON->General)", on_click=lambda: project_summary_update()).props("").classes(
                     ""
                 )
-                ui.button("更新滚动信息配置(JSON->General)", on_click=lambda: project_overview_config_update()).props(
-                    ""
-                ).classes("")
+                ui.button(
+                    "更新项目总表动态信息更新配置(JSON->General)", on_click=lambda: project_table_update_config_update()
+                ).props("").classes("")
         # 日志监控区域
         with ui.card().classes("w-full -space-y-2 overflow-hidden"):
             # 日志标题栏

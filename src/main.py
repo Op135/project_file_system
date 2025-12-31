@@ -125,7 +125,7 @@ app.storage.general.setdefault("project_req_max_ver", {})
 # 存储服务器层级 项目简介 的变量初始化
 app.storage.general.setdefault("project_summary", {})
 # 存储服务器层级 项目简介与概述数据动态更新配置 的变量初始化
-app.storage.general.setdefault("project_overview_config", {})
+app.storage.general.setdefault("project_table_update_config", {})
 # 存储服务器层级 各项目各工程角色概述数据负责人 的变量初始化
 app.storage.general.setdefault("overview_role", {})
 # 存储服务器层级 各项目各工程角色概述数据负责人是否需要核对概述的记录信息

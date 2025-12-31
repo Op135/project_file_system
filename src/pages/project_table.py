@@ -12,8 +12,8 @@ from ..utils import (
     get_cache_busted_path,
     get_overviow_page,
     logout,
-    project_overview_config_update,
     project_summary_update,
+    project_table_update_config_update,
 )
 
 # 获取一个以此模块命名的 logger
@@ -187,89 +187,47 @@ def project_table_page():
         # 清空
         rows_select = []
         s = ""
-        # 如果第一选矿选择的是“所有”
+        # 如果第一选框选择的是“所有”
         if select_major_value["value"] == "所有":
             rows_select = rows
         else:
             # 设置筛选字符串
             # 如果第二选项选的是“所有”
             if select_sub_value["value"] == "所有":
-                # 且第一选项选的不是“其它”，择拿正常项目名前面的字符串来匹配RFFM
+                # 且第一选项选的不是“其它”
+                # 匹配正常项目的所有，即匹配大类，如所有 RFFM
                 if select_major_value["value"] != "其它":
+                    # s = RFFM
                     s = select_major_value["value"]
                 # 且第一选项选的是“其它”，则拿“-”字符来排除
+                # 匹配其它所有，如RM3000、RM5000等等
                 else:
+                    # s = -
                     s = "-"
             # 如果第一选项选的不是“其它”，且不是“所有”
             elif select_major_value["value"] != "其它":
                 # 则拿正常项目-字符前后较完整字符串来匹配，如RFFM-17
+                # s = RFFM-17
                 s = f"{select_major_value['value']}-{select_sub_value['value']}"
             # 第一选项选的是“其它”且第二选项不是“所有”，拿具体特殊项目名来匹配，如RM3000
             else:
+                # s = RM3000
                 s = select_sub_value["value"]
 
             # 遍历无分类行数据列表，将符合筛选条件的行数据找出来
             for row_data in rows:
-                # 如果匹配字符不为“-”且匹配字符串在项目名里（正常项目） 或 匹配字符为“-”且匹配字符不在项目名里（特殊项目）
+                # 如果匹配字符不为“-”且匹配字符串在项目名里（筛选正常项目，如具体的RM3000或含RFMM或含RFMM-17的项目）
+                # 或 匹配字符为“-”且匹配字符不在项目名里（筛选特殊项目，如RM3000,RM5000,所有不含-字符的项目）
                 if s != "-" and s in row_data["project"] or s == "-" and s not in row_data["project"]:
                     # 获取当前行数据所属项目名
                     project_name = row_data["sub_project"]
                     overview_data = db_storage.get_item(f"{project_name}_over_data", {})
-                    # 遍历服务器 项目简介与概述数据对照字典
-                    for pro_key, over_key_li in app.storage.general["project_overview_config"].items():
-                        # 如果当前处理的不是负责人配置、且项目简介对照配置非空 或 是定制内容项
-                        if pro_key == "custom_labels" or "charge" not in pro_key and over_key_li != []:
-                            show_str = ""
-                            # 遍历对照配置列表（可能一个项目简介配置了多个对应的概述数据项）
-                            for over_key in over_key_li:
-                                # 当前概述数据项label存在服务器概述数据对应项目里，说明可能存在概述内容
-                                if over_key in overview_data:
-                                    chip_data_li = overview_data.get(over_key, {}).values()
-                                    # 遍历概述内容每个chip数据
-                                    for chip_data in chip_data_li:
-                                        # 该chip内容是激活 或者 待定状态 才显示
-                                        if chip_data["enabled"] or chip_data["enabled"] is None:
-                                            text = ""
-                                            # 如果有content键，则应该是文字型chip
-                                            if "content" in chip_data:
-                                                text = chip_data["content"]
-                                            # 如果有filename键，则应该是文件或图片型chip
-                                            elif "filename" in chip_data:
-                                                text = ".".join(chip_data["filename"].split(".")[:-1])
 
-                                            # 待定状态的概述内容串 加上特殊标记符号
-                                            if chip_data["enabled"] is None:
-                                                text = f"「{text}」?"
-
-                                            # 将文本拼接到待显示字符串上
-                                            # 这几类换行拼接
-                                            if pro_key in [
-                                                "light_source",
-                                                "target_distance",
-                                                "pcb",
-                                                "electronic_bom",
-                                                "software_executable_file",
-                                            ]:
-                                                show_str = f"{show_str}\n{text}"
-                                            else:
-                                                show_str = f"{show_str}，{text}"
-
-                            # 定制内容列，则在概述内容基础上，拼接添加需求项输出标签内容
-                            if pro_key == "custom_labels":
-                                label_list = app.storage.general["custom_labels"].get(project_name, [])
-                                if label_list:
-                                    show_str = f"{show_str}，{'，'.join(label_list)}"
-
-                            # 待确定的内容，统一更换仅显示一个?号
-                            # if "?" in show_str:
-                            #     show_str = "?"
-                            # 将处理完成的字符串作为该行数据对应项目简介项的显示内容
-                            row_data[pro_key] = show_str.strip("，").removeprefix(
-                                "\n"
-                            )  # removeprefix移除字符串前缀，strip移除首尾指定字符
-
-                        # 处理负责人配置部分显示内容
-                        elif (
+                    # 遍历服务器的项目与概述数据对照字典
+                    # 不在这个字典里的数据列，不会被修改，即显示固定内容
+                    for pro_key, over_key_li in app.storage.general["project_table_update_config"].items():
+                        # 专门处理概述负责人配置部分显示内容
+                        if (
                             "charge" in pro_key
                             and over_key_li != ""
                             and project_name in app.storage.general["overview_role"]
@@ -316,6 +274,63 @@ def project_table_page():
                                     charge_person = f"待{charge_person}\n选概述"
 
                             row_data[pro_key] = charge_person
+
+                        # 其它需要动态更新且配置非空 或 如：定制要点、需求输入等不用配置也固定动态更新的列
+                        elif pro_key in ["custom_labels", "requirement"] or over_key_li != []:
+                            show_str = ""
+                            # 遍历对照配置列表（可能一个项目简介配置了多个对应的概述数据项）
+                            for over_key in over_key_li:
+                                # 当前概述数据项label存在服务器概述数据对应项目里，说明可能存在概述内容
+                                if over_key in overview_data:
+                                    chip_data_li = overview_data.get(over_key, {}).values()
+                                    # 遍历概述内容每个chip数据
+                                    for chip_data in chip_data_li:
+                                        # 该chip内容是激活 或者 待定状态 才显示
+                                        if chip_data["enabled"] or chip_data["enabled"] is None:
+                                            text = ""
+                                            # 如果有content键，则应该是文字型chip
+                                            if "content" in chip_data:
+                                                text = chip_data["content"]
+                                            # 如果有filename键，则应该是文件或图片型chip
+                                            elif "filename" in chip_data:
+                                                text = ".".join(chip_data["filename"].split(".")[:-1])
+
+                                            # 待定状态的概述内容串 加上特殊标记符号
+                                            if chip_data["enabled"] is None:
+                                                text = f"「{text}」?"
+
+                                            # 将文本拼接到待显示字符串上
+                                            # 这几类换行拼接
+                                            if pro_key in [
+                                                "light_source",
+                                                "target_distance",
+                                                "pcb",
+                                                "electronic_bom",
+                                                "software_executable_file",
+                                            ]:
+                                                show_str = f"{show_str}\n{text}"
+                                            else:
+                                                show_str = f"{show_str}，{text}"
+
+                            # 定制内容列，则在概述内容基础上，拼接添加需求项输出标签内容
+                            if pro_key == "custom_labels":
+                                label_list = app.storage.general["custom_labels"].get(project_name, [])
+                                if label_list:
+                                    show_str = f"{show_str}，{'，'.join(label_list)}"
+                            # 需求录入列，动态内容设置
+                            elif pro_key == "requirement":
+                                max_ver = app.storage.general["project_req_max_ver"].get(project_name, "")
+                                if max_ver:
+                                    show_str = f"当前V{max_ver}\n点击升级"
+                                else:
+                                    show_str = "点击录入"
+                            # 待确定的内容，统一更换仅显示一个?号
+                            # if "?" in show_str:
+                            #     show_str = "?"
+                            # 将处理完成的字符串作为该行数据对应项目简介项的显示内容
+                            row_data[pro_key] = show_str.strip("，").removeprefix(
+                                "\n"
+                            )  # removeprefix移除字符串前缀，strip移除首尾指定字符
 
                     # 单独处理项目简介表里每行 负责销售 单元格的显示
                     row_data["sale_charge"] = app.storage.general["project_sale"].get(project_name, "")
@@ -382,7 +397,6 @@ def project_table_page():
         # grid.update()
 
     # 创建一个按钮，其点击事件调用 run_grid_method
-
     # 调用 AG Grid API 清除所有筛选模型
     def clear_all_filters(grid):
         grid.run_grid_method("setFilterModel", None)
@@ -443,32 +457,32 @@ def project_table_page():
             "pinned": "left",  # 固定到左侧
         },
         {"field": "project", "headerName": "对外产品型号", "width": 120},
-        {"field": "model_notes", "headerName": "型号备注", "width": 150, "autoHeight": True},
+        {"field": "model_notes", "headerName": "型号备注", "width": 150, "autoHeightLeft": True},
         {"field": "state", "headerName": "产品状态", "width": 80, "filter": "agTextColumnFilter"},
         {"field": "creation_date", "headerName": "立项日期", "width": 100, "filter": "agDateColumnFilter"},
         {
             "field": "introduction",
             "headerName": "产品简介",
             "width": 400,
-            "autoHeight": True,
+            "autoHeightLeft": True,
             "filter": "agTextColumnFilter",
         },
-        {"field": "custom_labels", "headerName": "定制要点", "width": 400, "autoHeight": True},
+        {"field": "custom_labels", "headerName": "定制要点", "width": 400, "autoHeightLeft": True},
         {
             "field": "light_source",
             "headerName": "光源选型",
             "width": 400,
-            "autoHeight": True,
+            "autoHeightLeft": True,
             "filter": "agTextColumnFilter",
             # "cellStyle": {"white-space": "pre-line"},
         },
-        {"field": "photometric", "headerName": "光度学要求", "width": 120, "autoHeight": True},
-        {"field": "target_distance", "headerName": "目标面距离", "width": 100, "autoHeight": True},
+        {"field": "photometric", "headerName": "光度学要求", "width": 120, "autoHeightLeft": True},
+        {"field": "target_distance", "headerName": "目标面距离", "width": 100, "autoHeightLeft": True},
         {
             "field": "adapter_options",
             "headerName": "转接座可选类别",
             "width": 140,
-            "autoHeight": True,
+            "autoHeightLeft": True,
             "filter": "agTextColumnFilter",
         },
         {"field": "color", "headerName": "外观颜色", "width": 80, "filter": "agTextColumnFilter"},
@@ -480,24 +494,29 @@ def project_table_page():
             "field": "pcb",
             "headerName": "PCB规格",
             "width": 180,
-            "autoHeight": True,
+            "autoHeightLeft": True,
             "filter": "agTextColumnFilter",
         },
         {
             "field": "electronic_bom",
             "headerName": "电子BOM",
             "width": 180,
-            "autoHeight": True,
+            "autoHeightLeft": True,
             "filter": "agTextColumnFilter",
         },
         {
             "field": "software_executable_file",
             "headerName": "固件执行文件",
             "width": 200,
-            "autoHeight": True,
+            "autoHeightLeft": True,
             "filter": "agTextColumnFilter",
         },
-        {"field": "requirement", "headerName": "需求录入", "width": 80},
+        {
+            "field": "requirement",
+            "headerName": "需求录入",
+            "width": 100,
+            "autoHeightCenter": True,
+        },
         {"field": "overview", "headerName": "概述整理", "width": 80},
         {"field": "customer", "headerName": "客户缩写", "width": 100, "filter": "agTextColumnFilter"},
         {"field": "sale_charge", "headerName": "销售", "width": 80, "filter": "agTextColumnFilter"},
@@ -505,22 +524,25 @@ def project_table_page():
             "field": "project_charge",
             "headerName": "项目",
             "width": 80,
-            "autoHeight": True,
+            "autoHeightLeft": True,
             "filter": "agTextColumnFilter",
         },
-        {"field": "optics_charge", "headerName": "光学", "width": 80, "autoHeight": True},
-        {"field": "structure_charge", "headerName": "结构", "width": 80, "autoHeight": True},
-        {"field": "hardware_charge", "headerName": "硬件", "width": 80, "autoHeight": True},
-        {"field": "software_charge", "headerName": "软件", "width": 80, "autoHeight": True},
-        {"field": "ui_charge", "headerName": "UI", "width": 80, "autoHeight": True},
-        {"field": "craft_charge", "headerName": "工艺", "width": 80, "autoHeight": True},
+        {"field": "optics_charge", "headerName": "光学", "width": 80, "autoHeightLeft": True},
+        {"field": "structure_charge", "headerName": "结构", "width": 80, "autoHeightLeft": True},
+        {"field": "hardware_charge", "headerName": "硬件", "width": 80, "autoHeightLeft": True},
+        {"field": "software_charge", "headerName": "软件", "width": 80, "autoHeightLeft": True},
+        {"field": "ui_charge", "headerName": "UI", "width": 80, "autoHeightLeft": True},
+        {"field": "craft_charge", "headerName": "工艺", "width": 80, "autoHeightLeft": True},
     ]
     for col in project_summary_columns:
         if "width" in col:
             col["minWidth"] = col["width"]
-        if "autoHeight" in col:
+        if "autoHeightLeft" in col:
             # 该类使得\n符号会起作用，达到手动换行作用
             col["cellClass"] = "left-auto-break"
+        if "autoHeightCenter" in col:
+            # 该类使得\n符号会起作用，达到手动换行作用
+            col["cellClass"] = "center-auto-break"
         col["headerClass"] = "center-auto-break"
         # 设置单元格样式规则
         col["cellClassRules"] = {
@@ -533,8 +555,8 @@ def project_table_page():
     # 防止没有初始化导致报错
     if not app.storage.general["project_summary"]:
         project_summary_update()
-    if not app.storage.general["project_overview_config"]:
-        project_overview_config_update()
+    if not app.storage.general["project_table_update_config"]:
+        project_table_update_config_update()
     # 从服务器获取完整项目摘要
     copy_project_dic = copy.deepcopy(app.storage.general["project_summary"])
     # 抽取出无分类项目摘要列表

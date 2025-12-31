@@ -481,12 +481,12 @@ def project_name_process_string(s: str) -> str:
         return s
 
 
-def project_overview_config_update():
+def project_table_update_config_update():
     try:
         # 解析JSON数据
-        if os.path.exists(f"{BASE_DIR}/project_overview_config.json"):
-            with open(f"{BASE_DIR}/project_overview_config.json", "r", encoding="utf-8") as f:
-                app.storage.general["project_overview_config"] = json.load(f)
+        if os.path.exists(f"{BASE_DIR}/project_table_update_config.json"):
+            with open(f"{BASE_DIR}/project_table_update_config.json", "r", encoding="utf-8") as f:
+                app.storage.general["project_table_update_config"] = json.load(f)
         ui.notify(
             "项目表滚动信息关联配置更新成功!",
             type="positive",
@@ -525,7 +525,7 @@ def project_summary_update():
                     {
                         "sub_project": project_name,
                         "project": project_name_process_string(project_name),
-                        "requirement": "点击录入",
+                        # "requirement": "点击录入",
                         "overview": "查阅整理",
                     }
                 )
