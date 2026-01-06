@@ -1875,6 +1875,13 @@
         "introduction": "白+紫光+近红外 复合光源模组",
         "customer": "HNK"
     },
+    "RFFM-16C8-A": {
+        "state": "研发",
+        "model_notes": "",
+        "creation_date": "2025-12-30",
+        "introduction": "白+405+460+近红外 复合光源模组",
+        "customer": "NJZW"
+    },
     "RFFM-16I3-A": {
         "state": "待定",
         "model_notes": "",

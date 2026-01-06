@@ -2316,6 +2316,8 @@ async def requirement_page(type="", json_path="", project_name=""):
                             # 更新目标项目概述角色统计结果，以便第一时间在项目总表能看到统计结果和状态
                             overview_role_update(target_project_name)
                             overview_role_update(target_project_name)
+
+                            logger.info(f"成功复制{target_project_name}的需求配置。")
                             ui.notify(
                                 "复制衍生项目需求文件概述资料成功。",
                                 type="positive",
@@ -2379,6 +2381,8 @@ async def requirement_page(type="", json_path="", project_name=""):
 
                 # 将提交该需求的用户更新为该项目负责的销售员
                 app.storage.general["project_sale"][target_project_name] = current_user
+
+                logger.info(f"成功提交{target_project_name}的需求配置，版本：V{new_version}。")
                 ui.notify(
                     f"需求已提交，版本已迭代到: V{new_version}",
                     type="positive",

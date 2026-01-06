@@ -54,11 +54,13 @@ def manage_page():
 
             # 4. 成功反馈
             notification.dismiss()  # 关闭加载提示
+            logger.info("成功备份了数据库文件。")
             ui.notify("备份成功！文件已保存至 backups 目录", type="positive", icon="check_circle")
 
         except Exception as e:
             # 5. 失败反馈
             notification.dismiss()
+            logger.error(f"备份数据库文件失败：{e}")
             ui.notify(f"备份失败: {str(e)}", type="negative")
 
     with ui.header(elevated=True).classes("flex justify-between items-center bg-blue-500 h-12 px-4"):

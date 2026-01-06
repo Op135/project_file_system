@@ -149,6 +149,8 @@ def get_cache_busted_path(web_path: str) -> str:
 def update_users_data():
     try:
         app.state.users_data = app.state.user_service.load_users()
+
+        logger.info("成功更新用户配置数据。")
         ui.notify(
             "用户配置数据更新成功!",
             type="positive",
@@ -158,6 +160,7 @@ def update_users_data():
             close_button="✖",
         )
     except Exception as e:
+        logger.error(f"更新用户配置数据失败：{e}")
         ui.notify(
             f'用户配置数据更新出错： "{e}" ',
             type="negative",
@@ -361,6 +364,8 @@ def merge_data_with_template(user_data_full, template_data_full):
 def update_config_service():
     try:
         app.state.init_config_data = app.state.config_service.load_config(force_reload=True)  # True表示强制重载需求文件
+
+        logger.info("成功更新需求配置文件。")
         ui.notify(
             "需求配置文件更新成功!",
             type="positive",
@@ -370,6 +375,7 @@ def update_config_service():
             close_button="✖",
         )
     except Exception as e:
+        logger.error(f"更新需求配置文件失败：{e}")
         ui.notify(
             f'需求配置文件更新出错： "{e}" ',
             type="negative",
@@ -411,6 +417,8 @@ def updata_overview_config():
         with open(f"{BASE_DIR}/overview_config.json", "r", encoding="utf-8") as f:
             # 使用 json.load() 读取文件内容并解析
             app.storage.general["over_config_data"] = json.load(f)
+
+            logger.info("成功更新概述项配置。")
             ui.notify(
                 "概述项配置更新成功!",
                 type="positive",
@@ -420,6 +428,7 @@ def updata_overview_config():
                 close_button="✖",
             )
     except Exception as e:
+        logger.error(f"更新概述项配置失败；{e}")
         ui.notify(
             f'概述项配置文件更新出错： "{e}" ',
             type="negative",
@@ -487,6 +496,8 @@ def project_table_update_config_update():
         if os.path.exists(f"{BASE_DIR}/project_table_update_config.json"):
             with open(f"{BASE_DIR}/project_table_update_config.json", "r", encoding="utf-8") as f:
                 app.storage.general["project_table_update_config"] = json.load(f)
+
+        logger.info("成功更新项目表滚动信息关联配置。")
         ui.notify(
             "项目表滚动信息关联配置更新成功!",
             type="positive",
@@ -496,6 +507,7 @@ def project_table_update_config_update():
             close_button="✖",
         )
     except Exception as e:
+        logger.error(f"更新项目表滚动信息关联配置失败：{e}")
         ui.notify(
             f'项目表滚动信息关联配置更新出错： "{e}" ',
             type="negative",
@@ -532,6 +544,8 @@ def project_summary_update():
                 # 将临时项目号增加到专门记录临时项目的服务器存储里
                 if "RFTS" in project_name:
                     app.storage.general["temp_project_name"].append(project_name)
+
+        logger.info("成功更新项目列表。")
         ui.notify(
             "项目列表更新成功!",
             type="positive",
@@ -541,6 +555,7 @@ def project_summary_update():
             close_button="✖",
         )
     except Exception as e:
+        logger.info("更新项目列表失败。")
         ui.notify(
             f'项目列表更新出错： "{e}" ',
             type="negative",
