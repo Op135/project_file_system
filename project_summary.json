@@ -1,6 +1,6 @@
 {
     "RFFM-1001-A": {
-        "state": "待定",
+        "state": "研发",
         "model_notes": "",
         "creation_date": "2020-03-04",
         "introduction": "常规白光照明+荧光成像模式，内置驱动板",
@@ -1111,6 +1111,13 @@
         "creation_date": "2025-12-04",
         "introduction": "常规白光照明，出线方向与散热器出风方向垂直",
         "customer": "NY"
+    },
+    "RFFM-1519-SG": {
+        "state": "研发",
+        "model_notes": "",
+        "creation_date": "2026-01-09",
+        "introduction": "常规白光照明，出线方向与散热器出风方向垂直",
+        "customer": "KMFK"
     },
     "RFFM-1520-A": {
         "state": "量产",

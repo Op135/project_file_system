@@ -57,6 +57,7 @@ async def requirement_page(type="", json_path="", project_name=""):
             .nicegui-editor .q-editor__content p, .nicegui-markdown p {
                 margin: 0.2rem 0;
             }
+                  
             /*控制选项框内选项样式*/
             .q-item {
                 min-height: 30px;
@@ -64,17 +65,36 @@ async def requirement_page(type="", json_path="", project_name=""):
                 color: inherit;
                 transition: color 0.3s,background-color 0.3s
             }
-            /*控制下拉选框高度*/
-            .q-field--auto-height .q-field__control, .q-field--auto-height .q-field__native {
-                min-height: 30px;
+                     
+                     
+            /* 定义一个名为 small-select 的类，专门用于减小高度 */
+            /* 1. 覆盖 min-height 和 height */
+            .small-select .q-field__control, 
+            .small-select .q-field__native {
+                min-height: 32px !important; /* 调整为你想要的小高度 */
+                height: 32px !important;
+            }
+            /* 2. 调整图标/下拉箭头容器的高度，确保居中 */
+            .small-select .q-field__marginal {
+                height: 32px !important;
+                font-size: 20px !important; /* 图标也可以稍微改小一点 */
+            }
+            /* 3. (可选) 如果用了 label，可能需要调整 label 的行高或位置 */
+            .small-select .q-field__label {
+                top: 6px; 
+            }
+               
+            /*已注释掉——控制下拉选框高度*/
+            /*.q-field--auto-height .q-field__control, .q-field--auto-height .q-field__native {
+                min-height: 40px;
             }
             .q-field--auto-height .q-field__control {
-                height: 30px;
+                height: 50px;
             }
             .q-field__marginal {
                 height: 30px;
                 font-size: 24px;
-            }
+            }*/
             /*.q-menu {
                 background-color:#efffff;
             }*/
@@ -3163,7 +3183,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                                     PROJECT_STATE_LIST,
                                     value=app.storage.general["project_summary"][project_name].get("state"),
                                     on_change=lambda e: set_project_state(project_name, e),
-                                ).props("outlined").classes("absolute top-0 left-1")
+                                ).props("outlined").classes("absolute top-0 left-1 small-select")
                             else:
                                 ui.chip(icon="star", color="amber-7").props("outline").classes(
                                     "absolute top-0 left-1 text-sm"

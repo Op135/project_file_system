@@ -373,9 +373,12 @@ def information_page():
         if current_role in module_show_data["overview_charge_pending_module"]:
             with ui.card().classes("gap-2 p-2"):
                 ui.label("待判断概述的项目：").classes("text-base")
+                show_bool = False
                 for user, project_list in app.storage.general["overview_charge_pending"].items():
                     if user == current_user:
                         for project_name in project_list:
+                            if not show_bool:
+                                show_bool = True
                             ui.button(
                                 f"点击更新{project_name}概述负责内容",
                                 on_click=lambda pn=project_name: get_overviow_page(pn, False),
@@ -385,3 +388,5 @@ def information_page():
                                     us
                                 ].remove(pn),
                             )
+                if not show_bool:
+                    ui.label("无待判断概述的项目").classes("text-sm text-green-500")
