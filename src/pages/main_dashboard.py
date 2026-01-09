@@ -30,7 +30,8 @@ def main_page():
     # 格式：(图标, 标题, 描述, 目标路径)
     menu_items = [
         ("assignment", "项目资料", "录入与查看项目资料", "/project_table"),
-        ("insert_chart", "消息与统计", "查阅项目相关消息与统计图表", "/information"),
+        ("rule", "项目待办项", "查阅项目相关待办项", "/information"),
+        ("handyman", "分析工具", "提供用于专业分析计算的工具", "/tool"),
     ]
 
     # 主界面
@@ -55,7 +56,7 @@ def main_page():
     # a-classes: 应用于所有子元素的通用样式
     # b-classes: 应用于特定子元素的样式 (这里没用，但可以写 b-col-6 c-col-4 等)
     with ui.column().classes("w-full h-[calc(100vh-5rem)] items-center justify-center"):
-        with ui.grid(columns=2).classes("w-[calc(70vw)] gap-4 h-[calc(30vh)]"):
+        with ui.grid(columns=3).classes("w-[calc(70vw)] gap-4 h-[calc(30vh)]"):
             # 所有非已审项目数量
             state_num_sum = 0
             # 所有登录用户提交的非已审项目数量

@@ -331,7 +331,7 @@ def information_page():
     header = ui.header(elevated=True).classes("flex justify-between items-center bg-blue-500 h-12 px-4")
     with header:
         ui.image(f"{IMG_DIR}/Rayfine.png").classes("absolute w-20")
-        ui.label("消息与统计").classes(
+        ui.label("项目待办项").classes(
             "text-white text-lg absolute left-1/2 transform -translate-x-1/2"
         )  # 绝对定位居中
         with ui.avatar(size="lg").classes("cursor-pointer ml-auto -mt-3"):  # 右侧对齐
