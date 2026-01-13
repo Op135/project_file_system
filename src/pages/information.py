@@ -4,6 +4,7 @@ import json
 import logging
 import os
 from datetime import datetime
+from pathlib import Path
 
 from nicegui import app, ui
 
@@ -332,6 +333,19 @@ def information_page():
         file_path = os.path.join(REQ_DIR, f"temp/{current_user}/{project_name}_需求配置_V{version}.json")
         ui.navigate.to(f"/main/requirement?type=requirement&json_path={file_path}")
 
+    def dele_button_group(project_name, version, button_group):
+        app.storage.general["temp_req"][current_user][project_name].remove(version)
+        # 删除指定路径文件
+        file_path = Path(os.path.join(REQ_DIR, f"temp/{current_user}/{project_name}_需求配置_V{version}.json"))
+        try:
+            file_path.unlink(missing_ok=True)
+            logger.info(f"文件 {file_path} 已删除（或原本就不存在）")
+        except PermissionError:
+            logger.error(f"删除失败：没有权限删除 {file_path}")
+        except IsADirectoryError:
+            logger.error(f"删除失败：{file_path} 是一个文件夹，不是文件")
+        button_group.delete()
+
     # 主界面
     header = ui.header(elevated=True).classes("flex justify-between items-center bg-blue-500 h-12 px-4")
     with header:
@@ -353,8 +367,8 @@ def information_page():
             with ui.card().classes("gap-2 p-2"):
                 ui.label("需求评审状态：").classes("text-base")
                 # 如果用户是审核者，显示所有待审需求
+                show_bool = False
                 if current_role in ["研发经理"] and app.storage.general.get("wait_review", {}):
-                    show_bool = False
                     for project_name, ver_dic in app.storage.general["wait_review"].items():
                         for ver, dic in ver_dic.items():
                             # 如果当前项目的当前版本未审
@@ -362,8 +376,6 @@ def information_page():
                                 show_bool = True
                                 button_group = ui.button_group().props("outline")
                                 get_review_button(button_group, project_name, ver)
-                    if not show_bool:
-                        ui.label("无待评审需求").classes("text-sm text-green-500")
                 # 用户不是审核者，且存在待审数据
                 elif app.storage.general.get("wait_review", {}):
                     show_bool = False
@@ -373,8 +385,8 @@ def information_page():
                                 show_bool = True
                                 button_group = ui.button_group().props("outline")
                                 get_review_button(button_group, project_name, ver)
-                    if not show_bool:
-                        ui.label("无待评审需求").classes("text-sm text-green-500")
+                if not show_bool:
+                    ui.label("无待评审需求").classes("text-sm text-green-500")
         if current_role in module_show_data["overview_charge_pending_module"]:
             with ui.card().classes("gap-2 p-2"):
                 ui.label("待判断概述的项目：").classes("text-base")
@@ -412,11 +424,11 @@ def information_page():
                                         on_click=lambda pn=project_name, v=version: get_req_page(pn, v),
                                     ).props("outline")
                                     ui.button(
-                                        "删除",
+                                        "移除记录",
                                         color="red-8",
-                                        on_click=lambda pn=project_name, v=version: app.storage.general["temp_req"][
-                                            current_user
-                                        ][pn].remove(v),
-                                    ).props("").on("click", lambda: button_group.delete())
+                                        on_click=lambda pn=project_name, v=version, bg=button_group: dele_button_group(
+                                            pn, v, bg
+                                        ),
+                                    ).props("")
                 if not show_bool:
                     ui.label("无项目暂存需求记录").classes("text-sm text-green-500")

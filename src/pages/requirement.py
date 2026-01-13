@@ -201,6 +201,8 @@ async def requirement_page(type="", json_path="", project_name=""):
     # 获取所有JSON配置文件的文件名
     try:
         config_files = [f.name for f in Path(REQ_DIR).glob("*.json") if f.is_file()]
+        # 合并列表
+        config_files.extend([f.name for f in Path(f"{REQ_DIR}/temp/{current_user}").glob("*.json") if f.is_file()])
         if not config_files:
             ui.notify(
                 "系统初始化，目录下未找到任何JSON配置文件。",
@@ -490,10 +492,36 @@ async def requirement_page(type="", json_path="", project_name=""):
             try:
                 old_data = {}
                 new_data = {}
-                with open(f"{REQ_DIR}/{old_file}", "r", encoding="utf-8") as f:
-                    old_data = json.load(f)
-                with open(f"{REQ_DIR}/{new_file}", "r", encoding="utf-8") as f:
-                    new_data = json.load(f)
+                if Path(f"{REQ_DIR}/{old_file}").is_file():
+                    with open(f"{REQ_DIR}/{old_file}", "r", encoding="utf-8") as f:
+                        old_data = json.load(f)
+                elif Path(f"{REQ_DIR}/temp/{current_user}/{old_file}").is_file():
+                    with open(f"{REQ_DIR}/temp/{current_user}/{old_file}", "r", encoding="utf-8") as f:
+                        old_data = json.load(f)
+                else:
+                    ui.notify(
+                        f"文件不存在: {old_file}",
+                        type="negative",
+                        position="center",
+                        timeout=0,
+                        progress=False,
+                        close_button="✖",
+                    )
+                if Path(f"{REQ_DIR}/{new_file}").is_file():
+                    with open(f"{REQ_DIR}/{new_file}", "r", encoding="utf-8") as f:
+                        new_data = json.load(f)
+                elif Path(f"{REQ_DIR}/temp/{current_user}/{new_file}").is_file():
+                    with open(f"{REQ_DIR}/temp/{current_user}/{new_file}", "r", encoding="utf-8") as f:
+                        new_data = json.load(f)
+                else:
+                    ui.notify(
+                        f"文件不存在: {new_file}",
+                        type="negative",
+                        position="center",
+                        timeout=0,
+                        progress=False,
+                        close_button="✖",
+                    )
 
             except Exception as e:
                 ui.notify(
@@ -2149,6 +2177,9 @@ async def requirement_page(type="", json_path="", project_name=""):
                 if not app.storage.general["temp_req"][current_user].get(project_name, []):
                     app.storage.general["temp_req"][current_user][project_name] = []
                 app.storage.general["temp_req"][current_user][project_name].append(new_version)
+                app.storage.general["temp_req"][current_user][project_name] = sorted(
+                    set(app.storage.general["temp_req"][current_user][project_name])
+                )
 
                 logger.info(f"成功暂存需求配置：{project_name}_需求配置_V{new_version}.json")
                 ui.notify(
