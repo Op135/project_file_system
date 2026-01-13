@@ -327,6 +327,11 @@ def information_page():
                         ""
                     )
 
+    # 跳转到指定项目与版本的临时需求文件配置页面
+    def get_req_page(project_name, version):
+        file_path = os.path.join(REQ_DIR, f"temp/{current_user}/{project_name}_需求配置_V{version}.json")
+        ui.navigate.to(f"/main/requirement?type=requirement&json_path={file_path}")
+
     # 主界面
     header = ui.header(elevated=True).classes("flex justify-between items-center bg-blue-500 h-12 px-4")
     with header:
@@ -390,3 +395,28 @@ def information_page():
                             )
                 if not show_bool:
                     ui.label("无待判断概述的项目").classes("text-sm text-green-500")
+        if current_role in module_show_data["temp_req_module"]:
+            with ui.card().classes("gap-2 p-2"):
+                ui.label("暂存需求记录：").classes("text-base")
+                show_bool = False
+                for user, project_dic in app.storage.general["temp_req"].items():
+                    if user == current_user:
+                        for project_name, version_li in project_dic.items():
+                            for version in version_li:
+                                if not show_bool:
+                                    show_bool = True
+                                button_group = ui.button_group().props("outline")
+                                with button_group:
+                                    ui.button(
+                                        f"编辑{project_name}_V{version}需求内容",
+                                        on_click=lambda pn=project_name, v=version: get_req_page(pn, v),
+                                    ).props("outline")
+                                    ui.button(
+                                        "删除",
+                                        color="red-8",
+                                        on_click=lambda pn=project_name, v=version: app.storage.general["temp_req"][
+                                            current_user
+                                        ][pn].remove(v),
+                                    ).props("").on("click", lambda: button_group.delete())
+                if not show_bool:
+                    ui.label("无项目暂存需求记录").classes("text-sm text-green-500")

@@ -566,7 +566,7 @@ async def requirement_page(type="", json_path="", project_name=""):
         with project_card:
             with ui.column().classes("-space-y-4"):
                 ui.label("请输入项目号：").classes("text-xl font-bold")
-                ui.label("1. 提交需求或选择查阅版本时该设置才生效，导出需求不起效。").classes("text-base text-red")
+                ui.label("1. 提交需求或选择查阅版本时该设置才生效，暂存需求不起效。").classes("text-base text-red")
                 ui.label("2. 新建临时项目输入RFTS即可，系统自动顺延产生项目号。").classes("text-base text-red")
                 ui.label("3. 输入完整临时项目号，存在则属于升级版本，不存在则无效。").classes("text-base text-red")
             input_field = ui.input().classes("text-[20px]/[22px] w-full")
@@ -1218,7 +1218,7 @@ async def requirement_page(type="", json_path="", project_name=""):
 
             except Exception as e:
                 ui.notify(
-                    f"需求项激活逻辑计算出错: ID={current_c_id}, 表达式={p}, 错误={e}, 导出需求，联系管理员处理。",
+                    f"需求项激活逻辑计算出错: ID={current_c_id}, 表达式={p}, 错误={e}, 请暂存需求，联系管理员处理。",
                     type="negative",
                     position="center",
                     timeout=0,
@@ -1283,7 +1283,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                 # 处理遇到节点序号条件为空的异常
                 elif v["condition"] == "":
                     ui.notify(
-                        f"需求节点序号为{k}的激活条件为空，无法处理，请导出需求，联系管理员处理后再继续。",
+                        f"需求节点序号为{k}的激活条件为空，无法处理，请暂存需求，联系管理员处理后再继续。",
                         type="negative",
                         position="center",
                         timeout=0,
@@ -1916,7 +1916,7 @@ async def requirement_page(type="", json_path="", project_name=""):
         # 先复制整个数据
         data_json = data
 
-        # === 新增代码开始：提交/导出前自动清理孤儿数据 ===
+        # === 新增代码开始：提交/导出/暂存前自动清理孤儿数据 ===
         # 遍历所有节点，专门清洗输入类题目中因依赖变更产生的失效数据
         for k, v in data_json["data"].items():
             if v["answer_type"] in ["正整数", "单行文本", "多行文本"]:
@@ -1981,7 +1981,7 @@ async def requirement_page(type="", json_path="", project_name=""):
 
         # 如果目标项目名只有RFTS，则需要推算临时项目的顺延项目号
         new_temp_project_bool = False
-        if target_project_name == "RFTS":
+        if type == "submit" and target_project_name == "RFTS":
             # 存在临时项目了
             if app.storage.general.get("temp_project_name", []):
                 # 找到临时项目号存在的最大值
@@ -2011,11 +2011,16 @@ async def requirement_page(type="", json_path="", project_name=""):
 
         # 参照项目的审核状态
         original_review_state = ""
+        # 参照项目的提交人
+        original_submitter = ""
         target_review_state = ""
         if app.storage.general["wait_review"].get(project_name, {}):
-            original_review_state = app.storage.general["wait_review"][project_name].get(version, {"state": ""})[
-                "state"
-            ]
+            original_review_state = app.storage.general["wait_review"][project_name].get(
+                f"{version.split('.')[0]}.0", {"state": ""}
+            )["state"]
+            original_submitter = app.storage.general["wait_review"][project_name].get(
+                f"{version.split('.')[0]}.0", {"submitter": ""}
+            )["submitter"]
         if app.storage.general["wait_review"].get(target_project_name, {}):
             if app.storage.general["wait_review"][target_project_name].keys():
                 ver_max = (
@@ -2055,10 +2060,20 @@ async def requirement_page(type="", json_path="", project_name=""):
 
         # 输出类型为导出到本地，导出不修改名称（目标项目名不起效），只迭代小数点后版本，更新时间戳
         if type == "export":
-            # 禁止待审、待修改需求导出
-            if original_review_state not in ["已审", ""]:
+            if original_review_state == "待修改" and original_submitter != current_user:
                 ui.notify(
-                    "需求处于未审状态，不能导出到本地！",
+                    "参照需求处于待修改状态，且当前用户不是参照需求提交人，禁止暂存！",
+                    type="warning",
+                    position="bottom",
+                    timeout=3000,
+                    progress=True,
+                    close_button="✖",
+                )
+                return
+            # 禁止待审、待修改需求导出
+            if original_review_state == "待审":
+                ui.notify(
+                    "参照需求处于待审状态，禁止暂存！",
                     type="warning",
                     position="bottom",
                     timeout=3000,
@@ -2095,29 +2110,72 @@ async def requirement_page(type="", json_path="", project_name=""):
             data_json["req_timestamp"] = datetime.now().isoformat()
             # 1. 将字典转换为 JSON 字符串
             json_str = json.dumps(data_json, indent=4, ensure_ascii=False)
-            # 2. 生成 JavaScript 下载代码
-            js_code = f"""
-                const blob = new Blob([{json.dumps(json_str)}], {{ type: 'application/json' }});
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = 'data.json';  // 下载文件名
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
-            """
-            # 3. 执行 JavaScript
-            ui.run_javascript(js_code)
 
-            ui.notify(
-                f"需求已导出，版本已迭代到: V{version}，且导出时不会更改项目名称。",
-                type="positive",
-                position="bottom",
-                timeout=1000,
-                progress=True,
-                close_button="✖",
-            )
+            # ------------------------------------原导出下载到本地的功能代码----------------------------------
+            # 2. 生成 JavaScript 下载代码
+            # js_code = f"""
+            #     const blob = new Blob([{json.dumps(json_str)}], {{ type: 'application/json' }});
+            #     const url = URL.createObjectURL(blob);
+            #     const a = document.createElement('a');
+            #     a.href = url;
+            #     a.download = 'data.json';  // 下载文件名
+            #     document.body.appendChild(a);
+            #     a.click();
+            #     document.body.removeChild(a);
+            #     URL.revokeObjectURL(url);
+            # """
+            # 3. 执行 JavaScript
+            # ui.run_javascript(js_code)
+            # ui.notify(
+            #         f"需求已导出，版本已迭代到: V{version}，且导出时不会更改项目名称。",
+            #         type="positive",
+            #         position="bottom",
+            #         timeout=1000,
+            #         progress=True,
+            #         close_button="✖",
+            #     )
+            # -----------------------------------------------------------------------------------------------
+            # 写入文件
+            file_path = os.path.join(REQ_DIR, f"temp/{current_user}/{project_name}_需求配置_V{new_version}.json")
+            try:
+                # 这一行代码即可完成：检查 + 递归创建 + 忽略已存在错误
+                Path(os.path.join(REQ_DIR, f"temp/{current_user}")).mkdir(parents=True, exist_ok=True)
+                with open(file_path, "w", encoding="utf-8") as f:
+                    f.write(json_str)
+
+                # 将该需求版本标记到待审字典里
+                if not app.storage.general["temp_req"].get(current_user, {}):
+                    app.storage.general["temp_req"][current_user] = {}
+                if not app.storage.general["temp_req"][current_user].get(project_name, []):
+                    app.storage.general["temp_req"][current_user][project_name] = []
+                app.storage.general["temp_req"][current_user][project_name].append(new_version)
+
+                logger.info(f"成功暂存需求配置：{project_name}_需求配置_V{new_version}.json")
+                ui.notify(
+                    f"需求已暂存，版本迭代到: V{new_version}，待办项已增加相应记录。",
+                    type="positive",
+                    position="center",
+                    timeout=3000,
+                    progress=True,
+                    close_button="✖",
+                )
+                ui.timer(
+                    3,
+                    callback=lambda: ui.navigate.to(f"/main/requirement?type=requirement&json_path={file_path}"),
+                    once=True,
+                )
+
+            except Exception as e:
+                logger.error("暂存项目需求时发生其他错误", exc_info=True)
+                ui.notify(
+                    f"暂存项目需求资料出错：{e}",
+                    type="negative",
+                    position="center",
+                    timeout=0,
+                    progress=False,
+                    close_button="✖",
+                )
+
         # 输出类型为提交到服务器
         elif type == "submit":
             if target_project_name == "":
@@ -2129,10 +2187,14 @@ async def requirement_page(type="", json_path="", project_name=""):
                     progress=True,
                     close_button="✖",
                 )
+                # 没有填写名字，更不会占用临时项目号，不用处理
+                # 如果属于新创建临时项目，失败则删除占位的临时项目号
+                # if new_temp_project_bool:
+                #     app.storage.general["temp_project_name"].remove(target_project_name)
                 return
             if current_role not in ["销售", "销售总监", "admin"]:
                 ui.notify(
-                    "当前用户无权限提交需求，只能导出到本地！",
+                    "当前用户无权限提交需求！",
                     type="warning",
                     position="bottom",
                     timeout=3000,
@@ -2148,13 +2210,17 @@ async def requirement_page(type="", json_path="", project_name=""):
                 and target_project_name not in app.storage.general["project_summary"]
             ):
                 ui.notify(
-                    "非临时项目，又未正式立项，不可提交服务器，只可导出到本地！",
+                    "非临时项目，又未正式立项，不可提交服务器，只可暂存！",
                     type="warning",
                     position="bottom",
                     timeout=3000,
                     progress=True,
                     close_button="✖",
                 )
+                # 不是临时项目，更不会占用临时项目号，不用处理
+                # 如果属于新创建临时项目，失败则删除占位的临时项目号
+                # if new_temp_project_bool:
+                #     app.storage.general["temp_project_name"].remove(target_project_name)
                 return
             # print(target_project_name)
             if target_project_name.split("-")[0] == "RFTS" and not validate_format_regex(
@@ -2168,11 +2234,28 @@ async def requirement_page(type="", json_path="", project_name=""):
                     progress=True,
                     close_button="✖",
                 )
+                # 既然已经是想升级临时项目，则不是单单RFTS，不会占位临时项目号，不用这个处理
+                # 如果属于新创建临时项目，失败则删除占位的临时项目号
+                # if new_temp_project_bool:
+                #     app.storage.general["temp_project_name"].remove(target_project_name)
+                return
+            if original_review_state == "待修改" and current_user != original_submitter:
+                ui.notify(
+                    "参照项目的需求处于待修改状态，只有原提交人能修改，禁止提交！",
+                    type="warning",
+                    position="bottom",
+                    timeout=3000,
+                    progress=True,
+                    close_button="✖",
+                )
+                # 如果属于新创建临时项目，失败则删除占位的临时项目号
+                if new_temp_project_bool:
+                    app.storage.general["temp_project_name"].remove(target_project_name)
                 return
             # 如果最近一次需求配置文件还处于未审状态，本次需求还不能提交
             if original_review_state == "待审":
                 ui.notify(
-                    "参照项目的需求处于待审状态，禁止参照引用！",
+                    "参照项目的需求处于待审状态，禁止提交！",
                     type="warning",
                     position="bottom",
                     timeout=3000,
@@ -2185,13 +2268,16 @@ async def requirement_page(type="", json_path="", project_name=""):
                 return
             if target_review_state == "待审":
                 ui.notify(
-                    "目标项目的需求处于待审状态，禁止修改！",
+                    "目标项目的需求处于待审状态，禁止升级版本！",
                     type="warning",
                     position="bottom",
                     timeout=3000,
                     progress=True,
                     close_button="✖",
                 )
+                # 如果属于新创建临时项目，失败则删除占位的临时项目号
+                if new_temp_project_bool:
+                    app.storage.general["temp_project_name"].remove(target_project_name)
                 return
             change_name = False
             #  改了项目名
@@ -2214,6 +2300,9 @@ async def requirement_page(type="", json_path="", project_name=""):
                     # 已审状态才能升级版本, 待修改不升级
                     if original_review_state in ["已审", ""]:
                         new_version = f"{version_a + 1}.0"
+                    # 防止修改需求暂存后提交时，版本迭代小数而提交，
+                    else:
+                        new_version = f"{version_a}.0"
 
                     # 获取旧版最高版需求文件数据
                     old_data_path = os.path.join(REQ_DIR, project_exists_file[str(v_max)]["name"])
@@ -2497,16 +2586,17 @@ async def requirement_page(type="", json_path="", project_name=""):
                     ui.menu_item("返回主界面", on_click=lambda: ui.navigate.to("/main"))
                     ui.menu_item("返回项目信息表", on_click=lambda: ui.navigate.to("/project_table"))
                     ui.separator().props("size=1px")
-                    ui.menu_item(
-                        "提交需求", on_click=lambda: output_config_data(app.storage.client["config_data"], "submit")
-                    )
-                    ui.menu_item(
-                        "导出到本地", on_click=lambda: output_config_data(app.storage.client["config_data"], "export")
-                    )
-                    ui.menu_item("从本地导入", on_click=lambda: import_config_data(upload))
-                    ui.separator().props("size=1px")
+                    if current_role in ["销售", "销售总监", "admin"]:
+                        ui.menu_item("新建需求", on_click=lambda: get_project_dialog("new"))
+                        ui.menu_item(
+                            "暂存需求", on_click=lambda: output_config_data(app.storage.client["config_data"], "export")
+                        )
+                        ui.menu_item(
+                            "提交需求", on_click=lambda: output_config_data(app.storage.client["config_data"], "submit")
+                        )
+                    # ui.menu_item("从本地导入", on_click=lambda: import_config_data(upload))
+                    # ui.separator().props("size=1px")
                     ui.menu_item("对比需求", on_click=show_comparison_dialog)
-                    ui.menu_item("新建需求", on_click=lambda: get_project_dialog("new"))
                     ui.separator().props("size=1px")
                     ui.menu_item("注销登录", on_click=lambda: logout())
                     ui.menu_item("关闭菜单", menu.close)
@@ -2607,11 +2697,11 @@ async def requirement_page(type="", json_path="", project_name=""):
                             == "待审"
                         ):
                             ui.notify(
-                                "当前需求处于待审状态，禁止导出和提交！",
+                                "当前需求处于待审状态，禁止暂存和提交，编辑后将无法保存！",
                                 type="warning",
-                                position="bottom",
-                                timeout=3000,
-                                progress=True,
+                                position="center",
+                                timeout=0,
+                                progress=False,
                                 close_button="✖",
                             )
                         elif (
@@ -2619,13 +2709,17 @@ async def requirement_page(type="", json_path="", project_name=""):
                                 app.storage.client["version"]
                             ]["state"]
                             == "待修改"
+                            and current_user
+                            != app.storage.general["wait_review"][app.storage.client["project_name"]][
+                                app.storage.client["version"]
+                            ]["submitter"]
                         ):
                             ui.notify(
-                                "当前需求处于待修改状态，修改后可提交，但禁止导出！",
+                                "当前需求处于待修改状态，只有原提交人可修改后提交或暂存，其他人不能！",
                                 type="warning",
-                                position="bottom",
-                                timeout=3000,
-                                progress=True,
+                                position="center",
+                                timeout=0,
+                                progress=False,
                                 close_button="✖",
                             )
             # ignore不设定默认导致键盘事件在'input', 'select', 'button', 'textarea'元素聚焦时被忽略

@@ -134,6 +134,8 @@ app.storage.general.setdefault("overview_charge_pending", {})
 app.storage.general.setdefault("project_sale", {})
 # 储存服务器层级 等待审核的项目需求即待审版本
 app.storage.general.setdefault("wait_review", {})
+# 储存服务器层级 记录暂存的项目需求项目与版本
+app.storage.general.setdefault("temp_req", {})
 # 储存服务器层级 用于存储用户偏好信息
 app.storage.general.setdefault("user_preferences", {})
 # 储存服务器层级 用于存储用户偏好信息
