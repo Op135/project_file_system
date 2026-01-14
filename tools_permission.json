@@ -1,0 +1,39 @@
+{
+    "etendue_calc": [
+        "admin",
+        "boss",
+        "研发经理",
+        "研发光学",
+        "销售总监",
+        "销售"
+    ],
+    "mode_calc": [
+        "admin",
+        "boss",
+        "研发经理",
+        "研发光学"
+    ],
+    "spherical_calc": [
+        "admin",
+        "boss",
+        "研发经理",
+        "研发光学",
+        "质量"
+    ],
+    "microlens_calc": [
+        "admin",
+        "boss",
+        "研发经理",
+        "研发光学",
+        "销售总监",
+        "销售"
+    ],
+    "simple_coupling_calc": [
+        "admin",
+        "boss",
+        "研发经理",
+        "研发光学",
+        "销售总监",
+        "销售"
+    ]
+}
