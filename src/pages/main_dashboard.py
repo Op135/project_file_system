@@ -32,6 +32,7 @@ def main_page():
         ("assignment", "项目资料", "录入与查看项目资料", "/project_table"),
         ("rule", "项目待办项", "查阅项目相关待办项", "/information"),
         ("handyman", "分析工具", "提供用于专业分析计算的工具", "/tool"),
+        ("handyman", "需求树状图", "提供用于专业分析计算的工具", "/question_tree"),
     ]
 
     # 主界面
