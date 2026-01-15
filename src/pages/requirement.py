@@ -1114,68 +1114,6 @@ async def requirement_page(type="", json_path="", project_name=""):
             if app.storage.client["config_data"]["data"][c_id]["answer_type"] in ["单选", "下拉单选"]:
                 if op_user_out.get("value") is None:
                     return logic_out_bool
-        # 如果该节点的前提条件都有输出了，再详细判断
-        # 复杂逻辑，处理本次条件节点序号用户输出在条件逻辑里出现的地方的运算情况
-        # 遍历分割出来的单个逻辑语句块，4any['硬件'] 和 17==True
-        # for p in elements:
-        #     # 将条件语句按照条件逻辑字符串进行切分
-        #     # 4 和 ['硬件']
-        #     cond_result = re.split(cond_pattern, p)
-        #     # 遍历涉及的条件序号
-        #     for c_id in cond_id_list:
-        #         # 跳过条件序号与条件语句不匹配的
-        #         if c_id != cond_result[0].strip():
-        #             continue
-        #         # 如果条件序号与条件语句匹配
-        #         # 获取条件节点的用户选填结果
-        #         op_user_out = dict(app.storage.client["config_data"]["data"][c_id]["user_must_out"])
-        #         # 用户选择的选项输出值构成的列表
-        #         op_user_out_list = []
-        #         if len(op_user_out.keys()) > 1:
-        #             for op_key, op_value in op_user_out.items():
-        #                 if op_value:
-        #                     for op in app.storage.client["config_data"]["data"][c_id]["options"]:
-        #                         if op["option_content"] == op_key:
-        #                             op_user_out_list.append(op["option_out"])
-        #         else:
-        #             op_user_out_list = list(op_user_out.values())
-        #         # 对比用户多选项列表与条件列表之间是否存在相同元素
-        #         # isinstance判断变量是否为某个数据类型
-        #         if "any" in p:  # and (isinstance(op_user_out, list) or op_user_out == [])
-        #             # ast.literal_eval 用于安全地解析和评估字符串中的字面量表达式
-        #             # ['硬件']
-        #             condition = ast.literal_eval(cond_result[1].strip())
-        #             # 判断用户选择项列表元素是否有任意一个在条件项列表里，并插入到判断结果列表里
-        #             if "not" in p:
-        #                 # 看当前激活条件列表里，全部都跟条件节点用户输出匹配不上，返回false
-        #                 bool_list.append(not any(item in condition for item in op_user_out_list))
-        #             else:
-        #                 # 看当前激活条件列表里，只要有一个跟条件节点用户输出匹配上，返true
-        #                 bool_list.append(any(item in condition for item in op_user_out_list))
-        #         # 对比用户多选项列表是否是条件列表的子集
-        #         elif "all" in p:  #  and (isinstance(op_user_out, list) or op_user_out == [])
-        #             # ['硬件']
-        #             condition = ast.literal_eval(cond_result[1].strip())
-        #             op_user_set = set(op_user_out_list)
-        #             cond_set = set(condition)
-        #             # 判断用户选择项集合是否为条件项集合的子集，并插入到判断结果列表里
-        #             if "not" in p:
-        #                 bool_list.append(not op_user_set.issubset(cond_set))
-        #             else:
-        #                 bool_list.append(op_user_set.issubset(cond_set))
-        #         # 对比用户单选项是否与条件一致
-        #         elif "==" in p:  #  and (isinstance(op_user_out, list) or op_user_out == [])
-        #             bool_list.append(op_user_out_list[0] == cond_result[1].strip() if op_user_out_list != [] else False)
-        #         # 对比用户单选项是否与条件不一致
-        #         elif "!=" in p:  #  and (isinstance(op_user_out, list) or op_user_out == [])
-        #             bool_list.append(op_user_out_list[0] != cond_result[1].strip() if op_user_out_list != [] else False)
-        #         else:
-        #             logger.info(f"节点{k}激活条件逻辑不符合语法")
-        #             continue
-
-        # result_str = "".join(f"{x} {y} " for x, y in itertools.zip_longest(bool_list, separators, fillvalue=""))
-        # # print(k, cond_lgoic_str, result_str)
-        # logic_out_bool = eval(result_str)
 
         # 3. 逻辑计算
         # 遍历分割开出来的各个条件，如：4any['硬件'] 或 17==True 等
