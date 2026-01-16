@@ -1,7 +1,7 @@
 import ast
+import asyncio
 import json
 import logging
-import os
 import re
 from collections import defaultdict
 
@@ -14,323 +14,498 @@ from ..utils import get_cache_busted_path, logout
 
 logger = logging.getLogger(__name__)
 
-# 配置文件路径
-CONFIG_PATH = f"{BASE_DIR}/config_service.json"
 
+# 1. 数据加载 (保持不变)
+def load_config():
+    file_path = f"{BASE_DIR}/config_service.json"
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            data = json.load(f).get("data", {})
+    except FileNotFoundError:
+        data = {}
 
-# ==========================================
-# 核心逻辑：图关系构建 (Graph Builder)
-# ==========================================
-def translate_val_to_content(node_data, target_val):
-    """
-    将逻辑值 (option_out) 翻译为显示文本 (option_content)
-    例如: True -> "是", "结构" -> "机械结构"
-    """
-    if not node_data or "options" not in node_data:
-        return target_val
-
-    target_str = str(target_val).strip()
-
-    # 遍历该节点的所有选项进行匹配
-    for opt in node_data.get("options", []):
-        # 比较 option_out 和 target_val (都转字符串比对)
-        if str(opt.get("option_out", "")).strip() == target_str:
-            return opt.get("option_content", target_str)
-
-    return target_val
-
-
-def format_logic_value_with_trans(raw_val, operator, source_node):
-    """
-    格式化并翻译逻辑值
-    raw_val: 原始值字符串 (如 "['A', 'B']" 或 "True")
-    source_node: 来源节点对象 (用于查找翻译字典)
-    """
-    final_val = raw_val
-
-    # 1. 尝试解析列表 (处理 any/all)
-    if "[" in raw_val and "]" in raw_val:
-        try:
-            val_list = ast.literal_eval(raw_val)
-            if isinstance(val_list, list):
-                # 翻译列表中的每一项
-                trans_list = [translate_val_to_content(source_node, v) for v in val_list]
-
-                connector = " 且 " if "all" in operator else " 或 "
-                return connector.join(f"“{v}”" for v in trans_list)
-        except Exception:
-            pass  # 解析失败降级处理
-
-    # 2. 单值处理
-    # 去除引号
-    clean_val = raw_val.strip("'").strip('"')
-    trans_val = translate_val_to_content(source_node, clean_val)
-    return f"“{trans_val}”"
-
-
-def format_logic_value(raw_val, operator):
-    """
-    根据操作符将列表值转换为逻辑字符串
-    ['A', 'B'] + any -> "A 或 B"
-    ['A', 'B'] + all -> "A 且 B"
-    """
-    # 1. 尝试解析列表
-    final_val = raw_val
-    is_list = False
-
-    if "[" in raw_val and "]" in raw_val:
-        try:
-            val_list = ast.literal_eval(raw_val)
-            if isinstance(val_list, list):
-                is_list = True
-                # 根据操作符决定连接词
-                connector = " 且 " if "all" in operator else " 或 "
-                final_val = connector.join(str(v) for v in val_list)
-        except Exception:
-            # 解析失败，手动清洗
-            final_val = raw_val.replace("[", "").replace("]", "").replace("'", "").replace('"', "")
-    else:
-        # 普通单值，去引号
-        final_val = raw_val.strip("'").strip('"')
-
-    return final_val
-
-
-def parse_condition_parent(condition_str):
-    """从条件字符串中提取父节点ID"""
-    if not condition_str or condition_str == "无条件":
-        return None
-    # 匹配字符串中的第一个数字序列作为父ID
-    match = re.search(r"(\d+)", str(condition_str))
-    if match:
-        return match.group(1)
-    return None
-
-
-def build_graph_relationships(config_data):
-    """
-    构建双向图关系：
-    1. nodes: ID -> 节点详情
-    2. parent_map: ID -> [父节点ID列表] (上游)
-    3. children_map: ID -> [子节点ID列表] (下游)
-    """
-    nodes_data = config_data.get("data", {})
-    nodes = {}  # 存储节点详细信息
+    child_map = defaultdict(list)
     parent_map = defaultdict(list)
-    children_map = defaultdict(list)
-    roots = []
 
-    # 第一遍遍历：建立基本索引
-    for node_id, node_info in nodes_data.items():
-        # 确保 ID 是字符串类型，方便统一处理
-        str_id = str(node_id)
-        nodes[str_id] = node_info
+    for c_id, info in data.items():
+        cond = info.get("condition", "")
+        if cond == "无条件":
+            continue
+        parents = re.findall(r"(\d+)\s*(?:any|all|==|!=|in)", cond)
+        for p_id in set(parents):
+            child_map[p_id].append(c_id)
+            parent_map[c_id].append(p_id)
 
-        # 解析父节点
-        raw_cond = node_info.get("condition")
-        parent_id = parse_condition_parent(raw_cond)
+    return data, child_map, parent_map
 
-        if parent_id:
-            parent_id = str(parent_id)
-            # 记录关系
-            parent_map[str_id].append(parent_id)
-            children_map[parent_id].append(str_id)
+
+DATA, CHILD_MAP, PARENT_MAP = load_config()
+
+
+# --- 条件翻译 (保持不变) ---
+def translate_condition(cond_str):
+    if not cond_str or cond_str == "无条件":
+        return "初始问题"
+
+    result = cond_str.replace(" and ", " 且 ").replace(" or ", " 或 ")
+
+    op_map = {
+        "==": "选了",
+        "!=": "非",
+        "any": "包含",
+        "all": "全含",
+        "in": "位于",
+    }
+
+    pattern = r"(\d+)\s*(any|all|==|!=|in)\s*((?:\[.*?\])|(?:'[^']*')|(?:\"[^\"]*\")|(?:True|False)|(?:[\u4e00-\u9fa5a-zA-Z0-9_]+))"
+
+    def replacer(match):
+        nid = match.group(1)
+        op = match.group(2)
+        raw_val = match.group(3)
+
+        try:
+            val = ast.literal_eval(raw_val)
+        except (ValueError, SyntaxError):
+            val = raw_val
+
+        node_opts = DATA.get(nid, {}).get("options", [])
+
+        def get_label(v):
+            v_str = str(v)
+            for opt in node_opts:
+                if str(opt.get("option_out")) == v_str:
+                    return opt.get("option_content")
+            if v_str == "True":
+                return "是"
+            if v_str == "False":
+                return "否"
+            return v_str
+
+        if isinstance(val, list):
+            val_display = "/".join([get_label(x) for x in val])
         else:
-            # 没有父节点，视为根节点
-            roots.append(str_id)
+            val_display = get_label(val)
 
-    # 对根节点排序
-    roots.sort(key=lambda x: int(x) if x.isdigit() else 0)
+        op_display = op_map.get(op, op)
+        return f"Q{nid}{op_display}“{val_display}”"
 
-    return nodes, parent_map, children_map, roots
-
-
-# ==========================================
-# 辅助解析逻辑
-# ==========================================
+    translated = re.sub(pattern, replacer, result)
+    return translated
 
 
-def parse_incoming_logic(condition_str, nodes):
-    """
-    解析当前节点的进入条件 (Left Column) - 翻译版
-    """
-    if not condition_str or condition_str == "无条件":
-        return []
+# 2. 递归获取所有祖先 (保持不变)
+def get_all_ancestors(node_id):
+    ancestors = {}
+    queue = [(p_id, 1) for p_id in PARENT_MAP.get(node_id, [])]
+    while queue:
+        curr_p, dist = queue.pop(0)
+        if curr_p not in ancestors or dist < ancestors[curr_p]:
+            ancestors[curr_p] = dist
+            for next_p in PARENT_MAP.get(curr_p, []):
+                queue.append((next_p, dist + 1))
+    return ancestors
 
-    logic_delimiters = ["and", "or"]
-    logic_pattern = "|".join(f"({delimiter})" for delimiter in logic_delimiters)
 
-    parts = re.split(logic_pattern, str(condition_str))
+# 3. 基础卡片颜色配置
+def get_type_base_color(ans_type):
+    # >>> [颜色配置] 卡片基础底色
+    # 如果是选择题类型，使用淡蓝色背景(bg-blue-50)和蓝边框(border-blue-200)
+    # 否则（如填空题），使用淡灰色背景(bg-slate-50)和灰边框(border-slate-200)
+    if any(x in ans_type for x in ["单选", "多选", "下拉"]):
+        return "bg-sky-100 border-sky-200"
+    return "bg-green-50 border-green-200"
 
-    parsed_blocks = []
-    current_relation = "START"
 
-    for part in parts:
-        if not part:
-            continue
-        part = part.strip()
-        if part in logic_delimiters:
-            current_relation = part.upper()
-            continue
+# --- 全局状态 ---
+selected_path = []
+active_ancestors = {}
+column_refreshers = []
+column_scroll_areas = []
+column_wrappers = []
 
-        ops_pattern = r"(\d+)\s*(not\s+)?(any|all|==|!=|in)\s*(.*)"
-        match = re.search(ops_pattern, part)
 
-        if match:
-            ref_id = match.group(1)
-            is_not = match.group(2)
-            operator = match.group(3)
-            raw_val = match.group(4)
+def get_path_to_node(target_id):
+    path = [target_id]
+    curr = target_id
+    loop_limit = 100
+    while PARENT_MAP.get(curr) and loop_limit > 0:
+        curr = PARENT_MAP[curr][0]
+        path.insert(0, curr)
+        loop_limit -= 1
+    return path
 
-            ref_node = nodes.get(ref_id, {})
 
-            # === 核心修改：传入 ref_node 进行翻译 ===
-            display_val = format_logic_value_with_trans(raw_val, operator, ref_node)
+def update_ui_state():
+    visible_count = len(selected_path) + 1
+    for i, wrapper in enumerate(column_wrappers):
+        wrapper.set_visibility(i < visible_count)
 
-            op_display = "等于"
-            if operator == "!=":
-                op_display = "不等于"
-            elif operator == "any":
-                op_display = "包含"
-            elif operator == "all":
-                op_display = "包含"
+    for i in range(min(len(column_refreshers), visible_count)):
+        column_refreshers[i].refresh()
 
-            if is_not:
-                op_display = f"非 ({op_display})"
 
-            parsed_blocks.append(
-                {
-                    "source_id": ref_id,
-                    "source_title": ref_node.get("guide_content", "未知节点"),
-                    "relation": current_relation,
-                    "operator_display": op_display,
-                    "trigger_value": display_val,
-                    "raw": part,
-                }
-            )
+async def jump_to_node(target_id, client=None):
+    global selected_path, active_ancestors
+
+    if not client:
+        try:
+            client = ui.context.client
+        except:
+            pass
+
+    new_path = get_path_to_node(target_id)
+    selected_path = new_path
+    active_ancestors = get_all_ancestors(target_id)
+
+    update_ui_state()
+
+    await asyncio.sleep(0.1)
+
+    for i, sa in enumerate(column_scroll_areas):
+        if i < len(selected_path) - 1:
+            sa.scroll_to(percent=0, duration=0.1)
+
+    depth = len(selected_path) - 1
+    if client:
+        client.run_javascript(f"smartScrollTo('node-{target_id}')")
+
+        client.run_javascript(
+            f'var el = document.getElementById("col-wrapper-{depth + 1}"); if(el) el.scrollIntoView({{behavior: "smooth", inline: "end", block: "nearest"}})'
+        )
+
+        await asyncio.sleep(0.1)
+        client.run_javascript(f"flashNode('node-{target_id}')")
+
+    ui.notify(f"已定位到: {target_id}", type="positive")
+
+
+async def handle_search(query_str, dialog_ref):
+    client = ui.context.client
+    if not query_str:
+        ui.notify("请输入搜索内容", type="warning")
+        return
+
+    if query_str.isdigit():
+        if query_str in DATA:
+            await jump_to_node(query_str, client)
         else:
-            # 纯数字ID兜底
-            if part.isdigit():
-                parsed_blocks.append(
-                    {
-                        "source_id": part,
-                        "source_title": nodes.get(part, {}).get("guide_content", "未知"),
-                        "relation": current_relation,
-                        "operator_display": "关联",
-                        "trigger_value": "-",
-                        "raw": part,
-                    }
-                )
+            ui.notify(f"未找到 ID 为 {query_str} 的问题", type="negative")
+        return
 
-    return parsed_blocks
+    matches = []
+    for nid, info in DATA.items():
+        content = info.get("guide_content", "")
+        if query_str.lower() in content.lower():
+            matches.append({"id": nid, "content": content})
+
+    if len(matches) == 0:
+        ui.notify("未找到相关内容", type="negative")
+    elif len(matches) == 1:
+        await jump_to_node(matches[0]["id"], client)
+    else:
+        dialog_ref.clear()
+        with dialog_ref, ui.card().classes("w-96 max-w-full"):
+            ui.label(f"找到 {len(matches)} 个匹配项").classes("text-lg font-medium mb-2")
+            with ui.scroll_area().classes("h-60 border rounded p-2"):
+                for m in matches:
+
+                    def create_handler(target_id):
+                        async def handler(_):
+                            dialog_ref.close()
+                            await jump_to_node(target_id, client)
+
+                        return handler
+
+                    with (
+                        ui.item()
+                        .classes("hover:bg-blue-50 cursor-pointer rounded border-b border-gray-100 p-2")
+                        .props("clickable")
+                        .on("click", create_handler(m["id"]))
+                    ):
+                        with ui.column().classes("gap-0"):
+                            ui.label(m["id"]).classes("text-xs font-bold bg-gray-200 px-1 rounded w-fit")
+                            ui.label(m["content"]).classes("text-sm text-gray-700 leading-tight")
+            ui.button("关闭", on_click=dialog_ref.close).props("flat full-width")
+        dialog_ref.open()
 
 
-def group_children_by_trigger(current_id, children_ids, nodes):
-    """
-    将子节点按“选项”分组 (Right Column) - 全逻辑展示版
-    同时展示当前节点的选择和外部依赖条件
-    """
-    groups = defaultdict(list)
+async def on_node_select(depth, nid):
+    client = ui.context.client
+    global selected_path, active_ancestors
 
-    # 获取当前节点（作为翻译源）
-    current_node = nodes.get(current_id, {})
+    selected_path = selected_path[:depth] + [nid]
+    active_ancestors = get_all_ancestors(nid)
 
-    # 分割正则：捕获 and/or 以便保留它们，\b 确保单词边界
-    logic_split_pattern = r"(\b(?:and|or)\b)"
+    update_ui_state()
 
-    for cid in children_ids:
-        child = nodes.get(cid, {})
-        raw_cond = child.get("condition", "")
+    await asyncio.sleep(0.05)
 
-        # 如果无条件
-        if not raw_cond or raw_cond == "无条件":
-            groups["直接跳转 (无条件)"].append(cid)
-            continue
+    for i, sa in enumerate(column_scroll_areas):
+        if i != depth:
+            sa.scroll_to(percent=0, duration=0.2)
 
-        # 1. 切割条件字符串
-        # "5==模组 and 7any['结构']" -> ['5==模组 ', 'and', ' 7any['结构']']
-        parts = re.split(logic_split_pattern, str(raw_cond))
+    client.run_javascript(f"smartScrollTo('node-{nid}')")
 
-        display_parts = []
+    next_col_id = f"col-wrapper-{depth + 1}"
+    await asyncio.sleep(0.05)
+    client.run_javascript(
+        f'var el = document.getElementById("{next_col_id}"); if(el) el.scrollIntoView({{behavior: "smooth", inline: "end", block: "nearest"}})'
+    )
 
-        for p in parts:
-            p = p.strip()
-            if not p:
-                continue
 
-            # --- 处理连接符 ---
-            if p == "and":
-                display_parts.append(" 且 ")
-                continue
-            if p == "or":
-                display_parts.append(" 或 ")
-                continue
+# 渲染列内容
+@ui.refreshable
+def render_col_content(depth, p_id=None):
+    current_active_depth = len(selected_path) - 1 if selected_path else -1
+    current_col_selected_id = selected_path[depth] if len(selected_path) > depth else None
 
-            # --- 处理条件单元 ---
-            # 匹配: ID + (not) + 操作符 + 值
-            match = re.search(r"(\d+)\s*(not\s+)?(any|all|!=|==|in)\s*(.*)", p)
+    is_upstream_col = depth <= current_active_depth
 
-            if match:
-                ref_id = match.group(1)
-                is_not_prefix = match.group(2)
-                operator = match.group(3)
-                raw_val = match.group(4).strip()
+    def sort_key(nid):
+        return nid in active_ancestors
 
-                # 查找引用节点和它的翻译
-                ref_node = nodes.get(ref_id, {})
-                formatted_val = format_logic_value_with_trans(raw_val, operator, ref_node)
+    if depth == 0:
+        nodes = [k for k, v in DATA.items() if v["condition"] == "无条件"]
+        sorted_nodes = sorted(nodes, key=sort_key, reverse=True)
+        for nid in sorted_nodes:
+            build_card(depth, nid, is_ghost=False)
+    else:
+        if not p_id:
+            return
+        children_ids = CHILD_MAP.get(p_id, [])
+        groups = defaultdict(list)
+        for cid in children_ids:
+            groups[DATA[cid]["condition"]].append(cid)
 
-                # === 情况 A: 当前节点的条件 (Local Choice) ===
-                if str(ref_id) == str(current_id):
-                    prefix = "若选择: "
-                    if operator == "!=" or is_not_prefix or (operator == "in" and "not" in p):
-                        prefix = "排除: "
-                    elif operator == "any":
-                        prefix = "若包含: "
+        def group_sort_key(g_key):
+            cids = groups[g_key]
+            return any(cid in active_ancestors for cid in cids)
 
-                    display_parts.append(f"{prefix}{formatted_val}")
+        sorted_group_keys = sorted(groups.keys(), key=group_sort_key, reverse=True)
 
-                # === 情况 B: 外部节点的条件 (External Constraint) ===
-                else:
-                    # 获取外部节点的标题简写 (比如前6个字)
-                    ref_title = ref_node.get("guide_content", f"#{ref_id}")
-                    # if len(ref_title) > 6:
-                    #     ref_title = ref_title[:6] + "..."
+        for cond in sorted_group_keys:
+            cids = groups[cond]
+            sorted_cids = sorted(cids, key=sort_key, reverse=True)
 
-                    op_text = "是"
-                    if operator == "!=":
-                        op_text = "不是"
-                    elif operator == "any" or operator == "in":
-                        op_text = "包含"
+            has_ancestor = any(cid in active_ancestors for cid in cids)
+            has_current_selection = any(cid == current_col_selected_id for cid in cids)
+            should_highlight_group = has_ancestor or has_current_selection
 
-                    if is_not_prefix:
-                        op_text = f"非{op_text}"
+            is_ghost_group = False
 
-                    # 外部条件加个括号格式
-                    display_parts.append(f"({ref_title} {op_text} {formatted_val})")
-
+            if should_highlight_group:
+                # >>> [颜色配置] 分组容器 - 包含高亮路径或当前选中项
+                # 边框: 橙色 (border-orange-500)
+                # 标题头: 橙色背景 (bg-orange-50), 深蓝色文字 (text-blue-900)
+                # 图标: 深蓝色 (blue-800)
+                container_cls = "border-orange-500 ring-1 ring-orange-100 opacity-100 bg-white"
+                header_cls = "bg-orange-50 text-blue-900"
+                icon_color = "blue-800"
+                is_ghost_group = False
+            elif is_upstream_col:
+                # >>> [颜色配置] 分组容器 - 历史路径中的未选中项 (GHOST状态)
+                # 效果: 灰色边框, 30%透明度, 黑白滤镜 (grayscale)
+                container_cls = "border-slate-100 opacity-50 grayscale bg-slate-50"
+                header_cls = "bg-slate-100 text-slate-400"
+                icon_color = "slate-400"
+                is_ghost_group = True
             else:
-                # 兜底：处理无法解析的片段或纯ID
-                if p == str(current_id):
-                    display_parts.append("直接跳转")
-                else:
-                    display_parts.append(p)
+                # >>> [颜色配置] 分组容器 - 普通状态 (当前最新列的未选中组)
+                # 边框: 淡蓝色 (border-blue-200)
+                # 标题头: 淡蓝色背景 (bg-blue-50)
+                container_cls = "border-blue-200 opacity-100 bg-white"
+                header_cls = "bg-blue-50 text-blue-900"
+                icon_color = "blue-800"
+                is_ghost_group = False
 
-        # 2. 生成最终分组 Key
-        full_key = "".join(display_parts)
-        groups[full_key].append(cid)
+            with ui.column().classes(
+                f"mb-1 w-full border {container_cls} rounded overflow-hidden shadow-sm transition-all duration-300"
+            ):
+                readable_cond = translate_condition(cond)
+                with ui.row().classes(f"w-full {header_cls} p-1 items-center gap-1"):
+                    ui.icon("hub", size="12px", color=icon_color)
+                    ui.label(readable_cond).classes("text-[10px] font-bold break-words leading-tight whitespace-normal")
 
-    return groups
+                with ui.column().classes("p-1 gap-1 w-full"):
+                    for nid in sorted_cids:
+                        build_card(depth, nid, is_ghost=is_ghost_group)
 
 
-# ==========================================
-# 页面渲染 (Miller Columns UI)
-# ==========================================
+# 构建单张卡片
+def build_card(depth, nid, is_ghost=False):
+    item = DATA[nid]
+    ans_type = item.get("answer_type", "单选")
+    # 获取基础底色 (见 get_type_base_color 函数)
+    base_style = get_type_base_color(ans_type)
+
+    is_sel = len(selected_path) > depth and selected_path[depth] == nid
+
+    is_current_active = is_sel and (depth == len(selected_path) - 1)
+    anc_level = active_ancestors.get(nid)
+
+    hint_text = item.get("option_hint", "")
+    options_list = item.get("options", [])
+    valid_opts = [str(o.get("option_content", "")) for o in options_list if o.get("option_content")]
+    options_display = " / ".join(valid_opts)
+
+    card_cls = "w-full cursor-pointer transition-all duration-200 p-1.5 border rounded-sm "
+
+    # >>> [颜色配置] 卡片交互状态样式
+    if is_current_active:
+        # 优先级 1: 当前最新点中的节点 -> 强制蓝色高亮 (Focus)
+        card_cls += "border-blue-600 ring-1 ring-blue-400 z-10 bg-white"
+    elif anc_level:
+        # 优先级 2: 祖先节点 是祖先(溯源): 橙色边框(border-orange-500), 橙色光圈(ring-orange-200)
+        ring_strength = max(1, 4 - anc_level)
+        card_cls += f"border-orange-500 ring-{ring_strength} ring-orange-200 z-10 scale-[1.005] shadow-sm"
+    elif is_sel:
+        # 优先级 3: 路径中的其他选中节点 深蓝边框(border-blue-600), 浅蓝光圈(ring-blue-400), 白底
+        card_cls += "border-blue-600 ring-1 ring-blue-400 z-10 bg-white"
+    else:
+        # 优先级 4: 普通未选中节点 透明边框, 悬停时灰色边框(hover:border-slate-300)
+        card_cls += "border-transparent hover:border-slate-300"
+
+    dom_id = f"node-{nid}"
+    if is_ghost:
+        dom_id += "-ghost"
+
+    with (
+        ui.card()
+        .tight()
+        .classes(card_cls + " " + base_style)
+        .props(f'id="{dom_id}"')
+        .on("click", lambda: on_node_select(depth, nid))
+    ):
+        if anc_level:
+            label = "直接前置" if anc_level == 1 else f"{anc_level}级溯源"
+            # >>> [颜色配置] 溯源徽标: 深橙色背景(orange-8)
+            ui.badge(label, color="orange-8").props("floating").classes("text-[8px] px-1 font-normal")
+
+        with ui.row().classes("items-start no-wrap gap-1"):
+            # >>> [颜色配置] ID标签: 黑色5%透明度背景(bg-black/5), 深灰字(text-slate-700)
+            ui.label(nid).classes("text-[9px] bg-black/5 px-1 rounded text-slate-700 font-mono flex-shrink-0")
+            # >>> [颜色配置] 问题内容: 深灰字(text-slate-700)
+            ui.label(item["guide_content"]).classes("text-[13px] font-medium leading-tight flex-grow text-slate-700")
+
+        if is_current_active and hint_text:
+            # >>> [颜色配置] 提示信息框(option_hint)
+            # 背景: 琥珀色淡底(bg-amber-50), 边框: 琥珀色淡边(border-amber-100)
+            # 图标: 深琥珀色(amber-700), 文字: 深琥珀色(text-amber-900)
+            with ui.row().classes("w-full mt-1.5 bg-amber-50 border border-amber-100 rounded p-1 items-start gap-1"):
+                ui.icon("tips_and_updates", size="10px", color="amber-700").classes("mt-0.5 flex-shrink-0")
+                ui.label(hint_text).classes("text-[10px] text-amber-900 leading-tight flex-grow break-all")
+
+        with ui.row().classes("mt-1 items-baseline justify-between w-full opacity-80 gap-1"):
+            with ui.element("div").classes(
+                "text-[9px] leading-tight flex flex-wrap gap-x-1 items-baseline flex-grow pr-1"
+            ):
+                # >>> [颜色配置] 问题类型文字: 深灰加粗(text-slate-600)
+                ui.label(ans_type).classes("font-bold text-slate-600 whitespace-nowrap")
+                if options_display:
+                    # >>> [颜色配置] 选项列表文字: 浅灰(text-slate-400)
+                    ui.label(options_display).classes("text-slate-400 font-normal break-all")
+
+            if nid in CHILD_MAP:
+                # >>> [颜色配置] 右侧小箭头: 深蓝色(blue-900)
+                ui.icon("chevron_right", size="14px", color="blue-900").classes("flex-none opacity-60 self-center")
+
+
+# 布局容器
+def layout_columns_container():
+    column_refreshers.clear()
+    column_scroll_areas.clear()
+    column_wrappers.clear()
+
+    MAX_DEPTH = 20
+
+    for d in range(MAX_DEPTH):
+        col_id = f"col-wrapper-{d}"
+        # >>> [颜色配置] 列容器整体: 淡灰背景(bg-slate-50), 右侧边框(border-r)
+        with (
+            ui.column()
+            .classes("w-72 h-full border-r bg-slate-50 flex-shrink-0 relative")
+            .props(f"id={col_id}") as wrapper
+        ):
+            column_wrappers.append(wrapper)
+            wrapper.set_visibility(False)
+
+            # >>> [颜色配置] 列顶部标题(层级x): 深蓝灰背景(bg-slate-800), 白字(text-white)
+            ui.label(f"{'初始' if d == 0 else f'层级 {d}'}").classes(
+                "w-full bg-slate-800 text-white p-1 text-[11px] font-medium sticky top-0 z-20 text-center"
+            )
+
+            sa = ui.scroll_area().classes("flex-grow w-full p-1")
+            column_scroll_areas.append(sa)
+            with sa:
+
+                @ui.refreshable
+                def col_content(depth=d):
+                    p_id = selected_path[depth - 1] if depth > 0 and len(selected_path) >= depth else None
+                    render_col_content(depth, p_id)
+
+                column_refreshers.append(col_content)
+                col_content()
+
+    update_ui_state()
 
 
 @ui.page("/question_tree_tabs")
 def question_tree_page():
-    # 1. 权限检查
+    # >>> [颜色配置] 搜索定位动画 (CSS)
+    # node-shake 动画颜色配置
+    # border-color: #f97316 (Orange-500) - 晃动时的边框色
+    # box-shadow: rgba(249, 115, 22, 0.5) - 晃动时的发光阴影色
+    # background-color: #fff7ed (Orange-50) - 晃动时的背景微亮色
+    ui.add_head_html("""
+    <style>
+        body { overflow: hidden !important; }
+        
+        @keyframes node-shake {
+            0%, 100% { transform: translateX(0); }
+            10%, 30%, 50%, 70%, 90% { transform: translateX(-6px); }
+            20%, 40%, 60%, 80% { transform: translateX(6px); }
+        }
+        
+        .node-highlight-anim {
+            animation: node-shake 0.8s cubic-bezier(.36,.07,.19,.97) both;
+            border-color: #f97316 !important; 
+            box-shadow: 0 0 15px rgba(249, 115, 22, 0.5) !important;
+            z-index: 100 !important;
+            background-color: #fff7ed !important;
+        }
+    </style>
+    """)
+
+    ui.add_head_html("""
+    <script>
+    function smartScrollTo(elementId) {
+        const el = document.getElementById(elementId);
+        if (!el) return;
+        const rect = el.getBoundingClientRect();
+        const winHeight = window.innerHeight;
+        const margin = winHeight * 0.2; 
+        if (rect.top < margin || rect.bottom > (winHeight - margin)) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+        }
+    }
+
+    function flashNode(elementId) {
+        const el = document.getElementById(elementId);
+        if (!el) return;
+        el.classList.remove('node-highlight-anim');
+        void el.offsetWidth;
+        el.classList.add('node-highlight-anim');
+        setTimeout(() => {
+            el.classList.remove('node-highlight-anim');
+        }, 850);
+    }
+    </script>
+    """)
+
+    selected_path.clear()
+    active_ancestors.clear()
+
     if not app.storage.user.get("current_user"):
         ui.navigate.to("/login")
         return
@@ -339,307 +514,51 @@ def question_tree_page():
     user_prefs = app.storage.general.get("user_preferences", {}).get(current_user, {})
     current_avatar_path = user_prefs.get("avatar", PRESET_AVATARS[0])
     current_display_path = get_cache_busted_path(current_avatar_path)
+    search_dialog = ui.dialog()
 
-    # 2. 数据加载与预处理
-    nodes = {}
-    parent_map = {}
-    children_map = {}
-    roots = []
+    # >>> [颜色配置] 页面顶部 Header: 蓝色背景(bg-blue-500)
+    header = ui.header(elevated=True).classes("flex justify-between items-center bg-blue-500 h-12 px-4 z-50")
+    with header:
+        ui.image(f"{IMG_DIR}/Rayfine.png").classes("absolute w-20")
+        ui.label("需求查阅").classes("text-white text-lg absolute left-1/2 transform -translate-x-1/2")
+        with ui.avatar(size="lg").classes("cursor-pointer ml-auto -mt-3"):
+            ui.image(current_display_path)
+            with ui.menu().props("auto-close") as menu:
+                ui.menu_item(f"你好, {app.storage.user.get('current_user', '匿名')}").style("white-space: nowrap;")
+                ui.separator().props("size=1px")
+                ui.menu_item("返回主界面", on_click=lambda: ui.navigate.to("/main"))
+                ui.separator().props("size=1px")
+                ui.menu_item("注销登录", on_click=lambda: logout())
 
-    try:
-        if os.path.exists(CONFIG_PATH):
-            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-                full_json = json.load(f)
-                # 构建图谱
-                nodes, parent_map, children_map, roots = build_graph_relationships(full_json)
-        else:
-            ui.notify(f"找不到配置文件: {CONFIG_PATH}", type="warning")
-    except Exception as e:
-        logger.error(f"Data load failed: {e}")
-        ui.notify(f"数据加载错误: {str(e)}", type="negative")
+    # >>> [颜色配置] 页面总背景: 灰色(bg-slate-200)
+    with ui.element("div").classes(
+        "fixed top-12 bottom-0 left-0 right-0 flex flex-col gap-0 overflow-hidden bg-slate-200"
+    ):
+        with ui.row().classes("w-full bg-white border-b p-2 items-center justify-between z-40 shadow-sm flex-none"):
+            with (
+                ui.input(placeholder="输入 ID 或内容搜索...")
+                .props("dense outlined rounded search")
+                .classes("w-64 rounded") as search_input
+            ):
+                with search_input.add_slot("append"):
+                    ui.icon("search", color="blue").classes("cursor-pointer").on(
+                        "click", lambda: handle_search(search_input.value, search_dialog)
+                    )
+                search_input.on("keydown.enter", lambda: handle_search(search_input.value, search_dialog))
 
-    # 3. 状态管理
-    # 当前选中的节点ID，默认为第一个根节点
-    state = {"current_id": roots[0] if roots else None}
+            ui.button(
+                "重置路径",
+                icon="refresh",
+                on_click=lambda: (
+                    selected_path.clear(),
+                    active_ancestors.clear(),
+                    update_ui_state(),
+                    search_input.set_value("") if search_input else None,
+                ),
+            ).props("flat dense")
 
-    # -------------------------------------------------
-    # 核心组件：米勒列渲染器 (Refreshable)
-    # -------------------------------------------------
-    @ui.refreshable
-    def render_miller_columns():
-        curr_id = state["current_id"]
-        if not curr_id or curr_id not in nodes:
-            ui.label("未选中节点").classes("p-4")
-            return
-
-        current_node = nodes[curr_id]
-
-        # 准备数据
-        incoming_logic = parse_incoming_logic(current_node.get("condition"), nodes)
-        children_ids = children_map.get(curr_id, [])
-        grouped_children = group_children_by_trigger(curr_id, children_ids, nodes)
-
-        with ui.row().classes("w-full h-full gap-4 p-4 bg-gray-100 items-stretch"):
-            # ============================================================
-            # 左栏：前置条件 (Logic Source) - 适配新逻辑解析
-            # ============================================================
-            with ui.column().classes("w-1/4 h-full border-r border-gray-200 bg-gray-50"):
-                ui.label("前置条件 (Input)").classes("text-xs font-bold text-gray-500 uppercase p-4 pb-2")
-
-                with ui.scroll_area().classes("w-full flex-grow px-4 pb-4"):
-                    if not incoming_logic:
-                        with ui.card().classes("w-full p-4 bg-white border-l-4 border-gray-300"):
-                            ui.label("无前置条件 (根节点)").classes("text-sm text-gray-400")
-                    else:
-                        for idx, block in enumerate(incoming_logic):
-                            # --- 逻辑连接符渲染 (AND / OR) ---
-                            # 第一个块显示 START (通常隐藏)，后续块显示与上一个的关系
-                            rel = block["relation"]
-                            if rel != "START":
-                                badge_color = "orange" if rel == "OR" else "blue"
-                                with ui.row().classes("w-full justify-center my-2 relative"):
-                                    # 分割线
-                                    ui.separator().classes("absolute top-1/2 w-full z-0")
-                                    # 徽章
-                                    ui.label(rel).classes(
-                                        f"z-10 text-[10px] font-bold text-white bg-{badge_color}-400 px-2 py-0.5 rounded-full"
-                                    )
-
-                            # --- 逻辑卡片 ---
-                            with ui.card().classes(
-                                "w-full p-3 bg-white border border-gray-200 shadow-sm relative group hover:border-blue-300 transition-all"
-                            ):
-                                # 来源 ID 和 标题
-                                with ui.row().classes("items-center justify-between w-full mb-1"):
-                                    ui.label(f"来自 #{block['source_id']}").classes(
-                                        "text-[10px] text-gray-400 font-mono"
-                                    )
-                                    # 跳转按钮 (悬停出现)
-                                    ui.button(
-                                        icon="arrow_back", on_click=lambda i=block["source_id"]: select_node(i)
-                                    ).props("round flat size=xs color=grey").classes(
-                                        "opacity-0 group-hover:opacity-100 transition-opacity"
-                                    )
-
-                                ui.label(block["source_title"]).classes(
-                                    "text-xs font-medium text-gray-700 line-clamp-2 leading-tight mb-2"
-                                )
-
-                                # 条件详情区 (灰色背景)
-                                with ui.column().classes("w-full bg-gray-50 rounded p-2 gap-1 border border-gray-100"):
-                                    # 操作符 (如: 等于, 包含任一)
-                                    ui.label(block["operator_display"]).classes("text-[10px] text-gray-500")
-                                    # 目标值 (高亮显示)
-                                    ui.label(block["trigger_value"]).classes(
-                                        "text-sm font-bold text-blue-600 break-all leading-tight"
-                                    )
-
-            # ============================================================
-            # 中栏：当前问题 (The Anchor)
-            # 对应图中：当前问题
-            # ============================================================
-            with ui.column().classes("w-1/4 h-full"):
-                ui.label("当前节点 (Current)").classes("text-xs font-bold text-blue-500 uppercase mb-2")
-
-                with ui.card().classes("w-full h-full bg-white border-t-4 border-blue-500 shadow-md flex flex-col p-0"):
-                    # 标题头
-                    with ui.column().classes("w-full bg-blue-50 p-6 border-b border-blue-100"):
-                        ui.label(f"ID: {curr_id}").classes("text-xs font-mono text-blue-400 mb-1")
-                        ui.label(current_node.get("guide_content", "无内容")).classes(
-                            "text-xl font-bold text-gray-800 leading-snug"
-                        )
-
-                    # 内容体
-                    with ui.scroll_area().classes("flex-grow p-6"):
-                        with ui.column().classes("gap-4"):
-                            # 类型
-                            with ui.row().classes("items-center gap-3"):
-                                ui.icon("category", color="grey-6").classes("text-xl")
-                                with ui.column().classes("gap-0"):
-                                    ui.label("交互类型").classes("text-xs text-gray-400")
-                                    ui.label(current_node.get("answer_type", "Unknown")).classes("text-sm font-medium")
-
-                            ui.separator()
-
-                            # 备注/option_hint
-                            if current_node.get("option_hint"):
-                                with ui.column().classes("gap-1 bg-gray-50 p-3 rounded w-full"):
-                                    ui.label("提示语").classes("text-xs text-gray-400")
-                                    ui.label(current_node.get("option_hint")).classes("text-sm text-gray-600 italic")
-                            ui.separator().classes("my-2")
-
-                            # === 新增：当前节点可用选项展示 ===
-                            node_options = current_node.get("options", [])
-                            if node_options:
-                                ui.label(f"可用选项 ({len(node_options)})").classes(
-                                    "text-xs font-bold text-gray-500 uppercase mt-2"
-                                )
-
-                                # 使用 List 或 Chips 展示选项
-                                with ui.column().classes("w-full gap-2"):
-                                    for opt in node_options:
-                                        # 获取内容和逻辑值
-                                        opt_content = opt.get("option_content", "")
-                                        # 某些输入型节点可能 options 里是空的或只有空字典，做个过滤
-                                        if not opt_content and not opt.get("option_show"):
-                                            continue
-
-                                        # 如果 option_content 为空（比如输入框），尝试显示 option_show 模板
-                                        display_text = opt_content if opt_content else opt.get("option_show", "输入项")
-                                        logic_val = opt.get("option_out", "")
-
-                                        with ui.row().classes(
-                                            "w-full items-center justify-between p-2 bg-blue-50 rounded border border-blue-100"
-                                        ):
-                                            # 左侧：显示内容
-                                            with ui.row().classes("items-center gap-2"):
-                                                ui.icon("radio_button_unchecked", size="xs").classes("text-blue-400")
-                                                ui.label(display_text).classes("text-sm text-gray-800 font-medium")
-
-                                            # 右侧：显示逻辑值 (作为参考，字号更小)
-                                            # 比如: "是" (True)
-                                            ui.label(f"Val: {logic_val}").classes(
-                                                "text-[10px] text-gray-400 font-mono bg-white px-1 rounded border border-gray-200"
-                                            )
-            # ============================================================
-            # 右栏：按选项分组的后续 (Grouped Output)
-            # 对应图中：当前问题选项A -> 问题10,21... | 当前问题选项B -> 问题50,61...
-            # ============================================================
-            with ui.column().classes("flex-grow h-full"):  # 使用 flex-grow 占据剩余空间
-                ui.label("后续分支 (Outcomes)").classes("text-xs font-bold text-green-600 uppercase mb-2")
-
-                with ui.scroll_area().classes("w-full flex-grow pr-2"):
-                    if not grouped_children:
-                        with ui.column().classes(
-                            "w-full h-32 items-center justify-center border-2 border-dashed border-gray-300 rounded-lg"
-                        ):
-                            ui.icon("stop_circle", size="md", color="grey-4")
-                            ui.label("流程结束").classes("text-gray-400 mt-2")
-
-                    # 遍历每一个选项分组
-                    for option_val, child_list in grouped_children.items():
-                        # 外层框：代表一个选项 (红框效果)
-                        with ui.card().classes(
-                            "w-full mb-4 bg-white border border-gray-200 shadow-sm overflow-visible"
-                        ):
-                            # 选项标题条
-                            with ui.row().classes(
-                                "w-full bg-green-50 px-4 py-2 border-b border-green-100 items-center justify-between"
-                            ):
-                                with ui.row().classes("items-center gap-2"):
-                                    ui.icon("check_circle_outline", size="xs", color="green")
-                                    ui.label(f"{option_val}").classes("text-sm font-bold text-green-800")
-                                ui.badge(f"{len(child_list)} 个后续").props("color=green-2 text-color=green-9 outline")
-
-                            # 该选项下的子节点列表
-                            with ui.column().classes("w-full p-2 gap-2"):
-                                for child_id in child_list:
-                                    child_node = nodes.get(child_id, {})
-                                    child_title = child_node.get("guide_content", "未命名")
-                                    child_cond = child_node.get("condition", "")
-
-                                    # 子节点条目
-                                    with (
-                                        ui.row()
-                                        .classes(
-                                            "w-full p-2 hover:bg-gray-50 rounded cursor-pointer border border-transparent hover:border-gray-300 items-center transition-all group"
-                                        )
-                                        .on("click", lambda i=child_id: select_node(i))
-                                    ):
-                                        ui.icon("subdirectory_arrow_right", size="xs").classes("text-gray-300 mr-2")
-
-                                        with ui.column().classes("gap-0 flex-grow"):
-                                            with ui.row().classes("items-center gap-2"):
-                                                ui.label(f"#{child_id}").classes("text-xs font-mono text-gray-400")
-                                                # 如果条件很复杂，显示完整条件作为提示
-                                                if len(child_cond) > len(option_val) + 10:
-                                                    ui.icon("info", size="xs", color="grey-4").tooltip(
-                                                        f"完整条件: {child_cond}"
-                                                    )
-
-                                            ui.label(child_title).classes("text-sm text-gray-700 line-clamp-1")
-
-                                        ui.icon("chevron_right", size="sm").classes(
-                                            "text-gray-300 group-hover:text-blue-500"
-                                        )
-
-    def select_node(node_id):
-        state["current_id"] = str(node_id)
-        render_miller_columns.refresh()
-        # 注意：此处删除了 tree_ui 相关的报错代码
-
-    # -------------------------------------------------
-    # UI 布局框架
-    # -------------------------------------------------
-
-    # Header
-    with ui.header(elevated=True).classes("flex justify-between items-center bg-blue-600 h-14 px-4 shadow-md"):
-        with ui.row().classes("items-center"):
-            ui.icon("alt_route", size="md").classes("text-white mr-2")
-            ui.label("逻辑全景浏览器").classes("text-white text-lg font-bold tracking-wide")
-
-        with ui.row().classes("items-center gap-4"):
-            ui.button("返回主页", icon="home", on_click=lambda: ui.navigate.to("/main")).props(
-                "flat text-color=white dense"
-            )
-            with ui.avatar(size="md").classes("cursor-pointer border-2 border-white"):
-                ui.image(current_display_path)
-
-    # Body
-    with ui.row().classes("w-full h-[calc(100vh-3.5rem)] gap-0"):
-        # --- 最左侧：全局目录树 (Navigator) ---
-        # 对应图中的“左侧目录树列表”，用于快速定位
-        with ui.column().classes("w-64 h-full border-r border-gray-300 bg-white flex-shrink-0 flex flex-col"):
-            ui.label("全局索引").classes("p-3 font-bold text-gray-700 bg-gray-50 border-b w-full")
-
-            # 构建 Tree 数据结构供 ui.tree 使用
-            # 这里简单地把所有根节点作为顶级，子节点懒加载或全部加载
-            # 为了简单起见，这里做一个简单的 ID 列表搜索，或者简单的层级展示
-
-            with ui.scroll_area().classes("flex-grow px-2 py-2"):
-                # 搜索框
-                search_input = (
-                    ui.input(placeholder="搜索 ID 或 内容...").props("dense outlined rounded").classes("w-full mb-2")
-                )
-
-                # 节点列表 (点击跳转)
-                # 由于节点可能很多，这里用 Virtual Scroll 或者简单列表
-                # 我们按 ID 排序显示
-                sorted_ids = sorted(nodes.keys(), key=lambda x: int(x) if x.isdigit() else 9999)
-
-                def run_search(e):
-                    term = e.value.lower()
-                    filtered_ids = [
-                        nid for nid in sorted_ids if term in nid or term in nodes[nid].get("guide_content", "").lower()
-                    ]
-                    list_container.clear()
-                    with list_container:
-                        render_search_list(filtered_ids)
-
-                search_input.on("input", run_search)
-
-                list_container = ui.column().classes("w-full gap-1")
-
-                def render_search_list(id_list):
-                    # 限制显示数量防止卡顿
-                    for nid in id_list[:50]:
-                        content = nodes[nid].get("guide_content", "")
-                        with (
-                            ui.row()
-                            .classes(
-                                "w-full items-center p-2 hover:bg-blue-50 rounded cursor-pointer border-b border-gray-100"
-                            )
-                            .on("click", lambda i=nid: select_node(i))
-                        ):
-                            ui.label(f"#{nid}").classes("text-xs font-mono text-blue-500 font-bold w-10")
-                            ui.label(content).classes("text-xs text-gray-700 line-clamp-1 flex-grow")
-
-                    if len(id_list) > 50:
-                        ui.label(f"...还有 {len(id_list) - 50} 项").classes("text-xs text-gray-400 p-2")
-
-                with list_container:
-                    render_search_list(sorted_ids)
-
-        # 右侧主区域
-        with ui.column().classes("flex-grow h-full relative"):
-            render_miller_columns()
+        # >>> [颜色配置] 滚动列的轨道背景: 稍深一点的灰色(bg-slate-300)
+        with ui.row().classes(
+            "w-full flex-grow overflow-x-auto overflow-y-hidden no-wrap items-start bg-slate-300 gap-0"
+        ) as columns_container:
+            layout_columns_container()
