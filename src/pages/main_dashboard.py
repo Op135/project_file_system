@@ -28,12 +28,20 @@ def main_page():
     current_display_path = get_cache_busted_path(current_avatar_path)
     # 定义导航项目
     # 格式：(图标, 标题, 描述, 目标路径)
-    menu_items = [
+    menu_items_metadata = [
         ("assignment", "项目资料", "录入与查看项目资料", "/project_table"),
         ("rule", "项目待办项", "查阅项目相关待办项", "/information"),
         ("handyman", "分析工具", "提供用于专业分析计算的工具", "/tool"),
-        ("handyman", "需求树状图", "提供用于专业分析计算的工具", "/question_tree_tabs"),
+        ("account_tree", "需求项结构", "查阅需求项结构", "/question_tree_tabs"),
     ]
+    menu_items = []
+    for items in menu_items_metadata:
+        # 需求结构图只对角色字符串里含有如下关键字的用户展示
+        if items[3] == "/question_tree_tabs" and not any(
+            k in str(current_role) for k in ["销售", "研发", "boss", "admin"]
+        ):
+            continue
+        menu_items.append(items)
 
     # 主界面
     with ui.header(elevated=True).classes("flex justify-between items-center bg-blue-500 h-12 px-4"):
@@ -57,7 +65,8 @@ def main_page():
     # a-classes: 应用于所有子元素的通用样式
     # b-classes: 应用于特定子元素的样式 (这里没用，但可以写 b-col-6 c-col-4 等)
     with ui.column().classes("w-full h-[calc(100vh-5rem)] items-center justify-center"):
-        with ui.grid(columns=3).classes("w-[calc(70vw)] gap-4 h-[calc(30vh)]"):
+        num = min(4, len(menu_items))
+        with ui.grid(columns=num).classes("w-[calc(70vw)] gap-4"):
             # 所有非已审项目数量
             state_num_sum = 0
             # 所有登录用户提交的非已审项目数量

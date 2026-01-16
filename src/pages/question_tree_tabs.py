@@ -88,7 +88,7 @@ def translate_condition(cond_str):
             val_display = get_label(val)
 
         op_display = op_map.get(op, op)
-        return f"Q{nid}{op_display}“{val_display}”"
+        return f"({nid}){op_display}“{val_display}”"
 
     translated = re.sub(pattern, replacer, result)
     return translated
@@ -113,8 +113,8 @@ def get_type_base_color(ans_type):
     # 如果是选择题类型，使用淡蓝色背景(bg-blue-50)和蓝边框(border-blue-200)
     # 否则（如填空题），使用淡灰色背景(bg-slate-50)和灰边框(border-slate-200)
     if any(x in ans_type for x in ["单选", "多选", "下拉"]):
-        return "bg-sky-100 border-sky-200"
-    return "bg-green-50 border-green-200"
+        return "bg-amber-50 border-amber-200"
+    return "bg-blue-50 border-blue-200"
 
 
 # --- 全局状态 ---
@@ -151,7 +151,7 @@ async def jump_to_node(target_id, client=None):
     if not client:
         try:
             client = ui.context.client
-        except:
+        except Exception:
             pass
 
     new_path = get_path_to_node(target_id)
@@ -176,8 +176,6 @@ async def jump_to_node(target_id, client=None):
 
         await asyncio.sleep(0.1)
         client.run_javascript(f"flashNode('node-{target_id}')")
-
-    ui.notify(f"已定位到: {target_id}", type="positive")
 
 
 async def handle_search(query_str, dialog_ref):
@@ -296,11 +294,11 @@ def render_col_content(depth, p_id=None):
 
             if should_highlight_group:
                 # >>> [颜色配置] 分组容器 - 包含高亮路径或当前选中项
-                # 边框: 橙色 (border-orange-500)
-                # 标题头: 橙色背景 (bg-orange-50), 深蓝色文字 (text-blue-900)
+                # 边框: 橙色 (border-red-500)
+                # 标题头: 橙色背景 (bg-red-50), 深蓝色文字 (text-blue-900)
                 # 图标: 深蓝色 (blue-800)
-                container_cls = "border-orange-500 ring-1 ring-orange-100 opacity-100 bg-white"
-                header_cls = "bg-orange-50 text-blue-900"
+                container_cls = "border-red-500 ring-1 ring-red-100 opacity-100 bg-white"
+                header_cls = "bg-red-50 text-blue-900"
                 icon_color = "blue-800"
                 is_ghost_group = False
             elif is_upstream_col:
@@ -354,11 +352,11 @@ def build_card(depth, nid, is_ghost=False):
     # >>> [颜色配置] 卡片交互状态样式
     if is_current_active:
         # 优先级 1: 当前最新点中的节点 -> 强制蓝色高亮 (Focus)
-        card_cls += "border-blue-600 ring-1 ring-blue-400 z-10 bg-white"
+        card_cls += "border-green-600 ring-1 ring-green-400 z-10 bg-green-50"
     elif anc_level:
-        # 优先级 2: 祖先节点 是祖先(溯源): 橙色边框(border-orange-500), 橙色光圈(ring-orange-200)
+        # 优先级 2: 祖先节点 是祖先(溯源): 橙色边框(border-red-500), 橙色光圈(ring-red-200)
         ring_strength = max(1, 4 - anc_level)
-        card_cls += f"border-orange-500 ring-{ring_strength} ring-orange-200 z-10 scale-[1.005] shadow-sm"
+        card_cls += f"border-red-500 ring-{ring_strength} ring-red-200 z-10 scale-[1.005] shadow-sm"
     elif is_sel:
         # 优先级 3: 路径中的其他选中节点 深蓝边框(border-blue-600), 浅蓝光圈(ring-blue-400), 白底
         card_cls += "border-blue-600 ring-1 ring-blue-400 z-10 bg-white"
@@ -379,12 +377,12 @@ def build_card(depth, nid, is_ghost=False):
     ):
         if anc_level:
             label = "直接前置" if anc_level == 1 else f"{anc_level}级溯源"
-            # >>> [颜色配置] 溯源徽标: 深橙色背景(orange-8)
-            ui.badge(label, color="orange-8").props("floating").classes("text-[8px] px-1 font-normal")
+            # >>> [颜色配置] 溯源徽标: 深橙色背景(red-8)
+            ui.badge(label, color="red-8").props("floating").classes("text-[8px] px-1 font-normal")
 
         with ui.row().classes("items-start no-wrap gap-1"):
             # >>> [颜色配置] ID标签: 黑色5%透明度背景(bg-black/5), 深灰字(text-slate-700)
-            ui.label(nid).classes("text-[9px] bg-black/5 px-1 rounded text-slate-700 font-mono flex-shrink-0")
+            ui.label(nid).classes("text-[10px] bg-black/5 px-1 rounded text-slate-800 font-mono flex-shrink-0")
             # >>> [颜色配置] 问题内容: 深灰字(text-slate-700)
             ui.label(item["guide_content"]).classes("text-[13px] font-medium leading-tight flex-grow text-slate-700")
 
@@ -423,9 +421,7 @@ def layout_columns_container():
         col_id = f"col-wrapper-{d}"
         # >>> [颜色配置] 列容器整体: 淡灰背景(bg-slate-50), 右侧边框(border-r)
         with (
-            ui.column()
-            .classes("w-72 h-full border-r bg-slate-50 flex-shrink-0 relative")
-            .props(f"id={col_id}") as wrapper
+            ui.column().classes("w-72 h-full border-r bg-white flex-shrink-0 relative").props(f"id={col_id}") as wrapper
         ):
             column_wrappers.append(wrapper)
             wrapper.set_visibility(False)
@@ -454,9 +450,9 @@ def layout_columns_container():
 def question_tree_page():
     # >>> [颜色配置] 搜索定位动画 (CSS)
     # node-shake 动画颜色配置
-    # border-color: #f97316 (Orange-500) - 晃动时的边框色
+    # border-color: #f97316 (red-500) - 晃动时的边框色
     # box-shadow: rgba(249, 115, 22, 0.5) - 晃动时的发光阴影色
-    # background-color: #fff7ed (Orange-50) - 晃动时的背景微亮色
+    # background-color: #fff7ed (red-50) - 晃动时的背景微亮色
     ui.add_head_html("""
     <style>
         body { overflow: hidden !important; }
@@ -500,6 +496,14 @@ def question_tree_page():
             el.classList.remove('node-highlight-anim');
         }, 850);
     }
+    /* >>> 新增: 修复 Chrome 自动填充背景色变蓝的问题 (使用过渡延迟法) <<< */
+    input:-webkit-autofill,
+    input:-webkit-autofill:hover, 
+    input:-webkit-autofill:focus, 
+    input:-webkit-autofill:active {
+        transition: background-color 5000s ease-in-out 0s;
+        -webkit-text-fill-color: #374151 !important; /* 保持文字颜色深灰 */
+    }
     </script>
     """)
 
@@ -523,7 +527,7 @@ def question_tree_page():
         ui.label("需求查阅").classes("text-white text-lg absolute left-1/2 transform -translate-x-1/2")
         with ui.avatar(size="lg").classes("cursor-pointer ml-auto -mt-3"):
             ui.image(current_display_path)
-            with ui.menu().props("auto-close") as menu:
+            with ui.menu().props("auto-close"):
                 ui.menu_item(f"你好, {app.storage.user.get('current_user', '匿名')}").style("white-space: nowrap;")
                 ui.separator().props("size=1px")
                 ui.menu_item("返回主界面", on_click=lambda: ui.navigate.to("/main"))
@@ -531,14 +535,17 @@ def question_tree_page():
                 ui.menu_item("注销登录", on_click=lambda: logout())
 
     # >>> [颜色配置] 页面总背景: 灰色(bg-slate-200)
-    with ui.element("div").classes(
-        "fixed top-12 bottom-0 left-0 right-0 flex flex-col gap-0 overflow-hidden bg-slate-200"
-    ):
+    with ui.element("div").classes("fixed top-12 bottom-0 left-0 right-0 flex flex-col gap-0 overflow-hidden bg-white"):
         with ui.row().classes("w-full bg-white border-b p-2 items-center justify-between z-40 shadow-sm flex-none"):
             with (
                 ui.input(placeholder="输入 ID 或内容搜索...")
-                .props("dense outlined rounded search")
-                .classes("w-64 rounded") as search_input
+                # 1. props: 保持 dense outlined rounded, 添加 autocomplete="off" 和 input-style
+                # input-style="-webkit-box-shadow..." 用于强力覆盖浏览器默认的自动填充背景色
+                .props('dense outlined rounded bg-color="white" autocomplete="off"')
+                # 2. classes:
+                #    - 移除 "rounded" (避免裁切)
+                #    - 移除 "bg-white" (已由 props 接管)
+                .classes("w-64") as search_input
             ):
                 with search_input.add_slot("append"):
                     ui.icon("search", color="blue").classes("cursor-pointer").on(
@@ -558,7 +565,5 @@ def question_tree_page():
             ).props("flat dense")
 
         # >>> [颜色配置] 滚动列的轨道背景: 稍深一点的灰色(bg-slate-300)
-        with ui.row().classes(
-            "w-full flex-grow overflow-x-auto overflow-y-hidden no-wrap items-start bg-slate-300 gap-0"
-        ) as columns_container:
+        with ui.row().classes("w-full flex-grow overflow-x-auto overflow-y-hidden no-wrap items-start bg-white gap-0"):
             layout_columns_container()
