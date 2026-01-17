@@ -36,7 +36,7 @@ def information_page():
     dialog = ui.dialog().props("persistent").classes("")
     # 获取用户信息
     current_user = app.storage.user.get("current_user")
-    is_admin = app.storage.user.get("is_admin")
+    # is_admin = app.storage.user.get("is_admin")
     current_role = app.storage.user.get("current_role")
 
     with open(f"{BASE_DIR}/information_module_show_role.json", "r", encoding="utf-8") as f:
@@ -412,23 +412,30 @@ def information_page():
                 ui.label("暂存需求记录：").classes("text-base")
                 show_bool = False
                 for user, project_dic in app.storage.general["temp_req"].items():
-                    if user == current_user:
+                    if user == current_user or current_user == "研发经理":
                         for project_name, version_li in project_dic.items():
                             for version in version_li:
                                 if not show_bool:
                                     show_bool = True
                                 button_group = ui.button_group().props("outline")
                                 with button_group:
-                                    ui.button(
-                                        f"编辑{project_name}_V{version}需求内容",
-                                        on_click=lambda pn=project_name, v=version: get_req_page(pn, v),
-                                    ).props("outline")
-                                    ui.button(
-                                        "移除记录",
-                                        color="red-8",
-                                        on_click=lambda pn=project_name, v=version, bg=button_group: dele_button_group(
-                                            pn, v, bg
-                                        ),
-                                    ).props("")
+                                    if current_user == "研发经理":
+                                        ui.button(
+                                            f"查看由{user}暂存的{project_name}_V{version}需求内容",
+                                            on_click=lambda pn=project_name, v=version: get_req_page(pn, v),
+                                        ).props("outline")
+                                    else:
+                                        ui.button(
+                                            f"编辑{project_name}_V{version}需求内容",
+                                            on_click=lambda pn=project_name, v=version: get_req_page(pn, v),
+                                        ).props("outline")
+                                    if current_user != "研发经理":
+                                        ui.button(
+                                            "移除记录",
+                                            color="red-8",
+                                            on_click=lambda pn=project_name,
+                                            v=version,
+                                            bg=button_group: dele_button_group(pn, v, bg),
+                                        ).props("")
                 if not show_bool:
                     ui.label("无项目暂存需求记录").classes("text-sm text-green-500")
