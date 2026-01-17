@@ -38,11 +38,10 @@ def tool_page():
     if not app.storage.user.get("current_user"):
         ui.navigate.to("/login")  # 如果未登录，跳转到登录页
         return
-    dialog = ui.dialog().props("persistent").classes("")
+    # dialog = ui.dialog().props("persistent").classes("")
 
     # 获取用户信息
     current_user = app.storage.user.get("current_user")
-    is_admin = app.storage.user.get("is_admin")
     current_role = app.storage.user.get("current_role")
 
     # 从全局存储中获取用户当前的头像设置

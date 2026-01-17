@@ -107,7 +107,7 @@ class EtendueCalculator:
             # 标题栏 (可选，如果 Dialog 外部有标题可省略)
             with ui.row().classes("w-full bg-slate-100 p-4 border-b items-center justify-between"):
                 with ui.row().classes("items-center"):
-                    ui.icon("lightbulb", size="32px").classes("text-blue-600")
+                    ui.icon("flare", size="32px").classes("text-blue-600")
                     ui.label("光学耦合极限计算器 (Etendue Calculator)").classes("text-xl font-bold text-slate-800")
                 # [修改点 3]：直接调用传入的 dialog 对象的 close 方法
                 ui.button(icon="close", on_click=dialog.close).props("flat dense round")

@@ -198,14 +198,19 @@ def generate_plots_static(params: Dict[str, float], phys_res: Dict[str, float]) 
         f"* 视觉倍率: {int(final_scale)}x",
         transform=ax2.transAxes,
         color="gray",
-        fontsize=8,
+        fontsize=12,
         fontstyle="italic",
     )
     ax2.axis("off")
 
     y_all = np.concatenate([y_des, y_act_plot])
-    margin = (y_all.max() - y_all.min()) * 0.2 + 0.1
-    ax2.set_ylim(y_all.min() - margin, y_all.max() + margin)
+    y_min, y_max = y_all.min(), y_all.max()
+    h = y_max - y_min
+    # 底部留 10%，顶部留 40% (给文字标签留出足够的空间)
+    # 如果高度极小(平面)，给一个默认余量
+    margin_bottom = h * 0.1 if h > 1e-9 else 0.1
+    margin_top = h * 0.4 if h > 1e-9 else 0.2
+    ax2.set_ylim(y_min - margin_bottom, y_max + margin_top)
 
     fig2.tight_layout()
     buf2 = io.BytesIO()
@@ -341,14 +346,17 @@ class SphericalLensCalculator:
         with ui.card().classes("w-full h-full p-0 gap-0 bg-gray-900 border-none"):
             with ui.row().classes("w-full bg-gray-800 p-4 border-b border-gray-700 items-center justify-between"):
                 with ui.row().classes("items-center"):
-                    ui.icon("lens", size="32px").classes("text-blue-400")
+                    ui.icon("trip_origin", size="32px").classes("text-blue-400")
                     ui.label("球面透镜面型偏差与牛顿环模拟").classes("text-xl font-bold text-gray-100")
                 ui.button(icon="close", on_click=dialog.close).props("flat dense round color=white")
 
-            with ui.row().classes("w-full flex-1 p-4 gap-4 no-wrap items-stretch overflow-hidden"):
+            # 1. flex-wrap: 允许小屏幕下三栏自动换行排列
+            # 2. overflow-y-auto: 允许垂直滚动
+            # 3. items-start: 防止高度拉伸导致的布局怪异
+            with ui.row().classes("w-full flex-1 p-4 gap-4 flex-wrap items-start overflow-y-auto"):
                 # --- [左] 参数 ---
                 with ui.column().classes(
-                    "flex-1 min-w-[300px] bg-gray-800 border border-gray-700 h-full overflow-y-auto p-4 rounded"
+                    "flex-1 min-w-[300px] shrink-0 bg-gray-800 border border-gray-700 h-full overflow-y-auto p-4 rounded"
                 ):
                     ui.markdown("### 🛠️ 参数设定").classes("text-blue-400 mt-0")
 
@@ -403,23 +411,33 @@ class SphericalLensCalculator:
                     )
 
                 # --- [中] 图像 ---
-                with ui.column().classes("flex-1 min-w-[380px] items-center h-full gap-4"):
+                with ui.column().classes("flex-1 min-w-[380px] shrink-0 items-center h-full gap-4"):
+                    # 【修改点 1】 上方图表：
+                    # 1. 保留 aspect-square (必须正方形)
+                    # 2. 增加 max-h-[45%] (高度上限为父容器的45%，给下方留空间)
+                    # 3. 改为 w-auto (宽度跟随高度自动调整，不再强制撑满宽)
+                    # 4. max-w-full (防止宽度溢出)
                     with ui.card().classes(
-                        "w-full aspect-square bg-black p-1 border-2 border-gray-600 flex items-center justify-center shrink-0 relative"
+                        "w-auto max-w-full aspect-square max-h-[70%] min-h-[300px] bg-black p-1 border-2 border-gray-600 flex-2 items-center justify-center shrink-0 relative"
                     ):
                         ui.label("样板干涉图").classes("absolute top-1 left-2 text-xs text-gray-500 z-10")
                         self.img_interfero = ui.image().classes("w-full h-full object-contain")
 
+                    # 【修改点 2】 下方图表：
+                    # 保持 grow 不变，它会自动占据剩余的 55%+ 空间
                     with ui.card().classes(
-                        "w-full grow bg-gray-800 border border-gray-700 flex items-center justify-center p-0 overflow-hidden relative"
+                        "w-full grow bg-gray-800 border border-gray-700 flex-1 items-center justify-center p-0 overflow-hidden relative"
                     ):
                         ui.label("面型偏差剖面").classes("absolute top-1 left-2 text-xs text-blue-300 z-10 font-bold")
-                        self.img_profile = ui.image().classes("w-full h-full object-contain")
+                        # 1. 移除 classes 里的 "object-contain"
+                        # 2. 添加 .props("fit=contain")
+                        # 这样无论容器多扁或多窄，图片都会完整缩放显示在容器内，绝不会被裁切
+                        self.img_profile = ui.image().classes("w-full h-full").props("fit=contain")
 
                     self.status_label = ui.label("").classes("text-xs text-gray-500")
 
                 # --- [右] 数据 ---
-                with ui.column().classes("flex-1 min-w-[280px] h-full gap-4"):
+                with ui.column().classes("flex-1 min-w-[280px] shrink-0 h-full gap-4"):
                     with ui.card().classes("w-full -space-y-4 bg-gray-800 border border-gray-700 p-4 rounded"):
                         ui.markdown("### 📊 实际工程误差").classes("text-green-400 mt-0")
                         self.desc_label = ui.label("").classes("text-xs text-gray-400 mb-2 italic")
@@ -438,15 +456,19 @@ class SphericalLensCalculator:
                     with ui.card().classes(
                         "w-full grow bg-gray-800 border border-gray-700 overflow-y-auto p-4 rounded"
                     ):
-                        ui.markdown(r"""
-                        <h3 class="text-purple-400 text-lg font-bold mt-0 mb-2">📐 物理依据 (Physics)</h3>
-                        
+                        # 1. 单独用 ui.label 写标题，样式更可控
+                        ui.label("📐 物理依据 (Physics)").classes("text-purple-400 text-lg font-bold mt-0 mb-2")
+
+                        # 2. Markdown 内容顶格写，或者确保没有多余缩进
+                        ui.markdown(
+                            r"""
                         **1. 矢高公式 (Sag Equation):**
                         $$z(r) = R - \sqrt{R^2 - r^2}$$
-                        
                         **2. 光圈与误差:**
                         $$\Delta z \approx N \cdot \frac{\lambda}{2}$$
-                        """).classes("text-gray-300 text-sm space-y-2")
+                        """,
+                            extras=["latex"],
+                        ).classes("text-gray-300 text-sm space-y-2")
 
         # 触发初始计算
         asyncio.create_task(self.update_interface())

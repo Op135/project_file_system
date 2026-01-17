@@ -387,7 +387,7 @@ class SimpleCouplingCalculator:
                             ui.label("自动生成").classes("text-xs text-gray-400 bg-gray-100 px-2 rounded-full")
 
                         with ui.column().classes("w-full flex-grow p-2 bg-white relative"):
-                            self.plot_view = ui.pyplot(figsize=(10, 5), close=False)
+                            self.plot_view = ui.pyplot(figsize=(10, 4), close=False).classes("")
                             with self.plot_view:
                                 plt.text(
                                     0.5,

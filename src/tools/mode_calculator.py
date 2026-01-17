@@ -385,7 +385,7 @@ class ModeCalculator:
             # 顶部标题栏
             with ui.row().classes("w-full bg-slate-100 p-4 border-b items-center justify-between"):
                 with ui.row().classes("items-center"):
-                    ui.icon("analytics", size="32px").classes("text-blue-600")
+                    ui.icon("lens_blur", size="32px").classes("text-blue-600")
                     ui.label("光纤/波束横模计算 (Fiber Modes)").classes("text-xl font-bold text-slate-800")
                 ui.button(icon="close", on_click=dialog.close).props("flat dense round")
 
@@ -405,7 +405,7 @@ class ModeCalculator:
 
                     with ui.tab_panels(tabs, value=tab_calc).classes("w-full p-4 bg-white"):
                         # --- Panel 1: 计算设置 ---
-                        with ui.tab_panel(tab_calc).classes("p-0 flex flex-col gap-4"):
+                        with ui.tab_panel(tab_calc).classes("p-0 flex flex-col gap-2"):
                             ui.label("几何结构 / 模式类型").classes("text-xs font-bold text-gray-400")
 
                             mode_toggle = (
@@ -429,7 +429,7 @@ class ModeCalculator:
                             )
 
                             # LP 模式独有
-                            self.container_lp_params = ui.column().classes("w-full gap-3")
+                            self.container_lp_params = ui.column().classes("w-full gap-2")
                             with self.container_lp_params:
                                 ui.number("光纤 NA", value=0.22, step=0.01).bind_value(self.params, "na_fib").props(
                                     "dense outlined"
@@ -445,7 +445,7 @@ class ModeCalculator:
                             ui.separator()
 
                             # LP 控制
-                            self.container_lp_ctrl = ui.column().classes("w-full gap-3")
+                            self.container_lp_ctrl = ui.column().classes("w-full gap-2")
                             with self.container_lp_ctrl:
                                 ui.label("圆形 LP(l, m) 指数").classes("text-xs font-bold text-gray-400")
                                 self.inp_l = (
@@ -463,7 +463,7 @@ class ModeCalculator:
                                 ).classes("w-full bg-blue-600")
 
                             # HG 控制
-                            self.container_hg_ctrl = ui.column().classes("w-full gap-3")
+                            self.container_hg_ctrl = ui.column().classes("w-full gap-2")
                             with self.container_hg_ctrl:
                                 ui.label("方形 HG(m, n) 指数").classes("text-xs font-bold text-gray-400")
                                 with ui.row().classes("w-full"):
@@ -480,7 +480,7 @@ class ModeCalculator:
                                 ).classes("w-full bg-purple-600")
 
                         # --- Panel 2: 视图 ---
-                        with ui.tab_panel(tab_view).classes("p-0 flex flex-col gap-4"):
+                        with ui.tab_panel(tab_view).classes("p-0 flex flex-col gap-2"):
                             self.slider_res = ui.slider(min=100, max=600, step=50, value=300).props('label="分辨率"')
                             self.select_cmap = (
                                 ui.select(

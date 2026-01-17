@@ -271,6 +271,10 @@ class MicrolensCalculator:
         # 这里使用 self.preview_plot 作为上下文，避免全局 plt 冲突
         with self.preview_plot:
             plt.clf()
+            # --- 新增：创建指定边距的子图，预留底部 20% 空间给图例 ---
+            # 原代码是 plt.gca()，这里改为显式调整
+            fig = plt.gcf()
+            fig.subplots_adjust(left=0.05, right=0.95, top=0.95, bottom=0.25)
             ax = plt.gca()
             ax.set_aspect("equal")
 
@@ -370,8 +374,15 @@ class MicrolensCalculator:
                 Line2D([0], [0], color="#fee2e2", lw=4, label="截断/重叠区域"),
                 Line2D([0], [0], marker="s", color="w", markerfacecolor="#f59e0b", label="LED光源"),
             ]
+            # --- 修改：图例位置微调 ---
+            # bbox_to_anchor=(0.5, -0.05) 让图例稍微向下一点，不遮挡图形
             ax.legend(
-                handles=custom_lines, loc="upper center", bbox_to_anchor=(0.5, 0.0), fontsize=8, frameon=False, ncol=3
+                handles=custom_lines,
+                loc="upper center",
+                bbox_to_anchor=(0.5, -0.05),  # 调整这里的 Y 坐标
+                fontsize=8,
+                frameon=False,
+                ncol=3,
             )
             ax.axis("off")
 
@@ -463,7 +474,7 @@ class MicrolensCalculator:
             # 顶部 Header (模拟原版 Header)
             with ui.row().classes("w-full bg-slate-800 h-14 items-center shadow-md flex-none px-4 justify-between"):
                 with ui.row().classes("items-center"):
-                    ui.icon("hub", size="md").classes("text-blue-400")
+                    ui.icon("hive", size="md").classes("text-blue-400")
                     ui.label("微透镜阵列透镜组光耦合效率计算").classes(
                         "text-lg font-bold tracking-wide text-white ml-2"
                     )
@@ -471,7 +482,8 @@ class MicrolensCalculator:
                 ui.button(icon="close", on_click=dialog.close).props("flat dense round color=white")
 
             # 主体内容
-            with ui.row().classes(f"w-full flex-1 {THEME_BG} gap-0 flex-nowrap overflow-hidden"):
+            # 修改为: 允许在极小屏幕下出现水平滚动条，防止挤压
+            with ui.row().classes(f"w-full flex-1 {THEME_BG} gap-0 flex-nowrap overflow-auto"):
                 # 左侧栏
                 with ui.column().classes(
                     f"w-80 flex-none {SIDEBAR_BG} h-full p-4 gap-4 border-r border-gray-200 flex flex-col"
@@ -562,14 +574,27 @@ class MicrolensCalculator:
 
                 # 右侧：结果展示区
                 with ui.column().classes("flex-grow h-full overflow-y-auto p-4 gap-4"):
-                    with ui.row().classes("w-full gap-4 items-stretch min-h-[350px]"):
-                        with ui.card().classes(f"{CARD_STYLE} w-4/12 flex flex-col items-center justify-center"):
+                    # --- 修改点 A：允许 flex-wrap，在中屏(md)以上才强制不换行 ---
+                    # 原代码: with ui.row().classes("w-full gap-4 items-stretch min-h-[250px]"):
+                    with ui.row().classes("w-full gap-4 flex-wrap md:flex-nowrap items-stretch"):
+                        # --- 修改点 B：左侧图表卡片 ---
+                        # 1. w-full: 小屏占满整行
+                        # 2. md:w-5/12: 中屏以上占 5/12 (稍微给大一点空间)
+                        # 3. shrink-0: 防止被右侧内容挤压
+                        with ui.card().classes(
+                            f"{CARD_STYLE} w-full md:w-5/12 shrink-0 flex flex-col items-center justify-center min-w-[300px]"
+                        ):
                             ui.label("阵列排布与有效孔径").classes("text-xs font-bold text-gray-400 mb-2")
-                            self.preview_plot = ui.pyplot(figsize=(4, 4), close=False)
+                            # 增加 plot 的尺寸，避免太小看不清
+                            self.preview_plot = ui.pyplot(figsize=(4.5, 4.5), close=False)
                             with self.preview_plot:
                                 plt.axis("off")
 
-                        with ui.column().classes("w-7/12 gap-3"):
+                        # --- 修改点 C：右侧数据栏 ---
+                        # 1. w-full: 小屏占满整行
+                        # 2. md:w-auto: 中屏以上自动适应
+                        # 3. grow: 占据剩余空间
+                        with ui.column().classes("w-full md:w-auto grow gap-3"):
                             with ui.row().classes("w-full gap-3"):
                                 with ui.column().classes(
                                     f"{CARD_STYLE} flex-1 border-l-4 border-blue-500 bg-blue-50 justify-center"
@@ -612,8 +637,10 @@ class MicrolensCalculator:
                                                 "text-xl font-bold text-purple-600"
                                             )
 
-                            with ui.row().classes("w-full gap-2"):
-                                with ui.column().classes(f"{CARD_STYLE} flex-1 items-center"):
+                            # 修改为: 增加 flex-wrap
+                            with ui.row().classes("w-full gap-2 flex-wrap"):
+                                # 为每个卡片增加 min-w-[200px] (根据实际内容调整)
+                                with ui.column().classes(f"{CARD_STYLE} flex-1 items-center min-w-[180px]"):
                                     ui.label("1. 几何拦截效率").classes("text-base text-gray-500 font-bold")
                                     self.ui_refs["factor_geo"] = ui.label("- %").classes(
                                         "text-3xl font-black text-slate-700"
@@ -622,9 +649,11 @@ class MicrolensCalculator:
                                         "text-xs text-gray-400 text-center"
                                     )
 
-                                ui.label("×").classes("text-2xl text-gray-300 self-center")
+                                # 注意：中间的 "×" 号在 flex-wrap 换行时会很尴尬，建议在小屏隐藏或调整结构
+                                # 这里建议给 x 号增加 hidden md:block (仅在中屏以上显示)
+                                ui.label("×").classes("text-2xl text-gray-300 self-center hidden md:block")
 
-                                with ui.column().classes(f"{CARD_STYLE} flex-1 items-center"):
+                                with ui.column().classes(f"{CARD_STYLE} flex-1 items-center min-w-[180px]"):
                                     ui.label("2. 平均透过率").classes("text-base text-gray-500 font-bold")
                                     self.ui_refs["factor_trans"] = ui.label("- %").classes(
                                         "text-3xl font-black text-slate-700"
