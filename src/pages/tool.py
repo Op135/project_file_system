@@ -64,6 +64,22 @@ def tool_page():
             "cls": EtendueCalculator,
         },
         {
+            "key": "simple_coupling_calc",
+            "title": "简单透镜组耦合效率",
+            "subtitle": "单路透镜耦合效率仿真",
+            "icon": "camera",
+            "color": "indigo",
+            "cls": SimpleCouplingCalculator,
+        },
+        {
+            "key": "microlens_calc",
+            "title": "复眼透镜耦合效率",
+            "subtitle": "复眼透镜效率仿真",
+            "icon": "hive",
+            "color": "orange",
+            "cls": MicrolensCalculator,
+        },
+        {
             "key": "mode_calc",
             "title": "激光横模分析",
             "subtitle": "LP/HG 模式场分布仿真",
@@ -78,22 +94,6 @@ def tool_page():
             "icon": "trip_origin",
             "color": "teal",
             "cls": SphericalLensCalculator,
-        },
-        {
-            "key": "microlens_calc",
-            "title": "复眼透镜耦合效率",
-            "subtitle": "复眼透镜效率仿真",
-            "icon": "hive",
-            "color": "orange",
-            "cls": MicrolensCalculator,
-        },
-        {
-            "key": "simple_coupling_calc",
-            "title": "简单透镜组耦合效率",
-            "subtitle": "单路透镜耦合效率仿真",
-            "icon": "camera",
-            "color": "indigo",
-            "cls": SimpleCouplingCalculator,
         },
     ]
 
