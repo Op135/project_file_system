@@ -671,7 +671,7 @@ async def requirement_page(type="", json_path="", project_name=""):
 
     # 取消项目命名处理函数
     def cancel_peoject_name(project_old_name):
-        app.storage.client["project_name"] = project_old_name
+        app.storage.client["target_project_name"] = project_old_name
         project_dialog.close()
 
     # 新建需求初始化所有配置
@@ -1877,6 +1877,17 @@ async def requirement_page(type="", json_path="", project_name=""):
     #     #  改了项目名 且
     #     if project_name != target_project_name and int(version_str_li[1]) != 0:
 
+    # [新增一个删除辅助函数，放在 output_config_data 内部或者外部均可]
+    def clean_autosave_file(project_name):
+        try:
+            # 构造自动保存的文件路径
+            autosave_path = os.path.join(REQ_DIR, f"temp/{current_user}/{project_name}_AUTOSAVE.json")
+            if os.path.exists(autosave_path):
+                os.remove(autosave_path)
+                logger.info(f"清理临时草稿文件: {autosave_path}")
+        except Exception as e:
+            logger.error(f"清理草稿失败: {e}")
+
     # 需求数据输出处理函数
     async def output_config_data(data, type):
         # 先复制整个数据
@@ -2119,6 +2130,9 @@ async def requirement_page(type="", json_path="", project_name=""):
                     set(app.storage.general["temp_req"][current_user][project_name])
                 )
 
+                # 产出可能存在的自动保存需求文件
+                clean_autosave_file(project_name)
+
                 logger.info(f"成功暂存需求配置：{project_name}_需求配置_V{new_version}.json")
                 ui.notify(
                     f"需求已暂存，版本迭代到: V{new_version}，待办项已增加相应记录。",
@@ -2144,6 +2158,45 @@ async def requirement_page(type="", json_path="", project_name=""):
                     progress=False,
                     close_button="✖",
                 )
+
+        # [新增] >>> 在 export 分支之前或之后插入 autosave 分支 <<<
+        elif type == "autosave":
+            # 如下情况，这里就没必要自动保存了
+            if (
+                # 用户没权限配置需求
+                current_role not in ["销售", "销售总监", "admin"]
+                # 参考需求待审，后面不能暂存或提交，这里没必要自动保存
+                or original_review_state == "待审"
+                # 参考需求待修改且当前用户无权修改，后面不能暂存或提交，这里没必要自动保存
+                or original_review_state == "待修改"
+                and original_submitter != current_user
+                # 临时项目命名有问题，后面不能暂存或提交，这里没必要自动保存
+                or project_name.split("-")[0] == "RFTS"
+                and not validate_format_regex(project_name, r"^RFTS-\d{4}$")
+                # 非临时项且不在正式项目名称列表里，后面不能暂存或提交，这里没必要自动保存
+                or target_project_name.split("-")[0] != "RFTS"
+                and target_project_name not in app.storage.general["project_summary"]
+            ):
+                return
+            # 1. 保持当前版本号和项目名不变
+            data_json["project_name"] = project_name
+            data_json["version"] = version
+            # 2. 更新时间戳
+            data_json["req_timestamp"] = datetime.now().isoformat()
+
+            # 3. 固定文件名后缀，覆盖保存 (例如: RFTS-0001_AUTOSAVE.json)
+            # 这样不会产生无数个垃圾文件，永远只有一份最新的草稿
+            file_path = os.path.join(REQ_DIR, f"temp/{current_user}/{project_name}_AUTOSAVE.json")
+
+            try:
+                Path(os.path.join(REQ_DIR, f"temp/{current_user}")).mkdir(parents=True, exist_ok=True)
+                json_str = json.dumps(data_json, indent=4, ensure_ascii=False)
+                with open(file_path, "w", encoding="utf-8") as f:
+                    f.write(json_str)
+                # 静默成功，仅在后台打印日志，不弹窗打扰用户
+                # logger.info(f"Auto-save success: {file_path}")
+            except Exception as e:
+                logger.error(f"自动保存失败: {e}")
 
         # 输出类型为提交到服务器
         elif type == "submit":
@@ -2459,6 +2512,9 @@ async def requirement_page(type="", json_path="", project_name=""):
 
                 # 将提交该需求的用户更新为该项目负责的销售员
                 app.storage.general["project_sale"][target_project_name] = current_user
+
+                # 产出可能存在的自动保存需求文件
+                clean_autosave_file(project_name)
 
                 logger.info(f"成功提交{target_project_name}的需求配置，版本：V{new_version}。")
                 ui.notify(
@@ -3377,6 +3433,10 @@ async def requirement_page(type="", json_path="", project_name=""):
                     req_thumbnail_display()
 
     header = ui.header(elevated=True).classes("flex justify-between items-center bg-blue-500 h-12 px-4")
+    # [新增] 定义自动保存文件的路径
+    autosave_path = ""
+    if project_name:  # 如果 URL 里有项目名
+        autosave_path = os.path.join(REQ_DIR, f"temp/{current_user}/{project_name}_AUTOSAVE.json")
     # 如果跳转传入了json文件路径，则解析这个路径并借此生成界面
     if type == "requirement" and os.path.exists(json_path):
         try:
@@ -3389,6 +3449,26 @@ async def requirement_page(type="", json_path="", project_name=""):
             logger.error(f"错误：文件 '{json_path}' 不是有效的 JSON 格式。", exc_info=True)
         except Exception:
             logger.error("读取需求文件时发生其他错误", exc_info=True)
+    # [新增] 如果没指定文件，但存在自动保存文件，优先加载自动保存文件
+    elif type == "requirement" and autosave_path and os.path.exists(autosave_path):
+        try:
+            with open(autosave_path, "r", encoding="utf-8") as f:
+                json_data = json.load(f)
+                loads_requirements(json_data, False)
+                ui.notify(
+                    "已为您恢复上次未保存的编辑内容",
+                    type="positive",
+                    position="bottom",
+                    timeout=1000,
+                    progress=True,
+                    close_button="✖",
+                )
+        except Exception as e:
+            logger.error(f"加载自动保存文件失败: {e}")
+            # 失败了就回退到新建
+            app.storage.client["project_name"] = project_name
+            app.storage.client["target_project_name"] = project_name
+            new_requirement()
     # 如果跳转传入的仅为项目名，则意味着服务器没有改项目配置文件，新建项目
     elif type == "requirement" and project_name:
         # 设置项目型号
@@ -3436,6 +3516,10 @@ async def requirement_page(type="", json_path="", project_name=""):
         # loads_overviews()
     else:
         new_requirement()
+
+    # [新增] 每 10 秒调用一次复用的保存函数，模式为 autosave
+    # 只有当 entry_status 为 True (或者你希望任何时候都存) 时才保存，防止刚进来就覆盖
+    ui.timer(30.0, lambda: output_config_data(app.storage.client["config_data"], "autosave"))
     # 添加全局键盘事件跟踪
     # ignore不设定默认导致键盘事件在'input', 'select', 'button', 'textarea'元素聚焦时被忽略
     ui.keyboard(on_key=handle_key)
