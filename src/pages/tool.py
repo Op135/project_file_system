@@ -161,13 +161,13 @@ def tool_page():
         ui.label("分析工具").classes("text-white text-lg absolute left-1/2 transform -translate-x-1/2")  # 绝对定位居中
         with ui.avatar(size="lg").classes("cursor-pointer ml-auto -mt-3"):  # 右侧对齐
             ui.image(current_display_path)
-            with ui.menu().props("auto-close") as menu:
+            with ui.menu().props("auto-close"):
                 ui.menu_item(f"你好, {app.storage.user.get('current_user', '匿名')}").style("white-space: nowrap;")
                 ui.separator().props("size=1px")
                 ui.menu_item("返回主界面", on_click=lambda: ui.navigate.to("/main"))
                 ui.separator().props("size=1px")
                 ui.menu_item("注销登录", on_click=lambda: logout())
-                ui.menu_item("关闭菜单", menu.close)
+
     # --- 2. 页面主体内容 ---
     # --- 核心修改：动态渲染网格 ---
     with ui.grid().classes("w-full gap-6 grid-cols-2 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-8"):

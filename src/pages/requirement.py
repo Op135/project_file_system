@@ -2605,7 +2605,7 @@ async def requirement_page(type="", json_path="", project_name=""):
             upload.set_visibility(False)  # 隐藏上传组件
             with ui.avatar(size="lg").classes("cursor-pointer ml-auto -mt-3"):  # 右侧对齐
                 ui.image(current_display_path)
-                with ui.menu().props("auto-close") as menu:
+                with ui.menu().props("auto-close"):
                     ui.menu_item(f"你好, {app.storage.user.get('current_user', '匿名')}").style("white-space: nowrap;")
                     ui.separator().props("size=1px")
                     ui.menu_item("返回主界面", on_click=lambda: ui.navigate.to("/main"))
@@ -2624,7 +2624,6 @@ async def requirement_page(type="", json_path="", project_name=""):
                     ui.menu_item("对比需求", on_click=show_comparison_dialog)
                     ui.separator().props("size=1px")
                     ui.menu_item("注销登录", on_click=lambda: logout())
-                    ui.menu_item("关闭菜单", menu.close)
             # 需求行
             with ui.row().classes("font-sans h-[calc(100vh-9rem)] items-stretch flex-nowrap w-full text-black"):
                 with ui.column().classes("w-1/4 min-w-[400px] items-center justify-start overflow-y-auto"):
@@ -2907,18 +2906,15 @@ async def requirement_page(type="", json_path="", project_name=""):
 
             with ui.avatar(size="lg").classes("cursor-pointer ml-auto -mt-3"):  # 右侧对齐
                 ui.image(current_display_path)
-                with ui.menu().props("auto-close") as menu:
+                with ui.menu().props("auto-close"):
                     ui.menu_item(f"你好, {app.storage.user.get('current_user', '匿名')}").style("white-space: nowrap;")
                     ui.separator().props("size=1px")
                     ui.menu_item("返回主界面", on_click=lambda: ui.navigate.to("/main"))
                     ui.menu_item("返回项目信息表", on_click=lambda: ui.navigate.to("/project_table"))
                     ui.menu_item("注销登录", on_click=lambda: logout())
                     ui.separator().props("size=1px")
-
                     ui.menu_item("对比需求", on_click=show_comparison_dialog)
-                    ui.separator().props("size=1px")
 
-                    ui.menu_item("关闭菜单", menu.close)
             with ui.row().classes("font-sans h-[calc(100vh-9rem)] items-stretch flex-nowrap w-full mt-3 text-black"):
                 # 需求内容列
                 with ui.column().classes("w-1/2 min-w-[400px]"):
@@ -3456,11 +3452,11 @@ async def requirement_page(type="", json_path="", project_name=""):
                 json_data = json.load(f)
                 loads_requirements(json_data, False)
                 ui.notify(
-                    "已为您恢复上次未保存的编辑内容",
-                    type="positive",
-                    position="bottom",
-                    timeout=1000,
-                    progress=True,
+                    "已为您恢复上次自动保存的需求内容",
+                    type="info",
+                    position="center",
+                    timeout=0,
+                    progress=False,
                     close_button="✖",
                 )
         except Exception as e:
@@ -3519,7 +3515,7 @@ async def requirement_page(type="", json_path="", project_name=""):
 
     # [新增] 每 10 秒调用一次复用的保存函数，模式为 autosave
     # 只有当 entry_status 为 True (或者你希望任何时候都存) 时才保存，防止刚进来就覆盖
-    ui.timer(30.0, lambda: output_config_data(app.storage.client["config_data"], "autosave"))
+    ui.timer(30.0, lambda: output_config_data(app.storage.client["config_data"], "autosave"), immediate=False)
     # 添加全局键盘事件跟踪
     # ignore不设定默认导致键盘事件在'input', 'select', 'button', 'textarea'元素聚焦时被忽略
     ui.keyboard(on_key=handle_key)

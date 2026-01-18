@@ -580,13 +580,13 @@ def project_table_page():
         )  # 绝对定位居中
         with ui.avatar(size="lg").classes("cursor-pointer ml-auto -mt-3"):  # 右侧对齐
             ui.image(current_display_path)
-            with ui.menu().props("auto-close") as menu:
+            with ui.menu().props("auto-close"):
                 ui.menu_item(f"你好, {app.storage.user.get('current_user', '匿名')}").style("white-space: nowrap;")
                 ui.separator().props("size=1px")
                 ui.menu_item("返回主界面", on_click=lambda: ui.navigate.to("/main"))
                 ui.separator().props("size=1px")
                 ui.menu_item("注销登录", on_click=lambda: logout())
-                ui.menu_item("关闭菜单", menu.close)
+
     with ui.column().classes("w-full h-[88vh] -space-y-2"):
         with ui.row().classes("items-center -space-x-2") as tool_row:
             ui.label("项目筛选：").classes("text-[16px]/[28px]")

@@ -51,7 +51,7 @@ def main_page():
         )  # 绝对定位居中
         with ui.avatar(size="lg").classes("cursor-pointer ml-auto -mt-3"):  # 右侧对齐
             ui.image(current_display_path)
-            with ui.menu().props("auto-close") as menu:
+            with ui.menu().props("auto-close"):
                 ui.menu_item(f"你好, {app.storage.user.get('current_user', '匿名')}").style("white-space: nowrap;")
                 ui.menu_item("用户信息", on_click=lambda: ui.navigate.to("/profile"))
                 if current_user == "admin":
@@ -59,7 +59,6 @@ def main_page():
                     ui.menu_item("系统管理", on_click=lambda: ui.navigate.to("/manage"))
                 ui.separator().props("size=1px")
                 ui.menu_item("注销登录", on_click=lambda: logout())
-                ui.menu_item("关闭菜单", menu.close)
 
     # 使用 ui.grid 创建一个响应式的网格布局
     # a-classes: 应用于所有子元素的通用样式
