@@ -720,27 +720,39 @@ async def requirement_page(type="", json_path="", project_name=""):
             final_config_data = json_data
         # --- 修改结束 ---
         # -----------------------------------------------
-        # 获取文件缩略图字典内容，直接覆盖现有内容
-        # file_information = json_data["file_dic"]
-        file_information = final_config_data.get("file_dic", {})
-        app.storage.client["file_thumbnail_dic"] = {}
-        for k, v in file_information.items():
-            app.add_static_file(local_file=f"{UPLOADS_DIR}/{v['file_name_hash']}", url_path=v["file_url"])
-            file_thumbnail = FileThumbnail(
-                file_url=v["file_url"],
-                file_type=v["file_type"],
-                file_name_suffix=v["file_name_suffix"],
-                file_lab=v["file_lab"],
-                parents_h=v["parents_h"],
-                auto_create=False,
-                delet_lab=True,
-                on_add_ref_click=add_ref_button,
-                on_question_display_click=question_display,
+        try:
+            # 获取文件缩略图字典内容，直接覆盖现有内容
+            # file_information = json_data["file_dic"]
+            file_information = final_config_data.get("file_dic", {})
+            app.storage.client["file_thumbnail_dic"] = {}
+            for k, v in file_information.items():
+                app.add_static_file(local_file=f"{UPLOADS_DIR}/{v['file_name_hash']}", url_path=v["file_url"])
+                file_thumbnail = FileThumbnail(
+                    file_url=v["file_url"],
+                    file_type=v["file_type"],
+                    file_name_suffix=v["file_name_suffix"],
+                    file_lab=v["file_lab"],
+                    parents_h=v["parents_h"],
+                    auto_create=False,
+                    delet_lab=True,
+                    on_add_ref_click=add_ref_button,
+                    on_question_display_click=question_display,
+                )
+                app.storage.client["file_thumbnail_dic"][k] = {
+                    "file_obj": file_thumbnail,
+                    "file_information": v,
+                }
+        except Exception as e:
+            logger.error(f"读取需求配置出错，引用文件丢失: {e}", exc_info=True)
+            ui.notify(
+                f"读取需求配置出错，引用文件丢失: {e}，请联系系统管理员",
+                type="negative",
+                position="center",
+                timeout=0,
+                progress=False,
+                close_button="✖",
             )
-            app.storage.client["file_thumbnail_dic"][k] = {
-                "file_obj": file_thumbnail,
-                "file_information": v,
-            }
+            return
         # # 恢复文件状态记录
         # app.storage.client["files"] = json_data["files"]
         # app.storage.client["deleted_files"] = json_data["deleted_files"]
@@ -1554,6 +1566,9 @@ async def requirement_page(type="", json_path="", project_name=""):
 
                 elif options_type in ["正整数", "单行文本", "多行文本"]:
                     placeholder = input_num_accor = app.storage.client["config_data"]["data"][k]["placeholder"]
+                    tolerance_placeholder = input_num_accor = app.storage.client["config_data"]["data"][k][
+                        "tolerance_placeholder"
+                    ]
                     # 根据依据，获取用户在输入框填入的数量，输入项有名称则名称为健，没有则用数字字符
                     input_num_accor = app.storage.client["config_data"]["data"][k]["input_num_accor"]
                     input_num = (
@@ -1668,7 +1683,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                                         input_tolerance = (
                                             ui.input(
                                                 label=input_tolerance_label,
-                                                placeholder=placeholder,
+                                                placeholder=tolerance_placeholder,
                                                 validation={"不能空白": lambda value: value.strip() != ""},
                                             )
                                             .props("outlined stack-label")
@@ -1696,7 +1711,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                                         input_tolerance = (
                                             ui.input(
                                                 label=input_tolerance_label,
-                                                placeholder=placeholder,
+                                                placeholder=tolerance_placeholder,
                                                 validation={"不能空白": lambda value: value.strip() != ""},
                                             )
                                             .props("outlined stack-label")
@@ -1720,6 +1735,20 @@ async def requirement_page(type="", json_path="", project_name=""):
                                     input_field.bind_value(
                                         app.storage.client["config_data"]["data"][k]["user_must_out"], input_label_key
                                     )
+                                    if input_tolerance_bool in ["正负", "范围"]:
+                                        input_tolerance = (
+                                            ui.textarea(
+                                                label=input_tolerance_label,
+                                                placeholder=tolerance_placeholder,
+                                                validation={"不能空白": lambda value: value.strip() != ""},
+                                            )
+                                            .props("outlined stack-label autogrow")
+                                            .classes("w-full text-[14px]/[16px]")
+                                        )
+                                        input_tolerance.bind_value(
+                                            app.storage.client["config_data"]["data"][k]["option_tolerance_out"],
+                                            input_label_key,
+                                        )
                 # 处理需要插入引用的确认项
                 if ref_config_bool:
                     with ui.row().classes("gap-1 w-full justify-center"):

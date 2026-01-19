@@ -116,6 +116,9 @@ class ConfigService:
                     "placeholder": self.clean_text(row.输入占位提示内容).strip()
                     if self.clean_text(row.输入占位提示内容).strip() != ""
                     else "",
+                    "tolerance_placeholder": self.clean_text(row.公差占位提示内容).strip()
+                    if self.clean_text(row.公差占位提示内容).strip() != ""
+                    else "",
                     "option_group_id": str(int(float(self.clean_text(row.选项展示组).strip()))),
                     "option_view": self.clean_text(row.选项查阅整理要求).strip(),
                     "user_must_out": {},
