@@ -446,6 +446,117 @@ def layout_columns_container():
     update_ui_state()
 
 
+# --- 新增：打印清单页面 (背景色分组优化版) ---
+@ui.page("/print_list")
+def print_list_page():
+    if not app.storage.user.get("current_user"):
+        ui.navigate.to("/login")
+        return
+
+    ui.add_head_html("""
+        <style>
+            @media print {
+                .no-print { display: none !important; }
+                body { padding: 0; margin: 0; }
+                /* 强制背景色打印，这对本功能的实现至关重要 */
+                * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+                .print-row { page-break-inside: avoid; }
+            }
+        </style>
+    """)
+
+    with ui.column().classes("w-full max-w-5xl mx-auto p-8 bg-white"):
+        # 1. 顶部工具栏 (打印时隐藏)
+        with ui.row().classes("w-full justify-between items-center mb-6 no-print"):
+            with ui.row().classes("items-center gap-2"):
+                ui.icon("format_list_numbered", size="md", color="slate-800")
+                ui.label("需求项完整清单").classes("text-2xl font-bold text-slate-800")
+
+            with ui.row().classes("gap-3"):
+                ui.button("打印清单", icon="print", on_click=lambda: ui.run_javascript("window.print()")).classes(
+                    "bg-slate-900 text-white shadow-lg"
+                )
+                # ui.button("关闭", icon="close", on_click=lambda: ui.navigate.to("/question_tree_tabs")).props(
+                #     "flat color=grey"
+                # )
+
+        # 2. 表头
+        with ui.row().classes(
+            "w-full border-b-2 border-slate-800 pb-2 mb-0 items-center text-sm font-bold text-slate-900 gap-0"
+        ):
+            ui.label("ID").classes("w-14 text-center")
+            ui.label("内容详情").classes("flex-1 px-4")
+            ui.label("激活条件").classes("w-48 text-right pr-2")
+
+        # 排序
+        def smart_sort(k):
+            return int(k) if k.isdigit() else k
+
+        sorted_ids = sorted(DATA.keys(), key=smart_sort)
+
+        # >>> 初始化分组状态变量 <<<
+        last_cond = None  # 记录上一行的条件
+        is_alt_bg = False  # 背景色开关 (False=白, True=灰)
+
+        # 3. 列表内容
+        with ui.column().classes("w-full gap-0 border-b border-slate-200"):
+            for nid in sorted_ids:
+                item = DATA[nid]
+                content = item.get("guide_content", "")
+                raw_cond = item.get("condition", "")
+                options = item.get("options", [])
+
+                readable_cond = translate_condition(raw_cond)
+
+                # >>> 核心逻辑：检测条件是否变化 <<<
+                # 如果当前条件和上一个不一样，切换背景色状态
+                if readable_cond != last_cond:
+                    is_alt_bg = not is_alt_bg
+                    last_cond = readable_cond
+
+                # 根据状态决定使用哪种背景色
+                # bg-white: 纯白
+                # bg-slate-50: 极淡的灰色 (适合打印)
+                row_bg_color = "bg-amber-50/30" if is_alt_bg else "bg-sky-50/30"
+
+                # 条件文字的胶囊样式
+                cond_class = (
+                    "text-slate-300 font-light scale-90 origin-right"
+                    if readable_cond == "初始问题"
+                    else "text-sky-600 px-1 rounded font-medium"  # 去掉了背景色，直接用文字颜色区分，因为行背景已经变了
+                )
+
+                # >>> 行容器 <<<
+                # print-row: 防断页
+                # items-stretch: 确保竖线拉伸到底
+                # row_bg_color: 应用动态计算的背景色
+                with ui.row().classes(
+                    f"w-full items-stretch border-t border-slate-200 py-1 print-row transition-colors gap-0 {row_bg_color}"
+                ):
+                    # [左] ID
+                    with ui.element("div").classes(
+                        "w-10 flex-none border-r border-slate-200 flex items-start justify-center pt-0.5"
+                    ):
+                        ui.label(str(nid)).classes("font-mono text-xs font-bold text-slate-400")
+
+                    # [中] 内容
+                    with ui.element("div").classes("flex-1 w-0 border-r border-slate-200 px-4 flex flex-col gap-1"):
+                        ui.label(content).classes("text-sm font-bold text-slate-800 leading-snug break-words")
+                        if options:
+                            valid_opts = [str(o.get("option_content", "")) for o in options if o.get("option_content")]
+                            if valid_opts:
+                                opt_str = " / ".join(valid_opts)
+                                ui.label(f"选项: {opt_str}").classes(
+                                    "text-[11px] text-slate-500 leading-tight break-words"
+                                )
+
+                    # [右] 条件
+                    with ui.element("div").classes("w-80 flex-none flex items-start justify-end pl-2"):
+                        ui.label(readable_cond).classes(
+                            f"text-[10px] leading-tight break-words text-right {cond_class}"
+                        )
+
+
 @ui.page("/question_tree_tabs")
 def question_tree_page():
     # >>> [颜色配置] 搜索定位动画 (CSS)
@@ -553,16 +664,27 @@ def question_tree_page():
                     )
                 search_input.on("keydown.enter", lambda: handle_search(search_input.value, search_dialog))
 
-            ui.button(
-                "重置路径",
-                icon="refresh",
-                on_click=lambda: (
-                    selected_path.clear(),
-                    active_ancestors.clear(),
-                    update_ui_state(),
-                    search_input.set_value("") if search_input else None,
-                ),
-            ).props("flat dense")
+            # >>> [修改点] 在这里插入一个 Row 来包含右侧的功能按钮 <<<
+            with ui.row().classes("items-center gap-2"):
+                # --- 新增的按钮：打印/查看清单 ---
+                ui.button(
+                    "问题清单",
+                    icon="print",
+                    # new_tab=True 会在浏览器新标签页打开我们刚才定义的页面
+                    on_click=lambda: ui.navigate.to("/print_list", new_tab=True),
+                ).props("flat dense color=blue-700").tooltip("在新窗口打开完整列表以打印")
+
+                # --- 原有的重置按钮 ---
+                ui.button(
+                    "重置路径",
+                    icon="refresh",
+                    on_click=lambda: (
+                        selected_path.clear(),
+                        active_ancestors.clear(),
+                        update_ui_state(),
+                        search_input.set_value("") if search_input else None,
+                    ),
+                ).props("flat dense color=grey-8")  # 我稍微加了个颜色让它和主色区分开
 
         # >>> [颜色配置] 滚动列的轨道背景: 稍深一点的灰色(bg-slate-300)
         with ui.row().classes("w-full flex-grow overflow-x-auto overflow-y-hidden no-wrap items-start bg-white gap-0"):

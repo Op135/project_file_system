@@ -138,7 +138,7 @@ app.storage.general.setdefault("wait_review", {})
 app.storage.general.setdefault("temp_req", {})
 # 储存服务器层级 用于存储用户偏好信息
 app.storage.general.setdefault("user_preferences", {})
-# 储存服务器层级 用于存储用户偏好信息
+# 储存服务器层级 用于存储项目定制信息
 app.storage.general.setdefault("custom_labels", {})
 # 储存服务器层级 用于标记项目概述是否要因转产而刷新
 app.storage.general.setdefault("conversion_refresh", {})

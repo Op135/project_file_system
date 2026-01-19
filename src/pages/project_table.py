@@ -319,9 +319,14 @@ def project_table_page():
                                     show_str = f"{show_str}，{'，'.join(label_list)}"
                             # 需求录入列，动态内容设置
                             elif pro_key == "requirement":
-                                max_ver = app.storage.general["project_req_max_ver"].get(project_name, "")
-                                if max_ver:
-                                    show_str = f"当前V{max_ver}\n点击升级"
+                                project_state_dic = app.storage.general["wait_review"].get(project_name, {})
+                                if project_state_dic:
+                                    max_num = max([int(float(v)) for v in project_state_dic.keys()])
+                                    if max_num:
+                                        max_ver = f"{str(max_num)}.0"
+                                        show_str = (
+                                            f"V{max_ver}{project_state_dic[max_ver].get('state', '未知')}\n点击升级"
+                                        )
                                 else:
                                     show_str = "点击录入"
                             # 待确定的内容，统一更换仅显示一个?号
@@ -457,65 +462,102 @@ def project_table_page():
             "pinned": "left",  # 固定到左侧
         },
         {"field": "project", "headerName": "对外产品型号", "width": 120},
-        {"field": "model_notes", "headerName": "型号备注", "width": 150, "autoHeightLeft": True},
+        {
+            "field": "model_notes",
+            "headerName": "型号备注",
+            "width": 150,
+            "cellClass": "left-auto-break",
+            "autoHeight": True,
+        },
         {"field": "state", "headerName": "产品状态", "width": 80, "filter": "agTextColumnFilter"},
         {"field": "creation_date", "headerName": "立项日期", "width": 100, "filter": "agDateColumnFilter"},
         {
             "field": "introduction",
             "headerName": "产品简介",
             "width": 400,
-            "autoHeightLeft": True,
+            "cellClass": "left-auto-break",
+            "autoHeight": True,
             "filter": "agTextColumnFilter",
         },
-        {"field": "custom_labels", "headerName": "定制要点", "width": 400, "autoHeightLeft": True},
+        {
+            "field": "custom_labels",
+            "headerName": "定制要点",
+            "width": 400,
+            "cellClass": "left-auto-break",
+            "autoHeight": True,
+        },
         {
             "field": "light_source",
             "headerName": "光源选型",
             "width": 400,
-            "autoHeightLeft": True,
+            "cellClass": "left-auto-break",
+            "autoHeight": True,
             "filter": "agTextColumnFilter",
-            # "cellStyle": {"white-space": "pre-line"},
         },
-        {"field": "photometric", "headerName": "光度学要求", "width": 120, "autoHeightLeft": True},
-        {"field": "target_distance", "headerName": "目标面距离", "width": 100, "autoHeightLeft": True},
+        {
+            "field": "photometric",
+            "headerName": "光度学要求",
+            "width": 120,
+            "cellClass": "left-auto-break",
+            "autoHeight": True,
+        },
+        {
+            "field": "target_distance",
+            "headerName": "目标面距离",
+            "width": 100,
+            "cellClass": "left-auto-break",
+            "autoHeight": True,
+        },
         {
             "field": "adapter_options",
             "headerName": "转接座可选类别",
             "width": 140,
-            "autoHeightLeft": True,
+            "cellClass": "left-auto-break",
+            "autoHeight": True,
             "filter": "agTextColumnFilter",
         },
         {"field": "color", "headerName": "外观颜色", "width": 80, "filter": "agTextColumnFilter"},
         {"field": "input_voltage", "headerName": "产品输入电压", "width": 100, "filter": "agTextColumnFilter"},
         {"field": "input_mode", "headerName": "输入控制模式", "width": 100, "filter": "agTextColumnFilter"},
         {"field": "output_mode", "headerName": "输出模式", "width": 100, "filter": "agTextColumnFilter"},
-        {"field": "guide_beam", "headerName": "导光束要求", "width": 100},
+        {
+            "field": "guide_beam",
+            "headerName": "导光束要求",
+            "width": 100,
+            "cellClass": "left-auto-break",
+            "autoHeight": True,
+            "filter": "agTextColumnFilter",
+        },
         {
             "field": "pcb",
             "headerName": "PCB规格",
             "width": 180,
-            "autoHeightLeft": True,
+            "cellClass": "left-auto-break",
+            "autoHeight": True,
             "filter": "agTextColumnFilter",
         },
         {
             "field": "electronic_bom",
             "headerName": "电子BOM",
             "width": 180,
-            "autoHeightLeft": True,
+            "cellClass": "left-auto-break",
+            "autoHeight": True,
             "filter": "agTextColumnFilter",
         },
         {
             "field": "software_executable_file",
             "headerName": "固件执行文件",
             "width": 200,
-            "autoHeightLeft": True,
+            "cellClass": "left-auto-break",
+            "autoHeight": True,
             "filter": "agTextColumnFilter",
         },
         {
             "field": "requirement",
             "headerName": "需求录入",
             "width": 100,
-            "autoHeightCenter": True,
+            "cellClass": "center-auto-break",
+            "autoHeight": True,
         },
         {"field": "overview", "headerName": "概述整理", "width": 80},
         {"field": "customer", "headerName": "客户缩写", "width": 100, "filter": "agTextColumnFilter"},
@@ -524,25 +566,56 @@ def project_table_page():
             "field": "project_charge",
             "headerName": "项目",
             "width": 80,
-            "autoHeightLeft": True,
+            "cellClass": "left-auto-break",
+            "autoHeight": True,
             "filter": "agTextColumnFilter",
         },
-        {"field": "optics_charge", "headerName": "光学", "width": 80, "autoHeightLeft": True},
-        {"field": "structure_charge", "headerName": "结构", "width": 80, "autoHeightLeft": True},
-        {"field": "hardware_charge", "headerName": "硬件", "width": 80, "autoHeightLeft": True},
-        {"field": "software_charge", "headerName": "软件", "width": 80, "autoHeightLeft": True},
-        {"field": "ui_charge", "headerName": "UI", "width": 80, "autoHeightLeft": True},
-        {"field": "craft_charge", "headerName": "工艺", "width": 80, "autoHeightLeft": True},
+        {
+            "field": "optics_charge",
+            "headerName": "光学",
+            "width": 80,
+            "cellClass": "left-auto-break",
+            "autoHeight": True,
+        },
+        {
+            "field": "structure_charge",
+            "headerName": "结构",
+            "width": 80,
+            "cellClass": "left-auto-break",
+            "autoHeight": True,
+        },
+        {
+            "field": "hardware_charge",
+            "headerName": "硬件",
+            "width": 80,
+            "cellClass": "left-auto-break",
+            "autoHeight": True,
+        },
+        {
+            "field": "software_charge",
+            "headerName": "软件",
+            "width": 80,
+            "cellClass": "left-auto-break",
+            "autoHeight": True,
+        },
+        {
+            "field": "ui_charge",
+            "headerName": "UI",
+            "width": 80,
+            "cellClass": "left-auto-break",
+            "autoHeight": True,
+        },
+        {
+            "field": "craft_charge",
+            "headerName": "工艺",
+            "width": 80,
+            "cellClass": "left-auto-break",
+            "autoHeight": True,
+        },
     ]
     for col in project_summary_columns:
         if "width" in col:
             col["minWidth"] = col["width"]
-        if "autoHeightLeft" in col:
-            # 该类使得\n符号会起作用，达到手动换行作用
-            col["cellClass"] = "left-auto-break"
-        if "autoHeightCenter" in col:
-            # 该类使得\n符号会起作用，达到手动换行作用
-            col["cellClass"] = "center-auto-break"
         col["headerClass"] = "center-auto-break"
         # 设置单元格样式规则
         col["cellClassRules"] = {
