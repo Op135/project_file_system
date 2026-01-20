@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 class ConfigService:
     def __init__(self):
         self.base_dir = Path(__file__).parent.parent
-        self.excel_path = self.base_dir / "data" / "config.xlsx"
+        self.excel_path = self.base_dir / "config.xlsx"
         self._cache = None  # 用于缓存加载的数据
         self._last_hash = None  # 用于检测文件是否修改
 

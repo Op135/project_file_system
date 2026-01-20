@@ -140,11 +140,11 @@ def information_page():
                 }
             }
             project_data = {}
-            with open(f"{BASE_DIR}/project_summary.json", "r", encoding="utf-8") as f:
+            with open(f"{BASE_DIR}/data/project_summary.json", "r", encoding="utf-8") as f:
                 project_data = json.load(f)
             project_data.update(temp_data)
             json_str = json.dumps(project_data, indent=4, ensure_ascii=False)
-            with open(f"{BASE_DIR}/project_summary.json", "w", encoding="utf-8") as f:
+            with open(f"{BASE_DIR}/data/project_summary.json", "w", encoding="utf-8") as f:
                 f.write(json_str)
             # 将服务器json配置文件同步更新到服务器储存，包括正式项目与临时项目记录
             project_summary_update()

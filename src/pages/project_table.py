@@ -155,7 +155,7 @@ def project_table_page():
         """
         try:
             # 1. 读取现有文件
-            target_file = os.path.join(BASE_DIR, "project_summary.json")
+            target_file = os.path.join(BASE_DIR, "data/project_summary.json")
 
             # 如果找不到文件，尝试使用 storage 里的数据反向生成（兜底策略）
             data = {}
@@ -236,7 +236,7 @@ def project_table_page():
         """
         try:
             # 1. 读取现有文件
-            target_file = os.path.join(BASE_DIR, "project_summary.json")
+            target_file = os.path.join(BASE_DIR, "data/project_summary.json")
 
             # 如果找不到文件，尝试使用 storage 里的数据反向生成（兜底策略）
             data = {}

@@ -266,14 +266,14 @@ async def requirement_page(type="", json_path="", project_name=""):
             app.storage.client["recovery_bool"] = False
             return
         project_data = {}
-        with open(f"{BASE_DIR}/project_summary.json", "r", encoding="utf-8") as f:
+        with open(f"{BASE_DIR}/data/project_summary.json", "r", encoding="utf-8") as f:
             project_data = json.load(f)
             project_data[project_name]["state"] = state
         # 将字典转换为 JSON 字符串
         json_str = json.dumps(project_data, indent=4, ensure_ascii=False)
         # 写入文件
         try:
-            with open(f"{BASE_DIR}/project_summary.json", "w", encoding="utf-8") as f:
+            with open(f"{BASE_DIR}/data/project_summary.json", "w", encoding="utf-8") as f:
                 f.write(json_str)
             app.storage.general["project_summary"][project_name]["state"] = state
             ui.notify(

@@ -548,9 +548,9 @@ def project_table_update_config_update():
 def project_summary_update():
     try:
         # 解析JSON数据
-        if os.path.exists(f"{BASE_DIR}/project_summary.json"):
+        if os.path.exists(f"{BASE_DIR}/data/project_summary.json"):
             project_data = {}
-            with open(f"{BASE_DIR}/project_summary.json", "r", encoding="utf-8") as f:
+            with open(f"{BASE_DIR}/data/project_summary.json", "r", encoding="utf-8") as f:
                 project_data = json.load(f)
                 app.storage.general["project_summary"] = copy.deepcopy(project_data)
                 app.storage.general["temp_project_name"] = []

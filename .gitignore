@@ -4,6 +4,7 @@ logs/
 files/
 over/
 req/
+data/
 .nicegui/
 uploads/
 *.pyc
