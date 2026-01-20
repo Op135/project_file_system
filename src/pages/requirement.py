@@ -1569,6 +1569,9 @@ async def requirement_page(type="", json_path="", project_name=""):
                     tolerance_placeholder = input_num_accor = app.storage.client["config_data"]["data"][k][
                         "tolerance_placeholder"
                     ]
+                    # 获取公差要求
+                    input_tolerance_bool = app.storage.client["config_data"]["data"][k]["input_tolerance"]
+
                     # 根据依据，获取用户在输入框填入的数量，输入项有名称则名称为健，没有则用数字字符
                     input_num_accor = app.storage.client["config_data"]["data"][k]["input_num_accor"]
                     input_num = (
@@ -1596,18 +1599,52 @@ async def requirement_page(type="", json_path="", project_name=""):
                             islice(input_name_storage_dic.items(), input_num)  # islice高效获取字典前N个键值对
                         )
                     input_name_dic = {} if input_name_accor == "" else input_name_storage_dic
-                    # 获取公差要求
-                    input_tolerance_bool = app.storage.client["config_data"]["data"][k]["input_tolerance"]
+
                     # 该项的项名称不需要依据，给项的健默认按照数字字符进行设置
                     if input_name_dic == {}:
                         for i in range(input_num):
                             input_name_dic[str(i + 1)] = str(i + 1)
 
+                    # ===================== 【核心优化：基于索引的数据迁移，解决前置问题命名变了导致后置问题内容找不到清空】 =====================
+                    # 1. 获取当前页面应显示的有效键列表（新名称列表），并截取有效数量
+                    # 注意：input_name_dic.values() 返回的是名称，这里用作后续存储的Key
+                    current_target_keys = list(input_name_dic.values())[:input_num]
+
+                    # 2. 获取当前存储中的数据（可能包含旧名称）
+                    stored_data_ref = app.storage.client["config_data"]["data"][k]["user_must_out"]
+                    stored_tolerance_ref = app.storage.client["config_data"]["data"][k].get("option_tolerance_out", {})
+
+                    # 3. 检查是否需要迁移：如果当前存储的键与目标键不一致（名称变了 或 数量变了）
+                    if list(stored_data_ref.keys()) != current_target_keys:
+                        new_data_map = {}
+                        new_tolerance_map = {}
+
+                        # 获取旧数据的纯值列表（按顺序）
+                        old_values = list(stored_data_ref.values())
+                        old_tolerance_values = list(stored_tolerance_ref.values())
+
+                        # 4. 按位置重新映射：将旧值赋给新名称
+                        for i, new_key in enumerate(current_target_keys):
+                            # 处理主要内容
+                            if i < len(old_values):
+                                new_data_map[new_key] = old_values[i]  # 继承旧值
+
+                            # 处理公差内容
+                            if i < len(old_tolerance_values):
+                                new_tolerance_map[new_key] = old_tolerance_values[i]  # 继承旧公差
+
+                        # 5. 更新存储（原子替换）
+                        app.storage.client["config_data"]["data"][k]["user_must_out"] = new_data_map
+                        app.storage.client["config_data"]["data"][k]["option_tolerance_out"] = new_tolerance_map
+                    # ===================== 【核心优化结束】 =====================
+
                     # ===【新增代码开始】：检测并显示“隐形/孤儿”数据 ===
                     # 1. 获取当前页面要求的有效键列表
-                    active_keys = list(input_name_dic.values())[
-                        :input_num
-                    ]  # 客户来回改数量，导致前面填的多出来了，要截取
+                    # ... (下面是原有的检测孤儿数据的逻辑，可以保留，但因为上面已经做了迁移，
+                    #      这里主要会检测到那种被彻底删减掉的数据，体验会更好) ...
+                    active_keys = (
+                        current_target_keys  # 直接复用上面的变量  客户来回改数量，导致前面填的多出来了，要截取
+                    )
 
                     # 2. 获取存储里的所有键
                     stored_data = app.storage.client["config_data"]["data"][k]["user_must_out"]
