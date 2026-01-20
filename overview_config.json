@@ -2158,6 +2158,37 @@
                 }
             },
             {
+                "label": "drive_test_report",
+                "title": "硬件测试报告",
+                "processing_type": "search",
+                "file_name_regular": [],
+                "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\2.输出——研发流程输出文档\\★可发客户的资料\\产品使用说明\\1.硬件使用说明及图纸",
+                "search_scope_regular": "^([^_]+)",
+                "search_folder_according": "drive_pcb",
+                "search_hierarchy": [],
+                "permission": {
+                    "read_role": [
+                        "boss",
+                        "销售总监",
+                        "销售",
+                        "客服主管",
+                        "客服",
+                        "研发助理",
+                        "研发软件",
+                        "研发光学",
+                        "研发样品",
+                        "工程",
+                        "质量"
+                    ],
+                    "edit_role": [
+                        "admin",
+                        "研发经理",
+                        "研发硬件",
+                        "研发电子主管"
+                    ]
+                }
+            },
+            {
                 "label": "wiring_manual",
                 "title": "产品接线说明书",
                 "processing_type": "file",

@@ -1,12 +1,14 @@
 # -*- encoding: utf-8 -*-
 import copy
+import datetime
+import json
 import logging
 import os
 
 from nicegui import app, ui
 
 from .. import db_storage  # 导入我们创建的模块
-from ..config import IMG_DIR, PRESET_AVATARS, REQ_DIR
+from ..config import BASE_DIR, IMG_DIR, PRESET_AVATARS, REQ_DIR
 from ..utils import (
     find_files_with_prefix_and_version,
     get_cache_busted_path,
@@ -14,6 +16,7 @@ from ..utils import (
     logout,
     project_summary_update,
     project_table_update_config_update,
+    validate_format_regex,
 )
 
 # 获取一个以此模块命名的 logger
@@ -135,12 +138,283 @@ def project_table_page():
         ui.navigate.to("/login")  # 如果未登录，跳转到登录页
         return
     current_user = app.storage.user.get("current_user")
+    current_role = app.storage.user.get("current_role")
     # 从全局存储中获取用户当前的头像设置
     # (在 main.py 中定义 "user_preferences")
     user_prefs = app.storage.general.get("user_preferences", {}).get(current_user, {})
     current_avatar_path = user_prefs.get("avatar", PRESET_AVATARS[0])  # 默认为第一个
     # 在 *显示* 前，应用缓存清除
     current_display_path = get_cache_busted_path(current_avatar_path)
+
+    table_dialog = ui.dialog()
+
+    # === 新增功能：处理新增项目的逻辑 ===
+    def save_new_project_to_file(new_project_data):
+        """
+        读取JSON，插入新数据，按Key排序，保存文件，并更新内存缓存
+        """
+        try:
+            # 1. 读取现有文件
+            target_file = os.path.join(BASE_DIR, "project_summary.json")
+
+            # 如果找不到文件，尝试使用 storage 里的数据反向生成（兜底策略）
+            data = {}
+            if os.path.exists(target_file):
+                with open(target_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+            else:
+                # 假如文件路径配置比较复杂，这里仅作演示，实际请确保路径正确
+                data = copy.deepcopy(app.storage.general.get("project_summary", {}))
+
+            # 2. 检查是否已存在
+            project_name = new_project_data["project_name"]  # 这里仅作为临时变量名，实际JSON key是 sub_project
+
+            key = project_name
+
+            if key in data:
+                ui.notify(
+                    f"项目 {key} 已存在！",
+                    type="info",
+                    position="bottom",
+                    timeout=2000,
+                    progress=True,
+                    close_button="✖",
+                )
+                return False
+
+            # 3. 构造要保存的结构 (对应截图中的 Value 部分)
+            # 移除临时的 project_name 字段，保留数据字段
+            save_value = {
+                "state": new_project_data["state"],
+                "model_notes": new_project_data["model_notes"],
+                "creation_date": new_project_data["creation_date"],
+                "introduction": new_project_data["introduction"],
+                "customer": new_project_data["customer"],
+            }
+
+            # 4. 插入数据
+            data[key] = save_value
+
+            # 5. 排序逻辑：按 Key 字母顺序排序
+            # 这能保证同一系列在一起，新系列排在后面（如果首字母更靠后）
+            sorted_keys = sorted(data.keys())
+            sorted_data = {k: data[k] for k in sorted_keys}
+
+            # 6. 写入文件
+            with open(target_file, "w", encoding="utf-8") as f:
+                json.dump(sorted_data, f, ensure_ascii=False, indent=4)
+
+            # 7. 更新内存中的全局缓存
+            project_summary_update()
+
+            logger.error(f"项目 {key} 创建成功！总项目数增加到{str(len(sorted_data.keys()))}个。")
+            ui.notify(
+                f"项目 {key} 创建成功！总项目数增加到{str(len(sorted_data.keys()))}个。",
+                type="positive",
+                position="bottom",
+                timeout=2000,
+                progress=True,
+                close_button="✖",
+            )
+            return True
+
+        except Exception as e:
+            logger.error(f"保存项目失败: {e}")
+            ui.notify(
+                f"新增项目失败: {e}",
+                type="negative",
+                position="center",
+                timeout=0,
+                progress=False,
+                close_button="✖",
+            )
+            return False
+
+    def save_revise_project_to_file(new_project_data):
+        """
+        读取JSON，插入新数据，按Key排序，保存文件，并更新内存缓存
+        """
+        try:
+            # 1. 读取现有文件
+            target_file = os.path.join(BASE_DIR, "project_summary.json")
+
+            # 如果找不到文件，尝试使用 storage 里的数据反向生成（兜底策略）
+            data = {}
+            if os.path.exists(target_file):
+                with open(target_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+            else:
+                # 假如文件路径配置比较复杂，这里仅作演示，实际请确保路径正确
+                data = copy.deepcopy(app.storage.general.get("project_summary", {}))
+
+            # 2. 检查是否不存在
+            project_name = new_project_data["project_name"]  # 这里仅作为临时变量名，实际JSON key是 sub_project
+
+            key = project_name
+
+            if key not in data:
+                ui.notify(
+                    f"项目 {key} 不存在，无法修改！",
+                    type="info",
+                    position="bottom",
+                    timeout=2000,
+                    progress=True,
+                    close_button="✖",
+                )
+                return False
+
+            # 3. 构造要保存的结构 (对应截图中的 Value 部分)
+            # 移除临时的 project_name 字段，保留数据字段
+            save_value = {
+                "state": new_project_data["state"],
+                "model_notes": new_project_data["model_notes"],
+                "creation_date": new_project_data["creation_date"],
+                "introduction": new_project_data["introduction"],
+                "customer": new_project_data["customer"],
+            }
+
+            # 4. 插入数据
+            data[key] = save_value
+
+            # 5. 排序逻辑：按 Key 字母顺序排序
+            # 这能保证同一系列在一起，新系列排在后面（如果首字母更靠后）
+            sorted_keys = sorted(data.keys())
+            sorted_data = {k: data[k] for k in sorted_keys}
+
+            # 6. 写入文件
+            with open(target_file, "w", encoding="utf-8") as f:
+                json.dump(sorted_data, f, ensure_ascii=False, indent=4)
+
+            # 7. 更新内存中的全局缓存
+            project_summary_update()
+
+            logger.info(f"项目 {key} 修改成功！")
+            ui.notify(
+                f"项目 {key} 修改成功！",
+                type="positive",
+                position="bottom",
+                timeout=2000,
+                progress=True,
+                close_button="✖",
+            )
+            return True
+
+        except Exception as e:
+            logger.error(f"修改项目失败: {e}")
+            ui.notify(
+                f"修改项目失败: {e}",
+                type="negative",
+                position="center",
+                timeout=0,
+                progress=False,
+                close_button="✖",
+            )
+            return False
+
+    # === 新增功能：构建弹窗 UI ===
+    def open_add_project_dialog():
+        table_dialog.clear()
+        with table_dialog, ui.card().classes("w-[500px]"):
+            ui.label("新增/修改研发项目").classes("text-xl font-bold mb-4")
+
+            # 表单数据绑定
+            form_data = {
+                "project_name": "RFXX-XXXX-X/RM3000",  # 预填前缀
+                "state": "研发",
+                "creation_date": datetime.date.today().strftime("%Y-%m-%d"),
+                "model_notes": "",
+                "introduction": "",
+                "customer": "",
+            }
+
+            # 查找传入项目是否存在总表里，存在则把该项目信息更新到输入框绑定变量上，以供编辑
+            def find_project_data(project_name):
+                project_data = app.storage.general["project_summary"].get(project_name, {})
+                if project_data:
+                    form_data["state"] = project_data["state"]
+                    form_data["creation_date"] = project_data["creation_date"]
+                    form_data["model_notes"] = project_data["model_notes"]
+                    form_data["introduction"] = project_data["introduction"]
+                    form_data["customer"] = project_data["customer"]
+
+            with ui.column().classes("w-full gap-2"):
+                # 项目名称 (Key)
+                ui.input("内部产品型号", value=form_data["project_name"]).props("autofocus outlined").bind_value(
+                    form_data, "project_name"
+                ).on_value_change(lambda: find_project_data(form_data["project_name"]))
+
+                with ui.row().classes("w-full gap-2"):
+                    # 状态
+                    ui.select(
+                        ["待定", "研发", "转产", "量产", "作废"], value=form_data["state"], label="状态"
+                    ).bind_value(form_data, "state").classes("w-1/3")
+                    # 日期
+                    ui.input("立项日期", value=form_data["creation_date"]).bind_value(
+                        form_data, "creation_date"
+                    ).classes("w-1/2").props("type=date")
+
+                # 简介 (多行)
+                ui.textarea("产品简介", value=form_data["introduction"]).bind_value(form_data, "introduction").props(
+                    "outlined rows=3"
+                ).classes("w-full")
+
+                # 备注
+                ui.input("型号备注", value=form_data["model_notes"]).bind_value(form_data, "model_notes").props(
+                    "outlined"
+                ).classes("w-full")
+
+                # 客户
+                ui.input("客户简称", value=form_data["customer"]).bind_value(form_data, "customer").props(
+                    "outlined"
+                ).classes("w-full")
+
+            with ui.row().classes("w-full justify-end mt-4"):
+
+                def on_add_confirm():
+                    # 简单校验
+                    if form_data["project_name"].split("-")[0] == "RFTS":
+                        ui.notify(
+                            "临时项目不在此创建，仅处理正式项目!",
+                            type="warning",
+                            position="bottom",
+                            timeout=3000,
+                            progress=True,
+                            close_button="✖",
+                        )
+                        return
+
+                    # 执行保存
+                    success = save_new_project_to_file(form_data)
+                    if success:
+                        table_dialog.close()
+                        # 刷新页面或表格 (最简单是直接刷新页面，或者手动更新 rows)
+                        ui.navigate.to("/project_table")  # 重新加载当前页以刷新数据
+
+                def on_revise_confirm():
+                    # 简单校验
+                    if form_data["project_name"] not in app.storage.general["project_summary"]:
+                        ui.notify(
+                            "项目不在清单里，无法修改!",
+                            type="warning",
+                            position="bottom",
+                            timeout=3000,
+                            progress=True,
+                            close_button="✖",
+                        )
+                        return
+
+                    # 执行保存
+                    success = save_revise_project_to_file(form_data)
+                    if success:
+                        table_dialog.close()
+                        # 刷新页面或表格 (最简单是直接刷新页面，或者手动更新 rows)
+                        ui.navigate.to("/project_table")  # 重新加载当前页以刷新数据
+
+                ui.button("确认创建", on_click=on_add_confirm).props("color=green")
+                ui.button("确认修改", on_click=on_revise_confirm).props("color=blue")
+                ui.button("取消", on_click=table_dialog.close).props("color=grey-8")
+
+            table_dialog.open()
 
     # 按照项目名里“-”符号切分为大类和小类，并输出二层结构的类别字典
     def get_select_dic(select_li):
@@ -657,6 +931,8 @@ def project_table_page():
                 ui.menu_item(f"你好, {app.storage.user.get('current_user', '匿名')}").style("white-space: nowrap;")
                 ui.separator().props("size=1px")
                 ui.menu_item("返回主界面", on_click=lambda: ui.navigate.to("/main"))
+                if current_role in ["研发经理"]:
+                    ui.menu_item("新增/修改项目", on_click=open_add_project_dialog)
                 ui.separator().props("size=1px")
                 ui.menu_item("注销登录", on_click=lambda: logout())
 
