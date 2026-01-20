@@ -4,7 +4,7 @@ import logging
 from nicegui import app, ui
 
 from ..config import IMG_DIR, PRESET_AVATARS
-from ..utils import get_cache_busted_path, logout
+from ..utils import get_cache_busted_path, logout, online_users
 
 # 获取一个以此模块命名的 logger
 # 比如：如果你的文件是 src/components.py，这个 logger 的名字就会是 "src.components"
@@ -13,6 +13,11 @@ logger = logging.getLogger(__name__)
 
 @ui.page("/main")
 def main_page():
+    online_data = {"online_count": ""}
+
+    def refresh_online_num():
+        online_data["online_count"] = str(len(online_users.keys()))
+
     # 检查用户是否已登录
     # {'current_user': '用户名', 'is_admin': False}
     if not app.storage.user.get("current_user"):
@@ -49,6 +54,29 @@ def main_page():
         ui.label("百炼光研发管理系统").classes(
             "text-white text-lg absolute left-1/2 transform -translate-x-1/2"
         )  # 绝对定位居中
+        # --- 【核心代码】在线人数 酷炫胶囊组件 ---
+        # 使用 row 布局，items-center 垂直居中
+        # bg-white/20: 白色背景，20%不透明度 (透出底下的蓝)
+        # rounded-full: 胶囊圆角
+        # shadow-sm: 轻微阴影增加层次感
+        # backdrop-blur-sm: 磨砂玻璃效果 (可选，浏览器支持时更酷)
+        with ui.row().classes(
+            "absolute right-20 items-center gap-2 bg-white/10 px-3 py-1.5 rounded-full shadow-sm text-white ml-4 transition-all hover:bg-white/20 cursor-default"
+        ):
+            # 1. 动态呼吸灯 (animate-pulse 是 Tailwind 自带动画)
+            # 这是一个绿色的圆点，一直在"呼吸"
+            with ui.element("div").classes("relative flex h-3 w-3"):
+                ui.element("span").classes(
+                    "animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"
+                )
+                ui.element("span").classes("relative inline-flex rounded-full h-3 w-3 bg-green-500")
+            # 2. 图标
+            ui.icon("groups", size="xs").classes("opacity-90")
+            # 3. 数字显示
+            # 使用 bind_text 绑定数据，实现实时更新
+            label = ui.label().bind_text_from(online_data, "online_count", backward=lambda x: f"在线: {x}")
+            label.classes("text-sm font-medium tracking-wide")
+
         with ui.avatar(size="lg").classes("cursor-pointer ml-auto -mt-3"):  # 右侧对齐
             ui.image(current_display_path)
             with ui.menu().props("auto-close"):
@@ -108,3 +136,8 @@ def main_page():
                             ui.badge(str(state_num_user + over_charge_num), color="red").props(
                                 "floating rounded transparent"
                             )
+
+    # --- 定时刷新在线用户数据 ---
+    # 每 3 秒检查一次全局字典，更新UI
+    # 这样如果有用户下线或上线，管理员在3秒内就能看到变化
+    ui.timer(3.0, refresh_online_num)
