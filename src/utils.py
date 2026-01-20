@@ -24,6 +24,32 @@ from .config import AVATAR_DIR, AVATAR_URL_DIR, BASE_DIR, IMG_DIR, IMG_URL_DIR, 
 # 比如：如果你的文件是 src/components.py，这个 logger 的名字就会是 "src.components"
 logger = logging.getLogger(__name__)
 
+# 内存中的全局字典：{ client.id : { 'username': str, 'login_time': str, 'ip': str } }
+online_users = {}
+
+
+def handle_connect(client):
+    """当用户建立连接时触发"""
+    try:
+        # 尝试获取用户名，如果没登录可能是 None 或 'Unknown'
+        # 注意：app.storage.user 需要在上下文中使用，这里假设已能获取
+        username = app.storage.user.get("current_user", "访客")
+
+        # 记录用户信息
+        online_users[client.id] = {
+            "username": username,
+            "login_time": datetime.now().strftime("%H:%M:%S"),
+            "ip": client.ip or "Unknown",
+        }
+    except Exception as e:
+        print(f"Connection track error: {e}")
+
+
+def handle_disconnect(client):
+    """当用户断开连接时触发"""
+    if client.id in online_users:
+        del online_users[client.id]
+
 
 # 判断传入的概述负责角色是否与当前登录的角色匹配
 def overview_state_show_judge(charge_role) -> bool:

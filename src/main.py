@@ -20,6 +20,11 @@ from .components import StorageBackupManager
 from .config import BASE_DIR, IMG_DIR, PDF_PREVIEW_CACHE, ST
 from .config_service import ConfigService
 from .user_service import UserService
+from .utils import handle_connect, handle_disconnect  # 导入上面定义的函数
+
+# 注册这两个钩子，实现监控用户连线与下线
+app.on_connect(handle_connect)
+app.on_disconnect(handle_disconnect)
 
 # 忽略所有来自 openpyxl 的 UserWarning
 # 这样可以精确地屏蔽掉这个警告，而不影响其他库的警告

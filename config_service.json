@@ -3347,7 +3347,7 @@
                     "option_content": "光通量",
                     "option_out": "50%光通量",
                     "option_bold": "光通量",
-                    "option_show": "要求加测50%亮度档，并满足合格标准的光参数有{V}",
+                    "option_show": "{V}加测50%亮度档（标准默认同100%亮度档）",
                     "option_label": ""
                 },
                 {
@@ -7437,7 +7437,7 @@
             ]
         }
     },
-    "config_timestamp": "2026-01-20T17:34:57.978273",
-    "excel_version_hash": "3c5e46db",
+    "config_timestamp": "2026-01-20T18:10:18.280456",
+    "excel_version_hash": "fd7c5f67",
     "entry_status": false
 }
