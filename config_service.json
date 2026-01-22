@@ -2485,7 +2485,7 @@
             ]
         },
         "74": {
-            "condition": "55==True",
+            "condition": "55==True or 56==True",
             "node_id": "74",
             "guide_content": "下列哪些白光或混合光参数客户进行限制",
             "answer_type": "多选",
@@ -7501,7 +7501,7 @@
             ]
         }
     },
-    "config_timestamp": "2026-01-22T18:34:36.518593",
-    "excel_version_hash": "906d2cd2",
+    "config_timestamp": "2026-01-22T19:01:46.096275",
+    "excel_version_hash": "72b16109",
     "entry_status": false
 }
