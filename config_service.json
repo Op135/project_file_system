@@ -587,7 +587,7 @@
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "客户",
-                    "option_show": "导光束/光纤由{V}自行搭配",
+                    "option_show": "导光束/光纤由{V}自备",
                     "option_label": ""
                 }
             ]
@@ -699,7 +699,7 @@
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
-                    "option_show": "导光束/光纤外形尺寸要求：{V}",
+                    "option_show": "导光束/光纤外形尺寸信息/需求：{V}",
                     "option_label": ""
                 }
             ]
@@ -7501,7 +7501,7 @@
             ]
         }
     },
-    "config_timestamp": "2026-01-21T19:25:43.613071",
-    "excel_version_hash": "e25a8568",
+    "config_timestamp": "2026-01-22T18:34:36.518593",
+    "excel_version_hash": "906d2cd2",
     "entry_status": false
 }

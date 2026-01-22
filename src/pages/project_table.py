@@ -613,6 +613,8 @@ def project_table_page():
 
                     # 单独处理项目简介表里每行 负责销售 单元格的显示
                     row_data["sale_charge"] = app.storage.general["project_sale"].get(project_name, "")
+                    # 单独处理项目简介表里每行 项目工程师 单元格的显示
+                    row_data["project_charge"] = app.storage.general["project_engineer"].get(project_name, "")
                     # 将行数据加入待显示的符合选框的数据列表里
                     rows_select.append(row_data)
 

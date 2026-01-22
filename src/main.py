@@ -149,6 +149,8 @@ app.storage.general.setdefault("custom_labels", {})
 app.storage.general.setdefault("conversion_refresh", {})
 # 储存服务器层级 用于记录已经存在的临时项目号
 app.storage.general.setdefault("temp_project_name", [])
+# 储存服务器层级 用于记录各项目的项目工程师负责人
+app.storage.general.setdefault("project_engineer", {})
 
 
 @ui.page("/view/svn_pdf")

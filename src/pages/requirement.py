@@ -176,6 +176,7 @@ async def requirement_page(type="", json_path="", project_name=""):
     app.storage.client.setdefault("current_question_num", 0)
 
     # 在全局作用域创建对话框（确保在菜单系统之外）
+    general_dialog = ui.dialog()
     # 创建项目名修改对话框
     with ui.dialog().classes("") as project_dialog:
         project_card = ui.card().classes("w-1/4")
@@ -223,6 +224,18 @@ async def requirement_page(type="", json_path="", project_name=""):
             close_button="✖",
         )
         config_files = []
+
+    def set_project_engineer_dialog(project_name, engineer_button):
+        general_dialog.clear()
+        with general_dialog, ui.card().classes("w-[500px]"):
+            project_engineer = app.storage.general["project_engineer"].get(project_name, "")
+            ui.label("设置项目工程师负责人").classes("text-xl font-bold mb-4")
+
+            ui.input("实时修改", value=project_engineer).props("autofocus outlined").bind_value(
+                app.storage.general["project_engineer"], project_name
+            )
+
+            general_dialog.open()
 
     # 键盘事件跟踪处理函数
     def requirement_handle_key(e: KeyEventArguments):
@@ -3357,18 +3370,33 @@ async def requirement_page(type="", json_path="", project_name=""):
 
                 # 概述内容列
                 with ui.column().classes("w-1/2 min-w-[400px] items-center"):
+                    # 只要有人查阅过项目的概述，就会创建该项目 项目工程师负责人 的条目
+                    app.storage.general["project_engineer"].setdefault(project_name, "")
                     with ui.row().classes("relative w-full items-center justify-center"):
-                        if not temp_bool:
-                            if current_role == "研发经理":
-                                ui.select(
-                                    PROJECT_STATE_LIST,
-                                    value=app.storage.general["project_summary"][project_name].get("state"),
-                                    on_change=lambda e: set_project_state(project_name, e),
-                                ).props("outlined").classes("absolute top-0 left-1 small-select")
+                        if current_role == "研发经理":
+                            ui.select(
+                                PROJECT_STATE_LIST,
+                                value=app.storage.general["project_summary"][project_name].get("state"),
+                                on_change=lambda e: set_project_state(project_name, e),
+                            ).props("outlined").classes("absolute top-0 left-1 small-select")
+                            project_engineer = app.storage.general["project_engineer"].get(project_name, "")
+                            if project_engineer:
+                                engineer_button = ui.button(project_engineer)
                             else:
-                                ui.chip(icon="star", color="amber-7").props("outline").classes(
-                                    "absolute top-0 left-1 text-sm"
-                                ).bind_text_from(app.storage.general["project_summary"][project_name], "state")
+                                engineer_button = ui.button("指定项目工程师")
+                            engineer_button.on_click(
+                                lambda pn=project_name, bt=engineer_button: set_project_engineer_dialog(pn, bt)
+                            ).props("outline").classes("absolute top-0 left-30")
+                            engineer_button.bind_text_from(app.storage.general["project_engineer"], project_name)
+                        else:
+                            ui.chip(icon="star", color="amber-7").props("outline").classes(
+                                "absolute top-0 left-1 text-sm"
+                            ).bind_text_from(app.storage.general["project_summary"][project_name], "state")
+                            ui.chip(text="未指定项目工程师", icon="engineering", color="blue-7").props(
+                                "outline"
+                            ).classes("absolute top-0 left-30 text-sm").bind_text_from(
+                                app.storage.general["project_engineer"], project_name
+                            )
                         ui.label(f"{project_name} 概述整理").classes("text-xl")
                         if (
                             "研发" in app.storage.user.get("current_role", "")
@@ -3581,7 +3609,8 @@ async def requirement_page(type="", json_path="", project_name=""):
 
     # [新增] 每 10 秒调用一次复用的保存函数，模式为 autosave
     # 只有当 entry_status 为 True (或者你希望任何时候都存) 时才保存，防止刚进来就覆盖
-    ui.timer(30.0, lambda: output_config_data(app.storage.client["config_data"], "autosave"), immediate=False)
+    if type == "requirement":
+        ui.timer(30.0, lambda: output_config_data(app.storage.client["config_data"], "autosave"), immediate=False)
     # 添加全局键盘事件跟踪
     # ignore不设定默认导致键盘事件在'input', 'select', 'button', 'textarea'元素聚焦时被忽略
     ui.keyboard(on_key=handle_key)

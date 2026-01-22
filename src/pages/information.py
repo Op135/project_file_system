@@ -293,7 +293,9 @@ def information_page():
             # 4. 否则 (例如 "待修改" 或 "待审")，才更新按钮组的内容
             button_group.clear()
             with button_group:
-                if current_role in ["研发经理"]:
+                if current_role in ["研发经理"] or current_user == app.storage.general["project_engineer"].get(
+                    project_name, ""
+                ):
                     ui.button(
                         f"{submitter}提交：{project_name}_V{ver} 需求状态：「{review_str}」",
                         on_click=lambda p_name=project_name: get_overviow_page(p_name, True),
@@ -363,12 +365,19 @@ def information_page():
                 ui.menu_item("注销登录", on_click=lambda: logout())
 
     with ui.row():
-        if current_role in module_show_data["wait_review_module"]:
+        # 获得所有扮演项目工程师的用户名
+        project_engineer_list = []
+        for project_engineer in app.storage.general["project_engineer"].values():
+            if project_engineer not in project_engineer_list:
+                project_engineer_list.append(project_engineer)
+        if current_role in module_show_data["wait_review_module"] or current_user in project_engineer_list:
             with ui.card().classes("gap-2 p-2"):
                 ui.label("需求评审状态：").classes("text-base")
                 # 如果用户是审核者，显示所有待审需求
                 show_bool = False
-                if current_role in ["研发经理"] and app.storage.general.get("wait_review", {}):
+                if (current_role in ["研发经理"] or current_user in project_engineer_list) and app.storage.general.get(
+                    "wait_review", {}
+                ):
                     for project_name, ver_dic in app.storage.general["wait_review"].items():
                         for ver, dic in ver_dic.items():
                             # 如果当前项目的当前版本未审
