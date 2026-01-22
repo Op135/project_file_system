@@ -660,13 +660,13 @@ def overview_role_update(project_name):
         over_role_dic = app.storage.general["overview_role"][project_name]
         # 遍历概述配置字典，主要用里面的角色分类，如光学、结构等等，和概述配置里的label
         for role, over_data_dic in app.storage.general["over_config_data"].items():
-            for over_config_li in over_data_dic.values():
+            for over_config_dic in over_data_dic.values():
                 # 初始化临时保存概述里出现过的用户次数字典
                 frequency_user_dic = {}
                 # 初始化临时保存概述里出现过的用户最晚时间字典
                 time_user_dic = {}
                 # 遍历当前角色分类，如光学下，概述配置的各项
-                for over_config in over_config_li:
+                for over_config in over_config_dic.values():
                     # 如果当前概述项的label存在服务器对应项目的概述数据字典键里
                     if over_config["label"] in OVERVIEW_DATA and OVERVIEW_DATA[over_config["label"]] != {}:
                         # 遍历当前label下用户添加过的多个概述数据

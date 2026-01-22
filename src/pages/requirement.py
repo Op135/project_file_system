@@ -3371,7 +3371,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                 # 概述内容列
                 with ui.column().classes("w-1/2 min-w-[400px] items-center"):
                     # 只要有人查阅过项目的概述，就会创建该项目 项目工程师负责人 的条目
-                    app.storage.general["project_engineer"].setdefault(project_name, "")
+                    app.storage.general["project_engineer"].setdefault(project_name, "未指定")
                     with ui.row().classes("relative w-full items-center justify-center"):
                         if current_role == "研发经理":
                             ui.select(
@@ -3380,10 +3380,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                                 on_change=lambda e: set_project_state(project_name, e),
                             ).props("outlined").classes("absolute top-0 left-1 small-select")
                             project_engineer = app.storage.general["project_engineer"].get(project_name, "")
-                            if project_engineer:
-                                engineer_button = ui.button(project_engineer)
-                            else:
-                                engineer_button = ui.button("指定项目工程师")
+                            engineer_button = ui.button(project_engineer)
                             engineer_button.on_click(
                                 lambda pn=project_name, bt=engineer_button: set_project_engineer_dialog(pn, bt)
                             ).props("outline").classes("absolute top-0 left-30")
@@ -3392,11 +3389,9 @@ async def requirement_page(type="", json_path="", project_name=""):
                             ui.chip(icon="star", color="amber-7").props("outline").classes(
                                 "absolute top-0 left-1 text-sm"
                             ).bind_text_from(app.storage.general["project_summary"][project_name], "state")
-                            ui.chip(text="未指定项目工程师", icon="engineering", color="blue-7").props(
-                                "outline"
-                            ).classes("absolute top-0 left-30 text-sm").bind_text_from(
-                                app.storage.general["project_engineer"], project_name
-                            )
+                            ui.chip(icon="engineering", color="blue-7").props("outline").classes(
+                                "absolute top-0 left-30 text-sm"
+                            ).bind_text_from(app.storage.general["project_engineer"], project_name)
                         ui.label(f"{project_name} 概述整理").classes("text-xl")
                         if (
                             "研发" in app.storage.user.get("current_role", "")
@@ -3423,7 +3418,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                                     ui.switch("全展开").classes("absolute -top-2 right-2 text-sm").on_value_change(
                                         lambda e, exps=current_role_expansions: [exp.set_value(e.value) for exp in exps]
                                     )
-                                for data_group, data_list in over_data.items():
+                                for data_group, data_dic in over_data.items():
                                     exp = ui.expansion(
                                         data_group,
                                         icon="list",
@@ -3434,7 +3429,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                                     current_role_expansions.append(exp)
                                     exp.set_visibility(False)
                                     with exp:
-                                        for data in data_list:
+                                        for data in data_dic.values():
                                             user_role = app.storage.user["current_role"]
                                             if (
                                                 user_role in data["permission"]["read_role"]
@@ -3503,6 +3498,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                                                         title=data["title"],
                                                         label=data["label"],
                                                         processing_type=data["processing_type"],
+                                                        dialog_placeholder=data["dialog_placeholder"],
                                                         permission=data["permission"],
                                                         state_options=data["state_options"],
                                                         node_options=data["node_options"],

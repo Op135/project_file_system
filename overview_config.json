@@ -1,7 +1,7 @@
 {
     "光学": {
-        "光源": [
-            {
+        "光源": {
+            "光源选型": {
                 "label": "light_source",
                 "title": "光源选型",
                 "processing_type": "text",
@@ -24,7 +24,7 @@
                     ]
                 }
             },
-            {
+            "光源驱动条件": {
                 "label": "light_drive",
                 "title": "光源驱动条件",
                 "processing_type": "text",
@@ -52,7 +52,7 @@
                     ]
                 }
             },
-            {
+            "光源最大热功率": {
                 "label": "light_heat",
                 "title": "光源最大热功率",
                 "processing_type": "text",
@@ -77,7 +77,7 @@
                     ]
                 }
             },
-            {
+            "光源期望工作温度": {
                 "label": "light_type_temperature",
                 "title": "光源期望工作温度",
                 "processing_type": "text",
@@ -104,7 +104,7 @@
                     ]
                 }
             },
-            {
+            "光源保护温度": {
                 "label": "light_max_temperature",
                 "title": "光源保护温度",
                 "processing_type": "text",
@@ -131,9 +131,9 @@
                     ]
                 }
             }
-        ],
-        "光学件": [
-            {
+        },
+        "光学件": {
+            "采用光学件": {
                 "label": "optical_materials",
                 "title": "采用光学件",
                 "processing_type": "text",
@@ -159,9 +159,9 @@
                     ]
                 }
             },
-            {
+            "需要运动的光学器件": {
                 "label": "optical_sports",
-                "title": "哪些光学器件需要运动",
+                "title": "需要运动的光学器件",
                 "processing_type": "text",
                 "dialog_placeholder": "透镜/玻片：器件名",
                 "permission": {
@@ -186,7 +186,7 @@
                     ]
                 }
             },
-            {
+            "光学器件运动逻辑说明": {
                 "label": "optical_sports_logic",
                 "title": "光学器件运动逻辑说明",
                 "processing_type": "text",
@@ -213,9 +213,9 @@
                     ]
                 }
             }
-        ],
-        "光电传感器": [
-            {
+        },
+        "光电传感器": {
+            "光源温敏型号": {
                 "label": "light_thermistor",
                 "title": "光源温敏型号",
                 "processing_type": "text",
@@ -243,7 +243,7 @@
                     ]
                 }
             },
-            {
+            "光电传感器选型": {
                 "label": "photoelectric_sensors",
                 "title": "光电传感器选型",
                 "processing_type": "text",
@@ -271,9 +271,9 @@
                     ]
                 }
             }
-        ],
-        "光输出": [
-            {
+        },
+        "光输出": {
+            "光输出目标面距离": {
                 "label": "target_surface",
                 "title": "光输出目标面距离",
                 "processing_type": "text",
@@ -300,9 +300,9 @@
                     ]
                 }
             }
-        ],
-        "配件": [
-            {
+        },
+        "配件": {
+            "导光束要求": {
                 "label": "guide_beam",
                 "title": "导光束要求",
                 "processing_type": "text",
@@ -327,9 +327,9 @@
                     ]
                 }
             }
-        ],
-        "文档标准": [
-            {
+        },
+        "文档标准": {
+            "产品技术规格书中文版": {
                 "label": "specifications",
                 "title": "产品技术规格书（中文版）",
                 "processing_type": "file",
@@ -358,10 +358,11 @@
                     ]
                 }
             },
-            {
+            "光学测试项": {
                 "label": "optical_testing",
                 "title": "光学测试项",
                 "processing_type": "test",
+                "dialog_placeholder": "色温：5500K±500K",
                 "state_options": [
                     "常亮100%亮度档",
                     "常亮50%亮度档",
@@ -415,12 +416,55 @@
                         "研发光学"
                     ]
                 }
+            },
+            "驱动输出测试项": {
+                "label": "drive_output_testing",
+                "title": "驱动输出测试项",
+                "processing_type": "test",
+                "dialog_placeholder": "电流：5A±8%",
+                "state_options": [
+                    "常亮100%亮度档",
+                    "频闪100%亮度档",
+                    "常亮50%亮度档",
+                    "频闪50%亮度档",
+                    "常亮5%亮度档",
+                    "频闪5%亮度档",
+                    "其它"
+                ],
+                "node_options": [
+                    "驱动板输出",
+                    "其它"
+                ],
+                "instrument_options": [],
+                "permission": {
+                    "read_role": [
+                        "boss",
+                        "销售总监",
+                        "销售",
+                        "客服主管",
+                        "客服",
+                        "研发助理",
+                        "研发软件",
+                        "研发结构",
+                        "研发电子主管",
+                        "研发硬件",
+                        "研发样品",
+                        "工程",
+                        "质量",
+                        "生产"
+                    ],
+                    "edit_role": [
+                        "admin",
+                        "研发经理",
+                        "研发光学"
+                    ]
+                }
             }
-        ]
+        }
     },
     "结构": {
-        "产品图纸": [
-            {
+        "产品图纸": {
+            "产品2D尺寸图": {
                 "label": "product_size_diagram",
                 "title": "产品2D尺寸图（pdf）",
                 "processing_type": "file",
@@ -449,7 +493,7 @@
                     ]
                 }
             },
-            {
+            "产品简化3D图": {
                 "label": "product_simplify_diagram",
                 "title": "产品简化3D图（stp）",
                 "processing_type": "file",
@@ -477,7 +521,7 @@
                     ]
                 }
             },
-            {
+            "产品完整3D图": {
                 "label": "product_complete_diagram",
                 "title": "产品完整3D图（stp）",
                 "processing_type": "file",
@@ -498,9 +542,9 @@
                     ]
                 }
             }
-        ],
-        "PCB图纸": [
-            {
+        },
+        "PCB图纸": {
+            "PCBA2D尺寸图": {
                 "label": "drive_size_diagram",
                 "title": "PCBA 2D尺寸图（pdf）",
                 "processing_type": "file",
@@ -529,7 +573,7 @@
                     ]
                 }
             },
-            {
+            "PCBA简化3D图": {
                 "label": "drive_simplify_diagram",
                 "title": "PCBA简化3D图（stp）",
                 "processing_type": "file",
@@ -557,9 +601,9 @@
                     ]
                 }
             }
-        ],
-        "结构重点特征示意图": [
-            {
+        },
+        "结构重点特征示意图": {
+            "产品出光口位置示意图": {
                 "label": "product_output_position",
                 "title": "产品出光口位置示意图",
                 "processing_type": "image",
@@ -586,7 +630,7 @@
                     ]
                 }
             },
-            {
+            "产品出线位置示意图": {
                 "label": "product_outlet_position",
                 "title": "产品出线位置示意图",
                 "processing_type": "image",
@@ -613,7 +657,7 @@
                     ]
                 }
             },
-            {
+            "产品风道示意图": {
                 "label": "product_wind_diagram",
                 "title": "产品风道示意图",
                 "processing_type": "image",
@@ -640,7 +684,7 @@
                     ]
                 }
             },
-            {
+            "重点装配细节示意图": {
                 "label": "mechanical_assembly_details",
                 "title": "重点装配细节示意图",
                 "processing_type": "image",
@@ -669,9 +713,9 @@
                     ]
                 }
             }
-        ],
-        "材质外观": [
-            {
+        },
+        "材质外观": {
+            "产品结构件选材": {
                 "label": "product_material_selection",
                 "title": "产品结构件选材",
                 "processing_type": "text",
@@ -697,7 +741,7 @@
                     ]
                 }
             },
-            {
+            "产品涉及表面处理工艺": {
                 "label": "product_treatment_process",
                 "title": "产品涉及表面处理工艺",
                 "processing_type": "text",
@@ -723,7 +767,7 @@
                     ]
                 }
             },
-            {
+            "产品外观颜色": {
                 "label": "product_color",
                 "title": "产品外观颜色",
                 "processing_type": "text",
@@ -750,7 +794,7 @@
                     ]
                 }
             },
-            {
+            "产品实秤重量": {
                 "label": "product_weight",
                 "title": "产品实秤重量",
                 "processing_type": "text",
@@ -778,9 +822,9 @@
                     ]
                 }
             }
-        ],
-        "环境条件": [
-            {
+        },
+        "环境条件": {
+            "产品实测工作环境温湿度": {
                 "label": "product_type_ambient",
                 "title": "产品实测工作环境温湿度",
                 "processing_type": "text",
@@ -807,7 +851,7 @@
                     ]
                 }
             },
-            {
+            "产品实测表面温升/温度": {
                 "label": "product_temperature_rise",
                 "title": "产品实测表面温升/温度",
                 "processing_type": "text",
@@ -834,7 +878,7 @@
                     ]
                 }
             },
-            {
+            "产品实测工作噪声": {
                 "label": "product_type_noise",
                 "title": "产品实测工作噪声",
                 "processing_type": "text",
@@ -861,9 +905,9 @@
                     ]
                 }
             }
-        ],
-        "包材": [
-            {
+        },
+        "包材": {
+            "产品包材": {
                 "label": "packaging_materials",
                 "title": "产品包材",
                 "processing_type": "text",
@@ -890,9 +934,9 @@
                     ]
                 }
             }
-        ],
-        "配件": [
-            {
+        },
+        "配件": {
+            "风扇选型": {
                 "label": "fan_model",
                 "title": "风扇选型",
                 "processing_type": "text",
@@ -920,7 +964,7 @@
                     ]
                 }
             },
-            {
+            "散热器类型": {
                 "label": "cooling_type",
                 "title": "散热器类型",
                 "processing_type": "text",
@@ -946,7 +990,7 @@
                     ]
                 }
             },
-            {
+            "TEC选型": {
                 "label": "tec_type",
                 "title": "TEC选型",
                 "processing_type": "text",
@@ -974,7 +1018,7 @@
                     ]
                 }
             },
-            {
+            "转接座选型": {
                 "label": "adapter_options",
                 "title": "转接座选型",
                 "processing_type": "text",
@@ -1002,7 +1046,7 @@
                     ]
                 }
             },
-            {
+            "机构传感器选型": {
                 "label": "sensor_type",
                 "title": "机构传感器选型",
                 "processing_type": "text",
@@ -1030,9 +1074,9 @@
                     ]
                 }
             }
-        ],
-        "补充图档": [
-            {
+        },
+        "补充图档": {
+            "其它图纸": {
                 "label": "other_drawings",
                 "title": "其它图纸",
                 "processing_type": "file",
@@ -1061,9 +1105,9 @@
                     ]
                 }
             }
-        ],
-        "文档标准": [
-            {
+        },
+        "文档标准": {
+            "装箱清单": {
                 "label": "packing_list",
                 "title": "装箱清单（xlsx）",
                 "processing_type": "file",
@@ -1092,10 +1136,11 @@
                     ]
                 }
             },
-            {
+            "机械结构测试项": {
                 "label": "mechanical_testing",
                 "title": "机械结构测试项",
                 "processing_type": "test",
+                "dialog_placeholder": "测试项名称：测试条件、产品状态、操作步骤、合格标准等信息。",
                 "state_options": [],
                 "node_options": [],
                 "instrument_options": [
@@ -1131,11 +1176,11 @@
                     ]
                 }
             }
-        ]
+        }
     },
     "硬件": {
-        "电气参数": [
-            {
+        "电气参数": {
+            "产品驱动输入电压": {
                 "label": "drive_voltage",
                 "title": "产品驱动输入电压",
                 "processing_type": "text",
@@ -1163,7 +1208,7 @@
                     ]
                 }
             },
-            {
+            "产品驱动输入功率": {
                 "label": "drive_power",
                 "title": "产品驱动输入功率",
                 "processing_type": "text",
@@ -1191,7 +1236,7 @@
                     ]
                 }
             },
-            {
+            "产品输入控制模式": {
                 "label": "product_control_mode",
                 "title": "产品输入控制模式",
                 "processing_type": "text",
@@ -1219,7 +1264,7 @@
                     ]
                 }
             },
-            {
+            "驱动输出信号类型": {
                 "label": "drive_output_signal",
                 "title": "驱动输出信号类型",
                 "processing_type": "text",
@@ -1246,9 +1291,9 @@
                     ]
                 }
             }
-        ],
-        "驱动板资料": [
-            {
+        },
+        "驱动板资料": {
+            "驱动PCB裸板规格": {
                 "label": "drive_pcb",
                 "title": "驱动PCB裸板规格",
                 "processing_type": "text",
@@ -1276,7 +1321,7 @@
                     ]
                 }
             },
-            {
+            "驱动PCB原理图": {
                 "label": "drive_pcb_principle",
                 "title": "驱动PCB原理图（pdf）",
                 "processing_type": "search",
@@ -1304,7 +1349,7 @@
                     ]
                 }
             },
-            {
+            "驱动PCB丝印图": {
                 "label": "drive_pcb_silkscreen",
                 "title": "驱动PCB丝印图（pdf）",
                 "processing_type": "search",
@@ -1333,7 +1378,7 @@
                     ]
                 }
             },
-            {
+            "驱动PCB加工工艺说明": {
                 "label": "drive_pcb_process",
                 "title": "驱动PCB加工工艺说明（xlsx）",
                 "processing_type": "search",
@@ -1360,7 +1405,7 @@
                     ]
                 }
             },
-            {
+            "驱动PCB制板文件压缩包": {
                 "label": "drive_pcb_making",
                 "title": "驱动PCB制板文件压缩包",
                 "processing_type": "search",
@@ -1383,7 +1428,7 @@
                     ]
                 }
             },
-            {
+            "驱动PCBA完整3D图": {
                 "label": "drive_complete_diagram",
                 "title": "驱动PCBA完整3D图（stp）",
                 "processing_type": "search",
@@ -1410,7 +1455,7 @@
                     ]
                 }
             },
-            {
+            "驱动板电子BOM": {
                 "label": "drive_electronic_bom",
                 "title": "驱动板电子BOM（xlsx）",
                 "processing_type": "search",
@@ -1444,9 +1489,9 @@
                     ]
                 }
             }
-        ],
-        "控制板资料": [
-            {
+        },
+        "控制板资料": {
+            "控制PCB裸板规格": {
                 "label": "control_pcb",
                 "title": "控制PCB裸板规格",
                 "processing_type": "text",
@@ -1474,7 +1519,7 @@
                     ]
                 }
             },
-            {
+            "控制PCB原理图": {
                 "label": "control_pcb_principle",
                 "title": "控制PCB原理图（pdf）",
                 "processing_type": "search",
@@ -1502,7 +1547,7 @@
                     ]
                 }
             },
-            {
+            "控制PCB丝印图": {
                 "label": "control_pcb_silkscreen",
                 "title": "控制PCB丝印图（pdf）",
                 "processing_type": "search",
@@ -1531,7 +1576,7 @@
                     ]
                 }
             },
-            {
+            "控制PCB加工工艺说明": {
                 "label": "control_pcb_process",
                 "title": "控制PCB加工工艺说明（xlsx）",
                 "processing_type": "search",
@@ -1558,7 +1603,7 @@
                     ]
                 }
             },
-            {
+            "控制PCB制板文件压缩包": {
                 "label": "control_pcb_making",
                 "title": "控制PCB制板文件压缩包",
                 "processing_type": "search",
@@ -1581,7 +1626,7 @@
                     ]
                 }
             },
-            {
+            "控制PCBA完整3D图": {
                 "label": "control_complete_diagram",
                 "title": "控制PCBA完整3D图（stp）",
                 "processing_type": "search",
@@ -1608,7 +1653,7 @@
                     ]
                 }
             },
-            {
+            "控制板电子BOM": {
                 "label": "control_electronic_bom",
                 "title": "控制板电子BOM（xlsx）",
                 "processing_type": "search",
@@ -1642,9 +1687,9 @@
                     ]
                 }
             }
-        ],
-        "光源基板资料": [
-            {
+        },
+        "光源基板资料": {
+            "光源PCB裸板规格": {
                 "label": "light_pcb",
                 "title": "光源PCB裸板规格",
                 "processing_type": "text",
@@ -1672,7 +1717,7 @@
                     ]
                 }
             },
-            {
+            "光源PCB原理图": {
                 "label": "light_pcb_principle",
                 "title": "光源PCB原理图（pdf）",
                 "processing_type": "search",
@@ -1700,7 +1745,7 @@
                     ]
                 }
             },
-            {
+            "光源PCB丝印图": {
                 "label": "light_pcb_silkscreen",
                 "title": "光源PCB丝印图（pdf）",
                 "processing_type": "search",
@@ -1729,7 +1774,7 @@
                     ]
                 }
             },
-            {
+            "光源PCB加工工艺说明": {
                 "label": "light_pcb_process",
                 "title": "光源PCB加工工艺说明（xlsx）",
                 "processing_type": "search",
@@ -1756,7 +1801,7 @@
                     ]
                 }
             },
-            {
+            "光源PCB制板文件压缩包": {
                 "label": "light_pcb_making",
                 "title": "光源PCB制板文件压缩包",
                 "processing_type": "search",
@@ -1779,7 +1824,7 @@
                     ]
                 }
             },
-            {
+            "光源PCBA完整3D图": {
                 "label": "light_complete_diagram",
                 "title": "光源PCBA完整3D图（stp）",
                 "processing_type": "search",
@@ -1806,7 +1851,7 @@
                     ]
                 }
             },
-            {
+            "光源板电子BOM": {
                 "label": "light_electronic_bom",
                 "title": "光源板电子BOM（xlsx）",
                 "processing_type": "search",
@@ -1840,9 +1885,9 @@
                     ]
                 }
             }
-        ],
-        "其它类型PCB资料": [
-            {
+        },
+        "其它类型PCB资料": {
+            "其它PCB裸板规格": {
                 "label": "other_pcb",
                 "title": "其它PCB裸板规格",
                 "processing_type": "text",
@@ -1870,7 +1915,7 @@
                     ]
                 }
             },
-            {
+            "其它PCB原理图": {
                 "label": "other_pcb_principle",
                 "title": "其它PCB原理图（pdf）",
                 "processing_type": "search",
@@ -1898,7 +1943,7 @@
                     ]
                 }
             },
-            {
+            "其它PCB丝印图": {
                 "label": "other_pcb_silkscreen",
                 "title": "其它PCB丝印图（pdf）",
                 "processing_type": "search",
@@ -1927,7 +1972,7 @@
                     ]
                 }
             },
-            {
+            "其它PCB加工工艺说明": {
                 "label": "other_pcb_process",
                 "title": "其它PCB加工工艺说明（xlsx）",
                 "processing_type": "search",
@@ -1954,7 +1999,7 @@
                     ]
                 }
             },
-            {
+            "其它PCB制板文件压缩包": {
                 "label": "other_pcb_making",
                 "title": "其它PCB制板文件压缩包",
                 "processing_type": "search",
@@ -1977,7 +2022,7 @@
                     ]
                 }
             },
-            {
+            "其它PCBA完整3D图": {
                 "label": "other_complete_diagram",
                 "title": "其它PCBA完整3D图（stp）",
                 "processing_type": "search",
@@ -2004,7 +2049,7 @@
                     ]
                 }
             },
-            {
+            "其它电子BOM": {
                 "label": "other_electronic_bom",
                 "title": "其它电子BOM（xlsx）",
                 "processing_type": "search",
@@ -2038,9 +2083,9 @@
                     ]
                 }
             }
-        ],
-        "配件": [
-            {
+        },
+        "配件": {
+            "显示类配件": {
                 "label": "display_accessories",
                 "title": "显示类配件",
                 "processing_type": "text",
@@ -2068,7 +2113,7 @@
                     ]
                 }
             },
-            {
+            "控制类配件": {
                 "label": "control_accessories",
                 "title": "控制类配件",
                 "processing_type": "text",
@@ -2096,7 +2141,7 @@
                     ]
                 }
             },
-            {
+            "线材配件": {
                 "label": "wire_accessories",
                 "title": "线材配件",
                 "processing_type": "text",
@@ -2124,9 +2169,9 @@
                     ]
                 }
             }
-        ],
-        "文档标准": [
-            {
+        },
+        "文档标准": {
+            "硬件使用说明书": {
                 "label": "drive_manual",
                 "title": "硬件使用说明书",
                 "processing_type": "search",
@@ -2157,7 +2202,7 @@
                     ]
                 }
             },
-            {
+            "硬件测试报告": {
                 "label": "drive_test_report",
                 "title": "硬件测试报告",
                 "processing_type": "search",
@@ -2188,7 +2233,7 @@
                     ]
                 }
             },
-            {
+            "产品接线说明书": {
                 "label": "wiring_manual",
                 "title": "产品接线说明书",
                 "processing_type": "file",
@@ -2217,10 +2262,11 @@
                     ]
                 }
             },
-            {
+            "硬件测试项": {
                 "label": "electronic_testing",
                 "title": "硬件测试项",
                 "processing_type": "test",
+                "dialog_placeholder": "电压：12V±3%",
                 "state_options": [
                     "常亮100%亮度档",
                     "频闪100%亮度档",
@@ -2257,11 +2303,11 @@
                     ]
                 }
             }
-        ]
+        }
     },
     "软件": {
-        "执行文件": [
-            {
+        "执行文件": {
+            "固件执行文件": {
                 "label": "software_executable_file",
                 "title": "固件执行文件",
                 "processing_type": "svn",
@@ -2300,9 +2346,9 @@
                     ]
                 }
             }
-        ],
-        "文档标准": [
-            {
+        },
+        "文档标准": {
+            "固件使用说明书": {
                 "label": "software_manual",
                 "title": "固件使用说明书",
                 "processing_type": "svn",
@@ -2340,7 +2386,7 @@
                     ]
                 }
             },
-            {
+            "通讯协议文件": {
                 "label": "software_protocol",
                 "title": "通讯协议文件",
                 "processing_type": "svn",
@@ -2378,7 +2424,7 @@
                     ]
                 }
             },
-            {
+            "XML协议文件": {
                 "label": "software_xml",
                 "title": "XML协议文件",
                 "processing_type": "svn",
@@ -2416,10 +2462,11 @@
                     ]
                 }
             },
-            {
+            "软件功能测试项": {
                 "label": "software_testing",
                 "title": "软件功能测试项",
                 "processing_type": "test",
+                "dialog_placeholder": "测试项名称：操作步骤、合格标准等信息；或指明依据的文档。",
                 "state_options": [],
                 "node_options": [],
                 "instrument_options": [],
@@ -2447,11 +2494,11 @@
                     ]
                 }
             }
-        ]
+        }
     },
     "UI": {
-        "执行文件": [
-            {
+        "执行文件": {
+            "UI执行文件压缩包": {
                 "label": "ui_execute_file",
                 "title": "UI执行文件压缩包",
                 "processing_type": "svn",
@@ -2490,12 +2537,13 @@
                     ]
                 }
             }
-        ],
-        "文档标准": [
-            {
+        },
+        "文档标准": {
+            "UI测试项": {
                 "label": "ui_testing",
                 "title": "UI测试项",
                 "processing_type": "test",
+                "dialog_placeholder": "写明UI检查内容与要求。",
                 "state_options": [],
                 "node_options": [],
                 "instrument_options": [],
@@ -2523,11 +2571,11 @@
                     ]
                 }
             }
-        ]
+        }
     },
     "工艺": {
-        "文档标准": [
-            {
+        "文档标准": {
+            "工艺重点要求": {
                 "label": "craft_key_requirements",
                 "title": "工艺重点要求",
                 "processing_type": "text",
@@ -2555,6 +2603,6 @@
                     ]
                 }
             }
-        ]
+        }
     }
 }

@@ -1146,11 +1146,13 @@ class InteractiveButton:
         # 有依赖文件夹配置，找依赖文件夹配置标签对应的标签标题名
         if self.search_folder_according:
             break_bool = False
+            # 遍历大类，比如：光学、结构、硬件
             for over_data in app.storage.general.get("over_config_data", {}).values():
-                for data_li in over_data.values():
+                # 遍历小类，比如：光源、光学件
+                for data_dic in over_data.values():
                     if break_bool:
                         break
-                    for data in data_li:
+                    for data in data_dic.values():
                         if data["label"] == self.search_folder_according:
                             # 得到概述项标签名，用于后续提示用户使用
                             according_title = data["title"]
@@ -1253,10 +1255,10 @@ class InteractiveButton:
         if self.search_folder_according:
             break_bool = False
             for over_data in app.storage.general.get("over_config_data", {}).values():
-                for data_li in over_data.values():
+                for data_dic in over_data.values():
                     if break_bool:
                         break
-                    for data in data_li:
+                    for data in data_dic.values():
                         if data["label"] == self.search_folder_according:
                             according_title = data["title"]
                             break_bool = True
@@ -2608,9 +2610,19 @@ class InteractiveButton:
             with chip:
                 # 为 chip 添加 tooltip
                 if chip_info.get("type") in ["svn"]:
-                    tooltip_text = f"创建节点: 需求V{chip_info.get('req_ver')}后<br>创建者: {chip_info.get('creator')}<br>时间: {next(reversed(chip_info.get('timestamp', {})))}<br>仓库: {chip_info.get('warehouse', '')}<br>注释: <br>{chip_info.get('notes', '').replace('\n', '<br>')}"
+                    tooltip_text = f"创建节点: 需求V{chip_info.get('req_ver')}后<br>创建者: {chip_info.get('creator')}<br>时间: {next(reversed(chip_info.get('timestamp', {})))}<br>仓库: {chip_info.get('warehouse', '')}<br>注释: <br>●{chip_info.get('notes', '').replace('\n', '<br>')}"
+                elif chip_info.get("type") in ["test"]:
+                    select_str = "测试条件状态与节点工具："
+                    select_bool = False
+                    for k, select_value in chip_info["test_select_data"].items():
+                        if select_value:
+                            select_bool = True
+                            select_str = f"{select_str}<br>●{select_value}"
+                    if not select_bool:
+                        select_str = "测试条件状态与节点工具：<br>无"
+                    tooltip_text = f"创建节点: 需求V{chip_info.get('req_ver')}后<br>创建者: {chip_info.get('creator')}<br>时间: {next(reversed(chip_info.get('timestamp', {})))}<br>{select_str}<br>注释: <br>●{chip_info.get('notes', '').replace('\n', '<br>')}"
                 else:
-                    tooltip_text = f"创建节点: 需求V{chip_info.get('req_ver')}后<br>创建者: {chip_info.get('creator')}<br>时间: {next(reversed(chip_info.get('timestamp', {})))}<br>注释: <br>{chip_info.get('notes', '').replace('\n', '<br>')}"
+                    tooltip_text = f"创建节点: 需求V{chip_info.get('req_ver')}后<br>创建者: {chip_info.get('creator')}<br>时间: {next(reversed(chip_info.get('timestamp', {})))}<br>注释: <br>●{chip_info.get('notes', '').replace('\n', '<br>')}"
 
                 with ui.tooltip():
                     ui.html(tooltip_text, sanitize=Sanitizer().sanitize)
@@ -2858,20 +2870,10 @@ class InteractiveButton:
                 "instrument_other_text": "",
             }
 
-            if self.label == "optical_testing":
-                placeholder = "色温：5500K±500K"
-            elif self.label == "mechanical_testing":
-                placeholder = "测试项名称：测试条件、产品状态、操作步骤、合格标准等信息。"
-            elif self.label == "electronic_testing":
-                placeholder = "电压：12V±3%"
-            elif self.label == "software_testing":
-                placeholder = "测试项名称：操作步骤、合格标准等信息；或指明依据的文档。"
-            elif self.label == "ui_testing":
-                placeholder = "写明UI检查内容与要求。"
             self.chip_label = (
                 ui.textarea(
                     label="检测内容与标准",
-                    placeholder=placeholder,
+                    placeholder=self.dialog_placeholder,
                     validation={"不能空白": lambda value: value.strip() != ""},
                 )
                 .props("outlined")
