@@ -667,7 +667,7 @@ class InteractiveButton:
         self.img_dialog = ui.dialog().props("").classes("p-0")
         self.check_down_dialog = ui.dialog().classes("")
         self.activ_dialog = ui.dialog().props("persistent").classes("")
-
+        self.history_dialog = ui.dialog().classes("w-full")
         # self.image_show = {"image_show": True}
         # self.chip_dialog.bind_value_to(self.image_show, "image_show")
 
@@ -683,9 +683,9 @@ class InteractiveButton:
             text_color = "text-deep-purple-7"
         else:
             text_color = "text-blue-7"
-        ui.button(f"{self.title}：", on_click=self._handle_main_button_click).props("flat").classes(
+        ui.button(f"{self.title}：").props("flat").classes(
             f"p-1 text-[14px]/[14px] {text_color} mt-2 font-semibold"
-        )
+        ).on("click", self._handle_main_button_click, ["ctrlKey"])
 
         # 创建一个行(row)容器，用于存放生成的所有 chip
         self.chip_container = ui.row().classes("w-full items-center gap-2 pl-8")
@@ -2072,7 +2072,8 @@ class InteractiveButton:
             # 获取共享存储中所有 chip 的ID
             # 用户打开开关，想看全部记录情况下
             if app.storage.client.get("record_switch"):
-                # 如果研发转产标记激活，则比较数据库与已显示异同时，排除掉svn类且失活的chip，使得研发切换为转产时，所有人会刷新一下
+                # 如果研发转产标记激活，则比较数据库与界面已显示chip数量异同时，
+                # 排除掉svn类且失活的chip，使得研发切换为转产时，所有人会刷新一下
                 if app.storage.general["conversion_refresh"].get(self.project):
                     # 抽取所有非svn类型的chip，及 svn类但激活的chip
                     stored_chip_ids = set(
@@ -2484,6 +2485,7 @@ class InteractiveButton:
             # 根据chip类型配置文字标签内容
             filepath = ""
 
+            # chip显示文本准备 与 连接文件服务器准备
             chip_text = chip_info.get("content", "")
             if chip_info["type"] == "file":
                 # 每次生成都用更新配置的路径
@@ -2538,6 +2540,8 @@ class InteractiveButton:
                 .props(f"data-chip-id={chip_info.get('id')} dense square")
                 .classes(f"m-0 {chip_info.get('bg_color')}")
             )
+
+            # 为文件类chip绑定点击事件
             if chip_info.get("type") == "text":
                 pass
             elif chip_info.get("type") in ["file", "search"]:
@@ -2599,6 +2603,7 @@ class InteractiveButton:
                             close_button="✖",
                         )
                     )
+
             # 创建chip元素的附属元素
             with chip:
                 # 为 chip 添加 tooltip
@@ -2620,7 +2625,8 @@ class InteractiveButton:
                 with ui.tooltip():
                     ui.html(tooltip_text, sanitize=Sanitizer().sanitize)
 
-                # 注意：我们将on_click事件直接绑定在这里
+                # 创建功能按钮
+                # 创建chip删除/设置按钮
                 delete_button = (
                     ui.button(on_click=lambda c=chip: self.delete_chip_info(c))
                     .classes(f"absolute -top-1 -right-1 m-0 p-0 q-py-0 {delete_bg}")
@@ -2644,22 +2650,74 @@ class InteractiveButton:
                     .style("font-size: 8px; display: none;")
                     .on("click", js_handler="(e) => {e.stopPropagation()}")
                 )
+                # --- 新增历史按钮 ---
+                history_button = (
+                    ui.button(on_click=lambda d=chip_info: self.show_chip_history(d))
+                    .classes("absolute -top-1 -right-1 m-0 p-0 q-py-0 bg-purple-1 text-purple-8")
+                    .props('round padding="0px 0px" icon="history"')
+                    .style("font-size: 8px; display: none;")
+                    .on("click", js_handler="(e) => {e.stopPropagation()}")
+                )
             # 设置chip元素是否显示
             # chip.set_value(chip_info["value"])
             # 设置chip元素是否可点击，会导致其上的好标签出不来
             # chip.set_enabled(chip_info["enabled"])
 
-            # 为chip绑定各种事件
+            # 辅助函数：JS 处理器，只有当 shiftKey 按下时才显示
+            # js_show_if_shift = "(e) => { if (e.shiftKey) { $el.style.display = 'block'; } }"
+            # 辅助函数：普通的显示
+            # js_show = "() => { $el.style.display = 'block'; }"
+            # 辅助函数：隐藏
+            # js_hide = "() => { $el.style.display = 'none'; }"
+            # 为 chip 绑定事件
+            # 注意：NiceGUI 的 ui_show/ui_hide 是 Python 端控制，网络延迟可能导致闪烁。
+            # 这里对于 Shift+Hover 建议使用 JS 控制或者 Python 端检查 e.args['shiftKey']。
+            # 下面演示 Python 端控制方法：
+            def check_shift_and_show(e, btn):
+                if e.args.get("shiftKey"):
+                    btn.style("display: block;")
+                else:
+                    btn.style("display: none;")
+
+            # --- 辅助函数：检查 Ctrl 键状态并控制显示 ---
+            def check_ctrl_and_show(e, btns):
+                # 如果按下了 Ctrl 键，显示按钮；否则隐藏
+                if e.args.get("ctrlKey"):
+                    for b in btns:
+                        b.style("display: block;")
+                else:
+                    for b in btns:
+                        b.style("display: none;")
+
+            # --- 定义需要受 Ctrl 键控制的按钮组 ---
+            control_btns = [delete_button, move_up_button, move_down_button]
+            # 1. 控制功能按钮 (Delete/Move) - 需要 Ctrl
+            # mouseenter: 鼠标划入瞬间检查
+            chip.on("mouseenter", lambda e: check_ctrl_and_show(e, control_btns), ["ctrlKey"])
+            # mousemove: 鼠标在元素上移动时持续检查 (为了支持先悬停，后按 Ctrl 的情况)
+            chip.on("mousemove", lambda e: check_ctrl_and_show(e, control_btns), ["ctrlKey"])
+            # mouseleave: 鼠标离开时强制隐藏
+            chip.on("mouseleave", lambda: [b.style("display: none;") for b in control_btns])
+
+            # 绑定 History 按钮 (Shift + Hover)
+            # 我们需要监听 chip 的 mouseenter，并检查 modifier
+            chip.on("mouseenter", lambda e: check_shift_and_show(e, history_button), ["shiftKey"])
+            # 当鼠标在 chip 上移动时（防止用户先 hover 再按 shift），也需要检查
+            chip.on("mousemove", lambda e: check_shift_and_show(e, history_button), ["shiftKey"])
+            # 离开时隐藏
+            chip.on("mouseleave", lambda: history_button.style("display: none;"))
+
+            # 为chip绑定按钮点击事件与鼠标事件
             chip.on("contextmenu", lambda chip_data=chip_info: self.on_right_click(chip_data))
-            chip.on("mouseenter", lambda b=delete_button: ui_show(b)).on(
-                "mouseleave", lambda b=delete_button: ui_hide(b)
-            )
-            chip.on("mouseenter", lambda b=move_up_button: ui_show(b)).on(
-                "mouseleave", lambda b=move_up_button: ui_hide(b)
-            )
-            chip.on("mouseenter", lambda b=move_down_button: ui_show(b)).on(
-                "mouseleave", lambda b=move_down_button: ui_hide(b)
-            )
+            # chip.on("mouseenter", lambda b=delete_button: ui_show(b)).on(
+            #     "mouseleave", lambda b=delete_button: ui_hide(b)
+            # )
+            # chip.on("mouseenter", lambda b=move_up_button: ui_show(b)).on(
+            #     "mouseleave", lambda b=move_up_button: ui_hide(b)
+            # )
+            # chip.on("mouseenter", lambda b=move_down_button: ui_show(b)).on(
+            #     "mouseleave", lambda b=move_down_button: ui_hide(b)
+            # )
 
         # chip类型为缩略图
         elif chip_info.get("type") == "image":
@@ -2675,7 +2733,7 @@ class InteractiveButton:
             thumbnail = (
                 ui.interactive_image(url_path)
                 .props(f"data-chip-id={chip_info.get('id')}")
-                .classes("h-10 cursor-pointer")
+                .classes("h-10 cursor-pointer relative-position")
             )
             thumbnail.on("click", lambda url_path=url_path: self.show_fullscreen(url_path))
 
@@ -2714,17 +2772,53 @@ class InteractiveButton:
                     .style("font-size: 8px; display: none;")
                     .on("click", js_handler="(e) => {e.stopPropagation()}")
                 )
+                # --- Feature 3: 图片的历史按钮 ---
+                history_button = (
+                    ui.button(on_click=lambda d=chip_info: self.show_chip_history(d))
+                    .classes("absolute -top-1 -right-1 m-0 p-0 q-py-0 bg-purple-1 text-purple-8")
+                    .props('round padding="0px 0px" icon="history"')
+                    .style("font-size: 8px; display: none;")
+                    .on("click", js_handler="(e) => {e.stopPropagation()}")
+                )
 
+            # 绑定事件
+            def check_shift_and_show(e, btn):
+                if e.args.get("shiftKey"):
+                    btn.style("display: block;")
+                else:
+                    btn.style("display: none;")
+
+            # --- 辅助函数 (可以直接复用上面的逻辑，或者重新定义) ---
+            def check_ctrl_and_show(e, btns):
+                if e.args.get("ctrlKey"):
+                    for b in btns:
+                        b.style("display: block;")
+                else:
+                    for b in btns:
+                        b.style("display: none;")
+
+            # --- 定义按钮组 ---
+            control_btns = [delete_button, move_up_button, move_down_button]
+            # 1. 控制功能按钮 (Delete/Move) - 需要 Ctrl
+            thumbnail.on("mouseover", lambda e: check_ctrl_and_show(e, control_btns), ["ctrlKey"])
+            # 注意：InteractiveImage 组件可能不支持 mousemove 绑定，如果不支持，可以尝试仅用 mouseover
+            # 但为了体验最佳，通常尽量加上 mousemove。如果报错，请删除下面这行 mousemove
+            thumbnail.on("mousemove", lambda e: check_ctrl_and_show(e, control_btns), ["ctrlKey"])
+            thumbnail.on("mouseout", lambda: [b.style("display: none;") for b in control_btns])
+            # 历史按钮逻辑
+            thumbnail.on("mouseover", lambda e: check_shift_and_show(e, history_button), ["shiftKey"])
+            thumbnail.on("mousemove", lambda e: check_shift_and_show(e, history_button), ["shiftKey"])
+            thumbnail.on("mouseout", lambda: history_button.style("display: none;"))
             # 为缩略图绑定各种事件
-            thumbnail.on("mouseover", lambda b=delete_button: ui_show(b)).on(
-                "mouseout", lambda b=delete_button: ui_hide(b)
-            )
-            thumbnail.on("mouseover", lambda b=move_up_button: ui_show(b)).on(
-                "mouseout", lambda b=move_up_button: ui_hide(b)
-            )
-            thumbnail.on("mouseover", lambda b=move_down_button: ui_show(b)).on(
-                "mouseout", lambda b=move_down_button: ui_hide(b)
-            )
+            # thumbnail.on("mouseover", lambda b=delete_button: ui_show(b)).on(
+            #     "mouseout", lambda b=delete_button: ui_hide(b)
+            # )
+            # thumbnail.on("mouseover", lambda b=move_up_button: ui_show(b)).on(
+            #     "mouseout", lambda b=move_up_button: ui_hide(b)
+            # )
+            # thumbnail.on("mouseover", lambda b=move_down_button: ui_show(b)).on(
+            #     "mouseout", lambda b=move_down_button: ui_hide(b)
+            # )
 
     # <-----------------------------------------------------------------
     # 创建用于输入文本chip的概述内容与注释的对话框
@@ -2987,8 +3081,137 @@ class InteractiveButton:
             )
             return False
 
+    # --- 显示标签历史记录 ---
+    def show_label_history(self):
+        self.history_dialog.clear()
+
+        # 1. 获取数据
+        raw_data = db_storage.get_deep_item([f"{self.project}_over_data", self.label], {})
+        history_list = []
+
+        for chip_id, chip_info in raw_data.items():
+            # 获取创建时间 (timestamp 字典中最早的时间)
+            timestamps = chip_info.get("timestamp", {})
+            creation_time = min(timestamps.keys()) if timestamps else "N/A"
+
+            history_list.append(
+                {
+                    "content": chip_info.get("content", "N/A"),
+                    "req_ver": chip_info.get("req_ver", "0.0"),
+                    "creation_time": creation_time,
+                    "creator": chip_info.get("creator", "未知"),
+                    "notes": chip_info.get("notes", ""),
+                    "enabled": chip_info.get("enabled", True),
+                    "type": chip_info.get("type", ""),
+                }
+            )
+
+        # 2. 排序：先按版本号(float)排序，版本相同按时间排序
+        try:
+            history_list.sort(key=lambda x: (float(x["req_ver"]), x["creation_time"]))
+        except ValueError:
+            # 防止版本号无法转float的情况
+            history_list.sort(key=lambda x: (x["req_ver"], x["creation_time"]))
+
+        # 3. 构建 UI
+        with self.history_dialog, ui.card().classes("w-[800px] max-w-full h-[80vh]"):
+            with ui.row().classes("w-full justify-between items-center"):
+                ui.label(f"历史记录: {self.title}").classes("text-xl font-bold text-gray-800")
+                ui.button(icon="close", on_click=self.history_dialog.close).props("flat round dense")
+
+            ui.separator()
+
+            with ui.scroll_area().classes("w-full flex-grow"):
+                if not history_list:
+                    ui.label("暂无记录").classes("w-full text-center text-gray-500 mt-4")
+
+                current_ver = None
+                for item in history_list:
+                    # 版本分组标题
+                    if item["req_ver"] != current_ver:
+                        current_ver = item["req_ver"]
+                        ui.label(f"需求版本 V{current_ver}").classes(
+                            "text-lg font-bold text-amber-900 mt-4 mb-2 bg-amber-50 px-2 py-1 rounded"
+                        )
+
+                    # 条目卡片
+                    with ui.row().classes(
+                        "w-full items-start p-2 border-b border-gray-100 hover:bg-gray-50 transition-colors"
+                    ):
+                        # 左侧：时间和创建人
+                        with ui.column().classes("w-1/5 min-w-[120px] gap-0"):
+                            ui.label(item["creation_time"]).classes("text-xs text-gray-500")
+                            ui.label(item["creator"]).classes("text-xs font-bold text-blue-600")
+
+                        # 中间：内容
+                        with ui.column().classes("flex-grow gap-1"):
+                            # 内容显示，如果是文件或图片显示图标
+                            with ui.row().classes("items-center gap-1"):
+                                if item["type"] in ["file", "image", "svn", "search"]:
+                                    ui.icon("attachment", size="xs", color="grey")
+                                ui.label(item["content"]).classes(
+                                    f"text-sm font-medium {'text-gray-400 line-through' if not item['enabled'] else 'text-gray-800'}"
+                                )
+                            if item["notes"]:
+                                ui.label(f"注: {item['notes']}").classes("text-xs text-gray-500 italic")
+
+        self.history_dialog.open()
+
+    # --- 显示 Chip 激活变更历史 ---
+    def show_chip_history(self, chip_data):
+        self.history_dialog.clear()
+
+        # 1. 获取时间戳记录
+        timestamp_data = chip_data.get("timestamp", {})
+        # 按时间倒序排列 (最新的在上面)
+        sorted_times = sorted(timestamp_data.keys(), reverse=True)
+
+        chip_content = chip_data.get("content", "未知内容")
+
+        with self.history_dialog, ui.card().classes("w-[600px] max-w-full"):
+            with ui.row().classes("w-full justify-between items-center"):
+                ui.label(f"变更历史: {chip_content}").classes("text-lg font-bold")
+                ui.button(icon="close", on_click=self.history_dialog.close).props("flat round dense")
+
+            ui.separator().classes("mb-2")
+
+            with ui.column().classes("w-full gap-2"):
+                if not sorted_times:
+                    ui.label("暂无变更记录").classes("text-gray-500")
+
+                for time_str in sorted_times:
+                    record = timestamp_data[time_str]
+                    creator = record.get("creator", "未知")
+                    activ_dic = record.get("select_activ_dic", {})
+
+                    with ui.card().classes("w-full p-2 bg-gray-50 border border-gray-200"):
+                        with ui.row().classes("w-full justify-between items-center mb-1"):
+                            with ui.row().classes("gap-2 items-center"):
+                                ui.icon("history", size="xs", color="blue")
+                                ui.label(time_str).classes("text-sm font-mono text-gray-700")
+                            ui.badge(creator, color="blue-grey").props("outline")
+
+                        ui.separator().classes("mb-1")
+
+                        # 显示该时刻的激活状态快照
+                        if activ_dic:
+                            ui.label("版本激活状态快照:").classes("text-xs text-gray-500 font-bold")
+                            with ui.row().classes("w-full flex-wrap gap-1"):
+                                sorted_vers = sorted(
+                                    activ_dic.keys(), key=lambda x: float(x) if x.replace(".", "", 1).isdigit() else 0
+                                )
+                                for ver in sorted_vers:
+                                    is_active = activ_dic[ver]
+                                    color = "green" if is_active else "grey-4"
+                                    text_col = "white" if is_active else "grey-7"
+                                    ui.chip(text=f"V{ver}", color=color, text_color=text_col).props(
+                                        "dense square size=xs"
+                                    )
+
+        self.history_dialog.open()
+
     # 处理主按钮的点击事件
-    def _handle_main_button_click(self):
+    def _handle_main_button_click(self, e: GenericEventArguments):
         if app.storage.general["project_summary"][self.project]["state"] not in ["研发", "转产", "量产"]:
             ui.notify(
                 "项目当前状态禁止添加概述!",
@@ -2998,6 +3221,10 @@ class InteractiveButton:
                 progress=True,
                 close_button="✖",
             )
+            return
+        # 检查是否按下了 Ctrl 键
+        if e.args.get("ctrlKey"):
+            self.show_label_history()
             return
         # 如果用户具有编辑权限
         if self._edit_permission_judge():

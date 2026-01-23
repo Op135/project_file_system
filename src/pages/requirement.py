@@ -2974,6 +2974,87 @@ async def requirement_page(type="", json_path="", project_name=""):
         if not db_storage.get_item(f"{project_name}_over_data", {}):
             await db_storage.set_item(f"{project_name}_over_data", {})
 
+        # --- 新增辅助函数：展示 Role 维度的历史记录 (Feature 1) ---
+        def show_role_history_dialog(project_name, role):
+            # 创建一个临时的 dialog
+            history_dialog = ui.dialog().classes("w-full")
+
+            # 1. 收集该 Role 下所有 Label 的数据
+            # 我们遍历数据库中该项目的所有 label，如果该 label 属于当前 role，则收集
+            # 注意：这里需要知道 label -> role 的映射。
+            # 我们可以遍历 app.storage.general["over_config_data"] 来找到该 role 下的所有 label key
+            target_labels = []
+            if role in app.storage.general.get("over_config_data", {}):
+                for group in app.storage.general["over_config_data"][role].values():
+                    for item in group.values():
+                        target_labels.append(item["label"])
+
+            all_history = []
+            for label in target_labels:
+                # 获取该 label 下的所有 chip
+                chips = db_storage.get_deep_item([f"{project_name}_over_data", label], {})
+                for chip_info in chips.values():
+                    timestamps = chip_info.get("timestamp", {})
+                    creation_time = min(timestamps.keys()) if timestamps else "N/A"
+                    all_history.append(
+                        {
+                            "label": label,  # 额外记录所属标签
+                            "content": chip_info.get("content", "N/A"),
+                            "req_ver": chip_info.get("req_ver", "0.0"),
+                            "creation_time": creation_time,
+                            "creator": chip_info.get("creator", "未知"),
+                            "type": chip_info.get("type", ""),
+                            "enabled": chip_info.get("enabled", True),
+                        }
+                    )
+
+            # 2. 排序
+            try:
+                all_history.sort(key=lambda x: (float(x["req_ver"]), x["creation_time"]))
+            except ValueError:
+                all_history.sort(key=lambda x: (x["req_ver"], x["creation_time"]))
+
+            # 3. 构建 UI
+            with history_dialog, ui.card().classes("w-[900px] max-w-full h-[80vh]"):
+                with ui.row().classes("w-full justify-between items-center"):
+                    ui.label(f"全项历史记录: {role}").classes("text-xl font-bold text-gray-800")
+                    ui.button(icon="close", on_click=history_dialog.close).props("flat round dense")
+
+                ui.separator()
+
+                with ui.scroll_area().classes("w-full flex-grow"):
+                    if not all_history:
+                        ui.label("暂无记录").classes("w-full text-center text-gray-500 mt-4")
+
+                    current_ver = None
+                    for item in all_history:
+                        if item["req_ver"] != current_ver:
+                            current_ver = item["req_ver"]
+                            ui.label(f"需求版本 V{current_ver}").classes(
+                                "text-lg font-bold text-white bg-blue-500 px-3 py-1 rounded mt-4 mb-2 inline-block"
+                            )
+
+                        with ui.row().classes(
+                            "w-full items-center p-2 border-b border-gray-100 hover:bg-gray-50 text-sm"
+                        ):
+                            # 时间与作者
+                            with ui.column().classes("w-32 gap-0"):
+                                ui.label(item["creation_time"]).classes("text-xs text-gray-500")
+                                ui.label(item["creator"]).classes("text-xs font-bold text-blue-600")
+
+                            # 所属标签 (Feature 1 特有)
+                            ui.label(f"[{item['label']}]").classes("text-xs font-bold text-purple-600 w-24 truncate")
+
+                            # 内容
+                            with ui.row().classes("flex-grow items-center gap-2"):
+                                if item["type"] in ["file", "image", "svn", "search"]:
+                                    ui.icon("attachment", size="xs", color="grey")
+                                ui.label(item["content"]).classes(
+                                    f"font-medium {'text-gray-400 line-through' if not item['enabled'] else 'text-gray-800'}"
+                                )
+
+            history_dialog.open()
+
         # 需求界面内容
         header.clear()
         with header:
@@ -3415,6 +3496,16 @@ async def requirement_page(type="", json_path="", project_name=""):
                                     ui.chip(icon="add_reaction", color="green-7").props("outline").classes(
                                         "text-xs"
                                     ).bind_text(app.storage.general["overview_role"][project_name][role], "latest_user")
+                                    # --- 修改点：在 switch 左边增加历史记录按钮 (Feature 1) ---
+                                    # 使用 absolute 定位放到 switch 左边，或者重新布局
+                                    # 原有的 switch 是 absolute top-0 right-2
+                                    # 我们把历史按钮放在 absolute top-0 right-20 (调整位置)
+                                    ui.button(
+                                        icon="history",
+                                        on_click=lambda r=role: show_role_history_dialog(project_name, r),
+                                    ).props("flat round dense color=grey-7").classes(
+                                        "absolute -top-1 right-35"
+                                    ).tooltip("查看该角色下所有版本的添加历史")
                                     ui.switch("全展开").classes("absolute -top-2 right-2 text-sm").on_value_change(
                                         lambda e, exps=current_role_expansions: [exp.set_value(e.value) for exp in exps]
                                     )
