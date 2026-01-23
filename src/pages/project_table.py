@@ -563,11 +563,11 @@ def project_table_page():
                                         if chip_data["enabled"] or chip_data["enabled"] is None:
                                             text = ""
                                             # 如果有content键，则应该是文字型chip
-                                            if "content" in chip_data:
-                                                text = chip_data["content"]
+                                            if chip_data.get("type") in ["text", "test"]:
+                                                text = chip_data.get("content")
                                             # 如果有filename键，则应该是文件或图片型chip
-                                            elif "filename" in chip_data:
-                                                text = ".".join(chip_data["filename"].split(".")[:-1])
+                                            elif chip_data.get("type") in ["search", "svn", "file", "image"]:
+                                                text = ".".join(chip_data["content"].split(".")[:-1])
 
                                             # 待定状态的概述内容串 加上特殊标记符号
                                             if chip_data["enabled"] is None:

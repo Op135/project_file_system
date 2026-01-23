@@ -1769,7 +1769,7 @@ class InteractiveButton:
         url_path = f"{FILES_URL_DIR}/{original_filename}"
         # 检查是否已存在该项里了
         if original_filename in [
-            d["filename"] for d in db_storage.get_deep_item([f"{self.project}_over_data", self.label], {}).values()
+            d["content"] for d in db_storage.get_deep_item([f"{self.project}_over_data", self.label], {}).values()
         ]:
             ui.notify(
                 f'文件 "{original_filename}" 无需重复提交!',
@@ -1830,7 +1830,7 @@ class InteractiveButton:
                 "type": self.processing_type,
                 "file_type": file_type,
                 # "filepath": f"{filepath}", 路径不能记死
-                "filename": original_filename,
+                "content": original_filename,
                 "url_path": url_path,
                 "notes": self.chip_notes.value,
                 "creator": creator,
@@ -1878,7 +1878,7 @@ class InteractiveButton:
             "type": self.processing_type,
             "file_type": file_type,
             # "filepath": f"{filepath}",
-            "filename": original_filename,
+            "content": original_filename,
             "url_path": url_path,
             "notes": self.chip_notes.value,
             "creator": creator,
@@ -2199,11 +2199,7 @@ class InteractiveButton:
         # 将 Python 变量的内容传递给 JavaScript
         # navigator.clipboard.writeText(text) 是现代浏览器提供的剪贴板 API
         # 这里的 f-string 会将 Python 变量值安全地嵌入到 JS 代码中
-        text = ""
-        if "content" in chip_data.keys():
-            text = chip_data.get("content")
-        elif "filename" in chip_data.keys():
-            text = chip_data.get("filename")
+        text = chip_data.get("content", "")
         js_code = f"navigator.clipboard.writeText('{text}');"
         ui.run_javascript(js_code)
         ui.notify(
@@ -2487,16 +2483,14 @@ class InteractiveButton:
             file_info = (False, None)
             # 根据chip类型配置文字标签内容
             filepath = ""
-            if chip_info.get("type") in ["text", "test"]:
-                chip_text = chip_info.get("content", "")
-            elif chip_info["type"] == "file":
-                chip_text = chip_info.get("filename", "")
+
+            chip_text = chip_info.get("content", "")
+            if chip_info["type"] == "file":
                 # 每次生成都用更新配置的路径
                 filepath = f"{self.upload_path}/{chip_text}"
                 # 以后改了文件夹配置，chip不会失效
                 app.add_static_file(local_file=filepath, url_path=chip_info.get("url_path"))
             elif chip_info["type"] == "search":
-                chip_text = chip_info.get("content", "")
                 # 每次生成都用更新配置的路径
                 # 判断路径是否是文件夹且存在，target_path 可能是空、有效文件夹路径，长得像文件夹的文件路径
                 if target_path and Path(target_path).is_dir():
@@ -2526,7 +2520,6 @@ class InteractiveButton:
                         filepath = str(files_li[0])
                         app.add_static_file(local_file=filepath, url_path=chip_info.get("url_path"))
             elif chip_info["type"] == "svn":
-                chip_text = chip_info.get("content", "")
                 target_url = chip_info.get("url_path", "")
                 file_info = await self.get_url_file_info_async(target_url)
                 if not file_info[0]:
@@ -2670,7 +2663,7 @@ class InteractiveButton:
 
         # chip类型为缩略图
         elif chip_info.get("type") == "image":
-            image_name = chip_info.get("filename")
+            image_name = chip_info.get("content")
 
             # 每次生成都用更新配置的路径
             image_path = f"{self.upload_path}/{image_name}"
