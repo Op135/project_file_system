@@ -266,7 +266,9 @@ def information_page():
         dialog.clear()
         with dialog, ui.card():
             with ui.column():
-                ui.label(f"确认移除{p_name}_需求配置_V{v}.json ？").classes("text-lg text-red-500")
+                ui.label(f"确认移除{p_name}_需求配置_V{v}.json，移除后想恢复只能找管理员。").classes(
+                    "text-lg text-red-500"
+                )
                 with ui.row().classes("w-full justify-end"):
                     ui.button(
                         "确认",

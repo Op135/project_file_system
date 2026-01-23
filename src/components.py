@@ -2860,7 +2860,7 @@ class InteractiveButton:
         self.chip_dialog.clear()
         with self.chip_dialog, ui.card().classes("w-full"):
             ui.label(f"添加产品的{self.title}").classes("text-lg font-bold")
-            placeholder = ""
+
             test_select_data = {
                 "state_select": "",
                 "state_other_text": "",
