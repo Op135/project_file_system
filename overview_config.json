@@ -1526,7 +1526,7 @@
                 "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
                 "search_scope_regular": "^([^_]+)",
-                "search_folder_according": "drive_pcb",
+                "search_folder_according": "control_pcb",
                 "search_hierarchy": [
                     "Files"
                 ],
@@ -1554,7 +1554,7 @@
                 "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
                 "search_scope_regular": "^([^_]+)",
-                "search_folder_according": "drive_pcb",
+                "search_folder_according": "control_pcb",
                 "search_hierarchy": [
                     "Files"
                 ],
@@ -1583,7 +1583,7 @@
                 "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
                 "search_scope_regular": "^([^_]+)",
-                "search_folder_according": "drive_pcb",
+                "search_folder_according": "control_pcb",
                 "search_hierarchy": [],
                 "permission": {
                     "read_role": [
@@ -1610,7 +1610,7 @@
                 "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
                 "search_scope_regular": "^([^_]+)",
-                "search_folder_according": "drive_pcb",
+                "search_folder_according": "control_pcb",
                 "search_hierarchy": [],
                 "permission": {
                     "read_role": [
@@ -1633,7 +1633,7 @@
                 "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
                 "search_scope_regular": "^([^_]+)",
-                "search_folder_according": "drive_pcb",
+                "search_folder_according": "control_pcb",
                 "search_hierarchy": [
                     "Files"
                 ],
@@ -1660,7 +1660,7 @@
                 "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
                 "search_scope_regular": "^([^_]+)",
-                "search_folder_according": "drive_pcb",
+                "search_folder_according": "control_pcb",
                 "search_hierarchy": [
                     "Files"
                 ],
@@ -1724,7 +1724,7 @@
                 "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
                 "search_scope_regular": "^([^_]+)",
-                "search_folder_according": "drive_pcb",
+                "search_folder_according": "light_pcb",
                 "search_hierarchy": [
                     "Files"
                 ],
@@ -1752,7 +1752,7 @@
                 "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
                 "search_scope_regular": "^([^_]+)",
-                "search_folder_according": "drive_pcb",
+                "search_folder_according": "light_pcb",
                 "search_hierarchy": [
                     "Files"
                 ],
@@ -1781,7 +1781,7 @@
                 "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
                 "search_scope_regular": "^([^_]+)",
-                "search_folder_according": "drive_pcb",
+                "search_folder_according": "light_pcb",
                 "search_hierarchy": [],
                 "permission": {
                     "read_role": [
@@ -1808,7 +1808,7 @@
                 "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
                 "search_scope_regular": "^([^_]+)",
-                "search_folder_according": "drive_pcb",
+                "search_folder_according": "light_pcb",
                 "search_hierarchy": [],
                 "permission": {
                     "read_role": [
@@ -1831,7 +1831,7 @@
                 "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
                 "search_scope_regular": "^([^_]+)",
-                "search_folder_according": "drive_pcb",
+                "search_folder_according": "light_pcb",
                 "search_hierarchy": [
                     "Files"
                 ],
@@ -1858,7 +1858,7 @@
                 "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
                 "search_scope_regular": "^([^_]+)",
-                "search_folder_according": "drive_pcb",
+                "search_folder_according": "light_pcb",
                 "search_hierarchy": [
                     "Files"
                 ],
@@ -1922,7 +1922,7 @@
                 "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
                 "search_scope_regular": "^([^_]+)",
-                "search_folder_according": "drive_pcb",
+                "search_folder_according": "other_pcb",
                 "search_hierarchy": [
                     "Files"
                 ],
@@ -1950,7 +1950,7 @@
                 "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
                 "search_scope_regular": "^([^_]+)",
-                "search_folder_according": "drive_pcb",
+                "search_folder_according": "other_pcb",
                 "search_hierarchy": [
                     "Files"
                 ],
@@ -1979,7 +1979,7 @@
                 "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
                 "search_scope_regular": "^([^_]+)",
-                "search_folder_according": "drive_pcb",
+                "search_folder_according": "other_pcb",
                 "search_hierarchy": [],
                 "permission": {
                     "read_role": [
@@ -2006,7 +2006,7 @@
                 "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
                 "search_scope_regular": "^([^_]+)",
-                "search_folder_according": "drive_pcb",
+                "search_folder_according": "other_pcb",
                 "search_hierarchy": [],
                 "permission": {
                     "read_role": [
@@ -2029,7 +2029,7 @@
                 "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
                 "search_scope_regular": "^([^_]+)",
-                "search_folder_according": "drive_pcb",
+                "search_folder_according": "other_pcb",
                 "search_hierarchy": [
                     "Files"
                 ],
@@ -2056,7 +2056,7 @@
                 "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
                 "search_scope_regular": "^([^_]+)",
-                "search_folder_according": "drive_pcb",
+                "search_folder_according": "other_pcb",
                 "search_hierarchy": [
                     "Files"
                 ],
@@ -2236,9 +2236,12 @@
             "产品接线说明书": {
                 "label": "wiring_manual",
                 "title": "产品接线说明书",
-                "processing_type": "file",
+                "processing_type": "search",
                 "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\2.输出——研发流程输出文档\\★可发客户的资料\\产品使用说明\\6.接线说明",
+                "search_scope_regular": "",
+                "search_folder_according": "",
+                "search_hierarchy": [],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -2266,10 +2269,12 @@
                 "label": "electronic_testing",
                 "title": "硬件测试项",
                 "processing_type": "test",
-                "dialog_placeholder": "电压：12V±3%",
+                "dialog_placeholder": "特殊测试项名称：值，公差。",
                 "state_options": [
                     "常亮100%亮度档",
                     "频闪100%亮度档",
+                    "常亮50%亮度档",
+                    "频闪50%亮度档",
                     "其它"
                 ],
                 "node_options": [
@@ -2278,7 +2283,9 @@
                     "治具输出",
                     "其它"
                 ],
-                "instrument_options": [],
+                "instrument_options": [
+                    "其它"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",

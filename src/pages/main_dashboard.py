@@ -4,7 +4,7 @@ import logging
 from nicegui import app, ui
 
 from ..config import IMG_DIR, PRESET_AVATARS
-from ..utils import get_cache_busted_path, logout, online_users
+from ..utils import get_cache_busted_path, get_project_engineer_project_list_dic, logout, online_users
 
 # 获取一个以此模块命名的 logger
 # 比如：如果你的文件是 src/components.py，这个 logger 的名字就会是 "src.components"
@@ -100,13 +100,16 @@ def main_page():
             state_num_user = 0
             # 所有登录用户负责的概述维护项目数量
             over_charge_num = 0
+            # {项目工程师名:[负责项目,负责项目]}
+            project_engineer_dic = get_project_engineer_project_list_dic()
             for project_name, ver_dic in app.storage.general["wait_review"].items():
                 for ver, dic in ver_dic.items():
                     state = dic.get("state")
                     submitter = dic.get("submitter")
                     if state != "已审":
                         state_num_sum += 1
-                        if submitter == current_user:
+                        # 待审项目提交人与当前用户匹配 或 待审项目的项目工程师由当前用户负责跟进
+                        if submitter == current_user or project_name in project_engineer_dic.get(current_user, []):
                             state_num_user += 1
             if current_user in app.storage.general["overview_charge_pending"]:
                 over_charge_num = len(app.storage.general["overview_charge_pending"][current_user])

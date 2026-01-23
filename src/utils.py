@@ -1428,3 +1428,16 @@ async def get_overviow_page(project_name, review: bool):
             ui.navigate.to(f"/main/requirement?type=temp_overview&json_path={overview_file_path}")
         else:
             ui.navigate.to(f"/main/requirement?type=overview&json_path={overview_file_path}")
+
+
+def get_project_engineer_project_list_dic():
+    """
+    获得所有扮演项目工程师的{项目工程师名:[负责项目,负责项目]}
+    """
+    project_engineer_dic = {}
+    for pn, project_engineer in app.storage.general["project_engineer"].items():
+        if project_engineer and project_engineer not in project_engineer_dic:
+            project_engineer_dic.update({project_engineer: [pn]})
+        elif project_engineer:
+            project_engineer_dic[project_engineer].append(pn)
+    return project_engineer_dic

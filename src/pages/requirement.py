@@ -2399,7 +2399,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                     # if float(version) < v_max or change_name:
                     version_a = int(project_exists_file[str(v_max)]["v_a"])
                     # 已审状态才能升级版本, 待修改不升级
-                    if original_review_state in ["已审", ""]:
+                    if target_review_state in ["已审", ""]:
                         new_version = f"{version_a + 1}.0"
                     # 防止修改需求暂存后提交时，版本迭代小数而提交，
                     else:
