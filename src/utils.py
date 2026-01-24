@@ -592,7 +592,7 @@ def project_summary_update():
         )
 
 
-async def copy_overview_data(project_name, version, target_project_name):
+async def copy_overview_data(project_name, version, target_project_name) -> None:
     """
     用于将某个项目某个版本的概述内容复制衍生成一个 “新项目的初版” 概述
 
@@ -1128,15 +1128,16 @@ def delete_file(file_path):
             close_button="✖",
         )
     except FileNotFoundError:
+        pass
         # 3. 处理文件不存在的错误
-        ui.notify(
-            f"错误：文件 '{file_path}' 未找到。",
-            type="negative",
-            position="center",
-            timeout=0,
-            progress=False,
-            close_button="✖",
-        )
+        # ui.notify(
+        #     f"错误：文件 '{file_path}' 未找到。",
+        #     type="negative",
+        #     position="center",
+        #     timeout=0,
+        #     progress=False,
+        #     close_button="✖",
+        # )
     except PermissionError:
         # 4. 处理权限不足的错误
         ui.notify(

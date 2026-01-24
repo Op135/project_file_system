@@ -685,7 +685,7 @@ class InteractiveButton:
             text_color = "text-blue-7"
         ui.button(f"{self.title}：").props("flat").classes(
             f"p-1 text-[14px]/[14px] {text_color} mt-2 font-semibold"
-        ).on("click", self._handle_main_button_click, ["ctrlKey"])
+        ).on("click", self._handle_main_button_click, ["shiftKey"])
 
         # 创建一个行(row)容器，用于存放生成的所有 chip
         self.chip_container = ui.row().classes("w-full items-center gap-2 pl-8")
@@ -3118,7 +3118,7 @@ class InteractiveButton:
             with ui.row().classes("w-full justify-between items-center"):
                 ui.label(f"历史记录: {self.title}").classes("text-xl font-bold text-gray-800")
                 ui.button(icon="close", on_click=self.history_dialog.close).props("flat round dense")
-
+            ui.label("文字颜色效果代表当前激活状态").classes("text-sm text-gray-500 mt-0 mb-1")
             ui.separator()
 
             with ui.scroll_area().classes("w-full flex-grow"):
@@ -3130,8 +3130,8 @@ class InteractiveButton:
                     # 版本分组标题
                     if item["req_ver"] != current_ver:
                         current_ver = item["req_ver"]
-                        ui.label(f"需求版本 V{current_ver}").classes(
-                            "text-lg font-bold text-amber-900 mt-4 mb-2 bg-amber-50 px-2 py-1 rounded"
+                        ui.label(f"需求版本V{current_ver}生效后提交的概述：").classes(
+                            "text-base font-bold text-amber-900 mt-3 mb-1 bg-amber-50 px-2 py-1 rounded"
                         )
 
                     # 条目卡片
@@ -3149,9 +3149,13 @@ class InteractiveButton:
                             with ui.row().classes("items-center gap-1"):
                                 if item["type"] in ["file", "image", "svn", "search"]:
                                     ui.icon("attachment", size="xs", color="grey")
-                                ui.label(item["content"]).classes(
-                                    f"text-sm font-medium {'text-gray-400 line-through' if not item['enabled'] else 'text-gray-800'}"
-                                )
+                                if item["enabled"]:
+                                    color = "text-blue-400"
+                                elif item["enabled"] == "null":
+                                    color = "text-orange-400 italic"
+                                else:
+                                    color = "text-gray-400 line-through"
+                                ui.label(item["content"]).classes(f"text-sm font-medium {color}")
                             if item["notes"]:
                                 ui.label(f"注: {item['notes']}").classes("text-xs text-gray-500 italic")
 
@@ -3168,14 +3172,14 @@ class InteractiveButton:
 
         chip_content = chip_data.get("content", "未知内容")
 
-        with self.history_dialog, ui.card().classes("w-[600px] max-w-full"):
+        with self.history_dialog, ui.card().classes("w-[600px] max-w-full -space-y-2"):
             with ui.row().classes("w-full justify-between items-center"):
                 ui.label(f"变更历史: {chip_content}").classes("text-lg font-bold")
                 ui.button(icon="close", on_click=self.history_dialog.close).props("flat round dense")
 
-            ui.separator().classes("mb-2")
+            ui.separator().classes("mb-1")
 
-            with ui.column().classes("w-full gap-2"):
+            with ui.column().classes("w-full gap-1"):
                 if not sorted_times:
                     ui.label("暂无变更记录").classes("text-gray-500")
 
@@ -3184,28 +3188,35 @@ class InteractiveButton:
                     creator = record.get("creator", "未知")
                     activ_dic = record.get("select_activ_dic", {})
 
-                    with ui.card().classes("w-full p-2 bg-gray-50 border border-gray-200"):
+                    with ui.card().classes("w-full p-2 bg-gray-50 border border-gray-200 -space-y-2"):
                         with ui.row().classes("w-full justify-between items-center mb-1"):
                             with ui.row().classes("gap-2 items-center"):
                                 ui.icon("history", size="xs", color="blue")
                                 ui.label(time_str).classes("text-sm font-mono text-gray-700")
                             ui.badge(creator, color="blue-grey").props("outline")
 
-                        ui.separator().classes("mb-1")
+                        # ui.separator().classes("mb-1")
 
                         # 显示该时刻的激活状态快照
                         if activ_dic:
-                            ui.label("版本激活状态快照:").classes("text-xs text-gray-500 font-bold")
                             with ui.row().classes("w-full flex-wrap gap-1"):
                                 sorted_vers = sorted(
                                     activ_dic.keys(), key=lambda x: float(x) if x.replace(".", "", 1).isdigit() else 0
                                 )
                                 for ver in sorted_vers:
                                     is_active = activ_dic[ver]
-                                    color = "green" if is_active else "grey-4"
-                                    text_col = "white" if is_active else "grey-7"
+                                    if is_active:
+                                        color = "green"
+                                        text_col = "white"
+                                    elif is_active == "null":
+                                        color = "orange"
+                                        text_col = "white"
+                                    else:
+                                        color = "grey-4"
+                                        text_col = "grey-7"
+
                                     ui.chip(text=f"V{ver}", color=color, text_color=text_col).props(
-                                        "dense square size=xs"
+                                        "dense square size=sm"
                                     )
 
         self.history_dialog.open()
@@ -3222,8 +3233,8 @@ class InteractiveButton:
                 close_button="✖",
             )
             return
-        # 检查是否按下了 Ctrl 键
-        if e.args.get("ctrlKey"):
+        # 检查是否按下了 Shift 键
+        if e.args.get("shiftKey"):
             self.show_label_history()
             return
         # 如果用户具有编辑权限

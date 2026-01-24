@@ -507,7 +507,9 @@
                         "研发结构"
                     ]
                 },
-                "impact_list": []
+                "impact_list": [
+                    "specifications"
+                ]
             },
             "产品简化3D图": {
                 "label": "product_simplify_diagram",
@@ -558,7 +560,27 @@
                         "研发结构"
                     ]
                 },
-                "impact_list": []
+                "impact_list": [
+                    "product_simplify_diagram",
+                    "product_size_diagram",
+                    "drive_pcb",
+                    "drive_electronic_bom",
+                    "control_pcb",
+                    "control_electronic_bom",
+                    "wire_accessories",
+                    "product_output_position",
+                    "product_outlet_position",
+                    "product_wind_diagram",
+                    "mechanical_assembly_details",
+                    "product_weight",
+                    "product_type_ambient",
+                    "product_temperature_rise",
+                    "packaging_materials",
+                    "adapter_options",
+                    "product_bom",
+                    "capture_list",
+                    "mechanical_testing"
+                ]
             }
         },
         "PCB图纸": {
@@ -590,7 +612,9 @@
                         "研发结构"
                     ]
                 },
-                "impact_list": []
+                "impact_list": [
+                    "specifications"
+                ]
             },
             "PCBA简化3D图": {
                 "label": "drive_simplify_diagram",
@@ -649,7 +673,9 @@
                         "研发结构"
                     ]
                 },
-                "impact_list": []
+                "impact_list": [
+                    "craft_key_requirements"
+                ]
             },
             "产品出线位置示意图": {
                 "label": "product_outlet_position",
@@ -677,7 +703,9 @@
                         "研发结构"
                     ]
                 },
-                "impact_list": []
+                "impact_list": [
+                    "craft_key_requirements"
+                ]
             },
             "产品风道示意图": {
                 "label": "product_wind_diagram",
@@ -705,7 +733,9 @@
                         "研发结构"
                     ]
                 },
-                "impact_list": []
+                "impact_list": [
+                    "craft_key_requirements"
+                ]
             },
             "重点装配细节示意图": {
                 "label": "mechanical_assembly_details",
@@ -735,7 +765,9 @@
                         "研发结构"
                     ]
                 },
-                "impact_list": []
+                "impact_list": [
+                    "craft_key_requirements"
+                ]
             }
         },
         "材质外观": {
@@ -764,7 +796,19 @@
                         "研发结构"
                     ]
                 },
-                "impact_list": []
+                "impact_list": [
+                    "product_complete_diagram",
+                    "product_treatment_process",
+                    "product_color",
+                    "product_weight",
+                    "product_type_ambient",
+                    "product_temperature_rise",
+                    "tec_type",
+                    "sensor_type",
+                    "mechanical_testing",
+                    "product_bom",
+                    "capture_list"
+                ]
             },
             "产品涉及表面处理工艺": {
                 "label": "product_treatment_process",
@@ -791,7 +835,20 @@
                         "研发结构"
                     ]
                 },
-                "impact_list": []
+                "impact_list": [
+                    "product_size_diagram",
+                    "product_complete_diagram",
+                    "mechanical_assembly_details",
+                    "product_material_selection",
+                    "product_color",
+                    "product_weight",
+                    "product_type_ambient",
+                    "product_temperature_rise",
+                    "sensor_type",
+                    "mechanical_testing",
+                    "product_bom",
+                    "capture_list"
+                ]
             },
             "产品外观颜色": {
                 "label": "product_color",
@@ -819,7 +876,15 @@
                         "研发结构"
                     ]
                 },
-                "impact_list": []
+                "impact_list": [
+                    "product_size_diagram",
+                    "product_material_selection",
+                    "product_treatment_process",
+                    "capture_list",
+                    "product_bom",
+                    "mechanical_testing",
+                    "specifications"
+                ]
             },
             "产品实秤重量": {
                 "label": "product_weight",
@@ -848,7 +913,10 @@
                         "研发结构"
                     ]
                 },
-                "impact_list": []
+                "impact_list": [
+                    "specifications",
+                    "mechanical_testing"
+                ]
             }
         },
         "环境条件": {
@@ -1145,6 +1213,54 @@
             }
         },
         "文档标准": {
+            "量产阶段打包目录": {
+                "label": "capture_list",
+                "title": "量产阶段打包目录（txt）",
+                "processing_type": "file",
+                "file_name_regular": [],
+                "upload_path": "\\\\192.168.1.102\\Server\\研发部（量产阶段）\\★结构件工程图",
+                "permission": {
+                    "read_role": [
+                        "boss",
+                        "研发助理",
+                        "采购",
+                        "研发样品"
+                    ],
+                    "edit_role": [
+                        "admin",
+                        "研发经理",
+                        "研发结构"
+                    ]
+                },
+                "impact_list": []
+            },
+            "研发阶段产品总BOM": {
+                "label": "product_bom",
+                "title": "研发阶段产品总BOM（xlsx）",
+                "processing_type": "file",
+                "file_name_regular": [],
+                "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\2.输出——研发流程输出文档\\产品总BOM",
+                "permission": {
+                    "read_role": [
+                        "boss",
+                        "销售总监",
+                        "研发助理",
+                        "研发电子主管",
+                        "研发硬件",
+                        "研发软件",
+                        "研发光学",
+                        "研发样品",
+                        "工程",
+                        "质量"
+                    ],
+                    "edit_role": [
+                        "admin",
+                        "研发经理",
+                        "研发结构"
+                    ]
+                },
+                "impact_list": []
+            },
             "装箱清单": {
                 "label": "packing_list",
                 "title": "装箱清单（xlsx）",
@@ -1247,7 +1363,31 @@
                         "研发电子主管"
                     ]
                 },
-                "impact_list": []
+                "impact_list": [
+                    "fan_model",
+                    "product_size_diagram",
+                    "product_simplify_diagram",
+                    "product_complete_diagram",
+                    "drive_size_diagram",
+                    "drive_simplify_diagram",
+                    "packaging_materials",
+                    "product_bom",
+                    "packing_list",
+                    "software_executable_file",
+                    "drive_power",
+                    "drive_pcb",
+                    "drive_pcb_principle",
+                    "drive_pcb_silkscreen",
+                    "drive_pcb_process",
+                    "drive_pcb_making",
+                    "drive_complete_diagram",
+                    "drive_electronic_bom",
+                    "control_accessories",
+                    "drive_manual",
+                    "drive_test_report",
+                    "wiring_manual",
+                    "electronic_testing"
+                ]
             },
             "产品驱动输入功率": {
                 "label": "drive_power",
@@ -1305,7 +1445,37 @@
                         "研发电子主管"
                     ]
                 },
-                "impact_list": []
+                "impact_list": [
+                    "product_size_diagram",
+                    "product_simplify_diagram",
+                    "product_complete_diagram",
+                    "drive_size_diagram",
+                    "drive_simplify_diagram",
+                    "packaging_materials",
+                    "product_bom",
+                    "packing_list",
+                    "drive_pcb",
+                    "drive_pcb_principle",
+                    "drive_pcb_silkscreen",
+                    "drive_pcb_process",
+                    "drive_pcb_making",
+                    "drive_complete_diagram",
+                    "drive_electronic_bom",
+                    "control_accessories",
+                    "wire_accessories",
+                    "drive_manual",
+                    "drive_test_report",
+                    "wiring_manual",
+                    "electronic_testing",
+                    "software_executable_file",
+                    "software_manual",
+                    "software_protocol",
+                    "software_xml",
+                    "software_testing",
+                    "ui_execute_file",
+                    "ui_testing",
+                    "craft_key_requirements"
+                ]
             },
             "驱动输出信号类型": {
                 "label": "drive_output_signal",
@@ -1333,7 +1503,14 @@
                         "研发电子主管"
                     ]
                 },
-                "impact_list": []
+                "impact_list": [
+                    "specifications",
+                    "optical_testing",
+                    "software_executable_file",
+                    "software_manual",
+                    "software_testing",
+                    "craft_key_requirements"
+                ]
             }
         },
         "驱动板资料": {
@@ -1364,7 +1541,21 @@
                         "研发电子主管"
                     ]
                 },
-                "impact_list": []
+                "impact_list": [
+                    "drive_size_diagram",
+                    "drive_simplify_diagram",
+                    "packaging_materials",
+                    "product_bom",
+                    "packing_list",
+                    "drive_pcb_principle",
+                    "drive_pcb_silkscreen",
+                    "drive_pcb_process",
+                    "drive_pcb_making",
+                    "drive_complete_diagram",
+                    "drive_electronic_bom",
+                    "drive_manual",
+                    "drive_test_report"
+                ]
             },
             "驱动PCB原理图": {
                 "label": "drive_pcb_principle",
@@ -1393,7 +1584,44 @@
                         "研发电子主管"
                     ]
                 },
-                "impact_list": []
+                "impact_list": [
+                    "drive_size_diagram",
+                    "drive_simplify_diagram",
+                    "product_size_diagram",
+                    "product_simplify_diagram",
+                    "product_complete_diagram",
+                    "packaging_materials",
+                    "product_bom",
+                    "packing_list",
+                    "drive_voltage",
+                    "drive_power",
+                    "product_control_mode",
+                    "drive_output_signal",
+                    "drive_pcb",
+                    "drive_pcb_silkscreen",
+                    "drive_pcb_process",
+                    "drive_pcb_making",
+                    "drive_complete_diagram",
+                    "drive_electronic_bom",
+                    "display_accessories",
+                    "control_accessories",
+                    "wire_accessories",
+                    "drive_manual",
+                    "drive_test_report",
+                    "wiring_manual",
+                    "electronic_testing",
+                    "software_executable_file",
+                    "software_manual",
+                    "software_protocol",
+                    "software_xml",
+                    "software_testing",
+                    "craft_key_requirements",
+                    "ui_execute_file",
+                    "ui_testing",
+                    "photoelectric_sensors",
+                    "light_thermistor",
+                    "specifications"
+                ]
             },
             "驱动PCB丝印图": {
                 "label": "drive_pcb_silkscreen",
@@ -1475,7 +1703,9 @@
                         "研发电子主管"
                     ]
                 },
-                "impact_list": []
+                "impact_list": [
+                    "drive_pcb_process"
+                ]
             },
             "驱动PCBA完整3D图": {
                 "label": "drive_complete_diagram",
@@ -1538,7 +1768,17 @@
                         "研发电子主管"
                     ]
                 },
-                "impact_list": []
+                "impact_list": [
+                    "drive_size_diagram",
+                    "product_bom",
+                    "packing_list",
+                    "software_executable_file",
+                    "software_manual",
+                    "software_protocol",
+                    "software_xml",
+                    "software_testing",
+                    "craft_key_requirements"
+                ]
             }
         },
         "控制板资料": {

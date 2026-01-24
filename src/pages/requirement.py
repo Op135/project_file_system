@@ -3041,9 +3041,6 @@ async def requirement_page(type="", json_path="", project_name=""):
 
         # --- 新增辅助函数：展示 Role 维度的历史记录 (Feature 1) ---
         def show_role_history_dialog(project_name, role):
-            # 创建一个临时的 dialog
-            history_dialog = ui.dialog().classes("w-full")
-
             # 1. 收集该 Role 下所有 Label 的数据
             # 我们遍历数据库中该项目的所有 label，如果该 label 属于当前 role，则收集
             # 注意：这里需要知道 label -> role 的映射。
@@ -3052,10 +3049,10 @@ async def requirement_page(type="", json_path="", project_name=""):
             if role in app.storage.general.get("over_config_data", {}):
                 for group in app.storage.general["over_config_data"][role].values():
                     for item in group.values():
-                        target_labels.append(item["label"])
+                        target_labels.append((item["label"], item.get("title", "无标题")))
 
             all_history = []
-            for label in target_labels:
+            for label, title in target_labels:
                 # 获取该 label 下的所有 chip
                 chips = db_storage.get_deep_item([f"{project_name}_over_data", label], {})
                 for chip_info in chips.values():
@@ -3064,6 +3061,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                     all_history.append(
                         {
                             "label": label,  # 额外记录所属标签
+                            "title": title,
                             "content": chip_info.get("content", "N/A"),
                             "req_ver": chip_info.get("req_ver", "0.0"),
                             "creation_time": creation_time,
@@ -3080,11 +3078,12 @@ async def requirement_page(type="", json_path="", project_name=""):
                 all_history.sort(key=lambda x: (x["req_ver"], x["creation_time"]))
 
             # 3. 构建 UI
-            with history_dialog, ui.card().classes("w-[900px] max-w-full h-[80vh]"):
+            general_dialog.clear()
+            with general_dialog, ui.card().classes("w-[900px] max-w-full h-[80vh]"):
                 with ui.row().classes("w-full justify-between items-center"):
                     ui.label(f"全项历史记录: {role}").classes("text-xl font-bold text-gray-800")
-                    ui.button(icon="close", on_click=history_dialog.close).props("flat round dense")
-
+                    ui.button(icon="close", on_click=general_dialog.close).props("flat round dense")
+                ui.label("概述文字颜色效果代表当前激活状态").classes("text-sm text-gray-500 mt-0 mb-1")
                 ui.separator()
 
                 with ui.scroll_area().classes("w-full flex-grow"):
@@ -3095,8 +3094,8 @@ async def requirement_page(type="", json_path="", project_name=""):
                     for item in all_history:
                         if item["req_ver"] != current_ver:
                             current_ver = item["req_ver"]
-                            ui.label(f"需求版本 V{current_ver}").classes(
-                                "text-lg font-bold text-white bg-blue-500 px-3 py-1 rounded mt-4 mb-2 inline-block"
+                            ui.label(f"需求版本V{current_ver}生效后提交的概述：").classes(
+                                "text-base font-bold text-amber-900 mt-3 mb-1 bg-amber-50 px-2 py-1 rounded"
                             )
 
                         with ui.row().classes(
@@ -3107,18 +3106,22 @@ async def requirement_page(type="", json_path="", project_name=""):
                                 ui.label(item["creation_time"]).classes("text-xs text-gray-500")
                                 ui.label(item["creator"]).classes("text-xs font-bold text-blue-600")
 
-                            # 所属标签 (Feature 1 特有)
-                            ui.label(f"[{item['label']}]").classes("text-xs font-bold text-purple-600 w-24 truncate")
+                            # 所属标签 (特有)
+                            ui.label(f"在[{item['title']}]添加：").classes("text-xs font-bold text-amber-600 truncate")
 
                             # 内容
                             with ui.row().classes("flex-grow items-center gap-2"):
                                 if item["type"] in ["file", "image", "svn", "search"]:
                                     ui.icon("attachment", size="xs", color="grey")
-                                ui.label(item["content"]).classes(
-                                    f"font-medium {'text-gray-400 line-through' if not item['enabled'] else 'text-gray-800'}"
-                                )
+                                if item["enabled"]:
+                                    color = "text-blue-400"
+                                elif item["enabled"] == "null":
+                                    color = "text-orange-400 italic"
+                                else:
+                                    color = "text-gray-400 line-through"
+                                ui.label(item["content"]).classes(f"font-medium {color}")
 
-            history_dialog.open()
+            general_dialog.open()
 
         # 需求界面内容
         header.clear()
