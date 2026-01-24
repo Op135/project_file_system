@@ -624,6 +624,13 @@ async def requirement_page(type="", json_path="", project_name=""):
     # 确认项目命名处理函数
     def confirm_peoject_name(key_str):
         target_project_name = app.storage.client["target_project_name"]
+        # 参照项目的审核状态
+        # version = app.storage.client["version"]
+        # original_review_state = ""
+        # if app.storage.general["wait_review"].get(project_name, {}):
+        #     original_review_state = app.storage.general["wait_review"][project_name].get(
+        #         f"{version.split('.')[0]}.0", {"state": ""}
+        #     )["state"]
         # project_name = app.storage.client["project_name"]
         if target_project_name == "":
             ui.notify(
@@ -676,6 +683,27 @@ async def requirement_page(type="", json_path="", project_name=""):
                 close_button="✖",
             )
             app.storage.client["target_project_name"] = app.storage.client["project_name"]
+        # elif original_review_state == "待修改":
+        #     ui.notify(
+        #         "当前需求处于待修改状态，禁止衍生！",
+        #         type="warning",
+        #         position="bottom",
+        #         timeout=3000,
+        #         progress=True,
+        #         close_button="✖",
+        #     )
+        #     app.storage.client["target_project_name"] = app.storage.client["project_name"]
+        # # 禁止待审、待修改需求导出
+        # elif original_review_state == "待审":
+        #     ui.notify(
+        #         "当前需求处于待审状态，禁止衍生！",
+        #         type="warning",
+        #         position="bottom",
+        #         timeout=3000,
+        #         progress=True,
+        #         close_button="✖",
+        #     )
+        #     app.storage.client["target_project_name"] = app.storage.client["project_name"]
         else:
             app.storage.client["page_elements"].get("target_project_button").props(remove="icon")
             # 为了新建项目需求而弹窗，则调用新需求处理函数
@@ -2154,6 +2182,10 @@ async def requirement_page(type="", json_path="", project_name=""):
                     close_button="✖",
                 )
                 return
+
+            # 一旦校验通过，开始暂存流程，立即禁止后续的自动保存，防止竞态条件
+            app.storage.client["allow_autosave"] = False
+
             # 记录衍生版本
             # 如果不等，则以为这改名时将当前版本改成改后名的最高版本了，这里参照版本得用真真参照的版本
             # if original_version != version:
@@ -2216,7 +2248,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                     set(app.storage.general["temp_req"][current_user][project_name])
                 )
 
-                # 产出可能存在的自动保存需求文件
+                # 删除可能存在的自动保存需求文件
                 clean_autosave_file(project_name)
 
                 logger.info(f"成功暂存需求配置：{project_name}_需求配置_V{new_version}.json")
@@ -2245,6 +2277,8 @@ async def requirement_page(type="", json_path="", project_name=""):
                     progress=False,
                     close_button="✖",
                 )
+                # 为了用户体验，建议在 return 前恢复为 True，以便用户能继续自动保存
+                app.storage.client["allow_autosave"] = True
 
         # [新增] >>> 在 export 分支之前或之后插入 autosave 分支 <<<
         elif type == "autosave":
@@ -2388,6 +2422,10 @@ async def requirement_page(type="", json_path="", project_name=""):
                 if new_temp_project_bool:
                     app.storage.general["temp_project_name"].remove(target_project_name)
                 return
+
+            # 一旦通过校验，开始提交流程，立即禁止后续的自动保存，防止竞态条件
+            app.storage.client["allow_autosave"] = False
+
             change_name = False
             #  改了项目名
             if project_name != target_project_name:
@@ -2433,6 +2471,8 @@ async def requirement_page(type="", json_path="", project_name=""):
                             progress=False,
                             close_button="✖",
                         )
+                        # 为了用户体验，建议在 return 前恢复为 True，以便用户能继续自动保存
+                        app.storage.client["allow_autosave"] = True
                         return
                     except Exception as e:
                         ui.notify(
@@ -2443,6 +2483,8 @@ async def requirement_page(type="", json_path="", project_name=""):
                             progress=False,
                             close_button="✖",
                         )
+                        # 为了用户体验，建议在 return 前恢复为 True，以便用户能继续自动保存
+                        app.storage.client["allow_autosave"] = True
                         return
 
                 # 服务器不存在该项目配置文件
@@ -2469,6 +2511,8 @@ async def requirement_page(type="", json_path="", project_name=""):
                             # 如果属于新创建临时项目，失败则删除占位的临时项目号
                             if new_temp_project_bool:
                                 app.storage.general["temp_project_name"].remove(target_project_name)
+                            # 为了用户体验，建议在 return 前恢复为 True，以便用户能继续自动保存
+                            app.storage.client["allow_autosave"] = True
                             return
                         # 定义文件路径
                         old_file_path = os.path.join(
@@ -2493,6 +2537,8 @@ async def requirement_page(type="", json_path="", project_name=""):
                             # 如果属于新创建临时项目，失败则删除占位的临时项目号
                             if new_temp_project_bool:
                                 app.storage.general["temp_project_name"].remove(target_project_name)
+                            # 为了用户体验，建议在 return 前恢复为 True，以便用户能继续自动保存
+                            app.storage.client["allow_autosave"] = True
                             return
                         except Exception as e:
                             ui.notify(
@@ -2506,6 +2552,8 @@ async def requirement_page(type="", json_path="", project_name=""):
                             # 如果属于新创建临时项目，失败则删除占位的临时项目号
                             if new_temp_project_bool:
                                 app.storage.general["temp_project_name"].remove(target_project_name)
+                            # 为了用户体验，建议在 return 前恢复为 True，以便用户能继续自动保存
+                            app.storage.client["allow_autosave"] = True
                             return
                         old_data_json["project_name"] = target_project_name
                         old_data_json["current_user"] = current_user
@@ -2552,6 +2600,8 @@ async def requirement_page(type="", json_path="", project_name=""):
                             app.storage.client["original_version"] = "1.0"
                             # 复制保存好旧版本临时需求配置文件后，接着处理一次
                             await output_config_data(data, type)
+                            # 为了用户体验，建议在 return 前恢复为 True，以便用户能继续自动保存
+                            app.storage.client["allow_autosave"] = True
                             return
                         except Exception as e:
                             logger.error("复制衍生项目需求与概述时发生其他错误", exc_info=True)
@@ -2570,6 +2620,9 @@ async def requirement_page(type="", json_path="", project_name=""):
                             # 如果属于新创建临时项目，失败则删除占位的临时项目号
                             if new_temp_project_bool:
                                 app.storage.general["temp_project_name"].remove(target_project_name)
+                            # 为了用户体验，建议在 return 前恢复为 True，以便用户能继续自动保存
+                            app.storage.client["allow_autosave"] = True
+                            return
                     # 排除其它项目衍生过来的情况，那种情况保持衍生的记录版本
                     else:
                         original_version = "0.0"
@@ -2600,7 +2653,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                 # 将提交该需求的用户更新为该项目负责的销售员
                 app.storage.general["project_sale"][target_project_name] = current_user
 
-                # 产出可能存在的自动保存需求文件
+                # 删除可能存在的自动保存需求文件
                 clean_autosave_file(project_name)
 
                 logger.info(f"成功提交{target_project_name}的需求配置，版本：V{new_version}。")
@@ -2623,6 +2676,8 @@ async def requirement_page(type="", json_path="", project_name=""):
                     progress=True,
                     close_button="✖",
                 )
+                # 为了用户体验，建议在 return 前恢复为 True，以便用户能继续自动保存
+                app.storage.client["allow_autosave"] = True
 
     def get_select_req(select_project_name):
         if select_project_name:
@@ -3640,20 +3695,23 @@ async def requirement_page(type="", json_path="", project_name=""):
                     and datetime.fromisoformat(autosave_ts) > datetime.fromisoformat(current_ts)
                 ):
                     # --- 此时页面已渲染，可以安全地弹出对话框 ---
-                    with ui.dialog() as dialog, ui.card():
+                    general_dialog.clear()
+                    with general_dialog, ui.card():
                         ui.label("发现更新的草稿").classes("text-h6")
                         ui.label(
-                            f"检测到自动保存的内容({datetime.fromisoformat(autosave_ts).strftime('%Y-%m-%d_%H:%M:%S')})比当前文件({datetime.fromisoformat(current_ts).strftime('%Y-%m-%d_%H:%M:%S')})较新，是否加载？"
+                            f"检测到自动保存的内容({datetime.fromisoformat(autosave_ts).strftime('%Y年%m月%d日_%H时%M分%S秒')})比当前文件({datetime.fromisoformat(current_ts).strftime('%Y年%m月%d日_%H时%M分%S秒')})较新，是否加载？"
                         )
                         with ui.row().classes("w-full justify-end"):
                             # 选择不加载：仅关闭弹窗，页面保持原状（已加载了 json_path 的数据）
-                            ui.button("不加载(覆盖掉自动保存的内容)", on_click=lambda: dialog.submit(False)).props(
-                                "color=amber-7"
-                            )
+                            ui.button(
+                                "不加载(覆盖掉自动保存的内容)", on_click=lambda: general_dialog.submit(False)
+                            ).props("color=amber-7")
                             # 选择加载：覆盖当前界面数据
-                            ui.button("加载自动保存内容", on_click=lambda: dialog.submit(True)).props("color=primary")
+                            ui.button("加载自动保存内容", on_click=lambda: general_dialog.submit(True)).props(
+                                "color=primary"
+                            )
 
-                    result = await dialog
+                    result = await general_dialog
                     if result:
                         loads_requirements(autosave_json_data, False)
                         ui.notify("已恢复自动保存的内容", type="positive")
