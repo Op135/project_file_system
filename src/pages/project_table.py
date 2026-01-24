@@ -696,9 +696,13 @@ def project_table_page():
                 v_max = max([float(s) for s in project_exists_file.keys()])
                 # 定义文件路径
                 file_path = os.path.join(REQ_DIR, project_exists_file[str(v_max)]["name"])
-                ui.navigate.to(f"/main/requirement?type=requirement&json_path={file_path}")
+                # 不止
+                ui.navigate.to(
+                    f"/main/requirement?type=requirement&project_name={row_data['sub_project']}&json_path={file_path}"
+                )
             else:
                 ui.navigate.to(f"/main/requirement?type=requirement&project_name={row_data['sub_project']}")
+
         elif col_id == "overview":
             await get_overviow_page(project_name, False)
 

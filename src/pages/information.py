@@ -282,6 +282,7 @@ def information_page():
 
     def get_requirement_page(project_name, ver):
         file_path = os.path.join(REQ_DIR, f"{project_name}_需求配置_V{ver}.json")
+        # 不传入项目名，就不会识别个人自动保存的需求文件
         ui.navigate.to(f"/main/requirement?type=requirement&json_path={file_path}")
 
     def get_review_button(button_group, project_name, ver):
@@ -336,6 +337,7 @@ def information_page():
     # 跳转到指定项目与版本的临时需求文件配置页面
     def get_req_page(project_name, version):
         file_path = os.path.join(REQ_DIR, f"temp/{current_user}/{project_name}_需求配置_V{version}.json")
+        # 不传入项目名，就不会识别个人自动保存的需求文件
         ui.navigate.to(f"/main/requirement?type=requirement&json_path={file_path}")
 
     def dele_button_group(project_name, version, button_group):

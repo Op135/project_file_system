@@ -174,6 +174,8 @@ async def requirement_page(type="", json_path="", project_name=""):
     app.storage.client.setdefault("req_com_num", 0)
     # 用于保存当前需求问题序号
     app.storage.client.setdefault("current_question_num", 0)
+    # 初始化自动保存开关为 False (关)，用于用户思考是否使用自动保存记录期间，避免自动保存机制覆盖掉原有自动保存需求
+    app.storage.client["allow_autosave"] = False
 
     # 在全局作用域创建对话框（确保在菜单系统之外）
     general_dialog = ui.dialog()
@@ -1969,6 +1971,11 @@ async def requirement_page(type="", json_path="", project_name=""):
 
     # 需求数据输出处理函数
     async def output_config_data(data, type):
+        # [新增安全锁检查] 如果是自动保存，且开关未开启，直接中止
+        if type == "autosave" and not app.storage.client.get("allow_autosave", False):
+            # 可选：打印日志方便调试
+            # logger.debug("自动保存已跳过：等待用户确认加载状态")
+            return
         # 先复制整个数据
         data_json = data
 
@@ -2221,6 +2228,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                     progress=True,
                     close_button="✖",
                 )
+                # 不传入项目名，就不会识别个人自动保存的需求文件
                 ui.timer(
                     3,
                     callback=lambda: ui.navigate.to(f"/main/requirement?type=requirement&json_path={file_path}"),
@@ -2604,6 +2612,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                     progress=True,
                     close_button="✖",
                 )
+                # 不传入项目名，就不会识别个人自动保存的需求文件
                 ui.navigate.to(f"/main/requirement?type=requirement&json_path={file_path}")
             else:
                 ui.notify(
@@ -2619,6 +2628,7 @@ async def requirement_page(type="", json_path="", project_name=""):
         if select_project_name:
             # 定义文件路径
             file_path = os.path.join(REQ_DIR, select_project_name)
+            # 不传入项目名，就不会识别个人自动保存的需求文件
             ui.navigate.to(f"/main/requirement?type=requirement&json_path={file_path}")
 
     # 滚动获取特定版本需求配置文件，并重新跳转页面
@@ -3609,19 +3619,77 @@ async def requirement_page(type="", json_path="", project_name=""):
                     # 检查缩略图对象存放字典，有对象则会创建缩略图
                     req_thumbnail_display()
 
+    # [逻辑优化] 定义一个异步函数，用于在页面加载后执行检查
+    async def check_autosave_after_load(project_name, json_data):
+        # 重新构造路径（因为这是一个闭包，或者重新获取）
+        autosave_path = os.path.join(REQ_DIR, f"temp/{current_user}/{project_name}_AUTOSAVE.json")
+
+        if os.path.exists(autosave_path):
+            try:
+                with open(autosave_path, "r", encoding="utf-8") as f:
+                    autosave_json_data = json.load(f)
+
+                # 比较时间戳
+                # 注意：确保 json_data["req_timestamp"] 存在，如果不存在(如新建)可能需要处理异常
+                current_ts = json_data.get("req_timestamp")
+                autosave_ts = autosave_json_data.get("req_timestamp")
+
+                if (
+                    current_ts
+                    and autosave_ts
+                    and datetime.fromisoformat(autosave_ts) > datetime.fromisoformat(current_ts)
+                ):
+                    # --- 此时页面已渲染，可以安全地弹出对话框 ---
+                    with ui.dialog() as dialog, ui.card():
+                        ui.label("发现更新的草稿").classes("text-h6")
+                        ui.label(
+                            f"检测到自动保存的内容({datetime.fromisoformat(autosave_ts).strftime('%Y-%m-%d_%H:%M:%S')})比当前文件({datetime.fromisoformat(current_ts).strftime('%Y-%m-%d_%H:%M:%S')})较新，是否加载？"
+                        )
+                        with ui.row().classes("w-full justify-end"):
+                            # 选择不加载：仅关闭弹窗，页面保持原状（已加载了 json_path 的数据）
+                            ui.button("不加载(覆盖掉自动保存的内容)", on_click=lambda: dialog.submit(False)).props(
+                                "color=amber-7"
+                            )
+                            # 选择加载：覆盖当前界面数据
+                            ui.button("加载自动保存内容", on_click=lambda: dialog.submit(True)).props("color=primary")
+
+                    result = await dialog
+                    if result:
+                        loads_requirements(autosave_json_data, False)
+                        ui.notify("已恢复自动保存的内容", type="positive")
+                    else:
+                        # 用户选择不加载，此时不需要做任何事，因为页面初始已经加载了旧数据
+                        # 但为了逻辑闭环，也可以弹个提示
+                        ui.notify("保留当前文件内容", type="info")
+
+            except Exception as e:
+                logger.error(f"检查自动保存逻辑失败: {e}")
+        # [关键新增] 无论用户选了"是"还是"否"，甚至如果没有进入if判断（没弹窗），
+        # 只要检查流程结束，就允许后续的自动保存了
+        app.storage.client["allow_autosave"] = True
+
+    # --- 页面初始化逻辑开始 ---
     header = ui.header(elevated=True).classes("flex justify-between items-center bg-blue-500 h-12 px-4")
     # [新增] 定义自动保存文件的路径
     autosave_path = ""
     if project_name:  # 如果 URL 里有项目名
         autosave_path = os.path.join(REQ_DIR, f"temp/{current_user}/{project_name}_AUTOSAVE.json")
-    # 如果跳转传入了json文件路径，则解析这个路径并借此生成界面
+    # 如果跳转传入了json文件路径，则解析这个路径并借此生成界面，优先级高于仅传项目名，认为本次跳转目标清晰明确
     if type == "requirement" and os.path.exists(json_path):
+        json_data = {}
         try:
             with open(json_path, "r", encoding="utf-8") as f:
-                # 使用 json.load() 读取文件内容并解析
                 json_data = json.load(f)
-                # 将json_data数据更新到客户端储存里，调用requirement_input_frame()显示需求确认项
-                loads_requirements(json_data, False)
+
+            # 1. 【关键】先无条件加载当前指定的文件，保证页面能显示出来
+            loads_requirements(json_data, False)
+
+            # 2. 【关键】使用 timer(0) 将检查逻辑推迟到客户端连接建立之后
+            # 这样就不会阻塞页面初始化响应
+            # 注意：这里我们不再需要在其他地方设置 allow_autosave = True，
+            # 因为 check_autosave_after_load 函数最后会负责开启它。
+            ui.timer(0.1, lambda: check_autosave_after_load(json_data["project_name"], json_data), once=True)
+
         except json.JSONDecodeError:
             logger.error(f"错误：文件 '{json_path}' 不是有效的 JSON 格式。", exc_info=True)
         except Exception:
@@ -3646,13 +3714,17 @@ async def requirement_page(type="", json_path="", project_name=""):
             app.storage.client["project_name"] = project_name
             app.storage.client["target_project_name"] = project_name
             new_requirement()
-    # 如果跳转传入的仅为项目名，则意味着服务器没有改项目配置文件，新建项目
+        # [关键新增] 这种情况没有弹窗，直接加载完就可以开启保存了
+        app.storage.client["allow_autosave"] = True
+    # 如果跳转传入的仅为项目名，且不存在自动保存需求文件，则意味着服务器没有改项目配置文件，新建项目
     elif type == "requirement" and project_name:
         # 设置项目型号
         app.storage.client["project_name"] = project_name
         app.storage.client["target_project_name"] = project_name
         # 客户端储存里数据初始化，调用requirement_input_frame()显示需求确认项
         new_requirement()
+        # [关键新增] 新建项目也可以直接开启保存
+        app.storage.client["allow_autosave"] = True
     # 如果跳转传入了json文件路径，则解析这个路径并借此生成界面
     elif type in ["overview", "temp_overview"] and os.path.exists(json_path):
         temp_bool = False
@@ -3693,11 +3765,13 @@ async def requirement_page(type="", json_path="", project_name=""):
         # loads_overviews()
     else:
         new_requirement()
+        # [关键新增] 新建项目也可以直接开启保存
+        app.storage.client["allow_autosave"] = True
 
     # [新增] 每 10 秒调用一次复用的保存函数，模式为 autosave
     # 只有当 entry_status 为 True (或者你希望任何时候都存) 时才保存，防止刚进来就覆盖
     if type == "requirement":
-        ui.timer(30.0, lambda: output_config_data(app.storage.client["config_data"], "autosave"), immediate=False)
+        ui.timer(10.0, lambda: output_config_data(app.storage.client["config_data"], "autosave"), immediate=False)
     # 添加全局键盘事件跟踪
     # ignore不设定默认导致键盘事件在'input', 'select', 'button', 'textarea'元素聚焦时被忽略
     ui.keyboard(on_key=handle_key)
