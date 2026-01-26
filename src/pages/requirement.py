@@ -2581,7 +2581,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                             )
                             # 更新目标项目概述角色统计结果，以便第一时间在项目总表能看到统计结果和状态
                             overview_role_update(target_project_name)
-                            overview_role_update(target_project_name)
+                            # overview_role_update(target_project_name)
 
                             logger.info(f"成功复制{target_project_name}的需求配置。")
                             ui.notify(

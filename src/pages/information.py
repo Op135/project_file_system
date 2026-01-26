@@ -19,6 +19,7 @@ from ..utils import (
     move_file_with_timestamp_pathlib,
     project_summary_update,
     requirement_version_tidy,
+    set_overview_active_state,
     set_project_custom_labels,
 )
 
@@ -50,65 +51,6 @@ def information_page():
     current_avatar_path = user_prefs.get("avatar", PRESET_AVATARS[0])  # 默认为第一个
     # 在 *显示* 前，应用缓存清除
     current_display_path = get_cache_busted_path(current_avatar_path)
-
-    async def set_overview_active_state(project_name, ver):
-        req_ver = int(float(ver))
-
-        # 按照需求概述资料里记录的需求最新版本，遍历处理服务器存储的该项目需求概述chip资料里的版本激活设置
-        # 按照现有chip资料里的最高版本激活设置，生成更高版本设置
-        # 如果服务器存储的概述资料里存在该项目对应数据
-        overview_data = copy.deepcopy(db_storage.get_item(f"{project_name}_over_data", {}))
-        # 遍历该项目概述内容，字典键为概述的各分类项，值为该项下chip字典
-        for chip_dic in overview_data.values():
-            # 遍历各个chip数据
-            for chip_data in chip_dic.values():
-                # 将chip数据里的选项激活设置字典的键，也就是版本整理成列表
-                over_chip_ver_li = [int(float(k)) for k in chip_data.get("select_activ_dic", {}).keys()]
-                # 如果列表非空
-                if over_chip_ver_li:
-                    # 获取选项激活设置里最大的版本值
-                    max_over_ver = max(over_chip_ver_li)
-
-                    # 适用于正常项目迭代，无论是原项目升版本疑惑其它项目衍生过来升版本，
-                    # 概述内容不会复制，需求版本值肯定大于激活设置的最大版本值
-                    # 由指定版本衍生到另外一个新项目，需求版本2.0，概述复制了参照项目的指定版本激活设置，并先记录为目标项目1.0版本概述，需求版本值肯定大于激活设置的最大版本值
-                    if req_ver > max_over_ver:
-                        # 获取激活设置最大版本值对应的布尔设置值
-                        activ_max_bool = chip_data["select_activ_dic"][f"{max_over_ver}.0"]
-                        # 从现有激活设置最大版本值+1到当前需求版本值开始生成键值对
-                        for key in range(max_over_ver + 1, req_ver + 1):
-                            # 新版本值均设置为激活设置最大值一样的布尔值
-                            # chip_data["select_activ_dic"][f"{key}.0"] = activ_max_bool
-
-                            # 新版本值均设置为None，为第三状态值，待工程师处理
-                            # chip_data["select_activ_dic"][f"{key}.0"] = None
-
-                            # 如果最大版本值为True，则新版本都设置为None
-                            if activ_max_bool:
-                                chip_data["select_activ_dic"][f"{key}.0"] = None
-                            # 如果最大版本值为False或者None，则新版本都设置为False
-                            else:
-                                chip_data["select_activ_dic"][f"{key}.0"] = False
-                    # 衍生项目且复制了2.0及以上版本的概述内容
-                    # 最高版本的激活状态要改成None，让其黄色显示
-                    else:
-                        ui.notify(
-                            f"出现需求版本{req_ver}不大于概述激活记录最高版本{max_over_ver}的情况。",
-                            type="warning",
-                            position="bottom",
-                            timeout=3000,
-                            progress=True,
-                            close_button="✖",
-                        )
-
-                    if chip_data["select_activ_dic"][f"{req_ver}.0"] is None:
-                        # 将这个存在未手动选择激活状态的chip的相关状态配置成特殊显示
-                        # 设置为None，这个chip的内容在项目总表展示时才会表明待选择处理
-                        chip_data["enabled"] = None
-                        chip_data["icon"] = "question_mark"
-                        chip_data["bg_color"] = "bg-amber-5"
-        if overview_data:
-            await db_storage.set_item(f"{project_name}_over_data", overview_data)
 
     def set_review_revise(p_name, v):
         app.storage.general["wait_review"][p_name][v]["state"] = "待修改"
