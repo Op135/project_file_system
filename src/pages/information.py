@@ -59,7 +59,8 @@ def information_page():
         app.storage.general["wait_review"][p_name][v]["state"] = "已审"
         # 将项目需求的最高版本号更新记录到服务器级储存里，供后续使用
         app.storage.general["project_req_max_ver"][p_name] = v
-        # 需求评审前，如果是衍生为新项目，概述已经复制，但待到需求评审通过了，才更新概述chip激活状态
+        # 需求评审前，如果是衍生为新项目，概述已经复制，需求升级不会复制概述；
+        # 待到需求评审通过时，统一生成更高版本的激活状态记录
         await set_overview_active_state(p_name, v)
         # 删除评审时生成的临时概述整理文件
         delete_file(f"{OVER_DIR}/{p_name}_概述整理_temp.json")

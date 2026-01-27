@@ -594,9 +594,10 @@ def project_summary_update():
 
 async def set_overview_active_state(project_name: str, ver: str) -> None:
     """
-    1. 按照需求概述资料里记录的需求最新版本，遍历处理服务器存储的该项目需求概述chip资料里的版本激活设置。
-    2. 按照现有chip资料里的最高版本激活设置，生成更高版本设置。
-    3. 如果服务器存储的概述资料里存在该项目对应数据。
+    1. 适用于在项目概述内容复制了旧版本的记录后，统一处理新版本的激活状态记录。
+    2. 查找传入项目project_name的概述资料，遍历各chip的最高版本激活设置。
+    3. 生成从最高版本+1到传入版本的激活状态记录（传入版本必须>该项目找到的最高版本chip记录）。
+    4. 最高版本为True或None的，生成为None的更高版本记录，其它False的，生成为False的更高版本记录。
     """
     req_ver = int(float(ver))
     overview_data = copy.deepcopy(db_storage.get_item(f"{project_name}_over_data", {}))
@@ -611,7 +612,7 @@ async def set_overview_active_state(project_name: str, ver: str) -> None:
                 # 获取选项激活设置里最大的版本值
                 max_over_ver = max(over_chip_ver_li)
 
-                # 适用于正常项目迭代，无论是原项目升版本疑惑其它项目衍生过来升版本，
+                # 适用于正常项目迭代，无论是原项目升版本异或其它项目衍生过来升版本，
                 # 概述内容不会复制，需求版本值肯定大于激活设置的最大版本值
                 # 由指定版本衍生到另外一个新项目，需求版本2.0，概述复制了参照项目的指定版本激活设置，并先记录为目标项目1.0版本概述，需求版本值肯定大于激活设置的最大版本值
                 if req_ver > max_over_ver:
@@ -626,7 +627,7 @@ async def set_overview_active_state(project_name: str, ver: str) -> None:
                         # chip_data["select_activ_dic"][f"{key}.0"] = None
 
                         # 如果最大版本值为True，则新版本都设置为None
-                        if activ_max_bool:
+                        if activ_max_bool or activ_max_bool is None:
                             chip_data["select_activ_dic"][f"{key}.0"] = None
                         # 如果最大版本值为False或者None，则新版本都设置为False
                         else:
@@ -635,7 +636,7 @@ async def set_overview_active_state(project_name: str, ver: str) -> None:
                 # 最高版本的激活状态要改成None，让其黄色显示
                 else:
                     ui.notify(
-                        f"出现需求版本{req_ver}不大于概述激活记录最高版本{max_over_ver}的情况。",
+                        f"传入的需求版本{req_ver}小于{project_name}概述激活记录最高版本{max_over_ver}，不做处理。",
                         type="warning",
                         position="bottom",
                         timeout=3000,

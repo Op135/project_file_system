@@ -2273,13 +2273,15 @@ class InteractiveButton:
         # 刷新概述负责人
         overview_role_update(self.project)
 
-    async def handle_checkbox_change(self, e: ValueChangeEventArguments, ui_spinner, async_function: Callable):
+    async def handle_checkbox_change(self, e: ValueChangeEventArguments, ui_spinner, select_label, chip_id):
         try:
             # 步骤 1: 立即显示 Spinner
             ui_spinner.set_visibility(True)
 
             # 步骤 2: 执行异步函数 并等待它完成
-            await async_function()
+            await db_storage.set_deep_item(
+                [f"{self.project}_over_data", self.label, chip_id, "select_activ_dic", select_label], e.value
+            )
 
         except Exception as ex:
             # (可选) 处理错误
@@ -2309,19 +2311,22 @@ class InteractiveButton:
             ui_spinner = ui.spinner(type="hourglass", size="md", color="amber-8", thickness=8.0)
             ui_spinner.set_visibility(False)
             with ui.grid(columns=6).classes("w-full gap-0"):
+                max_ver = f"{str(max([int(float(v)) for v in OLD_CHIP_SELECT_DIC.keys()]))}.0"
                 for select_label, val in OLD_CHIP_SELECT_DIC.items():
-                    ui.checkbox(
+                    select_box = ui.checkbox(
                         text=select_label,
                         value=val,
                         # 激活状态的变化，仅影响旧字典范围，并发其它用户的设置也会生效，可接受，反正最终关闭弹窗会看到大家并发处理的结果
                         on_change=lambda e, sl=select_label: self.handle_checkbox_change(
                             e,
                             ui_spinner,
-                            lambda: db_storage.set_deep_item(
-                                [f"{self.project}_over_data", self.label, chip_id, "select_activ_dic", sl], e.value
-                            ),
+                            sl,
+                            chip_id,
                         ),
                     )
+                    # 如果不是最高版本，则禁用该选项，防止用户修改旧版本激活状态
+                    if select_label != max_ver:
+                        select_box.disable()
             with ui.row().classes("w-full justify-end items-center") as row:
                 ui_spinner.move(row, 1)
                 ui.label("注意以上改动是即时生效的").classes("text-lg font-bold")
