@@ -2273,15 +2273,30 @@ class InteractiveButton:
         # 刷新概述负责人
         overview_role_update(self.project)
 
-    async def handle_checkbox_change(self, e: ValueChangeEventArguments, ui_spinner, select_label, chip_id):
+    def cancel_checkbox_change(self, chip_id):
+        # 移除当前用户的编辑标记
+        app.storage.general["over_change_broadcast"][self.project][chip_id]["editor"].remove(
+            app.storage.user.get("current_user", "匿名用户")
+        )
+        # 如果没有用户在编辑该chip，删除该chip的编辑记录
+        if not app.storage.general["over_change_broadcast"][self.project][chip_id]["editor"]:
+            del app.storage.general["over_change_broadcast"][self.project][chip_id]
+
+    async def handle_checkbox_change(self, ui_spinner, chip_id, chip_text):
         try:
-            # 步骤 1: 立即显示 Spinner
+            # 立即显示 Spinner
             ui_spinner.set_visibility(True)
 
-            # 步骤 2: 执行异步函数 并等待它完成
-            await db_storage.set_deep_item(
-                [f"{self.project}_over_data", self.label, chip_id, "select_activ_dic", select_label], e.value
+            # 备份旧的激活状态字典,用于对比
+            OLD_CHIP_SELECT_DIC = copy.deepcopy(
+                db_storage.get_deep_item([f"{self.project}_over_data", self.label, chip_id, "select_activ_dic"], {})
             )
+            # 执行异步函数 并等待它完成
+            await db_storage.set_deep_item(
+                [f"{self.project}_over_data", self.label, chip_id, "select_activ_dic"],
+                app.storage.general["over_change_broadcast"][self.project][chip_id]["select_activ_dic"],
+            )
+            await self._update_chip_creator(chip_id, OLD_CHIP_SELECT_DIC, chip_text)
 
         except Exception as ex:
             # (可选) 处理错误
@@ -2296,7 +2311,14 @@ class InteractiveButton:
             )
 
         finally:
-            # 步骤 3: 无论成功还是失败，都隐藏 Spinner
+            # 移除当前用户的编辑标记
+            app.storage.general["over_change_broadcast"][self.project][chip_id]["editor"].remove(
+                app.storage.user.get("current_user", "匿名用户")
+            )
+            # 如果没有用户在编辑该chip，删除该chip的编辑记录
+            if not app.storage.general["over_change_broadcast"][self.project][chip_id]["editor"]:
+                del app.storage.general["over_change_broadcast"][self.project][chip_id]
+            # 无论成功还是失败，都隐藏 Spinner
             ui_spinner.set_visibility(False)
 
     # 创建用于让用户选择chip激活范围的弹窗
@@ -2305,36 +2327,51 @@ class InteractiveButton:
         with self.activ_dialog, ui.card().classes("w-1/2"):
             ui.label("选择概述生效的需求版本").classes("text-lg font-bold")
             # 获取当前chip激活状态字典
-            OLD_CHIP_SELECT_DIC: Final[dict] = copy.deepcopy(
-                db_storage.get_deep_item([f"{self.project}_over_data", self.label, chip_id, "select_activ_dic"], {})
-            )
+            app.storage.general["over_change_broadcast"].setdefault(self.project, {})
+            app.storage.general["over_change_broadcast"][self.project].setdefault(chip_id, {})
+            if app.storage.general["over_change_broadcast"][self.project][chip_id]:
+                app.storage.general["over_change_broadcast"][self.project][chip_id]["editor"].append(
+                    app.storage.user.get("current_user", "匿名用户")
+                )
+            else:
+                app.storage.general["over_change_broadcast"][self.project][chip_id] = {
+                    "editor": [app.storage.user.get("current_user", "匿名用户")],
+                    "select_activ_dic": copy.deepcopy(
+                        db_storage.get_deep_item(
+                            [f"{self.project}_over_data", self.label, chip_id, "select_activ_dic"], {}
+                        )
+                    ),
+                }
+
             ui_spinner = ui.spinner(type="hourglass", size="md", color="amber-8", thickness=8.0)
             ui_spinner.set_visibility(False)
             with ui.grid(columns=6).classes("w-full gap-0"):
-                max_ver = f"{str(max([int(float(v)) for v in OLD_CHIP_SELECT_DIC.keys()]))}.0"
-                for select_label, val in OLD_CHIP_SELECT_DIC.items():
+                max_ver = f"{str(max([int(float(v)) for v in app.storage.general['over_change_broadcast'][self.project][chip_id]['select_activ_dic'].keys()]))}.0"
+                for select_label, val in app.storage.general["over_change_broadcast"][self.project][chip_id][
+                    "select_activ_dic"
+                ].items():
                     select_box = ui.checkbox(
                         text=select_label,
                         value=val,
-                        # 激活状态的变化，仅影响旧字典范围，并发其它用户的设置也会生效，可接受，反正最终关闭弹窗会看到大家并发处理的结果
-                        on_change=lambda e, sl=select_label: self.handle_checkbox_change(
-                            e,
-                            ui_spinner,
-                            sl,
-                            chip_id,
-                        ),
+                    )
+                    select_box.bind_value(
+                        app.storage.general["over_change_broadcast"][self.project][chip_id]["select_activ_dic"],
+                        select_label,
                     )
                     # 如果不是最高版本，则禁用该选项，防止用户修改旧版本激活状态
                     if select_label != max_ver:
                         select_box.disable()
             with ui.row().classes("w-full justify-end items-center") as row:
                 ui_spinner.move(row, 1)
-                ui.label("注意以上改动是即时生效的").classes("text-lg font-bold")
+                # ui.label("注意以上改动是即时生效的").classes("text-lg font-bold")
                 # 关闭时，会以重新检测到的最高版本激活状态来更新chip相关参数，且是并发综合处理结果
                 # 甚至多了新的版本，但chip最终都以最高版本激活状态来正确显示
-                ui.button(
-                    "关闭", on_click=lambda: self._update_chip_creator(chip_id, OLD_CHIP_SELECT_DIC, chip_text)
-                ).on("click", lambda: self.activ_dialog.close())
+                ui.button("确定", on_click=lambda: self.handle_checkbox_change(ui_spinner, chip_id, chip_text)).on(
+                    "click", lambda: self.activ_dialog.close()
+                )
+                ui.button("关闭", on_click=lambda: self.cancel_checkbox_change(chip_id)).on(
+                    "click", lambda: self.activ_dialog.close()
+                )
 
         self.activ_dialog.open()
 
