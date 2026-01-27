@@ -2216,27 +2216,6 @@ class InteractiveButton:
 
     # 以当前最新版本用户设置的激活状态，更新chip资料相应参数，如icon、enabled、bg_color等等
     async def _update_chip_creator(self, chip_id, OLD_CHIP_SELECT_DIC, chip_text):
-        # 获取该项目最高版本
-        req_max_ver = app.storage.general["project_req_max_ver"][self.project]
-        chip_state = db_storage.get_deep_item(
-            [f"{self.project}_over_data", self.label, chip_id, "select_activ_dic", req_max_ver]
-        )
-        # 如果最高版本激活状态为True
-        if chip_state:
-            await self._update_chip_active_parameter(chip_id, chip_text)
-        # 防止chip状态None（null）被当成False，当用户在弹窗选择激活状态时不做选择动作，保持原有null状态chip被处理成False显示效果
-        elif chip_state is None:
-            # 该情况意味着用户没有修改当前chip最新版本的null状态，看了一下而已
-            # 只要跳过这个情况不做任何修改即可
-            pass
-            # 冗余设计，复用注意检查与整体刷新处设置是否一致
-            # 修改这里要检查utils和information两个模块是否跟着改
-            # app.storage.general["overview_data"][self.project][self.label][chip_id]["enabled"] = None
-            # app.storage.general["overview_data"][self.project][self.label][chip_id]["icon"] = "question_mark"
-            # app.storage.general["overview_data"][self.project][self.label][chip_id]["bg_color"] = "bg-amber-5"
-        else:
-            await self._update_chip_block_parameter(chip_id)
-
         # 如果激活弹窗关闭时，检测到激活多选项发生了变化，则修改该chip的编辑人
         select_activ_dic = copy.deepcopy(
             db_storage.get_deep_item([f"{self.project}_over_data", self.label, chip_id, "select_activ_dic"], {})
@@ -2252,6 +2231,7 @@ class InteractiveButton:
                 close_button="✖",
             )
             self._select_set_activ_dialog(chip_id, chip_text)
+            return
         elif OLD_CHIP_SELECT_DIC != select_activ_dic:
             creator = app.storage.user.get("current_user", "匿名用户")
             await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "creator"], creator)
@@ -2283,6 +2263,19 @@ class InteractiveButton:
             del app.storage.general["over_change_broadcast"][self.project][chip_id]
 
     async def handle_checkbox_change(self, ui_spinner, chip_id, chip_text):
+        if app.storage.user.get("current_user", "匿名用户") not in app.storage.general["over_change_broadcast"][
+            self.project
+        ].get(chip_id, {}).get("editor", []):
+            ui.notify(
+                "需求刚刚升级了，各项概述的激活配置需要重新确定！",
+                type="warning",
+                position="bottom",
+                timeout=3000,
+                progress=True,
+                close_button="✖",
+            )
+            self._select_set_activ_dialog(chip_id, chip_text)
+            return
         try:
             # 立即显示 Spinner
             ui_spinner.set_visibility(True)
@@ -2291,12 +2284,38 @@ class InteractiveButton:
             OLD_CHIP_SELECT_DIC = copy.deepcopy(
                 db_storage.get_deep_item([f"{self.project}_over_data", self.label, chip_id, "select_activ_dic"], {})
             )
-            # 执行异步函数 并等待它完成
-            await db_storage.set_deep_item(
-                [f"{self.project}_over_data", self.label, chip_id, "select_activ_dic"],
-                app.storage.general["over_change_broadcast"][self.project][chip_id]["select_activ_dic"],
-            )
-            await self._update_chip_creator(chip_id, OLD_CHIP_SELECT_DIC, chip_text)
+            if (
+                app.storage.general["over_change_broadcast"][self.project][chip_id]["select_activ_dic"]
+                != OLD_CHIP_SELECT_DIC
+            ):
+                # 执行异步函数 并等待它完成
+                await db_storage.set_deep_item(
+                    [f"{self.project}_over_data", self.label, chip_id, "select_activ_dic"],
+                    app.storage.general["over_change_broadcast"][self.project][chip_id]["select_activ_dic"],
+                )
+                # 获取该项目最高版本
+                req_max_ver = app.storage.general["project_req_max_ver"][self.project]
+                chip_state = db_storage.get_deep_item(
+                    [f"{self.project}_over_data", self.label, chip_id, "select_activ_dic", req_max_ver]
+                )
+                # 如果最高版本激活状态为True
+                if chip_state:
+                    await self._update_chip_active_parameter(chip_id, chip_text)
+                # 防止chip状态None（null）被当成False，当用户在弹窗选择激活状态时不做选择动作，保持原有null状态chip被处理成False显示效果
+                elif chip_state is None:
+                    # 该情况意味着用户没有修改当前chip最新版本的null状态，看了一下而已
+                    # 只要跳过这个情况不做任何修改即可
+                    pass
+                    # 冗余设计，复用注意检查与整体刷新处设置是否一致
+                    # 修改这里要检查utils和information两个模块是否跟着改
+                    # app.storage.general["overview_data"][self.project][self.label][chip_id]["enabled"] = None
+                    # app.storage.general["overview_data"][self.project][self.label][chip_id]["icon"] = "question_mark"
+                    # app.storage.general["overview_data"][self.project][self.label][chip_id]["bg_color"] = "bg-amber-5"
+                else:
+                    await self._update_chip_block_parameter(chip_id)
+
+                # 更新chip的编辑人和编辑时间记录
+                await self._update_chip_creator(chip_id, OLD_CHIP_SELECT_DIC, chip_text)
 
         except Exception as ex:
             # (可选) 处理错误
@@ -2311,13 +2330,16 @@ class InteractiveButton:
             )
 
         finally:
-            # 移除当前用户的编辑标记
-            app.storage.general["over_change_broadcast"][self.project][chip_id]["editor"].remove(
-                app.storage.user.get("current_user", "匿名用户")
-            )
+            try:
+                # 移除当前用户的编辑标记
+                app.storage.general["over_change_broadcast"][self.project].get(chip_id, {}).get("editor", []).remove(
+                    app.storage.user.get("current_user", "匿名用户")
+                )
+            except ValueError:
+                pass  # 找不到就什么都不做
             # 如果没有用户在编辑该chip，删除该chip的编辑记录
-            if not app.storage.general["over_change_broadcast"][self.project][chip_id]["editor"]:
-                del app.storage.general["over_change_broadcast"][self.project][chip_id]
+            if not app.storage.general["over_change_broadcast"][self.project].get(chip_id, {}).get("editor", []):
+                app.storage.general["over_change_broadcast"][self.project].pop(chip_id, None)  # 如果无此key则不报错
             # 无论成功还是失败，都隐藏 Spinner
             ui_spinner.set_visibility(False)
 
@@ -2327,12 +2349,22 @@ class InteractiveButton:
         with self.activ_dialog, ui.card().classes("w-1/2"):
             ui.label("选择概述生效的需求版本").classes("text-lg font-bold")
             # 获取当前chip激活状态字典
+            select_activ_dic = copy.deepcopy(
+                db_storage.get_deep_item([f"{self.project}_over_data", self.label, chip_id, "select_activ_dic"], {})
+            )
+            # 在全局存储中为该chip创建共享实时编辑数据，用以关联多选项框的状态
             app.storage.general["over_change_broadcast"].setdefault(self.project, {})
             app.storage.general["over_change_broadcast"][self.project].setdefault(chip_id, {})
-            if app.storage.general["over_change_broadcast"][self.project][chip_id]:
+
+            # 如果该chip已经存在编辑记录，且选项数量没变，则继续使用该用户的编辑状态，只是追加当前用户到编辑列表中
+            if app.storage.general["over_change_broadcast"][self.project][chip_id] and len(
+                app.storage.general["over_change_broadcast"][self.project][chip_id]["select_activ_dic"]
+            ) == len(select_activ_dic):
                 app.storage.general["over_change_broadcast"][self.project][chip_id]["editor"].append(
                     app.storage.user.get("current_user", "匿名用户")
                 )
+            # 如果该chip没有编辑记录，或选项数量变了，则重新创建该chip的编辑记录，初始化当前用户为唯一编辑者
+            # 其它用户不存在清单里，后面提交时拦截提示
             else:
                 app.storage.general["over_change_broadcast"][self.project][chip_id] = {
                     "editor": [app.storage.user.get("current_user", "匿名用户")],
@@ -2359,17 +2391,17 @@ class InteractiveButton:
                         select_label,
                     )
                     # 如果不是最高版本，则禁用该选项，防止用户修改旧版本激活状态
-                    if select_label != max_ver:
-                        select_box.disable()
+                    # if select_label != max_ver:
+                    #     select_box.disable()
             with ui.row().classes("w-full justify-end items-center") as row:
                 ui_spinner.move(row, 1)
                 # ui.label("注意以上改动是即时生效的").classes("text-lg font-bold")
                 # 关闭时，会以重新检测到的最高版本激活状态来更新chip相关参数，且是并发综合处理结果
                 # 甚至多了新的版本，但chip最终都以最高版本激活状态来正确显示
-                ui.button("确定", on_click=lambda: self.handle_checkbox_change(ui_spinner, chip_id, chip_text)).on(
-                    "click", lambda: self.activ_dialog.close()
-                )
-                ui.button("关闭", on_click=lambda: self.cancel_checkbox_change(chip_id)).on(
+                ui.button(
+                    "确定", color="green", on_click=lambda: self.handle_checkbox_change(ui_spinner, chip_id, chip_text)
+                ).on("click", lambda: self.activ_dialog.close())
+                ui.button("取消", on_click=lambda: self.cancel_checkbox_change(chip_id)).on(
                     "click", lambda: self.activ_dialog.close()
                 )
 
