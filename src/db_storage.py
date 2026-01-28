@@ -223,7 +223,7 @@ def get_deep_item(path: List[str], default: Any = None) -> Any:
     return current_level_data if current_level_data is not None else default
 
 
-async def set_deep_item(path: List[str], value: Any):
+async def set_deep_item(path: List[str], value: Any) -> None:
     """
     异步设置一个任意深度的值（原子 RMW 借用set_item实现深拷贝），并持久化到数据库。
     如果路径上的字典不存在，会自动创建它们。

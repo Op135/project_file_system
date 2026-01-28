@@ -2215,13 +2215,13 @@ class InteractiveButton:
     # <-----------------------------------------------------------------
 
     # 以当前最新版本用户设置的激活状态，更新chip资料相应参数，如icon、enabled、bg_color等等
-    async def _update_chip_creator(self, chip_id, OLD_CHIP_SELECT_DIC, chip_text):
+    def _check_version_updated(self, chip_id, new_select_activ_dic, chip_text) -> bool:
         # 如果激活弹窗关闭时，检测到激活多选项发生了变化，则修改该chip的编辑人
         select_activ_dic = copy.deepcopy(
             db_storage.get_deep_item([f"{self.project}_over_data", self.label, chip_id, "select_activ_dic"], {})
         )
         # 激活状态发生变化，记录编辑人和编辑时间记录
-        if len(OLD_CHIP_SELECT_DIC) != len(select_activ_dic):
+        if len(new_select_activ_dic) != len(select_activ_dic):
             ui.notify(
                 "需求刚刚升级了，各项概述的激活配置需要重新确定！",
                 type="warning",
@@ -2231,27 +2231,8 @@ class InteractiveButton:
                 close_button="✖",
             )
             self._select_set_activ_dialog(chip_id, chip_text)
-            return
-        elif OLD_CHIP_SELECT_DIC != select_activ_dic:
-            creator = app.storage.user.get("current_user", "匿名用户")
-            await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "creator"], creator)
-            await db_storage.set_deep_item(
-                [
-                    f"{self.project}_over_data",
-                    self.label,
-                    chip_id,
-                    "timestamp",
-                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                ],
-                {
-                    "creator": creator,
-                    "select_activ_dic": select_activ_dic,
-                },
-            )
-        # 刷新chip容器内容
-        await self._refresh_chip_container()
-        # 刷新概述负责人
-        overview_role_update(self.project)
+            return True
+        return False
 
     def cancel_checkbox_change(self, chip_id):
         # 移除当前用户的编辑标记
@@ -2263,18 +2244,13 @@ class InteractiveButton:
             del app.storage.general["over_change_broadcast"][self.project][chip_id]
 
     async def handle_checkbox_change(self, ui_spinner, chip_id, chip_text):
-        if app.storage.user.get("current_user", "匿名用户") not in app.storage.general["over_change_broadcast"][
-            self.project
-        ].get(chip_id, {}).get("editor", []):
-            ui.notify(
-                "需求刚刚升级了，各项概述的激活配置需要重新确定！",
-                type="warning",
-                position="bottom",
-                timeout=3000,
-                progress=True,
-                close_button="✖",
-            )
-            self._select_set_activ_dialog(chip_id, chip_text)
+        new_select_activ_dic = copy.deepcopy(
+            app.storage.general["over_change_broadcast"][self.project][chip_id]["select_activ_dic"]
+        )
+        # 检查版本是否更新导致的激活长度变化，弹窗提醒用户重新确认
+        is_version_updated = self._check_version_updated(chip_id, new_select_activ_dic, chip_text)
+        # 如果版本更新，弹窗已打开选择激活范围，则直接返回不做后续处理
+        if is_version_updated:
             return
         try:
             # 立即显示 Spinner
@@ -2284,17 +2260,16 @@ class InteractiveButton:
             OLD_CHIP_SELECT_DIC = copy.deepcopy(
                 db_storage.get_deep_item([f"{self.project}_over_data", self.label, chip_id, "select_activ_dic"], {})
             )
-            if (
-                app.storage.general["over_change_broadcast"][self.project][chip_id]["select_activ_dic"]
-                != OLD_CHIP_SELECT_DIC
-            ):
+
+            # 只有当激活状态字典发生变化时，才进行后续处理
+            if new_select_activ_dic != OLD_CHIP_SELECT_DIC:
                 # 执行异步函数 并等待它完成
                 await db_storage.set_deep_item(
                     [f"{self.project}_over_data", self.label, chip_id, "select_activ_dic"],
-                    app.storage.general["over_change_broadcast"][self.project][chip_id]["select_activ_dic"],
+                    new_select_activ_dic,
                 )
                 # 获取该项目最高版本
-                req_max_ver = app.storage.general["project_req_max_ver"][self.project]
+                req_max_ver = f"{str(max([int(float(v)) for v in new_select_activ_dic.keys()]))}.0"
                 chip_state = db_storage.get_deep_item(
                     [f"{self.project}_over_data", self.label, chip_id, "select_activ_dic", req_max_ver]
                 )
@@ -2314,8 +2289,30 @@ class InteractiveButton:
                 else:
                     await self._update_chip_block_parameter(chip_id)
 
-                # 更新chip的编辑人和编辑时间记录
-                await self._update_chip_creator(chip_id, OLD_CHIP_SELECT_DIC, chip_text)
+                # 记录最后修改人和修改时间
+                creator = app.storage.user.get("current_user", "匿名用户")
+                await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "creator"], creator)
+                await db_storage.set_deep_item(
+                    [
+                        f"{self.project}_over_data",
+                        self.label,
+                        chip_id,
+                        "timestamp",
+                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    ],
+                    {
+                        "creator": creator,
+                        "select_activ_dic": new_select_activ_dic,
+                    },
+                )
+
+                # 刷新chip容器内容
+                await self._refresh_chip_container()
+                # 刷新概述负责人
+                overview_role_update(self.project)
+
+                # 检查版本是否更新导致的激活长度变化，弹窗提醒用户重新确认
+                self._check_version_updated(chip_id, new_select_activ_dic, chip_text)
 
         except Exception as ex:
             # (可选) 处理错误
