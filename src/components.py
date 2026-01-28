@@ -2070,17 +2070,19 @@ class InteractiveButton:
         # 在用户打开了特定弹窗的情况下，不刷对应条目下的缩略图元素
         if not (self.chip_dialog.value or self.check_down_dialog.value or self.activ_dialog.value):
             # 获取当前UI上所有 chip 的ID
-            displayed_chip_ids = {child.props.get("data-chip-id") for child in self.chip_container}
+            displayed_chip_feature = {
+                (child.props.get("data-chip-id"), child.props.get("icon")) for child in self.chip_container
+            }
             # 获取共享存储中所有 chip 的ID
             # 用户打开开关，想看全部记录情况下
             if app.storage.client.get("record_switch"):
                 # 如果研发转产标记激活，则比较数据库与界面已显示chip数量异同时，
                 # 排除掉svn类且失活的chip，使得研发切换为转产时，所有人会刷新一下
                 if app.storage.general["conversion_refresh"].get(self.project):
-                    # 抽取所有非svn类型的chip，及 svn类但激活的chip
-                    stored_chip_ids = set(
+                    # 抽取所有非svn类型的chip，及 svn类但激活或None的chip
+                    stored_chip_feature = set(
                         [
-                            id
+                            (id, chip_dic["icon"])
                             for id, chip_dic in db_storage.get_deep_item(
                                 [f"{self.project}_over_data", self.label], {}
                             ).items()
@@ -2089,14 +2091,19 @@ class InteractiveButton:
                     )
                 else:
                     # 所有chip均显示
-                    stored_chip_ids = set(
-                        db_storage.get_deep_item([f"{self.project}_over_data", self.label], {}).keys()
+                    stored_chip_feature = set(
+                        [
+                            (id, chip_dic["icon"])
+                            for id, chip_dic in db_storage.get_deep_item(
+                                [f"{self.project}_over_data", self.label], {}
+                            ).items()
+                        ]
                     )
             # 关闭开关，只看激活chip记录情况下
             else:
-                stored_chip_ids = set(
+                stored_chip_feature = set(
                     [
-                        id
+                        (id, chip_dic["icon"])
                         for id, chip_dic in db_storage.get_deep_item(
                             [f"{self.project}_over_data", self.label], {}
                         ).items()
@@ -2105,7 +2112,7 @@ class InteractiveButton:
                 )
 
             # 只有当UI和存储中的ID集合不一致时，才重新渲染，以提高效率
-            if displayed_chip_ids != stored_chip_ids:
+            if displayed_chip_feature != stored_chip_feature:
                 # 刷新chip容器内容
                 await self._refresh_chip_container()
                 # 刷新角色负责用户数据
@@ -2256,20 +2263,24 @@ class InteractiveButton:
                     over_chip_ver_li = [int(float(k)) for k in chip_data.get("select_activ_dic", {}).keys()]
                     # 获取选项激活设置里最大的版本值
                     max_over_ver = max(over_chip_ver_li)
-                    # 将该chip数据的最高版本激活状态设置为None
-                    chip_data["select_activ_dic"][f"{max_over_ver}.0"] = None
-                    chip_data["enabled"] = None
-                    chip_data["icon"] = "question_mark"
-                    chip_data["bg_color"] = "bg-amber-5"
-                # 刷新chip容器内容
-                await self._refresh_chip_container()
+                    # 如果chip状态为True，将该chip数据的最高版本激活状态设置为None
+                    if chip_data["select_activ_dic"][f"{max_over_ver}.0"]:
+                        chip_data["select_activ_dic"][f"{max_over_ver}.0"] = None
+                        chip_data["enabled"] = None
+                        chip_data["icon"] = "question_mark"
+                        chip_data["bg_color"] = "bg-amber-5"
+
         if overview_data:
             await db_storage.set_item(f"{self.project}_over_data", overview_data)
+        # 更新数据后，chip的刷新机制检测到数据变化会自动刷新UI显示
 
     def _show_related_chip_select_dialog(self, chip_text):
         self.activ_dialog.clear()
-        with self.activ_dialog, ui.card().classes("w-full"):
-            ui.label(f"修改{chip_text}后，需选择影响的其它概述项：").classes("text-lg font-bold")
+        with self.activ_dialog, ui.card().classes("w-full").style("max-width: 800px;"):
+            ui.label(f"修改『{chip_text}』后，需选择影响的其它概述项：").classes("text-lg font-bold")
+            ui.label("选中的概述项，其内部所有激活的内容将变为待确认状态，相关人员会收到提醒。").classes(
+                "text-base text-brown font-bold -mt-4"
+            )
 
             with ui.grid(columns=3).classes("w-full gap-0"):
                 related_select_dic = {}
@@ -2289,7 +2300,7 @@ class InteractiveButton:
                     on_click=lambda: self._set_related_chip_state(False, related_select_dic),
                 ).on("click", lambda: self.activ_dialog.close())
                 ui.button(
-                    "全部受影响", color="amber", on_click=lambda: self._set_related_chip_state(True, related_select_dic)
+                    "全部受影响", color="blue", on_click=lambda: self._set_related_chip_state(True, related_select_dic)
                 ).on("click", lambda: self.activ_dialog.close())
 
         self.activ_dialog.open()
