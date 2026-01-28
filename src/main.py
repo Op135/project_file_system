@@ -153,6 +153,8 @@ app.storage.general.setdefault("temp_project_name", [])
 app.storage.general.setdefault("project_engineer", {})
 # 储存服务器层级 用于记录各项目的项目工程师负责人
 app.storage.general.setdefault("over_change_broadcast", {})
+# 储存服务器层级 用于扁平化记录概述项配置信息
+app.storage.general.setdefault("over_config_data_flat", {})
 
 
 @ui.page("/view/svn_pdf")

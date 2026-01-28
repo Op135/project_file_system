@@ -443,7 +443,11 @@ def updata_overview_config():
         with open(f"{BASE_DIR}/overview_config.json", "r", encoding="utf-8") as f:
             # 使用 json.load() 读取文件内容并解析
             app.storage.general["over_config_data"] = json.load(f)
-
+            # 扁平化概述项配置字典重新生成
+            for role, role_dic in app.storage.general["over_config_data"].items():
+                for group_name, group_dic in role_dic.items():
+                    for chip_button_name, chip_dic in group_dic.items():
+                        app.storage.general["over_config_data_flat"][chip_dic.get("label")] = chip_dic
             logger.info("成功更新概述项配置。")
             ui.notify(
                 "概述项配置更新成功!",

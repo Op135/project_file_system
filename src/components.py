@@ -623,6 +623,7 @@ class InteractiveButton:
         label: str,
         processing_type: str,
         permission: dict,
+        impact_list: list = [],
         upload_path: str = SUBMIT_FILES_DIR,
         state_path: dict = {},
         search_scope_regular: str = "",
@@ -644,6 +645,7 @@ class InteractiveButton:
         self.label = label
         self.project = project
         self.processing_type = processing_type
+        self.impact_list = impact_list
         self.upload_path = upload_path
         self.state_path = state_path
         self.search_scope_regular = search_scope_regular
@@ -2243,6 +2245,55 @@ class InteractiveButton:
         if not app.storage.general["over_change_broadcast"][self.project][chip_id]["editor"]:
             del app.storage.general["over_change_broadcast"][self.project][chip_id]
 
+    async def _set_related_chip_state(self, all_related_bool, related_select_dic):
+        overview_data = copy.deepcopy(db_storage.get_item(f"{self.project}_over_data", {}))
+        # 遍历该项目概述内容，字典键为概述的各分类项，值为该项下chip字典
+        for label, chip_dic in overview_data.items():
+            if label in related_select_dic and (related_select_dic[label] or all_related_bool):
+                # 遍历各个chip数据
+                for chip_id, chip_data in chip_dic.items():
+                    # 将chip数据里的选项激活设置字典的键，也就是版本整理成列表
+                    over_chip_ver_li = [int(float(k)) for k in chip_data.get("select_activ_dic", {}).keys()]
+                    # 获取选项激活设置里最大的版本值
+                    max_over_ver = max(over_chip_ver_li)
+                    # 将该chip数据的最高版本激活状态设置为None
+                    chip_data["select_activ_dic"][f"{max_over_ver}.0"] = None
+                    chip_data["enabled"] = None
+                    chip_data["icon"] = "question_mark"
+                    chip_data["bg_color"] = "bg-amber-5"
+                # 刷新chip容器内容
+                await self._refresh_chip_container()
+        if overview_data:
+            await db_storage.set_item(f"{self.project}_over_data", overview_data)
+
+    def _show_related_chip_select_dialog(self, chip_text):
+        self.activ_dialog.clear()
+        with self.activ_dialog, ui.card().classes("w-full"):
+            ui.label(f"修改{chip_text}后，需选择影响的其它概述项：").classes("text-lg font-bold")
+
+            with ui.grid(columns=3).classes("w-full gap-0"):
+                related_select_dic = {}
+                for related_label in self.impact_list:
+                    related_select_dic.update({related_label: False})
+                    select_box = ui.checkbox(
+                        text=app.storage.general["over_config_data_flat"]
+                        .get(related_label, {})
+                        .get("title", "未知标题"),
+                    )
+                    select_box.bind_value(related_select_dic, related_label)
+
+            with ui.row().classes("w-full justify-end items-center"):
+                ui.button(
+                    "勾选的受影响",
+                    color="green",
+                    on_click=lambda: self._set_related_chip_state(False, related_select_dic),
+                ).on("click", lambda: self.activ_dialog.close())
+                ui.button(
+                    "全部受影响", color="amber", on_click=lambda: self._set_related_chip_state(True, related_select_dic)
+                ).on("click", lambda: self.activ_dialog.close())
+
+        self.activ_dialog.open()
+
     async def handle_checkbox_change(self, ui_spinner, chip_id, chip_text):
         new_select_activ_dic = copy.deepcopy(
             app.storage.general["over_change_broadcast"][self.project][chip_id]["select_activ_dic"]
@@ -2306,6 +2357,21 @@ class InteractiveButton:
                     },
                 )
 
+                try:
+                    # 移除当前用户的编辑标记
+                    app.storage.general["over_change_broadcast"][self.project].get(chip_id, {}).get(
+                        "editor", []
+                    ).remove(app.storage.user.get("current_user", "匿名用户"))
+                except ValueError:
+                    pass  # 找不到就什么都不做
+                # 如果没有用户在编辑该chip，删除该chip的编辑记录
+                if not app.storage.general["over_change_broadcast"][self.project].get(chip_id, {}).get("editor", []):
+                    app.storage.general["over_change_broadcast"][self.project].pop(chip_id, None)  # 如果无此key则不报错
+                # 无论成功还是失败，都隐藏 Spinner
+                ui_spinner.set_visibility(False)
+
+                self._show_related_chip_select_dialog(chip_text)
+
                 # 刷新chip容器内容
                 await self._refresh_chip_container()
                 # 刷新概述负责人
@@ -2325,20 +2391,6 @@ class InteractiveButton:
                 progress=False,
                 close_button="✖",
             )
-
-        finally:
-            try:
-                # 移除当前用户的编辑标记
-                app.storage.general["over_change_broadcast"][self.project].get(chip_id, {}).get("editor", []).remove(
-                    app.storage.user.get("current_user", "匿名用户")
-                )
-            except ValueError:
-                pass  # 找不到就什么都不做
-            # 如果没有用户在编辑该chip，删除该chip的编辑记录
-            if not app.storage.general["over_change_broadcast"][self.project].get(chip_id, {}).get("editor", []):
-                app.storage.general["over_change_broadcast"][self.project].pop(chip_id, None)  # 如果无此key则不报错
-            # 无论成功还是失败，都隐藏 Spinner
-            ui_spinner.set_visibility(False)
 
     # 创建用于让用户选择chip激活范围的弹窗
     def _select_set_activ_dialog(self, chip_id, chip_text=""):
