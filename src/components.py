@@ -1548,7 +1548,7 @@ class InteractiveButton:
         # 隐藏漏斗
         ui_spinner.set_visibility(False)
         # 显示相关芯片选择对话框
-        self._show_related_chip_select_dialog(text)
+        self._show_related_chip_select_dialog(text, True, "add_chip")
 
     # 当用户点击“添加”按钮时，将SVN文件引用数据添加到共享存储中
     async def _add_svn_chip_data(self, ui_spinner):
@@ -1658,7 +1658,7 @@ class InteractiveButton:
         # 隐藏漏斗
         ui_spinner.set_visibility(False)
         # 显示相关芯片选择对话框
-        self._show_related_chip_select_dialog(text)
+        self._show_related_chip_select_dialog(text, True, "add_chip")
 
     # 当用户点击“添加”按钮时，将文本数据添加到共享存储中
     async def _add_text_chip_data(self, ui_spinner):
@@ -1739,7 +1739,7 @@ class InteractiveButton:
                 progress=True,
                 close_button="✖",
             )
-            self._show_related_chip_select_dialog(text)
+            self._show_related_chip_select_dialog(text, True, "add_chip")
 
     # 处理文件/图片上传事件
     async def _handle_file_upload(self, e):
@@ -1863,7 +1863,7 @@ class InteractiveButton:
                 close_button="✖",
             )
             # 显示相关芯片选择对话框
-            self._show_related_chip_select_dialog(original_filename)
+            self._show_related_chip_select_dialog(original_filename, True, "add_chip")
 
     # 显示服务器已有文件
     async def _show_have_file(self, original_filename, file_type, url_path):
@@ -2013,7 +2013,7 @@ class InteractiveButton:
                 close_button="✖",
             )
         # 显示相关芯片选择对话框
-        self._show_related_chip_select_dialog(text)
+        self._show_related_chip_select_dialog(text, True, "add_chip")
 
     # ----------------------------------------------------------------->
 
@@ -2263,29 +2263,88 @@ class InteractiveButton:
         if not app.storage.general["over_change_broadcast"][self.project][chip_id]["editor"]:
             del app.storage.general["over_change_broadcast"][self.project][chip_id]
 
-    async def _set_related_chip_state(self, all_related_bool, related_select_dic):
+    async def _set_related_chip_state(self, chip_text, chip_state, all_related_bool, related_select_dic, type):
         overview_data = copy.deepcopy(db_storage.get_item(f"{self.project}_over_data", {}))
         # 遍历该项目概述内容，字典键为概述的各分类项，值为该项下chip字典
-        for label, chip_dic in overview_data.items():
-            if label in related_select_dic and (related_select_dic[label] or all_related_bool):
+        for related_label, chip_dic in overview_data.items():
+            if related_label in related_select_dic and (related_select_dic[related_label] or all_related_bool):
                 # 遍历各个chip数据
-                for chip_id, chip_data in chip_dic.items():
+                for related_chip_id, chip_data in chip_dic.items():
                     # 将chip数据里的选项激活设置字典的键，也就是版本整理成列表
                     over_chip_ver_li = [int(float(k)) for k in chip_data.get("select_activ_dic", {}).keys()]
                     # 获取选项激活设置里最大的版本值
                     max_over_ver = max(over_chip_ver_li)
                     # 如果chip状态为True，将该chip数据的最高版本激活状态设置为None
+                    if related_label == "tec_type":
+                        pass
                     if chip_data["select_activ_dic"][f"{max_over_ver}.0"]:
                         chip_data["select_activ_dic"][f"{max_over_ver}.0"] = None
                         chip_data["enabled"] = None
                         chip_data["icon"] = "question_mark"
                         chip_data["bg_color"] = "bg-amber-5"
+                    if chip_data["select_activ_dic"][f"{max_over_ver}.0"] is not False:
+                        # 如果已经有处于打开状态的记录，则在记录里追加操作记录
+                        if db_storage.get_deep_item(
+                            [f"{self.project}_over_related_record", related_label, related_chip_id, "open"]
+                        ):
+                            # 获取已有的打开记录字典
+                            open_dic = copy.deepcopy(
+                                db_storage.get_deep_item(
+                                    [f"{self.project}_over_related_record", related_label, related_chip_id, "open"], {}
+                                )
+                            )
+                            # 在记录字典里追加本次操作记录
+                            open_dic["record"].update(
+                                {
+                                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"): {
+                                        "operate_user": app.storage.user.get("current_user", "匿名用户"),
+                                        "operate_type": type,
+                                        "operate_chip_content": chip_text,
+                                        "operate_chip_state": chip_state,
+                                    }
+                                },
+                            )
+                            # 将更新后的记录字典写回数据库
+                            await db_storage.set_deep_item(
+                                [f"{self.project}_over_related_record", related_label, related_chip_id, "open"],
+                                open_dic,
+                            )
+                        # 如果没有打开记录，则创建新的记录
+                        else:
+                            # 受影响chip的负责角色
+                            related_role = (
+                                app.storage.general.get("over_config_data_flat", {})
+                                .get(related_label, {})
+                                .get("role", "匿名用户")
+                            )
+                            await db_storage.set_deep_item(
+                                [f"{self.project}_over_related_record", related_label, related_chip_id, "open"],
+                                {
+                                    # 受影响chip打开记录的时间
+                                    "open_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                                    # 记录受影响chip的负责人
+                                    "open_related_user": app.storage.general.get("overview_role", {})
+                                    .get(self.project, {})
+                                    .get(related_role, {})
+                                    .get("latest_user", "匿名用户"),
+                                    "close_time": "",
+                                    "close_related_user": "",
+                                    "record": {
+                                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"): {
+                                            "operate_user": app.storage.user.get("current_user", "匿名用户"),
+                                            "operate_type": type,
+                                            "operate_chip_content": chip_text,
+                                            "operate_chip_state": chip_state,
+                                        }
+                                    },
+                                },
+                            )
 
         if overview_data:
             await db_storage.set_item(f"{self.project}_over_data", overview_data)
         # 更新数据后，chip的刷新机制检测到数据变化会自动刷新UI显示
 
-    def _show_related_chip_select_dialog(self, chip_text):
+    def _show_related_chip_select_dialog(self, chip_text, chip_state, type):
         self.activ_dialog.clear()
         with self.activ_dialog, ui.card().classes("w-full").style("max-width: 800px;"):
             ui.label("选择本次操作可能影响的其它概述项：").classes("text-lg font-bold")
@@ -2308,10 +2367,16 @@ class InteractiveButton:
                 ui.button(
                     "勾选的受影响",
                     color="green",
-                    on_click=lambda: self._set_related_chip_state(False, related_select_dic),
+                    on_click=lambda: self._set_related_chip_state(
+                        chip_text, chip_state, False, related_select_dic, type
+                    ),
                 ).on("click", lambda: self.activ_dialog.close())
                 ui.button(
-                    "全部受影响", color="blue", on_click=lambda: self._set_related_chip_state(True, related_select_dic)
+                    "全部受影响",
+                    color="blue",
+                    on_click=lambda: self._set_related_chip_state(
+                        chip_text, chip_state, True, related_select_dic, type
+                    ),
                 ).on("click", lambda: self.activ_dialog.close())
 
         self.activ_dialog.open()
@@ -2392,7 +2457,22 @@ class InteractiveButton:
                 # 无论成功还是失败，都隐藏 Spinner
                 ui_spinner.set_visibility(False)
 
-                self._show_related_chip_select_dialog(chip_text)
+                open_dic = copy.deepcopy(
+                    db_storage.get_deep_item([f"{self.project}_over_related_record", self.label, chip_id, "open"], {})
+                )
+                # 如果有打开的记录，则将其关闭，记录关闭时间和关闭人
+                if open_dic:
+                    # 更新关闭时间和关闭人
+                    open_dic["close_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    open_dic["close_related_user"] = creator
+                    # 删除旧的打开记录，改为以关闭时间为键存储
+                    await db_storage.del_deep_item([f"{self.project}_over_related_record", self.label, chip_id, "open"])
+                    await db_storage.set_deep_item(
+                        [f"{self.project}_over_related_record", self.label, chip_id, open_dic["close_time"]], open_dic
+                    )
+
+                # 显示相关芯片选择对话框
+                self._show_related_chip_select_dialog(chip_text, chip_state, "activ_change")
 
                 # 刷新chip容器内容
                 await self._refresh_chip_container()
@@ -2431,9 +2511,12 @@ class InteractiveButton:
             if app.storage.general["over_change_broadcast"][self.project][chip_id] and len(
                 app.storage.general["over_change_broadcast"][self.project][chip_id]["select_activ_dic"]
             ) == len(select_activ_dic):
-                app.storage.general["over_change_broadcast"][self.project][chip_id]["editor"].append(
-                    app.storage.user.get("current_user", "匿名用户")
-                )
+                editor_list = app.storage.general["over_change_broadcast"][self.project][chip_id]["editor"]
+                # 如果当前用户不在编辑列表里，则追加
+                editor_list.append(app.storage.user.get("current_user", "匿名用户"))
+                # 去重后写回编辑列表
+                app.storage.general["over_change_broadcast"][self.project][chip_id]["editor"] = list(set(editor_list))
+
             # 如果该chip没有编辑记录，或选项数量变了，则重新创建该chip的编辑记录，初始化当前用户为唯一编辑者
             # 其它用户不存在清单里，后面提交时拦截提示
             else:
@@ -2464,6 +2547,27 @@ class InteractiveButton:
                     # 如果不是最高版本，则禁用该选项，防止用户修改旧版本激活状态
                     # if select_label != max_ver:
                     #     select_box.disable()
+            open_dic = copy.deepcopy(
+                db_storage.get_deep_item([f"{self.project}_over_related_record", self.label, chip_id, "open"], {})
+            )
+            # 显示本次状态变化由哪些操作引起
+            if open_dic:
+                ui.label("本次状态变化由以下其它概述调整引起：").classes("text-base font-bold text-brown")
+                for time_key, record in open_dic.get("record", {}).items():
+                    if record.get("operate_type", "") == "add_chip":
+                        record_label = ui.label(
+                            f'[{time_key}]由用户"{record.get("operate_user", "匿名用户")}"添加了『"{record.get("operate_chip_content", "未知内容")}"』"'
+                        )
+                    elif record.get("operate_type", "") == "activ_change":
+                        record_label = ui.label(
+                            f'[{time_key}]由用户"{record.get("operate_user", "匿名用户")}"修改『"{record.get("operate_chip_content", "未知内容")}"』的状态为『"{record.get("operate_chip_state", "未知状态")}"』'
+                        )
+                    else:
+                        record_label = ui.label(
+                            f'[{time_key}]由用户"{record.get("operate_user", "匿名用户")}"操作了『"{record.get("operate_chip_content", "未知内容")}"』，操作类型未知'
+                        )
+                    record_label.classes("text-sm text-brown")
+
             with ui.row().classes("w-full justify-end items-center") as row:
                 ui_spinner.move(row, 1)
                 # ui.label("注意以上改动是即时生效的").classes("text-lg font-bold")
