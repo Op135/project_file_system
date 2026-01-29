@@ -1547,6 +1547,8 @@ class InteractiveButton:
                 )
         # 隐藏漏斗
         ui_spinner.set_visibility(False)
+        # 显示相关芯片选择对话框
+        self._show_related_chip_select_dialog(text)
 
     # 当用户点击“添加”按钮时，将SVN文件引用数据添加到共享存储中
     async def _add_svn_chip_data(self, ui_spinner):
@@ -1655,6 +1657,8 @@ class InteractiveButton:
 
         # 隐藏漏斗
         ui_spinner.set_visibility(False)
+        # 显示相关芯片选择对话框
+        self._show_related_chip_select_dialog(text)
 
     # 当用户点击“添加”按钮时，将文本数据添加到共享存储中
     async def _add_text_chip_data(self, ui_spinner):
@@ -1735,6 +1739,7 @@ class InteractiveButton:
                 progress=True,
                 close_button="✖",
             )
+            self._show_related_chip_select_dialog(text)
 
     # 处理文件/图片上传事件
     async def _handle_file_upload(self, e):
@@ -1812,7 +1817,7 @@ class InteractiveButton:
                     close_button="✖",
                 )
                 return
-            file_icon = ""
+            file_icon = "image"
             # 文件类型的icon与图片的设置不一样
             if self.processing_type == "file":
                 # 文件类型才将icon设置为引用小图，图片类不设置
@@ -1857,6 +1862,8 @@ class InteractiveButton:
                 progress=True,
                 close_button="✖",
             )
+            # 显示相关芯片选择对话框
+            self._show_related_chip_select_dialog(original_filename)
 
     # 显示服务器已有文件
     async def _show_have_file(self, original_filename, file_type, url_path):
@@ -2005,6 +2012,8 @@ class InteractiveButton:
                 progress=True,
                 close_button="✖",
             )
+        # 显示相关芯片选择对话框
+        self._show_related_chip_select_dialog(text)
 
     # ----------------------------------------------------------------->
 
@@ -2071,8 +2080,9 @@ class InteractiveButton:
         if not (self.chip_dialog.value or self.check_down_dialog.value or self.activ_dialog.value):
             # 获取当前UI上所有 chip 的ID
             displayed_chip_feature = {
-                (child.props.get("data-chip-id"), child.props.get("icon")) for child in self.chip_container
+                (child.props.get("data-chip-id"), child.props.get("enabled-state")) for child in self.chip_container
             }
+
             # 获取共享存储中所有 chip 的ID
             # 用户打开开关，想看全部记录情况下
             if app.storage.client.get("record_switch"):
@@ -2082,7 +2092,7 @@ class InteractiveButton:
                     # 抽取所有非svn类型的chip，及 svn类但激活或None的chip
                     stored_chip_feature = set(
                         [
-                            (id, chip_dic["icon"])
+                            (id, str(chip_dic["enabled"]))
                             for id, chip_dic in db_storage.get_deep_item(
                                 [f"{self.project}_over_data", self.label], {}
                             ).items()
@@ -2093,7 +2103,7 @@ class InteractiveButton:
                     # 所有chip均显示
                     stored_chip_feature = set(
                         [
-                            (id, chip_dic["icon"])
+                            (id, str(chip_dic["enabled"]))
                             for id, chip_dic in db_storage.get_deep_item(
                                 [f"{self.project}_over_data", self.label], {}
                             ).items()
@@ -2103,7 +2113,7 @@ class InteractiveButton:
             else:
                 stored_chip_feature = set(
                     [
-                        (id, chip_dic["icon"])
+                        (id, str(chip_dic["enabled"]))
                         for id, chip_dic in db_storage.get_deep_item(
                             [f"{self.project}_over_data", self.label], {}
                         ).items()
@@ -2112,6 +2122,7 @@ class InteractiveButton:
                 )
 
             # 只有当UI和存储中的ID集合不一致时，才重新渲染，以提高效率
+            # print(self.title, displayed_chip_feature, stored_chip_feature)
             if displayed_chip_feature != stored_chip_feature:
                 # 刷新chip容器内容
                 await self._refresh_chip_container()
@@ -2277,7 +2288,7 @@ class InteractiveButton:
     def _show_related_chip_select_dialog(self, chip_text):
         self.activ_dialog.clear()
         with self.activ_dialog, ui.card().classes("w-full").style("max-width: 800px;"):
-            ui.label(f"修改『{chip_text}』后，需选择影响的其它概述项：").classes("text-lg font-bold")
+            ui.label("选择本次操作可能影响的其它概述项：").classes("text-lg font-bold")
             ui.label("选中的概述项，其内部所有激活的内容将变为待确认状态，相关人员会收到提醒。").classes(
                 "text-base text-brown font-bold -mt-4"
             )
@@ -2671,7 +2682,7 @@ class InteractiveButton:
             # 创建 chip 并附加一个自定义属性 `data-chip-id` 用于后续的同步检查
             chip = (
                 ui.chip(text=chip_text, removable=False, icon=chip_info.get("icon"))
-                .props(f"data-chip-id={chip_info.get('id')} dense square")
+                .props(f"data-chip-id={chip_info.get('id')} enabled-state={chip_info.get('enabled')} dense square")
                 .classes(f"m-0 {chip_info.get('bg_color')}")
             )
 
@@ -2866,7 +2877,7 @@ class InteractiveButton:
             # 根据文件类型创建缩略图
             thumbnail = (
                 ui.interactive_image(url_path)
-                .props(f"data-chip-id={chip_info.get('id')}")
+                .props(f"data-chip-id={chip_info.get('id')} enabled-state={chip_info.get('enabled')}")
                 .classes("h-10 cursor-pointer relative-position")
             )
             thumbnail.on("click", lambda url_path=url_path: self.show_fullscreen(url_path))
@@ -2874,7 +2885,7 @@ class InteractiveButton:
             # 创建缩略图的附属元素
             with thumbnail:
                 if chip_info.get("icon"):
-                    ui.icon(chip_info.get("icon", "")).props("flat fab color=red").classes(
+                    ui.icon(chip_info.get("icon", "image")).props("flat fab color=red").classes(
                         "absolute top-0 left-0 text-xl"
                     )
                 # 缩略图创建日期提示

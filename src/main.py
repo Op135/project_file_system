@@ -194,7 +194,7 @@ def root():
 # ======================
 if __name__ in {"__main__", "__mp_main__"}:
     ui.run(
-        title="项目文件管理系统",
+        title="研发项目文件管理系统",
         favicon=f"{IMG_DIR}/RFRF.png",
         # host='0.0.0.0' 允许来自局域网的任何IP访问
         host="0.0.0.0",
