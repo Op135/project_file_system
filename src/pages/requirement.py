@@ -3211,12 +3211,22 @@ async def requirement_page(type="", json_path="", project_name=""):
                                     original_str = "全新配置需求"
 
                             # 处理需求内容标题内容
-                            version_label = f"需求版本V{version}增删改内容"
+                            version_label = f"版本V{version}变更内容"
+                            # 获取需求提交日期
+                            pass_time = (
+                                app.storage.general["wait_review"]
+                                .get(project_name, {})
+                                .get(version, {})
+                                .get("pass_time", "")
+                            )
+                            if pass_time and version != "0":
+                                req_time = datetime.fromisoformat(pass_time).strftime("%Y年%m月%d日%H时%M分%S秒")
+                                original_str = f"{original_str}，于{req_time}评审通过生效。"
                             if version == "0":
-                                version_label = f"最新版需求内容_V{version_data['version']}"
+                                version_label = f"需求汇总内容（更新到版本V{version_data['version']}）"
                             exp = ui.expansion(
                                 version_label,
-                                icon="storage",
+                                icon="text_snippet" if version == "0" else "difference",
                                 value=False,
                                 caption=f"{original_str}",
                                 group="group",
@@ -3577,10 +3587,18 @@ async def requirement_page(type="", json_path="", project_name=""):
                                     ui.switch("全展开").classes("absolute -top-2 right-2 text-sm").on_value_change(
                                         lambda e, exps=current_role_expansions: [exp.set_value(e.value) for exp in exps]
                                     )
+                                exp_icon_dic = {
+                                    "光学": "flare",
+                                    "结构": "view_in_ar",
+                                    "硬件": "memory",
+                                    "软件": "terminal",
+                                    "UI": "screenshot_monitor",
+                                    "工艺": "handyman",
+                                }
                                 for data_group, data_dic in over_data.items():
                                     exp = ui.expansion(
                                         data_group,
-                                        icon="list",
+                                        icon=exp_icon_dic.get(role, "list"),
                                         value=False,
                                         caption="",
                                     ).classes("gap-1 w-full bg-gray-100/30 rounded")

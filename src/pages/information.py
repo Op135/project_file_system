@@ -57,6 +57,7 @@ def information_page():
 
     async def set_review_pass(button_group, p_name, v):
         app.storage.general["wait_review"][p_name][v]["state"] = "已审"
+        app.storage.general["wait_review"][p_name][v]["pass_time"] = datetime.now().isoformat()
         # 将项目需求的最高版本号更新记录到服务器级储存里，供后续使用
         app.storage.general["project_req_max_ver"][p_name] = v
         # 需求评审前，如果是衍生为新项目，概述已经复制，需求升级不会复制概述；

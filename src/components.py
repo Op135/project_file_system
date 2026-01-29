@@ -2552,19 +2552,25 @@ class InteractiveButton:
             )
             # 显示本次状态变化由哪些操作引起
             if open_dic:
-                ui.label("本次状态变化由以下其它概述调整引起：").classes("text-base font-bold text-brown")
+                ui.label("本次状态变化由以下概述调整引起：").classes("text-base font-bold text-brown")
                 for time_key, record in open_dic.get("record", {}).items():
                     if record.get("operate_type", "") == "add_chip":
                         record_label = ui.label(
-                            f'[{time_key}]由用户"{record.get("operate_user", "匿名用户")}"添加了『"{record.get("operate_chip_content", "未知内容")}"』"'
+                            f'[{time_key}]由用户"{record.get("operate_user", "匿名用户")}"添加了『{record.get("operate_chip_content", "未知内容")}』"'
                         )
                     elif record.get("operate_type", "") == "activ_change":
+                        if record.get("operate_chip_state"):
+                            state_label = "激活"
+                        elif record.get("operate_chip_state") is False:
+                            state_label = "失活"
+                        else:
+                            state_label = "待确认"
                         record_label = ui.label(
-                            f'[{time_key}]由用户"{record.get("operate_user", "匿名用户")}"修改『"{record.get("operate_chip_content", "未知内容")}"』的状态为『"{record.get("operate_chip_state", "未知状态")}"』'
+                            f'[{time_key}]由用户"{record.get("operate_user", "匿名用户")}"修改『{record.get("operate_chip_content", "未知内容")}』的状态为『{state_label}』'
                         )
                     else:
                         record_label = ui.label(
-                            f'[{time_key}]由用户"{record.get("operate_user", "匿名用户")}"操作了『"{record.get("operate_chip_content", "未知内容")}"』，操作类型未知'
+                            f'[{time_key}]由用户"{record.get("operate_user", "匿名用户")}"操作了『{record.get("operate_chip_content", "未知内容")}』，操作类型未知'
                         )
                     record_label.classes("text-sm text-brown")
 
