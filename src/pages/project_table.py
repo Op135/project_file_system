@@ -52,6 +52,28 @@ def project_table_page():
                 color: rgba(0, 0, 0, .54);
                 font-size: 24px;
             }
+            /* === 新增：状态行背景颜色控制 === */
+            /* 待定状态：淡黄色背景，深黄色文字 */
+            .row-wait {
+                background-color: #efe8c1 !important;
+                color: #000000 !important;
+            }
+            /* 作废状态：浅灰色背景，灰色文字，且加删除线 */
+            .row-invalid {
+                background-color: #888888 !important;
+                color: #000000 !important;
+                text-decoration: line-through !important;
+            }
+            /* 核心修复：必须直接针对行内的 .ag-cell 设置删除线，否则会被 flex 布局阻断 */
+            .row-invalid .ag-cell {
+                text-decoration: line-through !important;
+            }
+
+            /* 修正行内单元格背景，设为透明，让行的背景色透出来 */
+            .row-wait .ag-cell, .row-invalid .ag-cell {
+                background-color: transparent !important;
+            }
+                     
             /*控制表格筛选下拉菜单背景颜色*/
             .ag-menu {
                 background-color: white;
@@ -311,6 +333,60 @@ def project_table_page():
             )
             return False
 
+    # === 新增功能：自动刷新并定位到对应系列 ===
+    def auto_refresh_view(target_project_name):
+        """
+        保存后调用：重新加载数据，重新计算分类，并将视图切换到目标项目所在的系列
+        """
+        # 声明引用外部变量，以便修改它们
+        nonlocal rows, select_dic
+
+        # 1. 重新获取最新数据 (因为 save_... 已经更新了 app.storage 和文件)
+        copy_project_dic = copy.deepcopy(app.storage.general["project_summary"])
+        rows = list(copy_project_dic.values())
+
+        # 2. 重新计算分类字典 (防止新增了从未有过的大类或小类)
+        #    重新生成所有项目名列表
+        select_li_new = list(set([pro_sum["project"] for pro_sum in rows]))
+        #    更新全局的 select_dic
+        select_dic = get_select_dic(select_li_new)
+
+        # 3. 解析目标项目的分类 (反推它属于哪个大类和小类)
+        target_major = "RFFM"  # 默认兜底
+        target_sub = "所有"
+
+        # 复用 get_select_dic 里的切分逻辑
+        if "-" in target_project_name:
+            parts = target_project_name.split("-")
+            target_major = parts[0]
+            if len(parts) > 1:
+                # 取第二段的前两位作为子类 (如 15)
+                target_sub = parts[1][:2]
+        else:
+            # 如果没有横杠，属于“其它”
+            target_major = "其它"
+            target_sub = target_project_name
+
+        # 4. 更新 UI 控件
+        # 4.1 更新大类选项 (以防新增了大类)
+        select_major.set_options(list(select_dic.keys()))
+
+        # 4.2 设定大类值 (这通常会触发 on_value_change，但为了保险我们手动处理后续)
+        select_major.value = target_major
+
+        # 4.3 手动强制更新一下小类选项
+        #    (update_sub_select 依赖外部变量 select_major_value，此时可能还未同步，所以手动取字典)
+        if target_major in select_dic:
+            select_sub.set_options(select_dic[target_major])
+
+        # 4.4 设定小类值
+        select_sub.value = target_sub
+
+        # 5. 刷新表格
+        #    此时 select_major.value 和 select_sub.value 已经更新
+        #    update_aggrid 会读取这两个值来筛选 rows
+        update_aggrid(aggrid)
+
     # === 新增功能：构建弹窗 UI ===
     def open_add_project_dialog():
         table_dialog.clear()
@@ -386,9 +462,10 @@ def project_table_page():
                     # 执行保存
                     success = save_new_project_to_file(form_data)
                     if success:
-                        table_dialog.close()
+                        # table_dialog.close()
                         # 刷新页面或表格 (最简单是直接刷新页面，或者手动更新 rows)
-                        ui.navigate.to("/project_table")  # 重新加载当前页以刷新数据
+                        # ui.navigate.to("/project_table")  # 重新加载当前页以刷新数据
+                        auto_refresh_view(form_data["project_name"])  # 自动刷新并定位
 
                 def on_revise_confirm():
                     # 简单校验
@@ -406,9 +483,10 @@ def project_table_page():
                     # 执行保存
                     success = save_revise_project_to_file(form_data)
                     if success:
-                        table_dialog.close()
+                        # table_dialog.close()
                         # 刷新页面或表格 (最简单是直接刷新页面，或者手动更新 rows)
-                        ui.navigate.to("/project_table")  # 重新加载当前页以刷新数据
+                        # ui.navigate.to("/project_table")  # 重新加载当前页以刷新数据
+                        auto_refresh_view(form_data["project_name"])  # 自动刷新并定位
 
                 ui.button("确认创建", on_click=on_add_confirm).props("color=green")
                 ui.button("确认修改", on_click=on_revise_confirm).props("color=blue")
@@ -777,7 +855,7 @@ def project_table_page():
         {
             "field": "photometric",
             "headerName": "光度学要求",
-            "width": 120,
+            "width": 250,
             "cellClass": "left-auto-break",
             "autoHeight": True,
         },
@@ -803,7 +881,7 @@ def project_table_page():
         {
             "field": "guide_beam",
             "headerName": "导光束要求",
-            "width": 100,
+            "width": 115,
             "cellClass": "left-auto-break",
             "autoHeight": True,
             "filter": "agTextColumnFilter",
@@ -819,7 +897,7 @@ def project_table_page():
         {
             "field": "electronic_bom",
             "headerName": "电子BOM",
-            "width": 180,
+            "width": 250,
             "cellClass": "left-auto-break",
             "autoHeight": True,
             "filter": "agTextColumnFilter",
@@ -966,6 +1044,11 @@ def project_table_page():
                 "pagination": True,  # 开启分页
                 "paginationPageSize": 20,  # 每页显示 10 行
                 "paginationPageSizeSelector": [10, 20, 30, 40, 50],  # (可选) 允许用户在底部选择每页行数
+                # === 新增：根据状态字段应用 CSS 类 ===
+                "rowClassRules": {
+                    "row-wait": "data.state == '待定'",
+                    "row-invalid": "data.state == '作废'",
+                },
             }
         ).classes("ag-theme-alpine ag-header-cell-resize::after h-full")
 

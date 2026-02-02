@@ -3444,7 +3444,7 @@
                     "option_out": "True",
                     "option_bold": "",
                     "option_show": "",
-                    "option_label": "限环境温度"
+                    "option_label": ""
                 },
                 {
                     "option_id": "opt_2",
@@ -3508,7 +3508,7 @@
                     "option_out": "True",
                     "option_bold": "",
                     "option_show": "",
-                    "option_label": "限环境湿度"
+                    "option_label": ""
                 },
                 {
                     "option_id": "opt_2",
@@ -3636,7 +3636,7 @@
                     "option_out": "True",
                     "option_bold": "",
                     "option_show": "",
-                    "option_label": "限表面温度"
+                    "option_label": ""
                 },
                 {
                     "option_id": "opt_2",
@@ -7204,7 +7204,7 @@
                     "option_out": "True",
                     "option_bold": "",
                     "option_show": "",
-                    "option_label": "光学有补充需求"
+                    "option_label": ""
                 },
                 {
                     "option_id": "opt_2",
@@ -7268,7 +7268,7 @@
                     "option_out": "True",
                     "option_bold": "",
                     "option_show": "",
-                    "option_label": "结构有补充需求"
+                    "option_label": ""
                 },
                 {
                     "option_id": "opt_2",
@@ -7332,7 +7332,7 @@
                     "option_out": "True",
                     "option_bold": "",
                     "option_show": "",
-                    "option_label": "硬件有补充需求"
+                    "option_label": ""
                 },
                 {
                     "option_id": "opt_2",
@@ -7396,7 +7396,7 @@
                     "option_out": "True",
                     "option_bold": "",
                     "option_show": "",
-                    "option_label": "软件有补充需求"
+                    "option_label": ""
                 },
                 {
                     "option_id": "opt_2",
@@ -7460,7 +7460,7 @@
                     "option_out": "True",
                     "option_bold": "",
                     "option_show": "",
-                    "option_label": "工艺有补充需求"
+                    "option_label": ""
                 },
                 {
                     "option_id": "opt_2",
@@ -7501,7 +7501,7 @@
             ]
         }
     },
-    "config_timestamp": "2026-01-29T22:43:03.136503",
-    "excel_version_hash": "72b16109",
+    "config_timestamp": "2026-02-02T18:00:49.501048",
+    "excel_version_hash": "9a821910",
     "entry_status": false
 }
