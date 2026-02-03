@@ -13,10 +13,35 @@ logger = logging.getLogger(__name__)
 
 @ui.page("/main")
 def main_page():
-    online_data = {"online_count": ""}
+    online_data = {"online_count": "", "online_users": [], "tooltip_text": ""}
 
     def refresh_online_num():
-        online_data["online_count"] = str(len(online_users.keys()))
+        # --- 新增去重逻辑 ---
+        # 使用一个临时字典，以 username 为 Key 来存储用户信息
+        # 这样同一个 username 无论开多少个网页，在这个字典里只会保留一份
+        unique_users_map = {}
+
+        for user_data in online_users.values():
+            username = user_data.get("username", "未知用户")
+            # 如果该用户还没被记录，或者你希望更新到最新的连接信息，就存入
+            if username not in unique_users_map:
+                unique_users_map[username] = user_data
+
+        # --- 更新统计数据 ---
+
+        # 1. 数量：计算去重后的字典长度
+        online_data["online_count"] = str(len(unique_users_map))
+
+        # 2. Tooltip 文本：基于去重后的数据生成
+        tooltip_text = ""
+        for user in unique_users_map.values():
+            # 这里的 user 已经是去重后的单条数据了
+            u_name = user.get("username", "未知用户")
+            u_ip = user.get("ip", "未知IP")
+            u_time = user.get("login_time", "未知时间")
+            tooltip_text += f"{u_name} - {u_time}<br>"
+
+        online_data["tooltip_text"] = tooltip_text
 
     # 检查用户是否已登录
     # {'current_user': '用户名', 'is_admin': False}
@@ -76,6 +101,9 @@ def main_page():
             # 使用 bind_text 绑定数据，实现实时更新
             label = ui.label().bind_text_from(online_data, "online_count", backward=lambda x: f"在线: {x}")
             label.classes("text-sm font-medium tracking-wide")
+            with label:
+                with ui.tooltip("在线用户列表"):
+                    ui.html(sanitize=False).bind_content_from(online_data, "tooltip_text")
 
         with ui.avatar(size="lg").classes("cursor-pointer ml-auto -mt-3"):  # 右侧对齐
             ui.image(current_display_path)

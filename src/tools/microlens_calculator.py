@@ -271,13 +271,14 @@ class MicrolensCalculator:
         # 这里使用 self.preview_plot 作为上下文，避免全局 plt 冲突
         with self.preview_plot:
             plt.clf()
-            # --- 新增：创建指定边距的子图，预留底部 20% 空间给图例 ---
-            # 原代码是 plt.gca()，这里改为显式调整
+
+            # --- 布局调整 ---
             fig = plt.gcf()
             fig.subplots_adjust(left=0.05, right=0.95, top=0.95, bottom=0.25)
             ax = plt.gca()
             ax.set_aspect("equal")
 
+            # --- 1. 计算所有中心点 (保持原有逻辑) ---
             centers = []
             if self.state.arr_type == "rect_grid":
                 rows, cols = int(self.state.grid_rows), int(self.state.grid_cols)
@@ -309,17 +310,36 @@ class MicrolensCalculator:
                     next_queue = []
                     current_ring += 1
 
+            # --- 2. 新增：计算阵列外接圆直径 (复验外径) ---
+            lens_r = self.state.lens_d / 2.0
+            max_dist = 0.0
+            if centers:
+                # 找到离原点最远的透镜中心
+                dists = [np.sqrt(c[0] ** 2 + c[1] ** 2) for c in centers]
+                max_dist = max(dists)
+
+            # 外接圆半径 = 最远中心距离 + 透镜半径
+            enclosing_r = max_dist + lens_r
+            enclosing_dia = enclosing_r * 2.0
+
+            # --- 3. 调整视图范围 (Limits) ---
+            # 既要包含所有中心点，也要包含外接圆
             all_x = [c[0] for c in centers]
             all_y = [c[1] for c in centers]
             margin = self.state.pitch_x * 0.8
-            ax.set_xlim(min(all_x) - margin, max(all_x) + margin)
-            ax.set_ylim(min(all_y) - margin, max(all_y) + margin)
 
+            # 比较“矩形边界+边距”与“外接圆+边距”，取较大范围以防显示不全
+            view_limit = max(max(map(abs, all_x)) + margin, enclosing_r * 1.05)
+
+            ax.set_xlim(-view_limit, view_limit)
+            ax.set_ylim(-view_limit, view_limit)
+
+            # --- 4. 绘图循环 (保持原有逻辑) ---
             led_w, led_h = self.state.src_w, (self.state.src_h if self.state.src_type == "rect" else self.state.src_w)
-            lens_r = self.state.lens_d / 2.0
 
             for cx, cy in centers:
                 verts = []
+                # 绘制网格辅助线
                 if self.state.arr_type == "rect_grid":
                     verts = [
                         (cx - self.state.pitch_x / 2, cy - self.state.pitch_y / 2),
@@ -328,6 +348,10 @@ class MicrolensCalculator:
                         (cx - self.state.pitch_x / 2, cy + self.state.pitch_y / 2),
                         (cx - self.state.pitch_x / 2, cy - self.state.pitch_y / 2),
                     ]
+                    rect_poly = patches.Polygon(
+                        verts, closed=True, fill=False, edgecolor="#cbd5e1", linestyle="--", linewidth=0.5
+                    )
+                    ax.add_patch(rect_poly)
                 else:
                     r_hex = self.state.pitch_x / np.sqrt(3)
                     for i in range(6):
@@ -336,29 +360,27 @@ class MicrolensCalculator:
                         vx = cx + r_hex * np.cos(angle_rad)
                         vy = cy + r_hex * np.sin(angle_rad)
                         verts.append((vx, vy))
-                    verts.append(verts[0])
+                    verts.append(verts[0])  # Close loop
 
                     poly = patches.Polygon(
                         verts, closed=True, fill=False, edgecolor="#cbd5e1", linestyle="--", linewidth=0.5
                     )
                     ax.add_patch(poly)
 
-                if self.state.arr_type == "rect_grid":
-                    rect_poly = patches.Polygon(
-                        verts, closed=True, fill=False, edgecolor="#cbd5e1", linestyle="--", linewidth=0.5
-                    )
-                    ax.add_patch(rect_poly)
-
+                # 绘制透镜实体
                 lens_circle = patches.Circle(
                     (cx, cy), radius=lens_r, linewidth=1, edgecolor="#ef4444", facecolor="#fee2e2", alpha=0.5
                 )
                 ax.add_patch(lens_circle)
 
+                # 绘制有效通光孔径 (Pitch 裁剪)
                 valid_area = patches.Circle((cx, cy), radius=lens_r, facecolor="#3b82f6", alpha=0.8, linewidth=0)
-                pitch_path = Path(verts)
-                valid_area.set_clip_path(PathPatch(pitch_path, transform=ax.transData))
+                if verts:
+                    pitch_path = Path(verts)
+                    valid_area.set_clip_path(PathPatch(pitch_path, transform=ax.transData))
                 ax.add_patch(valid_area)
 
+                # 绘制光源投影
                 if self.state.src_type == "rect":
                     led = patches.Rectangle(
                         (cx - led_w / 2, cy - led_h / 2), led_w, led_h, linewidth=0, facecolor="#f59e0b"
@@ -367,22 +389,31 @@ class MicrolensCalculator:
                     led = patches.Circle((cx, cy), radius=led_w / 2, linewidth=0, facecolor="#f59e0b")
                 ax.add_patch(led)
 
+            # --- 5. 新增：绘制外接圆 ---
+            # 使用紫色虚线圈出整体范围
+            outer_circle = patches.Circle(
+                (0, 0), radius=enclosing_r, fill=False, edgecolor="#8b5cf6", linestyle="-.", linewidth=1.5, alpha=0.8
+            )
+            ax.add_patch(outer_circle)
+
+            # --- 6. 更新图例 (包含外径数值) ---
             from matplotlib.lines import Line2D
 
             custom_lines = [
-                Line2D([0], [0], color="#3b82f6", lw=4, label="有效通光区域"),
-                Line2D([0], [0], color="#fee2e2", lw=4, label="截断/重叠区域"),
+                Line2D([0], [0], color="#3b82f6", lw=4, label="有效通光"),
+                Line2D([0], [0], color="#fee2e2", lw=4, label="截断/重叠"),
                 Line2D([0], [0], marker="s", color="w", markerfacecolor="#f59e0b", label="LED光源"),
+                # 新增图例项，直接显示计算结果
+                Line2D([0], [0], color="#8b5cf6", linestyle="-.", lw=1.5, label=f"外径 Ø{enclosing_dia:.1f}mm"),
             ]
-            # --- 修改：图例位置微调 ---
-            # bbox_to_anchor=(0.5, -0.05) 让图例稍微向下一点，不遮挡图形
+
             ax.legend(
                 handles=custom_lines,
                 loc="upper center",
-                bbox_to_anchor=(0.5, -0.05),  # 调整这里的 Y 坐标
+                bbox_to_anchor=(0.5, -0.05),
                 fontsize=8,
                 frameon=False,
-                ncol=3,
+                ncol=2,  # 改为2列，防止文字过长挤在一起
             )
             ax.axis("off")
 
