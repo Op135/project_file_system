@@ -1267,6 +1267,9 @@ def find_key_position(dictionary, target_key):
 # 查阅指定项目概述文件里的最新需求内容，整理待显示的定制内容标签为列表（除重处理），保存到服务器层级储存里
 def set_project_custom_labels(project_name):
     overview_file_path = os.path.join(OVER_DIR, f"{project_name}_概述整理.json")
+    if not os.path.exists(overview_file_path):
+        # logger.info(f"整理项目{project_name}的定制内容标签时，概述整理文件不存在。")
+        return
     overviow_data = {}
     label_list = []
     try:

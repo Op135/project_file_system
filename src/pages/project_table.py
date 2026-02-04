@@ -16,7 +16,7 @@ from ..utils import (
     logout,
     project_summary_update,
     project_table_update_config_update,
-    validate_format_regex,
+    set_project_custom_labels,
 )
 
 # 获取一个以此模块命名的 logger
@@ -34,7 +34,7 @@ def project_table_page():
                 --ag-foreground-color: #111 !important;       /* 单元格文本颜色 */
                 --ag-header-foreground-color: #000 !important;       /*  表头文本颜色 */
                 --ag-header-background-color: #f1f0ed !important; /* 表头背景色 */
-                --ag-odd-row-background-color: #f6dead33 !important; /* 奇数行背景色 */
+                --ag-odd-row-background-color: #f9cb8b33 !important; /* 奇数行背景色 */
                 --ag-background-color: #93d5dc33 !important; /* 背景色 */
                 --ag-row-hover-color: #41b34933 !important;     /* 行悬停颜色 */
                 --ag-border-color: #ddd !important;           /* 边框颜色 */
@@ -55,12 +55,12 @@ def project_table_page():
             /* === 新增：状态行背景颜色控制 === */
             /* 待定状态：淡黄色背景，深黄色文字 */
             .row-wait {
-                background-color: #efe8c1 !important;
+                background-color: #88888833 !important;
                 color: #000000 !important;
             }
             /* 作废状态：浅灰色背景，灰色文字，且加删除线 */
             .row-invalid {
-                background-color: #888888 !important;
+                background-color: #88888866 !important;
                 color: #000000 !important;
                 text-decoration: line-through !important;
             }
@@ -668,6 +668,7 @@ def project_table_page():
                             if pro_key == "custom_labels":
                                 label_list = app.storage.general["custom_labels"].get(project_name, [])
                                 if label_list:
+                                    set_project_custom_labels(project_name)
                                     show_str = f"{show_str}，{'，'.join(label_list)}"
                             # 需求录入列，动态内容设置
                             elif pro_key == "requirement":

@@ -37,7 +37,7 @@ def main_page():
         for user in unique_users_map.values():
             # 这里的 user 已经是去重后的单条数据了
             u_name = user.get("username", "未知用户")
-            u_ip = user.get("ip", "未知IP")
+            # u_ip = user.get("ip", "未知IP")
             u_time = user.get("login_time", "未知时间")
             tooltip_text += f"{u_name} - {u_time}<br>"
 
