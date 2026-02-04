@@ -23,57 +23,77 @@ from ..utils import (
     set_project_custom_labels,
 )
 
-# 获取一个以此模块命名的 logger
-# 比如：如果你的文件是 src/components.py，这个 logger 的名字就会是 "src.components"
+# 获取 logger
 logger = logging.getLogger(__name__)
+
+
+# --- UI 辅助组件 ---
+def ui_card_header(title, icon="assignment", color="blue-500"):
+    """统一的卡片标题样式"""
+    with ui.row().classes("w-full items-center gap-2 pb-3 border-b border-gray-100 mb-3"):
+        ui.icon(icon, color=color.replace("text-", "")).classes("text-xl")
+        ui.label(title).classes("text-lg font-bold text-gray-800")
+
+
+def status_badge(text, color_name="gray"):
+    """状态小标签"""
+    # 简单的颜色映射
+    colors = {
+        "待审": ("orange-100", "orange-800"),
+        "已审": ("green-100", "green-800"),
+        "待修改": ("red-100", "red-800"),
+        "研发": ("blue-100", "blue-800"),
+    }
+    bg, fg = colors.get(text, (f"{color_name}-100", f"{color_name}-800"))
+    ui.label(text).classes(f"text-xs px-2 py-0.5 rounded bg-{bg} text-{fg} font-medium")
 
 
 @ui.page("/information")
 def information_page():
-    # 检查用户是否已登录
-    # {'current_user': '用户名', 'is_admin': False}
+    # 1. 权限与基础数据获取
     if not app.storage.user.get("current_user"):
-        ui.navigate.to("/login")  # 如果未登录，跳转到登录页
+        ui.navigate.to("/login")
         return
+
     dialog = ui.dialog().props("persistent").classes("")
-    # 获取用户信息
-    current_user = app.storage.user.get("current_user")
-    # is_admin = app.storage.user.get("is_admin")
+    current_user = app.storage.user.get("current_user", "匿名用户")
     current_role = app.storage.user.get("current_role")
 
-    with open(f"{BASE_DIR}/information_module_show_role.json", "r", encoding="utf-8") as f:
-        # 使用 json.load() 读取文件内容并解析
-        module_show_data = json.load(f)
+    # 读取配置文件
+    try:
+        with open(f"{BASE_DIR}/information_module_show_role.json", "r", encoding="utf-8") as f:
+            module_show_data = json.load(f)
+    except Exception as e:
+        logger.error(f"无法读取权限配置: {e}")
+        module_show_data = {}  # 防止报错
 
-    # 从全局存储中获取用户当前的头像设置
-    # (在 main.py 中定义 "user_preferences")
+    # 头像处理
     user_prefs = app.storage.general.get("user_preferences", {}).get(current_user, {})
-    current_avatar_path = user_prefs.get("avatar", PRESET_AVATARS[0])  # 默认为第一个
-    # 在 *显示* 前，应用缓存清除
+    current_avatar_path = user_prefs.get("avatar", PRESET_AVATARS[0])
     current_display_path = get_cache_busted_path(current_avatar_path)
+
+    # -------------------------------------------------------------------------
+    # 业务逻辑函数 (保持原有逻辑核心，适配新UI容器)
+    # -------------------------------------------------------------------------
 
     def set_review_revise(p_name, v):
         app.storage.general["wait_review"][p_name][v]["state"] = "待修改"
 
-    async def set_review_pass(button_group, p_name, v):
+    async def set_review_pass(container_row, p_name, v):
+        """审核通过逻辑"""
         app.storage.general["wait_review"][p_name][v]["state"] = "已审"
         app.storage.general["wait_review"][p_name][v]["pass_time"] = datetime.now().isoformat()
-        # 将项目需求的最高版本号更新记录到服务器级储存里，供后续使用
         app.storage.general["project_req_max_ver"][p_name] = v
-        # 需求评审前，如果是衍生为新项目，概述已经复制，需求升级不会复制概述；
-        # 待到需求评审通过时，统一生成更高版本的激活状态记录
         await set_overview_active_state(p_name, v)
-        # 删除评审时生成的临时概述整理文件
         delete_file(f"{OVER_DIR}/{p_name}_概述整理_temp.json")
-        # 生成正式概述整理文件，里面整理出来的最新需求配置内容，给其它函数整理出该项目的定制内容标签，以供总表显示
         await requirement_version_tidy(p_name, False)
-        # 整理该项目需求定制内容标签
         set_project_custom_labels(p_name)
-        get_review_button(button_group, p_name, v)
+
+        # 刷新UI行
+        refresh_review_row(container_row, p_name, v)
         dialog.close()
 
-    # 处理新建临时项目情况
-    async def set_temporary_project_review_pass(button_group, p_name, v, data):
+    async def set_temporary_project_review_pass(container_row, p_name, v, data):
         if data.get("introduction").strip() and data.get("customer").strip():
             temp_data = {
                 p_name: {
@@ -84,220 +104,193 @@ def information_page():
                     "customer": data.get("customer").strip(),
                 }
             }
+            # 更新 project_summary
             project_data = {}
-            with open(f"{BASE_DIR}/data/project_summary.json", "r", encoding="utf-8") as f:
-                project_data = json.load(f)
+            try:
+                with open(f"{BASE_DIR}/data/project_summary.json", "r", encoding="utf-8") as f:
+                    project_data = json.load(f)
+            except FileNotFoundError:
+                pass
             project_data.update(temp_data)
-            json_str = json.dumps(project_data, indent=4, ensure_ascii=False)
             with open(f"{BASE_DIR}/data/project_summary.json", "w", encoding="utf-8") as f:
-                f.write(json_str)
-            # 将服务器json配置文件同步更新到服务器储存，包括正式项目与临时项目记录
-            project_summary_update()
-            await set_review_pass(button_group, p_name, v)
-        else:
-            ui.notify(
-                "项目简介与客户简称必须填写!",
-                type="warning",
-                position="bottom",
-                timeout=3000,
-                progress=True,
-                close_button="✖",
-            )
+                json.dump(project_data, f, indent=4, ensure_ascii=False)
 
-    # 判断是否为新建临时项目，分类处理
-    async def set_temporary_project_dialog(button_group, p_name, v):
-        # 临时项目且为新建项目
+            project_summary_update()
+            await set_review_pass(container_row, p_name, v)
+        else:
+            ui.notify("项目简介与客户简称必须填写!", type="warning", position="bottom", close_button="✖")
+
+    async def set_temporary_project_dialog(container_row, p_name, v):
         if "RFTS" in p_name and p_name not in app.storage.general["project_summary"]:
             dialog.clear()
-            with dialog, ui.card().classes("w-1/3"):
+            with dialog, ui.card().classes("w-full max-w-lg"):
+                ui.label("🆕 新建项目补全信息").classes("text-lg font-bold mb-2")
                 pro_data = {"notes": "", "introduction": "", "customer": ""}
-                ui.label("输入如下项目必要信息：")
-                input_notes = (
-                    ui.textarea(
-                        label="项目备注",
-                        placeholder="选填，填写特殊备注信息",
-                    )
-                    .props("outlined stack-label autogrow")
-                    .classes("w-full text-[14px]/[16px] w-full")
-                )
-                input_notes.bind_value(pro_data, "notes")
-                input_introduction = (
-                    ui.textarea(
-                        label="项目简介",
-                        placeholder="必填，填写简介，比如功能需求，定制要点等信息",
-                        validation={"不能空白": lambda value: value.strip() != ""},
-                    )
-                    .props("outlined stack-label autogrow")
-                    .classes("w-full text-[14px]/[16px] w-full")
-                )
-                input_introduction.bind_value(pro_data, "introduction")
-                input_customer = (
-                    ui.textarea(
-                        label="项目客户",
-                        placeholder="必填，填写客户简称，注意查重",
-                        validation={"不能空白": lambda value: value.strip() != ""},
-                    )
-                    .props("outlined stack-label autogrow")
-                    .classes("w-full text-[14px]/[16px] w-full")
-                )
-                input_customer.bind_value(pro_data, "customer")
-                with ui.row().classes("w-full justify-end"):
-                    ui.button(
-                        "确认",
-                        color="red-5",
-                        on_click=lambda bg=button_group,
-                        pn=p_name,
-                        ver=v,
-                        data=pro_data: set_temporary_project_review_pass(bg, pn, ver, data),
-                    )
-                    ui.button("取消", on_click=lambda: dialog.close())
-            dialog.open()
-        # 正式项目 或 非新建临时项目，直接处理
-        else:
-            await set_review_pass(button_group, p_name, v)
 
-    # 提醒需求提交人发生变化
-    async def set_review_pass_dialog(button_group, p_name, v):
-        if app.storage.general["wait_review"][p_name][v]["state"] == "待审":
+                ui.input(label="项目备注", placeholder="选填").bind_value(pro_data, "notes").classes("w-full")
+                ui.textarea(label="项目简介", placeholder="必填").bind_value(pro_data, "introduction").classes("w-full")
+                ui.input(label="项目客户", placeholder="必填").bind_value(pro_data, "customer").classes("w-full")
+
+                with ui.row().classes("w-full justify-end mt-4"):
+                    ui.button("取消", on_click=dialog.close).props("flat color=grey")
+                    ui.button(
+                        "确认创建",
+                        color="primary",
+                        on_click=lambda: set_temporary_project_review_pass(container_row, p_name, v, pro_data),
+                    )
+            dialog.open()
+        else:
+            await set_review_pass(container_row, p_name, v)
+
+    async def set_review_pass_dialog(container_row, p_name, v):
+        """点击审核通过的入口"""
+        current_state = app.storage.general["wait_review"][p_name].get(v, {}).get("state")
+
+        if current_state == "待审":
             old_v = "1.0" if v == "1.0" else f"{int(float(v)) - 1}.0"
             new_submitter = app.storage.general["wait_review"][p_name].get(v, {}).get("submitter")
             old_submitter = app.storage.general["wait_review"][p_name].get(old_v, {}).get("submitter")
-            # 需求提交人新版发生了变化，弹窗提醒
+
             if new_submitter != old_submitter:
                 dialog.clear()
                 with dialog, ui.card():
-                    ui.label(f"需求提交人有变：{old_submitter} ——> {new_submitter}，是否继续通过审核？")
-                    with ui.row().classes("w-full justify-end"):
+                    ui.label("⚠️ 提交人变更提醒").classes("text-lg font-bold text-orange-600")
+                    ui.label(f"提交人从 {old_submitter} 变更为 {new_submitter}，是否继续？")
+                    with ui.row().classes("w-full justify-end mt-4"):
+                        ui.button("取消", on_click=dialog.close).props("flat")
                         ui.button(
-                            "确认",
-                            color="red-5",
-                            on_click=lambda bg=button_group, pn=p_name, ver=v: set_temporary_project_dialog(
-                                bg, pn, ver
-                            ),
+                            "继续通过",
+                            color="red",
+                            on_click=lambda: set_temporary_project_dialog(container_row, p_name, v),
                         )
-                        ui.button("取消", on_click=lambda: dialog.close())
                 dialog.open()
-            # 需求提交人没有变化，直接调用下一步处理函数
             else:
-                await set_temporary_project_dialog(button_group, p_name, v)
-        # 待修改等非待审状态则更新按钮组
+                await set_temporary_project_dialog(container_row, p_name, v)
         else:
-            ui.notify(
-                "需求非待审状态，不能通过审核，状态以刷新!",
-                type="warning",
-                position="bottom",
-                timeout=3000,
-                progress=True,
-                close_button="✖",
-            )
-            get_review_button(button_group, p_name, v)
+            ui.notify("需求非待审状态，无法通过，已刷新列表", type="warning")
+            refresh_review_row(container_row, p_name, v)
 
-    def remove_requirement_file(button_group, p_name, v):
-        # 将需求配置文件移除到指定文件夹
+    def remove_requirement_file(container_row, p_name, v):
         move_file_with_timestamp_pathlib(f"{REQ_DIR}/{p_name}_需求配置_V{v}.json", REQ_REMOVE_DIR)
-        # 删除需求配置文件
-        # delete_file(f"{REQ_DIR}/{p_name}_需求配置_V{v}.json")
-        # 删除临时概述整理文件
         delete_file(f"{OVER_DIR}/{p_name}_概述整理_temp.json")
-        # 删除需求待审核记录条目
         app.storage.general["wait_review"][p_name].pop(v, None)
-        # 删除按钮组件
-        button_group.delete()
-        # 关闭弹窗
+        container_row.delete()  # 删除整行UI
         dialog.close()
 
-    def remove_requirement_dialog(button_group, p_name, v):
+    def remove_requirement_dialog(container_row, p_name, v):
         dialog.clear()
         with dialog, ui.card():
-            with ui.column():
-                ui.label(f"确认移除{p_name}_需求配置_V{v}.json，移除后想恢复只能找管理员。").classes(
-                    "text-lg text-red-500"
-                )
-                with ui.row().classes("w-full justify-end"):
-                    ui.button(
-                        "确认",
-                        color="red-5",
-                        on_click=lambda bg=button_group, pro_name=p_name, ver=v: remove_requirement_file(
-                            bg, pro_name, ver
-                        ),
-                    )
-                    ui.button("取消", on_click=lambda: dialog.close())
+            ui.label("⚠️ 危险操作").classes("text-lg font-bold text-red-600")
+            ui.label(f"确认移除 {p_name}_V{v} 吗？移除后需联系管理员恢复。")
+            with ui.row().classes("w-full justify-end mt-4"):
+                ui.button("取消", on_click=dialog.close).props("flat")
+                ui.button("确认移除", color="red", on_click=lambda: remove_requirement_file(container_row, p_name, v))
         dialog.open()
 
     def get_requirement_page(project_name, ver):
         file_path = os.path.join(REQ_DIR, f"{project_name}_需求配置_V{ver}.json")
-        # 不传入项目名，就不会识别个人自动保存的需求文件
         ui.navigate.to(f"/main/requirement?type=requirement&json_path={file_path}")
 
-    def get_review_button(button_group, project_name, ver):
-        # 1. 总是先从 storage 获取最新的状态
-        review_str = app.storage.general["wait_review"][project_name][ver].get("state")
-        submitter = app.storage.general["wait_review"][project_name][ver].get("submitter")
-        # 2. 关键逻辑：检查新状态
-        if review_str == "已审":
-            # 3. 如果状态是 "已审"，删除这个按钮组
-            button_group.delete()
-        else:
-            # 4. 否则 (例如 "待修改" 或 "待审")，才更新按钮组的内容
-            button_group.clear()
-            with button_group:
-                if current_role in ["研发经理"] or current_user == app.storage.general["project_engineer"].get(
-                    project_name, ""
-                ):
-                    ui.button(
-                        f"{submitter}提交：{project_name}_V{ver} 需求状态：「{review_str}」",
-                        on_click=lambda p_name=project_name: get_overviow_page(p_name, True),
-                    ).props("outline")
-                    ui.button(
-                        "审核通过",
-                        color="green-8",
-                        on_click=lambda bg=button_group, pn=project_name, v=ver: set_review_pass_dialog(bg, pn, v),
-                    ).props("")
-                    ui.button(
-                        "需修改",
-                        color="amber-8",
-                        on_click=lambda p_name=project_name, v=ver: set_review_revise(p_name, v),
-                    ).on("click", lambda bg=button_group, pn=project_name, v=ver: get_review_button(bg, pn, v)).props(
-                        ""
-                    )
-                    ui.button(
-                        "移除",
-                        color="red-8",
-                        on_click=lambda bg=button_group, pn=project_name, v=ver: remove_requirement_dialog(bg, pn, v),
-                    ).props("")
-                else:
-                    ui.button(
-                        f"{project_name}_V{ver} 需求状态：「{review_str}」",
-                        on_click=lambda p_name=project_name, v=ver: get_requirement_page(p_name, v),
-                    ).props("outline")
-                    ui.button(
-                        "修改",
-                        color="amber-8",
-                        on_click=lambda p_name=project_name, v=ver: set_review_revise(p_name, v),
-                    ).on("click", lambda bg=button_group, pn=project_name, v=ver: get_review_button(bg, pn, v)).props(
-                        ""
-                    )
-
-    # 跳转到指定项目与版本的临时需求文件配置页面
     def get_req_page(project_name, version):
         file_path = os.path.join(REQ_DIR, f"temp/{current_user}/{project_name}_需求配置_V{version}.json")
-        # 不传入项目名，就不会识别个人自动保存的需求文件
         ui.navigate.to(f"/main/requirement?type=requirement&json_path={file_path}")
 
-    def dele_button_group(project_name, version, button_group):
-        app.storage.general["temp_req"][current_user][project_name].remove(version)
-        # 删除指定路径文件
-        file_path = Path(os.path.join(REQ_DIR, f"temp/{current_user}/{project_name}_需求配置_V{version}.json"))
+    def dele_temp_req_row(container_row, project_name, version):
+        """删除暂存记录的行"""
         try:
+            app.storage.general["temp_req"][current_user][project_name].remove(version)
+            file_path = Path(os.path.join(REQ_DIR, f"temp/{current_user}/{project_name}_需求配置_V{version}.json"))
             file_path.unlink(missing_ok=True)
-            logger.info(f"文件 {file_path} 已删除（或原本就不存在）")
-        except PermissionError:
-            logger.error(f"删除失败：没有权限删除 {file_path}")
-        except IsADirectoryError:
-            logger.error(f"删除失败：{file_path} 是一个文件夹，不是文件")
-        button_group.delete()
+            container_row.delete()
+            ui.notify("已移除暂存记录", type="positive")
+        except Exception as e:
+            logger.error(f"删除失败: {e}")
+            ui.notify("删除失败", type="negative")
 
-    # 主界面
+    # --- 核心UI渲染逻辑：单行刷新 ---
+
+    def refresh_review_row(container, project_name, ver):
+        """
+        刷新单个评审条目的UI。
+        如果状态变为'已审'，则删除该行；否则重新渲染按钮。
+        """
+        # 1. 获取最新状态
+        try:
+            review_data = app.storage.general["wait_review"][project_name][ver]
+            review_state = review_data.get("state")
+            submitter = review_data.get("submitter")
+        except (KeyError, TypeError):
+            container.delete()  # 数据丢失，删除UI
+            return
+
+        # 2. 如果已审，删除该行
+        if review_state == "已审":
+            container.delete()
+            return
+
+        # 3. 重新渲染内容
+        container.clear()
+        with container:
+            project_engineer_dic = get_project_engineer_project_list_dic()
+            is_manager = current_role in ["研发经理"]
+            is_engineer = current_user == project_engineer_dic.get(project_name, "")
+
+            # --- 卡片布局 ---
+            with ui.card().classes(
+                "w-full p-3 border-l-4 border-l-blue-500 shadow-sm hover:shadow-md transition-shadow duration-300 bg-white"
+            ):
+                with ui.row().classes("w-full justify-between items-center wrap gap-2"):
+                    # 左侧：信息展示
+                    with ui.column().classes("gap-1"):
+                        with ui.row().classes("items-center gap-2"):
+                            ui.label(project_name).classes("font-bold text-gray-800 text-base")
+                            status_badge(f"V{ver}", "blue")
+                            status_badge(review_state)
+                        ui.label(f"提交人: {submitter}").classes("text-xs text-gray-500")
+
+                    # 右侧：操作按钮组
+                    with ui.row().classes("items-center gap-2"):
+                        # 权限判断
+                        if is_manager or is_engineer:
+                            # 审核者视角
+                            ui.button(icon="visibility", on_click=lambda: get_overviow_page(project_name, True)).props(
+                                "flat round dense text-color=grey-7"
+                            ).tooltip("查看需求详情")
+
+                            ui.button(
+                                icon="check",
+                                color="green",
+                                on_click=lambda: set_review_pass_dialog(container, project_name, ver),
+                            ).props("flat round dense").tooltip("审核通过")
+
+                            ui.button(
+                                icon="edit_note", color="orange", on_click=lambda: set_review_revise(project_name, ver)
+                            ).on("click", lambda: refresh_review_row(container, project_name, ver)).props(
+                                "flat round dense"
+                            ).tooltip("退回修改")
+
+                            ui.button(
+                                icon="delete",
+                                color="red",
+                                on_click=lambda: remove_requirement_dialog(container, project_name, ver),
+                            ).props("flat round dense").tooltip("移除记录")
+                        else:
+                            # 普通提交者视角
+                            ui.button(
+                                icon="visibility", on_click=lambda: get_requirement_page(project_name, ver)
+                            ).props("flat round dense text-color=grey-7").tooltip("查看详情")
+
+                            ui.button(
+                                icon="edit", color="orange", on_click=lambda: set_review_revise(project_name, ver)
+                            ).on("click", lambda: refresh_review_row(container, project_name, ver)).props(
+                                "flat round dense"
+                            ).tooltip("申请修改")
+
+    # -------------------------------------------------------------------------
+    # 页面整体布局
+    # -------------------------------------------------------------------------
+
+    # 1. 顶部导航栏 (深色主题)
     header = ui.header(elevated=True).classes("flex justify-between items-center bg-blue-500 h-12 px-4")
     with header:
         ui.image(f"{IMG_DIR}/Rayfine.png").classes("absolute w-20")
@@ -313,87 +306,190 @@ def information_page():
                 ui.separator().props("size=1px")
                 ui.menu_item("注销登录", on_click=lambda: logout())
 
-    with ui.row():
-        # 获得所有扮演项目工程师的{项目工程师名:[负责项目,负责项目]}
+    # 2. 主内容区域 (Grid布局)
+    with ui.element("div").classes("w-full h-[calc(100vh-5rem)] bg-gray-50 p-4 md:p-6"):
         project_engineer_dic = get_project_engineer_project_list_dic()
 
-        if current_role in module_show_data["wait_review_module"] or current_user in project_engineer_dic:
-            with ui.card().classes("gap-2 p-2"):
-                ui.label("需求评审状态：").classes("text-base")
-                # 如果用户是审核者，显示所有待审需求
-                show_bool = False
-                if (current_role in ["研发经理"] or current_user in project_engineer_dic) and app.storage.general.get(
-                    "wait_review", {}
+        # Grid: 大屏12列，左8右4；小屏自动换行
+        with ui.grid(columns=12).classes("w-full gap-6"):
+            # =========================================================
+            # 左侧列 (主要工作流)
+            # =========================================================
+            with ui.column().classes("col-span-12 lg:col-span-8 gap-6"):
+                # A. 待判断概述 (Priority Task)
+                if current_role in module_show_data.get("overview_charge_pending_module", []):
+                    my_pending = app.storage.general["overview_charge_pending"].get(current_user, [])
+                    if my_pending:
+                        with ui.card().classes("w-full rounded-xl shadow-sm border border-red-100 bg-white"):
+                            ui_card_header("待处理：项目概述定义", "edit_document", "red-600")
+                            with ui.column().classes("w-full gap-2 px-1"):
+                                for project_name in my_pending:
+                                    # 每一行项目
+                                    row_container = ui.row().classes(
+                                        "w-full items-center justify-between p-3 bg-red-50 rounded-lg border border-red-100 hover:bg-red-100 transition-colors"
+                                    )
+                                    with row_container:
+                                        ui.label(project_name).classes("font-medium text-gray-800")
+                                        ui.button(
+                                            "去处理",
+                                            icon="arrow_forward",
+                                            on_click=lambda pn=project_name: get_overviow_page(pn, False),
+                                        ).props("flat dense color=red size=sm").on(
+                                            "click",
+                                            lambda pn=project_name: app.storage.general["overview_charge_pending"][
+                                                current_user
+                                            ].remove(pn),
+                                        )
+
+                # B. 需求评审队列 (Review Queue)
+                if (
+                    current_role in module_show_data.get("wait_review_module", [])
+                    or current_user in project_engineer_dic
                 ):
-                    for project_name, ver_dic in app.storage.general["wait_review"].items():
-                        for ver, dic in ver_dic.items():
-                            # 如果当前项目的当前版本未审
-                            if dic.get("state") != "已审" and (
-                                current_role in ["研发经理"] or project_name in project_engineer_dic[current_user]
-                            ):
-                                show_bool = True
-                                button_group = ui.button_group().props("outline")
-                                get_review_button(button_group, project_name, ver)
-                # 用户不是审核者，且存在待审数据
-                elif app.storage.general.get("wait_review", {}):
-                    show_bool = False
-                    for project_name, ver_dic in app.storage.general["wait_review"].items():
-                        for ver, dic in ver_dic.items():
-                            if dic.get("state") != "已审" and dic.get("submitter") == current_user:
-                                show_bool = True
-                                button_group = ui.button_group().props("outline")
-                                get_review_button(button_group, project_name, ver)
-                if not show_bool:
-                    ui.label("无待评审需求").classes("text-sm text-green-500")
-        if current_role in module_show_data["overview_charge_pending_module"]:
-            with ui.card().classes("gap-2 p-2"):
-                ui.label("待判断概述的项目：").classes("text-base")
-                show_bool = False
-                for user, project_list in app.storage.general["overview_charge_pending"].items():
-                    if user == current_user:
-                        for project_name in project_list:
-                            if not show_bool:
-                                show_bool = True
-                            ui.button(
-                                f"点击更新{project_name}概述负责内容",
-                                on_click=lambda pn=project_name: get_overviow_page(pn, False),
-                            ).props("outline").on(
-                                "click",
-                                lambda pn=project_name, us=user: app.storage.general["overview_charge_pending"][
-                                    us
-                                ].remove(pn),
-                            )
-                if not show_bool:
-                    ui.label("无待判断概述的项目").classes("text-sm text-green-500")
-        if current_role in module_show_data["temp_req_module"]:
-            with ui.card().classes("gap-2 p-2"):
-                ui.label("暂存需求记录：").classes("text-base")
-                show_bool = False
-                for user, project_dic in app.storage.general["temp_req"].items():
-                    if user == current_user or current_user == "研发经理":
-                        for project_name, version_li in project_dic.items():
-                            for version in version_li:
-                                if not show_bool:
-                                    show_bool = True
-                                button_group = ui.button_group().props("outline")
-                                with button_group:
-                                    if current_user == "研发经理":
-                                        ui.button(
-                                            f"查看由{user}暂存的{project_name}_V{version}需求内容",
-                                            on_click=lambda pn=project_name, v=version: get_req_page(pn, v),
-                                        ).props("outline")
-                                    else:
-                                        ui.button(
-                                            f"编辑{project_name}_V{version}需求内容",
-                                            on_click=lambda pn=project_name, v=version: get_req_page(pn, v),
-                                        ).props("outline")
-                                    if current_user != "研发经理":
-                                        ui.button(
-                                            "移除记录",
-                                            color="red-8",
-                                            on_click=lambda pn=project_name,
-                                            v=version,
-                                            bg=button_group: dele_button_group(pn, v, bg),
-                                        ).props("")
-                if not show_bool:
-                    ui.label("无项目暂存需求记录").classes("text-sm text-green-500")
+                    with ui.card().classes("w-full rounded-xl shadow-sm border border-gray-100 bg-white"):
+                        ui_card_header("需求评审看板", "rate_review", "blue-600")
+
+                        review_container = ui.column().classes("w-full gap-3")
+                        has_review_data = False
+
+                        with review_container:
+                            if app.storage.general.get("wait_review", {}):
+                                for project_name, ver_dic in app.storage.general["wait_review"].items():
+                                    for ver, dic in ver_dic.items():
+                                        # 过滤显示逻辑
+                                        is_manager = current_role in ["研发经理"]
+                                        is_engineer = project_name in project_engineer_dic.get(current_user, [])
+                                        is_submitter = dic.get("submitter") == current_user
+
+                                        should_show = (is_manager or is_engineer) and dic.get("state") != "已审"
+                                        if not should_show and is_submitter and dic.get("state") != "已审":
+                                            should_show = True
+
+                                        if should_show:
+                                            has_review_data = True
+                                            # 创建行容器
+                                            row = ui.row().classes("w-full p-0 gap-0")
+                                            refresh_review_row(row, project_name, ver)
+
+                        if not has_review_data:
+                            with ui.column().classes("w-full items-center py-8 text-gray-400"):
+                                ui.icon("task_alt", size="4em").classes("mb-2 opacity-50")
+                                ui.label("当前没有待评审的需求").classes("text-sm")
+
+            # =========================================================
+            # 右侧列 (辅助与统计)
+            # =========================================================
+            with ui.column().classes("col-span-12 lg:col-span-4 gap-6"):
+                # C. 统计图表 (Statistics)
+                if current_role in module_show_data.get("overview_charge_pending_statistics", []):
+                    pending_data = app.storage.general.get("overview_charge_pending", {})
+
+                    with ui.card().classes(
+                        "w-full rounded-xl shadow-sm border border-gray-100 p-0 overflow-hidden bg-white"
+                    ):
+                        with ui.column().classes("p-4 pb-0"):
+                            ui_card_header("团队待办概览", "bar_chart", "indigo-500")
+
+                        if pending_data:
+                            # 数据准备：横向图表适合人名展示
+                            user_list = list(pending_data.keys())
+                            user_list.reverse()  # 让图表从上往下排
+                            count_list = [len(pending_data[u]) for u in user_list]
+
+                            # ECharts 配置
+                            ui.echart(
+                                {
+                                    "tooltip": {"trigger": "axis"},
+                                    "grid": {"top": 10, "bottom": 10, "left": 70, "right": 40, "containLabel": False},
+                                    "xAxis": {"type": "value", "splitLine": {"show": False}},
+                                    "yAxis": {
+                                        "type": "category",
+                                        "data": user_list,
+                                        "axisTick": {"show": False},
+                                        "axisLine": {"show": False},
+                                        "axisLabel": {"width": 65, "overflow": "truncate"},
+                                    },
+                                    "series": [
+                                        {
+                                            "name": "待办数",
+                                            "data": count_list,
+                                            "type": "bar",
+                                            "barWidth": 15,
+                                            "itemStyle": {"color": "#6366f1", "borderRadius": [0, 4, 4, 0]},
+                                            "label": {"show": True, "position": "right", "color": "#666"},
+                                        }
+                                    ],
+                                }
+                            ).classes("w-full h-48")
+
+                            ui.separator()
+
+                            # 详情折叠
+                            with ui.expansion("查看详细清单").classes("w-full text-sm text-gray-600 bg-gray-50"):
+                                with ui.column().classes("p-3 gap-2 w-full"):
+                                    for user, projects in pending_data.items():
+                                        if projects:
+                                            with ui.row().classes("w-full justify-between text-xs"):
+                                                ui.label(user).classes("font-bold text-gray-700")
+                                                ui.label(f"{len(projects)}").classes(
+                                                    "bg-indigo-100 text-indigo-700 px-1.5 rounded-full"
+                                                )
+                                            # 显示前3个，避免太长
+                                            for p in projects[:5]:
+                                                ui.label(f"• {p}").classes("pl-2 text-gray-500 truncate text-xs")
+                                            if len(projects) > 5:
+                                                ui.label(f"...等共 {len(projects)} 项").classes(
+                                                    "pl-2 text-gray-400 text-xs italic"
+                                                )
+                        else:
+                            ui.label("暂无积压数据").classes("p-4 text-gray-400 text-sm")
+
+                # D. 草稿箱 (Drafts)
+                if current_role in module_show_data.get("temp_req_module", []):
+                    with ui.card().classes("w-full rounded-xl shadow-sm border border-gray-100 bg-white"):
+                        ui_card_header("需求草稿箱", "save_as", "amber-600")
+
+                        temp_req_dic = app.storage.general.get("temp_req", {})
+                        has_drafts = False
+
+                        with ui.scroll_area().classes("h-64 w-full pr-2"):
+                            for user, project_dic in temp_req_dic.items():
+                                if user == current_user or current_role == "研发经理":
+                                    for project_name, version_li in project_dic.items():
+                                        for version in version_li:
+                                            has_drafts = True
+                                            row = ui.row().classes(
+                                                "w-full items-center justify-between py-2 border-b border-gray-50 last:border-0"
+                                            )
+                                            with row:
+                                                with ui.column().classes("gap-0"):
+                                                    ui.label(project_name).classes("font-medium text-sm text-gray-700")
+                                                    ui.label(f"V{version} • {user}").classes("text-xs text-gray-400")
+
+                                                with ui.row().classes("gap-1"):
+                                                    # 经理只能看，本人可编辑
+                                                    btn_icon = (
+                                                        "visibility"
+                                                        if (current_role == "研发经理" and user != current_user)
+                                                        else "edit"
+                                                    )
+                                                    ui.button(
+                                                        icon=btn_icon,
+                                                        on_click=lambda pn=project_name, v=version: get_req_page(pn, v),
+                                                    ).props("flat dense size=sm color=amber").tooltip("查看/编辑")
+
+                                                    # 只有非经理(本人)可以删除
+                                                    if current_role != "研发经理":
+                                                        ui.button(
+                                                            icon="close",
+                                                            color="red",
+                                                            on_click=lambda r=row,
+                                                            pn=project_name,
+                                                            v=version: dele_temp_req_row(r, pn, v),
+                                                        ).props("flat dense size=sm").tooltip("丢弃草稿")
+
+                        if not has_drafts:
+                            ui.label("暂无草稿记录").classes("text-sm text-gray-400 p-2")
+
+
+# 注意：此文件被设计为模块导入模式，不需要 ui.run()
