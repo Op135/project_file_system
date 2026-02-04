@@ -155,6 +155,8 @@ app.storage.general.setdefault("project_engineer", {})
 app.storage.general.setdefault("over_change_broadcast", {})
 # 储存服务器层级 用于扁平化记录概述项配置信息
 app.storage.general.setdefault("over_config_data_flat", {})
+# 储存服务器层级 用于扁平化需求配置里的定制标签信息{"node_id": {"option_id":"option_label"}}
+app.storage.general.setdefault("config_service_custom_labels", {})
 
 
 @ui.page("/view/svn_pdf")
@@ -204,8 +206,8 @@ if __name__ in {"__main__", "__mp_main__"}:
         dark=False,
         # 在生产环境中，必须禁用热重载功能，以获得更好的性能和稳定性
         # False 不自动重载，True自动重载
-        reload=True,
-        # reload=False,
+        # reload=True,
+        reload=False,
         # 【关键修改 1】让父进程闭嘴
         # 将 Uvicorn 自身的日志级别设为 warning，
         # 这样它就不会打印 "changes detected" 这种 INFO 级别的废话了

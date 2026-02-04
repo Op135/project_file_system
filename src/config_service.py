@@ -7,6 +7,7 @@ from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
+from nicegui import app
 
 from .components import ConfigValidator
 
@@ -150,6 +151,22 @@ class ConfigService:
         try:
             with open(f"{self.base_dir}/config_service.json", "w", encoding="utf-8") as f:
                 json.dump(self._cache, f, ensure_ascii=False, indent=4)
+
+            app.storage.general["config_service_custom_labels"] = {}  # 重置定制标签缓存
+            for num, data in processed.items():
+                options_list = data["options"]
+                # 该需求配置项存在输出标签配置
+                if any([op_dic["option_label"] for op_dic in options_list]):
+                    for op_dic in options_list:
+                        # 当前需求项里的这个选填项存在输出标签
+                        if op_dic["option_label"]:
+                            node_id = data["node_id"]
+                            option_id = op_dic["option_id"]
+                            option_label = op_dic["option_label"]
+                            if node_id not in app.storage.general["config_service_custom_labels"]:
+                                app.storage.general["config_service_custom_labels"][node_id] = {}
+                            app.storage.general["config_service_custom_labels"][node_id][option_id] = option_label
+
             # 检查临时配置文件是否存在，存在则删除
             if os.path.exists(f"{self.base_dir}/config_service_temp.json"):
                 # 文件存在，执行删除操作

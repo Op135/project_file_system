@@ -1267,6 +1267,7 @@ def find_key_position(dictionary, target_key):
 # 查阅指定项目概述文件里的最新需求内容，整理待显示的定制内容标签为列表（除重处理），保存到服务器层级储存里
 def set_project_custom_labels(project_name):
     overview_file_path = os.path.join(OVER_DIR, f"{project_name}_概述整理.json")
+
     if not os.path.exists(overview_file_path):
         # logger.info(f"整理项目{project_name}的定制内容标签时，概述整理文件不存在。")
         return
@@ -1297,27 +1298,32 @@ def set_project_custom_labels(project_name):
         # 该需求配置项存在输出标签配置
         if any([op_dic["option_label"] for op_dic in options_list]):
             for op_dic in options_list:
+                op_dic_label = (
+                    app.storage.general["config_service_custom_labels"]
+                    .get(data["node_id"], {})
+                    .get(op_dic["option_id"], "")
+                )
                 # 当前需求项里的这个选填项存在输出标签
-                if op_dic["option_label"]:
+                if op_dic["option_label"] and op_dic_label:
                     # 如果是单选，且 用户选择的输出值与选项输出配置值匹配
                     if (
                         "单选" in answer_type
                         and op_dic["option_out"] == must_out_dic.get("value")
-                        and op_dic["option_label"] not in label_list
+                        and op_dic_label not in label_list
                     ):
-                        label_list.append(op_dic["option_label"])
+                        label_list.append(op_dic_label)
                     # 如果是多选，且 该选填项对应显示值在用户选择的输出字典里对应的布尔值是true
                     elif (
                         "多选" in answer_type
                         and must_out_dic.get(op_dic["option_out"])
-                        and op_dic["option_label"] not in label_list
+                        and op_dic_label not in label_list
                     ):
-                        label_list.append(op_dic["option_label"])
+                        label_list.append(op_dic_label)
                     # 如果是文本类型
                     elif answer_type in ["正整数", "单行文本", "多行文本"]:
                         add_str = "，".join(must_out_dic.values())
                         if add_str:
-                            label_str = op_dic["option_label"].replace("{V}", add_str)
+                            label_str = op_dic_label.replace("{V}", add_str)
                             if label_str not in label_list:
                                 label_list.append(label_str)
     app.storage.general["custom_labels"][project_name] = label_list
