@@ -2891,7 +2891,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                                 close_button="✖",
                             )
             # ignore不设定默认导致键盘事件在'input', 'select', 'button', 'textarea'元素聚焦时被忽略
-            ui.keyboard(on_key=requirement_handle_key, ignore=[])
+            ui.keyboard(on_key=requirement_handle_key, ignore=["input", "textarea"])
 
     # 根据需求条目数据，格式化最终显示的字符串
     def format_show_string(item: dict) -> str:
@@ -2972,7 +2972,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                 for k in key_li:
                     # ---【修改点 1】：先转义下划线，再处理换行 ---
                     # 必须填写的输入内容为多行文本，则默认在最前面加上换行标签，且内部\n统一替换成换行标签
-                    raw_str = str(user_out[k]).replace("_", "\\_")  # 转义 Markdown 下划线
+                    raw_str = str(user_out[k]).replace("_", "\\_").replace("*", "\\*")  # 转义 Markdown 下划线
 
                     if answer_type == "多行文本":
                         user_out_str = f"{raw_str.replace('\n', '<br>')}"
@@ -2980,7 +2980,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                         user_out_str = raw_str
 
                     # ---【修改点 2】：公差里的下划线也要转义 ---
-                    tol_str = str(tolerance_out[k]).replace("_", "\\_") if tolerance_out else "无"
+                    tol_str = str(tolerance_out[k]).replace("_", "\\_").replace("*", "\\*") if tolerance_out else "无"
 
                     content_li.append(
                         content.replace("{K}", f'<b><span style="color: {key_color};">{k}</span></b>')
@@ -2997,7 +2997,7 @@ async def requirement_page(type="", json_path="", project_name=""):
             # 只有一项输入内容
             else:
                 # ---【修改点 3】：先转义下划线，再处理换行 ---
-                raw_str = str(user_out[key_li[0]]).replace("_", "\\_")  # 转义 Markdown 下划线
+                raw_str = str(user_out[key_li[0]]).replace("_", "\\_").replace("*", "\\*")  # 转义 Markdown 下划线
 
                 # 必须填写的输入内容为多行文本，则默认在最前面加上换行标签，且内部\n统一替换成换行标签
                 if answer_type == "多行文本":
@@ -3006,7 +3006,9 @@ async def requirement_page(type="", json_path="", project_name=""):
                     user_out_str = raw_str
 
                 # ---【修改点 4】：公差里的下划线也要转义 ---
-                tol_str = str(tolerance_out[key_li[0]]).replace("_", "\\_") if tolerance_out else "无"
+                tol_str = (
+                    str(tolerance_out[key_li[0]]).replace("_", "\\_").replace("*", "\\*") if tolerance_out else "无"
+                )
 
                 result = (
                     show_template.replace("{K}", f'<b><span style="color: {key_color};">{key_li[0]}</span></b>')

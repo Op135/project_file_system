@@ -813,7 +813,7 @@
             ]
         },
         "24": {
-            "condition": "23==True",
+            "condition": "5==模组 and 23==True",
             "node_id": "24",
             "guide_content": "是否绑定转接座型号或下单时选配",
             "answer_type": "单选",
@@ -877,7 +877,7 @@
             ]
         },
         "26": {
-            "condition": "23==True",
+            "condition": "5==模组 and 23==True",
             "node_id": "26",
             "guide_content": "如何要求我司转接座默认旋帽",
             "answer_type": "单选",
@@ -949,7 +949,7 @@
             ]
         },
         "28": {
-            "condition": "23==True and 24==False",
+            "condition": "5==模组 and 23==True and 24==False",
             "node_id": "28",
             "guide_content": "是否指定导光束/光纤转接座材料及表面工艺",
             "answer_type": "单选",
@@ -1013,7 +1013,7 @@
             ]
         },
         "30": {
-            "condition": "23==True and 24==False",
+            "condition": "5==模组 and 23==True and 24==False",
             "node_id": "30",
             "guide_content": "是否指定导光束/光纤转接座尺寸形状",
             "answer_type": "单选",
@@ -1077,7 +1077,7 @@
             ]
         },
         "32": {
-            "condition": "23==True and 24==False",
+            "condition": "5==模组 and 23==True and 24==False",
             "node_id": "32",
             "guide_content": "是否指定导光束/光纤转接座外观颜色",
             "answer_type": "单选",
@@ -1141,7 +1141,7 @@
             ]
         },
         "34": {
-            "condition": "23==True and 26!=不配",
+            "condition": "5==模组 and 23==True and 26!=不配",
             "node_id": "34",
             "guide_content": "转接座头部旋帽是否按我司工艺点胶出货",
             "answer_type": "单选",
@@ -1177,7 +1177,7 @@
             ]
         },
         "35": {
-            "condition": "23==True",
+            "condition": "5==模组 and 23==True",
             "node_id": "35",
             "guide_content": "导光束/光纤转接座包装要求",
             "answer_type": "单选",
@@ -1221,7 +1221,7 @@
             ]
         },
         "36": {
-            "condition": "23==True and 24==False",
+            "condition": "5==整机 and 14==True or 5==模组 and 23==True and 24==False",
             "node_id": "36",
             "guide_content": "导光束/光纤转接座是否要求插拔检测功能",
             "answer_type": "单选",
@@ -3221,7 +3221,7 @@
             "input_name_accor": "58",
             "input_tolerance": "正负",
             "ref_config": "False",
-            "option_hint": "填写该项要求的典型值（测试点）与公差范围；推荐YY1081-2011标准默认公差±20%，\n典型值如：0.75@模组输出、0.75@我司1M导光束输出；\n公差示例：±20%。",
+            "option_hint": "填写该项要求的典型值（测试点）与公差范围；推荐YY1081-2011标准默认公差±20%，\n典型值如：0.75（模组输出）、0.75（我司1M导光束输出）；\n公差示例：±20%。",
             "placeholder": "无单位",
             "tolerance_placeholder": "单位提示：%",
             "option_group_id": "6",
@@ -3249,7 +3249,7 @@
             "input_name_accor": "58",
             "input_tolerance": "正负",
             "ref_config": "False",
-            "option_hint": "填写该项要求的典型值（测试点）与公差范围；推荐YY1081-2011标准默认公差±20%，\n典型值如：1.25@模组输出、1.25@我司1M导光束输出；\n公差示例：±20%。",
+            "option_hint": "填写该项要求的典型值（测试点）与公差范围；推荐YY1081-2011标准默认公差±20%，\n典型值如：1.25（模组输出）、1.25（我司1M导光束输出）；\n公差示例：±20%。",
             "placeholder": "无单位",
             "tolerance_placeholder": "单位提示：%",
             "option_group_id": "6",
@@ -7501,7 +7501,7 @@
             ]
         }
     },
-    "config_timestamp": "2026-02-04T11:22:33.006548",
-    "excel_version_hash": "c8d6ade6",
+    "config_timestamp": "2026-02-04T15:14:08.327536",
+    "excel_version_hash": "04ae4ef4",
     "entry_status": false
 }

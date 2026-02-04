@@ -383,7 +383,9 @@ def information_page():
                 # C. 统计图表 (Statistics)
                 if current_role in module_show_data.get("overview_charge_pending_statistics", []):
                     pending_data = app.storage.general.get("overview_charge_pending", {})
-
+                    for user in list(pending_data.keys()):
+                        if not pending_data[user]:
+                            del pending_data[user]
                     with ui.card().classes(
                         "w-full rounded-xl shadow-sm border border-gray-100 p-0 overflow-hidden bg-white"
                     ):
