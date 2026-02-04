@@ -47,6 +47,168 @@ from ..utils import (
 logger = logging.getLogger(__name__)
 
 
+# --- 新增代码：独立的测试汇总报告页面 ---
+@ui.page("/report/test_summary/{project_name}")
+def test_summary_report(project_name: str):
+    # 1. 权限检查 (可选，建议保留)
+    if not app.storage.user.get("current_user"):
+        ui.label("请先登录").classes("text-xl text-red")
+        return
+
+    # 2. 注入打印专用样式
+    # 作用：打印时隐藏“打印按钮”，强制表格显示边框，优化A4纸显示
+    ui.add_head_html("""
+        <style>
+            body { background-color: white; padding: 20px; font-family: sans-serif; }
+            
+            /* 打印按钮样式：右上角悬浮 */
+            .print-btn {
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                z-index: 1000;
+                box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            }
+
+            /* 打印时的样式覆盖 */
+            @media print {
+                /* 隐藏打印按钮 */
+                .no-print { display: none !important; }
+                
+                /* 移除页面边距，交由打印机控制 */
+                body { padding: 0; margin: 0; }
+                
+                /* 表格样式强制黑白 */
+                .q-table { font-size: 11pt !important; }
+                .q-table th, .q-table td {
+                    border: 1px solid #000 !important;
+                    color: #000 !important;
+                }
+                /* 确保表头背景（如果浏览器开启背景打印） */
+                thead tr th { background-color: #f0f0f0 !important; -webkit-print-color-adjust: exact; }
+                
+                /* 隐藏表格底部分页器 */
+                .q-table__bottom { display: none !important; }
+                
+                /* 避免表格行在分页时被切断 */
+                tr { page-break-inside: avoid; }
+            }
+        </style>
+    """)
+
+    # 3. 页面布局
+    with ui.column().classes("w-full max-w-[1200px] mx-auto"):
+        # --- 顶部标题区 ---
+        with ui.row().classes("w-full items-center justify-center mb-6 border-b-2 border-black pb-4"):
+            ui.icon("fact_check", size="lg").classes("mr-2")
+            ui.label(f"{project_name} 生产测试项汇总表").classes("text-2xl font-bold")
+            ui.label(f"生成日期: {datetime.now().strftime('%Y-%m-%d')}").classes(
+                "absolute right-0 bottom-2 text-sm text-gray-500 no-print"
+            )
+
+        # --- 右上角打印按钮 (no-print类用于打印时隐藏) ---
+        ui.button("打印 / 存为PDF", icon="print", on_click=lambda: ui.run_javascript("window.print()")).classes(
+            "print-btn bg-blue-7 text-white no-print"
+        )
+
+        # --- 数据处理 (复用之前的逻辑) ---
+        all_over_data = db_storage.get_item(f"{project_name}_over_data", {})
+        rows = []
+        role_order = ["光学", "结构", "硬件", "软件", "UI", "工艺", "质量"]
+
+        # 辅助格式化函数
+        def fmt_option(select_data, key_prefix):
+            select_val = select_data.get(f"{key_prefix}_select")
+            other_val = select_data.get(f"{key_prefix}_other_text")
+            if select_val == "其它":
+                return f"{other_val}" if other_val else "其它(未填)"
+            return select_val if select_val else "-"
+
+        # 遍历提取数据
+        for label, chips in all_over_data.items():
+            label_title = label
+            # 尝试获取中文标题
+            if "over_config_data_flat" in app.storage.general:
+                label_info = app.storage.general["over_config_data_flat"].get(label, {})
+                label_title = label_info.get("title", label)
+
+            for chip_id, data in chips.items():
+                if data.get("type") == "test" and data.get("enabled") in [True, None]:
+                    test_data = data.get("test_select_data", {})
+                    rows.append(
+                        {
+                            "role": data.get("role", "未知"),
+                            "category": label_title,
+                            "content": data.get("content", ""),
+                            "condition": fmt_option(test_data, "state"),
+                            "node": fmt_option(test_data, "node"),
+                            "instrument": fmt_option(test_data, "instrument"),
+                            "notes": data.get("notes", ""),
+                        }
+                    )
+
+        # 排序
+        rows.sort(key=lambda x: (role_order.index(x["role"]) if x["role"] in role_order else 99, x["category"]))
+
+        # --- 表格显示 ---
+        if not rows:
+            ui.label("该项目暂无测试项数据").classes("text-xl text-gray-400 w-full text-center mt-10")
+        else:
+            columns = [
+                {
+                    "name": "role",
+                    "label": "部门",
+                    "field": "role",
+                    "align": "center",
+                    "style": "width: 60px; font-weight: bold;",
+                },
+                {"name": "category", "label": "分类", "field": "category", "align": "center", "style": "width: 80px;"},
+                {
+                    "name": "content",
+                    "label": "测试内容 / 标准",
+                    "field": "content",
+                    "align": "left",
+                    "style": "white-space: pre-wrap; font-weight: bold; font-size: 14px;",
+                },
+                {
+                    "name": "condition",
+                    "label": "条件",
+                    "field": "condition",
+                    "align": "left",
+                    "style": "white-space: pre-wrap; width: 100px;",
+                },
+                {"name": "node", "label": "节点", "field": "node", "align": "center", "style": "width: 80px;"},
+                {
+                    "name": "instrument",
+                    "label": "工具",
+                    "field": "instrument",
+                    "align": "left",
+                    "style": "width: 100px;",
+                },
+                {
+                    "name": "notes",
+                    "label": "备注",
+                    "field": "notes",
+                    "align": "left",
+                    "style": "white-space: pre-wrap; font-style: italic; color: #555;",
+                },
+            ]
+
+            # 使用 dense 和 bordered 样式，使其更像传统的Excel打印单
+            ui.table(
+                columns=columns,
+                rows=rows,
+                row_key="content",
+                pagination={"rowsPerPage": 0},  # 不分页，显示全部
+            ).classes("w-full").props('flat bordered dense hide-bottom separator="cell"')
+
+        # --- 底部页脚 ---
+        with ui.row().classes("w-full justify-between mt-8 pt-4 border-t border-gray-300 text-sm"):
+            ui.label(f"制表人: {app.storage.user.get('current_user', 'System')}")
+            ui.label("审核人: ______________")
+            ui.label("批准人: ______________")
+
+
 @ui.page("/main/requirement")
 async def requirement_page(type="", json_path="", project_name=""):
     ui.add_head_html("""
@@ -3048,6 +3210,175 @@ async def requirement_page(type="", json_path="", project_name=""):
         text_str = color_data[role_text][0] if color_data[role_text] else role_text[0]
         ui.badge(text=text_str, color=color_str).props("rounded").classes("p-1 text-[8px]/[8px]")
 
+    # 生成测试项汇总单弹窗（含打印功能）
+    def generate_test_summary_dialog(project_name):
+        # --- 1. 注入打印专用样式 ---
+        # 这段 CSS 只有在点击打印时才会生效
+        ui.add_head_html("""
+            <style>
+                @media print {
+                    /* 隐藏所有页面元素 */
+                    body > * { display: none !important; }
+                    
+                    /* 强制显示打印区域 */
+                    .printable-area, .printable-area * { 
+                        display: block !important; 
+                        visibility: visible !important; 
+                        height: auto !important;
+                        overflow: visible !important;
+                    }
+                    
+                    /* 定位打印区域到页面左上角 */
+                    .printable-area {
+                        position: absolute !important;
+                        left: 0 !important;
+                        top: 0 !important;
+                        width: 100% !important;
+                        margin: 0 !important;
+                        padding: 0 !important;
+                        box-shadow: none !important;
+                        border: none !important;
+                    }
+
+                    /* 隐藏弹窗中的关闭按钮、底部操作栏等 */
+                    .no-print { display: none !important; }
+
+                    /* 优化表格打印样式 */
+                    .q-table__card { box-shadow: none !important; }
+                    .q-table th, .q-table td {
+                        border: 1px solid #000 !important; /* 强制显示黑色边框 */
+                        color: #000 !important;            /* 强制黑色文字 */
+                        font-size: 12px !important;        /* 缩小字号适配A4纸 */
+                        padding: 4px !important;
+                    }
+                    /* 隐藏表格底部的分页栏 */
+                    .q-table__bottom { display: none !important; }
+                    
+                    /* 确保表头有背景色（需要在浏览器打印设置中勾选“背景图形”） */
+                    thead tr th { background-color: #f0f0f0 !important; -webkit-print-color-adjust: exact; }
+                }
+            </style>
+        """)
+
+        # --- 2. 获取数据 (保持原有逻辑) ---
+        all_over_data = db_storage.get_item(f"{project_name}_over_data", {})
+        rows = []
+        role_order = ["光学", "结构", "硬件", "软件", "UI", "工艺", "质量"]
+
+        def fmt_option(select_data, key_prefix):
+            select_val = select_data.get(f"{key_prefix}_select")
+            other_val = select_data.get(f"{key_prefix}_other_text")
+            if select_val == "其它":
+                return f"{other_val}" if other_val else "其它(未填)"
+            return select_val if select_val else "-"
+
+        for label, chips in all_over_data.items():
+            label_title = label
+            if "over_config_data_flat" in app.storage.general:
+                label_info = app.storage.general["over_config_data_flat"].get(label, {})
+                label_title = label_info.get("title", label)
+
+            for chip_id, data in chips.items():
+                if data.get("type") == "test" and data.get("enabled") in [True, None]:
+                    test_data = data.get("test_select_data", {})
+                    rows.append(
+                        {
+                            "role": data.get("role", "未知"),
+                            "category": label_title,
+                            "content": data.get("content", ""),
+                            "condition": fmt_option(test_data, "state"),
+                            "node": fmt_option(test_data, "node"),
+                            "instrument": fmt_option(test_data, "instrument"),
+                            "notes": data.get("notes", ""),
+                        }
+                    )
+
+        rows.sort(key=lambda x: (role_order.index(x["role"]) if x["role"] in role_order else 99, x["category"]))
+
+        columns = [
+            {
+                "name": "role",
+                "label": "负责部门",
+                "field": "role",
+                "align": "left",
+                "sortable": True,
+                "style": "width: 60px; font-weight: bold;",
+            },
+            {
+                "name": "category",
+                "label": "功能分类",
+                "field": "category",
+                "align": "left",
+                "sortable": True,
+                "style": "width: 80px;",
+            },
+            {
+                "name": "content",
+                "label": "测试标准/内容",
+                "field": "content",
+                "align": "left",
+                "style": "white-space: pre-wrap; font-weight: bold;",
+            },
+            {
+                "name": "condition",
+                "label": "条件/状态",
+                "field": "condition",
+                "align": "left",
+                "style": "white-space: pre-wrap; width: 100px;",
+            },
+            {"name": "node", "label": "测试节点", "field": "node", "align": "left", "style": "width: 80px;"},
+            {
+                "name": "instrument",
+                "label": "工具/治具",
+                "field": "instrument",
+                "align": "left",
+                "style": "width: 100px;",
+            },
+            {
+                "name": "notes",
+                "label": "备注",
+                "field": "notes",
+                "align": "left",
+                "style": "white-space: pre-wrap; font-style: italic;",
+            },
+        ]
+
+        # --- 3. 构建界面 ---
+        with ui.dialog() as dialog:
+            # 给卡片添加 printable-area 类，标记这是要打印的区域
+            with ui.card().classes("w-full max-w-[90vw] h-[90vh] p-0 printable-area"):
+                # 头部
+                with ui.row().classes("w-full items-center justify-between p-4 bg-blue-50 border-b border-blue-200"):
+                    with ui.row().classes("items-center gap-2"):
+                        ui.icon("fact_check", size="md", color="blue-8")
+                        # 打印时，我们可能希望标题更正式一点
+                        ui.label(f"{project_name} - 生产测试项汇总表").classes("text-xl font-bold text-blue-900")
+                    # 关闭按钮在打印时隐藏 (no-print)
+                    ui.button(icon="close", on_click=dialog.close).props("flat round dense").classes("no-print")
+
+                # 表格区域
+                if not rows:
+                    with ui.column().classes("w-full h-full items-center justify-center text-gray-400"):
+                        ui.icon("assignment_late", size="4xl")
+                        ui.label("当前项目尚未添加任何有效的测试项概述")
+                else:
+                    ui.table(columns=columns, rows=rows, row_key="content", pagination={"rowsPerPage": 0}).classes(
+                        "w-full h-full"
+                    ).props("flat bordered virtual-scroll sticky-header-table dense")  # 增加 dense 让打印更紧凑
+
+                # 底部操作栏 (no-print)
+                with ui.row().classes("w-full justify-end p-2 border-t border-gray-200 bg-gray-50 no-print"):
+                    ui.label(f"共计 {len(rows)} 条").classes("mr-auto self-center text-gray-600 ml-2")
+
+                    # --- 打印按钮 ---
+                    ui.button("打印表格", icon="print", on_click=lambda: ui.run_javascript("window.print()")).classes(
+                        "bg-blue-7 text-white"
+                    )
+
+                    ui.button("关闭", on_click=dialog.close).props("flat")
+
+        dialog.open()
+
     # 需求显示界面框架构造函数
     async def overview_input_frame(json_data, temp_bool):
         project_name = json_data["1.0"]["project_name"]
@@ -3568,6 +3899,17 @@ async def requirement_page(type="", json_path="", project_name=""):
                                 "absolute top-0 left-30 text-sm"
                             ).bind_text_from(app.storage.general["project_engineer"], project_name)
                         ui.label(f"{project_name} 概述整理").classes("text-xl")
+
+                        ui.button(
+                            "测试汇总单",
+                            icon="print",
+                            # 使用 window.open 打开新标签页，URL 对应上面定义的 @ui.page 路径
+                            on_click=lambda: ui.run_javascript(
+                                f'window.open("/report/test_summary/{project_name}", "_blank")'
+                            ),
+                        ).props("flat dense").classes(
+                            "absolute top-0 right-45 text-sm text-blue-800 bg-blue-50 hover:bg-blue-100"
+                        )
                         if (
                             "研发" in app.storage.user.get("current_role", "")
                             or app.storage.user.get("current_role", "") == "admin"
