@@ -66,7 +66,7 @@ def test_summary_report(project_name: str):
                 .q-table { 
                     width: 100% !important;
                     border-collapse: collapse !important; 
-                    font-size: 16pt !important;
+                    font-size: 18px !important;
                 }
 
                 /* 单元格样式：使用 0.5pt 极细边框 */
@@ -91,8 +91,11 @@ def test_summary_report(project_name: str):
             /* --- 新增：强制所有表格的表头文字居中 --- */
             .q-table th {
                 text-align: center !important;
-                font-size: 15px;
+                font-size: 17px;
                 font-weight: bold;
+            }
+            .q-table td {
+                font-size: 15px;
             }
                      
             /* 打印按钮样式：右上角悬浮 */
@@ -109,19 +112,19 @@ def test_summary_report(project_name: str):
     # 3. 页面布局
     with ui.column().classes("w-full min-w-[1200px] mx-auto"):
         # --- 顶部标题区 ---
-        with ui.row().classes("w-full items-center justify-center mb-6 border-b-2 border-black pb-4 relative"):
+        with ui.row().classes("w-full items-center justify-center mt-6 mb-6 border-b-2 border-black pb-4 relative"):
             # --- 新增：公司 Logo ---
             # 2. 使用 absolute left-0 将其固定在左侧，不影响标题居中
             # 注意：请将 'logo.png' 替换为你实际的图片路径或 URL
-            ui.image(f"{IMG_DIR}/Rayfine.png").classes("absolute left-0 top-2 bottom-2 m-auto w-30 object-contain")
+            ui.image(f"{IMG_DIR}/Rayfine.png").classes("absolute left-0 top-0 bottom-2 m-auto w-30 object-contain")
 
-            ui.icon("fact_check", size="lg").classes("mr-2")
+            # ui.icon("fact_check", size="lg").classes("mr-2")
             ui.label(f"{project_name} 生产测试项汇总表").classes("text-2xl font-bold")
 
         # --- 右上角打印按钮 (no-print类用于打印时隐藏) ---
-        ui.button("打印", icon="print", on_click=lambda: ui.run_javascript("window.print()")).classes(
-            "print-btn bg-blue-5 text-white no-print"
-        )
+        ui.button("打印", icon="print", on_click=lambda: ui.run_javascript("window.print()")).props(
+            "flat dense"
+        ).classes("print-btn text-blue-7 no-print")
 
         # --- 数据处理 (复用之前的逻辑) ---
         all_over_data = db_storage.get_item(f"{project_name}_over_data", {})
