@@ -2970,11 +2970,18 @@ async def requirement_page(type="", json_path="", project_name=""):
                 suffix = match.group(3)  # ] 之后的内容
                 # 键为1/2/3或用户起的多个名字
                 for k in key_li:
+                    # ---【修改点 1】：先转义下划线，再处理换行 ---
                     # 必须填写的输入内容为多行文本，则默认在最前面加上换行标签，且内部\n统一替换成换行标签
+                    raw_str = str(user_out[k]).replace("_", "\\_")  # 转义 Markdown 下划线
+
                     if answer_type == "多行文本":
-                        user_out_str = f"<br>{str(user_out[k]).replace('\n', '<br>')}"
+                        user_out_str = f"{raw_str.replace('\n', '<br>')}"
                     else:
-                        user_out_str = str(user_out[k])
+                        user_out_str = raw_str
+
+                    # ---【修改点 2】：公差里的下划线也要转义 ---
+                    tol_str = str(tolerance_out[k]).replace("_", "\\_") if tolerance_out else "无"
+
                     content_li.append(
                         content.replace("{K}", f'<b><span style="color: {key_color};">{k}</span></b>')
                         .replace(
@@ -2983,17 +2990,24 @@ async def requirement_page(type="", json_path="", project_name=""):
                         )
                         .replace(
                             "{T}",
-                            f'<b><span style="color: {text_color};">{str(tolerance_out[k]) if tolerance_out else "无"}</span></b>',
+                            f'<b><span style="color: {text_color};">{tol_str}</span></b>',
                         )
                     )
                 result = f"{prefix}<br>{'<br>'.join(content_li)}<br>{suffix}"
             # 只有一项输入内容
             else:
+                # ---【修改点 3】：先转义下划线，再处理换行 ---
+                raw_str = str(user_out[key_li[0]]).replace("_", "\\_")  # 转义 Markdown 下划线
+
                 # 必须填写的输入内容为多行文本，则默认在最前面加上换行标签，且内部\n统一替换成换行标签
                 if answer_type == "多行文本":
-                    user_out_str = f"<br>{str(user_out[key_li[0]]).replace('\n', '<br>')}"
+                    user_out_str = f"<br>{raw_str.replace('\n', '<br>')}"
                 else:
-                    user_out_str = str(user_out[key_li[0]])
+                    user_out_str = raw_str
+
+                # ---【修改点 4】：公差里的下划线也要转义 ---
+                tol_str = str(tolerance_out[key_li[0]]).replace("_", "\\_") if tolerance_out else "无"
+
                 result = (
                     show_template.replace("{K}", f'<b><span style="color: {key_color};">{key_li[0]}</span></b>')
                     .replace(
@@ -3002,7 +3016,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                     )
                     .replace(
                         "{T}",
-                        f'<b><span style="color: {text_color};">{str(tolerance_out[key_li[0]]) if tolerance_out else "无"}</span></b>',
+                        f'<b><span style="color: {text_color};">{tol_str}</span></b>',
                     )
                 )
             return result
