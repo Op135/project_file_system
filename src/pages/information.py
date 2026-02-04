@@ -311,11 +311,11 @@ def information_page():
         project_engineer_dic = get_project_engineer_project_list_dic()
 
         # Grid: 大屏12列，左8右4；小屏自动换行
-        with ui.grid(columns=12).classes("w-full gap-6"):
+        with ui.grid(columns=12).classes("w-full gap-4"):
             # =========================================================
             # 左侧列 (主要工作流)
             # =========================================================
-            with ui.column().classes("col-span-12 lg:col-span-8 gap-6"):
+            with ui.column().classes("col-span-12 lg:col-span-6 gap-4"):
                 # A. 待判断概述 (Priority Task)
                 if current_role in module_show_data.get("overview_charge_pending_module", []):
                     my_pending = app.storage.general["overview_charge_pending"].get(current_user, [])
@@ -379,7 +379,7 @@ def information_page():
             # =========================================================
             # 右侧列 (辅助与统计)
             # =========================================================
-            with ui.column().classes("col-span-12 lg:col-span-4 gap-6"):
+            with ui.column().classes("col-span-12 lg:col-span-6 gap-4"):
                 # C. 统计图表 (Statistics)
                 if current_role in module_show_data.get("overview_charge_pending_statistics", []):
                     pending_data = app.storage.general.get("overview_charge_pending", {})
@@ -459,7 +459,7 @@ def information_page():
                                         for version in version_li:
                                             has_drafts = True
                                             row = ui.row().classes(
-                                                "w-full items-center justify-between py-2 border-b border-gray-50 last:border-0"
+                                                "w-full items-center justify-between py-2 border-b border-gray-100 last:border-0"
                                             )
                                             with row:
                                                 with ui.column().classes("gap-0"):
