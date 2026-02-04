@@ -10,6 +10,7 @@ from . import (
     project_table,
     question_tree_tabs,
     requirement,
+    test_summary,
     tool,
     user_profile,
 )
