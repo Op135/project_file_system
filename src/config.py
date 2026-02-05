@@ -29,6 +29,9 @@ OVER_UPLOADS_FILE_TYPE = {
     ".bin",
     ".zip",
     ".rar",
+    ".mp4",
+    ".webm",
+    ".mov",
 }
 # 需求可上传文件类型，除了图片，图片都可以
 REQ_UPLOADS_FILE_TYPE = {
@@ -41,6 +44,9 @@ REQ_UPLOADS_FILE_TYPE = {
     ".xml",
     ".zip",
     ".rar",
+    ".mp4",
+    ".webm",
+    ".mov",
 }
 # 文件夹路径设定
 BASE_DIR = Path(__file__).parent.parent  # 项目根目录

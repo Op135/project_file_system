@@ -4,9 +4,10 @@ logs/
 files/
 over/
 req/
-data/
+data/*
 .nicegui/
 uploads/
 *.pyc
 # 忽略 Python 字节码缓存
 __pycache__/
+data/users.xlsx

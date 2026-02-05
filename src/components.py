@@ -303,6 +303,8 @@ class FileThumbnail:
         self.on_add_ref_click = on_add_ref_click
         self.on_question_display_click = on_question_display_click
         self.dialog = ui.dialog().props("").classes("p-0")
+        # --- 视频弹窗 ---
+        self.video_dialog = ui.dialog().classes("p-0 bg-transparent shadow-none")
         if self.file_type.startswith("image/"):
             with self.dialog:
                 # with (
@@ -349,7 +351,25 @@ class FileThumbnail:
         if self.file_type.startswith("image/"):
             self.thumbnail = ui.interactive_image(self.file_url).classes(f"h-{str(self.parents_h)} cursor-pointer")
             self.thumbnail.on("click", self.show_fullscreen)
+        # 2. 视频处理 (新增!!!)
+        elif self.file_type.startswith("video/"):
+            with ui.row().classes(f"h-{str(self.parents_h)} flex-nowrap gap-1") as self.video_row:
+                # 使用视频图标，或者你可以截取一帧作为封面(比较复杂)，这里用图标最简单
+                self.thumbnail = (
+                    ui.interactive_image(f"{IMG_DIR}/file_type_video.png", content="")
+                    .classes("h-full text-5xl cursor-pointer")
+                    .classes("h-full aspect-[1/1] cursor-pointer")
+                    .on("click", self.play_video)  # 绑定播放函数
+                )
+                # 叠加一个播放的小图标在上面，增加辨识度
+                with self.thumbnail:
+                    ui.icon("play_circle_outline").classes(
+                        "absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 text-black text-xl opacity-80"
+                    )
 
+                ui.label(self.file_neme).classes(
+                    f"h-full w-[{str(label_w)}px] text-[{str(font_px)}px]/[{str(font_px)}px] break-all text-black p-0 m-0 bg-white-500"
+                )
         elif self.file_type == "application/pdf":
             with ui.row().classes(f"h-{str(self.parents_h)} flex-nowrap gap-1") as self.pdf_row:
                 # 使用 PDF 图标作为 PDF 文件的缩略图
@@ -550,10 +570,33 @@ class FileThumbnail:
             await asyncio.sleep(3)
         if self.file_type.startswith("image/"):
             self.show_fullscreen()
+        elif self.file_type.startswith("video/"):
+            self.play_video()
         elif self.file_type == "application/pdf":
             self.open_pdf_in_browser()  # 使用浏览器打开则用open_pdf_in_browser()
         else:
             await self.check_and_download()
+
+    # 播放视频函数 (新增)
+    def play_video(self):
+        self.video_dialog.clear()
+        with self.video_dialog:
+            # 修改 Card 样式：
+            # 1. w-auto: 让卡片宽度适应视频宽度
+            # 2. max-w-screen-xl: 限制最大宽度，防止视频过大溢出屏幕
+            # 3. overflow-hidden: 防止圆角处漏出
+            with ui.card().classes(
+                "w-auto max-w-screen-xl min-w-[300px] bg-black p-0 items-center justify-center relative-position overflow-hidden"
+            ):
+                # 修改 Video 样式：
+                # 1. w-full: 让视频填满卡片宽
+                # 2. max-h-[85vh]: 限制高度，防止超出垂直屏幕范围
+                ui.video(src=self.file_url).classes("w-full max-h-[85vh]").props("controls autoplay")
+                # 关闭按钮保持不变
+                ui.button(icon="close", on_click=self.video_dialog.close).props("flat round color=white").classes(
+                    "absolute top-2 right-2 z-10 opacity-70 hover:opacity-100"
+                )
+        self.video_dialog.open()
 
     # 图片开始拖拽
     def start_drag(self, e: GenericEventArguments):
@@ -637,8 +680,8 @@ class InteractiveButton:
         temp_bool: bool = False,
         # delete_bool: bool = True,
     ):
-        if processing_type not in ["text", "file", "image", "test", "search", "svn"]:
-            raise ValueError("processing_type 必须是 'text','file','image','test','search','svn'")
+        if processing_type not in ["text", "file", "image", "test", "search", "svn", "video"]:
+            raise ValueError("processing_type 必须是 'text','file','image','test','search','svn','video'")
 
         self.role = role
         self.title = title
@@ -667,6 +710,7 @@ class InteractiveButton:
         # self.select_ver = {"value": None}
         self.chip_dialog = ui.dialog().classes("")
         self.img_dialog = ui.dialog().props("").classes("p-0")
+        self.overview_video_dialog = ui.dialog().classes("p-0 bg-transparent shadow-none")
         self.check_down_dialog = ui.dialog().classes("")
         self.activ_dialog = ui.dialog().props("persistent").classes("")
         self.history_dialog = ui.dialog().classes("w-full")
@@ -679,7 +723,7 @@ class InteractiveButton:
         #     await db_storage.set_deep_item([f"{self.project}_over_data", self.label], {})
 
         # 创建主按钮，并绑定点击事件
-        if self.processing_type in ["file", "image"]:
+        if self.processing_type in ["file", "image", "video"]:
             text_color = "text-orange-7"
         elif self.processing_type == "test":
             text_color = "text-deep-purple-7"
@@ -705,6 +749,19 @@ class InteractiveButton:
         # 设置一个定时器，每隔0.5秒检查一次共享数据是否有变化，并更新UI
         # 这是实现多用户实时同步的关键
         ui.timer(0.5, self._update_chip_display)
+
+    def play_overview_video(self, url_path):
+        self.overview_video_dialog.clear()
+        with self.overview_video_dialog:
+            with ui.card().classes(
+                "w-auto max-w-screen-xl min-w-[300px] bg-black p-0 items-center justify-center relative-position overflow-hidden"
+            ):
+                ui.video(src=url_path).classes("w-full max-h-[85vh]").props("controls autoplay")
+                ui.button(icon="close", on_click=self.overview_video_dialog.close).props(
+                    "flat round color=white"
+                ).classes("absolute top-2 right-2 z-10 opacity-70 hover:opacity-100")
+
+        self.overview_video_dialog.open()
 
     # 显示大图
     def show_fullscreen(self, url_path):
@@ -1769,6 +1826,18 @@ class InteractiveButton:
             )
             self.spinner.set_visibility(False)
             return
+        # 增加视频类型校验
+        elif self.processing_type == "video" and "video" not in file_type:
+            ui.notify(
+                f'文件 "{original_filename}" 不是视频类型，无法上传!',
+                type="warning",
+                position="bottom",
+                timeout=3000,
+                progress=True,
+                close_button="✖",
+            )
+            self.spinner.set_visibility(False)
+            return
         # 生成一个唯一的内部文件名以避免覆盖，但保留原始文件名用于显示
         # unique_filename = f"{uuid.uuid4().hex}{Path(original_filename).suffix}"
         # filepath = self.upload_path / unique_filename
@@ -1822,6 +1891,8 @@ class InteractiveButton:
             if self.processing_type == "file":
                 # 文件类型才将icon设置为引用小图，图片类不设置
                 file_icon = "attachment"
+            elif self.processing_type == "video":
+                file_icon = "play_circle"
             chip_id = str(uuid.uuid4())
             req_max_ver = app.storage.general["project_req_max_ver"][self.project]
             select_activ_dic = self._get_select_activ_dic(req_max_ver)
@@ -2032,7 +2103,7 @@ class InteractiveButton:
                 ui.button("否", on_click=lambda: self.chip_dialog.close(), color="blue-grey-6")
 
     # 刷新chip容器
-    async def _refresh_chip_container(self):
+    async def _refresh_chip_container(self) -> None:
         # 获取该项目最高版本
         req_max_ver = app.storage.general["project_req_max_ver"][self.project]
         # 删除元素重新显示
@@ -2858,7 +2929,23 @@ class InteractiveButton:
                             close_button="✖",
                         )
                     )
-
+            # 新增 video 处理
+            elif chip_info.get("type") == "video":
+                # 确保路径存在
+                if filepath and Path(filepath).exists():
+                    chip.on_click(lambda url_path=chip_info.get("url_path"): self.play_overview_video(url_path))
+                else:
+                    chip.set_icon("videocam_off")
+                    chip.on_click(
+                        lambda: ui.notify(
+                            f"视频文件：\n{chip_info.get('url_path')}\n已丢失，点击不能打开或下载！",
+                            type="warning",
+                            position="bottom",
+                            timeout=3000,
+                            progress=True,
+                            close_button="✖",
+                        )
+                    )
             # 创建chip元素的附属元素
             with chip:
                 # 为 chip 添加 tooltip

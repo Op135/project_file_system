@@ -2271,7 +2271,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                 )
                 # 不传入项目名，就不会识别个人自动保存的需求文件
                 ui.timer(
-                    3,
+                    1,
                     callback=lambda: ui.navigate.to(f"/main/requirement?type=requirement&json_path={file_path}"),
                     once=True,
                 )
