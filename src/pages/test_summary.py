@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 def test_summary_report(project_name: str):
     # 1. 权限检查 (可选，建议保留)
     if not app.storage.user.get("current_user"):
-        ui.label("请先登录").classes("text-xl text-red")
+        ui.navigate.to("/login")
         return
 
     # 2. 注入打印专用样式
@@ -130,6 +130,8 @@ def test_summary_report(project_name: str):
         all_over_data = db_storage.get_item(f"{project_name}_over_data", {})
         rows = []
         role_order = ["光学", "结构", "硬件", "软件", "UI", "工艺", "质量"]
+        drive_voltage_list = []
+        power_label_list = []
 
         # 辅助格式化函数
         def fmt_option(select_data, key_prefix):
@@ -146,9 +148,16 @@ def test_summary_report(project_name: str):
             if "over_config_data_flat" in app.storage.general:
                 label_info = app.storage.general["over_config_data_flat"].get(label, {})
                 label_title = label_info.get("title", label)
-
+            if label == "drive_voltage":
+                for chip_id, data in chips.items():
+                    if data.get("content", "") and data.get("enabled"):
+                        drive_voltage_list.append(data.get("content", ""))
+            if label == "power_label":
+                for chip_id, data in chips.items():
+                    if data.get("content", "") and data.get("enabled"):
+                        power_label_list.append(data.get("content", ""))
             for chip_id, data in chips.items():
-                if data.get("type") == "test" and data.get("enabled") in [True, None]:
+                if data.get("type") == "test" and data.get("enabled"):
                     test_data = data.get("test_select_data", {})
                     rows.append(
                         {
@@ -169,6 +178,15 @@ def test_summary_report(project_name: str):
         if not rows:
             ui.label("该项目暂无测试项数据").classes("text-xl text-gray-400 w-full text-center mt-10")
         else:
+            if drive_voltage_list and power_label_list and len(drive_voltage_list) == 1 and len(power_label_list) == 1:
+                ui.label(f"输入电压：{drive_voltage_list[0].split('±')[0]}，标签功率：{power_label_list[0]}").classes(
+                    "text-base font-medium mb-0"
+                )
+            else:
+                ui.label("输入电压或标签功率数据异常（空白或内容不唯一），无法显示").classes(
+                    "text-base font-medium mb-0 text-red-600"
+                )
+
             columns = [
                 {
                     "name": "role",

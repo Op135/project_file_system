@@ -511,7 +511,10 @@
                         "研发光学"
                     ]
                 },
-                "impact_list": []
+                "impact_list": [
+                    "specifications",
+                    "craft_key_requirements"
+                ]
             },
             "产品技术规格书中文版": {
                 "label": "specifications",
@@ -680,7 +683,8 @@
                     "specifications",
                     "optical_testing",
                     "photoelectric_sensors",
-                    "light_max_temperature"
+                    "light_max_temperature",
+                    "power_label"
                 ]
             }
         }
@@ -1719,7 +1723,8 @@
                     ]
                 },
                 "impact_list": [
-                    "specifications"
+                    "specifications",
+                    "power_label"
                 ]
             },
             "产品输入控制模式": {
