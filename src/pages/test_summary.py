@@ -190,7 +190,7 @@ def test_summary_report(project_name: str):
                     "label": "条件",
                     "field": "condition",
                     "align": "center",
-                    "style": "white-space: pre-wrap; width: 200px;",
+                    "style": "white-space: pre-wrap; width: 300px;",
                 },
                 {"name": "node", "label": "节点", "field": "node", "align": "center", "style": "width: 80px;"},
                 {
@@ -198,7 +198,7 @@ def test_summary_report(project_name: str):
                     "label": "工具",
                     "field": "instrument",
                     "align": "center",
-                    "style": "width: 100px;",
+                    "style": "width: 150px;",
                 },
                 {
                     "name": "notes",

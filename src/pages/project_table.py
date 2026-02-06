@@ -1,4 +1,5 @@
 # -*- encoding: utf-8 -*-
+import asyncio
 import copy
 import datetime
 import json
@@ -29,6 +30,40 @@ def project_table_page():
     # 向页面的 <head> 部分添加自定义的 HTML 代码。这通常用于添加自定义的 CSS 样式、JavaScript 代码或元数据（如 <meta> 标签）
     ui.add_head_html("""
         <style>
+            /* === 自定义 Loading 动画样式 === */
+            .custom-loading-overlay {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                padding: 20px;
+                background: rgba(255, 255, 255, 0.9); /* 半透明白色背景 */
+                border-radius: 12px;
+                box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+                backdrop-filter: blur(5px); /* 毛玻璃效果 */
+            }
+
+            .loading-spinner {
+                width: 40px;
+                height: 40px;
+                border: 4px solid #e9f7f8; /* 浅色底环 */
+                border-top: 4px solid #2196F3; /* 蓝色主色，可改成你的主题色 */
+                border-radius: 50%;
+                animation: spin 1s linear infinite;
+                margin-bottom: 10px;
+            }
+
+            .loading-text {
+                color: #555;
+                font-size: 14px;
+                font-weight: 600;
+                font-family: 'Arial', sans-serif;
+            }
+
+            @keyframes spin {
+                0% { transform: rotate(0deg); }
+                100% { transform: rotate(360deg); }
+            }
             .ag-theme-alpine {
                 --ag-font-family: 'Arial', sans-serif !important;
                 --ag-foreground-color: #111 !important;       /* 单元格文本颜色 */
@@ -334,7 +369,7 @@ def project_table_page():
             return False
 
     # === 新增功能：自动刷新并定位到对应系列 ===
-    def auto_refresh_view(target_project_name):
+    async def auto_refresh_view(target_project_name):
         """
         保存后调用：重新加载数据，重新计算分类，并将视图切换到目标项目所在的系列
         """
@@ -385,7 +420,7 @@ def project_table_page():
         # 5. 刷新表格
         #    此时 select_major.value 和 select_sub.value 已经更新
         #    update_aggrid 会读取这两个值来筛选 rows
-        update_aggrid(aggrid)
+        await update_aggrid(aggrid)
 
     # === 新增功能：构建弹窗 UI ===
     def open_add_project_dialog():
@@ -446,7 +481,7 @@ def project_table_page():
 
             with ui.row().classes("w-full justify-end mt-4"):
 
-                def on_add_confirm():
+                async def on_add_confirm():
                     # 简单校验
                     if form_data["project_name"].split("-")[0] == "RFTS":
                         ui.notify(
@@ -465,9 +500,9 @@ def project_table_page():
                         # table_dialog.close()
                         # 刷新页面或表格 (最简单是直接刷新页面，或者手动更新 rows)
                         # ui.navigate.to("/project_table")  # 重新加载当前页以刷新数据
-                        auto_refresh_view(form_data["project_name"])  # 自动刷新并定位
+                        await auto_refresh_view(form_data["project_name"])  # 自动刷新并定位
 
-                def on_revise_confirm():
+                async def on_revise_confirm():
                     # 简单校验
                     if form_data["project_name"] not in app.storage.general["project_summary"]:
                         ui.notify(
@@ -486,7 +521,7 @@ def project_table_page():
                         # table_dialog.close()
                         # 刷新页面或表格 (最简单是直接刷新页面，或者手动更新 rows)
                         # ui.navigate.to("/project_table")  # 重新加载当前页以刷新数据
-                        auto_refresh_view(form_data["project_name"])  # 自动刷新并定位
+                        await auto_refresh_view(form_data["project_name"])  # 自动刷新并定位
 
                 ui.button("确认创建", on_click=on_add_confirm).props("color=green")
                 ui.button("确认修改", on_click=on_revise_confirm).props("color=blue")
@@ -534,7 +569,15 @@ def project_table_page():
         )
 
     # 按照两个选项的值，更新表格行数据，将概述填写内容同步到简介表，刷新表格显示
-    def update_aggrid(aggrid):
+    async def update_aggrid(aggrid):
+        # step 1: 立即显示 AG Grid 的加载遮罩
+        # 这会显示 "Loading..." 或者转圈动画，覆盖在表格上
+        aggrid.run_grid_method("showLoadingOverlay")
+
+        # step 2: 关键步骤！让出 0.01 秒的时间给 UI 线程
+        # 如果没有这行，Python 会一口气算完数据才去更新 UI，用户依然看不到加载动画
+        await asyncio.sleep(0.01)
+
         nonlocal rows_select
         # 清空
         rows_select = []
@@ -691,6 +734,8 @@ def project_table_page():
                 rows_select.append(row_data)
 
         # aggrid.run_grid_method("setRowData", rows_select)
+        # step 3: 更新数据
+        # AG Grid 在接收到新数据时，会自动移除 Loading Overlay
         aggrid.options["rowData"] = rows_select
         aggrid.update()
 
@@ -1043,6 +1088,14 @@ def project_table_page():
                     "row-wait": "data.state == '待定'",
                     "row-invalid": "data.state == '作废'",
                 },
+                # === 自定义加载模板 ===
+                # 注意：这里使用 HTML 字符串引用我们在 CSS 中定义的类
+                "overlayLoadingTemplate": """
+                    <div class="custom-loading-overlay">
+                        <div class="loading-spinner"></div>
+                        <div class="loading-text">正在加载数据...</div>
+                    </div>
+                """,
             }
         ).classes("ag-theme-alpine ag-header-cell-resize::after h-full")
 
@@ -1051,7 +1104,7 @@ def project_table_page():
         select_major.on_value_change(lambda aggrid=aggrid: update_aggrid(aggrid))
         select_sub.on_value_change(lambda aggrid=aggrid: update_aggrid(aggrid))
         aggrid.on("cellClicked", lambda e, aggrid=aggrid: handle_cell_click(e, aggrid))
-        update_aggrid(aggrid)
+        ui.timer(0.1, lambda: update_aggrid(aggrid), once=True)
 
         with tool_row:
             with ui.row().classes("items-center -space-x-4"):
