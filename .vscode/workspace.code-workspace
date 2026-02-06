@@ -166,7 +166,7 @@
 					},
 					{
 						"name": "类名高亮",
-						"scope": "entity.name.type, entity.name.class",
+						"scope": "entity.name.type, entity.name.class, entity.name.namespace, entity.name.scope-resolution",
 						"settings": {
 							"foreground": "#1177b0",
 							"fontStyle": ""

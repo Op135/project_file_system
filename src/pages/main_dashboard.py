@@ -13,6 +13,23 @@ logger = logging.getLogger(__name__)
 
 @ui.page("/main")
 def main_page():
+    ui.add_head_html("""
+        <style>
+            @keyframes hard-shake {
+                0% { transform: translateX(0); }
+                20% { transform: translateX(-2px) rotate(-3deg); }
+                40% { transform: translateX(2px) rotate(3deg); }
+                55% { transform: translateX(-1px) rotate(-2deg); }
+                70% { transform: translateX(1px) rotate(2deg); }
+                80% { transform: translateX(-1px) rotate(-1deg); }
+                90% { transform: translateX(1px) rotate(1deg); }
+                100% { transform: translateX(0); }
+            }
+            .animate-shake {
+                animation: hard-shake 1.0s ease-in-out infinite; /* n秒循环一次 */
+            }
+        </style>
+    """)
     online_data = {"online_count": "", "online_users": [], "tooltip_text": ""}
 
     def refresh_online_num():
@@ -143,30 +160,45 @@ def main_page():
                 over_charge_num = len(app.storage.general["overview_charge_pending"][current_user])
 
             for icon, title, subtitle, target in menu_items:
-                # 每个功能模块都用一个 ui.card 包裹
+                # 1. 预先计算该模块的待办数量 (Logic Pre-calculation)
+                #    这样我们可以根据数量来决定图标的颜色
+                pending_count = 0
+                if target == "/information":
+                    # 根据当前用户角色判断统计口径
+                    if current_role in ["研发经理"]:
+                        # 经理看到的是所有未审 + 自己负责的概述
+                        pending_count = state_num_sum + over_charge_num
+                    else:
+                        # 普通用户看到的是自己提交的未审 + 自己负责的项目 + 概述
+                        pending_count = state_num_user + over_charge_num
+
+                # 2. 定义动态样式 (Dynamic Styling)
+                #    如果有待办，图标变黄；否则保持原本的蓝色
+                #    text-orange-500: 警示色
+                #    text-blue-500: 正常色
+                icon_color_class = "text-red-500 animate-pulse" if pending_count > 0 else "text-blue-500"
+
+                # 3. 渲染卡片
                 with ui.card().classes(
                     "flex flex-col items-center justify-center cursor-pointer "
                     "hover:shadow-xl hover:-translate-y-1 transition-all duration-300 ease-in-out"
                 ) as card:
-                    # 设置点击事件，导航到指定页面
-                    # 当点击发生时，GenericEventArguments 对象被赋值给 _ 因为我们不需要处理这个点击事件对象，所以不关心它
                     card.on("click", lambda _, t=target: ui.navigate.to(t))
 
-                    # 大图标
-                    ui.icon(icon).classes("text-5xl text-blue-500 mb-4")
-                    # 模块标题
+                    # 应用动态颜色到图标
+                    ui.icon(icon).classes(f"text-5xl {icon_color_class} mb-4")
+
                     ui.label(title).classes("text-xl font-semibold")
-                    # 模块描述
                     ui.label(subtitle).classes("text-center text-gray-500 text-sm mt-1")
-                    if target == "/information":
-                        if current_role in ["研发经理"] and (state_num_sum or over_charge_num):
-                            ui.badge(str(state_num_sum + over_charge_num), color="red").props(
-                                "floating rounded transparent"
-                            )
-                        elif state_num_user or over_charge_num:
-                            ui.badge(str(state_num_user + over_charge_num), color="red").props(
-                                "floating rounded transparent"
-                            )
+
+                    # 4. 渲染增强后的 Badge
+                    if pending_count > 0:
+                        # color="red": 红色背景
+                        # animate-pulse: 呼吸灯效果，模拟“活着”的紧迫感
+                        # ring-2 ring-white: 2像素白色描边，将红点与图标视觉分离，增加体积感
+                        ui.badge(str(pending_count), color="red").props("floating rounded transparent").classes(
+                            "animate-shake ring-2 ring-white"
+                        )
 
     # --- 定时刷新在线用户数据 ---
     # 每 3 秒检查一次全局字典，更新UI
