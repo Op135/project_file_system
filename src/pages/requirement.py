@@ -2008,6 +2008,13 @@ async def requirement_page(type="", json_path="", project_name=""):
 
     # 需求数据输出处理函数
     async def output_config_data(data, type):
+        # 获取当前页面的 client 对象
+        try:
+            client = ui.context.client
+        except Exception:
+            # logger.error("无法获取当前客户端对象，可能页面已关闭。")
+            return
+
         # [新增安全锁检查] 如果是自动保存，且开关未开启，直接中止
         if type == "autosave" and not app.storage.client.get("allow_autosave", False):
             # 可选：打印日志方便调试

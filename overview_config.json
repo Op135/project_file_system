@@ -482,6 +482,37 @@
             }
         },
         "文档标准": {
+            "产品标签功率": {
+                "label": "power_label",
+                "role": "光学",
+                "title": "产品标签功率",
+                "processing_type": "text",
+                "dialog_placeholder": "150W/150VA",
+                "permission": {
+                    "read_role": [
+                        "boss",
+                        "销售",
+                        "销售总监",
+                        "客服主管",
+                        "客服",
+                        "研发助理",
+                        "研发电子主管",
+                        "研发硬件",
+                        "研发软件",
+                        "研发结构",
+                        "研发样品",
+                        "工程",
+                        "质量",
+                        "生产"
+                    ],
+                    "edit_role": [
+                        "admin",
+                        "研发经理",
+                        "研发光学"
+                    ]
+                },
+                "impact_list": []
+            },
             "产品技术规格书中文版": {
                 "label": "specifications",
                 "role": "光学",
@@ -1496,7 +1527,7 @@
                 "title": "量产阶段打包目录（txt）",
                 "processing_type": "file",
                 "file_name_regular": [],
-                "upload_path": "\\\\192.168.1.102\\Server\\研发部（量产阶段）\\★结构件工程图",
+                "upload_path": "\\\\192.168.1.102\\Server\\研发部（量产阶段）\\★结构件工程图\\结构件工程图打包目录",
                 "permission": {
                     "read_role": [
                         "boss",
