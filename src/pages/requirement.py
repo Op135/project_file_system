@@ -3057,6 +3057,272 @@ async def requirement_page(type="", json_path="", project_name=""):
         text_str = color_data[role_text][0] if color_data[role_text] else role_text[0]
         ui.badge(text=text_str, color=color_str).props("rounded").classes("p-1 text-[8px]/[8px]")
 
+    # --- 更新 requirement.py 中的 modify_overview_content_dialog 函数 ---
+
+    async def modify_overview_content_dialog(project_name):
+        """
+        研发经理专用的修改概述内容弹窗（增强版）
+        - 支持 text/file/image/svn/search/video 的 content/notes 修改
+        - 特别支持 test 类型的 test_select_data 修改
+        - 修改不覆盖原 creator，但记录修改历史
+        """
+        # 1. 准备数据容器
+        over_config = app.storage.general.get("over_config_data", {})
+
+        # 状态变量
+        state = {"role": None, "label": None, "chip_id": None, "current_chip_data": None, "btn_config": None}
+
+        # 存储 test 类型动态生成的输入控件引用
+        test_inputs = {}
+
+        # 创建对话框
+        general_dialog.clear()
+        with general_dialog, ui.card().classes("w-[700px] max-w-full"):
+            ui.label(f"修改概述内容 - {project_name}").classes("text-xl font-bold text-amber-900")
+            ui.label("注意：此功能直接修改底层数据，修改记录将留档，原创建人保持不变。").classes(
+                "text-xs text-red-500 mb-2"
+            )
+
+            # --- 级联选择区域 ---
+            select_container = ui.column().classes("w-full gap-2")
+
+            # --- 编辑区域 (初始隐藏) ---
+            editor_scroll = ui.scroll_area().classes("w-full h-[50vh] border-t pt-2 border-gray-200 mt-2")
+            editor_scroll.set_visibility(False)
+
+            with editor_scroll:
+                editor_container = ui.column().classes("w-full gap-3")
+
+            # 辅助：获取当前 label 对应的配置信息
+            def get_button_config(role, label):
+                if role and role in over_config:
+                    for group_data in over_config[role].values():
+                        for item_val in group_data.values():
+                            if item_val["label"] == label:
+                                return item_val
+                return None
+
+            # 定义选择器的更新逻辑
+            def on_role_change(e):
+                state["role"] = e.value
+                state["label"] = None
+                state["chip_id"] = None
+                state["btn_config"] = None
+                label_select.value = None
+                chip_select.value = None
+                label_select.options = get_label_options(e.value)
+                label_select.update()
+                chip_select.options = {}
+                chip_select.update()
+                editor_scroll.set_visibility(False)
+
+            def on_label_change(e):
+                state["label"] = e.value
+                state["chip_id"] = None
+                state["btn_config"] = get_button_config(state["role"], state["label"])
+                chip_select.value = None
+                chip_select.options = get_chip_options(state["label"])
+                chip_select.update()
+                editor_scroll.set_visibility(False)
+
+            def on_chip_change(e):
+                state["chip_id"] = e.value
+                # [修复 1] 显式获取并检查变量，确保路径列表是纯字符串
+                current_label = state["label"]
+                current_id = e.value
+
+                if current_id and current_label:
+                    # 获取该chip的完整数据
+                    path_list = [f"{project_name}_over_data", str(current_label), str(current_id)]
+                    chip_data = db_storage.get_deep_item(path_list, {})
+
+                    state["current_chip_data"] = copy.deepcopy(chip_data)
+                    chip_type = chip_data.get("type", "text")
+
+                    # --- 1. 基础内容填充 ---
+                    content_input.value = chip_data.get("content", "")
+                    notes_input.value = chip_data.get("notes", "")
+
+                    # --- 2. 类型特殊处理 ---
+                    test_ui_container.clear()
+
+                    if chip_type == "test":
+                        render_test_editor(chip_data)
+                        test_ui_container.set_visibility(True)
+                        type_warning.set_visibility(False)
+                    elif chip_type != "text":
+                        test_ui_container.set_visibility(False)
+                        type_warning.text = (
+                            f"当前类型为【{chip_type}】，修改内容通常意味着修改文件名或路径，请确保服务器存在对应文件。"
+                        )
+                        type_warning.set_visibility(True)
+                    else:
+                        test_ui_container.set_visibility(False)
+                        type_warning.set_visibility(False)
+
+                    editor_scroll.set_visibility(True)
+
+            # 渲染测试项编辑器
+            def render_test_editor(chip_data):
+                test_data = chip_data.get("test_select_data", {})
+                config = state["btn_config"] or {}
+
+                with test_ui_container:
+                    ui.label("测试项参数配置:").classes(
+                        "text-sm font-bold text-deep-purple-700 bg-deep-purple-50 p-1 rounded"
+                    )
+
+                    # 辅助函数：创建一组 选择框 + 补充输入框
+                    def create_test_group(label, key_prefix, options):
+                        if not options:
+                            return
+
+                        with ui.row().classes("w-full items-start gap-2"):
+                            # 下拉选择
+                            select = (
+                                ui.select(options=options, label=label, value=test_data.get(f"{key_prefix}_select"))
+                                .classes("w-1/3")
+                                .props("outlined dense options-dense")
+                            )
+
+                            # 补充文本框
+                            is_other = select.value == "其它"
+                            other_input = (
+                                ui.textarea(
+                                    placeholder="特殊要求描述", value=test_data.get(f"{key_prefix}_other_text", "")
+                                )
+                                .classes("flex-grow")
+                                .props("outlined dense rows=1")
+                            )
+                            other_input.set_visibility(is_other)
+
+                            # 绑定联动
+                            def on_sel_change(e, inp=other_input):
+                                inp.set_visibility(e.value == "其它")
+                                if e.value != "其它":
+                                    inp.value = ""
+
+                            # [修复 2] 使用 on_value_change 替代 on_change
+                            select.on_value_change(on_sel_change)
+
+                            # 存入引用以便保存时读取
+                            test_inputs[f"{key_prefix}_select"] = select
+                            test_inputs[f"{key_prefix}_other_text"] = other_input
+
+                    # 渲染三组配置
+                    create_test_group("条件/状态", "state", config.get("state_options", []))
+                    create_test_group("节点/位置", "node", config.get("node_options", []))
+                    create_test_group("工具/仪器", "instrument", config.get("instrument_options", []))
+
+            # 辅助：获取Label选项
+            def get_label_options(role):
+                options = {}
+                if role and role in over_config:
+                    for group_data in over_config[role].values():
+                        for item_val in group_data.values():
+                            options[item_val["label"]] = f"{item_val.get('title', '未命名')} ({item_val.get('label')})"
+                return options
+
+            # 辅助：获取Chip选项
+            def get_chip_options(label):
+                options = {}
+                if label:
+                    chips = db_storage.get_deep_item([f"{project_name}_over_data", label], {})
+                    for c_id, c_data in chips.items():
+                        content = c_data.get("content", "无内容")
+                        display = content[:30] + "..." if len(content) > 30 else content
+                        options[c_id] = display
+                return options
+
+            # --- 界面构建 ---
+            with select_container:
+                role_options = list(over_config.keys())
+                ui.select(options=role_options, label="1. 选择角色分类", on_change=on_role_change).classes("w-full")
+                label_select = ui.select(options={}, label="2. 选择概述分类", on_change=on_label_change).classes(
+                    "w-full"
+                )
+                chip_select = ui.select(options={}, label="3. 选择具体概述条目", on_change=on_chip_change).classes(
+                    "w-full"
+                )
+
+            with editor_container:
+                type_warning = ui.label("").classes("text-xs text-orange-600 font-bold")
+
+                # 测试项专用容器
+                test_ui_container = ui.column().classes("w-full gap-2 p-2 border border-deep-purple-100 rounded")
+
+                ui.label("概述内容 (Content):").classes("text-sm font-bold text-gray-600")
+                content_input = ui.textarea(placeholder="修改内容").classes("w-full").props("outlined auto-grow")
+
+                ui.label("注释 (Notes):").classes("text-sm font-bold text-gray-600")
+                notes_input = ui.textarea(placeholder="修改注释").classes("w-full").props("outlined auto-grow")
+
+                async def save_modification():
+                    # [修复 3] 增加对 current_chip_data 的非空检查，消除 None 类型访问属性的报错
+                    if not state["chip_id"] or not state["label"] or state["current_chip_data"] is None:
+                        return
+
+                    new_content = content_input.value.strip()
+                    new_notes = notes_input.value.strip()
+
+                    if not new_content:
+                        ui.notify("内容不能为空", type="warning")
+                        return
+
+                    try:
+                        # 确保路径是字符串列表
+                        label_str = str(state["label"])
+                        id_str = str(state["chip_id"])
+                        base_path = [f"{project_name}_over_data", label_str, id_str]
+
+                        # 1. 更新基础字段
+                        await db_storage.set_deep_item(base_path + ["content"], new_content)
+                        await db_storage.set_deep_item(base_path + ["notes"], new_notes)
+
+                        # 2. 如果是 Test 类型，收集并保存 test_select_data
+                        if state["current_chip_data"].get("type") == "test":
+                            new_test_data = {}
+                            for key, input_elem in test_inputs.items():
+                                if input_elem:
+                                    new_test_data[key] = input_elem.value
+
+                            final_test_data = state["current_chip_data"].get("test_select_data", {}).copy()
+                            final_test_data.update(new_test_data)
+
+                            await db_storage.set_deep_item(base_path + ["test_select_data"], final_test_data)
+
+                        # 3. 历史记录 (不修改原 creator)
+                        # current_user = app.storage.user.get("current_user", "匿名管理员")
+                        # timestamp_now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+                        # # 获取当前的 select_activ_dic
+                        # current_activ = state["current_chip_data"].get("select_activ_dic", {})
+
+                        # 追加 timestamp 记录
+                        # await db_storage.set_deep_item(
+                        #     base_path + ["timestamp", timestamp_now],
+                        #     {
+                        #         "creator": current_user,
+                        #         "select_activ_dic": current_activ,
+                        #         "action": "manager_edit",
+                        #         "note": "研发经理修正数据",
+                        #     },
+                        # )
+
+                        ui.notify("修改已保存！", type="positive")
+                        # general_dialog.close()
+                        # overview_role_update(project_name)
+
+                    except Exception as e:
+                        logger.error(f"修改概述失败: {e}")
+                        ui.notify(f"保存失败: {e}", type="negative")
+
+                with ui.row().classes("w-full justify-end mt-2 pb-4"):
+                    ui.button("取消", on_click=general_dialog.close).props("flat color=grey")
+                    ui.button("确认修改并保存", on_click=save_modification).props("color=red icon=save")
+
+        general_dialog.open()
+
     # 需求显示界面框架构造函数
     async def overview_input_frame(json_data, temp_bool):
         project_name = json_data["1.0"]["project_name"]
@@ -3167,6 +3433,9 @@ async def requirement_page(type="", json_path="", project_name=""):
                     ui.menu_item("注销登录", on_click=lambda: logout())
                     ui.separator().props("size=1px")
                     ui.menu_item("对比需求", on_click=show_comparison_dialog)
+                    if current_role == "研发经理":
+                        ui.separator().props("size=1px")
+                        ui.menu_item("修改概述内容", on_click=lambda: modify_overview_content_dialog(project_name))
 
             with ui.row().classes("font-sans h-[calc(100vh-9rem)] items-stretch flex-nowrap w-full mt-3 text-black"):
                 # 需求内容列

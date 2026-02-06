@@ -518,7 +518,7 @@
                 "role": "光学",
                 "title": "光学测试项",
                 "processing_type": "test",
-                "dialog_placeholder": "色温：5500K±500K",
+                "dialog_placeholder": "白光色温：5500K±500K",
                 "state_options": [
                     "常亮100%亮度档",
                     "常亮50%亮度档",
@@ -591,7 +591,7 @@
                 "role": "光学",
                 "title": "驱动输出测试项",
                 "processing_type": "test",
-                "dialog_placeholder": "电流：5A±8%",
+                "dialog_placeholder": "白光电流：5A±8%",
                 "state_options": [
                     "常亮100%亮度档",
                     "频闪100%亮度档",

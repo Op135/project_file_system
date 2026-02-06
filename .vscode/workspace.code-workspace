@@ -118,7 +118,85 @@
 			"default": "right", // 默认情况下，单元格工具栏位于右侧
 			"jupyter-notebook": "left" // 对于 Jupyter Notebook，单元格工具栏位于左侧
 		},
-		"workbench.colorTheme": "Monokai-lgy", // 设置工作区的主题为 Monokai-lgy
+		"workbench.colorTheme": "Monokai", // 设置工作区的主题为 Monokai-lgy
+		// 界面颜色自定义（工作区 UI）
+		"workbench.colorCustomizations": {
+			"[Monokai]": {
+				// 设置终端颜色，这里以黑色背景白色字体为例
+				"terminal.background": "#191916", // 设置终端背景颜色为 #282c34
+				"terminal.foreground": "#bababa", // 设置终端前景颜色为 #ffffff
+				"statusBar.background": "#75af75", // 状态栏背景（绿色）
+				"statusBar.debuggingBackground": "#caba6a", // 调试状态栏背景
+				"editor.lineHighlightBackground": "#313026", // 活动行背景
+				"editor.selectionBackground": "#73767a60", // 选择内容背景
+				"editorLineNumber.activeForeground": "#e6e6e6", // 活动行号颜色
+				"list.hoverBackground": "#3e3d38", // 列表悬停背景
+				"selection.background": "#878b9180", // 通用选择背景
+				"statusBarItem.remoteBackground": "#AC6218", // 远程连接图标背景
+				"diffEditor.insertedTextBackground": "#4b661680", // 差异编辑器：插入文本背景
+				"diffEditor.removedTextBackground": "#90274A70", // 差异编辑器：删除文本背景
+				"widget.shadow": "#00000098", // 组件阴影
+				"minimap.selectionHighlight": "#878b9180" // 缩略图选择高亮
+			}
+		},
+		// 代码语义高亮自定义（语法配色）
+		"editor.tokenColorCustomizations": {
+			"[Monokai]": {
+				"comments": "#6e6a58", // 注释颜色
+				"strings": "#cec255", // 字符串颜色
+				"variables": "#55bb8a", // 变量颜色
+				"keywords": "#f83371", // 关键字颜色
+				"functions": "#51c4d3", // 函数颜色（加粗在 JSON 中需另设）
+				"textMateRules": [
+					{
+						"name": "函数名加粗",
+						"scope": "entity.name.function",
+						"settings": {
+							"fontStyle": "bold",
+							"foreground": "#51c4d3"
+						}
+					},
+					{
+						"name": "存储类型",
+						"scope": "storage.type",
+						"settings": {
+							"fontStyle": "italic",
+							"foreground": "#66a9c9"
+						}
+					},
+					{
+						"name": "类名高亮",
+						"scope": "entity.name.type, entity.name.class",
+						"settings": {
+							"foreground": "#1177b0",
+							"fontStyle": ""
+						}
+					},
+					{
+						"name": "Inherited class",
+						"scope": "entity.other.inherited-class",
+						"settings": {
+							"foreground": "#A6E22E"
+						}
+					},
+					{
+						"name": "形参高亮",
+						"scope": "variable.parameter",
+						"settings": {
+							"fontStyle": "italic",
+							"foreground": "#fb8b05"
+						}
+					},
+					{
+						"name": "Markdown 列表标题",
+						"scope": "punctuation.definition.list.begin.markdown",
+						"settings": {
+							"foreground": "#A6E22E"
+						}
+					}
+				]
+			}
+		},
 		// 配置语言的文件关联 (如: `"*.extension": "html"`)。这些关联的优先级高于已安装语言的默认关联。
 		"files.associations": {}, // 文件关联配置，这里为空
 		// 分配给新文件的默认语言模式。
@@ -145,11 +223,6 @@
 			"workbench.action.terminal.scrollToNextCommand",
 			"workbench.action.terminal.scrollToPreviousCommand"
 		],
-		"workbench.colorCustomizations": {
-			// 设置终端颜色，这里以黑色背景白色字体为例
-			"terminal.background": "#191916", // 设置终端背景颜色为 #282c34
-			"terminal.foreground": "#bababa" // 设置终端前景颜色为 #ffffff
-		},
 		"editor.linkedEditing": true,
 		"editor.gotoLocation.multipleDefinitions": "goto",
 	},
