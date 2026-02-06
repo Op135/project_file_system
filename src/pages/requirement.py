@@ -329,12 +329,21 @@ async def requirement_page(type="", json_path="", project_name=""):
         ui.timer(0.8, lambda: close_conversion_refresh(project_name), once=True)
         over_dialog.close()
 
-    def set_project_state_dialog(project_name, state, on_cancel_action):
+    def set_project_conversion_dialog(project_name, state, on_cancel_action):
         over_card.clear()
         with over_card:
-            ui.label("是否确认项目转产，所有svn概述项将设置为失活状态，且切换不可逆！").classes("text-base text-red")
+            ui.label("确认项目开始转产，所有svn概述项将设置为失活状态，且切换不可逆！").classes("text-base text-red")
             with ui.row().classes("w-full justify-end"):
                 ui.button("确认", on_click=lambda: set_conversion_svn_chip(project_name, state))
+                ui.button("取消", on_click=on_cancel_action)
+        over_dialog.open()
+
+    def set_project_trial_dialog(on_cancel_action):
+        over_card.clear()
+        with over_card:
+            ui.label("确认项目进入试产阶段，概述内容将通过ECN修改，且切换不可逆！").classes("text-base text-red")
+            with ui.row().classes("w-full justify-end"):
+                ui.button("确认", on_click=lambda: over_dialog.close())
                 ui.button("取消", on_click=on_cancel_action)
         over_dialog.open()
 
@@ -357,24 +366,23 @@ async def requirement_page(type="", json_path="", project_name=""):
             over_dialog.close()
 
         if current_role == "研发经理":
-            if previous_state in ["转产", "量产"] and state in ["研发", "待定", "作废"]:
+            if (
+                previous_state in ["作废", "待定"]
+                and state in ["转产", "试产", "量产"]
+                or previous_state in ["研发"]
+                and state in ["试产", "量产"]
+                or previous_state in ["转产"]
+                and state in ["量产"]
+                or previous_state in ["试产", "量产"]
+                and state in ["转产"]
+                or previous_state in ["转产", "试产", "量产"]
+                and state in ["研发", "待定", "作废"]
+            ):
                 # 恢复标记打开，防止状态改回时按照正常修改状态操作文件和弹出提示信息
                 app.storage.client["recovery_bool"] = True
                 select_element.value = previous_state
                 ui.notify(
-                    "无法将项目从转产后状态(转产/量产)更改为转产前状态(作废/待定/研发)！",
-                    type="warning",
-                    position="bottom",
-                    timeout=3000,
-                    progress=True,
-                    close_button="✖",
-                )
-            elif previous_state in ["作废", "待定"] and state in ["转产", "量产"]:
-                # 恢复标记打开，防止状态改回时按照正常修改状态操作文件和弹出提示信息
-                app.storage.client["recovery_bool"] = True
-                select_element.value = previous_state
-                ui.notify(
-                    "无法将项目从作废/待定状态直接更改为转产/量产状态！",
+                    "禁止违规状态切换！",
                     type="warning",
                     position="bottom",
                     timeout=3000,
@@ -382,8 +390,10 @@ async def requirement_page(type="", json_path="", project_name=""):
                     close_button="✖",
                 )
             # 如果是从研发状态改为转产或量产，将所有svn概述全部失活掉，然后进行特殊刷新
-            elif previous_state == "研发" and state in ["转产", "量产"]:
-                set_project_state_dialog(project_name, state, on_cancel_action)
+            elif previous_state == "研发" and state == "转产":
+                set_project_conversion_dialog(project_name, state, on_cancel_action)
+            elif previous_state == "转产" and state == "试产":
+                set_project_trial_dialog(on_cancel_action)
             else:
                 edit_project_summary(project_name, state, app.storage.client.get("recovery_bool", False))
 

@@ -7,6 +7,10 @@
                 "title": "光源选型",
                 "processing_type": "text",
                 "dialog_placeholder": "_光：规格型号",
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -59,6 +63,10 @@
                 "title": "光源驱动条件",
                 "processing_type": "text",
                 "dialog_placeholder": "_光：If=_A，Vf=_V±_V，阈值电流=_A",
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -106,6 +114,10 @@
                 "title": "光源最大热功率",
                 "processing_type": "text",
                 "dialog_placeholder": "_光：_W",
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -139,6 +151,10 @@
                 "title": "光源期望工作温度",
                 "processing_type": "text",
                 "dialog_placeholder": "_光：T(温敏)=_℃",
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -176,6 +192,10 @@
                 "title": "光源保护温度",
                 "processing_type": "text",
                 "dialog_placeholder": "_光：T(温敏)=_℃",
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -220,6 +240,10 @@
                 "title": "采用光学件",
                 "processing_type": "text",
                 "dialog_placeholder": "透镜/玻片：器件名",
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -253,6 +277,10 @@
                 "title": "需要运动的光学器件",
                 "processing_type": "text",
                 "dialog_placeholder": "透镜/玻片：器件名",
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -294,6 +322,10 @@
                 "title": "光学器件运动逻辑说明",
                 "processing_type": "text",
                 "dialog_placeholder": "透镜/玻片：逻辑说明",
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -334,6 +366,10 @@
                 "title": "光源温敏型号",
                 "processing_type": "text",
                 "dialog_placeholder": "_光：规格型号",
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -373,6 +409,10 @@
                 "title": "光电传感器选型",
                 "processing_type": "text",
                 "dialog_placeholder": "规格型号：用途说明",
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -419,6 +459,10 @@
                 "title": "光输出目标面距离",
                 "processing_type": "text",
                 "dialog_placeholder": "_mm@距模组输出口透镜顶点",
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -459,6 +503,10 @@
                 "title": "导光束要求",
                 "processing_type": "text",
                 "dialog_placeholder": "普通胶粘导光束/热熔导光束，通光口径≥_mm",
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -488,6 +536,10 @@
                 "title": "产品标签功率",
                 "processing_type": "text",
                 "dialog_placeholder": "150W/150VA",
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -523,6 +575,10 @@
                 "processing_type": "file",
                 "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（量产阶段）\\★产品技术规格书\\中文版",
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -583,6 +639,10 @@
                     "需要治具",
                     "其它"
                 ],
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -640,6 +700,10 @@
                     "其它"
                 ],
                 "instrument_options": [],
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -698,6 +762,10 @@
                 "processing_type": "file",
                 "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\2.输出——研发流程输出文档\\★可发客户的资料\\产品简化尺寸图\\模组",
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -731,6 +799,10 @@
                 "processing_type": "file",
                 "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\2.输出——研发流程输出文档\\★可发客户的资料\\产品简化尺寸图\\模组",
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -761,6 +833,10 @@
                 "processing_type": "file",
                 "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\2.输出——研发流程输出文档\\产品完整3D图",
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -806,6 +882,10 @@
                 "processing_type": "file",
                 "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\2.输出——研发流程输出文档\\★可发客户的资料\\产品简化尺寸图\\PCBA",
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -839,6 +919,10 @@
                 "processing_type": "file",
                 "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\2.输出——研发流程输出文档\\★可发客户的资料\\产品简化尺寸图\\PCBA",
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -870,6 +954,10 @@
                 "title": "产品出光口位置示意图",
                 "processing_type": "image",
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\2.输出——研发流程输出文档\\产品示意图\\产品出光口位置示意图",
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -901,6 +989,10 @@
                 "title": "产品出线位置示意图",
                 "processing_type": "image",
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\2.输出——研发流程输出文档\\产品示意图\\产品出线位置示意图",
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -932,6 +1024,10 @@
                 "title": "产品风道示意图",
                 "processing_type": "image",
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\2.输出——研发流程输出文档\\产品示意图\\产品风道示意图",
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -963,6 +1059,10 @@
                 "title": "重点装配细节示意图",
                 "processing_type": "image",
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\2.输出——研发流程输出文档\\产品示意图\\重点装配细节示意图",
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -998,6 +1098,10 @@
                 "title": "产品结构件选材",
                 "processing_type": "text",
                 "dialog_placeholder": "主要/零件名：材料型号，考虑其着色/重量/防锈/导电/导磁性能",
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -1038,6 +1142,10 @@
                 "title": "产品涉及表面处理工艺",
                 "processing_type": "text",
                 "dialog_placeholder": "主要/零件名：阳极氧化/导电氧化，100目喷砂",
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -1079,6 +1187,10 @@
                 "title": "产品外观颜色",
                 "processing_type": "text",
                 "dialog_placeholder": "公司常规色/具体色号",
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -1116,6 +1228,10 @@
                 "title": "产品实秤重量",
                 "processing_type": "text",
                 "dialog_placeholder": "整机/主体：_kg",
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -1151,6 +1267,10 @@
                 "title": "产品实测工作环境温湿度",
                 "processing_type": "text",
                 "dialog_placeholder": "-_℃，RH_%可启动/_℃，RH_%临近保护温度_℃",
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -1180,6 +1300,10 @@
                 "title": "产品实测表面温升/温度",
                 "processing_type": "text",
                 "dialog_placeholder": "温度/温升_℃@测试条件",
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -1209,6 +1333,10 @@
                 "title": "产品实测工作噪声",
                 "processing_type": "text",
                 "dialog_placeholder": "_dB(A)@测试条件",
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -1240,6 +1368,10 @@
                 "title": "产品包材",
                 "processing_type": "text",
                 "dialog_placeholder": "纸箱/珍珠棉包装盒，_pcs/套",
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -1274,6 +1406,10 @@
                 "title": "风扇选型",
                 "processing_type": "text",
                 "dialog_placeholder": "规格型号，_pcs/套，电压_V",
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -1327,6 +1463,10 @@
                 "title": "散热器类型",
                 "processing_type": "text",
                 "dialog_placeholder": "铝型材/铜管/铝型材嵌铜板散热器",
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -1374,6 +1514,10 @@
                 "title": "TEC选型",
                 "processing_type": "text",
                 "dialog_placeholder": "规格型号，_pcs/套，驱动电流_A，电压_V",
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -1421,6 +1565,10 @@
                 "title": "转接座选型",
                 "processing_type": "text",
                 "dialog_placeholder": "选配/具体型号，普通/悬臂检测/接近开关检测",
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -1458,6 +1606,10 @@
                 "title": "机构传感器选型",
                 "processing_type": "text",
                 "dialog_placeholder": "规格型号，_pcs/套",
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -1499,6 +1651,10 @@
                 "processing_type": "file",
                 "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\2.输出——研发流程输出文档\\其它图纸",
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -1532,6 +1688,10 @@
                 "processing_type": "file",
                 "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（量产阶段）\\★结构件工程图\\结构件工程图打包目录",
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -1554,6 +1714,10 @@
                 "processing_type": "file",
                 "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\2.输出——研发流程输出文档\\产品总BOM",
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -1582,6 +1746,10 @@
                 "processing_type": "file",
                 "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（量产阶段）\\★装箱清单",
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -1623,6 +1791,10 @@
                     "需要治具",
                     "其它"
                 ],
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -1660,6 +1832,10 @@
                 "title": "产品驱动输入电压",
                 "processing_type": "text",
                 "dialog_placeholder": "DC/AC_V",
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -1700,6 +1876,10 @@
                 "title": "产品驱动输入功率",
                 "processing_type": "text",
                 "dialog_placeholder": "_W",
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -1733,6 +1913,10 @@
                 "title": "产品输入控制模式",
                 "processing_type": "text",
                 "dialog_placeholder": "电位器/按键/PWM/RS232/触摸屏/等等",
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -1772,6 +1956,10 @@
                 "title": "驱动输出信号类型",
                 "processing_type": "text",
                 "dialog_placeholder": "模拟输出/PWM输出",
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -1808,6 +1996,10 @@
                 "title": "驱动PCB裸板规格",
                 "processing_type": "text",
                 "dialog_placeholder": "如：RFFM-1121_DP24A_V02",
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -1857,6 +2049,10 @@
                 "search_hierarchy": [
                     "Files"
                 ],
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -1900,6 +2096,10 @@
                 "search_hierarchy": [
                     "Files"
                 ],
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -1929,6 +2129,10 @@
                 "search_scope_regular": "^([^_]+)",
                 "search_folder_according": "drive_pcb",
                 "search_hierarchy": [],
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -1958,6 +2162,10 @@
                 "search_scope_regular": "^([^_]+)",
                 "search_folder_according": "drive_pcb",
                 "search_hierarchy": [],
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -1986,6 +2194,10 @@
                 "search_folder_according": "drive_pcb",
                 "search_hierarchy": [
                     "Files"
+                ],
+                "allowed_state": [
+                    "研发",
+                    "转产"
                 ],
                 "permission": {
                     "read_role": [
@@ -2019,6 +2231,10 @@
                 "search_folder_according": "drive_pcb",
                 "search_hierarchy": [
                     "Files"
+                ],
+                "allowed_state": [
+                    "研发",
+                    "转产"
                 ],
                 "permission": {
                     "read_role": [
@@ -2062,6 +2278,10 @@
                 "title": "控制PCB裸板规格",
                 "processing_type": "text",
                 "dialog_placeholder": "如：RFFM-1121_CP24A_V02",
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -2112,6 +2332,10 @@
                 "search_hierarchy": [
                     "Files"
                 ],
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -2150,6 +2374,10 @@
                 "search_hierarchy": [
                     "Files"
                 ],
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -2179,6 +2407,10 @@
                 "search_scope_regular": "^([^_]+)",
                 "search_folder_according": "control_pcb",
                 "search_hierarchy": [],
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -2208,6 +2440,10 @@
                 "search_scope_regular": "^([^_]+)",
                 "search_folder_according": "control_pcb",
                 "search_hierarchy": [],
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -2234,6 +2470,10 @@
                 "search_folder_according": "control_pcb",
                 "search_hierarchy": [
                     "Files"
+                ],
+                "allowed_state": [
+                    "研发",
+                    "转产"
                 ],
                 "permission": {
                     "read_role": [
@@ -2268,6 +2508,10 @@
                 "search_folder_according": "control_pcb",
                 "search_hierarchy": [
                     "Files"
+                ],
+                "allowed_state": [
+                    "研发",
+                    "转产"
                 ],
                 "permission": {
                     "read_role": [
@@ -2310,6 +2554,10 @@
                 "title": "光源PCB裸板规格",
                 "processing_type": "text",
                 "dialog_placeholder": "如：RFFM-1121_LP24A_V02",
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -2354,6 +2602,10 @@
                 "search_hierarchy": [
                     "Files"
                 ],
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -2387,6 +2639,10 @@
                 "search_hierarchy": [
                     "Files"
                 ],
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -2416,6 +2672,10 @@
                 "search_scope_regular": "^([^_]+)",
                 "search_folder_according": "light_pcb",
                 "search_hierarchy": [],
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -2445,6 +2705,10 @@
                 "search_scope_regular": "^([^_]+)",
                 "search_folder_according": "light_pcb",
                 "search_hierarchy": [],
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -2471,6 +2735,10 @@
                 "search_folder_according": "light_pcb",
                 "search_hierarchy": [
                     "Files"
+                ],
+                "allowed_state": [
+                    "研发",
+                    "转产"
                 ],
                 "permission": {
                     "read_role": [
@@ -2506,6 +2774,10 @@
                 "search_folder_according": "light_pcb",
                 "search_hierarchy": [
                     "Files"
+                ],
+                "allowed_state": [
+                    "研发",
+                    "转产"
                 ],
                 "permission": {
                     "read_role": [
@@ -2543,6 +2815,10 @@
                 "title": "其它PCB裸板规格",
                 "processing_type": "text",
                 "dialog_placeholder": "如：RFFM-1121_OP24A_V02",
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -2579,6 +2855,10 @@
                 "search_hierarchy": [
                     "Files"
                 ],
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -2609,6 +2889,10 @@
                 "search_hierarchy": [
                     "Files"
                 ],
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -2638,6 +2922,10 @@
                 "search_scope_regular": "^([^_]+)",
                 "search_folder_according": "other_pcb",
                 "search_hierarchy": [],
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -2667,6 +2955,10 @@
                 "search_scope_regular": "^([^_]+)",
                 "search_folder_according": "other_pcb",
                 "search_hierarchy": [],
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -2693,6 +2985,10 @@
                 "search_folder_according": "other_pcb",
                 "search_hierarchy": [
                     "Files"
+                ],
+                "allowed_state": [
+                    "研发",
+                    "转产"
                 ],
                 "permission": {
                     "read_role": [
@@ -2722,6 +3018,10 @@
                 "search_folder_according": "other_pcb",
                 "search_hierarchy": [
                     "Files"
+                ],
+                "allowed_state": [
+                    "研发",
+                    "转产"
                 ],
                 "permission": {
                     "read_role": [
@@ -2755,6 +3055,10 @@
                 "title": "显示类配件",
                 "processing_type": "text",
                 "dialog_placeholder": "规格型号，_pcs/套",
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -2802,6 +3106,10 @@
                 "title": "控制类配件",
                 "processing_type": "text",
                 "dialog_placeholder": "规格型号，_pcs/套",
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -2850,6 +3158,10 @@
                 "title": "线材配件",
                 "processing_type": "text",
                 "dialog_placeholder": "线材名称（料号），_pcs/套",
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -2900,6 +3212,10 @@
                 "search_scope_regular": "^([^_]+)",
                 "search_folder_according": "drive_pcb",
                 "search_hierarchy": [],
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -2933,6 +3249,10 @@
                 "search_scope_regular": "^([^_]+)",
                 "search_folder_according": "drive_pcb",
                 "search_hierarchy": [],
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -2966,6 +3286,10 @@
                 "search_scope_regular": "",
                 "search_folder_according": "",
                 "search_hierarchy": [],
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -3012,6 +3336,10 @@
                 "instrument_options": [
                     "其它"
                 ],
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -3057,6 +3385,10 @@
                 "search_folder_according": "",
                 "search_hierarchy": [
                     "src"
+                ],
+                "allowed_state": [
+                    "研发",
+                    "转产"
                 ],
                 "permission": {
                     "read_role": [
@@ -3117,6 +3449,10 @@
                 "search_hierarchy": [
                     "docs"
                 ],
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -3156,6 +3492,10 @@
                 "search_folder_according": "",
                 "search_hierarchy": [
                     "docs"
+                ],
+                "allowed_state": [
+                    "研发",
+                    "转产"
                 ],
                 "permission": {
                     "read_role": [
@@ -3199,6 +3539,10 @@
                 "search_hierarchy": [
                     "docs"
                 ],
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -3231,6 +3575,10 @@
                 "state_options": [],
                 "node_options": [],
                 "instrument_options": [],
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -3277,6 +3625,10 @@
                 "search_hierarchy": [
                     "src"
                 ],
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -3315,6 +3667,10 @@
                 "state_options": [],
                 "node_options": [],
                 "instrument_options": [],
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",
@@ -3350,6 +3706,10 @@
                 "title": "工艺重点要求",
                 "processing_type": "text",
                 "dialog_placeholder": "序号.要求",
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
                 "permission": {
                     "read_role": [
                         "boss",

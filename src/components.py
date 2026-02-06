@@ -666,6 +666,7 @@ class InteractiveButton:
         label: str,
         processing_type: str,
         permission: dict,
+        allowed_state: list = ["研发", "转产"],
         impact_list: list = [],
         upload_path: str = SUBMIT_FILES_DIR,
         state_path: dict = {},
@@ -688,6 +689,7 @@ class InteractiveButton:
         self.label = label
         self.project = project
         self.processing_type = processing_type
+        self.allowed_state = allowed_state
         self.impact_list = impact_list
         self.upload_path = upload_path
         self.state_path = state_path
@@ -2668,6 +2670,16 @@ class InteractiveButton:
                 await db_storage.del_deep_item([f"{self.project}_over_data", self.label, chip.props["data-chip-id"]])
 
             elif app.storage.user["current_user"] != "admin":
+                if app.storage.general["project_summary"][self.project]["state"] not in self.allowed_state:
+                    ui.notify(
+                        "项目当前状态禁止修改概述激活状态!",
+                        type="info",
+                        position="bottom",
+                        timeout=2000,
+                        progress=True,
+                        close_button="✖",
+                    )
+                    return
                 # app.storage.general["overview_data"][self.project][self.label][chip.props["data-chip-id"]]["removable"] = False
                 chip_id = chip.props["data-chip-id"]
                 self._select_set_activ_dialog(chip_id, chip.text)
@@ -2683,6 +2695,16 @@ class InteractiveButton:
                     [f"{self.project}_over_data", self.label, thumbnail.props["data-chip-id"]]
                 )
             elif app.storage.user["current_user"] != "admin":
+                if app.storage.general["project_summary"][self.project]["state"] not in self.allowed_state:
+                    ui.notify(
+                        "项目当前状态禁止修改概述激活状态!",
+                        type="info",
+                        position="bottom",
+                        timeout=2000,
+                        progress=True,
+                        close_button="✖",
+                    )
+                    return
                 chip_id = thumbnail.props["data-chip-id"]
                 self._select_set_activ_dialog(chip_id)
 
@@ -3565,7 +3587,7 @@ class InteractiveButton:
 
     # 处理主按钮的点击事件
     def _handle_main_button_click(self, e: GenericEventArguments):
-        if app.storage.general["project_summary"][self.project]["state"] not in ["研发", "转产", "量产"]:
+        if app.storage.general["project_summary"][self.project]["state"] not in self.allowed_state:
             ui.notify(
                 "项目当前状态禁止添加概述!",
                 type="info",

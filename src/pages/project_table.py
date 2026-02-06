@@ -9,7 +9,7 @@ import os
 from nicegui import app, ui
 
 from .. import db_storage  # 导入我们创建的模块
-from ..config import BASE_DIR, IMG_DIR, PRESET_AVATARS, REQ_DIR
+from ..config import BASE_DIR, IMG_DIR, PRESET_AVATARS, PROJECT_STATE_LIST, REQ_DIR
 from ..utils import (
     find_files_with_prefix_and_version,
     get_cache_busted_path,
@@ -456,9 +456,9 @@ def project_table_page():
 
                 with ui.row().classes("w-full gap-2"):
                     # 状态
-                    ui.select(
-                        ["待定", "研发", "转产", "量产", "作废"], value=form_data["state"], label="状态"
-                    ).bind_value(form_data, "state").classes("w-1/3")
+                    ui.select(PROJECT_STATE_LIST, value=form_data["state"], label="状态").bind_value(
+                        form_data, "state"
+                    ).classes("w-1/3")
                     # 日期
                     ui.input("立项日期", value=form_data["creation_date"]).bind_value(
                         form_data, "creation_date"
