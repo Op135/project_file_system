@@ -3981,6 +3981,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                                                         title=data["title"],
                                                         label=data["label"],
                                                         processing_type=data["processing_type"],
+                                                        dialog_placeholder=data["dialog_placeholder"],
                                                         impact_list=data["impact_list"],
                                                         permission=data["permission"],
                                                         temp_bool=temp_bool,

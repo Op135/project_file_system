@@ -1206,19 +1206,11 @@ class InteractiveButton:
                 return target_url
         # 有依赖文件夹配置，找依赖文件夹配置标签对应的标签标题名
         if self.search_folder_according:
-            break_bool = False
-            # 遍历大类，比如：光学、结构、硬件
-            for over_data in app.storage.general.get("over_config_data", {}).values():
-                # 遍历小类，比如：光源、光学件
-                for data_dic in over_data.values():
-                    if break_bool:
-                        break
-                    for data in data_dic.values():
-                        if data["label"] == self.search_folder_according:
-                            # 得到概述项标签名，用于后续提示用户使用
-                            according_title = data["title"]
-                            break_bool = True
-                            break
+            according_title = (
+                app.storage.general.get("over_config_data_flat", {})
+                .get(self.search_folder_according, {})
+                .get("title", "未知项")
+            )
             # 获取文件夹依赖标签里的chip数据
             for data in db_storage.get_deep_item(
                 [f"{self.project}_over_data", self.search_folder_according], {}
@@ -1314,16 +1306,12 @@ class InteractiveButton:
         according_folder_name = []
         # 有依赖文件夹配置，找依赖文件夹配置标签对应的标签标题名
         if self.search_folder_according:
-            break_bool = False
-            for over_data in app.storage.general.get("over_config_data", {}).values():
-                for data_dic in over_data.values():
-                    if break_bool:
-                        break
-                    for data in data_dic.values():
-                        if data["label"] == self.search_folder_according:
-                            according_title = data["title"]
-                            break_bool = True
-                            break
+            according_title = (
+                app.storage.general.get("over_config_data_flat", {})
+                .get(self.search_folder_according, {})
+                .get("title", "未知项")
+            )
+
             # 获取文件夹依赖标签里的chip数据
             for data in db_storage.get_deep_item(
                 [f"{self.project}_over_data", self.search_folder_according], {}
@@ -1361,10 +1349,12 @@ class InteractiveButton:
                 # 有缩小范围的正则表达式配置
                 if self.search_scope_regular:
                     # 查找这个文件夹
+                    # 按照正则获取比如：RFFM-1121_DP24A_V02的RFFM-1121部分来缩小范围
                     match = re.search(self.search_scope_regular, according_folder_name[0])
                     if match:
+                        # 获取RFFM-1121部分
                         search_target = match.group(1)
-                        # search_target = according_folder_name[0].split("_")[0]
+                        # 去RFFM-1121文件夹里找RFFM-1121_DP24A_V02这个文件夹
                         folder_according_li = await find_dirs_by_name_os_walk(
                             f"{self.upload_path}\\{search_target}", according_folder_name[0]
                         )
@@ -1415,7 +1405,7 @@ class InteractiveButton:
                         for path in folder_according_li:
                             path_str = f"{path_str}\n{str(path)}"
                         ui.notify(
-                            f"{according_title}概述项配置的文件夹存在多个:{path_str}\n链接无效!",
+                            f"{according_title}概述项配置的文件夹存在多个:\n{path_str}\n链接无效!",
                             type="warning",
                             position="bottom",
                             timeout=3000,

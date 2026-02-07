@@ -165,6 +165,13 @@
 						}
 					},
 					{
+						"name": "JSON String",
+						"scope": "meta.structure.dictionary.json string.quoted.double.json",
+						"settings": {
+							"foreground": "#aca358"
+						}
+					},
+					{
 						"name": "类名高亮",
 						"scope": "entity.name.type, entity.name.class, entity.name.namespace, entity.name.scope-resolution",
 						"settings": {
