@@ -666,6 +666,7 @@ class InteractiveButton:
         label: str,
         processing_type: str,
         permission: dict,
+        nature: str = "必填",
         allowed_state: list = ["研发", "转产"],
         impact_list: list = [],
         upload_path: str = SUBMIT_FILES_DIR,
@@ -689,6 +690,7 @@ class InteractiveButton:
         self.label = label
         self.project = project
         self.processing_type = processing_type
+        self.nature = nature
         self.allowed_state = allowed_state
         self.impact_list = impact_list
         self.upload_path = upload_path
@@ -725,15 +727,27 @@ class InteractiveButton:
         #     await db_storage.set_deep_item([f"{self.project}_over_data", self.label], {})
 
         # 创建主按钮，并绑定点击事件
-        if self.processing_type in ["file", "image", "video"]:
-            text_color = "text-orange-7"
+        if self.processing_type == "file":
+            btn_icon = "file_present"
+        elif self.processing_type == "image":
+            btn_icon = "image"
+        elif self.processing_type == "video":
+            btn_icon = "video_camera_back"
         elif self.processing_type == "test":
-            text_color = "text-deep-purple-7"
+            btn_icon = "gpp_good"
         else:
-            text_color = "text-blue-7"
-        ui.button(f"{self.title}：").props("flat").classes(
-            f"p-1 text-[14px]/[14px] {text_color} mt-2 font-semibold"
-        ).on("click", self._handle_main_button_click, ["shiftKey"])
+            btn_icon = "text_fields"
+
+        # 创建按钮
+        btn = (
+            ui.button(self.title, icon=btn_icon).props("flat").classes("p-1 text-[14px]/[14px] mt-2 font-bold relative")
+        )
+        btn.on("click", self._handle_main_button_click, ["shiftKey"])
+
+        # 如果是必填项，可以给按钮加一个tooltip提示
+        if self.nature == "必填":
+            with btn:
+                self.btn_label = ui.label("●").classes("absolute top-0 left-0 text-[10px] text-red")
 
         # 创建一个行(row)容器，用于存放生成的所有 chip
         self.chip_container = ui.row().classes("w-full items-center gap-2 pl-8")
@@ -2103,8 +2117,21 @@ class InteractiveButton:
         with self.chip_container:
             search_bool = False
             target_path = ""
-            for chip_info in db_storage.get_deep_item([f"{self.project}_over_data", self.label], {}).values():
-                # 如果打开显示所有记录的开关，失活chip不显示，跳过
+            label_chip_dic = db_storage.get_deep_item([f"{self.project}_over_data", self.label], {}).values()
+
+            # 根据概述项下的chip的激活状态，设置概述项按钮小标记颜色
+            chip_enabled_state_list = [chip_info["enabled"] for chip_info in label_chip_dic]
+            # 有激活状态为None的chip，说明有未选择的测试项选项，优先显示橙色；没有未选择但有激活的chip，显示绿色；都没有则显示红色
+            if chip_enabled_state_list and any(state is None for state in chip_enabled_state_list):
+                self.btn_label.classes("text-orange", remove="text-green text-red")
+            elif chip_enabled_state_list and any(chip_enabled_state_list):
+                self.btn_label.classes("text-green", remove="text-red text-orange")
+            else:
+                self.btn_label.classes("text-red", remove="text-green text-orange")
+
+            # 创建chip
+            for chip_info in label_chip_dic:
+                # 如果没打开显示所有记录的开关，失活chip不显示，跳过
                 if not app.storage.client.get("record_switch") and chip_info.get("enabled") is False:
                     continue
                 if self.processing_type == "search":
@@ -3181,7 +3208,7 @@ class InteractiveButton:
         with self.chip_dialog, ui.card().classes("w-1/2"):
             ui.label("添加新的概述内容").classes("text-lg font-bold")
             self.chip_label = (
-                ui.textarea(label=self.dialog_label, placeholder=self.dialog_placeholder)
+                ui.textarea(label=self.dialog_label, value=self.dialog_placeholder, placeholder=self.dialog_placeholder)
                 .props("outlined")
                 .classes("w-full")
             )
@@ -3314,6 +3341,7 @@ class InteractiveButton:
             self.chip_label = (
                 ui.textarea(
                     label="检测内容与标准",
+                    value=self.dialog_placeholder,
                     placeholder=self.dialog_placeholder,
                     validation={"不能空白": lambda value: value.strip() != ""},
                 )

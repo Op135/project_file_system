@@ -3896,6 +3896,8 @@ async def requirement_page(type="", json_path="", project_name=""):
                                 )
                     with ui.column().classes("w-full overflow-y-auto p-1 gap-2 rounded"):
                         overview_role_update(project_name)
+                        # 获取项目的实时概述数据 (chip数据)
+                        project_over_data = db_storage.get_item(f"{project_name}_over_data", {})
                         # 显示概述模块内容
                         for role, over_data in app.storage.general["over_config_data"].items():
                             with ui.card().classes("w-full px-3 gap-0"):
@@ -3931,15 +3933,51 @@ async def requirement_page(type="", json_path="", project_name=""):
                                     "工艺": "handyman",
                                 }
                                 for data_group, data_dic in over_data.items():
+                                    # === 新增：预计算统计数据 ===
+                                    # active_count = 0  # 激活数量
+                                    # pending_count = 0  # 待确认数量
+                                    # missing_required = 0  # 必填但为空的数量
+
+                                    # for conf in data_dic.values():
+                                    #     # 获取该按钮对应的 label (存储key)
+                                    #     label_key = conf.get("label")
+                                    #     # 默认为必填，除非配置里明确写了 "nature": 选填
+                                    #     is_required = conf.get("nature", "必填")
+
+                                    #     # 获取该label下实际存在的 chips
+                                    #     chips = project_over_data.get(label_key, {})
+
+                                    #     # 检查是否为“必填但未填” (没有chip 或者 chip都被删除了)
+                                    #     # 注意：这里简单的判断 chips 字典是否为空。
+                                    #     # 如果需要更严谨（例如排除掉 file_del_bool=True 的），需遍历检查
+                                    #     has_valid_chip = False
+                                    #     if chips:
+                                    #         for chip in chips.values():
+                                    #             # 统计激活和待确认状态
+                                    #             if chip.get("enabled") is True:
+                                    #                 active_count += 1
+                                    #                 has_valid_chip = True
+                                    #             elif chip.get("enabled") is None:
+                                    #                 pending_count += 1
+                                    #                 has_valid_chip = True
+                                    #             # 如果是 False (失活)，不算有效内容，也不算待确认
+                                    #             elif chip.get("enabled") is False:
+                                    #                 pass
+
+                                    #     if is_required == "必填" and not has_valid_chip:
+                                    #         missing_required += 1
+
+                                    # === 创建 Expansion ===
                                     exp = ui.expansion(
                                         data_group,
                                         icon=exp_icon_dic.get(role, "list"),
                                         value=False,
-                                        caption="",
+                                        caption="",  # 可应用统计文字
                                     ).classes("gap-1 w-full bg-gray-100/30 rounded")
-                                    # 将生成的 expansion 对象添加到列表中
+
                                     current_role_expansions.append(exp)
                                     exp.set_visibility(False)
+
                                     with exp:
                                         for data in data_dic.values():
                                             user_role = app.storage.user["current_role"]
@@ -3948,6 +3986,9 @@ async def requirement_page(type="", json_path="", project_name=""):
                                                 or user_role in data["permission"]["edit_role"]
                                             ):
                                                 exp.set_visibility(True)
+
+                                                # 提取必填属性
+                                                is_required_btn = data.get("nature", "必填")
                                                 if data["processing_type"] == "text":
                                                     InteractiveButton(
                                                         project=project_name,
@@ -3959,6 +4000,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                                                         dialog_placeholder=data["dialog_placeholder"],
                                                         permission=data["permission"],
                                                         temp_bool=temp_bool,
+                                                        nature=is_required_btn,
                                                         # delete_bool=False,
                                                     )
                                                 elif data["processing_type"] in ["file", "image"]:
@@ -3972,6 +4014,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                                                         permission=data["permission"],
                                                         temp_bool=temp_bool,
                                                         upload_path=data["upload_path"],
+                                                        nature=is_required_btn,
                                                         # delete_bool=False,
                                                     )
                                                 elif data["processing_type"] in ["search"]:
@@ -3989,6 +4032,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                                                         search_scope_regular=data["search_scope_regular"],
                                                         search_folder_according=data["search_folder_according"],
                                                         search_hierarchy=data["search_hierarchy"],
+                                                        nature=is_required_btn,
                                                         # delete_bool=False,
                                                     )
                                                 elif data["processing_type"] in ["svn"]:
@@ -4006,6 +4050,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                                                         search_scope_regular=data["search_scope_regular"],
                                                         search_folder_according=data["search_folder_according"],
                                                         search_hierarchy=data["search_hierarchy"],
+                                                        nature=is_required_btn,
                                                         # delete_bool=False,
                                                     )
                                                 elif data["processing_type"] in ["test"]:
@@ -4022,6 +4067,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                                                         node_options=data["node_options"],
                                                         instrument_options=data["instrument_options"],
                                                         temp_bool=temp_bool,
+                                                        nature=is_required_btn,
                                                         # delete_bool=False,
                                                     )
 

@@ -2354,7 +2354,7 @@
             "控制PCB裸板规格": {
                 "label": "control_pcb",
                 "role": "硬件",
-                "nature": "必填",
+                "nature": "选填",
                 "title": "控制PCB裸板规格",
                 "processing_type": "text",
                 "dialog_placeholder": "如：RFFM-1121_CP24A_V02",
@@ -2403,7 +2403,7 @@
             "控制PCB原理图": {
                 "label": "control_pcb_principle",
                 "role": "硬件",
-                "nature": "必填",
+                "nature": "选填",
                 "title": "控制PCB原理图（pdf）",
                 "processing_type": "search",
                 "dialog_placeholder": "裸板规格必须先填",
@@ -2447,7 +2447,7 @@
             "控制PCB丝印图": {
                 "label": "control_pcb_silkscreen",
                 "role": "硬件",
-                "nature": "必填",
+                "nature": "选填",
                 "title": "控制PCB丝印图（pdf）",
                 "processing_type": "search",
                 "dialog_placeholder": "裸板规格必须先填",
@@ -2484,7 +2484,7 @@
             "控制PCB加工工艺说明": {
                 "label": "control_pcb_process",
                 "role": "硬件",
-                "nature": "必填",
+                "nature": "选填",
                 "title": "控制PCB加工工艺说明（xlsx）",
                 "processing_type": "search",
                 "dialog_placeholder": "裸板规格必须先填",
@@ -2519,7 +2519,7 @@
             "控制PCB制板文件压缩包": {
                 "label": "control_pcb_making",
                 "role": "硬件",
-                "nature": "必填",
+                "nature": "选填",
                 "title": "控制PCB制板文件压缩包",
                 "processing_type": "search",
                 "dialog_placeholder": "裸板规格必须先填",
@@ -2550,7 +2550,7 @@
             "控制PCBA完整3D图": {
                 "label": "control_complete_diagram",
                 "role": "硬件",
-                "nature": "必填",
+                "nature": "选填",
                 "title": "控制PCBA完整3D图（stp）",
                 "processing_type": "search",
                 "dialog_placeholder": "裸板规格必须先填",
@@ -2590,7 +2590,7 @@
             "控制板电子BOM": {
                 "label": "control_electronic_bom",
                 "role": "硬件",
-                "nature": "必填",
+                "nature": "选填",
                 "title": "控制板电子BOM（xlsx）",
                 "processing_type": "search",
                 "dialog_placeholder": "裸板规格必须先填",
