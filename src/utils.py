@@ -51,6 +51,50 @@ def handle_disconnect(client):
         del online_users[client.id]
 
 
+def update_overview_charge_pending_dic():
+    for project, project_dic in app.storage.general["overview_role"].items():
+        for role, charge_user_dic in project_dic.items():
+            latest_user = charge_user_dic.get("latest_user", "")
+            latest_user = latest_user.split("：")[1] if latest_user else ""
+            if not latest_user:
+                continue
+            # 向概述负责人待处理全局记录字典里添加负责人
+            if latest_user not in app.storage.general["overview_charge_pending"]:
+                app.storage.general["overview_charge_pending"][latest_user] = {project: {}}
+            if project not in app.storage.general["overview_charge_pending"][latest_user]:
+                app.storage.general["overview_charge_pending"][latest_user][project] = {}
+
+            for group_dic in app.storage.general["over_config_data"].get(role, {}).values():
+                for ver_dic in group_dic.values():
+                    nature = ver_dic.get("nature")
+                    title = ver_dic.get("title")
+                    label = ver_dic.get("label")
+                    if nature == "必填" and latest_user:
+                        app.storage.general["overview_charge_pending"][latest_user][project].update({title: False})
+
+                    label_chip_dic = db_storage.get_deep_item([f"{project}_over_data", label], {}).values()
+                    # 根据概述项下的chip的激活状态，设置概述项按钮小标记颜色
+                    chip_enabled_state_list = [chip_info["enabled"] for chip_info in label_chip_dic]
+                    # 有激活状态为None的chip，说明有未选择的测试项选项，优先显示橙色；没有未选择但有激活的chip，显示绿色；都没有则显示红色
+                    if chip_enabled_state_list and any(state is None for state in chip_enabled_state_list):
+                        # 在用户负责的对应项目概述状态字典中，增加或更改当前分项为待确认标记
+                        app.storage.general["overview_charge_pending"][latest_user][project].update({title: None})
+                    elif chip_enabled_state_list and any(chip_enabled_state_list):
+                        # 在用户负责的对应项目概述状态字典中，因为当前分项没有待确认且存在激活chip，删除当前分项记录
+                        if app.storage.general["overview_charge_pending"][latest_user].get(project):
+                            app.storage.general["overview_charge_pending"][latest_user][project].pop(title, None)
+                    else:
+                        # 如果当前分项是必填项，在用户负责的对应项目概述状态字典中，增加或更改当前分项为无chip标记
+                        if nature == "必填":
+                            app.storage.general["overview_charge_pending"][latest_user][project].update({title: False})
+                        # 如果当前分项非必填项，在用户负责的对应项目概述状态字典中，删除可能存在的过期记录
+                        elif app.storage.general["overview_charge_pending"][latest_user].get(project):
+                            app.storage.general["overview_charge_pending"][latest_user][project].pop(title, None)
+            # 如果用户负责项目概述项状态字典为空，则清除掉这个项目对应记录
+            if not app.storage.general["overview_charge_pending"][latest_user].get(project):
+                app.storage.general["overview_charge_pending"][latest_user].pop(project, None)
+
+
 # 判断传入的概述负责角色是否与当前登录的角色匹配
 def overview_state_show_judge(charge_role) -> bool:
     # # 以下登录角色也要对所有概述状态进行了解
@@ -449,24 +493,8 @@ def updata_overview_config():
                     for chip_button_name, chip_dic in group_dic.items():
                         app.storage.general["over_config_data_flat"][chip_dic.get("label")] = chip_dic
             logger.info("成功更新概述项配置。")
-            ui.notify(
-                "概述项配置更新成功!",
-                type="positive",
-                position="bottom",
-                timeout=1000,
-                progress=True,
-                close_button="✖",
-            )
     except Exception as e:
         logger.error(f"更新概述项配置失败；{e}")
-        ui.notify(
-            f'概述项配置文件更新出错： "{e}" ',
-            type="negative",
-            position="center",
-            timeout=0,
-            progress=False,
-            close_button="✖",
-        )
 
 
 # 传入待判断字符串和正则表达式，输出判断结果

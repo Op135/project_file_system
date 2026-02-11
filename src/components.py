@@ -2592,7 +2592,7 @@ class InteractiveButton:
             ui_spinner = ui.spinner(type="hourglass", size="md", color="amber-8", thickness=8.0)
             ui_spinner.set_visibility(False)
             with ui.grid(columns=6).classes("w-full gap-0"):
-                max_ver = f"{str(max([int(float(v)) for v in app.storage.general['over_change_broadcast'][self.project][chip_id]['select_activ_dic'].keys()]))}.0"
+                # max_ver = f"{str(max([int(float(v)) for v in app.storage.general['over_change_broadcast'][self.project][chip_id]['select_activ_dic'].keys()]))}.0"
                 for select_label, val in app.storage.general["over_change_broadcast"][self.project][chip_id][
                     "select_activ_dic"
                 ].items():
@@ -3096,10 +3096,13 @@ class InteractiveButton:
 
             # 创建缩略图的附属元素
             with thumbnail:
-                if chip_info.get("icon"):
-                    ui.icon(chip_info.get("icon", "image")).props("flat fab color=red").classes(
-                        "absolute top-0 left-0 text-xl"
-                    )
+                image_icon = chip_info.get("icon")
+                if image_icon == "image":
+                    ui.icon(image_icon).props("flat fab").classes("absolute top-0 left-0 text-xl text-blue-500/50")
+                elif image_icon == "block":
+                    ui.icon(image_icon).props("flat fab").classes("absolute top-0 left-0 text-xl text-red")
+                elif image_icon == "question_mark":
+                    ui.icon(image_icon).props("flat fab").classes("absolute top-0 left-0 text-xl text-amber-5")
                 # 缩略图创建日期提示
                 tooltip_text = f"创建节点: 需求V{chip_info.get('req_ver')}后<br>图片名: {image_name}<br>创建者: {chip_info.get('creator')}<br>时间: {next(reversed(chip_info.get('timestamp', {})))}<br>注释: <br>{chip_info.get('notes', '').replace('\n', '<br>')}"
                 with ui.tooltip():

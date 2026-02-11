@@ -2018,13 +2018,6 @@ async def requirement_page(type="", json_path="", project_name=""):
 
     # 需求数据输出处理函数
     async def output_config_data(data, type):
-        # 获取当前页面的 client 对象
-        try:
-            client = ui.context.client
-        except Exception:
-            # logger.error("无法获取当前客户端对象，可能页面已关闭。")
-            return
-
         # [新增安全锁检查] 如果是自动保存，且开关未开启，直接中止
         if type == "autosave" and not app.storage.client.get("allow_autosave", False):
             # 可选：打印日志方便调试
@@ -2286,6 +2279,9 @@ async def requirement_page(type="", json_path="", project_name=""):
                     progress=True,
                     close_button="✖",
                 )
+                # 新增：跳转前取消定时器
+                if "autosave_timer" in app.storage.client:
+                    app.storage.client["autosave_timer"].cancel()
                 # 不传入项目名，就不会识别个人自动保存的需求文件
                 ui.timer(
                     1,
@@ -2691,6 +2687,9 @@ async def requirement_page(type="", json_path="", project_name=""):
                     progress=True,
                     close_button="✖",
                 )
+                # 新增：跳转前取消定时器
+                if "autosave_timer" in app.storage.client:
+                    app.storage.client["autosave_timer"].cancel()
                 # 不传入项目名，就不会识别个人自动保存的需求文件
                 ui.navigate.to(f"/main/requirement?type=requirement&json_path={file_path}")
             else:
@@ -2709,6 +2708,9 @@ async def requirement_page(type="", json_path="", project_name=""):
         if select_project_name:
             # 定义文件路径
             file_path = os.path.join(REQ_DIR, select_project_name)
+            # 新增：跳转前取消定时器
+            if "autosave_timer" in app.storage.client:
+                app.storage.client["autosave_timer"].cancel()
             # 不传入项目名，就不会识别个人自动保存的需求文件
             ui.navigate.to(f"/main/requirement?type=requirement&json_path={file_path}")
 
@@ -3897,7 +3899,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                     with ui.column().classes("w-full overflow-y-auto p-1 gap-2 rounded"):
                         overview_role_update(project_name)
                         # 获取项目的实时概述数据 (chip数据)
-                        project_over_data = db_storage.get_item(f"{project_name}_over_data", {})
+                        # project_over_data = db_storage.get_item(f"{project_name}_over_data", {})
                         # 显示概述模块内容
                         for role, over_data in app.storage.general["over_config_data"].items():
                             with ui.card().classes("w-full px-3 gap-0"):
@@ -4237,7 +4239,9 @@ async def requirement_page(type="", json_path="", project_name=""):
     # [新增] 每 10 秒调用一次复用的保存函数，模式为 autosave
     # 只有当 entry_status 为 True (或者你希望任何时候都存) 时才保存，防止刚进来就覆盖
     if type == "requirement":
-        ui.timer(10.0, lambda: output_config_data(app.storage.client["config_data"], "autosave"), immediate=False)
+        app.storage.client["autosave_timer"] = ui.timer(
+            10.0, lambda: output_config_data(app.storage.client["config_data"], "autosave"), immediate=False
+        )
     # 添加全局键盘事件跟踪
     # ignore不设定默认导致键盘事件在'input', 'select', 'button', 'textarea'元素聚焦时被忽略
     ui.keyboard(on_key=handle_key)

@@ -635,33 +635,33 @@ def project_table_page():
                         # 获取负责人名
                         charge_person = show_str.split("：")[1] if show_str else ""
                         # 当前项目的当前over_key_li角色比如“光学”，存在最近编辑者
-                        if charge_person:
-                            selected_bool = False
-                            break_bool = False
-                            for class_dic in overview_data.values():
-                                if break_bool:
-                                    break
-                                for ver_dic in class_dic.values():
-                                    if break_bool:
-                                        break
-                                    select_activ_dic = ver_dic.get("select_activ_dic", {})
-                                    if select_activ_dic:
-                                        max_ver = max([int(float(ver)) for ver in select_activ_dic.keys()])
-                                        # chip处于待选择激活状态下 且 over_key_li角色比如“光学”和当前chip的编辑角色一致
-                                        if select_activ_dic[f"{max_ver}.0"] is None and over_key_li == ver_dic.get(
-                                            "role", ""
-                                        ):
-                                            selected_bool = True
-                                            # 查到一个需要改变角色显示状态的就不要再继续遍历了
-                                            break_bool = True
-                            if selected_bool:
-                                # 向概述负责人待处理全局记录字典里添加负责人与项目信息
-                                if charge_person not in app.storage.general["overview_charge_pending"]:
-                                    app.storage.general["overview_charge_pending"][charge_person] = []
-                                elif project_name not in app.storage.general["overview_charge_pending"][charge_person]:
-                                    app.storage.general["overview_charge_pending"][charge_person].append(project_name)
-                                # 处理表格显示信息
-                                charge_person = f"待{charge_person}\n选概述"
+                        # if charge_person:
+                        #     selected_bool = False
+                        #     break_bool = False
+                        #     for class_dic in overview_data.values():
+                        #         if break_bool:
+                        #             break
+                        #         for ver_dic in class_dic.values():
+                        #             if break_bool:
+                        #                 break
+                        #             select_activ_dic = ver_dic.get("select_activ_dic", {})
+                        #             if select_activ_dic:
+                        #                 max_ver = max([int(float(ver)) for ver in select_activ_dic.keys()])
+                        #                 # chip处于待选择激活状态下 且 over_key_li角色比如“光学”和当前chip的编辑角色一致
+                        #                 if select_activ_dic[f"{max_ver}.0"] is None and over_key_li == ver_dic.get(
+                        #                     "role", ""
+                        #                 ):
+                        #                     selected_bool = True
+                        #                     # 查到一个需要改变角色显示状态的就不要再继续遍历了
+                        #                     break_bool = True
+                        #     if selected_bool:
+                        #         # 向概述负责人待处理全局记录字典里添加负责人与项目信息
+                        #         if charge_person not in app.storage.general["overview_charge_pending"]:
+                        #             app.storage.general["overview_charge_pending"][charge_person] = []
+                        #         elif project_name not in app.storage.general["overview_charge_pending"][charge_person]:
+                        #             app.storage.general["overview_charge_pending"][charge_person].append(project_name)
+                        #         # 处理表格显示信息
+                        #         charge_person = f"待{charge_person}\n选概述"
 
                         row_data[pro_key] = charge_person
 
@@ -678,10 +678,10 @@ def project_table_page():
                                     # 该chip内容是激活 或者 待定状态 才显示
                                     if chip_data["enabled"] or chip_data["enabled"] is None:
                                         text = ""
-                                        # 如果有content键，则应该是文字型chip
+                                        # 文本型内容，直接显示
                                         if chip_data.get("type") in ["text", "test"]:
                                             text = chip_data.get("content")
-                                        # 如果有filename键，则应该是文件或图片型chip
+                                        # 文件名类型内容，去除后缀
                                         elif chip_data.get("type") in ["search", "svn", "file", "image"]:
                                             text = ".".join(chip_data["content"].split(".")[:-1])
 

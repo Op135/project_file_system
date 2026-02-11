@@ -4,7 +4,13 @@ import logging
 from nicegui import app, ui
 
 from ..config import IMG_DIR, PRESET_AVATARS
-from ..utils import get_cache_busted_path, get_project_engineer_project_list_dic, logout, online_users
+from ..utils import (
+    get_cache_busted_path,
+    get_project_engineer_project_list_dic,
+    logout,
+    online_users,
+    update_overview_charge_pending_dic,
+)
 
 # 获取一个以此模块命名的 logger
 # 比如：如果你的文件是 src/components.py，这个 logger 的名字就会是 "src.components"
@@ -90,6 +96,9 @@ def main_page():
             continue
         menu_items.append(items)
 
+    # 刷新概述待确认总字典信息
+    # update_overview_charge_pending_dic()
+
     # 主界面
     with ui.header(elevated=True).classes("flex justify-between items-center bg-blue-500 h-12 px-4"):
         ui.image(f"{IMG_DIR}/Rayfine.png").classes("absolute w-20")
@@ -157,7 +166,7 @@ def main_page():
                         if submitter == current_user or project_name in project_engineer_dic.get(current_user, []):
                             state_num_user += 1
             if current_user in app.storage.general["overview_charge_pending"]:
-                over_charge_num = len(app.storage.general["overview_charge_pending"][current_user])
+                over_charge_num = len(app.storage.general["overview_charge_pending"][current_user].keys())
 
             for icon, title, subtitle, target in menu_items:
                 # 1. 预先计算该模块的待办数量 (Logic Pre-calculation)

@@ -21,6 +21,7 @@ from ..utils import (
     requirement_version_tidy,
     set_overview_active_state,
     set_project_custom_labels,
+    update_overview_charge_pending_dic,
 )
 
 # 获取 logger
@@ -289,7 +290,8 @@ def information_page():
     # -------------------------------------------------------------------------
     # 页面整体布局
     # -------------------------------------------------------------------------
-
+    # 刷新概述待确认总字典信息
+    # update_overview_charge_pending_dic()
     # 1. 顶部导航栏 (深色主题)
     header = ui.header(elevated=True).classes("flex justify-between items-center bg-blue-500 h-12 px-4")
     with header:
@@ -318,28 +320,29 @@ def information_page():
             with ui.column().classes("col-span-12 lg:col-span-6 gap-4"):
                 # A. 待判断概述 (Priority Task)
                 if current_role in module_show_data.get("overview_charge_pending_module", []):
-                    my_pending = app.storage.general["overview_charge_pending"].get(current_user, [])
+                    my_pending = app.storage.general["overview_charge_pending"].get(current_user, {})
                     if my_pending:
                         with ui.card().classes("w-full rounded-xl shadow-sm border border-red-100 bg-white"):
-                            ui_card_header("待处理：项目概述定义", "edit_document", "red-600")
+                            ui_card_header("待处理：项目概述", "edit_document", "red-600")
                             with ui.column().classes("w-full gap-2 px-1"):
-                                for project_name in my_pending:
+                                for project_name, state_dic in my_pending.items():
+                                    # 无内容的必填概述分项数量
+                                    false_num = list(state_dic.values()).count(False)
+                                    # 待确认的概述分项数量
+                                    none_num = list(state_dic.values()).count(None)
                                     # 每一行项目
                                     row_container = ui.row().classes(
                                         "w-full items-center justify-between p-3 bg-red-50 rounded-lg border border-red-100 hover:bg-red-100 transition-colors"
                                     )
                                     with row_container:
-                                        ui.label(project_name).classes("font-medium text-gray-800")
+                                        ui.label(
+                                            f"{project_name}（{str(false_num)}项必填概述无内容,{str(none_num)}项概述待确认）"
+                                        ).classes("font-medium text-gray-800")
                                         ui.button(
                                             "去处理",
                                             icon="arrow_forward",
                                             on_click=lambda pn=project_name: get_overviow_page(pn, False),
-                                        ).props("flat dense color=red size=sm").on(
-                                            "click",
-                                            lambda pn=project_name: app.storage.general["overview_charge_pending"][
-                                                current_user
-                                            ].remove(pn),
-                                        )
+                                        ).props("flat dense color=red size=sm")
 
                 # B. 需求评审队列 (Review Queue)
                 if (
@@ -383,9 +386,9 @@ def information_page():
                 # C. 统计图表 (Statistics)
                 if current_role in module_show_data.get("overview_charge_pending_statistics", []):
                     pending_data = app.storage.general.get("overview_charge_pending", {})
-                    for user in list(pending_data.keys()):
-                        if not pending_data[user]:
-                            del pending_data[user]
+                    for user, pending_project_dic in pending_data.items():
+                        if not pending_project_dic:
+                            pending_data.pop(user, None)
                     with ui.card().classes(
                         "w-full rounded-xl shadow-sm border border-gray-100 p-0 overflow-hidden bg-white"
                     ):
@@ -396,14 +399,14 @@ def information_page():
                             # 数据准备：横向图表适合人名展示
                             user_list = list(pending_data.keys())
                             user_list.reverse()  # 让图表从上往下排
-                            count_list = [len(pending_data[u]) for u in user_list]
+                            count_list = [len(pending_data[u].keys()) for u in user_list]
 
                             # ECharts 配置
                             ui.echart(
                                 {
                                     "tooltip": {"trigger": "axis"},
                                     "grid": {"top": 10, "bottom": 10, "left": 70, "right": 40, "containLabel": False},
-                                    "xAxis": {"type": "value", "splitLine": {"show": False}},
+                                    "xAxis": {"type": "value", "splitLine": {"show": False}, "minInterval": 1},
                                     "yAxis": {
                                         "type": "category",
                                         "data": user_list,
@@ -429,20 +432,16 @@ def information_page():
                             # 详情折叠
                             with ui.expansion("查看详细清单").classes("w-full text-sm text-gray-600 bg-gray-50"):
                                 with ui.column().classes("p-3 gap-2 w-full"):
-                                    for user, projects in pending_data.items():
-                                        if projects:
+                                    for user, pending_project_dic in pending_data.items():
+                                        if pending_project_dic:
                                             with ui.row().classes("w-full justify-between text-xs"):
                                                 ui.label(user).classes("font-bold text-gray-700")
-                                                ui.label(f"{len(projects)}").classes(
+                                                ui.label(f"{len(pending_project_dic.keys())}").classes(
                                                     "bg-indigo-100 text-indigo-700 px-1.5 rounded-full"
                                                 )
                                             # 显示前3个，避免太长
-                                            for p in projects[:5]:
+                                            for p in pending_project_dic.keys():
                                                 ui.label(f"• {p}").classes("pl-2 text-gray-500 truncate text-xs")
-                                            if len(projects) > 5:
-                                                ui.label(f"...等共 {len(projects)} 项").classes(
-                                                    "pl-2 text-gray-400 text-xs italic"
-                                                )
                         else:
                             ui.label("暂无积压数据").classes("p-4 text-gray-400 text-sm")
 
@@ -485,9 +484,9 @@ def information_page():
                                                         ui.button(
                                                             icon="close",
                                                             color="red",
-                                                            on_click=lambda r=row,
-                                                            pn=project_name,
-                                                            v=version: dele_temp_req_row(r, pn, v),
+                                                            on_click=lambda r=row, pn=project_name, v=version: (
+                                                                dele_temp_req_row(r, pn, v)
+                                                            ),
                                                         ).props("flat dense size=sm").tooltip("丢弃草稿")
 
                         if not has_drafts:
