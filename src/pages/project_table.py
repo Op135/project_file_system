@@ -369,7 +369,7 @@ def project_table_page():
             return False
 
     # === 新增功能：自动刷新并定位到对应系列 ===
-    async def auto_refresh_view(target_project_name):
+    async def auto_refresh_view(target_project_name) -> None:
         """
         保存后调用：重新加载数据，重新计算分类，并将视图切换到目标项目所在的系列
         """

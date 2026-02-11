@@ -280,6 +280,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                         over_data[label][id]["icon"] = "block"
                         over_data[label][id]["enabled"] = False
                         over_data[label][id]["bg_color"] = "bg-grey-5"
+
         return over_data
 
     # 编辑project_summary json文件
@@ -2602,8 +2603,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                                 copy_project_name, f"{copy_version.split('.')[0]}.0", target_project_name
                             )
                             # 更新目标项目概述角色统计结果，以便第一时间在项目总表能看到统计结果和状态
-                            overview_role_update(target_project_name)
-                            # overview_role_update(target_project_name)
+                            overview_role_update(target_project_name, "all_update")
 
                             logger.info(f"成功复制{target_project_name}的需求配置。")
                             ui.notify(
@@ -3310,27 +3310,7 @@ async def requirement_page(type="", json_path="", project_name=""):
 
                             await db_storage.set_deep_item(base_path + ["test_select_data"], final_test_data)
 
-                        # 3. 历史记录 (不修改原 creator)
-                        # current_user = app.storage.user.get("current_user", "匿名管理员")
-                        # timestamp_now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-                        # # 获取当前的 select_activ_dic
-                        # current_activ = state["current_chip_data"].get("select_activ_dic", {})
-
-                        # 追加 timestamp 记录
-                        # await db_storage.set_deep_item(
-                        #     base_path + ["timestamp", timestamp_now],
-                        #     {
-                        #         "creator": current_user,
-                        #         "select_activ_dic": current_activ,
-                        #         "action": "manager_edit",
-                        #         "note": "研发经理修正数据",
-                        #     },
-                        # )
-
                         ui.notify("修改已保存！", type="positive")
-                        # general_dialog.close()
-                        # overview_role_update(project_name)
 
                     except Exception as e:
                         logger.error(f"修改概述失败: {e}")
@@ -3897,7 +3877,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                                     app.storage.client, "record_switch"
                                 )
                     with ui.column().classes("w-full overflow-y-auto p-1 gap-2 rounded"):
-                        overview_role_update(project_name)
+                        overview_role_update(project_name, "initialize")
                         # 获取项目的实时概述数据 (chip数据)
                         # project_over_data = db_storage.get_item(f"{project_name}_over_data", {})
                         # 显示概述模块内容
@@ -3935,40 +3915,6 @@ async def requirement_page(type="", json_path="", project_name=""):
                                     "工艺": "handyman",
                                 }
                                 for data_group, data_dic in over_data.items():
-                                    # === 新增：预计算统计数据 ===
-                                    # active_count = 0  # 激活数量
-                                    # pending_count = 0  # 待确认数量
-                                    # missing_required = 0  # 必填但为空的数量
-
-                                    # for conf in data_dic.values():
-                                    #     # 获取该按钮对应的 label (存储key)
-                                    #     label_key = conf.get("label")
-                                    #     # 默认为必填，除非配置里明确写了 "nature": 选填
-                                    #     is_required = conf.get("nature", "必填")
-
-                                    #     # 获取该label下实际存在的 chips
-                                    #     chips = project_over_data.get(label_key, {})
-
-                                    #     # 检查是否为“必填但未填” (没有chip 或者 chip都被删除了)
-                                    #     # 注意：这里简单的判断 chips 字典是否为空。
-                                    #     # 如果需要更严谨（例如排除掉 file_del_bool=True 的），需遍历检查
-                                    #     has_valid_chip = False
-                                    #     if chips:
-                                    #         for chip in chips.values():
-                                    #             # 统计激活和待确认状态
-                                    #             if chip.get("enabled") is True:
-                                    #                 active_count += 1
-                                    #                 has_valid_chip = True
-                                    #             elif chip.get("enabled") is None:
-                                    #                 pending_count += 1
-                                    #                 has_valid_chip = True
-                                    #             # 如果是 False (失活)，不算有效内容，也不算待确认
-                                    #             elif chip.get("enabled") is False:
-                                    #                 pass
-
-                                    #     if is_required == "必填" and not has_valid_chip:
-                                    #         missing_required += 1
-
                                     # === 创建 Expansion ===
                                     exp = ui.expansion(
                                         data_group,

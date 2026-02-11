@@ -291,7 +291,7 @@ def information_page():
     # 页面整体布局
     # -------------------------------------------------------------------------
     # 刷新概述待确认总字典信息
-    # update_overview_charge_pending_dic()
+    # update_overview_charge_pending_dic("all")
     # 1. 顶部导航栏 (深色主题)
     header = ui.header(elevated=True).classes("flex justify-between items-center bg-blue-500 h-12 px-4")
     with header:

@@ -1903,10 +1903,13 @@ class InteractiveButton:
     # 显示服务器已有文件
     async def _show_have_file(self, original_filename, file_type, url_path):
         # 准备要存储的 chip 数据
-        file_icon = ""
+        file_icon = "image"
+        # 文件类型的icon与图片的设置不一样
         if self.processing_type == "file":
             # 文件类型才将icon设置为引用小图，图片类不设置
             file_icon = "attachment"
+        elif self.processing_type == "video":
+            file_icon = "play_circle"
         chip_id = str(uuid.uuid4())
         req_max_ver = app.storage.general["project_req_max_ver"][self.project]
         select_activ_dic = self._get_select_activ_dic(req_max_ver)
@@ -2176,8 +2179,8 @@ class InteractiveButton:
             if displayed_chip_feature != stored_chip_feature:
                 # 刷新chip容器内容
                 await self._refresh_chip_container()
-                # 刷新角色负责用户数据
-                overview_role_update(self.project)
+                # 刷新指定角色负责用户数据
+                overview_role_update(self.project, self.role)
 
     # pdf文件打开函数
     def open_pdf_in_browser(self, url_path):
@@ -2536,8 +2539,8 @@ class InteractiveButton:
 
                 # 刷新chip容器内容
                 await self._refresh_chip_container()
-                # 刷新概述负责人
-                overview_role_update(self.project)
+                # 刷新指定角色概述负责人
+                overview_role_update(self.project, self.role)
 
                 # 检查版本是否更新导致的激活长度变化，弹窗提醒用户重新确认
                 self._check_version_updated(chip_id, new_select_activ_dic, chip_text)

@@ -51,48 +51,91 @@ def handle_disconnect(client):
         del online_users[client.id]
 
 
-def update_overview_charge_pending_dic():
-    for project, project_dic in app.storage.general["overview_role"].items():
-        for role, charge_user_dic in project_dic.items():
-            latest_user = charge_user_dic.get("latest_user", "")
-            latest_user = latest_user.split("：")[1] if latest_user else ""
-            if not latest_user:
-                continue
-            # 向概述负责人待处理全局记录字典里添加负责人
-            if latest_user not in app.storage.general["overview_charge_pending"]:
-                app.storage.general["overview_charge_pending"][latest_user] = {project: {}}
-            if project not in app.storage.general["overview_charge_pending"][latest_user]:
-                app.storage.general["overview_charge_pending"][latest_user][project] = {}
+def update_overview_charge_pending_dic(scope, des_user="", project_name="", des_label=""):
+    """
+    scope传入all时，刷新所有项目概述负责人待定状态字典信息，比较费时；
+    scope传入local时，只刷新指定负责人、指定项目、指定概述标签类的待定状态信息，比较快；
+    """
+    if scope == "all":
+        for project, project_dic in app.storage.general["overview_role"].items():
+            for role, charge_user_dic in project_dic.items():
+                latest_user = charge_user_dic.get("latest_user", "")
+                latest_user = latest_user.split("：")[1] if latest_user else ""
+                if not latest_user:
+                    continue
+                # 向概述负责人待处理全局记录字典里添加负责人
+                if latest_user not in app.storage.general["overview_charge_pending"]:
+                    app.storage.general["overview_charge_pending"][latest_user] = {project: {}}
+                if project not in app.storage.general["overview_charge_pending"][latest_user]:
+                    app.storage.general["overview_charge_pending"][latest_user][project] = {}
 
-            for group_dic in app.storage.general["over_config_data"].get(role, {}).values():
-                for ver_dic in group_dic.values():
-                    nature = ver_dic.get("nature")
-                    title = ver_dic.get("title")
-                    label = ver_dic.get("label")
-                    if nature == "必填" and latest_user:
-                        app.storage.general["overview_charge_pending"][latest_user][project].update({title: False})
-
-                    label_chip_dic = db_storage.get_deep_item([f"{project}_over_data", label], {}).values()
-                    # 根据概述项下的chip的激活状态，设置概述项按钮小标记颜色
-                    chip_enabled_state_list = [chip_info["enabled"] for chip_info in label_chip_dic]
-                    # 有激活状态为None的chip，说明有未选择的测试项选项，优先显示橙色；没有未选择但有激活的chip，显示绿色；都没有则显示红色
-                    if chip_enabled_state_list and any(state is None for state in chip_enabled_state_list):
-                        # 在用户负责的对应项目概述状态字典中，增加或更改当前分项为待确认标记
-                        app.storage.general["overview_charge_pending"][latest_user][project].update({title: None})
-                    elif chip_enabled_state_list and any(chip_enabled_state_list):
-                        # 在用户负责的对应项目概述状态字典中，因为当前分项没有待确认且存在激活chip，删除当前分项记录
-                        if app.storage.general["overview_charge_pending"][latest_user].get(project):
-                            app.storage.general["overview_charge_pending"][latest_user][project].pop(title, None)
-                    else:
-                        # 如果当前分项是必填项，在用户负责的对应项目概述状态字典中，增加或更改当前分项为无chip标记
-                        if nature == "必填":
+                for group_dic in app.storage.general["over_config_data"].get(role, {}).values():
+                    for ver_dic in group_dic.values():
+                        nature = ver_dic.get("nature")
+                        title = ver_dic.get("title")
+                        label = ver_dic.get("label")
+                        if nature == "必填" and latest_user:
                             app.storage.general["overview_charge_pending"][latest_user][project].update({title: False})
-                        # 如果当前分项非必填项，在用户负责的对应项目概述状态字典中，删除可能存在的过期记录
-                        elif app.storage.general["overview_charge_pending"][latest_user].get(project):
-                            app.storage.general["overview_charge_pending"][latest_user][project].pop(title, None)
+
+                        label_chip_dic = db_storage.get_deep_item([f"{project}_over_data", label], {}).values()
+                        # 根据概述项下的chip的激活状态，设置概述项按钮小标记颜色
+                        chip_enabled_state_list = [chip_info["enabled"] for chip_info in label_chip_dic]
+                        # 有激活状态为None的chip，说明有未选择的测试项选项，优先显示橙色；没有未选择但有激活的chip，显示绿色；都没有则显示红色
+                        if chip_enabled_state_list and any(state is None for state in chip_enabled_state_list):
+                            # 在用户负责的对应项目概述状态字典中，增加或更改当前分项为待确认标记
+                            app.storage.general["overview_charge_pending"][latest_user][project].update({title: None})
+                        elif chip_enabled_state_list and any(chip_enabled_state_list):
+                            # 在用户负责的对应项目概述状态字典中，因为当前分项没有待确认且存在激活chip，删除当前分项记录
+                            if app.storage.general["overview_charge_pending"][latest_user].get(project):
+                                app.storage.general["overview_charge_pending"][latest_user][project].pop(title, None)
+                        else:
+                            # 如果当前分项是必填项，在用户负责的对应项目概述状态字典中，增加或更改当前分项为无chip标记
+                            if nature == "必填":
+                                app.storage.general["overview_charge_pending"][latest_user][project].update(
+                                    {title: False}
+                                )
+                            # 如果当前分项非必填项，在用户负责的对应项目概述状态字典中，删除可能存在的过期记录
+                            elif app.storage.general["overview_charge_pending"][latest_user].get(project):
+                                app.storage.general["overview_charge_pending"][latest_user][project].pop(title, None)
+                # 如果用户负责项目概述项状态字典为空，则清除掉这个项目对应记录
+                if not app.storage.general["overview_charge_pending"][latest_user].get(project):
+                    app.storage.general["overview_charge_pending"][latest_user].pop(project, None)
+    elif scope == "local":
+        # 向概述负责人待处理全局记录字典里添加负责人
+        if des_user not in app.storage.general["overview_charge_pending"]:
+            app.storage.general["overview_charge_pending"][des_user] = {project_name: {}}
+        if project_name not in app.storage.general["overview_charge_pending"][des_user]:
+            app.storage.general["overview_charge_pending"][des_user][project_name] = {}
+
+        ver_dic = app.storage.general["over_config_data_flat"].get(des_label, {})
+        if ver_dic:
+            nature = ver_dic.get("nature")
+            title = ver_dic.get("title")
+
+            if nature == "必填":
+                app.storage.general["overview_charge_pending"][des_user][project_name].update({title: False})
+
+            label_chip_dic = db_storage.get_deep_item([f"{project_name}_over_data", des_label], {}).values()
+            # 根据概述项下的chip的激活状态，设置概述项按钮小标记颜色
+            chip_enabled_state_list = [chip_info["enabled"] for chip_info in label_chip_dic]
+            # 有激活状态为None的chip，说明有未选择的测试项选项，优先显示橙色；没有未选择但有激活的chip，显示绿色；都没有则显示红色
+            if chip_enabled_state_list and any(state is None for state in chip_enabled_state_list):
+                # 在用户负责的对应项目概述状态字典中，增加或更改当前分项为待确认标记
+                app.storage.general["overview_charge_pending"][des_user][project_name].update({title: None})
+            elif chip_enabled_state_list and any(chip_enabled_state_list):
+                # 在用户负责的对应项目概述状态字典中，因为当前分项没有待确认且存在激活chip，删除当前分项记录
+                if app.storage.general["overview_charge_pending"][des_user].get(project_name):
+                    app.storage.general["overview_charge_pending"][des_user][project_name].pop(title, None)
+            else:
+                # 如果当前分项是必填项，在用户负责的对应项目概述状态字典中，增加或更改当前分项为无chip标记
+                if nature == "必填":
+                    app.storage.general["overview_charge_pending"][des_user][project_name].update({title: False})
+                # 如果当前分项非必填项，在用户负责的对应项目概述状态字典中，删除可能存在的过期记录
+                elif app.storage.general["overview_charge_pending"][des_user].get(project_name):
+                    app.storage.general["overview_charge_pending"][des_user][project_name].pop(title, None)
             # 如果用户负责项目概述项状态字典为空，则清除掉这个项目对应记录
-            if not app.storage.general["overview_charge_pending"][latest_user].get(project):
-                app.storage.general["overview_charge_pending"][latest_user].pop(project, None)
+            if not app.storage.general["overview_charge_pending"][des_user].get(project_name):
+                app.storage.general["overview_charge_pending"][des_user].pop(project_name, None)
 
 
 # 判断传入的概述负责角色是否与当前登录的角色匹配
@@ -719,6 +762,8 @@ async def copy_overview_data(project_name, version, target_project_name) -> None
                 chip_data["enabled"] = True
                 if chip_data["type"] == "file":
                     chip_data["icon"] = "attachment"
+                if chip_data["type"] == "image":
+                    chip_data["icon"] = "image"
                 else:
                     chip_data["icon"] = None
                 chip_data["bg_color"] = "bg-light-blue-1"
@@ -734,21 +779,24 @@ async def copy_overview_data(project_name, version, target_project_name) -> None
         await db_storage.set_item(f"{target_project_name}_over_data", overview_data)
 
 
-def overview_role_update(project_name):
+def overview_role_update(project_name, input_role="all_update"):
     """
     app.storage.general["overview_role"][project_name]={"光学":{"most_user":"用户名","latest_user":"用户名"},...}
+    当input_role传入initialize时，只初始化准备好相应键值对，用于UI元素绑定；
+    当input_role传入all_update时，更新整个项目的责任人信息；
+    当input_role传入具体role时，更新项目指定角色的责任人信息；
     """
     # 将服务器概述资料获取到
     OVERVIEW_DATA: Final[dict] = db_storage.get_item(f"{project_name}_over_data", {})
     # 设置时间对象识别格式
     format_string = "%Y-%m-%d %H:%M:%S"
-    # 如果项目名存在服务器概述数据的键里
+    # 如果项目名不存在服务器概述数据的键里
     if project_name not in app.storage.general["overview_role"]:
         temp_dic = {}
         for role in app.storage.general["over_config_data"].keys():
             temp_dic[role] = {"most_user": "", "latest_user": ""}
         app.storage.general["overview_role"][project_name] = temp_dic
-    else:
+    elif input_role != "initialize" and input_role == "all":
         # 初始化概述角色字典
         over_role_dic = app.storage.general["overview_role"][project_name]
         # 遍历概述配置字典，主要用里面的角色分类，如光学、结构等等，和概述配置里的label
@@ -811,9 +859,68 @@ def overview_role_update(project_name):
                         if time_user_dic[user] == latest_time:
                             # 将这个用户定义为最晚创建概述的人
                             over_role_dic[role]["latest_user"] = f"最近：{user}"
+    elif input_role != "initialize" and input_role:
+        # 初始化概述角色字典
+        over_role_dic = app.storage.general["overview_role"][project_name]
+        # 遍历概述配置字典指定角色的配置数据
+        for over_config_dic in app.storage.general["over_config_data"].get(input_role, {}).values():
+            # 初始化临时保存概述里出现过的用户次数字典
+            frequency_user_dic = {}
+            # 初始化临时保存概述里出现过的用户最晚时间字典
+            time_user_dic = {}
+            # 遍历当前角色分类，如光学下，概述配置的各项
+            for over_config in over_config_dic.values():
+                # 如果当前概述项的label存在服务器对应项目的概述数据字典键里
+                if over_config["label"] in OVERVIEW_DATA and OVERVIEW_DATA[over_config["label"]] != {}:
+                    # 遍历当前label下用户添加过的多个概述数据
+                    for over_data in OVERVIEW_DATA[over_config["label"]].values():
+                        # 如果数据的创建用户已经存在临时记录字典里
+                        if over_data["creator"] in frequency_user_dic:
+                            # 将该用户创建次数加1次
+                            frequency_user_dic[over_data["creator"]] = frequency_user_dic[over_data["creator"]] + 1
+                            # 生成用户本次概述创建的时间对象
+                            time_obj_new = datetime.strptime(next(reversed(over_data["timestamp"])), format_string)
+                            # 获取已保存的该用户概述最晚创建时间对象
+                            time_obj_old = time_user_dic[over_data["creator"]]
+                            # 两个时间对比，如果本次时间比已保存的时间更晚
+                            if time_obj_new > time_obj_old:
+                                # 将本次时间更新为该用户所有概述的最晚创建时间
+                                time_user_dic[over_data["creator"]] = time_obj_new
+                        # 如果数据的创建用户不存在临时记录字典里
+                        else:
+                            # 记该用户创建一次
+                            frequency_user_dic[over_data["creator"]] = 1
+                            # 记该用户首次创建时间
+                            time_user_dic[over_data["creator"]] = datetime.strptime(
+                                next(reversed(over_data["timestamp"])), format_string
+                            )
+            # 当前角色的所有概述存在创建记录
+            if frequency_user_dic != {}:
+                # 找到临时保存用户创建概述次数字典里，所有次数的最大值
+                max_value = max(frequency_user_dic.values())
+                # 找到跟最大次数相同的对应所有用户
+                most_user_li = [key for key, value in frequency_user_dic.items() if value == max_value]
+                # 如果有多个人都创建了最大次数
+                if len(most_user_li) > 1:
+                    # 找到这些人创建概述数据的最晚时间
+                    lat_time = max([time_user_dic[user] for user in most_user_li])
+                    # 找到这些人里哪个人是最晚创建概述的
+                    for user in most_user_li:
+                        if time_user_dic[user] == lat_time:
+                            # 将找到的用户定义为概述创建最多次的人
+                            over_role_dic[input_role]["most_user"] = f"最多：{user}"
+                # 如果创建次数最多的情况只有一个人
+                else:
+                    # 将这个用户定义为概述创建最多次的人
+                    over_role_dic[input_role]["most_user"] = f"最多：{most_user_li[0]}"
 
-            # 将最终各角色模块找到的最多与最晚创建者字典更新到对应项目键值对里
-            # app.storage.general["overview_role"][project_name] = over_role_dic
+                # 找出临时保存用户最晚创建概述时间里最晚的时间点
+                latest_time = max(list(time_user_dic.values()))
+                # 找出最晚创建概述的用户
+                for user in time_user_dic.keys():
+                    if time_user_dic[user] == latest_time:
+                        # 将这个用户定义为最晚创建概述的人
+                        over_role_dic[input_role]["latest_user"] = f"最近：{user}"
 
 
 # 在指定目录中查找包含特定前缀的文件名，并提取版本号

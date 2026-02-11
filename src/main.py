@@ -20,7 +20,12 @@ from .components import StorageBackupManager
 from .config import BASE_DIR, IMG_DIR, PDF_PREVIEW_CACHE, ST
 from .config_service import ConfigService
 from .user_service import UserService
-from .utils import handle_connect, handle_disconnect, updata_overview_config  # 导入上面定义的函数
+from .utils import (  # 导入上面定义的函数
+    handle_connect,
+    handle_disconnect,
+    updata_overview_config,
+    update_overview_charge_pending_dic,
+)
 
 # 注册这两个钩子，实现监控用户连线与下线
 app.on_connect(handle_connect)
@@ -80,6 +85,11 @@ def setup_logging():
     logging.info("日志系统初始化完成 (Console + File)")
 
 
+def start_background_task():
+    # 每隔 60 秒在后台静默更新一次全局字典
+    ui.timer(120.0, update_overview_charge_pending_dic("all"))
+
+
 # 在 main.py 最开始调用
 setup_logging()
 
@@ -115,6 +125,8 @@ def init_backup_service():
 app.on_startup(db_storage.init_db)
 # 注册备份初始化
 app.on_startup(init_backup_service)
+# 注册后台定期执行动作
+app.on_startup(start_background_task)
 # 为了能在系统关闭时顺利执行备份，需将这里外部注册关闭数据库移到init_backup_service函数内部最后
 # app.on_shutdown(db_storage.close_db)
 
@@ -201,8 +213,8 @@ if __name__ in {"__main__", "__mp_main__"}:
         dark=False,
         # 在生产环境中，必须禁用热重载功能，以获得更好的性能和稳定性
         # False 不自动重载，True自动重载
-        # reload=True,
-        reload=False,
+        reload=True,
+        # reload=False,
         # 【关键修改 1】让父进程闭嘴
         # 将 Uvicorn 自身的日志级别设为 warning，
         # 这样它就不会打印 "changes detected" 这种 INFO 级别的废话了

@@ -97,7 +97,7 @@ def main_page():
         menu_items.append(items)
 
     # 刷新概述待确认总字典信息
-    # update_overview_charge_pending_dic()
+    # update_overview_charge_pending_dic("all")
 
     # 主界面
     with ui.header(elevated=True).classes("flex justify-between items-center bg-blue-500 h-12 px-4"):
