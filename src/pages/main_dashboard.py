@@ -9,7 +9,6 @@ from ..utils import (
     get_project_engineer_project_list_dic,
     logout,
     online_users,
-    update_overview_charge_pending_dic,
 )
 
 # 获取一个以此模块命名的 logger
@@ -95,9 +94,6 @@ def main_page():
         ):
             continue
         menu_items.append(items)
-
-    # 刷新概述待确认总字典信息
-    # update_overview_charge_pending_dic("all")
 
     # 主界面
     with ui.header(elevated=True).classes("flex justify-between items-center bg-blue-500 h-12 px-4"):

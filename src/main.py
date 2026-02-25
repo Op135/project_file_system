@@ -87,7 +87,10 @@ def setup_logging():
 
 def start_background_task():
     # 每隔 60 秒在后台静默更新一次全局字典
-    ui.timer(120.0, update_overview_charge_pending_dic("all"))
+    # 1. ui.timer 改用 app.timer，它是纯后端定时器，不会生成 UI Client
+    # 2. 使用 lambda 确保它是被定时器回调，而不是立即执行
+    # app.timer(1200.0, lambda: update_overview_charge_pending_dic("all"))
+    update_overview_charge_pending_dic("all")
 
 
 # 在 main.py 最开始调用

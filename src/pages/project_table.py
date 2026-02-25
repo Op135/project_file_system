@@ -655,11 +655,6 @@ def project_table_page():
                         #                     # 查到一个需要改变角色显示状态的就不要再继续遍历了
                         #                     break_bool = True
                         #     if selected_bool:
-                        #         # 向概述负责人待处理全局记录字典里添加负责人与项目信息
-                        #         if charge_person not in app.storage.general["overview_charge_pending"]:
-                        #             app.storage.general["overview_charge_pending"][charge_person] = []
-                        #         elif project_name not in app.storage.general["overview_charge_pending"][charge_person]:
-                        #             app.storage.general["overview_charge_pending"][charge_person].append(project_name)
                         #         # 处理表格显示信息
                         #         charge_person = f"待{charge_person}\n选概述"
 

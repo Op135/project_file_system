@@ -53,89 +53,129 @@ def handle_disconnect(client):
 
 def update_overview_charge_pending_dic(scope, des_user="", project_name="", des_label=""):
     """
-    scope传入all时，刷新所有项目概述负责人待定状态字典信息，比较费时；
-    scope传入local时，只刷新指定负责人、指定项目、指定概述标签类的待定状态信息，比较快；
+    scope传入all时，刷新所有项目概述负责人待定状态字典信息（已进行内存预读与O(n)降维优化）；
+    scope传入local时，只刷新指定负责人、指定项目、指定概述标签类的待定状态信息，极致响应速度；
     """
+    pending_storage = app.storage.general.setdefault("overview_charge_pending", {})
+
     if scope == "all":
-        for project, project_dic in app.storage.general["overview_role"].items():
+        # 1. 静态配置预处理：将嵌套的配置树打平为角色映射表，避免在深层循环中重复提取
+        role_config_map = {}
+        for role, group_dict in app.storage.general.get("over_config_data", {}).items():
+            role_config_map[role] = []
+            for group_dic in group_dict.values():
+                for ver_dic in group_dic.values():
+                    role_config_map[role].append(
+                        {"nature": ver_dic.get("nature"), "title": ver_dic.get("title"), "label": ver_dic.get("label")}
+                    )
+
+        # 2. 遍历项目：将 I/O 读取提升到项目层级，阻断 N*M 次的深层 I/O 调用
+        for project, project_dic in app.storage.general.get("overview_role", {}).items():
+            # 核心优化：一次性将该项目所有概述数据载入内存字典
+            project_over_data = db_storage.get_item(f"{project}_over_data", {})
+
             for role, charge_user_dic in project_dic.items():
-                latest_user = charge_user_dic.get("latest_user", "")
-                latest_user = latest_user.split("：")[1] if latest_user else ""
+                latest_user_raw = charge_user_dic.get("latest_user", "")
+                latest_user = latest_user_raw.split("：")[1] if "：" in latest_user_raw else latest_user_raw
+
                 if not latest_user:
                     continue
-                # 向概述负责人待处理全局记录字典里添加负责人
-                if latest_user not in app.storage.general["overview_charge_pending"]:
-                    app.storage.general["overview_charge_pending"][latest_user] = {project: {}}
-                if project not in app.storage.general["overview_charge_pending"][latest_user]:
-                    app.storage.general["overview_charge_pending"][latest_user][project] = {}
 
-                for group_dic in app.storage.general["over_config_data"].get(role, {}).values():
-                    for ver_dic in group_dic.values():
-                        nature = ver_dic.get("nature")
-                        title = ver_dic.get("title")
-                        label = ver_dic.get("label")
-                        if nature == "必填" and latest_user:
-                            app.storage.general["overview_charge_pending"][latest_user][project].update({title: False})
+                # 优雅初始化多层字典
+                user_proj_dict = pending_storage.setdefault(latest_user, {}).setdefault(project, {})
 
-                        label_chip_dic = db_storage.get_deep_item([f"{project}_over_data", label], {}).values()
-                        # 根据概述项下的chip的激活状态，设置概述项按钮小标记颜色
-                        chip_enabled_state_list = [chip_info["enabled"] for chip_info in label_chip_dic]
-                        # 有激活状态为None的chip，说明有未选择的测试项选项，优先显示橙色；没有未选择但有激活的chip，显示绿色；都没有则显示红色
-                        if chip_enabled_state_list and any(state is None for state in chip_enabled_state_list):
-                            # 在用户负责的对应项目概述状态字典中，增加或更改当前分项为待确认标记
-                            app.storage.general["overview_charge_pending"][latest_user][project].update({title: None})
-                        elif chip_enabled_state_list and any(chip_enabled_state_list):
-                            # 在用户负责的对应项目概述状态字典中，因为当前分项没有待确认且存在激活chip，删除当前分项记录
-                            if app.storage.general["overview_charge_pending"][latest_user].get(project):
-                                app.storage.general["overview_charge_pending"][latest_user][project].pop(title, None)
+                # 3. 遍历预处理好的配置项
+                for config_item in role_config_map.get(role, []):
+                    nature = config_item["nature"]
+                    title = config_item["title"]
+                    label = config_item["label"]
+
+                    if nature == "必填":
+                        user_proj_dict.setdefault(title, False)
+
+                    # 直接从内存级缓存获取芯片数据，复杂度 O(1)
+                    label_chip_dic = project_over_data.get(label, {}).values()
+
+                    if not label_chip_dic:
+                        # 缺失数据判定
+                        if nature == "必填":
+                            user_proj_dict[title] = False
                         else:
-                            # 如果当前分项是必填项，在用户负责的对应项目概述状态字典中，增加或更改当前分项为无chip标记
-                            if nature == "必填":
-                                app.storage.general["overview_charge_pending"][latest_user][project].update(
-                                    {title: False}
-                                )
-                            # 如果当前分项非必填项，在用户负责的对应项目概述状态字典中，删除可能存在的过期记录
-                            elif app.storage.general["overview_charge_pending"][latest_user].get(project):
-                                app.storage.general["overview_charge_pending"][latest_user][project].pop(title, None)
-                # 如果用户负责项目概述项状态字典为空，则清除掉这个项目对应记录
-                if not app.storage.general["overview_charge_pending"][latest_user].get(project):
-                    app.storage.general["overview_charge_pending"][latest_user].pop(project, None)
-    elif scope == "local":
-        # 向概述负责人待处理全局记录字典里添加负责人
-        if des_user not in app.storage.general["overview_charge_pending"]:
-            app.storage.general["overview_charge_pending"][des_user] = {project_name: {}}
-        if project_name not in app.storage.general["overview_charge_pending"][des_user]:
-            app.storage.general["overview_charge_pending"][des_user][project_name] = {}
+                            user_proj_dict.pop(title, None)
+                        continue
 
-        ver_dic = app.storage.general["over_config_data_flat"].get(des_label, {})
+                    # 4. 短路状态判定：寻找是否含有待确认项 (None) 或 激活项 (True)
+                    has_none = False
+                    has_active = False
+                    for chip_info in label_chip_dic:
+                        state = chip_info.get("enabled")
+                        if state is None:
+                            has_none = True
+                            break  # 短路求值：找到待确认项立刻终止当前标签遍历
+                        elif state is True:
+                            has_active = True
+
+                    if has_none:
+                        user_proj_dict[title] = None  # 存在未决选项，置为 None（优先显示橙色待办）
+                    elif has_active:
+                        user_proj_dict.pop(title, None)  # 存在激活态，移出待办
+                    else:
+                        if nature == "必填":
+                            user_proj_dict[title] = False  # 全为 False，退回未填写状态（显示红色）
+                        else:
+                            user_proj_dict.pop(title, None)
+
+                # 5. 清理空项目节点，防止内存泄漏或无效的 UI 渲染树
+                if not user_proj_dict:
+                    pending_storage[latest_user].pop(project, None)
+
+    elif scope == "local":
+        if not des_user or not project_name or not des_label:
+            return
+
+        # 优雅初始化多层字典
+        user_proj_dict = pending_storage.setdefault(des_user, {}).setdefault(project_name, {})
+
+        ver_dic = app.storage.general.get("over_config_data_flat", {}).get(des_label, {})
         if ver_dic:
             nature = ver_dic.get("nature")
             title = ver_dic.get("title")
 
             if nature == "必填":
-                app.storage.general["overview_charge_pending"][des_user][project_name].update({title: False})
+                user_proj_dict.setdefault(title, False)
 
+            # Local 模式本就是单项操作，直接通过深层提取即可
             label_chip_dic = db_storage.get_deep_item([f"{project_name}_over_data", des_label], {}).values()
-            # 根据概述项下的chip的激活状态，设置概述项按钮小标记颜色
-            chip_enabled_state_list = [chip_info["enabled"] for chip_info in label_chip_dic]
-            # 有激活状态为None的chip，说明有未选择的测试项选项，优先显示橙色；没有未选择但有激活的chip，显示绿色；都没有则显示红色
-            if chip_enabled_state_list and any(state is None for state in chip_enabled_state_list):
-                # 在用户负责的对应项目概述状态字典中，增加或更改当前分项为待确认标记
-                app.storage.general["overview_charge_pending"][des_user][project_name].update({title: None})
-            elif chip_enabled_state_list and any(chip_enabled_state_list):
-                # 在用户负责的对应项目概述状态字典中，因为当前分项没有待确认且存在激活chip，删除当前分项记录
-                if app.storage.general["overview_charge_pending"][des_user].get(project_name):
-                    app.storage.general["overview_charge_pending"][des_user][project_name].pop(title, None)
-            else:
-                # 如果当前分项是必填项，在用户负责的对应项目概述状态字典中，增加或更改当前分项为无chip标记
+
+            if not label_chip_dic:
                 if nature == "必填":
-                    app.storage.general["overview_charge_pending"][des_user][project_name].update({title: False})
-                # 如果当前分项非必填项，在用户负责的对应项目概述状态字典中，删除可能存在的过期记录
-                elif app.storage.general["overview_charge_pending"][des_user].get(project_name):
-                    app.storage.general["overview_charge_pending"][des_user][project_name].pop(title, None)
-            # 如果用户负责项目概述项状态字典为空，则清除掉这个项目对应记录
-            if not app.storage.general["overview_charge_pending"][des_user].get(project_name):
-                app.storage.general["overview_charge_pending"][des_user].pop(project_name, None)
+                    user_proj_dict[title] = False
+                else:
+                    user_proj_dict.pop(title, None)
+            else:
+                has_none = False
+                has_active = False
+                for chip_info in label_chip_dic:
+                    state = chip_info.get("enabled")
+                    if state is None:
+                        has_none = True
+                        break  # 短路求值
+                    elif state is True:
+                        has_active = True
+
+                if has_none:
+                    user_proj_dict[title] = None
+                elif has_active:
+                    user_proj_dict.pop(title, None)
+                else:
+                    if nature == "必填":
+                        user_proj_dict[title] = False
+                    else:
+                        user_proj_dict.pop(title, None)
+
+        # 同样执行空项目清理
+        if not user_proj_dict:
+            pending_storage[des_user].pop(project_name, None)
 
 
 # 判断传入的概述负责角色是否与当前登录的角色匹配
@@ -536,6 +576,9 @@ def updata_overview_config():
                     for chip_button_name, chip_dic in group_dic.items():
                         app.storage.general["over_config_data_flat"][chip_dic.get("label")] = chip_dic
             logger.info("成功更新概述项配置。")
+            # --- 新增：配置结构变更后，强制进行一次全局待定状态重构 ---
+            update_overview_charge_pending_dic("all")
+            logger.info("全局概述待定状态已基于最新配置文件重新构建。")
     except Exception as e:
         logger.error(f"更新概述项配置失败；{e}")
 

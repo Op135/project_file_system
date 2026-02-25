@@ -2114,7 +2114,9 @@
                 "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
                 "search_scope_regular": "^([^_]+)",
-                "search_folder_according": "drive_pcb",
+                "search_folder_according": [
+                    "drive_pcb"
+                ],
                 "search_hierarchy": [
                     "Files"
                 ],
@@ -2163,7 +2165,9 @@
                 "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
                 "search_scope_regular": "^([^_]+)",
-                "search_folder_according": "drive_pcb",
+                "search_folder_according": [
+                    "drive_pcb"
+                ],
                 "search_hierarchy": [
                     "Files"
                 ],
@@ -2200,7 +2204,9 @@
                 "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
                 "search_scope_regular": "^([^_]+)",
-                "search_folder_according": "drive_pcb",
+                "search_folder_according": [
+                    "drive_pcb"
+                ],
                 "search_hierarchy": [],
                 "allowed_state": [
                     "研发",
@@ -2235,7 +2241,9 @@
                 "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
                 "search_scope_regular": "^([^_]+)",
-                "search_folder_according": "drive_pcb",
+                "search_folder_according": [
+                    "drive_pcb"
+                ],
                 "search_hierarchy": [],
                 "allowed_state": [
                     "研发",
@@ -2268,7 +2276,9 @@
                 "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
                 "search_scope_regular": "^([^_]+)",
-                "search_folder_according": "drive_pcb",
+                "search_folder_according": [
+                    "drive_pcb"
+                ],
                 "search_hierarchy": [
                     "Files"
                 ],
@@ -2307,7 +2317,9 @@
                 "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
                 "search_scope_regular": "^([^_]+)",
-                "search_folder_according": "drive_pcb",
+                "search_folder_according": [
+                    "drive_pcb"
+                ],
                 "search_hierarchy": [
                     "Files"
                 ],
@@ -2410,7 +2422,9 @@
                 "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
                 "search_scope_regular": "^([^_]+)",
-                "search_folder_according": "control_pcb",
+                "search_folder_according": [
+                    "control_pcb"
+                ],
                 "search_hierarchy": [
                     "Files"
                 ],
@@ -2454,7 +2468,9 @@
                 "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
                 "search_scope_regular": "^([^_]+)",
-                "search_folder_according": "control_pcb",
+                "search_folder_according": [
+                    "control_pcb"
+                ],
                 "search_hierarchy": [
                     "Files"
                 ],
@@ -2491,7 +2507,9 @@
                 "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
                 "search_scope_regular": "^([^_]+)",
-                "search_folder_according": "control_pcb",
+                "search_folder_according": [
+                    "control_pcb"
+                ],
                 "search_hierarchy": [],
                 "allowed_state": [
                     "研发",
@@ -2526,7 +2544,9 @@
                 "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
                 "search_scope_regular": "^([^_]+)",
-                "search_folder_according": "control_pcb",
+                "search_folder_according": [
+                    "control_pcb"
+                ],
                 "search_hierarchy": [],
                 "allowed_state": [
                     "研发",
@@ -2557,7 +2577,9 @@
                 "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
                 "search_scope_regular": "^([^_]+)",
-                "search_folder_according": "control_pcb",
+                "search_folder_according": [
+                    "control_pcb"
+                ],
                 "search_hierarchy": [
                     "Files"
                 ],
@@ -2597,7 +2619,9 @@
                 "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
                 "search_scope_regular": "^([^_]+)",
-                "search_folder_according": "control_pcb",
+                "search_folder_according": [
+                    "control_pcb"
+                ],
                 "search_hierarchy": [
                     "Files"
                 ],
@@ -2693,7 +2717,9 @@
                 "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
                 "search_scope_regular": "^([^_]+)",
-                "search_folder_according": "light_pcb",
+                "search_folder_according": [
+                    "light_pcb"
+                ],
                 "search_hierarchy": [
                     "Files"
                 ],
@@ -2732,7 +2758,9 @@
                 "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
                 "search_scope_regular": "^([^_]+)",
-                "search_folder_according": "light_pcb",
+                "search_folder_according": [
+                    "light_pcb"
+                ],
                 "search_hierarchy": [
                     "Files"
                 ],
@@ -2769,7 +2797,9 @@
                 "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
                 "search_scope_regular": "^([^_]+)",
-                "search_folder_according": "light_pcb",
+                "search_folder_according": [
+                    "light_pcb"
+                ],
                 "search_hierarchy": [],
                 "allowed_state": [
                     "研发",
@@ -2804,7 +2834,9 @@
                 "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
                 "search_scope_regular": "^([^_]+)",
-                "search_folder_according": "light_pcb",
+                "search_folder_according": [
+                    "light_pcb"
+                ],
                 "search_hierarchy": [],
                 "allowed_state": [
                     "研发",
@@ -2835,7 +2867,9 @@
                 "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
                 "search_scope_regular": "^([^_]+)",
-                "search_folder_according": "light_pcb",
+                "search_folder_according": [
+                    "light_pcb"
+                ],
                 "search_hierarchy": [
                     "Files"
                 ],
@@ -2876,7 +2910,9 @@
                 "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
                 "search_scope_regular": "^([^_]+)",
-                "search_folder_according": "light_pcb",
+                "search_folder_according": [
+                    "light_pcb"
+                ],
                 "search_hierarchy": [
                     "Files"
                 ],
@@ -2959,7 +2995,9 @@
                 "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
                 "search_scope_regular": "^([^_]+)",
-                "search_folder_according": "other_pcb",
+                "search_folder_according": [
+                    "other_pcb"
+                ],
                 "search_hierarchy": [
                     "Files"
                 ],
@@ -2995,7 +3033,9 @@
                 "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
                 "search_scope_regular": "^([^_]+)",
-                "search_folder_according": "other_pcb",
+                "search_folder_according": [
+                    "other_pcb"
+                ],
                 "search_hierarchy": [
                     "Files"
                 ],
@@ -3032,7 +3072,9 @@
                 "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
                 "search_scope_regular": "^([^_]+)",
-                "search_folder_according": "other_pcb",
+                "search_folder_according": [
+                    "other_pcb"
+                ],
                 "search_hierarchy": [],
                 "allowed_state": [
                     "研发",
@@ -3067,7 +3109,9 @@
                 "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
                 "search_scope_regular": "^([^_]+)",
-                "search_folder_according": "other_pcb",
+                "search_folder_according": [
+                    "other_pcb"
+                ],
                 "search_hierarchy": [],
                 "allowed_state": [
                     "研发",
@@ -3098,7 +3142,9 @@
                 "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
                 "search_scope_regular": "^([^_]+)",
-                "search_folder_according": "other_pcb",
+                "search_folder_according": [
+                    "other_pcb"
+                ],
                 "search_hierarchy": [
                     "Files"
                 ],
@@ -3133,7 +3179,9 @@
                 "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
                 "search_scope_regular": "^([^_]+)",
-                "search_folder_according": "other_pcb",
+                "search_folder_according": [
+                    "other_pcb"
+                ],
                 "search_hierarchy": [
                     "Files"
                 ],
@@ -3333,7 +3381,12 @@
                 "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\2.输出——研发流程输出文档\\★可发客户的资料\\产品使用说明\\1.硬件使用说明及图纸",
                 "search_scope_regular": "^([^_]+)",
-                "search_folder_according": "drive_pcb",
+                "search_folder_according": [
+                    "drive_pcb",
+                    "control_pcb",
+                    "light_pcb",
+                    "other_pcb"
+                ],
                 "search_hierarchy": [],
                 "allowed_state": [
                     "研发",
@@ -3372,7 +3425,10 @@
                 "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\2.输出——研发流程输出文档\\★可发客户的资料\\产品使用说明\\1.硬件使用说明及图纸",
                 "search_scope_regular": "^([^_]+)",
-                "search_folder_according": "drive_pcb",
+                "search_folder_according": [
+                    "drive_pcb",
+                    "control_pcb"
+                ],
                 "search_hierarchy": [],
                 "allowed_state": [
                     "研发",
@@ -3413,7 +3469,7 @@
                 "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\2.输出——研发流程输出文档\\★可发客户的资料\\产品使用说明\\6.接线说明",
                 "search_scope_regular": "",
-                "search_folder_according": "",
+                "search_folder_according": [],
                 "search_hierarchy": [],
                 "allowed_state": [
                     "研发",
@@ -3514,7 +3570,7 @@
                     "量产": "Product"
                 },
                 "search_scope_regular": "^([A-Z]{4}-[A-Z0-9]{4,5})[-_]+",
-                "search_folder_according": "",
+                "search_folder_according": [],
                 "search_hierarchy": [
                     "src"
                 ],
@@ -3579,7 +3635,7 @@
                     "量产": "Product"
                 },
                 "search_scope_regular": "^([A-Z]{4}-[A-Z0-9]{4,5})[-_]+",
-                "search_folder_according": "",
+                "search_folder_according": [],
                 "search_hierarchy": [
                     "docs"
                 ],
@@ -3625,7 +3681,7 @@
                     "量产": "Product"
                 },
                 "search_scope_regular": "^([A-Z]{4}-[A-Z0-9]{4,5})[-_]+",
-                "search_folder_according": "",
+                "search_folder_according": [],
                 "search_hierarchy": [
                     "docs"
                 ],
@@ -3673,7 +3729,7 @@
                     "量产": "Product"
                 },
                 "search_scope_regular": "^([A-Z]{4}-[A-Z0-9]{4,5})[-_]+",
-                "search_folder_according": "",
+                "search_folder_according": [],
                 "search_hierarchy": [
                     "docs"
                 ],
@@ -3762,7 +3818,7 @@
                     "量产": "Product"
                 },
                 "search_scope_regular": "^([A-Z]{4}-[A-Z0-9]{4,5})[-_]+",
-                "search_folder_according": "",
+                "search_folder_according": [],
                 "search_hierarchy": [
                     "src"
                 ],

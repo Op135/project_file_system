@@ -48,6 +48,7 @@ from .utils import (
     overview_state_show_judge,
     ui_hide,
     ui_show,
+    update_overview_charge_pending_dic,
 )
 
 # 获取一个以此模块命名的 logger
@@ -225,6 +226,16 @@ class StorageBackupManager:
 
         # 包装器：确保在 timer 中可以调用 async 函数
         async def run_schedule():
+            # --- 新增：1. 每日凌晨全局清洗待定状态，消除运行时可能累积的脏数据 ---
+            try:
+                from .utils import update_overview_charge_pending_dic  # 局部导入防循环依赖
+
+                update_overview_charge_pending_dic("all")
+                logger.info("每日定时任务：全局待定状态刷新完成，内存与静态数据已对齐。")
+            except Exception as e:
+                logger.error(f"每日定时任务：全局待定状态刷新失败，错误：{e}")
+
+            # --- 2. 执行安全备份 (原有逻辑) ---
             await self.run_safe_backup("DAILY_SCHEDULE")
             # 重新调度下一次 (24小时后)
             app.timer(86400, run_schedule, once=True)
@@ -672,7 +683,7 @@ class InteractiveButton:
         upload_path: str = SUBMIT_FILES_DIR,
         state_path: dict = {},
         search_scope_regular: str = "",
-        search_folder_according: str = "",
+        search_folder_according_li: list = [],
         search_hierarchy: list = [],
         dialog_label: str = "按规定格式输入",
         dialog_placeholder: str = "",
@@ -696,7 +707,7 @@ class InteractiveButton:
         self.upload_path = upload_path
         self.state_path = state_path
         self.search_scope_regular = search_scope_regular
-        self.search_folder_according = search_folder_according
+        self.search_folder_according_li = search_folder_according_li
         self.search_hierarchy = search_hierarchy
         self.dialog_placeholder = dialog_placeholder
         self.dialog_label = dialog_label
@@ -1199,8 +1210,9 @@ class InteractiveButton:
             return False, None
 
     # 查找合法路径是否存在且唯一，并返回合法路径
-    def _splicing_svn_file_url(self, chip_text) -> str:
-        target_url = ""
+    def _splicing_svn_file_url(self, chip_text) -> list:
+        return_url_li = []
+        target_url_li = []
         # 保存依赖文件夹所的概述配置项标签名
         according_title = ""
         # 保存找到的激活的依赖文件夹名
@@ -1219,69 +1231,75 @@ class InteractiveButton:
                     progress=True,
                     close_button="✖",
                 )
-                return target_url
+                return target_url_li
         # 有依赖文件夹配置，找依赖文件夹配置标签对应的标签标题名
-        if self.search_folder_according:
-            according_title = (
-                app.storage.general.get("over_config_data_flat", {})
-                .get(self.search_folder_according, {})
-                .get("title", "未知项")
-            )
-            # 获取文件夹依赖标签里的chip数据
-            for data in db_storage.get_deep_item(
-                [f"{self.project}_over_data", self.search_folder_according], {}
-            ).values():
-                # 将所有激活的chip对应的内容，也就是文件夹名保存起来
-                if data["enabled"]:
-                    according_folder_name.append(data["content"])
+        if self.search_folder_according_li:
+            for search_folder_according in self.search_folder_according_li:
+                title_str = (
+                    app.storage.general.get("over_config_data_flat", {})
+                    .get(search_folder_according, {})
+                    .get("title", "未知项")
+                )
+                according_title = f"{according_title}\n{title_str}"
+                # 获取文件夹依赖标签里的chip数据
+                for data in db_storage.get_deep_item(
+                    [f"{self.project}_over_data", search_folder_according], {}
+                ).values():
+                    # 将所有激活的chip对应的内容，也就是文件夹名保存起来
+                    if data["enabled"]:
+                        according_folder_name.append(data["content"])
 
             # 如果少于一个有效文件夹名，即没有有效文件夹配置
             if len(according_folder_name) < 1:
                 if overview_state_show_judge(self.role):
                     ui.notify(
-                        f"概述项{according_title}无有效配置，链接无效!",
+                        f"概述项：\n{according_title}\n均无有效配置，链接无效!",
                         type="warning",
                         position="bottom",
                         timeout=3000,
                         progress=True,
+                        multi_line=True,
                         close_button="✖",
                     )
-                return target_url
+                return target_url_li
             # 如果超过一个有效文件夹名
-            elif len(according_folder_name) > 1:
-                if overview_state_show_judge(self.role):
-                    ui.notify(
-                        f"概述项{according_title}有效配置不唯一，链接无效!",
-                        type="warning",
-                        position="bottom",
-                        timeout=3000,
-                        progress=True,
-                        close_button="✖",
-                    )
-                return target_url
+            # elif len(according_folder_name) > 1:
+            #     if overview_state_show_judge(self.role):
+            #         ui.notify(
+            #             f"概述项{according_title}有效配置不唯一，链接无效!",
+            #             type="warning",
+            #             position="bottom",
+            #             timeout=3000,
+            #             progress=True,
+            #             close_button="✖",
+            #         )
+            #     return target_url
             # 有且仅有一个有效文件夹配置
             else:
                 # 有缩小范围的正则表达式配置
                 if self.search_scope_regular:
-                    # 查找这个文件夹
-                    match = re.search(self.search_scope_regular, according_folder_name[0])
-                    if match:
-                        search_target = match.group(1)
-                        target_url = f"{self.upload_path}/{svn_main_folder}/{search_target}/{according_folder_name[0]}"
-                    else:
-                        if overview_state_show_judge(self.role):
-                            ui.notify(
-                                f"文件夹{according_folder_name[0]}命名不符合规则!",
-                                type="warning",
-                                position="bottom",
-                                timeout=3000,
-                                progress=True,
-                                close_button="✖",
-                            )
-                        return target_url
+                    for folder_name in according_folder_name:
+                        # 查找这个文件夹
+                        match = re.search(self.search_scope_regular, folder_name)
+                        if match:
+                            search_target = match.group(1)
+                            target_url_li.append(f"{self.upload_path}/{svn_main_folder}/{search_target}/{folder_name}")
+                        else:
+                            if overview_state_show_judge(self.role):
+                                ui.notify(
+                                    f"文件夹{folder_name}命名不符合规则!",
+                                    type="warning",
+                                    position="bottom",
+                                    timeout=3000,
+                                    progress=True,
+                                    close_button="✖",
+                                )
+                    if not target_url_li:
+                        return target_url_li
                 # 没有缩小范围的正则表达式配置
                 else:
-                    target_url = f"{self.upload_path}/{svn_main_folder}/{according_folder_name[0]}"
+                    for folder_name in according_folder_name:
+                        target_url_li.append(f"{self.upload_path}/{svn_main_folder}/{folder_name}")
 
         # 无依赖文件夹配置，直接上传到config配置的顶层文件夹
         else:
@@ -1291,7 +1309,7 @@ class InteractiveButton:
                 match = re.search(self.search_scope_regular, chip_text)
                 if match:
                     search_target = match.group(1)
-                    target_url = f"{self.upload_path}/{svn_main_folder}/{search_target}"
+                    target_url_li.append(f"{self.upload_path}/{svn_main_folder}/{search_target}")
                 else:
                     if overview_state_show_judge(self.role):
                         ui.notify(
@@ -1302,16 +1320,18 @@ class InteractiveButton:
                             progress=True,
                             close_button="✖",
                         )
-                    return target_url
+                    return target_url_li
             # 没有正则表达式缩小范围
             else:
-                target_url = f"{self.upload_path}/{svn_main_folder}"
+                target_url_li.append(f"{self.upload_path}/{svn_main_folder}")
 
-        # 需要再深入层级
-        if self.search_hierarchy:
-            for h in self.search_hierarchy:
-                target_url = f"{target_url}/{h}"
-        return f"{target_url}/{chip_text}"
+        for target_url in target_url_li:
+            # 需要再深入层级
+            if self.search_hierarchy:
+                for h in self.search_hierarchy:
+                    target_url = f"{target_url}/{h}"
+            return_url_li.append(f"{target_url}/{chip_text}")
+        return return_url_li
 
     # 查找合法路径是否存在且唯一，并返回合法路径
     async def _search_file_path(self, chip_text) -> list:
@@ -1322,30 +1342,32 @@ class InteractiveButton:
         # 保存找到的激活的依赖文件夹名
         according_folder_name_li = []
         # 有依赖文件夹配置，找依赖文件夹配置标签对应的标签标题名
-        if self.search_folder_according:
-            according_title = (
-                app.storage.general.get("over_config_data_flat", {})
-                .get(self.search_folder_according, {})
-                .get("title", "未知项")
-            )
-
-            # 获取文件夹依赖标签里的chip数据
-            for data in db_storage.get_deep_item(
-                [f"{self.project}_over_data", self.search_folder_according], {}
-            ).values():
-                # 将所有激活的chip对应的内容，也就是文件夹名保存起来
-                if data["enabled"]:
-                    according_folder_name_li.append(data["content"])
+        if self.search_folder_according_li:
+            for search_folder_according in self.search_folder_according_li:
+                title_str = (
+                    app.storage.general.get("over_config_data_flat", {})
+                    .get(search_folder_according, {})
+                    .get("title", "未知项")
+                )
+                according_title = f"{according_title}\n{title_str}"
+                # 获取文件夹依赖标签里的chip数据
+                for data in db_storage.get_deep_item(
+                    [f"{self.project}_over_data", search_folder_according], {}
+                ).values():
+                    # 将所有激活的chip对应的内容，也就是文件夹名保存起来
+                    if data["enabled"]:
+                        according_folder_name_li.append(data["content"])
 
             # 如果少于一个有效文件夹名，即没有有效文件夹配置
             if len(according_folder_name_li) < 1:
                 if overview_state_show_judge(self.role):
                     ui.notify(
-                        f"概述项{according_title}无有效配置，链接无效!",
+                        f"概述项：\n{according_title}\n均无有效配置，链接无效!",
                         type="warning",
                         position="bottom",
                         timeout=3000,
                         progress=True,
+                        multi_line=True,
                         close_button="✖",
                     )
                 return target_path_list
@@ -1613,14 +1635,27 @@ class InteractiveButton:
             )
         else:
             # 开始显示漏斗
+            target_url = ""
             ui_spinner.set_visibility(True)
-            target_url = self._splicing_svn_file_url(text)
-            if target_url:
+            target_url_li = self._splicing_svn_file_url(text)
+            if target_url_li and len(target_url_li) == 1:
+                target_url = target_url_li[0]
                 file_info = await self.get_url_file_info_async(target_url)
                 # 文件不存在，上面函数调用已提示，这里隐藏沙漏即可
                 if not file_info[0]:
                     ui_spinner.set_visibility(False)
                     return
+            elif target_url_li and len(target_url_li) > 1:
+                ui.notify(
+                    "有多个路径，不合规!",
+                    type="warning",
+                    position="bottom",
+                    timeout=3000,
+                    progress=True,
+                    close_button="✖",
+                )
+                ui_spinner.set_visibility(False)
+                return
             else:
                 # 拼接不成路径的异常情况已在_splicing_svn_file_url函数里有弹出提示框
                 ui_spinner.set_visibility(False)
@@ -2181,6 +2216,8 @@ class InteractiveButton:
                 await self._refresh_chip_container()
                 # 刷新指定角色负责用户数据
                 overview_role_update(self.project, self.role)
+                # 局部更新该项的待处理状态
+                self._update_local_pending()
 
     # pdf文件打开函数
     def open_pdf_in_browser(self, url_path):
@@ -2297,6 +2334,19 @@ class InteractiveButton:
         )
 
     # <-----------------------------------------------------------------
+    def _update_local_pending(self):
+        """局部更新当前概述项的负责人待处理状态"""
+        # 获取当前角色下的最新负责人
+        latest_user_str = (
+            app.storage.general.get("overview_role", {}).get(self.project, {}).get(self.role, {}).get("latest_user", "")
+        )
+        des_user = latest_user_str.split("：")[1] if latest_user_str else ""
+
+        # 如果存在负责人，则局部刷新其待办状态字典
+        if des_user:
+            update_overview_charge_pending_dic(
+                scope="local", des_user=des_user, project_name=self.project, des_label=self.label
+            )
 
     # 以当前最新版本用户设置的激活状态，更新chip资料相应参数，如icon、enabled、bg_color等等
     def _check_version_updated(self, chip_id, new_select_activ_dic, chip_text) -> bool:
@@ -2541,6 +2591,8 @@ class InteractiveButton:
                 await self._refresh_chip_container()
                 # 刷新指定角色概述负责人
                 overview_role_update(self.project, self.role)
+                # 局部更新该项的待处理状态
+                self._update_local_pending()
 
                 # 检查版本是否更新导致的激活长度变化，弹窗提醒用户重新确认
                 self._check_version_updated(chip_id, new_select_activ_dic, chip_text)
