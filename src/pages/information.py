@@ -234,7 +234,8 @@ def information_page():
         with container:
             project_engineer_dic = get_project_engineer_project_list_dic()
             is_manager = current_role in ["研发经理"]
-            is_engineer = current_user == project_engineer_dic.get(project_name, "")
+            # is_engineer = current_user == project_engineer_dic.get(project_name, "")
+            is_engineer = current_user in project_engineer_dic
 
             # --- 卡片布局 ---
             with ui.card().classes(
