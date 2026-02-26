@@ -32,22 +32,27 @@ ui.notify(
     position="center",
     timeout=0,
     progress=False,
+    multi_line=True,
     close_button="✖",
 )
+# type="warning",[\s\S\n]*?\)
 ui.notify(
     "该文件已被销售删除，虽可查看，但谨慎参考！",
     type="warning",
     position="bottom",
     timeout=3000,
     progress=True,
+    multi_line=True,
     close_button="✖",
 )
+# type="info",[\s\S\n]*?\)
 ui.notify(
     f"开始下载文件: {self.file_neme_suffix}",
     type="info",
     position="bottom",
     timeout=2000,
     progress=True,
+    multi_line=True,
     close_button="✖",
 )
 ui.notify(
@@ -56,6 +61,7 @@ ui.notify(
     position="bottom",
     timeout=1000,
     progress=True,
+    multi_line=True,
     close_button="✖",
 )
 

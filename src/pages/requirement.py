@@ -20,6 +20,7 @@ from ..components import ButtonUploader, FileThumbnail, InteractiveButton, Overv
 from ..config import (
     BASE_DIR,
     IMG_DIR,
+    OVERVIEW_UI_RENDER_REGISTRY,
     PRESET_AVATARS,
     PROJECT_STATE_LIST,
     REQ_DIR,
@@ -3931,120 +3932,124 @@ async def requirement_page(type="", json_path="", project_name=""):
                                     current_role_expansions.append(exp)
                                     exp.set_visibility(False)
 
-                                    # with exp:
-                                    #     for data in data_dic.values():
-                                    #         user_role = app.storage.user["current_role"]
-                                    #         if (
-                                    #             user_role in data["permission"]["read_role"]
-                                    #             or user_role in data["permission"]["edit_role"]
-                                    #         ):
-                                    #             exp.set_visibility(True)
+                                    # 直接从 config.py 中读取渲染策略，找不到则默认 InteractiveButton
+                                    render_type = OVERVIEW_UI_RENDER_REGISTRY.get(data_group, "InteractiveButton")
 
-                                    #             # 提取必填属性
-                                    #             is_required_btn = data.get("nature", "必填")
-                                    #             if data["processing_type"] == "text":
-                                    #                 InteractiveButton(
-                                    #                     project=project_name,
-                                    #                     role=role,
-                                    #                     title=data["title"],
-                                    #                     label=data["label"],
-                                    #                     processing_type=data["processing_type"],
-                                    #                     impact_list=data["impact_list"],
-                                    #                     dialog_placeholder=data["dialog_placeholder"],
-                                    #                     permission=data["permission"],
-                                    #                     temp_bool=temp_bool,
-                                    #                     nature=is_required_btn,
-                                    #                     # delete_bool=False,
-                                    #                 )
-                                    #             elif data["processing_type"] in ["file", "image"]:
-                                    #                 InteractiveButton(
-                                    #                     project=project_name,
-                                    #                     role=role,
-                                    #                     title=data["title"],
-                                    #                     label=data["label"],
-                                    #                     processing_type=data["processing_type"],
-                                    #                     impact_list=data["impact_list"],
-                                    #                     permission=data["permission"],
-                                    #                     temp_bool=temp_bool,
-                                    #                     upload_path=data["upload_path"],
-                                    #                     nature=is_required_btn,
-                                    #                     # delete_bool=False,
-                                    #                 )
-                                    #             elif data["processing_type"] in ["search"]:
-                                    #                 InteractiveButton(
-                                    #                     project=project_name,
-                                    #                     role=role,
-                                    #                     title=data["title"],
-                                    #                     label=data["label"],
-                                    #                     processing_type=data["processing_type"],
-                                    #                     dialog_placeholder=data["dialog_placeholder"],
-                                    #                     impact_list=data["impact_list"],
-                                    #                     permission=data["permission"],
-                                    #                     temp_bool=temp_bool,
-                                    #                     upload_path=data["upload_path"],
-                                    #                     search_scope_regular=data["search_scope_regular"],
-                                    #                     search_folder_according_li=data["search_folder_according"],
-                                    #                     search_hierarchy=data["search_hierarchy"],
-                                    #                     nature=is_required_btn,
-                                    #                     # delete_bool=False,
-                                    #                 )
-                                    #             elif data["processing_type"] in ["svn"]:
-                                    #                 InteractiveButton(
-                                    #                     project=project_name,
-                                    #                     role=role,
-                                    #                     title=data["title"],
-                                    #                     label=data["label"],
-                                    #                     processing_type=data["processing_type"],
-                                    #                     impact_list=data["impact_list"],
-                                    #                     permission=data["permission"],
-                                    #                     temp_bool=temp_bool,
-                                    #                     upload_path=data["upload_path"],
-                                    #                     state_path=data["state_path"],
-                                    #                     search_scope_regular=data["search_scope_regular"],
-                                    #                     search_folder_according_li=data["search_folder_according"],
-                                    #                     search_hierarchy=data["search_hierarchy"],
-                                    #                     nature=is_required_btn,
-                                    #                     # delete_bool=False,
-                                    #                 )
-                                    #             elif data["processing_type"] in ["test"]:
-                                    #                 InteractiveButton(
-                                    #                     project=project_name,
-                                    #                     role=role,
-                                    #                     title=data["title"],
-                                    #                     label=data["label"],
-                                    #                     processing_type=data["processing_type"],
-                                    #                     impact_list=data["impact_list"],
-                                    #                     dialog_placeholder=data["dialog_placeholder"],
-                                    #                     permission=data["permission"],
-                                    #                     state_options=data["state_options"],
-                                    #                     node_options=data["node_options"],
-                                    #                     instrument_options=data["instrument_options"],
-                                    #                     temp_bool=temp_bool,
-                                    #                     nature=is_required_btn,
-                                    #                     # delete_bool=False,
-                                    #                 )
-                                    with exp:
-                                        # 权限预检：只要分组里有任意一项有权限，就显示这个折叠面板和里面的表格
-                                        user_role = app.storage.user["current_role"]
-                                        has_permission = False
-                                        for data in data_dic.values():
-                                            if (
-                                                user_role in data["permission"]["read_role"]
-                                                or user_role in data["permission"]["edit_role"]
-                                            ):
-                                                has_permission = True
-                                                break
-
+                                    # 权限预检：只要分组里有任意一项有权限，就显示这个折叠面板和里面的表格
+                                    user_role = app.storage.user["current_role"]
+                                    has_permission = False
+                                    for data in data_dic.values():
+                                        if (
+                                            user_role in data["permission"]["read_role"]
+                                            or user_role in data["permission"]["edit_role"]
+                                        ):
+                                            has_permission = True
+                                            break
+                                    if render_type == "OverviewTableGroup":
                                         if has_permission:
-                                            exp.set_visibility(True)
-                                            # 💡 核心改动：不再遍历实例化 InteractiveButton，而是将整个配置组交给 OverviewTableGroup
-                                            OverviewTableGroup(
-                                                project=project_name,
-                                                role=role,
-                                                group_name=data_group,
-                                                configs=data_dic,
-                                                temp_bool=temp_bool,
-                                            )
+                                            with exp:
+                                                exp.set_visibility(True)
+                                                # 💡 核心改动：不再遍历实例化 InteractiveButton，而是将整个配置组交给 OverviewTableGroup
+                                                OverviewTableGroup(
+                                                    project=project_name,
+                                                    role=role,
+                                                    group_name=data_group,
+                                                    configs=data_dic,
+                                                    temp_bool=temp_bool,
+                                                )
+                                    else:
+                                        with exp:
+                                            for data in data_dic.values():
+                                                user_role = app.storage.user["current_role"]
+                                                if (
+                                                    user_role in data["permission"]["read_role"]
+                                                    or user_role in data["permission"]["edit_role"]
+                                                ):
+                                                    exp.set_visibility(True)
+
+                                                    # 提取必填属性
+                                                    is_required_btn = data.get("nature", "必填")
+                                                    if data["processing_type"] == "text":
+                                                        InteractiveButton(
+                                                            project=project_name,
+                                                            role=role,
+                                                            title=data["title"],
+                                                            label=data["label"],
+                                                            processing_type=data["processing_type"],
+                                                            impact_list=data["impact_list"],
+                                                            dialog_placeholder=data["dialog_placeholder"],
+                                                            permission=data["permission"],
+                                                            temp_bool=temp_bool,
+                                                            nature=is_required_btn,
+                                                            # delete_bool=False,
+                                                        )
+                                                    elif data["processing_type"] in ["file", "image"]:
+                                                        InteractiveButton(
+                                                            project=project_name,
+                                                            role=role,
+                                                            title=data["title"],
+                                                            label=data["label"],
+                                                            processing_type=data["processing_type"],
+                                                            impact_list=data["impact_list"],
+                                                            permission=data["permission"],
+                                                            temp_bool=temp_bool,
+                                                            upload_path=data["upload_path"],
+                                                            nature=is_required_btn,
+                                                            # delete_bool=False,
+                                                        )
+                                                    elif data["processing_type"] in ["search"]:
+                                                        InteractiveButton(
+                                                            project=project_name,
+                                                            role=role,
+                                                            title=data["title"],
+                                                            label=data["label"],
+                                                            processing_type=data["processing_type"],
+                                                            dialog_placeholder=data["dialog_placeholder"],
+                                                            impact_list=data["impact_list"],
+                                                            permission=data["permission"],
+                                                            temp_bool=temp_bool,
+                                                            upload_path=data["upload_path"],
+                                                            search_scope_regular=data["search_scope_regular"],
+                                                            search_folder_according_li=data["search_folder_according"],
+                                                            search_hierarchy=data["search_hierarchy"],
+                                                            nature=is_required_btn,
+                                                            # delete_bool=False,
+                                                        )
+                                                    elif data["processing_type"] in ["svn"]:
+                                                        InteractiveButton(
+                                                            project=project_name,
+                                                            role=role,
+                                                            title=data["title"],
+                                                            label=data["label"],
+                                                            processing_type=data["processing_type"],
+                                                            impact_list=data["impact_list"],
+                                                            permission=data["permission"],
+                                                            temp_bool=temp_bool,
+                                                            upload_path=data["upload_path"],
+                                                            state_path=data["state_path"],
+                                                            search_scope_regular=data["search_scope_regular"],
+                                                            search_folder_according_li=data["search_folder_according"],
+                                                            search_hierarchy=data["search_hierarchy"],
+                                                            nature=is_required_btn,
+                                                            # delete_bool=False,
+                                                        )
+                                                    elif data["processing_type"] in ["test"]:
+                                                        InteractiveButton(
+                                                            project=project_name,
+                                                            role=role,
+                                                            title=data["title"],
+                                                            label=data["label"],
+                                                            processing_type=data["processing_type"],
+                                                            impact_list=data["impact_list"],
+                                                            dialog_placeholder=data["dialog_placeholder"],
+                                                            permission=data["permission"],
+                                                            state_options=data["state_options"],
+                                                            node_options=data["node_options"],
+                                                            instrument_options=data["instrument_options"],
+                                                            temp_bool=temp_bool,
+                                                            nature=is_required_btn,
+                                                            # delete_bool=False,
+                                                        )
 
             with ui.row().classes("fixed bottom-0 left-0 right-0 bg-sky-50 p-3 items-center shadow-inner"):
                 ui.label(text="参考文件：").classes("text-lg text-black m-0")

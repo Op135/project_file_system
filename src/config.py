@@ -15,6 +15,18 @@ ST = os.environ.get("STORAGE_SECRET", "this_is_not_a_secret_for_development_only
 SVN_USERNAME = "temp_t1"
 SVN_PASSWORD = "123456"
 
+# 如果某个分组没在这里配置，代码里默认它使用 InteractiveButton。
+OVERVIEW_UI_RENDER_REGISTRY = {
+    "光源": "OverviewTableGroup",
+    "产品图纸": "OverviewTableGroup",
+    "PCB图纸": "OverviewTableGroup",
+    "驱动板资料": "OverviewTableGroup",
+    "控制板资料": "OverviewTableGroup",
+    "光源基板资料": "OverviewTableGroup",
+    "其它类型PCB资料": "OverviewTableGroup",
+    "软件文档": "OverviewTableGroup",
+    "UI文档": "OverviewTableGroup",
+}
 # 概述可上传文件类型，除了图片，图片都可以
 OVER_UPLOADS_FILE_TYPE = {
     ".pdf",

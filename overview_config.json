@@ -150,6 +150,51 @@
                     "mechanical_assembly_details"
                 ]
             },
+            "光源温敏型号": {
+                "label": "light_thermistor",
+                "role": "光学",
+                "nature": "必填",
+                "title": "光源温敏型号",
+                "processing_type": "text",
+                "dialog_placeholder": "光源名称：温敏规格型号",
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
+                "permission": {
+                    "read_role": [
+                        "boss",
+                        "销售总监",
+                        "销售",
+                        "客服主管",
+                        "客服",
+                        "研发助理",
+                        "研发电子主管",
+                        "研发硬件",
+                        "研发软件",
+                        "研发结构",
+                        "研发样品",
+                        "工程",
+                        "质量"
+                    ],
+                    "edit_role": [
+                        "admin",
+                        "研发经理",
+                        "研发光学"
+                    ]
+                },
+                "impact_list": [
+                    "craft_key_requirements",
+                    "software_executable_file",
+                    "wire_accessories",
+                    "drive_pcb_principle",
+                    "drive_pcb",
+                    "drive_electronic_bom",
+                    "product_complete_diagram",
+                    "product_bom",
+                    "mechanical_assembly_details"
+                ]
+            },
             "光源性能阈温": {
                 "label": "light_type_temperature",
                 "role": "光学",
@@ -372,51 +417,6 @@
             }
         },
         "光电传感器": {
-            "光源温敏型号": {
-                "label": "light_thermistor",
-                "role": "光学",
-                "nature": "必填",
-                "title": "光源温敏型号",
-                "processing_type": "text",
-                "dialog_placeholder": "光源名称：温敏规格型号",
-                "allowed_state": [
-                    "研发",
-                    "转产"
-                ],
-                "permission": {
-                    "read_role": [
-                        "boss",
-                        "销售总监",
-                        "销售",
-                        "客服主管",
-                        "客服",
-                        "研发助理",
-                        "研发电子主管",
-                        "研发硬件",
-                        "研发软件",
-                        "研发结构",
-                        "研发样品",
-                        "工程",
-                        "质量"
-                    ],
-                    "edit_role": [
-                        "admin",
-                        "研发经理",
-                        "研发光学"
-                    ]
-                },
-                "impact_list": [
-                    "craft_key_requirements",
-                    "software_executable_file",
-                    "wire_accessories",
-                    "drive_pcb_principle",
-                    "drive_pcb",
-                    "drive_electronic_bom",
-                    "product_complete_diagram",
-                    "product_bom",
-                    "mechanical_assembly_details"
-                ]
-            },
             "光电传感器选型": {
                 "label": "photoelectric_sensors",
                 "nature": "必填",
@@ -777,79 +777,6 @@
     },
     "结构": {
         "产品图纸": {
-            "产品2D尺寸图": {
-                "label": "product_size_diagram",
-                "role": "结构",
-                "nature": "必填",
-                "title": "产品2D尺寸图（pdf）",
-                "processing_type": "file",
-                "file_name_regular": [],
-                "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\2.输出——研发流程输出文档\\★可发客户的资料\\产品简化尺寸图\\模组",
-                "allowed_state": [
-                    "研发",
-                    "转产"
-                ],
-                "permission": {
-                    "read_role": [
-                        "boss",
-                        "销售总监",
-                        "销售",
-                        "客服主管",
-                        "客服",
-                        "研发助理",
-                        "研发电子主管",
-                        "研发硬件",
-                        "研发软件",
-                        "研发光学",
-                        "研发样品",
-                        "工程",
-                        "质量"
-                    ],
-                    "edit_role": [
-                        "admin",
-                        "研发经理",
-                        "研发结构"
-                    ]
-                },
-                "impact_list": [
-                    "specifications"
-                ]
-            },
-            "产品简化3D图": {
-                "label": "product_simplify_diagram",
-                "role": "结构",
-                "nature": "必填",
-                "title": "产品简化3D图（stp）",
-                "processing_type": "file",
-                "file_name_regular": [],
-                "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\2.输出——研发流程输出文档\\★可发客户的资料\\产品简化尺寸图\\模组",
-                "allowed_state": [
-                    "研发",
-                    "转产"
-                ],
-                "permission": {
-                    "read_role": [
-                        "boss",
-                        "销售总监",
-                        "销售",
-                        "客服主管",
-                        "客服",
-                        "研发助理",
-                        "研发电子主管",
-                        "研发硬件",
-                        "研发光学",
-                        "研发样品",
-                        "工程",
-                        "质量"
-                    ],
-                    "edit_role": [
-                        "admin",
-                        "研发经理",
-                        "研发结构"
-                    ]
-                },
-                "impact_list": []
-            },
             "产品完整3D图": {
                 "label": "product_complete_diagram",
                 "role": "结构",
@@ -899,9 +826,117 @@
                     "capture_list",
                     "mechanical_testing"
                 ]
+            },
+            "产品简化3D图": {
+                "label": "product_simplify_diagram",
+                "role": "结构",
+                "nature": "必填",
+                "title": "产品简化3D图（stp）",
+                "processing_type": "file",
+                "file_name_regular": [],
+                "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\2.输出——研发流程输出文档\\★可发客户的资料\\产品简化尺寸图\\模组",
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
+                "permission": {
+                    "read_role": [
+                        "boss",
+                        "销售总监",
+                        "销售",
+                        "客服主管",
+                        "客服",
+                        "研发助理",
+                        "研发电子主管",
+                        "研发硬件",
+                        "研发光学",
+                        "研发样品",
+                        "工程",
+                        "质量"
+                    ],
+                    "edit_role": [
+                        "admin",
+                        "研发经理",
+                        "研发结构"
+                    ]
+                },
+                "impact_list": []
+            },
+            "产品2D尺寸图": {
+                "label": "product_size_diagram",
+                "role": "结构",
+                "nature": "必填",
+                "title": "产品2D尺寸图（pdf）",
+                "processing_type": "file",
+                "file_name_regular": [],
+                "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\2.输出——研发流程输出文档\\★可发客户的资料\\产品简化尺寸图\\模组",
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
+                "permission": {
+                    "read_role": [
+                        "boss",
+                        "销售总监",
+                        "销售",
+                        "客服主管",
+                        "客服",
+                        "研发助理",
+                        "研发电子主管",
+                        "研发硬件",
+                        "研发软件",
+                        "研发光学",
+                        "研发样品",
+                        "工程",
+                        "质量"
+                    ],
+                    "edit_role": [
+                        "admin",
+                        "研发经理",
+                        "研发结构"
+                    ]
+                },
+                "impact_list": [
+                    "specifications"
+                ]
             }
         },
         "PCB图纸": {
+            "PCBA简化3D图": {
+                "label": "drive_simplify_diagram",
+                "role": "结构",
+                "nature": "必填",
+                "title": "PCBA简化3D图（stp）",
+                "processing_type": "file",
+                "file_name_regular": [],
+                "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\2.输出——研发流程输出文档\\★可发客户的资料\\产品简化尺寸图\\PCBA",
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
+                "permission": {
+                    "read_role": [
+                        "boss",
+                        "销售总监",
+                        "销售",
+                        "客服主管",
+                        "客服",
+                        "研发助理",
+                        "研发电子主管",
+                        "研发硬件",
+                        "研发光学",
+                        "研发样品",
+                        "工程",
+                        "质量"
+                    ],
+                    "edit_role": [
+                        "admin",
+                        "研发经理",
+                        "研发结构"
+                    ]
+                },
+                "impact_list": []
+            },
             "PCBA2D尺寸图": {
                 "label": "drive_size_diagram",
                 "role": "结构",
@@ -939,41 +974,6 @@
                 "impact_list": [
                     "specifications"
                 ]
-            },
-            "PCBA简化3D图": {
-                "label": "drive_simplify_diagram",
-                "role": "结构",
-                "nature": "必填",
-                "title": "PCBA简化3D图（stp）",
-                "processing_type": "file",
-                "file_name_regular": [],
-                "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\2.输出——研发流程输出文档\\★可发客户的资料\\产品简化尺寸图\\PCBA",
-                "allowed_state": [
-                    "研发",
-                    "转产"
-                ],
-                "permission": {
-                    "read_role": [
-                        "boss",
-                        "销售总监",
-                        "销售",
-                        "客服主管",
-                        "客服",
-                        "研发助理",
-                        "研发电子主管",
-                        "研发硬件",
-                        "研发光学",
-                        "研发样品",
-                        "工程",
-                        "质量"
-                    ],
-                    "edit_role": [
-                        "admin",
-                        "研发经理",
-                        "研发结构"
-                    ]
-                },
-                "impact_list": []
             }
         },
         "结构重点特征示意图": {
@@ -3554,7 +3554,7 @@
         }
     },
     "软件": {
-        "执行文件": {
+        "软件文档": {
             "固件执行文件": {
                 "label": "software_executable_file",
                 "role": "软件",
@@ -3617,9 +3617,7 @@
                     "product_bom",
                     "mechanical_testing"
                 ]
-            }
-        },
-        "文档标准": {
+            },
             "固件使用说明书": {
                 "label": "software_manual",
                 "role": "软件",
@@ -3759,7 +3757,9 @@
                     ]
                 },
                 "impact_list": []
-            },
+            }
+        },
+        "软件标准": {
             "软件功能测试项": {
                 "label": "software_testing",
                 "role": "软件",
@@ -3802,7 +3802,7 @@
         }
     },
     "UI": {
-        "执行文件": {
+        "UI文档": {
             "UI执行文件压缩包": {
                 "label": "ui_execute_file",
                 "role": "UI",
@@ -3854,7 +3854,7 @@
                 ]
             }
         },
-        "文档标准": {
+        "UI标准": {
             "UI测试项": {
                 "label": "ui_testing",
                 "role": "UI",
