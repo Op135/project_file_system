@@ -55,6 +55,17 @@ from .utils import (
 # 比如：如果你的文件是 src/components.py，这个 logger 的名字就会是 "src.components"
 logger = logging.getLogger(__name__)
 
+# 注入全局 CSS，强制允许 ui.chip 内部的文字换行
+# ui.add_head_html("""
+#     <style>
+#     .multiline-chip .q-chip__content {
+#         white-space: normal !important;
+#         word-break: break-all !important;
+#         line-height: 1.3 !important;
+#     }
+#     </style>
+#     """)
+
 
 class StorageBackupManager:
     def __init__(
@@ -3673,6 +3684,1784 @@ class InteractiveButton:
             else:
                 # 设置文件类chip的弹窗格式
                 self._setup_file_notes_dialog()
+
+
+class OverviewTableGroup:
+    """
+    基于表格布局的概述内容组管理组件。
+    将同一个分组（如"光源"）下的所有配置项渲染为一个二维表格，
+    保持后端存储逻辑不变，实现横向的视觉强关联。
+    """
+
+    def __init__(
+        self,
+        project: str,
+        role: str,
+        group_name: str,
+        configs: dict,
+        temp_bool: bool = False,
+    ):
+        self.project = project
+        self.role = role
+        self.group_name = group_name
+        self.configs = configs  # 传入整个分组的配置字典，例如 "光源" 下的所有配置
+        self.temp_bool = temp_bool
+        # --- 💡 细化权限管控到列层级 ---
+        self.permitted_configs = {}
+        user_role = app.storage.user.get("current_role", "")
+        for key, config in self.configs.items():
+            # 只有当用户具备读取或编辑权限时，该列才会被加入最终渲染和监控的列表中
+            if user_role in config.get("permission", {}).get("read_role", []) or user_role in config.get(
+                "permission", {}
+            ).get("edit_role", []):
+                self.permitted_configs[key] = config
+        self.offset = (0, 0)
+        self.is_dragging = False
+        self.last_pos = (0, 0)
+        self.zoom_level = 1.0
+
+        # 全局复用的对话框（以节省DOM节点）
+        self.chip_dialog = ui.dialog().classes("")
+        self.img_dialog = ui.dialog().props("").classes("p-0")
+        self.overview_video_dialog = ui.dialog().classes("p-0 bg-transparent shadow-none")
+        self.check_down_dialog = ui.dialog().classes("")
+        self.activ_dialog = ui.dialog().props("persistent").classes("")
+        self.history_dialog = ui.dialog().classes("w-full")
+
+        # 隐藏的文件上传器
+        self.uploader = ui.upload(
+            on_upload=self._handle_file_upload,
+            on_begin_upload=lambda: self.spinner.set_visibility(True) if hasattr(self, "spinner") else None,
+            auto_upload=True,
+            max_files=1,
+        ).props("accept=*/*")
+        self.uploader.set_visibility(False)
+
+        # 当前正在操作的列配置（非常关键，用于让弹窗知道在处理哪个字段）
+        self.current_config = {}
+
+        # 表格的主容器
+        self.container = ui.column().classes(
+            "w-full gap-0 border border-blue-200 rounded-lg overflow-hidden mt-2 bg-white shadow-sm"
+        )
+
+        # --- 状态追踪细化到列 (字典结构) ---
+        self.last_state_hashes = {}
+
+        # 初始渲染 & 开启定时器
+        ui.timer(0.5, self._update_display)
+
+    async def _group_and_migrate_data(self, col_configs, show_all, conversion_refresh):
+        """
+        核心方法：将按列存放的数据转换为按行存放，并无缝清洗旧数据。
+        修补了跨行移动时跳入“幽灵空行”的 BUG。
+        """
+        row_dict = {}
+        ordered_row_ids = []
+
+        # 1. 预先拉取并过滤所有列的数据
+        all_cols_chips = []
+        for config in col_configs:
+            label = config["label"]
+            chips_dict = db_storage.get_deep_item([f"{self.project}_over_data", label], {})
+
+            valid_chips = []
+            for chip_id, chip_data in chips_dict.items():
+                if (
+                    conversion_refresh
+                    and chip_data.get("type") == "svn"
+                    and chip_data.get("enabled") not in [True, None]
+                ):
+                    continue
+                if not show_all and chip_data.get("enabled") is False:
+                    continue
+                valid_chips.append(chip_data)
+            all_cols_chips.append((label, valid_chips))
+
+        if not all_cols_chips:
+            return []
+
+        # 2. 建立行基准线 fallback_row_ids，保证老数据严格按水平 Index 对齐
+        fallback_row_ids = []
+        max_len = max([len(chips) for _, chips in all_cols_chips]) if all_cols_chips else 0
+
+        for i in range(max_len):
+            found_row_id = None
+            # 优先在各列中找同水平位置已经存在的真实 row_id
+            for _, chips in all_cols_chips:
+                if i < len(chips) and chips[i].get("row_id"):
+                    found_row_id = chips[i].get("row_id")
+                    break
+            # 如果这一行全是老数据没 ID，才生成一个唯一行标识
+            if not found_row_id:
+                found_row_id = str(uuid.uuid4())
+            fallback_row_ids.append(found_row_id)
+
+        # 3. 归集数据并分配/清洗 row_id
+        first_col_label = col_configs[0]["label"]
+
+        for label, chips in all_cols_chips:
+            for i, chip_data in enumerate(chips):
+                row_id = chip_data.get("row_id")
+                # 如果没有 row_id (旧数据)，则从基准线中分配并异步保存
+                if not row_id:
+                    row_id = fallback_row_ids[i]
+                    chip_data["row_id"] = row_id
+                    await db_storage.set_deep_item(
+                        [f"{self.project}_over_data", label, chip_data["id"], "row_id"], row_id
+                    )
+
+                # 归集到行字典，支持单个单元格内追加多个 chip
+                if row_id not in row_dict:
+                    row_dict[row_id] = {}
+                row_dict[row_id].setdefault(label, []).append(chip_data)
+
+                # 建立行显示主序：以第一列的物理顺序为尊
+                if label == first_col_label:
+                    if row_id not in ordered_row_ids:
+                        ordered_row_ids.append(row_id)
+
+        # 4. 补漏：如果后面列有不属于第一列主序的零散行，统一追加到表格末尾
+        for label, chips in all_cols_chips:
+            for chip_data in chips:
+                row_id = chip_data.get("row_id")
+                if row_id not in ordered_row_ids:
+                    ordered_row_ids.append(row_id)
+
+        # 5. 保存干净、无空洞的行顺序快照，供后续跨行移动算法准确计算
+        self.ordered_row_ids = ordered_row_ids
+
+        # 组装最终渲染所需的数组
+        rows_list = [{"row_id": rid, "chips": row_dict[rid]} for rid in ordered_row_ids if rid in row_dict]
+        return rows_list
+
+    # ================= UI 渲染核心 =================
+    def _handle_header_click(self, e, config):
+        """处理表头点击事件"""
+        if e.args.get("shiftKey"):
+            self.show_label_history(config)
+
+    async def _render_table(self):
+        col_configs = list(self.permitted_configs.values())
+        if not col_configs:
+            return
+
+        req_max_ver = app.storage.general["project_req_max_ver"].get(self.project, "1.0")
+        show_all = app.storage.client.get("record_switch")
+        conversion_refresh = app.storage.general.get("conversion_refresh", {}).get(self.project)
+
+        # 1. 获取按行绑定的数据，并完成旧数据清洗
+        rows_list = await self._group_and_migrate_data(col_configs, show_all, conversion_refresh)
+        # 数据准备完毕，此时再瞬间清空并重绘 UI，不会产生折叠坍缩
+        self.container.clear()
+        # 2. 渲染 UI
+        with self.container:
+            # --- 渲染表头 ---
+            with ui.row().classes("w-full flex-nowrap bg-blue-50/80 border-b border-blue-200 p-0 m-0"):
+                for config in col_configs:
+                    label = config["label"]
+
+                    # 💡 恢复 1：计算状态指示灯颜色
+                    # 获取该列的所有原始 chip 数据
+                    raw_chips_dict = db_storage.get_deep_item([f"{self.project}_over_data", label], {})
+                    chip_states = [c.get("enabled") for c in raw_chips_dict.values()]
+
+                    dot_color = "text-red"
+                    if chip_states and any(state is None for state in chip_states):
+                        dot_color = "text-orange"
+                    elif chip_states and any(state is True for state in chip_states):
+                        dot_color = "text-green"
+
+                    # 判断是否为必填项
+                    is_required = config.get("nature") == "必填"
+
+                    # 💡 恢复 2：让表头变成可点击，并绑定 Shift+Click 事件
+                    with (
+                        ui.column()
+                        .classes(
+                            "flex-1 p-2 border-r border-blue-200 last:border-r-0 items-center justify-center min-w-[140px] relative cursor-pointer hover:bg-blue-100 transition-colors"
+                        )
+                        .on("click", lambda e, c=config: self._handle_header_click(e, c), ["shiftKey"])
+                    ):
+                        # 渲染小圆点（仅必填项显示，悬浮在左上角）
+                        if is_required:
+                            ui.label("●").classes(f"absolute top-1 left-2 text-[10px] {dot_color}")
+
+                        # 渲染标题
+                        ui.label(config["title"]).classes("font-bold text-sm text-blue-900 text-center").style(
+                            "white-space: pre-wrap;"
+                        )
+
+                        # 增加贴心的浮动提示
+                        # ui.tooltip("按住 Shift 点击查看该列历史记录").classes("text-xs bg-gray-800")
+
+            # --- 渲染数据行 ---
+            # 提取第一列的 label 用于判断
+            first_col_label = list(self.permitted_configs.values())[0]["label"]
+            for index, row_data in enumerate(rows_list):
+                bg_color = "bg-white" if index % 2 == 0 else "bg-gray-50/40"
+                row_id = row_data["row_id"]
+                row_chips = row_data["chips"]
+
+                with ui.row().classes(
+                    f"w-full flex-nowrap border-b border-gray-100 {bg_color} items-stretch p-0 m-0 hover:bg-amber-50/40 transition-colors"
+                ):
+                    for config in col_configs:
+                        label = config["label"]
+
+                        # 💡 优化 1：取消居中对齐改为顶部对齐(items-start)，并增加 pb-6 给绝对定位的按钮留出一点底边距
+                        with ui.column().classes(
+                            "flex-1 p-2 pb-6 border-r border-gray-100 last:border-r-0 items-start justify-start min-w-[140px] relative group gap-1"
+                        ):
+                            is_first_col = label == first_col_label
+                            has_chip = bool(label in row_chips and row_chips[label])
+
+                            # 1. 渲染该单元格内的所有 chip
+                            if has_chip:
+                                for chip_data in row_chips[label]:
+                                    await self._render_single_chip(chip_data, config, req_max_ver)
+
+                            # 2. 渲染添加按钮：
+                            if self._edit_permission_judge(config, notify=False):
+                                if not (is_first_col and has_chip):
+                                    icon_name = self._get_icon_for_type(config["processing_type"])
+                                    btn = ui.button(
+                                        icon=icon_name,
+                                        on_click=lambda _, c=config, rid=row_id: self._handle_add_click(
+                                            c, target_row_id=rid
+                                        ),
+                                    ).props("flat round dense size=sm")
+                                    # 💡 优化 2：绝对定位到右下角，完全脱离文档流，不撑大表格高度
+                                    btn.classes(
+                                        "absolute bottom-0 right-1 text-blue-500 opacity-0 group-hover:opacity-100 transition-all m-0 p-0 z-10"
+                                    ).tooltip(f"添加 {config['title']}")
+            # --- 渲染表格底部的“添加新行”栏 ---
+            # 只有具有任意列的编辑权限时才显示
+            with ui.row().classes("w-full bg-blue-50/30 justify-center p-2"):
+                ui.button("添加新行", icon="add", on_click=self._handle_add_new_row).classes("w-full max-w-xs").props(
+                    "outline"
+                )
+
+    async def _render_single_chip(self, chip_info: dict, config: dict, req_max_ver: str):
+        """渲染单个单元格内的 Chip (移植自原 _create_chip_from_data)"""
+        chip_text = chip_info.get("content", "")
+        filepath = ""
+        upload_path = config.get("upload_path", "")
+        delete_icon = "close" if app.storage.user["current_user"] == "admin" else "settings"
+        delete_bg = "bg-red text-white" if app.storage.user["current_user"] == "admin" else "bg-white text-light-blue"
+
+        if chip_info.get("type") in ["text", "file", "test", "search", "svn", "video"]:
+            file_info = (False, None)
+            if chip_info["type"] == "file":
+                filepath = f"{upload_path}/{chip_text}"
+                app.add_static_file(local_file=filepath, url_path=chip_info.get("url_path"))
+            elif chip_info["type"] == "search":
+                target_path_list = await self._search_file_path(chip_text, config)
+                files_li = []
+                for target_path in target_path_list:
+                    if target_path and Path(target_path).is_dir():
+                        files_li.extend(find_files_pathlib(target_path, chip_text))
+                if len(files_li) == 1:
+                    filepath = str(files_li[0])
+                    app.add_static_file(local_file=filepath, url_path=chip_info.get("url_path"))
+            elif chip_info["type"] == "svn":
+                target_url = chip_info.get("url_path", "")
+                file_info = await self.get_url_file_info_async(target_url)
+
+            # 💡 优化 3：新增一个相对定位的容器包裹 Chip，这是解决小按钮被裁切的关键！
+            with ui.element("div").classes("relative w-full flex items-center justify-start") as wrapper:
+                # 创建主 Chip 元素
+                chip = (
+                    ui.chip(text=chip_text, removable=False, icon=chip_info.get("icon"))
+                    .props(f"data-chip-id={chip_info.get('id')} enabled-state={chip_info.get('enabled')} dense square")
+                    # 💡 优化 4：移除 overflow-hidden text-ellipsis，改为高度自适应(h-auto)
+                    .classes(
+                        f"m-0 {chip_info.get('bg_color')} w-full justify-start shadow-sm h-auto py-1 min-h-[30px] multiline-chip"
+                    )
+                    # 💡 优化 5：强制允许长串英文、连字符进行自动换行
+                    .style("white-space: normal; word-break: break-all; line-height: 1.3;")
+                )
+
+                # 点击事件绑定
+                if chip_info.get("type") in ["file", "search"]:
+                    if chip_info.get("file_type") == "application/pdf" and filepath and Path(filepath).exists():
+                        chip.on_click(lambda url=chip_info.get("url_path"): self.open_pdf_in_browser(url))
+                    elif filepath and Path(filepath).exists():
+                        chip.on_click(lambda fp=filepath, fn=chip_text: self.check_and_download(fp, fn))
+                    else:
+                        chip.on_click(lambda: ui.notify("文件不存在、失效或不唯一！", type="warning"))
+                elif chip_info.get("type") == "svn":
+                    if chip_info.get("file_type") == "application/pdf" and file_info[0]:
+                        chip.on_click(
+                            lambda url=chip_info.get("url_path"), fn=chip_text: self.open_svn_pdf_in_browser(url, fn)
+                        )
+                    elif file_info[0]:
+                        chip.on_click(
+                            lambda url=chip_info.get("url_path"), fn=chip_text: self.check_and_download_svn(url, fn)
+                        )
+                    else:
+                        chip.on_click(lambda: ui.notify("SVN文件已丢失！", type="warning"))
+                elif chip_info.get("type") == "video":
+                    if filepath and Path(filepath).exists():
+                        chip.on_click(lambda url=chip_info.get("url_path"): self.play_overview_video(url))
+                    else:
+                        chip.on_click(lambda: ui.notify("视频文件已丢失！", type="warning"))
+
+                # Tooltip & 控制按钮
+                with chip:
+                    tooltip_text = f"版本: V{chip_info.get('req_ver')}<br>创建者: {chip_info.get('creator')}<br>注释: <br>●{chip_info.get('notes', '').replace('\n', '<br>')}"
+                    with ui.tooltip():
+                        ui.html(tooltip_text, sanitize=Sanitizer().sanitize)
+
+                    # 💡 优化 6：悬浮按钮放在 div 容器内（与 chip 平级），绝对定位，利用 z-20 浮在 chip 上方
+                # 注意 style 中 display 设置为 flex 而非 block，防止图标偏离中心
+                delete_button = (
+                    ui.button(on_click=lambda c=chip, cfg=config: self.delete_chip_info(c, cfg))
+                    .classes(f"absolute -top-2 -right-2 m-0 p-0 q-py-0 z-20 {delete_bg} shadow-md")
+                    .props(f'round padding="0px 0px" icon={delete_icon}')
+                    .style("font-size: 8px; display: none;")
+                    .on("click", js_handler="(e) => {e.stopPropagation()}")
+                )
+                move_up_button = (
+                    ui.button(on_click=lambda d=chip_info, cfg=config: self.move_up_data(d, cfg))
+                    .classes(
+                        "absolute -top-2 right-6 m-0 p-0 q-py-0 z-20 bg-white text-light-blue shadow-md border border-gray-200"
+                    )
+                    .props('round padding="0px 0px" icon="arrow_drop_up"')
+                    .style("font-size: 8px; display: none;")
+                    .on("click", js_handler="(e) => {e.stopPropagation()}")
+                )
+                move_down_button = (
+                    ui.button(on_click=lambda d=chip_info, cfg=config: self.move_down_data(d, cfg))
+                    .classes(
+                        "absolute -top-2 right-2 m-0 p-0 q-py-0 z-20 bg-white text-light-blue shadow-md border border-gray-200"
+                    )
+                    .props('round padding="0px 0px" icon="arrow_drop_down"')
+                    .style("font-size: 8px; display: none;")
+                    .on("click", js_handler="(e) => {e.stopPropagation()}")
+                )
+                history_button = (
+                    ui.button(on_click=lambda d=chip_info, cfg=config: self.show_chip_history(d, cfg))
+                    .classes("absolute -top-2 -right-2 m-0 p-0 q-py-0 z-20 bg-purple-1 text-purple-8 shadow-md")
+                    .props('round padding="0px 0px" icon="history"')
+                    .style("font-size: 8px; display: none;")
+                    .on("click", js_handler="(e) => {e.stopPropagation()}")
+                )
+
+            # 交互事件
+            # 💡 优化 7：使用 display: flex 保持按钮圆圈内的图标居中
+            def check_ctrl_and_show(e, btns):
+                for b in btns:
+                    b.style("display: flex;" if e.args.get("ctrlKey") else "display: none;")
+
+            def check_shift_and_show(e, btn):
+                btn.style("display: flex;" if e.args.get("shiftKey") else "display: none;")
+
+            control_btns = [delete_button, move_up_button, move_down_button]
+            wrapper.on("mouseenter", lambda e: check_ctrl_and_show(e, control_btns), ["ctrlKey"])
+            wrapper.on("mousemove", lambda e: check_ctrl_and_show(e, control_btns), ["ctrlKey"])
+            wrapper.on("mouseleave", lambda: [b.style("display: none;") for b in control_btns])
+            wrapper.on("mouseenter", lambda e: check_shift_and_show(e, history_button), ["shiftKey"])
+            wrapper.on("mousemove", lambda e: check_shift_and_show(e, history_button), ["shiftKey"])
+            wrapper.on("mouseleave", lambda: history_button.style("display: none;"))
+            chip.on("contextmenu", lambda d=chip_info: self.on_right_click(d))
+
+        elif chip_info.get("type") == "image":
+            image_name = chip_info.get("content")
+            image_path = f"{upload_path}/{image_name}"
+            url_path = f"{FILES_URL_DIR}/{image_name}"
+            app.add_static_file(local_file=image_path, url_path=url_path)
+
+            with ui.element("div").classes("relative w-full") as wrapper:
+                thumbnail = (
+                    ui.interactive_image(url_path)
+                    .props(f"data-chip-id={chip_info.get('id')} enabled-state={chip_info.get('enabled')}")
+                    .classes("h-10 cursor-pointer w-full object-cover rounded shadow-sm border border-gray-200")
+                )
+                thumbnail.on("click", lambda u=url_path: self.show_fullscreen(u))
+
+                with thumbnail:
+                    ui.icon(chip_info.get("icon", "")).props("flat fab").classes(
+                        "absolute top-0 left-0 text-xl text-blue-500/50"
+                    )
+                    tooltip_text = f"版本: V{chip_info.get('req_ver')}<br>创建者: {chip_info.get('creator')}<br>注释: <br>{chip_info.get('notes', '')}"
+                    with ui.tooltip():
+                        ui.html(tooltip_text, sanitize=Sanitizer().sanitize)
+
+                delete_button = (
+                    ui.button(on_click=lambda t=thumbnail, cfg=config: self.clear_thumbnail(t, cfg))
+                    .classes(f"absolute -top-1 -right-1 z-20 m-0 p-0 q-py-1 {delete_bg}")
+                    .props(f'round padding="0px 0px" icon={delete_icon}')
+                    .style("font-size: 8px; display: none;")
+                    .on("click", js_handler="(e) => {e.stopPropagation()}")  # 阻止事件冒泡
+                )
+                move_up_button = (
+                    ui.button(on_click=lambda d=chip_info, cfg=config: self.move_up_data(d, cfg))
+                    .classes("absolute bottom-3 -right-1 z-20 m-0 p-0 q-py-0 bg-white text-light-blue")
+                    .props('round padding="0px 0px" icon="arrow_drop_up"')
+                    .style("font-size: 8px; display: none;")
+                    .on("click", js_handler="(e) => {e.stopPropagation()}")  # 阻止事件冒泡
+                )
+                move_down_button = (
+                    ui.button(on_click=lambda d=chip_info, cfg=config: self.move_down_data(d, cfg))
+                    .classes("absolute -bottom-1 -right-1 z-20 m-0 p-0 q-py-0 bg-white text-light-blue")
+                    .props('round padding="0px 0px" icon="arrow_drop_down"')
+                    .style("font-size: 8px; display: none;")
+                    .on("click", js_handler="(e) => {e.stopPropagation()}")  # 阻止事件冒泡
+                )
+                history_button = (
+                    ui.button(on_click=lambda d=chip_info, cfg=config: self.show_chip_history(d, cfg))
+                    .classes("absolute -top-1 -right-1 z-20 m-0 p-0 q-py-0 bg-purple-1 text-purple-8")
+                    .props('round padding="0px 0px" icon="history"')
+                    .style("font-size: 8px; display: none;")
+                    .on("click", js_handler="(e) => {e.stopPropagation()}")  # 阻止事件冒泡
+                )
+
+            # 交互事件
+            # 💡 优化 7：使用 display: flex 保持按钮圆圈内的图标居中
+            def check_ctrl_and_show(e, btns):
+                for b in btns:
+                    b.style("display: flex;" if e.args.get("ctrlKey") else "display: none;")
+
+            def check_shift_and_show(e, btn):
+                btn.style("display: flex;" if e.args.get("shiftKey") else "display: none;")
+
+            control_btns = [delete_button, move_up_button, move_down_button]
+            wrapper.on("mouseenter", lambda e: check_ctrl_and_show(e, control_btns), ["ctrlKey"])
+            wrapper.on("mousemove", lambda e: check_ctrl_and_show(e, control_btns), ["ctrlKey"])
+            wrapper.on("mouseleave", lambda: [b.style("display: none;") for b in control_btns])
+
+            wrapper.on("mouseenter", lambda e: check_shift_and_show(e, history_button), ["shiftKey"])
+            wrapper.on("mousemove", lambda e: check_shift_and_show(e, history_button), ["shiftKey"])
+            wrapper.on("mouseleave", lambda: history_button.style("display: none;"))
+
+    async def _update_display(self):
+        """通过 Hash 校验检测列数据变更，仅刷新变化列对应的待处理状态"""
+        if self.chip_dialog.value or self.check_down_dialog.value or self.activ_dialog.value:
+            return
+
+        import json
+
+        changed_labels = []
+        show_all = app.storage.client.get("record_switch")
+
+        # --- 💡 核心改进 3：细化 Hash 计算到单列，记录发生了实际变更的列标签 ---
+        for config in self.permitted_configs.values():
+            label = config["label"]
+            chips_dict = db_storage.get_deep_item([f"{self.project}_over_data", label], {})
+            filtered_dict = {k: v for k, v in chips_dict.items() if show_all or v.get("enabled") is not False}
+
+            # 针对当前列的数据生成哈希
+            # 核心修复：移除 sort_keys=True，使得字典插入顺序的变化能够改变哈希值触发刷新
+            col_hash = hash(json.dumps(filtered_dict, sort_keys=False, default=str))
+
+            # 如果该列哈希发生变化，则记录
+            if self.last_state_hashes.get(label) != col_hash:
+                self.last_state_hashes[label] = col_hash
+                changed_labels.append(label)
+
+        # 只有在确有列发生数据变更时才重绘，并精准推送该列的待处理状态
+        if changed_labels:
+            await self._render_table()
+            overview_role_update(self.project, self.role)
+            for changed_label in changed_labels:
+                self._update_local_pending(changed_label)
+
+    def _get_icon_for_type(self, ptype: str) -> str:
+        icons = {"file": "post_add", "image": "add_photo_alternate", "video": "video_call", "test": "add_task"}
+        return icons.get(ptype, "add_circle_outline")
+
+    # ================= 权限与交互 =================
+    def _edit_permission_judge(self, config: dict, notify=True):
+        if app.storage.user["current_role"] in config.get("permission", {}).get("edit_role", []) and not self.temp_bool:
+            return True
+        if notify:
+            msg = (
+                "当前处于需求审核界面，概述内容锁定不可编辑!"
+                if self.temp_bool
+                else "当前用户无该项编辑权限，请联系管理员申请!"
+            )
+            ui.notify(msg, type="info", position="bottom", timeout=2000)
+        return False
+
+    def _handle_add_click(self, config: dict, target_row_id: str = ""):
+        """处理单元格内的添加点击（绑定到特定行）"""
+        self.current_config = config
+        # 如果传入了 target_row_id，保存到组件状态中，供后续的 _add_xxx_chip_data 使用
+        self.current_target_row_id = target_row_id
+
+        if app.storage.general["project_summary"][self.project]["state"] not in config.get(
+            "allowed_state", ["研发", "转产"]
+        ):
+            ui.notify("项目当前状态禁止添加概述!", type="info", position="bottom", timeout=2000)
+            return
+
+        self.current_config = config
+        ptype = config["processing_type"]
+        if ptype == "text":
+            self._setup_text_chip_dialog()
+        elif ptype == "test":
+            self._setup_test_chip_dialog()
+        elif ptype == "search":
+            self._setup_search_chip_dialog()
+        elif ptype == "svn":
+            self._setup_svn_chip_dialog()
+        else:
+            self._setup_file_notes_dialog()
+
+    def _handle_add_new_row(self):
+        """点击底部添加新行时，触发第一列的添加弹窗，并生成全新 row_id"""
+        first_col_config = list(self.permitted_configs.values())[0]
+        # 生成一个全新的 UUID 作为新行的基准
+        new_row_id = str(uuid.uuid4())
+        self._handle_add_click(first_col_config, target_row_id=new_row_id)
+
+    # ================= 弹窗 & 添加数据逻辑 (继承并传参化) =================
+    def _setup_text_chip_dialog(self):
+        self.chip_dialog.clear()
+        config = self.current_config
+        with self.chip_dialog, ui.card().classes("w-1/2"):
+            ui.label(f"添加: {config['title']}").classes("text-lg font-bold text-blue-900")
+            self.chip_label = (
+                ui.textarea(
+                    label=config.get("dialog_label", "填写内容"),
+                    value=config.get("dialog_placeholder", ""),
+                    placeholder=config.get("dialog_placeholder", ""),
+                )
+                .props("outlined")
+                .classes("w-full")
+            )
+            self.chip_notes = (
+                ui.textarea(
+                    label="注释（必填）",
+                    placeholder="首填/变更原因",
+                    validation={"不能空白": lambda v: v.strip() != ""},
+                )
+                .props("outlined")
+                .classes("w-full")
+            )
+            with ui.row().classes("w-full justify-end items-center"):
+                ui_spinner = ui.spinner(type="hourglass", size="md", color="amber-8", thickness=8.0)
+                ui_spinner.set_visibility(False)
+                ui.button("添加", on_click=lambda: self._add_text_chip_data(ui_spinner))
+        self.chip_dialog.open()
+
+    async def _add_text_chip_data(self, ui_spinner):
+        config = self.current_config
+        text, notes = self.chip_label.value.strip(), self.chip_notes.value.strip()
+        if not text or not notes:
+            ui.notify("内容和注释均不能为空!", type="warning")
+            return
+        if text in [
+            d["content"] for d in db_storage.get_deep_item([f"{self.project}_over_data", config["label"]], {}).values()
+        ]:
+            ui.notify("概述内容已存在。", type="warning")
+            return
+
+        ui_spinner.set_visibility(True)
+        req_max_ver = app.storage.general["project_req_max_ver"].get(self.project, "1.0")
+        select_activ_dic = self._get_select_activ_dic(req_max_ver)
+        creator = app.storage.user.get("current_user", "匿名")
+        # 获取要绑定的 row_id，如果没有（理论上现在都有了），就生成一个新的
+        row_id = getattr(self, "current_target_row_id", None) or str(uuid.uuid4())
+        chip_data = {
+            "id": str(uuid.uuid4()),
+            "row_id": row_id,
+            "role": self.role,
+            "icon": None,
+            "enabled": True,
+            "bg_color": "bg-light-blue-1",
+            "type": "text",
+            "content": text,
+            "notes": notes,
+            "creator": creator,
+            "req_ver": req_max_ver,
+            "select_activ_dic": select_activ_dic,
+            "timestamp": {
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S"): {"creator": creator, "select_activ_dic": select_activ_dic}
+            },
+        }
+        await db_storage.set_deep_item([f"{self.project}_over_data", config["label"], chip_data["id"]], chip_data)
+
+        ui_spinner.set_visibility(False)
+        self.chip_dialog.close()
+        ui.notify("内容已添加", type="positive")
+        self._show_related_chip_select_dialog(text, True, "add_chip", config)
+
+    # ... 省略了其他几个 Dialog 和 _add 逻辑 (逻辑结构完全与 InteractiveButton 一致，只是 self.label 替换为了 config['label']，具体细节我打包在下方) ...
+
+    # ---------------- 补充缺失的方法适配 -----------------
+    def _setup_test_chip_dialog(self):
+        self.chip_dialog.clear()
+        config = self.current_config
+        with self.chip_dialog, ui.card().classes("w-full"):
+            ui.label(f"添加产品的{config['title']}").classes("text-lg font-bold text-blue-900")
+            test_select_data = {
+                "state_select": "",
+                "state_other_text": "",
+                "node_select": "",
+                "node_other_text": "",
+                "instrument_select": "",
+                "instrument_other_text": "",
+            }
+            self.chip_label = (
+                ui.textarea(
+                    label="检测内容与标准",
+                    value=config.get("dialog_placeholder", ""),
+                    placeholder=config.get("dialog_placeholder", ""),
+                    validation={"不能空白": lambda v: v.strip() != ""},
+                )
+                .props("outlined")
+                .classes("w-full")
+            )
+
+            def bind_select(options, title, prefix):
+                if options:
+                    with ui.column().classes("w-full p-0 m-0"):
+                        sel = (
+                            ui.select(options, multiple=False, label=title)
+                            .props("outlined")
+                            .classes("w-full")
+                            .bind_value(test_select_data, f"{prefix}_select")
+                        )
+                        oth = (
+                            ui.textarea(
+                                label=f"{title}特殊要求",
+                                placeholder="写明特殊要求",
+                                validation={"不能空白": lambda v: v.strip() != ""},
+                            )
+                            .props("outlined")
+                            .classes("w-full")
+                            .bind_value(test_select_data, f"{prefix}_other_text")
+                        )
+                        oth.set_visibility(False)
+                        sel.on_value_change(lambda: self._set_other_ui(oth, sel.value))
+
+            bind_select(config.get("state_options", []), "条件/状态", "state")
+            bind_select(config.get("node_options", []), "节点/位置", "node")
+            bind_select(config.get("instrument_options", []), "工具/仪器/治具", "instrument")
+
+            self.chip_notes = (
+                ui.textarea(
+                    label="注释（必填）",
+                    placeholder="首填/变更原因",
+                    validation={"不能空白": lambda v: v.strip() != ""},
+                )
+                .props("outlined")
+                .classes("w-full")
+            )
+            with ui.row().classes("w-full justify-end items-center"):
+                ui_spinner = ui.spinner(type="hourglass", size="md", color="amber-8", thickness=8.0)
+                ui_spinner.set_visibility(False)
+                ui.button("添加", on_click=lambda: self._add_test_chip_data(ui_spinner, test_select_data))
+        self.chip_dialog.open()
+
+    async def _add_test_chip_data(self, ui_spinner, test_select_data):
+        config = self.current_config
+        text, notes = self.chip_label.value.strip(), self.chip_notes.value.strip()
+        # 校验逻辑
+        other_bool = any(
+            test_select_data[f"{p}_select"] == "其它" and not test_select_data[f"{p}_other_text"]
+            for p in ["state", "node", "instrument"]
+        )
+        if not text or not all(
+            test_select_data[f"{p}_select"] for p in ["state", "node", "instrument"] if config.get(f"{p}_options")
+        ):
+            ui.notify("必填项未完成!", type="warning")
+            return
+        if not notes:
+            ui.notify("注释不能为空!", type="warning")
+            return
+        if other_bool:
+            ui.notify("特殊要求不能为空!", type="warning")
+            return
+
+        ui_spinner.set_visibility(True)
+        req_max_ver = app.storage.general["project_req_max_ver"].get(self.project, "1.0")
+        select_activ_dic = self._get_select_activ_dic(req_max_ver)
+        creator = app.storage.user.get("current_user", "匿名")
+        # 获取要绑定的 row_id，如果没有（理论上现在都有了），就生成一个新的
+        row_id = getattr(self, "current_target_row_id", None) or str(uuid.uuid4())
+        chip_data = {
+            "id": str(uuid.uuid4()),
+            "row_id": row_id,
+            "role": self.role,
+            "icon": None,
+            "enabled": True,
+            "bg_color": "bg-light-blue-1",
+            "type": "test",
+            "content": text,
+            "notes": notes,
+            "test_select_data": test_select_data,
+            "creator": creator,
+            "req_ver": req_max_ver,
+            "select_activ_dic": select_activ_dic,
+            "timestamp": {
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S"): {"creator": creator, "select_activ_dic": select_activ_dic}
+            },
+        }
+        await db_storage.set_deep_item([f"{self.project}_over_data", config["label"], chip_data["id"]], chip_data)
+        ui_spinner.set_visibility(False)
+        self.chip_dialog.close()
+        self._show_related_chip_select_dialog(text, True, "add_chip", config)
+
+    # ---- 文件处理相关 ----
+    def _setup_file_notes_dialog(self):
+        self.chip_dialog.clear()
+        config = self.current_config
+        with self.chip_dialog, ui.card().classes("w-1/2"):
+            ui.label(f"添加上传文件的注释: {config['title']}").classes("text-lg font-bold text-blue-900")
+            ui.label(f"保存根目录：{config.get('upload_path', '')}").classes("text-xs text-brown-7")
+            self.chip_notes = (
+                ui.textarea(
+                    label="针对该文件的注释（必填）",
+                    placeholder="首次提交/变更原因",
+                    validation={"不能空白": lambda v: v.strip() != ""},
+                )
+                .props("outlined")
+                .classes("w-full")
+            )
+            with ui.row().classes("w-full justify-end items-center"):
+                self.spinner = ui.spinner(type="hourglass", size="md", color="amber-8", thickness=8.0)
+                self.spinner.set_visibility(False)
+                ui.button("添加", on_click=self._get_file_upload)
+        self.chip_dialog.open()
+
+    def _get_file_upload(self):
+        if not self.chip_notes.value:
+            ui.notify("注释不能为空!", type="warning")
+        else:
+            self.uploader.reset()
+            self.uploader.run_method("pickFiles")
+
+    async def _handle_file_upload(self, e):
+        config = self.current_config
+        original_filename, file_type = e.file.name, e.file.content_type
+        file_ext = os.path.splitext(original_filename)[1].lower()
+
+        if config["processing_type"] == "file" and file_ext not in OVER_UPLOADS_FILE_TYPE:
+            ui.notify("文件格式错误!", type="warning")
+            self.spinner.set_visibility(False)
+            return
+        if config["processing_type"] == "image" and "image" not in file_type:
+            ui.notify("不是图片类型!", type="warning")
+            self.spinner.set_visibility(False)
+            return
+        if config["processing_type"] == "video" and "video" not in file_type:
+            ui.notify("不是视频类型!", type="warning")
+            self.spinner.set_visibility(False)
+            return
+
+        filepath = f"{config.get('upload_path', '')}/{original_filename}"
+        url_path = f"{FILES_URL_DIR}/{original_filename}"
+
+        # 写入文件逻辑...
+        try:
+            file_content = await e.file.read()
+            with open(filepath, "wb") as f:
+                f.write(io.BytesIO(file_content).read())
+        except Exception as ex:
+            ui.notify(f"上传失败: {ex}", type="negative")
+            self.spinner.set_visibility(False)
+            return
+
+        req_max_ver = app.storage.general["project_req_max_ver"].get(self.project, "1.0")
+        creator = app.storage.user.get("current_user", "匿名")
+        icon_map = {"file": "attachment", "video": "play_circle", "image": "image"}
+        # 获取要绑定的 row_id，如果没有（理论上现在都有了），就生成一个新的
+        row_id = getattr(self, "current_target_row_id", None) or str(uuid.uuid4())
+        chip_data = {
+            "id": str(uuid.uuid4()),
+            "row_id": row_id,
+            "role": self.role,
+            "icon": icon_map.get(config["processing_type"], "image"),
+            "enabled": True,
+            "bg_color": "bg-light-blue-1",
+            "type": config["processing_type"],
+            "file_type": file_type,
+            "content": original_filename,
+            "url_path": url_path,
+            "notes": self.chip_notes.value,
+            "creator": creator,
+            "req_ver": req_max_ver,
+            "select_activ_dic": self._get_select_activ_dic(req_max_ver),
+            "timestamp": {
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S"): {
+                    "creator": creator,
+                    "select_activ_dic": self._get_select_activ_dic(req_max_ver),
+                }
+            },
+        }
+        await db_storage.set_deep_item([f"{self.project}_over_data", config["label"], chip_data["id"]], chip_data)
+        self.spinner.set_visibility(False)
+        self.chip_dialog.close()
+        self._show_related_chip_select_dialog(original_filename, True, "add_chip", config)
+
+    # ---------------- 搜索与SVN弹窗 (保留通用结构传Config) ----------------
+    def _setup_search_chip_dialog(self):
+        self.chip_dialog.clear()
+        config = self.current_config
+        with self.chip_dialog, ui.card().classes("w-1/2"):
+            ui.label(f"添加引用: {config['title']}").classes("text-lg font-bold text-blue-900")
+            self.chip_label = (
+                ui.input(label=config.get("dialog_label", ""), placeholder="完整文件名")
+                .props("outlined")
+                .classes("w-full")
+            )
+            self.chip_notes = ui.textarea(label="注释（必填）").props("outlined").classes("w-full")
+            with ui.row().classes("w-full justify-end items-center"):
+                ui_spinner = ui.spinner(type="hourglass", size="md", color="amber-8", thickness=8.0)
+                ui_spinner.set_visibility(False)
+                ui.button("添加", on_click=lambda: self._add_search_chip_data(ui_spinner))
+        self.chip_dialog.open()
+
+    async def _add_search_chip_data(self, ui_spinner):
+        config = self.current_config
+        text, notes = self.chip_label.value.strip(), self.chip_notes.value.strip()
+        if not text or not notes:
+            ui.notify("不能为空!", type="warning")
+            return
+
+        ui_spinner.set_visibility(True)
+        target_path_list = await self._search_file_path(text, config)
+        files_li = []
+        for target_path in target_path_list:
+            if target_path and Path(target_path).is_dir():
+                files_li.extend(find_files_pathlib(target_path, text))
+
+        if not files_li:
+            ui.notify("文件不存在!", type="warning")
+        elif len(files_li) > 1:
+            ui.notify("文件不唯一!", type="warning")
+        else:
+            req_max_ver = app.storage.general["project_req_max_ver"].get(self.project, "1.0")
+            creator = app.storage.user.get("current_user", "匿名")
+            # 获取要绑定的 row_id，如果没有（理论上现在都有了），就生成一个新的
+            row_id = getattr(self, "current_target_row_id", None) or str(uuid.uuid4())
+            chip_data = {
+                "id": str(uuid.uuid4()),
+                "row_id": row_id,
+                "role": self.role,
+                "icon": "saved_search",
+                "enabled": True,
+                "bg_color": "bg-light-blue-1",
+                "type": "search",
+                "file_type": get_file_type_by_extension(str(files_li[0]))[0],
+                "content": text,
+                "url_path": f"{FILES_URL_DIR}/{text}",
+                "notes": notes,
+                "creator": creator,
+                "req_ver": req_max_ver,
+                "select_activ_dic": self._get_select_activ_dic(req_max_ver),
+                "timestamp": {
+                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"): {
+                        "creator": creator,
+                        "select_activ_dic": self._get_select_activ_dic(req_max_ver),
+                    }
+                },
+            }
+            await db_storage.set_deep_item([f"{self.project}_over_data", config["label"], chip_data["id"]], chip_data)
+            self.chip_dialog.close()
+            self._show_related_chip_select_dialog(text, True, "add_chip", config)
+        ui_spinner.set_visibility(False)
+
+    # ---------------- 辅助方法重构 -----------------
+    def _get_select_activ_dic(self, req_max_ver):
+        return {f"{i}.0": (f"{i}.0" == req_max_ver) for i in range(1, int(float(req_max_ver)) + 1)}
+
+    def _set_other_ui(self, other_ui, select_value):
+        other_ui.set_visibility(select_value == "其它")
+        if select_value != "其它":
+            other_ui.set_value("")
+
+    def _update_local_pending(self, label):
+        latest_user_str = (
+            app.storage.general.get("overview_role", {}).get(self.project, {}).get(self.role, {}).get("latest_user", "")
+        )
+        des_user = latest_user_str.split("：")[1] if latest_user_str else ""
+        if des_user:
+            update_overview_charge_pending_dic(
+                scope="local", des_user=des_user, project_name=self.project, des_label=label
+            )
+
+    async def delete_chip_info(self, chip, config):
+        if self._edit_permission_judge(config):
+            if app.storage.user["current_user"] == "admin":
+                await db_storage.del_deep_item(
+                    [f"{self.project}_over_data", config["label"], chip.props["data-chip-id"]]
+                )
+            else:
+                self.current_config = config
+                self._select_set_activ_dialog(chip.props["data-chip-id"], chip.text, config)
+
+    async def clear_thumbnail(self, thumbnail, config):
+        if self._edit_permission_judge(config):
+            if app.storage.user["current_user"] == "admin":
+                await db_storage.del_deep_item(
+                    [f"{self.project}_over_data", config["label"], thumbnail.props["data-chip-id"]]
+                )
+            else:
+                self.current_config = config
+                self._select_set_activ_dialog(thumbnail.props["data-chip-id"], "", config)
+
+    def _move_data(self, old_data, chip_id, move_num):
+        temp_data = {}
+        old_data_keys = list(old_data.keys())
+        if not app.storage.client.get("record_switch"):
+            num = move_num
+            step = int(move_num / abs(move_num))
+            current_index = old_data_keys.index(chip_id)
+            while num != 0 and (
+                (step < 0 and current_index != 0) or (step > 0 and current_index != len(old_data_keys) - 1)
+            ):
+                current_index += step
+                if old_data[old_data_keys[current_index]].get("enabled") in [True, None]:
+                    num -= step
+                move_num += step
+            move_num -= step
+        new_data_keys = move_element(old_data_keys, chip_id, move_num)
+        for k in new_data_keys:
+            temp_data[k] = old_data.get(k, {})
+        return temp_data
+
+    async def move_up_data(self, chip_data, config):
+        if not self._edit_permission_judge(config):
+            return
+
+        # 识别第一列
+        first_col_label = list(self.permitted_configs.values())[0]["label"]
+        current_label = config["label"]
+        current_row_id = chip_data.get("row_id")
+
+        # 获取当前行在视图中的排序索引
+        if not hasattr(self, "ordered_row_ids") or current_row_id not in self.ordered_row_ids:
+            return
+        current_idx = self.ordered_row_ids.index(current_row_id)
+
+        if current_label == first_col_label:
+            # 💡 第一列：改变字典顺序，带动整行上移
+            await db_storage.atomic_deep_update(
+                [f"{self.project}_over_data", current_label], self._move_data, chip_data["id"], -1
+            )
+        else:
+            # 💡 其他列：跨行跳跃（换行 ID 操作）
+            if current_idx > 0:  # 如果不是第一行，则允许上移
+                target_row_id = self.ordered_row_ids[current_idx - 1]
+                chip_data["row_id"] = target_row_id
+                await db_storage.set_deep_item(
+                    [f"{self.project}_over_data", current_label, chip_data["id"], "row_id"], target_row_id
+                )
+
+        self.last_state_hashes = {}
+        await self._update_display()
+
+    async def move_down_data(self, chip_data, config):
+        if not self._edit_permission_judge(config):
+            return
+
+        first_col_label = list(self.permitted_configs.values())[0]["label"]
+        current_label = config["label"]
+        current_row_id = chip_data.get("row_id")
+
+        if not hasattr(self, "ordered_row_ids") or current_row_id not in self.ordered_row_ids:
+            return
+        current_idx = self.ordered_row_ids.index(current_row_id)
+
+        if current_label == first_col_label:
+            # 💡 第一列：改变字典顺序，带动整行下移
+            await db_storage.atomic_deep_update(
+                [f"{self.project}_over_data", current_label], self._move_data, chip_data["id"], 1
+            )
+        else:
+            # 💡 其他列：跨行跳跃（换行 ID 操作）
+            if current_idx < len(self.ordered_row_ids) - 1:  # 如果不是最后一行，则允许下移
+                target_row_id = self.ordered_row_ids[current_idx + 1]
+                chip_data["row_id"] = target_row_id
+                await db_storage.set_deep_item(
+                    [f"{self.project}_over_data", current_label, chip_data["id"], "row_id"], target_row_id
+                )
+
+        self.last_state_hashes = {}
+        await self._update_display()
+
+    # -------------- 对话框和联动刷新 --------------
+    def _show_related_chip_select_dialog(self, chip_text, chip_state, type, config):
+        self.activ_dialog.clear()
+        with self.activ_dialog, ui.card().classes("w-full max-w-[800px]"):
+            ui.label("选择本次操作可能影响的其它概述项：").classes("text-lg font-bold")
+            with ui.grid(columns=3).classes("w-full gap-0"):
+                related_select_dic = {label: False for label in config.get("impact_list", [])}
+                for related_label in config.get("impact_list", []):
+                    ui.checkbox(
+                        text=app.storage.general["over_config_data_flat"].get(related_label, {}).get("title", "未知")
+                    ).bind_value(related_select_dic, related_label)
+            with ui.row().classes("w-full justify-end items-center"):
+                ui.button(
+                    "勾选的受影响",
+                    color="green",
+                    on_click=lambda: self._set_related_chip_state(
+                        chip_text, chip_state, False, related_select_dic, type, config
+                    ),
+                ).on("click", self.activ_dialog.close)
+                ui.button(
+                    "全部受影响",
+                    color="blue",
+                    on_click=lambda: self._set_related_chip_state(
+                        chip_text, chip_state, True, related_select_dic, type, config
+                    ),
+                ).on("click", self.activ_dialog.close)
+        self.activ_dialog.open()
+
+    async def _set_related_chip_state(self, chip_text, chip_state, all_related_bool, related_select_dic, type, config):
+        overview_data = copy.deepcopy(db_storage.get_item(f"{self.project}_over_data", {}))
+        for related_label, chip_dic in overview_data.items():
+            if related_label in related_select_dic and (related_select_dic[related_label] or all_related_bool):
+                for related_chip_id, chip_data in chip_dic.items():
+                    over_chip_ver_li = [int(float(k)) for k in chip_data.get("select_activ_dic", {}).keys()]
+                    if not over_chip_ver_li:
+                        continue
+                    max_over_ver = max(over_chip_ver_li)
+                    if chip_data["select_activ_dic"].get(f"{max_over_ver}.0"):
+                        chip_data["select_activ_dic"][f"{max_over_ver}.0"] = None
+                        chip_data["enabled"] = None
+                        chip_data["icon"] = "question_mark"
+                        chip_data["bg_color"] = "bg-amber-5"
+        if overview_data:
+            await db_storage.set_item(f"{self.project}_over_data", overview_data)
+
+    def _select_set_activ_dialog(self, chip_id, chip_text="", config=None):
+        if config is None:
+            config = self.current_config
+        label = config["label"]
+        self.activ_dialog.clear()
+
+        with self.activ_dialog, ui.card().classes("w-1/2"):
+            ui.label("选择概述生效的需求版本").classes("text-lg font-bold")
+            select_activ_dic = copy.deepcopy(
+                db_storage.get_deep_item([f"{self.project}_over_data", label, chip_id, "select_activ_dic"], {})
+            )
+            app.storage.general["over_change_broadcast"].setdefault(self.project, {})
+            app.storage.general["over_change_broadcast"][self.project].setdefault(chip_id, {})
+
+            if app.storage.general["over_change_broadcast"][self.project][chip_id] and len(
+                app.storage.general["over_change_broadcast"][self.project][chip_id]["select_activ_dic"]
+            ) == len(select_activ_dic):
+                editor_list = app.storage.general["over_change_broadcast"][self.project][chip_id]["editor"]
+                editor_list.append(app.storage.user.get("current_user", "匿名用户"))
+                app.storage.general["over_change_broadcast"][self.project][chip_id]["editor"] = list(set(editor_list))
+            else:
+                app.storage.general["over_change_broadcast"][self.project][chip_id] = {
+                    "editor": [app.storage.user.get("current_user", "匿名用户")],
+                    "select_activ_dic": copy.deepcopy(select_activ_dic),
+                }
+
+            ui_spinner = ui.spinner(type="hourglass", size="md", color="amber-8", thickness=8.0)
+            ui_spinner.set_visibility(False)
+
+            with ui.grid(columns=6).classes("w-full gap-0"):
+                for select_label, val in app.storage.general["over_change_broadcast"][self.project][chip_id][
+                    "select_activ_dic"
+                ].items():
+                    select_box = ui.checkbox(text=select_label, value=val)
+                    select_box.bind_value(
+                        app.storage.general["over_change_broadcast"][self.project][chip_id]["select_activ_dic"],
+                        select_label,
+                    )
+
+            open_dic = copy.deepcopy(
+                db_storage.get_deep_item([f"{self.project}_over_related_record", label, chip_id, "open"], {})
+            )
+            if open_dic:
+                ui.label("本次状态变化由以下概述调整引起：").classes("text-base font-bold text-brown")
+                for time_key, record in open_dic.get("record", {}).items():
+                    op_type = record.get("operate_type", "")
+                    if op_type == "add_chip":
+                        record_label = ui.label(
+                            f'[{time_key}]由用户"{record.get("operate_user", "匿名")}"添加了『{record.get("operate_chip_content", "未知")}』"'
+                        )
+                    elif op_type == "activ_change":
+                        state = (
+                            "激活"
+                            if record.get("operate_chip_state")
+                            else "失活"
+                            if record.get("operate_chip_state") is False
+                            else "待确认"
+                        )
+                        record_label = ui.label(
+                            f'[{time_key}]由用户"{record.get("operate_user", "匿名")}"修改状态为『{state}』'
+                        )
+                    else:
+                        record_label = ui.label(f"[{time_key}]由用户操作了数据")
+                    record_label.classes("text-sm text-brown")
+
+            with ui.row().classes("w-full justify-end items-center") as row:
+                ui_spinner.move(row, 1)
+                ui.button(
+                    "确定",
+                    color="green",
+                    on_click=lambda: self.handle_checkbox_change(ui_spinner, chip_id, chip_text, config),
+                ).on("click", self.activ_dialog.close)
+                ui.button("取消", on_click=lambda: self.cancel_checkbox_change(chip_id)).on(
+                    "click", self.activ_dialog.close
+                )
+
+        self.activ_dialog.open()
+
+    def cancel_checkbox_change(self, chip_id):
+        try:
+            app.storage.general["over_change_broadcast"][self.project][chip_id]["editor"].remove(
+                app.storage.user.get("current_user", "匿名用户")
+            )
+        except ValueError:
+            pass
+        if not app.storage.general["over_change_broadcast"][self.project].get(chip_id, {}).get("editor"):
+            app.storage.general["over_change_broadcast"][self.project].pop(chip_id, None)
+
+    def _check_version_updated(self, chip_id, new_select_activ_dic, chip_text, config) -> bool:
+        select_activ_dic = copy.deepcopy(
+            db_storage.get_deep_item([f"{self.project}_over_data", config["label"], chip_id, "select_activ_dic"], {})
+        )
+        if len(new_select_activ_dic) != len(select_activ_dic):
+            ui.notify(
+                "需求刚刚升级了，各项概述的激活配置需要重新确定！", type="warning", position="bottom", timeout=3000
+            )
+            self._select_set_activ_dialog(chip_id, chip_text, config)
+            return True
+        return False
+
+    async def _cascade_deactivate_row(self, row_id: str, req_max_ver: str, creator: str):
+        """
+        处理第一列失活时的连带失活逻辑，包含标准历史记录生成
+        """
+        first_col_label = list(self.permitted_configs.values())[0]["label"]
+        time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        for config in self.permitted_configs.values():
+            label = config["label"]
+            # 排除第一列自身
+            if label == first_col_label:
+                continue
+
+            chips_dict = db_storage.get_deep_item([f"{self.project}_over_data", label], {})
+            for chip_id, chip_data in chips_dict.items():
+                if chip_data.get("row_id") == row_id:
+                    # 检查当前是否尚未失活 (True 或 None)
+                    current_state = chip_data.get("select_activ_dic", {}).get(req_max_ver)
+                    if current_state is not False:
+                        # 1. 更新激活字典
+                        new_select_activ_dic = copy.deepcopy(chip_data.get("select_activ_dic", {}))
+                        new_select_activ_dic[req_max_ver] = False
+                        await db_storage.set_deep_item(
+                            [f"{self.project}_over_data", label, chip_id, "select_activ_dic"], new_select_activ_dic
+                        )
+
+                        # 2. 更新UI样式参数
+                        await self._update_chip_block_parameter(chip_id, config)
+
+                        # 3. 产生标准操作记录 (明确标注是连带失活)
+                        history_creator_label = f"{creator}(连带失活)"
+                        await db_storage.set_deep_item(
+                            [f"{self.project}_over_data", label, chip_id, "creator"], history_creator_label
+                        )
+                        await db_storage.set_deep_item(
+                            [f"{self.project}_over_data", label, chip_id, "timestamp", time_str],
+                            {"creator": history_creator_label, "select_activ_dic": new_select_activ_dic},
+                        )
+
+                        # 4. 闭环历史打开记录 (与手动操作逻辑完全一致)
+                        open_dic = copy.deepcopy(
+                            db_storage.get_deep_item(
+                                [f"{self.project}_over_related_record", label, chip_id, "open"], {}
+                            )
+                        )
+                        if open_dic:
+                            open_dic["close_time"] = time_str
+                            open_dic["close_related_user"] = history_creator_label
+                            await db_storage.del_deep_item(
+                                [f"{self.project}_over_related_record", label, chip_id, "open"]
+                            )
+                            await db_storage.set_deep_item(
+                                [f"{self.project}_over_related_record", label, chip_id, open_dic["close_time"]],
+                                open_dic,
+                            )
+
+    async def handle_checkbox_change(self, ui_spinner, chip_id, chip_text, config):
+        label = config["label"]
+        new_select_activ_dic = copy.deepcopy(
+            app.storage.general["over_change_broadcast"][self.project][chip_id]["select_activ_dic"]
+        )
+        if self._check_version_updated(chip_id, new_select_activ_dic, chip_text, config):
+            return
+
+        try:
+            OLD_CHIP_SELECT_DIC = copy.deepcopy(
+                db_storage.get_deep_item([f"{self.project}_over_data", label, chip_id, "select_activ_dic"], {})
+            )
+            if new_select_activ_dic != OLD_CHIP_SELECT_DIC:
+                ui_spinner.set_visibility(True)
+                await db_storage.set_deep_item(
+                    [f"{self.project}_over_data", label, chip_id, "select_activ_dic"], new_select_activ_dic
+                )
+
+                req_max_ver = f"{str(max([int(float(v)) for v in new_select_activ_dic.keys()]))}.0"
+                chip_state = db_storage.get_deep_item(
+                    [f"{self.project}_over_data", label, chip_id, "select_activ_dic", req_max_ver]
+                )
+
+                if chip_state:
+                    await self._update_chip_active_parameter(chip_id, chip_text, config)
+                elif chip_state is None:
+                    pass
+                else:
+                    await self._update_chip_block_parameter(chip_id, config)
+
+                creator = app.storage.user.get("current_user", "匿名用户")
+                await db_storage.set_deep_item([f"{self.project}_over_data", label, chip_id, "creator"], creator)
+                await db_storage.set_deep_item(
+                    [
+                        f"{self.project}_over_data",
+                        label,
+                        chip_id,
+                        "timestamp",
+                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    ],
+                    {"creator": creator, "select_activ_dic": new_select_activ_dic},
+                )
+
+                self.cancel_checkbox_change(chip_id)
+                ui_spinner.set_visibility(False)
+
+                open_dic = copy.deepcopy(
+                    db_storage.get_deep_item([f"{self.project}_over_related_record", label, chip_id, "open"], {})
+                )
+                if open_dic:
+                    open_dic["close_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    open_dic["close_related_user"] = creator
+                    await db_storage.del_deep_item([f"{self.project}_over_related_record", label, chip_id, "open"])
+                    await db_storage.set_deep_item(
+                        [f"{self.project}_over_related_record", label, chip_id, open_dic["close_time"]], open_dic
+                    )
+
+                self._show_related_chip_select_dialog(chip_text, chip_state, "activ_change", config)
+                # 💡 核心新增：级联失活判断逻辑
+                first_col_label = list(self.permitted_configs.values())[0]["label"]
+                if label == first_col_label and chip_state is False:
+                    # 获取当前操作行的 row_id
+                    current_row_id = db_storage.get_deep_item([f"{self.project}_over_data", label, chip_id, "row_id"])
+                    if current_row_id:
+                        await self._cascade_deactivate_row(current_row_id, req_max_ver, creator)
+                self.last_state_hashes = {}  # 触发整体重绘
+                await self._update_display()
+
+        except Exception as ex:
+            ui.notify(f"错误: {ex}", type="negative", position="center")
+
+    async def _update_chip_block_parameter(self, chip_id, config):
+        label = config["label"]
+        await db_storage.set_deep_item([f"{self.project}_over_data", label, chip_id, "icon"], "block")
+        await db_storage.set_deep_item([f"{self.project}_over_data", label, chip_id, "enabled"], False)
+        await db_storage.set_deep_item([f"{self.project}_over_data", label, chip_id, "bg_color"], "bg-grey-5")
+
+    async def _update_chip_active_parameter(self, chip_id, chip_text, config):
+        label = config["label"]
+        c_type = db_storage.get_deep_item([f"{self.project}_over_data", label, chip_id, "type"])
+        if c_type == "file":
+            await db_storage.set_deep_item([f"{self.project}_over_data", label, chip_id, "icon"], "attachment")
+        elif c_type == "search":
+            target_path_list = await self._search_file_path(chip_text, config)
+            if target_path_list and find_files_pathlib(target_path_list[0], chip_text):
+                await db_storage.set_deep_item([f"{self.project}_over_data", label, chip_id, "icon"], "saved_search")
+            else:
+                await db_storage.set_deep_item([f"{self.project}_over_data", label, chip_id, "icon"], "search_off")
+        elif c_type == "svn":
+            url = db_storage.get_deep_item([f"{self.project}_over_data", label, chip_id, "url_path"])
+            file_info = await self.get_url_file_info_async(url)
+            icon_val = "saved_search" if file_info[0] else "search_off"
+            await db_storage.set_deep_item([f"{self.project}_over_data", label, chip_id, "icon"], icon_val)
+        else:
+            await db_storage.set_deep_item([f"{self.project}_over_data", label, chip_id, "icon"], None)
+
+        await db_storage.set_deep_item([f"{self.project}_over_data", label, chip_id, "enabled"], True)
+        await db_storage.set_deep_item([f"{self.project}_over_data", label, chip_id, "bg_color"], "bg-light-blue-1")
+
+    def show_chip_history(self, chip_data, config):
+        self.history_dialog.clear()
+        timestamp_data = chip_data.get("timestamp", {})
+        sorted_times = sorted(timestamp_data.keys(), reverse=True)
+        chip_content = chip_data.get("content", "未知内容")
+
+        with self.history_dialog, ui.card().classes("w-[600px] max-w-full -space-y-2"):
+            with ui.row().classes("w-full justify-between items-center"):
+                ui.label(f"变更历史: {chip_content}").classes("text-lg font-bold")
+                ui.button(icon="close", on_click=self.history_dialog.close).props("flat round dense")
+
+            ui.separator().classes("mb-1")
+
+            with ui.column().classes("w-full gap-1"):
+                if not sorted_times:
+                    ui.label("暂无变更记录").classes("text-gray-500")
+
+                for time_str in sorted_times:
+                    record = timestamp_data[time_str]
+                    creator = record.get("creator", "未知")
+                    activ_dic = record.get("select_activ_dic", {})
+
+                    with ui.card().classes("w-full p-2 bg-gray-50 border border-gray-200 -space-y-2"):
+                        with ui.row().classes("w-full justify-between items-center mb-1"):
+                            with ui.row().classes("gap-2 items-center"):
+                                ui.icon("history", size="xs", color="blue")
+                                ui.label(time_str).classes("text-sm font-mono text-gray-700")
+                            ui.badge(creator, color="blue-grey").props("outline")
+
+                        if activ_dic:
+                            with ui.row().classes("w-full flex-wrap gap-1"):
+                                sorted_vers = sorted(
+                                    activ_dic.keys(), key=lambda x: float(x) if x.replace(".", "", 1).isdigit() else 0
+                                )
+                                for ver in sorted_vers:
+                                    is_active = activ_dic[ver]
+                                    if is_active:
+                                        color, text_col = "green", "white"
+                                    elif is_active == "null":
+                                        color, text_col = "orange", "white"
+                                    else:
+                                        color, text_col = "grey-4", "grey-7"
+
+                                    ui.chip(text=f"V{ver}", color=color, text_color=text_col).props(
+                                        "dense square size=sm"
+                                    )
+
+        self.history_dialog.open()
+
+    def show_label_history(self, config):
+        """显示整列标签的历史记录"""
+        self.history_dialog.clear()
+        label = config["label"]
+        title = config["title"]
+
+        # 1. 获取该列所有数据
+        raw_data = db_storage.get_deep_item([f"{self.project}_over_data", label], {})
+        history_list = []
+
+        for chip_id, chip_info in raw_data.items():
+            # 获取创建时间 (timestamp 字典中最早的时间)
+            timestamps = chip_info.get("timestamp", {})
+            creation_time = min(timestamps.keys()) if timestamps else "N/A"
+
+            history_list.append(
+                {
+                    "content": chip_info.get("content", "N/A"),
+                    "req_ver": chip_info.get("req_ver", "0.0"),
+                    "creation_time": creation_time,
+                    "creator": chip_info.get("creator", "未知"),
+                    "notes": chip_info.get("notes", ""),
+                    "enabled": chip_info.get("enabled", True),
+                    "type": chip_info.get("type", ""),
+                }
+            )
+
+        # 2. 排序：先按版本号(float)排序，版本相同按时间排序
+        try:
+            history_list.sort(key=lambda x: (float(x["req_ver"]), x["creation_time"]))
+        except ValueError:
+            history_list.sort(key=lambda x: (x["req_ver"], x["creation_time"]))
+
+        # 3. 构建 UI
+        with self.history_dialog, ui.card().classes("w-[800px] max-w-full h-[80vh]"):
+            with ui.row().classes("w-full justify-between items-center"):
+                ui.label(f"历史记录: {title}").classes("text-xl font-bold text-gray-800")
+                ui.button(icon="close", on_click=self.history_dialog.close).props("flat round dense")
+            ui.label("文字颜色效果代表当前激活状态").classes("text-sm text-gray-500 mt-0 mb-1")
+            ui.separator()
+
+            with ui.scroll_area().classes("w-full flex-grow"):
+                if not history_list:
+                    ui.label("暂无记录").classes("w-full text-center text-gray-500 mt-4")
+
+                current_ver = None
+                for item in history_list:
+                    # 版本分组标题
+                    if item["req_ver"] != current_ver:
+                        current_ver = item["req_ver"]
+                        ui.label(f"需求版本V{current_ver}生效后提交的概述：").classes(
+                            "text-base font-bold text-amber-900 mt-3 mb-1 bg-amber-50 px-2 py-1 rounded"
+                        )
+
+                    # 条目卡片
+                    with ui.row().classes(
+                        "w-full items-start p-2 border-b border-gray-100 hover:bg-gray-50 transition-colors"
+                    ):
+                        # 左侧：时间和创建人
+                        with ui.column().classes("w-1/5 min-w-[120px] gap-0"):
+                            ui.label(item["creation_time"]).classes("text-xs text-gray-500")
+                            ui.label(item["creator"]).classes("text-xs font-bold text-blue-600")
+
+                        # 中间：内容
+                        with ui.column().classes("flex-grow gap-1"):
+                            # 内容显示，如果是文件或图片显示图标
+                            with ui.row().classes("items-center gap-1"):
+                                if item["type"] in ["file", "image", "svn", "search", "video"]:
+                                    ui.icon("attachment", size="xs", color="grey")
+
+                                if item["enabled"] is True:
+                                    color = "text-blue-400"
+                                elif item["enabled"] is None or str(item["enabled"]).lower() == "null":
+                                    color = "text-orange-400 italic"
+                                else:
+                                    color = "text-gray-400 line-through"
+
+                                ui.label(item["content"]).classes(f"text-sm font-medium {color}")
+                            if item["notes"]:
+                                ui.label(f"注: {item['notes']}").classes("text-xs text-gray-500 italic")
+
+        self.history_dialog.open()
+
+    def on_right_click(self, chip_data):
+        ui.run_javascript(f"navigator.clipboard.writeText('{chip_data.get('content', '')}');")
+        ui.notify("内容已复制到剪贴板！", type="positive", position="bottom", timeout=1000)
+
+    # ------ 依赖原 InteractiveButton 的文件路径搜索方法 ------
+    async def _search_file_path(self, chip_text, config) -> list:
+        target_path_list = []
+        according_folder_name_li = []
+        search_folder_according_li = config.get("search_folder_according", [])
+        upload_path = config.get("upload_path", "")
+        search_scope_regular = config.get("search_scope_regular", "")
+        search_hierarchy = config.get("search_hierarchy", [])
+
+        if search_folder_according_li:
+            for according in search_folder_according_li:
+                for data in db_storage.get_deep_item([f"{self.project}_over_data", according], {}).values():
+                    if data["enabled"]:
+                        according_folder_name_li.append(data["content"])
+            if not according_folder_name_li:
+                return target_path_list
+            for folder_name in according_folder_name_li:
+                if search_scope_regular:
+                    match = re.search(search_scope_regular, folder_name)
+                    if match:
+                        target_path_list.extend(
+                            await find_dirs_by_name_os_walk(f"{upload_path}\\{match.group(1)}", folder_name)
+                        )
+                else:
+                    target_path_list.extend(await find_dirs_by_name_os_walk(upload_path, folder_name))
+        else:
+            if search_scope_regular:
+                match = re.search(search_scope_regular, chip_text)
+                if match:
+                    target_path_list = await find_dirs_by_name_os_walk(upload_path, match.group(1))
+            else:
+                target_path_list = [upload_path]
+
+        if search_hierarchy:
+            target_path_list = [f"{tp}\\{h}" for tp in target_path_list for h in search_hierarchy]
+        return target_path_list
+
+    # 模拟通用文件/PDF/视频操作
+    def open_pdf_in_browser(self, url_path):
+        ui.run_javascript(f'window.open("{url_path.replace(" ", "%20")}", "_blank");')
+
+    async def check_and_download(self, filepath, file_name):
+        ui.download(filepath)
+
+    # ================= 完全照搬的视图、下载与网络请求相关 =================
+    def play_overview_video(self, url_path):
+        self.overview_video_dialog.clear()
+        with self.overview_video_dialog:
+            with ui.card().classes(
+                "w-auto max-w-screen-xl min-w-[300px] bg-black p-0 items-center justify-center relative-position overflow-hidden"
+            ):
+                ui.video(src=url_path).classes("w-full max-h-[85vh]").props("controls autoplay")
+                ui.button(icon="close", on_click=self.overview_video_dialog.close).props(
+                    "flat round color=white"
+                ).classes("absolute top-2 right-2 z-10 opacity-70 hover:opacity-100")
+        self.overview_video_dialog.open()
+
+    def show_fullscreen(self, url_path):
+        self.img_dialog.clear()
+        with self.img_dialog:
+            self.image_big = ui.interactive_image(url_path).classes("cursor-grab").style("overflow: hidden;")
+            self.image_big.on("mousedown", self.start_drag)
+            self.image_big.on_mouse(self.get_img_xy)
+            self.image_big.on("mousemove", self.handle_drag)
+            self.image_big.on("mouseup", self.end_drag)
+            self.image_big.on("mouseleave", self.end_drag)
+            self.image_big.on("wheel", self.handle_zoom)
+        self.img_dialog.open()
+        self.reset_transform()
+
+    def start_drag(self, e: GenericEventArguments):
+        if e.args.get("button") == 0:
+            self.is_dragging = True
+            self.last_pos = (e.args["clientX"], e.args["clientY"])
+            self.image_big.classes(replace="cursor-grabbing")
+        elif e.args.get("button") == 1:
+            self.reset_transform()
+
+    def handle_drag(self, e: GenericEventArguments):
+        if self.is_dragging:
+            dx = e.args["clientX"] - self.last_pos[0]
+            dy = e.args["clientY"] - self.last_pos[1]
+            self.offset = (self.offset[0] + dx, self.offset[1] + dy)
+            self.last_pos = (e.args["clientX"], e.args["clientY"])
+            self.update_transform()
+
+    def end_drag(self, e: GenericEventArguments):
+        self.is_dragging = False
+        if hasattr(self, "image_big"):
+            self.image_big.classes(replace="cursor-grab")
+
+    def get_img_xy(self, e: MouseEventArguments):
+        self.image_x, self.image_y = e.image_x, e.image_y
+
+    def handle_zoom(self, e: GenericEventArguments):
+        new_zoom = self.zoom_level * (1.1 if e.args["deltaY"] < 0 else 0.9)
+        self.zoom_level = max(0.01, min(10, new_zoom))
+        self.update_transform()
+
+    def update_transform(self):
+        if hasattr(self, "image_big"):
+            self.image_big.style(
+                f"transform: translate({self.offset[0]}px, {self.offset[1]}px) scale({self.zoom_level})"
+            )
+
+    def reset_transform(self):
+        self.zoom_level = 1.0
+        self.offset = (0, 0)
+        self.update_transform()
+
+    async def get_url_file_info_async(self, url: str, timeout: int = 15):
+        # 请直接复制 InteractiveButton 原有的 get_url_file_info_async 内部实现
+        headers = {"User-Agent": "Mozilla/5.0"}
+        ssl_context = ssl.create_default_context()
+        ssl_context.check_hostname = False
+        ssl_context.verify_mode = ssl.CERT_NONE
+        auth = BasicAuth(SVN_USERNAME, SVN_PASSWORD) if SVN_USERNAME and SVN_PASSWORD else None
+        try:
+            async with httpx.AsyncClient(follow_redirects=False, verify=ssl_context, auth=auth) as client:
+                async with client.stream("GET", url, timeout=timeout, headers=headers) as response:
+                    if 300 <= response.status_code < 400:
+                        return False, None
+                    if response.status_code < 400:
+                        ct = response.headers.get("Content-Type")
+                        return True, ct.split(";")[0].strip() if ct else None
+                    return False, None
+        except Exception:
+            return False, None
+
+    async def get_svn_file_http_async(self, http_url: str, username: str = "", password: str = ""):
+        auth = BasicAuth(username, password) if username and password else None
+        ssl_context = ssl.create_default_context()
+        ssl_context.check_hostname = False
+        ssl_context.verify_mode = ssl.CERT_NONE
+        try:
+            async with httpx.AsyncClient(follow_redirects=True, verify=ssl_context, auth=auth) as client:
+                response = await client.get(http_url, auth=auth, timeout=10)
+                response.raise_for_status()
+                return http_url.split("/")[-1], response.content
+        except Exception:
+            return None, None
+
+    async def check_and_download_svn(self, http_url, file_name):
+        storage_key = f"downloaded_{file_name}"
+        has_downloaded = await ui.run_javascript(f'sessionStorage.getItem("{storage_key}")')
+        if has_downloaded:
+            self.check_down_dialog.clear()
+            with self.check_down_dialog, ui.card().classes("min-w-[400px]"):
+                with ui.card_section():
+                    ui.label(f'文件 "{file_name}" 已下载。').classes("text-lg font-medium")
+                with ui.card_actions().props("align=right"):
+                    ui.button(
+                        "仍要重新下载",
+                        on_click=lambda: self.trigger_download_svn_async(
+                            http_url, file_name, self.check_down_dialog.close
+                        ),
+                        color="primary",
+                    )
+                    ui.button("关闭", on_click=self.check_down_dialog.close, color="grey")
+            self.check_down_dialog.open()
+        else:
+            await self.trigger_download_svn_async(http_url, file_name)
+            await ui.run_javascript(f'sessionStorage.setItem("{storage_key}", "true")')
+
+    async def trigger_download_svn_async(self, http_url, file_name, on_finish=None):
+        _, content = await self.get_svn_file_http_async(http_url, username=SVN_USERNAME, password=SVN_PASSWORD)
+        if content:
+            ui.download(content, file_name)
+            ui.notify(f"已开始下载: {file_name}", type="positive")
+            if on_finish:
+                on_finish()
+
+    async def open_svn_pdf_in_browser(self, http_url, file_name):
+        _, pdf_bytes = await self.get_svn_file_http_async(http_url, username=SVN_USERNAME, password=SVN_PASSWORD)
+        if pdf_bytes:
+            client_id = ui.context.client.id
+            PDF_PREVIEW_CACHE[client_id] = pdf_bytes
+            cache_buster = int(time.time())
+            ui.run_javascript(f'window.open("/view/svn_pdf?id={client_id}&v={cache_buster}", "_blank");')
+
+    # ================= 需要将 self.xxx 替换为 config 的方法 =================
+    def _setup_svn_chip_dialog(self):
+        self.chip_dialog.clear()
+        config = self.current_config
+        with self.chip_dialog, ui.card().classes("w-1/2"):
+            ui.label(f"添加SVN文件引用: {config['title']}").classes("text-lg font-bold text-blue-900")
+            self.chip_label = (
+                ui.input(
+                    label=config.get("dialog_label", "填入包括后缀的完整文件名"), placeholder="填入包括后缀的完整文件名"
+                )
+                .props("outlined")
+                .classes("w-full")
+            )
+            self.chip_notes = (
+                ui.textarea(
+                    label="注释（必填）",
+                    placeholder="首填/变更原因",
+                    validation={"不能空白": lambda v: v.strip() != ""},
+                )
+                .props("outlined")
+                .classes("w-full")
+            )
+            with ui.row().classes("w-full justify-end items-center"):
+                ui_spinner = ui.spinner(type="hourglass", size="md", color="amber-8", thickness=8.0)
+                ui_spinner.set_visibility(False)
+                ui.button("添加", on_click=lambda: self._add_svn_chip_data(ui_spinner))
+        self.chip_dialog.open()
+
+    async def _add_svn_chip_data(self, ui_spinner):
+        config = self.current_config
+        text = self.chip_label.value.strip()
+        notes = self.chip_notes.value.strip()
+        project_state = app.storage.general["project_summary"][self.project]["state"]
+        warehouse = config.get("state_path", {}).get(project_state)
+        file_info = (False, None)
+
+        if not text or not notes:
+            ui.notify("引用文件名和注释不能为空!", type="warning")
+            return
+
+        if (text, warehouse) in [
+            (d["content"], d.get("warehouse"))
+            for d in db_storage.get_deep_item([f"{self.project}_over_data", config["label"]], {}).values()
+        ]:
+            ui.notify(f"{warehouse}仓库下的相同引用文件名已添加过。", type="warning")
+            return
+
+        ui_spinner.set_visibility(True)
+        target_url_li = self._splicing_svn_file_url(text, config)
+
+        if target_url_li and len(target_url_li) == 1:
+            target_url = target_url_li[0]
+            file_info = await self.get_url_file_info_async(target_url)
+            if not file_info[0]:
+                ui_spinner.set_visibility(False)
+                return
+        elif target_url_li and len(target_url_li) > 1:
+            ui.notify("有多个路径，不合规!", type="warning")
+            ui_spinner.set_visibility(False)
+            return
+        else:
+            ui_spinner.set_visibility(False)
+            return
+
+        chip_id = str(uuid.uuid4())
+        req_max_ver = app.storage.general["project_req_max_ver"].get(self.project, "1.0")
+        select_activ_dic = self._get_select_activ_dic(req_max_ver)
+        creator = app.storage.user.get("current_user", "匿名用户")
+
+        file_type = file_info[1]
+        if (file_type == "application/octet-stream" or file_type is None) and target_url.lower().endswith(".pdf"):
+            file_type = "application/pdf"
+        # 获取要绑定的 row_id，如果没有（理论上现在都有了），就生成一个新的
+        row_id = getattr(self, "current_target_row_id", None) or str(uuid.uuid4())
+        chip_data = {
+            "id": chip_id,
+            "row_id": row_id,
+            "role": self.role,
+            "icon": "saved_search",
+            "enabled": True,
+            "bg_color": "bg-light-blue-1",
+            "type": "svn",
+            "file_type": file_type,
+            "url_path": target_url,
+            "content": text,
+            "warehouse": warehouse,
+            "notes": notes,
+            "creator": creator,
+            "req_ver": req_max_ver,
+            "select_activ_dic": select_activ_dic,
+            "timestamp": {
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S"): {"creator": creator, "select_activ_dic": select_activ_dic}
+            },
+        }
+
+        await db_storage.set_deep_item([f"{self.project}_over_data", config["label"], chip_id], chip_data)
+        ui_spinner.set_visibility(False)
+        self.chip_dialog.close()
+        ui.notify("SVN文件引用已添加。", type="positive")
+        self._show_related_chip_select_dialog(text, True, "add_chip", config)
+
+    def _splicing_svn_file_url(self, chip_text, config) -> list:
+        return_url_li = []
+        target_url_li = []
+        according_folder_name = []
+        project_state = app.storage.general["project_summary"][self.project]["state"]
+        svn_main_folder = config.get("state_path", {}).get(project_state)
+
+        if not svn_main_folder:
+            if self._edit_permission_judge(config, notify=False):
+                ui.notify(f"在当前项目{project_state}状态下，无相应svn管控仓库配置!", type="warning")
+            return target_url_li
+
+        search_folder_according_li = config.get("search_folder_according", [])
+        search_scope_regular = config.get("search_scope_regular", "")
+        upload_path = config.get("upload_path", "")
+        search_hierarchy = config.get("search_hierarchy", [])
+
+        if search_folder_according_li:
+            for search_folder_according in search_folder_according_li:
+                for data in db_storage.get_deep_item(
+                    [f"{self.project}_over_data", search_folder_according], {}
+                ).values():
+                    if data["enabled"]:
+                        according_folder_name.append(data["content"])
+
+            if len(according_folder_name) < 1:
+                if self._edit_permission_judge(config, notify=False):
+                    ui.notify("依赖文件夹均无有效配置，链接无效!", type="warning")
+                return target_url_li
+            else:
+                if search_scope_regular:
+                    for folder_name in according_folder_name:
+                        match = re.search(search_scope_regular, folder_name)
+                        if match:
+                            target_url_li.append(f"{upload_path}/{svn_main_folder}/{match.group(1)}/{folder_name}")
+                        else:
+                            if self._edit_permission_judge(config, notify=False):
+                                ui.notify(f"文件夹{folder_name}命名不符合规则!", type="warning")
+                    if not target_url_li:
+                        return target_url_li
+                else:
+                    for folder_name in according_folder_name:
+                        target_url_li.append(f"{upload_path}/{svn_main_folder}/{folder_name}")
+        else:
+            if search_scope_regular:
+                match = re.search(search_scope_regular, chip_text)
+                if match:
+                    target_url_li.append(f"{upload_path}/{svn_main_folder}/{match.group(1)}")
+                else:
+                    if self._edit_permission_judge(config, notify=False):
+                        ui.notify(f"文件{chip_text}命名不符合规则!", type="warning")
+                    return target_url_li
+            else:
+                target_url_li.append(f"{upload_path}/{svn_main_folder}")
+
+        for target_url in target_url_li:
+            if search_hierarchy:
+                for h in search_hierarchy:
+                    target_url = f"{target_url}/{h}"
+            return_url_li.append(f"{target_url}/{chip_text}")
+        return return_url_li
 
 
 class ConfigValidator:
