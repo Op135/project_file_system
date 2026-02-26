@@ -55,17 +55,6 @@ from .utils import (
 # 比如：如果你的文件是 src/components.py，这个 logger 的名字就会是 "src.components"
 logger = logging.getLogger(__name__)
 
-# 注入全局 CSS，强制允许 ui.chip 内部的文字换行
-# ui.add_head_html("""
-#     <style>
-#     .multiline-chip .q-chip__content {
-#         white-space: normal !important;
-#         word-break: break-all !important;
-#         line-height: 1.3 !important;
-#     }
-#     </style>
-#     """)
-
 
 class StorageBackupManager:
     def __init__(
@@ -788,7 +777,7 @@ class InteractiveButton:
             self.uploader.set_visibility(False)
         # 设置一个定时器，每隔0.5秒检查一次共享数据是否有变化，并更新UI
         # 这是实现多用户实时同步的关键
-        ui.timer(0.5, self._update_chip_display)
+        ui.timer(1.0, self._update_chip_display)
 
     def play_overview_video(self, url_path):
         self.overview_video_dialog.clear()
@@ -3742,14 +3731,14 @@ class OverviewTableGroup:
 
         # 表格的主容器
         self.container = ui.column().classes(
-            "w-full gap-0 border border-blue-200 rounded-lg overflow-hidden mt-2 bg-white shadow-sm"
+            "w-full gap-0 border border-blue-200 rounded-sm overflow-hidden mt-2 bg-white"
         )
 
         # --- 状态追踪细化到列 (字典结构) ---
         self.last_state_hashes = {}
 
         # 初始渲染 & 开启定时器
-        ui.timer(0.5, self._update_display)
+        ui.timer(1.0, self._update_display)
 
     async def _group_and_migrate_data(self, col_configs, show_all, conversion_refresh):
         """
@@ -3857,7 +3846,7 @@ class OverviewTableGroup:
         # 2. 渲染 UI
         with self.container:
             # --- 渲染表头 ---
-            with ui.row().classes("w-full flex-nowrap bg-blue-50/80 border-b border-blue-200 p-0 m-0"):
+            with ui.row().classes("w-full flex-nowrap bg-blue-50/80 border-b border-blue-200 p-0 m-0  -space-x-4"):
                 for config in col_configs:
                     label = config["label"]
 
@@ -3879,13 +3868,13 @@ class OverviewTableGroup:
                     with (
                         ui.column()
                         .classes(
-                            "flex-1 p-2 border-r border-blue-200 last:border-r-0 items-center justify-center min-w-[140px] relative cursor-pointer hover:bg-blue-100 transition-colors"
+                            "flex-1 p-1 border-r border-blue-200 last:border-r-0 items-center justify-center min-w-[100px] relative cursor-pointer hover:bg-blue-100 transition-colors"
                         )
                         .on("click", lambda e, c=config: self._handle_header_click(e, c), ["shiftKey"])
                     ):
                         # 渲染小圆点（仅必填项显示，悬浮在左上角）
                         if is_required:
-                            ui.label("●").classes(f"absolute top-1 left-2 text-[10px] {dot_color}")
+                            ui.label("●").classes(f"absolute -top-1 left-0 text-[10px] {dot_color}")
 
                         # 渲染标题
                         ui.label(config["title"]).classes("font-bold text-sm text-blue-900 text-center").style(
@@ -3904,14 +3893,14 @@ class OverviewTableGroup:
                 row_chips = row_data["chips"]
 
                 with ui.row().classes(
-                    f"w-full flex-nowrap border-b border-gray-100 {bg_color} items-stretch p-0 m-0 hover:bg-amber-50/40 transition-colors"
+                    f"w-full flex-nowrap border-b border-gray-100 {bg_color} items-stretch p-0 m-0  -space-x-4 hover:bg-amber-50/40 transition-colors"
                 ):
                     for config in col_configs:
                         label = config["label"]
 
                         # 💡 优化 1：取消居中对齐改为顶部对齐(items-start)，并增加 pb-6 给绝对定位的按钮留出一点底边距
                         with ui.column().classes(
-                            "flex-1 p-2 pb-6 border-r border-gray-100 last:border-r-0 items-start justify-start min-w-[140px] relative group gap-1"
+                            "flex-1 p-2 pb-4 border-r border-gray-100 last:border-r-0 items-start justify-start min-w-[140px] relative group gap-1"
                         ):
                             is_first_col = label == first_col_label
                             has_chip = bool(label in row_chips and row_chips[label])
@@ -3933,14 +3922,12 @@ class OverviewTableGroup:
                                     ).props("flat round dense size=sm")
                                     # 💡 优化 2：绝对定位到右下角，完全脱离文档流，不撑大表格高度
                                     btn.classes(
-                                        "absolute bottom-0 right-1 text-blue-500 opacity-0 group-hover:opacity-100 transition-all m-0 p-0 z-10"
+                                        "absolute -bottom-1 -right-1 text-blue-500 opacity-0 group-hover:opacity-100 transition-all m-0 p-0 z-10"
                                     ).tooltip(f"添加 {config['title']}")
             # --- 渲染表格底部的“添加新行”栏 ---
             # 只有具有任意列的编辑权限时才显示
-            with ui.row().classes("w-full bg-blue-50/30 justify-center p-2"):
-                ui.button("添加新行", icon="add", on_click=self._handle_add_new_row).classes("w-full max-w-xs").props(
-                    "outline"
-                )
+            with ui.row().classes("w-full bg-blue-50/30 justify-center p-0"):
+                ui.button("", icon="add", on_click=self._handle_add_new_row).classes("w-full text-[8px]").props("flat")
 
     async def _render_single_chip(self, chip_info: dict, config: dict, req_max_ver: str):
         """渲染单个单元格内的 Chip (移植自原 _create_chip_from_data)"""
@@ -3983,13 +3970,28 @@ class OverviewTableGroup:
                 )
 
                 # 点击事件绑定
+                # --- 修复 3.1: 补充文件路径失效、丢失时的动态图标修改与警告 ---
                 if chip_info.get("type") in ["file", "search"]:
                     if chip_info.get("file_type") == "application/pdf" and filepath and Path(filepath).exists():
                         chip.on_click(lambda url=chip_info.get("url_path"): self.open_pdf_in_browser(url))
                     elif filepath and Path(filepath).exists():
                         chip.on_click(lambda fp=filepath, fn=chip_text: self.check_and_download(fp, fn))
                     else:
-                        chip.on_click(lambda: ui.notify("文件不存在、失效或不唯一！", type="warning"))
+                        if chip_info["type"] == "file":
+                            chip.set_icon("link_off")
+                        elif chip_info["type"] == "search" and chip._props.get("icon") != "question_mark":
+                            chip.set_icon("search_off")
+                        chip.on_click(
+                            lambda: ui.notify(
+                                "文件不存在服务器、路径失效、不唯一，点击不能打开或下载！",
+                                type="warning",
+                                position="bottom",
+                                timeout=3000,
+                                progress=True,
+                                close_button="✖",
+                            )
+                        )
+
                 elif chip_info.get("type") == "svn":
                     if chip_info.get("file_type") == "application/pdf" and file_info[0]:
                         chip.on_click(
@@ -4000,16 +4002,52 @@ class OverviewTableGroup:
                             lambda url=chip_info.get("url_path"), fn=chip_text: self.check_and_download_svn(url, fn)
                         )
                     else:
-                        chip.on_click(lambda: ui.notify("SVN文件已丢失！", type="warning"))
+                        if chip._props.get("icon") != "question_mark":
+                            chip.set_icon("search_off")
+                        chip.on_click(
+                            lambda: ui.notify(
+                                f"SVN文件：\n{chip_info.get('url_path')}\n已丢失，点击不能打开或下载！",
+                                type="warning",
+                                position="bottom",
+                                timeout=3000,
+                                progress=True,
+                                close_button="✖",
+                            )
+                        )
+
                 elif chip_info.get("type") == "video":
                     if filepath and Path(filepath).exists():
                         chip.on_click(lambda url=chip_info.get("url_path"): self.play_overview_video(url))
                     else:
-                        chip.on_click(lambda: ui.notify("视频文件已丢失！", type="warning"))
+                        chip.set_icon("videocam_off")
+                        chip.on_click(
+                            lambda: ui.notify(
+                                f"视频文件：\n{chip_info.get('url_path')}\n已丢失，点击不能打开或下载！",
+                                type="warning",
+                                position="bottom",
+                                timeout=3000,
+                                progress=True,
+                                close_button="✖",
+                            )
+                        )
 
                 # Tooltip & 控制按钮
                 with chip:
-                    tooltip_text = f"版本: V{chip_info.get('req_ver')}<br>创建者: {chip_info.get('creator')}<br>注释: <br>●{chip_info.get('notes', '').replace('\n', '<br>')}"
+                    # 为 chip 添加 tooltip
+                    if chip_info.get("type") in ["svn"]:
+                        tooltip_text = f"创建节点: 需求V{chip_info.get('req_ver')}后<br>创建者: {chip_info.get('creator')}<br>时间: {next(reversed(chip_info.get('timestamp', {})))}<br>仓库: {chip_info.get('warehouse', '')}<br>注释: <br>●{chip_info.get('notes', '').replace('\n', '<br>')}"
+                    elif chip_info.get("type") in ["test"]:
+                        select_str = "测试条件状态与节点工具："
+                        select_bool = False
+                        for k, select_value in chip_info["test_select_data"].items():
+                            if select_value:
+                                select_bool = True
+                                select_str = f"{select_str}<br>●{select_value}"
+                        if not select_bool:
+                            select_str = "测试条件状态与节点工具：<br>无"
+                        tooltip_text = f"创建节点: 需求V{chip_info.get('req_ver')}后<br>创建者: {chip_info.get('creator')}<br>时间: {next(reversed(chip_info.get('timestamp', {})))}<br>{select_str}<br>注释: <br>●{chip_info.get('notes', '').replace('\n', '<br>')}"
+                    else:
+                        tooltip_text = f"创建节点: 需求V{chip_info.get('req_ver')}后<br>创建者: {chip_info.get('creator')}<br>时间: {next(reversed(chip_info.get('timestamp', {})))}<br>注释: <br>●{chip_info.get('notes', '').replace('\n', '<br>')}"
                     with ui.tooltip():
                         ui.html(tooltip_text, sanitize=Sanitizer().sanitize)
 
@@ -4084,7 +4122,8 @@ class OverviewTableGroup:
                     ui.icon(chip_info.get("icon", "")).props("flat fab").classes(
                         "absolute top-0 left-0 text-xl text-blue-500/50"
                     )
-                    tooltip_text = f"版本: V{chip_info.get('req_ver')}<br>创建者: {chip_info.get('creator')}<br>注释: <br>{chip_info.get('notes', '')}"
+                    # 缩略图创建日期提示
+                    tooltip_text = f"创建节点: 需求V{chip_info.get('req_ver')}后<br>图片名: {image_name}<br>创建者: {chip_info.get('creator')}<br>时间: {next(reversed(chip_info.get('timestamp', {})))}<br>注释: <br>{chip_info.get('notes', '').replace('\n', '<br>')}"
                     with ui.tooltip():
                         ui.html(tooltip_text, sanitize=Sanitizer().sanitize)
 
@@ -4135,25 +4174,45 @@ class OverviewTableGroup:
             wrapper.on("mousemove", lambda e: check_shift_and_show(e, history_button), ["shiftKey"])
             wrapper.on("mouseleave", lambda: history_button.style("display: none;"))
 
-    async def _update_display(self):
-        """通过 Hash 校验检测列数据变更，仅刷新变化列对应的待处理状态"""
+    from typing import Any, Dict
+
+    # 一个专门用于生成轻量级哈希的方法，并加入类型提示
+    def _generate_col_signature(self, filtered_dict: Dict[str, Any]) -> int:
+        """
+        生成列数据的轻量级状态签名，避免使用高开销的 json.dumps
+        """
+        signature = []
+
+        # 遍历字典（Python 3.7+ 字典保持插入顺序，因此顺序变化也会体现在生成的 tuple 中）
+        for chip_id, chip in filtered_dict.items():
+            # 提取时间戳中的最新键（代表该 chip 经历的最后一次修改）
+            timestamps = chip.get("timestamp", {})
+            # 防御性编程：兼容空时间戳或非标准格式
+            latest_time = max(timestamps.keys()) if timestamps else ""
+
+            # 仅提取影响 UI 渲染的核心维度，构建轻量级元组
+            signature.append((chip_id, chip.get("row_id", ""), chip.get("enabled"), latest_time))
+
+        # tuple 是不可变的，内置的 hash() 函数在 C 语言层面的执行效率极高
+        return hash(tuple(signature))
+
+    async def _update_display(self) -> None:
+        """通过轻量级 Hash 校验检测列数据变更，仅刷新变化列对应的待处理状态"""
         if self.chip_dialog.value or self.check_down_dialog.value or self.activ_dialog.value:
             return
-
-        import json
 
         changed_labels = []
         show_all = app.storage.client.get("record_switch")
 
-        # --- 💡 核心改进 3：细化 Hash 计算到单列，记录发生了实际变更的列标签 ---
         for config in self.permitted_configs.values():
             label = config["label"]
             chips_dict = db_storage.get_deep_item([f"{self.project}_over_data", label], {})
             filtered_dict = {k: v for k, v in chips_dict.items() if show_all or v.get("enabled") is not False}
 
-            # 针对当前列的数据生成哈希
-            # 核心修复：移除 sort_keys=True，使得字典插入顺序的变化能够改变哈希值触发刷新
-            col_hash = hash(json.dumps(filtered_dict, sort_keys=False, default=str))
+            # ---------------------------------------------------------
+            # 【优化点】：替换原有的 json.dumps 逻辑，调用轻量级签名函数
+            # ---------------------------------------------------------
+            col_hash = self._generate_col_signature(filtered_dict)
 
             # 如果该列哈希发生变化，则记录
             if self.last_state_hashes.get(label) != col_hash:
@@ -4163,13 +4222,21 @@ class OverviewTableGroup:
         # 只有在确有列发生数据变更时才重绘，并精准推送该列的待处理状态
         if changed_labels:
             await self._render_table()
+            # 这里调用的是全局范围的角色更新，建议后续也优化为按需触发
             overview_role_update(self.project, self.role)
             for changed_label in changed_labels:
                 self._update_local_pending(changed_label)
 
     def _get_icon_for_type(self, ptype: str) -> str:
-        icons = {"file": "post_add", "image": "add_photo_alternate", "video": "video_call", "test": "add_task"}
-        return icons.get(ptype, "add_circle_outline")
+        icons = {
+            "file": "post_add",
+            "search": "zoom_in",
+            "svn": "zoom_in",
+            "image": "add_photo_alternate",
+            "video": "video_call",
+            "test": "add_task",
+        }
+        return icons.get(ptype, "edit_note")
 
     # ================= 权限与交互 =================
     def _edit_permission_judge(self, config: dict, notify=True):
@@ -4359,29 +4426,55 @@ class OverviewTableGroup:
     async def _add_test_chip_data(self, ui_spinner, test_select_data):
         config = self.current_config
         text, notes = self.chip_label.value.strip(), self.chip_notes.value.strip()
-        # 校验逻辑
+
         other_bool = any(
             test_select_data[f"{p}_select"] == "其它" and not test_select_data[f"{p}_other_text"]
             for p in ["state", "node", "instrument"]
         )
+
         if not text or not all(
             test_select_data[f"{p}_select"] for p in ["state", "node", "instrument"] if config.get(f"{p}_options")
         ):
-            ui.notify("必填项未完成!", type="warning")
+            ui.notify(
+                "测试项内容及选项必须填写和选择!",
+                type="warning",
+                position="bottom",
+                timeout=3000,
+                progress=True,
+                close_button="✖",
+            )
             return
         if not notes:
-            ui.notify("注释不能为空!", type="warning")
+            ui.notify("注释不能为空!", type="warning", position="bottom", timeout=3000, progress=True, close_button="✖")
             return
         if other_bool:
-            ui.notify("特殊要求不能为空!", type="warning")
+            ui.notify(
+                "特殊要求不能为空!", type="warning", position="bottom", timeout=3000, progress=True, close_button="✖"
+            )
+            return
+
+        # --- 修复 1.2: 补充 Test 类型的组合查重拦截 ---
+        existing_test_data = [
+            (d["content"], d.get("test_select_data"))
+            for d in db_storage.get_deep_item([f"{self.project}_over_data", config["label"]], {}).values()
+        ]
+        if (text, test_select_data) in existing_test_data:
+            ui.notify(
+                "测试项内容标准已存在。",
+                type="warning",
+                position="bottom",
+                timeout=3000,
+                progress=True,
+                close_button="✖",
+            )
             return
 
         ui_spinner.set_visibility(True)
         req_max_ver = app.storage.general["project_req_max_ver"].get(self.project, "1.0")
         select_activ_dic = self._get_select_activ_dic(req_max_ver)
-        creator = app.storage.user.get("current_user", "匿名")
-        # 获取要绑定的 row_id，如果没有（理论上现在都有了），就生成一个新的
+        creator = app.storage.user.get("current_user", "匿名用户")
         row_id = getattr(self, "current_target_row_id", None) or str(uuid.uuid4())
+
         chip_data = {
             "id": str(uuid.uuid4()),
             "row_id": row_id,
@@ -4401,8 +4494,11 @@ class OverviewTableGroup:
             },
         }
         await db_storage.set_deep_item([f"{self.project}_over_data", config["label"], chip_data["id"]], chip_data)
+
         ui_spinner.set_visibility(False)
+        self.chip_notes.value = ""
         self.chip_dialog.close()
+        ui.notify("内容已添加。", type="positive", position="bottom", timeout=1000, progress=True, close_button="✖")
         self._show_related_chip_select_dialog(text, True, "add_chip", config)
 
     # ---- 文件处理相关 ----
@@ -4435,44 +4531,105 @@ class OverviewTableGroup:
             self.uploader.run_method("pickFiles")
 
     async def _handle_file_upload(self, e):
+        """处理文件/图片/视频上传事件（已修复同名防覆盖与查重漏洞）"""
         config = self.current_config
-        original_filename, file_type = e.file.name, e.file.content_type
+        original_filename = e.file.name
+        file_type = e.file.content_type
         file_ext = os.path.splitext(original_filename)[1].lower()
 
+        # 1. 校验文件类型后缀
         if config["processing_type"] == "file" and file_ext not in OVER_UPLOADS_FILE_TYPE:
-            ui.notify("文件格式错误!", type="warning")
-            self.spinner.set_visibility(False)
+            ui.notify(
+                f'文件 "{original_filename}" 不是规定的文件类型，无法上传!',
+                type="warning",
+                position="bottom",
+                timeout=3000,
+            )
+            if hasattr(self, "spinner"):
+                self.spinner.set_visibility(False)
             return
         if config["processing_type"] == "image" and "image" not in file_type:
-            ui.notify("不是图片类型!", type="warning")
-            self.spinner.set_visibility(False)
+            ui.notify(f'文件 "{original_filename}" 不是图片类型!', type="warning", position="bottom", timeout=3000)
+            if hasattr(self, "spinner"):
+                self.spinner.set_visibility(False)
             return
         if config["processing_type"] == "video" and "video" not in file_type:
-            ui.notify("不是视频类型!", type="warning")
-            self.spinner.set_visibility(False)
+            ui.notify(f'文件 "{original_filename}" 不是视频类型!', type="warning", position="bottom", timeout=3000)
+            if hasattr(self, "spinner"):
+                self.spinner.set_visibility(False)
             return
 
-        filepath = f"{config.get('upload_path', '')}/{original_filename}"
+        upload_path = config.get("upload_path", "")
+        filepath = f"{upload_path}/{original_filename}"
         url_path = f"{FILES_URL_DIR}/{original_filename}"
 
-        # 写入文件逻辑...
+        # 2. 逻辑层查重：检查该列是否已绑定过同名文件
+        existing_contents = [
+            d["content"] for d in db_storage.get_deep_item([f"{self.project}_over_data", config["label"]], {}).values()
+        ]
+        if original_filename in existing_contents:
+            ui.notify(f'文件 "{original_filename}" 无需重复提交!', type="warning", position="bottom", timeout=3000)
+            if hasattr(self, "spinner"):
+                self.spinner.set_visibility(False)
+            return
+
+        # 获取或生成二维表格行基准 ID
+        row_id = getattr(self, "current_target_row_id", None) or str(uuid.uuid4())
+
+        # 3. 物理层防覆盖：检查服务器磁盘是否已有同名文件
+        if os.path.exists(filepath):
+            if hasattr(self, "spinner"):
+                self.spinner.set_visibility(False)
+            # 触发防覆盖询问弹窗
+            self._select_file_show(original_filename, file_type, url_path, config, row_id)
+            return
+
+        # 4. 安全写入新文件
         try:
             file_content = await e.file.read()
             with open(filepath, "wb") as f:
                 f.write(io.BytesIO(file_content).read())
         except Exception as ex:
-            ui.notify(f"上传失败: {ex}", type="negative")
-            self.spinner.set_visibility(False)
+            logger.error("上传处理失败", exc_info=True)
+            ui.notify(f"上传失败: {ex}", type="negative", position="center", timeout=0)
+            if hasattr(self, "spinner"):
+                self.spinner.set_visibility(False)
             return
 
+        # 5. 写入成功，创建并绑定数据
+        await self._create_file_chip_data(original_filename, file_type, url_path, config, row_id)
+        ui.notify(f'文件 "{original_filename}" 上传成功!', type="positive", position="bottom", timeout=1000)
+
+    def _select_file_show(self, original_filename, file_type, url_path, config, row_id):
+        """询问重复提交文件是否按服务器现有文件显示"""
+        self.chip_dialog.clear()
+        self.chip_dialog.open()
+        with self.chip_dialog, ui.card().classes("w-1/2 bg-orange-2"):
+            ui.label("服务器已有同名文件，无法上传覆盖，是否使用服务器已有文件？").classes("text-lg")
+            with ui.row().classes("w-full justify-end"):
+                ui.button(
+                    "是",
+                    on_click=lambda: self._show_have_file(original_filename, file_type, url_path, config, row_id),
+                    color="green-6",
+                )
+                ui.button("否", on_click=lambda: self.chip_dialog.close(), color="blue-grey-6")
+
+    async def _show_have_file(self, original_filename, file_type, url_path, config, row_id):
+        """复用服务器已有文件，直接生成数据记录"""
+        await self._create_file_chip_data(original_filename, file_type, url_path, config, row_id)
+        ui.notify(f'文件 "{original_filename}" 显示成功!', type="positive", position="bottom", timeout=1000)
+
+    async def _create_file_chip_data(self, original_filename, file_type, url_path, config, row_id):
+        """内部辅助函数：统一处理文件类型 Chip 数据的生成与共享存储写入"""
         req_max_ver = app.storage.general["project_req_max_ver"].get(self.project, "1.0")
-        creator = app.storage.user.get("current_user", "匿名")
+        creator = app.storage.user.get("current_user", "匿名用户")
         icon_map = {"file": "attachment", "video": "play_circle", "image": "image"}
-        # 获取要绑定的 row_id，如果没有（理论上现在都有了），就生成一个新的
-        row_id = getattr(self, "current_target_row_id", None) or str(uuid.uuid4())
+        select_activ_dic = self._get_select_activ_dic(req_max_ver)
+        chip_id = str(uuid.uuid4())
+
         chip_data = {
-            "id": str(uuid.uuid4()),
-            "row_id": row_id,
+            "id": chip_id,
+            "row_id": row_id,  # 确保二维行对齐
             "role": self.role,
             "icon": icon_map.get(config["processing_type"], "image"),
             "enabled": True,
@@ -4484,18 +4641,30 @@ class OverviewTableGroup:
             "notes": self.chip_notes.value,
             "creator": creator,
             "req_ver": req_max_ver,
-            "select_activ_dic": self._get_select_activ_dic(req_max_ver),
+            "select_activ_dic": select_activ_dic,
             "timestamp": {
                 datetime.now().strftime("%Y-%m-%d %H:%M:%S"): {
                     "creator": creator,
-                    "select_activ_dic": self._get_select_activ_dic(req_max_ver),
+                    "select_activ_dic": select_activ_dic,
                 }
             },
         }
-        await db_storage.set_deep_item([f"{self.project}_over_data", config["label"], chip_data["id"]], chip_data)
-        self.spinner.set_visibility(False)
+
+        # 写入数据库
+        await db_storage.set_deep_item([f"{self.project}_over_data", config["label"], chip_id], chip_data)
+
+        # 清理状态与UI收尾
+        self.chip_notes.value = ""
+        if hasattr(self, "spinner"):
+            self.spinner.set_visibility(False)
         self.chip_dialog.close()
+
+        # 触发关联项选择弹窗
         self._show_related_chip_select_dialog(original_filename, True, "add_chip", config)
+
+        # 触发哈希变更与表格重绘
+        self.last_state_hashes = {}
+        await self._update_display()
 
     # ---------------- 搜索与SVN弹窗 (保留通用结构传Config) ----------------
     def _setup_search_chip_dialog(self):
@@ -4518,25 +4687,62 @@ class OverviewTableGroup:
     async def _add_search_chip_data(self, ui_spinner):
         config = self.current_config
         text, notes = self.chip_label.value.strip(), self.chip_notes.value.strip()
+
         if not text or not notes:
-            ui.notify("不能为空!", type="warning")
+            ui.notify(
+                "引用文件名和注释不能为空!",
+                type="warning",
+                position="bottom",
+                timeout=3000,
+                progress=True,
+                close_button="✖",
+            )
+            return
+
+        # --- 修复 1.1: 补充 Search 类型的查重拦截 ---
+        existing_contents = [
+            d["content"] for d in db_storage.get_deep_item([f"{self.project}_over_data", config["label"]], {}).values()
+        ]
+        if text in existing_contents:
+            ui.notify(
+                "引用文件名已添加过。", type="warning", position="bottom", timeout=3000, progress=True, close_button="✖"
+            )
             return
 
         ui_spinner.set_visibility(True)
         target_path_list = await self._search_file_path(text, config)
         files_li = []
+        target_path_li_str = ""  # 用于 Debug 提示
+
         for target_path in target_path_list:
+            target_path_li_str += f"{target_path}\n"
             if target_path and Path(target_path).is_dir():
                 files_li.extend(find_files_pathlib(target_path, text))
 
+        # --- 修复 4.1: 恢复详细的查找失败 Debug 路径提示 ---
         if not files_li:
-            ui.notify("文件不存在!", type="warning")
+            ui.notify(
+                f"引用文件不存在以下所有路径：\n{target_path_li_str}请检查文件命名或相关依赖配置!",
+                type="warning",
+                position="bottom",
+                timeout=3000,
+                progress=True,
+                multi_line=True,
+                close_button="✖",
+            )
         elif len(files_li) > 1:
-            ui.notify("文件不唯一!", type="warning")
+            ui.notify(
+                f"引用文件在以下路径：\n{target_path_li_str}有多个同名文件，请确保唯一!",
+                type="warning",
+                position="bottom",
+                timeout=3000,
+                progress=True,
+                multi_line=True,
+                close_button="✖",
+            )
         else:
             req_max_ver = app.storage.general["project_req_max_ver"].get(self.project, "1.0")
-            creator = app.storage.user.get("current_user", "匿名")
-            # 获取要绑定的 row_id，如果没有（理论上现在都有了），就生成一个新的
+            creator = app.storage.user.get("current_user", "匿名用户")
             row_id = getattr(self, "current_target_row_id", None) or str(uuid.uuid4())
             chip_data = {
                 "id": str(uuid.uuid4()),
@@ -4562,6 +4768,9 @@ class OverviewTableGroup:
             }
             await db_storage.set_deep_item([f"{self.project}_over_data", config["label"], chip_data["id"]], chip_data)
             self.chip_dialog.close()
+            ui.notify(
+                "文件引用已添加。", type="positive", position="bottom", timeout=1000, progress=True, close_button="✖"
+            )
             self._show_related_chip_select_dialog(text, True, "add_chip", config)
         ui_spinner.set_visibility(False)
 
@@ -4591,6 +4800,18 @@ class OverviewTableGroup:
                     [f"{self.project}_over_data", config["label"], chip.props["data-chip-id"]]
                 )
             else:
+                # --- 修复 2.1: 补充非管理员的状态阶段拦截 ---
+                allowed_state = config.get("allowed_state", ["研发", "转产"])
+                if app.storage.general["project_summary"][self.project]["state"] not in allowed_state:
+                    ui.notify(
+                        "项目当前状态禁止修改概述激活状态!",
+                        type="info",
+                        position="bottom",
+                        timeout=2000,
+                        progress=True,
+                        close_button="✖",
+                    )
+                    return
                 self.current_config = config
                 self._select_set_activ_dialog(chip.props["data-chip-id"], chip.text, config)
 
@@ -4601,6 +4822,18 @@ class OverviewTableGroup:
                     [f"{self.project}_over_data", config["label"], thumbnail.props["data-chip-id"]]
                 )
             else:
+                # --- 修复 2.2: 补充非管理员的状态阶段拦截 ---
+                allowed_state = config.get("allowed_state", ["研发", "转产"])
+                if app.storage.general["project_summary"][self.project]["state"] not in allowed_state:
+                    ui.notify(
+                        "项目当前状态禁止修改概述激活状态!",
+                        type="info",
+                        position="bottom",
+                        timeout=2000,
+                        progress=True,
+                        close_button="✖",
+                    )
+                    return
                 self.current_config = config
                 self._select_set_activ_dialog(thumbnail.props["data-chip-id"], "", config)
 
@@ -4777,7 +5010,7 @@ class OverviewTableGroup:
                     op_type = record.get("operate_type", "")
                     if op_type == "add_chip":
                         record_label = ui.label(
-                            f'[{time_key}]由用户"{record.get("operate_user", "匿名")}"添加了『{record.get("operate_chip_content", "未知")}』"'
+                            f'[{time_key}]由用户"{record.get("operate_user", "匿名用户")}"添加了『{record.get("operate_chip_content", "未知内容")}』"'
                         )
                     elif op_type == "activ_change":
                         state = (
@@ -4788,10 +5021,12 @@ class OverviewTableGroup:
                             else "待确认"
                         )
                         record_label = ui.label(
-                            f'[{time_key}]由用户"{record.get("operate_user", "匿名")}"修改状态为『{state}』'
+                            f'[{time_key}]由用户"{record.get("operate_user", "匿名用户")}"修改『{record.get("operate_chip_content", "未知内容")}』的状态为『{state}』'
                         )
                     else:
-                        record_label = ui.label(f"[{time_key}]由用户操作了数据")
+                        record_label = ui.label(
+                            f'[{time_key}]由用户"{record.get("operate_user", "匿名用户")}"操作了『{record.get("operate_chip_content", "未知内容")}』，操作类型未知'
+                        )
                     record_label.classes("text-sm text-brown")
 
             with ui.row().classes("w-full justify-end items-center") as row:
@@ -5293,12 +5528,32 @@ class OverviewTableGroup:
                 on_finish()
 
     async def open_svn_pdf_in_browser(self, http_url, file_name):
+        """修复 4.3: 恢复拉取前与打开后的交互提示"""
+        ui.notify(
+            f"正在从 SVN 准备预览 {file_name}...",
+            type="info",
+            position="bottom",
+            timeout=2000,
+            progress=True,
+            close_button="✖",
+        )
+
         _, pdf_bytes = await self.get_svn_file_http_async(http_url, username=SVN_USERNAME, password=SVN_PASSWORD)
+
         if pdf_bytes:
             client_id = ui.context.client.id
             PDF_PREVIEW_CACHE[client_id] = pdf_bytes
             cache_buster = int(time.time())
             ui.run_javascript(f'window.open("/view/svn_pdf?id={client_id}&v={cache_buster}", "_blank");')
+
+            ui.notify(
+                f"已在新标签页中打开: {file_name}",
+                type="positive",
+                position="bottom",
+                timeout=1000,
+                progress=True,
+                close_button="✖",
+            )
 
     # ================= 需要将 self.xxx 替换为 config 的方法 =================
     def _setup_svn_chip_dialog(self):
@@ -5405,12 +5660,21 @@ class OverviewTableGroup:
         return_url_li = []
         target_url_li = []
         according_folder_name = []
+        according_title = ""  # --- 修复 4.2: 恢复收集依赖项的标题名称 ---
+
         project_state = app.storage.general["project_summary"][self.project]["state"]
         svn_main_folder = config.get("state_path", {}).get(project_state)
 
         if not svn_main_folder:
             if self._edit_permission_judge(config, notify=False):
-                ui.notify(f"在当前项目{project_state}状态下，无相应svn管控仓库配置!", type="warning")
+                ui.notify(
+                    f"该项概述，在当前项目{project_state}状态下，无相应svn管控仓库配置!",
+                    type="warning",
+                    position="bottom",
+                    timeout=3000,
+                    progress=True,
+                    close_button="✖",
+                )
             return target_url_li
 
         search_folder_according_li = config.get("search_folder_according", [])
@@ -5420,6 +5684,14 @@ class OverviewTableGroup:
 
         if search_folder_according_li:
             for search_folder_according in search_folder_according_li:
+                # 抓取中文配置标题，方便报错时精准定位
+                title_str = (
+                    app.storage.general.get("over_config_data_flat", {})
+                    .get(search_folder_according, {})
+                    .get("title", "未知项")
+                )
+                according_title = f"{according_title}\n{title_str}"
+
                 for data in db_storage.get_deep_item(
                     [f"{self.project}_over_data", search_folder_according], {}
                 ).values():
@@ -5428,7 +5700,15 @@ class OverviewTableGroup:
 
             if len(according_folder_name) < 1:
                 if self._edit_permission_judge(config, notify=False):
-                    ui.notify("依赖文件夹均无有效配置，链接无效!", type="warning")
+                    ui.notify(
+                        f"概述项：\n{according_title}\n均无有效配置，链接无效!",
+                        type="warning",
+                        position="bottom",
+                        timeout=3000,
+                        progress=True,
+                        multi_line=True,
+                        close_button="✖",
+                    )
                 return target_url_li
             else:
                 if search_scope_regular:
