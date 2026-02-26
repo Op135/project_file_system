@@ -323,7 +323,7 @@ def information_page():
                         with ui.card().classes("w-full rounded-xl shadow-sm border border-red-100 bg-white"):
                             ui_card_header("待处理：项目概述", "edit_document", "red-600")
                             with ui.column().classes("w-full gap-2 px-1"):
-                                for project_name, state_dic in my_pending.items():
+                                for project_name, state_dic in list(my_pending.items()):
                                     # 无内容的必填概述分项数量
                                     false_num = list(state_dic.values()).count(False)
                                     # 待确认的概述分项数量
@@ -384,7 +384,7 @@ def information_page():
                 # C. 统计图表 (Statistics)
                 if current_role in module_show_data.get("overview_charge_pending_statistics", []):
                     pending_data = app.storage.general.get("overview_charge_pending", {})
-                    for user, pending_project_dic in pending_data.items():
+                    for user, pending_project_dic in list(pending_data.items()):
                         if not pending_project_dic:
                             pending_data.pop(user, None)
                     with ui.card().classes(

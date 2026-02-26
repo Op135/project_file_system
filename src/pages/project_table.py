@@ -9,7 +9,7 @@ import os
 from nicegui import app, ui
 
 from .. import db_storage  # 导入我们创建的模块
-from ..config import BASE_DIR, IMG_DIR, PRESET_AVATARS, PROJECT_STATE_LIST, REQ_DIR
+from ..config import BASE_DIR, IGNORE_STR, IMG_DIR, PRESET_AVATARS, PROJECT_STATE_LIST, REQ_DIR
 from ..utils import (
     find_files_with_prefix_and_version,
     get_cache_busted_path,
@@ -676,6 +676,8 @@ def project_table_page():
                                         # 文本型内容，直接显示
                                         if chip_data.get("type") in ["text", "test"]:
                                             text = chip_data.get("content")
+                                            if text in IGNORE_STR:
+                                                continue
                                         # 文件名类型内容，去除后缀
                                         elif chip_data.get("type") in ["search", "svn", "file", "image"]:
                                             text = ".".join(chip_data["content"].split(".")[:-1])
@@ -939,7 +941,7 @@ def project_table_page():
         {
             "field": "software_executable_file",
             "headerName": "固件执行文件",
-            "width": 200,
+            "width": 250,
             "cellClass": "left-auto-break",
             "autoHeight": True,
             "filter": "agTextColumnFilter",

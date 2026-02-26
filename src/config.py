@@ -79,7 +79,8 @@ IMG_URL_DIR = "/img"
 # 用它来临时存储 PDF 字节，完全绕过 JSON 序列化
 PDF_PREVIEW_CACHE = {}
 
-
+# 显示忽略的无效字符串
+IGNORE_STR = ["无"]
 # 项目状态可选项
 PROJECT_STATE_LIST = ["作废", "待定", "研发", "转产", "试产", "量产"]
 # 默认头像路径
