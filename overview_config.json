@@ -52,19 +52,125 @@
                     "light_thermistor",
                     "photoelectric_sensors",
                     "optical_materials",
-                    "light_drive",
+                    "light_if",
+                    "light_vf",
+                    "light_threshold_current",
                     "light_heat",
                     "light_type_temperature",
                     "light_max_temperature"
                 ]
             },
-            "光源驱动条件": {
-                "label": "light_drive",
+            "光源驱动If": {
+                "label": "light_if",
                 "role": "光学",
                 "nature": "必填",
-                "title": "光源驱动条件",
+                "title": "光源驱动If",
                 "processing_type": "text",
-                "dialog_placeholder": "光源名称：If=_A，Vf=_V±_V，阈值电流=_A",
+                "dialog_placeholder": "_A",
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
+                "permission": {
+                    "read_role": [
+                        "boss",
+                        "销售总监",
+                        "销售",
+                        "客服主管",
+                        "客服",
+                        "研发助理",
+                        "研发电子主管",
+                        "研发硬件",
+                        "研发软件",
+                        "研发结构",
+                        "研发样品",
+                        "工程",
+                        "质量"
+                    ],
+                    "edit_role": [
+                        "admin",
+                        "研发经理",
+                        "研发光学"
+                    ]
+                },
+                "impact_list": [
+                    "craft_key_requirements",
+                    "software_executable_file",
+                    "ui_execute_file",
+                    "drive_pcb_principle",
+                    "drive_pcb",
+                    "drive_electronic_bom",
+                    "light_pcb",
+                    "drive_power",
+                    "wire_accessories",
+                    "product_type_ambient",
+                    "product_temperature_rise",
+                    "product_type_noise",
+                    "product_complete_diagram",
+                    "light_heat",
+                    "optical_testing",
+                    "drive_output_testing"
+                ]
+            },
+            "光源驱动Vf": {
+                "label": "light_vf",
+                "role": "光学",
+                "nature": "必填",
+                "title": "光源驱动Vf",
+                "processing_type": "text",
+                "dialog_placeholder": "_±_V@_A",
+                "allowed_state": [
+                    "研发",
+                    "转产"
+                ],
+                "permission": {
+                    "read_role": [
+                        "boss",
+                        "销售总监",
+                        "销售",
+                        "客服主管",
+                        "客服",
+                        "研发助理",
+                        "研发电子主管",
+                        "研发硬件",
+                        "研发软件",
+                        "研发结构",
+                        "研发样品",
+                        "工程",
+                        "质量"
+                    ],
+                    "edit_role": [
+                        "admin",
+                        "研发经理",
+                        "研发光学"
+                    ]
+                },
+                "impact_list": [
+                    "craft_key_requirements",
+                    "software_executable_file",
+                    "ui_execute_file",
+                    "drive_pcb_principle",
+                    "drive_pcb",
+                    "drive_electronic_bom",
+                    "light_pcb",
+                    "drive_power",
+                    "wire_accessories",
+                    "product_type_ambient",
+                    "product_temperature_rise",
+                    "product_type_noise",
+                    "product_complete_diagram",
+                    "light_heat",
+                    "optical_testing",
+                    "drive_output_testing"
+                ]
+            },
+            "光源阈值电流": {
+                "label": "light_threshold_current",
+                "role": "光学",
+                "nature": "必填",
+                "title": "光源阈值电流",
+                "processing_type": "text",
+                "dialog_placeholder": "_A",
                 "allowed_state": [
                     "研发",
                     "转产"
@@ -116,7 +222,7 @@
                 "nature": "必填",
                 "title": "光源最大热功率",
                 "processing_type": "text",
-                "dialog_placeholder": "光源名称：_W（Vf最大情况）",
+                "dialog_placeholder": "_W（Vf最大情况）",
                 "allowed_state": [
                     "研发",
                     "转产",
@@ -156,7 +262,7 @@
                 "nature": "必填",
                 "title": "光源温敏型号",
                 "processing_type": "text",
-                "dialog_placeholder": "光源名称：温敏规格型号",
+                "dialog_placeholder": "温敏规格型号",
                 "allowed_state": [
                     "研发",
                     "转产"
@@ -201,7 +307,7 @@
                 "nature": "选填",
                 "title": "光源性能阈温",
                 "processing_type": "text",
-                "dialog_placeholder": "光源名称：T(温敏)=_℃",
+                "dialog_placeholder": "NTC≤_℃",
                 "allowed_state": [
                     "研发",
                     "转产",
@@ -245,7 +351,7 @@
                 "nature": "必填",
                 "title": "光源保护温度",
                 "processing_type": "text",
-                "dialog_placeholder": "光源名称：T(温敏)=_℃减半，T(温敏)=_℃灭灯",
+                "dialog_placeholder": "NTC≥_℃减半，NTC≥_℃灭灯",
                 "allowed_state": [
                     "研发",
                     "转产"
@@ -697,7 +803,9 @@
                     "drive_output_testing",
                     "guide_beam",
                     "light_source",
-                    "light_drive",
+                    "light_if",
+                    "light_vf",
+                    "light_threshold_current",
                     "light_type_temperature"
                 ]
             },

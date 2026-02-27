@@ -518,7 +518,7 @@ class FileThumbnail:
             position="bottom",
             timeout=2000,
             progress=True,
-            multi_line=True,
+            # multi_line=True,
             close_button="✖",
         )
         ui.download(self.local_file_path)
@@ -577,7 +577,7 @@ class FileThumbnail:
                 position="bottom",
                 timeout=3000,
                 progress=True,
-                multi_line=True,
+                # multi_line=True,
                 close_button="✖",
             )
             await asyncio.sleep(3)
@@ -751,7 +751,7 @@ class InteractiveButton:
         btn = (
             ui.button(self.title, icon=btn_icon).props("flat").classes("p-1 text-[14px]/[14px] mt-2 font-bold relative")
         )
-        btn.on("click", self._handle_main_button_click, ["shiftKey"])
+        btn.on("click", self._handle_main_button_click, ["ctrlKey"])
 
         with btn:
             if self.nature == "必填":
@@ -902,7 +902,7 @@ class InteractiveButton:
                         position="bottom",
                         timeout=3000,
                         progress=True,
-                        multi_line=True,
+                        # multi_line=True,
                         close_button="✖",
                     )
 
@@ -930,7 +930,7 @@ class InteractiveButton:
                             position="bottom",
                             timeout=3000,
                             progress=True,
-                            multi_line=True,
+                            # multi_line=True,
                             close_button="✖",
                         )
                     )
@@ -997,28 +997,28 @@ class InteractiveButton:
                 # 功能按钮
                 delete_button = (
                     ui.button(on_click=lambda c=chip: self.delete_chip_info(c))
-                    .classes(f"absolute -top-1 -right-1 m-0 p-0 q-py-0 {delete_bg}")
+                    .classes(f"absolute -top-1 -right-2 m-0 p-0 q-py-0 {delete_bg}")
                     .props(f'round padding="0px 0px" icon={delete_icon}')
-                    .style("font-size: 8px; display: none;")
-                    .on("click", js_handler="(e) => {e.stopPropagation()}")
-                )
-                move_up_button = (
-                    ui.button(on_click=lambda d=chip_info: self.move_up_data(d))
-                    .classes("absolute -top-1 right-7 m-0 p-0 q-py-0 bg-white text-light-blue")
-                    .props('round padding="0px 0px" icon="arrow_drop_up"')
                     .style("font-size: 8px; display: none;")
                     .on("click", js_handler="(e) => {e.stopPropagation()}")
                 )
                 move_down_button = (
                     ui.button(on_click=lambda d=chip_info: self.move_down_data(d))
-                    .classes("absolute -top-1 right-3 m-0 p-0 q-py-0 bg-white text-light-blue")
+                    .classes("absolute -top-1 right-2 m-0 p-0 q-py-0 bg-white text-light-blue")
                     .props('round padding="0px 0px" icon="arrow_drop_down"')
+                    .style("font-size: 8px; display: none;")
+                    .on("click", js_handler="(e) => {e.stopPropagation()}")
+                )
+                move_up_button = (
+                    ui.button(on_click=lambda d=chip_info: self.move_up_data(d))
+                    .classes("absolute -top-1 right-6 m-0 p-0 q-py-0 bg-white text-light-blue")
+                    .props('round padding="0px 0px" icon="arrow_drop_up"')
                     .style("font-size: 8px; display: none;")
                     .on("click", js_handler="(e) => {e.stopPropagation()}")
                 )
                 history_button = (
                     ui.button(on_click=lambda d=chip_info: self.show_chip_history(d))
-                    .classes("absolute -top-1 -right-1 m-0 p-0 q-py-0 bg-purple-1 text-purple-8")
+                    .classes("absolute -bottom-1 -right-2 m-0 p-0 q-py-0 bg-white text-purple-8")
                     .props('round padding="0px 0px" icon="history"')
                     .style("font-size: 8px; display: none;")
                     .on("click", js_handler="(e) => {e.stopPropagation()}")
@@ -1035,13 +1035,13 @@ class InteractiveButton:
             def check_shift_and_show(e, btn):
                 btn.style("display: block;" if e.args.get("shiftKey") else "display: none;")
 
-            control_btns = [delete_button, move_up_button, move_down_button]
+            control_btns = [delete_button, move_up_button, move_down_button, history_button]
             chip.on("mouseenter", lambda e: check_ctrl_and_show(e, control_btns), ["ctrlKey"])
             chip.on("mousemove", lambda e: check_ctrl_and_show(e, control_btns), ["ctrlKey"])
             chip.on("mouseleave", lambda: [b.style("display: none;") for b in control_btns])
-            chip.on("mouseenter", lambda e: check_shift_and_show(e, history_button), ["shiftKey"])
-            chip.on("mousemove", lambda e: check_shift_and_show(e, history_button), ["shiftKey"])
-            chip.on("mouseleave", lambda: history_button.style("display: none;"))
+            # chip.on("mouseenter", lambda e: check_shift_and_show(e, history_button), ["shiftKey"])
+            # chip.on("mousemove", lambda e: check_shift_and_show(e, history_button), ["shiftKey"])
+            # chip.on("mouseleave", lambda: history_button.style("display: none;"))
             chip.on("contextmenu", lambda d=chip_info: self.on_right_click(d))
 
         elif chip_info.get("type") == "image":
@@ -1072,28 +1072,28 @@ class InteractiveButton:
 
                 delete_button = (
                     ui.button(on_click=lambda t=thumbnail: self.clear_thumbnail(t))
-                    .classes(f"absolute -top-1 -right-1 m-0 p-0 q-py-1 {delete_bg}")
+                    .classes(f"absolute -top-1 -right-2 m-0 p-0 q-py-1 {delete_bg}")
                     .props(f'round padding="0px 0px" icon={delete_icon}')
                     .style("font-size: 8px; display: none;")
                     .on("click", js_handler="(e) => {e.stopPropagation()}")
                 )
                 move_up_button = (
                     ui.button(on_click=lambda d=chip_info: self.move_up_data(d))
-                    .classes("absolute bottom-3 -right-1 m-0 p-0 q-py-0 bg-white text-light-blue")
+                    .classes("absolute bottom-3 -right-2 m-0 p-0 q-py-0 bg-white text-light-blue")
                     .props('round padding="0px 0px" icon="arrow_drop_up"')
                     .style("font-size: 8px; display: none;")
                     .on("click", js_handler="(e) => {e.stopPropagation()}")
                 )
                 move_down_button = (
                     ui.button(on_click=lambda d=chip_info: self.move_down_data(d))
-                    .classes("absolute -bottom-1 -right-1 m-0 p-0 q-py-0 bg-white text-light-blue")
+                    .classes("absolute -bottom-1 -right-2 m-0 p-0 q-py-0 bg-white text-light-blue")
                     .props('round padding="0px 0px" icon="arrow_drop_down"')
                     .style("font-size: 8px; display: none;")
                     .on("click", js_handler="(e) => {e.stopPropagation()}")
                 )
                 history_button = (
                     ui.button(on_click=lambda d=chip_info: self.show_chip_history(d))
-                    .classes("absolute -top-1 -right-1 m-0 p-0 q-py-0 bg-purple-1 text-purple-8")
+                    .classes("absolute -top-1 right-3 m-0 p-0 q-py-0 bg-white text-purple-8")
                     .props('round padding="0px 0px" icon="history"')
                     .style("font-size: 8px; display: none;")
                     .on("click", js_handler="(e) => {e.stopPropagation()}")
@@ -1110,13 +1110,13 @@ class InteractiveButton:
             def check_shift_and_show(e, btn):
                 btn.style("display: block;" if e.args.get("shiftKey") else "display: none;")
 
-            control_btns = [delete_button, move_up_button, move_down_button]
+            control_btns = [delete_button, move_up_button, move_down_button, history_button]
             thumbnail.on("mouseover", lambda e: check_ctrl_and_show(e, control_btns), ["ctrlKey"])
             thumbnail.on("mousemove", lambda e: check_ctrl_and_show(e, control_btns), ["ctrlKey"])
             thumbnail.on("mouseout", lambda: [b.style("display: none;") for b in control_btns])
-            thumbnail.on("mouseover", lambda e: check_shift_and_show(e, history_button), ["shiftKey"])
-            thumbnail.on("mousemove", lambda e: check_shift_and_show(e, history_button), ["shiftKey"])
-            thumbnail.on("mouseout", lambda: history_button.style("display: none;"))
+            # thumbnail.on("mouseover", lambda e: check_shift_and_show(e, history_button), ["shiftKey"])
+            # thumbnail.on("mousemove", lambda e: check_shift_and_show(e, history_button), ["shiftKey"])
+            # thumbnail.on("mouseout", lambda: history_button.style("display: none;"))
 
     # ==========================================================
     # 2. 弹窗 UI 配置 (Dialog Setups)
@@ -1297,7 +1297,7 @@ class InteractiveButton:
                 position="bottom",
                 timeout=3000,
                 progress=True,
-                multi_line=True,
+                # multi_line=True,
                 close_button="✖",
             )
             return
@@ -1310,7 +1310,7 @@ class InteractiveButton:
                 position="bottom",
                 timeout=3000,
                 progress=True,
-                multi_line=True,
+                # multi_line=True,
                 close_button="✖",
             )
             return
@@ -1348,7 +1348,7 @@ class InteractiveButton:
             position="bottom",
             timeout=1000,
             progress=True,
-            multi_line=True,
+            # multi_line=True,
             close_button="✖",
         )
         self._show_related_chip_select_dialog(text, True, "add_chip")
@@ -1362,7 +1362,7 @@ class InteractiveButton:
                 position="bottom",
                 timeout=3000,
                 progress=True,
-                multi_line=True,
+                # multi_line=True,
                 close_button="✖",
             )
             return
@@ -1376,7 +1376,7 @@ class InteractiveButton:
                 position="bottom",
                 timeout=3000,
                 progress=True,
-                multi_line=True,
+                # multi_line=True,
                 close_button="✖",
             )
             return
@@ -1447,7 +1447,7 @@ class InteractiveButton:
                 position="bottom",
                 timeout=1000,
                 progress=True,
-                multi_line=True,
+                # multi_line=True,
                 close_button="✖",
             )
             self._show_related_chip_select_dialog(text, True, "add_chip")
@@ -1466,7 +1466,7 @@ class InteractiveButton:
                 position="bottom",
                 timeout=3000,
                 progress=True,
-                multi_line=True,
+                # multi_line=True,
                 close_button="✖",
             )
             return
@@ -1480,7 +1480,7 @@ class InteractiveButton:
                 position="bottom",
                 timeout=3000,
                 progress=True,
-                multi_line=True,
+                # multi_line=True,
                 close_button="✖",
             )
             return
@@ -1500,7 +1500,7 @@ class InteractiveButton:
                 position="bottom",
                 timeout=3000,
                 progress=True,
-                multi_line=True,
+                # multi_line=True,
                 close_button="✖",
             )
             ui_spinner.set_visibility(False)
@@ -1546,7 +1546,7 @@ class InteractiveButton:
             position="bottom",
             timeout=1000,
             progress=True,
-            multi_line=True,
+            # multi_line=True,
             close_button="✖",
         )
         self._show_related_chip_select_dialog(text, True, "add_chip")
@@ -1573,7 +1573,7 @@ class InteractiveButton:
                 position="bottom",
                 timeout=3000,
                 progress=True,
-                multi_line=True,
+                # multi_line=True,
                 close_button="✖",
             )
             return
@@ -1584,7 +1584,7 @@ class InteractiveButton:
                 position="bottom",
                 timeout=3000,
                 progress=True,
-                multi_line=True,
+                # multi_line=True,
                 close_button="✖",
             )
             return
@@ -1595,7 +1595,7 @@ class InteractiveButton:
                 position="bottom",
                 timeout=3000,
                 progress=True,
-                multi_line=True,
+                # multi_line=True,
                 close_button="✖",
             )
             return
@@ -1612,7 +1612,7 @@ class InteractiveButton:
                 position="bottom",
                 timeout=3000,
                 progress=True,
-                multi_line=True,
+                # multi_line=True,
                 close_button="✖",
             )
             return
@@ -1651,7 +1651,7 @@ class InteractiveButton:
             position="bottom",
             timeout=1000,
             progress=True,
-            multi_line=True,
+            # multi_line=True,
             close_button="✖",
         )
         self._show_related_chip_select_dialog(text, True, "add_chip")
@@ -1664,7 +1664,7 @@ class InteractiveButton:
                 position="bottom",
                 timeout=3000,
                 progress=True,
-                multi_line=True,
+                # multi_line=True,
                 close_button="✖",
             )
         else:
@@ -1683,7 +1683,7 @@ class InteractiveButton:
                 position="bottom",
                 timeout=3000,
                 progress=True,
-                multi_line=True,
+                # multi_line=True,
                 close_button="✖",
             )
             self.spinner.set_visibility(False)
@@ -1695,7 +1695,7 @@ class InteractiveButton:
                 position="bottom",
                 timeout=3000,
                 progress=True,
-                multi_line=True,
+                # multi_line=True,
                 close_button="✖",
             )
             self.spinner.set_visibility(False)
@@ -1725,7 +1725,7 @@ class InteractiveButton:
                 position="bottom",
                 timeout=3000,
                 progress=True,
-                multi_line=True,
+                # multi_line=True,
                 close_button="✖",
             )
             self.spinner.set_visibility(False)
@@ -1745,7 +1745,7 @@ class InteractiveButton:
                     position="center",
                     timeout=0,
                     progress=False,
-                    multi_line=True,
+                    # multi_line=True,
                     close_button="✖",
                 )
                 self.spinner.set_visibility(False)
@@ -1792,7 +1792,7 @@ class InteractiveButton:
                 position="bottom",
                 timeout=1000,
                 progress=True,
-                multi_line=True,
+                # multi_line=True,
                 close_button="✖",
             )
             self._show_related_chip_select_dialog(original_filename, True, "add_chip")
@@ -1846,7 +1846,7 @@ class InteractiveButton:
             position="bottom",
             timeout=1000,
             progress=True,
-            multi_line=True,
+            # multi_line=True,
             close_button="✖",
         )
 
@@ -1894,7 +1894,7 @@ class InteractiveButton:
                 position="bottom",
                 timeout=3000,
                 progress=True,
-                multi_line=True,
+                # multi_line=True,
                 close_button="✖",
             )
             self._select_set_activ_dialog(chip_id, chip_text)
@@ -2078,7 +2078,7 @@ class InteractiveButton:
                 position="center",
                 timeout=0,
                 progress=False,
-                multi_line=True,
+                # multi_line=True,
                 close_button="✖",
             )
 
@@ -2160,7 +2160,11 @@ class InteractiveButton:
     # ==========================================================
 
     def _edit_permission_judge(self):
-        if app.storage.user["current_role"] in self.permission["edit_role"] and not self.temp_bool:
+        if (
+            not self.temp_bool
+            and app.storage.user["current_role"] in self.permission["edit_role"]
+            and app.storage.general["project_summary"][self.project]["state"] in self.allowed_state
+        ):
             return True
         elif self.temp_bool:
             ui.notify(
@@ -2169,18 +2173,29 @@ class InteractiveButton:
                 position="bottom",
                 timeout=2000,
                 progress=True,
-                multi_line=True,
+                # multi_line=True,
                 close_button="✖",
             )
             return False
-        else:
+        elif app.storage.user["current_role"] not in self.permission["edit_role"]:
             ui.notify(
                 "当前用户无该项编辑权限，请联系管理员申请!",
                 type="info",
                 position="bottom",
                 timeout=2000,
                 progress=True,
-                multi_line=True,
+                # multi_line=True,
+                close_button="✖",
+            )
+            return False
+        else:
+            ui.notify(
+                "项目当前状态禁止编辑概述!",
+                type="info",
+                position="bottom",
+                timeout=2000,
+                progress=True,
+                # multi_line=True,
                 close_button="✖",
             )
             return False
@@ -2190,17 +2205,6 @@ class InteractiveButton:
             if app.storage.user["current_user"] == "admin":
                 await db_storage.del_deep_item([f"{self.project}_over_data", self.label, chip.props["data-chip-id"]])
             else:
-                if app.storage.general["project_summary"][self.project]["state"] not in self.allowed_state:
-                    ui.notify(
-                        "项目当前状态禁止修改概述激活状态!",
-                        type="info",
-                        position="bottom",
-                        timeout=2000,
-                        progress=True,
-                        multi_line=True,
-                        close_button="✖",
-                    )
-                    return
                 self._select_set_activ_dialog(chip.props["data-chip-id"], chip.text)
 
     async def clear_thumbnail(self, thumbnail):
@@ -2211,17 +2215,6 @@ class InteractiveButton:
                     [f"{self.project}_over_data", self.label, thumbnail.props["data-chip-id"]]
                 )
             else:
-                if app.storage.general["project_summary"][self.project]["state"] not in self.allowed_state:
-                    ui.notify(
-                        "项目当前状态禁止修改概述激活状态!",
-                        type="info",
-                        position="bottom",
-                        timeout=2000,
-                        progress=True,
-                        multi_line=True,
-                        close_button="✖",
-                    )
-                    return
                 self._select_set_activ_dialog(thumbnail.props["data-chip-id"])
 
     def _move_data(self, old_data, chip_id, move_num):
@@ -2428,7 +2421,7 @@ class InteractiveButton:
                     position="bottom",
                     timeout=3000,
                     progress=True,
-                    multi_line=True,
+                    # multi_line=True,
                     close_button="✖",
                 )
             return target_url_li
@@ -2466,7 +2459,15 @@ class InteractiveButton:
                         if match:
                             target_url_li.append(f"{self.upload_path}/{svn_main_folder}/{match.group(1)}/{folder_name}")
                         elif overview_state_show_judge(self.role):
-                            ui.notify(f"文件夹{folder_name}命名不符合规则!", type="warning")
+                            ui.notify(
+                                f"文件夹{folder_name}命名不符合规则!",
+                                type="warning",
+                                position="bottom",
+                                timeout=3000,
+                                progress=True,
+                                # multi_line=True,
+                                close_button="✖",
+                            )
                     if not target_url_li:
                         return target_url_li
                 else:
@@ -2479,7 +2480,15 @@ class InteractiveButton:
                     target_url_li.append(f"{self.upload_path}/{svn_main_folder}/{match.group(1)}")
                 else:
                     if overview_state_show_judge(self.role):
-                        ui.notify(f"文件{chip_text}命名不符合规则!", type="warning")
+                        ui.notify(
+                            f"文件{chip_text}命名不符合规则!",
+                            type="warning",
+                            position="bottom",
+                            timeout=3000,
+                            progress=True,
+                            # multi_line=True,
+                            close_button="✖",
+                        )
                     return target_url_li
             else:
                 target_url_li.append(f"{self.upload_path}/{svn_main_folder}")
@@ -2531,7 +2540,15 @@ class InteractiveButton:
                                 )
                             )
                         elif overview_state_show_judge(self.role):
-                            ui.notify(f"文件夹{according_folder_name}命名不符合规则!", type="warning")
+                            ui.notify(
+                                f"文件夹{according_folder_name}命名不符合规则!",
+                                type="warning",
+                                position="bottom",
+                                timeout=3000,
+                                progress=True,
+                                # multi_line=True,
+                                close_button="✖",
+                            )
                 else:
                     for according_folder_name in according_folder_name_li:
                         folder_according_li.extend(
@@ -2546,7 +2563,15 @@ class InteractiveButton:
                     if folder_according_li:
                         target_path_list = folder_according_li
                 elif overview_state_show_judge(self.role):
-                    ui.notify(f"文件{chip_text}命名不符合规则!", type="warning")
+                    ui.notify(
+                        f"文件{chip_text}命名不符合规则!",
+                        type="warning",
+                        position="bottom",
+                        timeout=3000,
+                        progress=True,
+                        # multi_line=True,
+                        close_button="✖",
+                    )
             else:
                 target_path_list = [self.upload_path]
 
@@ -2691,7 +2716,7 @@ class InteractiveButton:
                 position="bottom",
                 timeout=1000,
                 progress=True,
-                multi_line=True,
+                # multi_line=True,
                 close_button="✖",
             )
             if on_finish:
@@ -2704,7 +2729,7 @@ class InteractiveButton:
             position="bottom",
             timeout=2000,
             progress=True,
-            multi_line=True,
+            # multi_line=True,
             close_button="✖",
         )
         _, pdf_bytes = await self.get_svn_file_http_async(http_url, username=SVN_USERNAME, password=SVN_PASSWORD)
@@ -2720,7 +2745,7 @@ class InteractiveButton:
                 position="bottom",
                 timeout=1000,
                 progress=True,
-                multi_line=True,
+                # multi_line=True,
                 close_button="✖",
             )
 
@@ -2735,7 +2760,7 @@ class InteractiveButton:
             position="bottom",
             timeout=2000,
             progress=True,
-            multi_line=True,
+            # multi_line=True,
             close_button="✖",
         )
         ui.download(filepath)
@@ -2774,7 +2799,7 @@ class InteractiveButton:
             position="bottom",
             timeout=1000,
             progress=True,
-            multi_line=True,
+            # multi_line=True,
             close_button="✖",
         )
 
@@ -2783,18 +2808,7 @@ class InteractiveButton:
     # ==========================================================
 
     def _handle_main_button_click(self, e: GenericEventArguments):
-        if app.storage.general["project_summary"][self.project]["state"] not in self.allowed_state:
-            ui.notify(
-                "项目当前状态禁止添加概述!",
-                type="info",
-                position="bottom",
-                timeout=2000,
-                progress=True,
-                multi_line=True,
-                close_button="✖",
-            )
-            return
-        if e.args.get("shiftKey"):
+        if e.args.get("ctrlKey"):
             self.show_label_history()
             return
 
@@ -2963,7 +2977,7 @@ class OverviewTableGroup:
     # ================= UI 渲染核心 =================
     def _handle_header_click(self, e, config):
         """处理表头点击事件"""
-        if e.args.get("shiftKey"):
+        if e.args.get("ctrlKey"):
             self.show_label_history(config)
 
     async def _render_table(self):
@@ -2982,7 +2996,9 @@ class OverviewTableGroup:
         # 2. 渲染 UI
         with self.container:
             # --- 渲染表头 ---
-            with ui.row().classes("w-full flex-nowrap bg-blue-50/80 border-b border-blue-200 p-0 m-0  -space-x-4"):
+            with ui.row().classes(
+                "w-full flex-nowrap bg-blue-50/80 border-b border-blue-200 p-0 m-0 items-center -space-x-4"
+            ):
                 for config in col_configs:
                     label = config["label"]
 
@@ -3006,7 +3022,7 @@ class OverviewTableGroup:
                         .classes(
                             "flex-1 p-1 border-r border-blue-200 last:border-r-0 items-center justify-center min-w-[100px] relative cursor-pointer hover:bg-blue-100 transition-colors"
                         )
-                        .on("click", lambda e, c=config: self._handle_header_click(e, c), ["shiftKey"])
+                        .on("click", lambda e, c=config: self._handle_header_click(e, c), ["ctrlKey"])
                     ):
                         # 渲染小圆点（仅必填项显示，悬浮在左上角）
                         if is_required:
@@ -3036,7 +3052,7 @@ class OverviewTableGroup:
 
                         # 💡 优化 1：取消居中对齐改为顶部对齐(items-start)，并增加 pb-6 给绝对定位的按钮留出一点底边距
                         with ui.column().classes(
-                            "flex-1 p-2 pb-4 border-r border-gray-100 last:border-r-0 items-start justify-start min-w-[140px] relative group gap-1"
+                            "flex-1 p-2 pb-4 border-r border-gray-100 last:border-r-0 items-start justify-start min-w-[100px] relative group gap-1"
                         ):
                             is_first_col = label == first_col_label
                             has_chip = bool(label in row_chips and row_chips[label])
@@ -3063,7 +3079,9 @@ class OverviewTableGroup:
             # --- 渲染表格底部的“添加新行”栏 ---
             # 只有具有任意列的编辑权限时才显示
             with ui.row().classes("w-full bg-blue-50/30 justify-center p-0"):
-                ui.button("", icon="add", on_click=self._handle_add_new_row).classes("w-full text-[8px]").props("flat")
+                ui.button("", icon="add", on_click=lambda: self._handle_add_new_row()).classes(
+                    "w-full text-[8px]"
+                ).props("flat")
 
     async def _render_single_chip(self, chip_info: dict, config: dict, req_max_ver: str):
         """渲染单个单元格内的 Chip (移植自原 _create_chip_from_data)"""
@@ -3124,7 +3142,7 @@ class OverviewTableGroup:
                                 position="bottom",
                                 timeout=3000,
                                 progress=True,
-                                multi_line=True,
+                                # multi_line=True,
                                 close_button="✖",
                             )
                         )
@@ -3194,32 +3212,32 @@ class OverviewTableGroup:
                 # 注意 style 中 display 设置为 flex 而非 block，防止图标偏离中心
                 delete_button = (
                     ui.button(on_click=lambda c=chip, cfg=config: self.delete_chip_info(c, cfg))
-                    .classes(f"absolute -top-2 -right-2 m-0 p-0 q-py-0 z-20 {delete_bg} shadow-md")
+                    .classes(f"absolute -top-1 -right-2 m-0 p-0 q-py-0 z-20 {delete_bg} shadow-md")
                     .props(f'round padding="0px 0px" icon={delete_icon}')
-                    .style("font-size: 8px; display: none;")
-                    .on("click", js_handler="(e) => {e.stopPropagation()}")
-                )
-                move_up_button = (
-                    ui.button(on_click=lambda d=chip_info, cfg=config: self.move_up_data(d, cfg))
-                    .classes(
-                        "absolute -top-2 right-6 m-0 p-0 q-py-0 z-20 bg-white text-light-blue shadow-md border border-gray-200"
-                    )
-                    .props('round padding="0px 0px" icon="arrow_drop_up"')
                     .style("font-size: 8px; display: none;")
                     .on("click", js_handler="(e) => {e.stopPropagation()}")
                 )
                 move_down_button = (
                     ui.button(on_click=lambda d=chip_info, cfg=config: self.move_down_data(d, cfg))
                     .classes(
-                        "absolute -top-2 right-2 m-0 p-0 q-py-0 z-20 bg-white text-light-blue shadow-md border border-gray-200"
+                        "absolute -top-1 right-2 m-0 p-0 q-py-0 z-20 bg-white text-light-blue shadow-md border border-gray-200"
                     )
                     .props('round padding="0px 0px" icon="arrow_drop_down"')
                     .style("font-size: 8px; display: none;")
                     .on("click", js_handler="(e) => {e.stopPropagation()}")
                 )
+                move_up_button = (
+                    ui.button(on_click=lambda d=chip_info, cfg=config: self.move_up_data(d, cfg))
+                    .classes(
+                        "absolute -top-1 right-6 m-0 p-0 q-py-0 z-20 bg-white text-light-blue shadow-md border border-gray-200"
+                    )
+                    .props('round padding="0px 0px" icon="arrow_drop_up"')
+                    .style("font-size: 8px; display: none;")
+                    .on("click", js_handler="(e) => {e.stopPropagation()}")
+                )
                 history_button = (
                     ui.button(on_click=lambda d=chip_info, cfg=config: self.show_chip_history(d, cfg))
-                    .classes("absolute -top-2 -right-2 m-0 p-0 q-py-0 z-20 bg-purple-1 text-purple-8 shadow-md")
+                    .classes("absolute -bottom-1 -right-2 m-0 p-0 q-py-0 z-20 bg-white text-purple-8 shadow-md")
                     .props('round padding="0px 0px" icon="history"')
                     .style("font-size: 8px; display: none;")
                     .on("click", js_handler="(e) => {e.stopPropagation()}")
@@ -3234,13 +3252,13 @@ class OverviewTableGroup:
             def check_shift_and_show(e, btn):
                 btn.style("display: flex;" if e.args.get("shiftKey") else "display: none;")
 
-            control_btns = [delete_button, move_up_button, move_down_button]
+            control_btns = [delete_button, move_up_button, move_down_button, history_button]
             wrapper.on("mouseenter", lambda e: check_ctrl_and_show(e, control_btns), ["ctrlKey"])
             wrapper.on("mousemove", lambda e: check_ctrl_and_show(e, control_btns), ["ctrlKey"])
             wrapper.on("mouseleave", lambda: [b.style("display: none;") for b in control_btns])
-            wrapper.on("mouseenter", lambda e: check_shift_and_show(e, history_button), ["shiftKey"])
-            wrapper.on("mousemove", lambda e: check_shift_and_show(e, history_button), ["shiftKey"])
-            wrapper.on("mouseleave", lambda: history_button.style("display: none;"))
+            # wrapper.on("mouseenter", lambda e: check_shift_and_show(e, history_button), ["shiftKey"])
+            # wrapper.on("mousemove", lambda e: check_shift_and_show(e, history_button), ["shiftKey"])
+            # wrapper.on("mouseleave", lambda: history_button.style("display: none;"))
             chip.on("contextmenu", lambda d=chip_info: self.on_right_click(d))
 
         elif chip_info.get("type") == "image":
@@ -3268,28 +3286,28 @@ class OverviewTableGroup:
 
                 delete_button = (
                     ui.button(on_click=lambda t=thumbnail, cfg=config: self.clear_thumbnail(t, cfg))
-                    .classes(f"absolute -top-1 -right-1 z-20 m-0 p-0 q-py-1 {delete_bg}")
+                    .classes(f"absolute -top-1 -right-2 z-20 m-0 p-0 q-py-1 {delete_bg}")
                     .props(f'round padding="0px 0px" icon={delete_icon}')
                     .style("font-size: 8px; display: none;")
                     .on("click", js_handler="(e) => {e.stopPropagation()}")  # 阻止事件冒泡
                 )
                 move_up_button = (
                     ui.button(on_click=lambda d=chip_info, cfg=config: self.move_up_data(d, cfg))
-                    .classes("absolute bottom-3 -right-1 z-20 m-0 p-0 q-py-0 bg-white text-light-blue")
+                    .classes("absolute bottom-3 -right-2 z-20 m-0 p-0 q-py-0 bg-white text-light-blue")
                     .props('round padding="0px 0px" icon="arrow_drop_up"')
                     .style("font-size: 8px; display: none;")
                     .on("click", js_handler="(e) => {e.stopPropagation()}")  # 阻止事件冒泡
                 )
                 move_down_button = (
                     ui.button(on_click=lambda d=chip_info, cfg=config: self.move_down_data(d, cfg))
-                    .classes("absolute -bottom-1 -right-1 z-20 m-0 p-0 q-py-0 bg-white text-light-blue")
+                    .classes("absolute -bottom-1 -right-2 z-20 m-0 p-0 q-py-0 bg-white text-light-blue")
                     .props('round padding="0px 0px" icon="arrow_drop_down"')
                     .style("font-size: 8px; display: none;")
                     .on("click", js_handler="(e) => {e.stopPropagation()}")  # 阻止事件冒泡
                 )
                 history_button = (
                     ui.button(on_click=lambda d=chip_info, cfg=config: self.show_chip_history(d, cfg))
-                    .classes("absolute -top-1 -right-1 z-20 m-0 p-0 q-py-0 bg-purple-1 text-purple-8")
+                    .classes("absolute -top-1 right-3 z-20 m-0 p-0 q-py-0 bg-white text-purple-8")
                     .props('round padding="0px 0px" icon="history"')
                     .style("font-size: 8px; display: none;")
                     .on("click", js_handler="(e) => {e.stopPropagation()}")  # 阻止事件冒泡
@@ -3304,14 +3322,13 @@ class OverviewTableGroup:
             def check_shift_and_show(e, btn):
                 btn.style("display: flex;" if e.args.get("shiftKey") else "display: none;")
 
-            control_btns = [delete_button, move_up_button, move_down_button]
+            control_btns = [delete_button, move_up_button, move_down_button, history_button]
             wrapper.on("mouseenter", lambda e: check_ctrl_and_show(e, control_btns), ["ctrlKey"])
             wrapper.on("mousemove", lambda e: check_ctrl_and_show(e, control_btns), ["ctrlKey"])
             wrapper.on("mouseleave", lambda: [b.style("display: none;") for b in control_btns])
-
-            wrapper.on("mouseenter", lambda e: check_shift_and_show(e, history_button), ["shiftKey"])
-            wrapper.on("mousemove", lambda e: check_shift_and_show(e, history_button), ["shiftKey"])
-            wrapper.on("mouseleave", lambda: history_button.style("display: none;"))
+            # wrapper.on("mouseenter", lambda e: check_shift_and_show(e, history_button), ["shiftKey"])
+            # wrapper.on("mousemove", lambda e: check_shift_and_show(e, history_button), ["shiftKey"])
+            # wrapper.on("mouseleave", lambda: history_button.style("display: none;"))
 
     from typing import Any, Dict
 
@@ -3379,21 +3396,28 @@ class OverviewTableGroup:
 
     # ================= 权限与交互 =================
     def _edit_permission_judge(self, config: dict, notify=True):
-        if app.storage.user["current_role"] in config.get("permission", {}).get("edit_role", []) and not self.temp_bool:
+        allowed_state = config.get("allowed_state", ["研发", "转产"])
+        if (
+            not self.temp_bool
+            and app.storage.user["current_role"] in config.get("permission", {}).get("edit_role", [])
+            and app.storage.general["project_summary"][self.project]["state"] in allowed_state
+        ):
             return True
+
         if notify:
-            msg = (
-                "当前处于需求审核界面，概述内容锁定不可编辑!"
-                if self.temp_bool
-                else "当前用户无该项编辑权限，请联系管理员申请!"
-            )
+            if self.temp_bool:
+                msg = "当前处于需求审核界面，概述内容锁定不可编辑!"
+            elif app.storage.user["current_role"] not in config.get("permission", {}).get("edit_role", []):
+                msg = "当前用户无该项编辑权限，请联系管理员申请2!"
+            else:
+                msg = "项目当前状态禁止编辑概述!"
             ui.notify(
                 msg,
                 type="info",
                 position="bottom",
                 timeout=2000,
                 progress=True,
-                multi_line=True,
+                # multi_line=True,
                 close_button="✖",
             )
         return False
@@ -3413,7 +3437,7 @@ class OverviewTableGroup:
                 position="bottom",
                 timeout=2000,
                 progress=True,
-                multi_line=True,
+                # multi_line=True,
                 close_button="✖",
             )
             return
@@ -3434,9 +3458,10 @@ class OverviewTableGroup:
     def _handle_add_new_row(self):
         """点击底部添加新行时，触发第一列的添加弹窗，并生成全新 row_id"""
         first_col_config = list(self.permitted_configs.values())[0]
-        # 生成一个全新的 UUID 作为新行的基准
-        new_row_id = str(uuid.uuid4())
-        self._handle_add_click(first_col_config, target_row_id=new_row_id)
+        if self._edit_permission_judge(first_col_config):
+            # 生成一个全新的 UUID 作为新行的基准
+            new_row_id = str(uuid.uuid4())
+            self._handle_add_click(first_col_config, target_row_id=new_row_id)
 
     # ================= 弹窗 & 添加数据逻辑 (继承并传参化) =================
     def _setup_text_chip_dialog(self):
@@ -3446,7 +3471,7 @@ class OverviewTableGroup:
             ui.label(f"添加: {config['title']}").classes("text-lg font-bold text-blue-900")
             self.chip_label = (
                 ui.textarea(
-                    label=config.get("dialog_label", "填写内容"),
+                    label=config.get("dialog_label", "按规定格式填写"),
                     value=config.get("dialog_placeholder", ""),
                     placeholder=config.get("dialog_placeholder", ""),
                 )
@@ -3470,22 +3495,40 @@ class OverviewTableGroup:
 
     async def _add_text_chip_data(self, ui_spinner):
         config = self.current_config
+        # 获取要绑定的 row_id，如果没有（理论上现在都有了），就生成一个新的
+        row_id = getattr(self, "current_target_row_id", None) or str(uuid.uuid4())
         text, notes = self.chip_label.value.strip(), self.chip_notes.value.strip()
         if not text or not notes:
-            ui.notify("内容和注释均不能为空!", type="warning")
+            ui.notify(
+                "内容和注释均不能为空!",
+                type="warning",
+                position="bottom",
+                timeout=3000,
+                progress=True,
+                # multi_line=True,
+                close_button="✖",
+            )
             return
-        if text in [
-            d["content"] for d in db_storage.get_deep_item([f"{self.project}_over_data", config["label"]], {}).values()
+        if (text, row_id) in [
+            (d["content"], d.get("row_id", ""))
+            for d in db_storage.get_deep_item([f"{self.project}_over_data", config["label"]], {}).values()
         ]:
-            ui.notify("概述内容已存在。", type="warning")
+            ui.notify(
+                "概述内容已存在。",
+                type="warning",
+                position="bottom",
+                timeout=3000,
+                progress=True,
+                # multi_line=True,
+                close_button="✖",
+            )
             return
 
         ui_spinner.set_visibility(True)
         req_max_ver = app.storage.general["project_req_max_ver"].get(self.project, "1.0")
         select_activ_dic = self._get_select_activ_dic(req_max_ver)
         creator = app.storage.user.get("current_user", "匿名")
-        # 获取要绑定的 row_id，如果没有（理论上现在都有了），就生成一个新的
-        row_id = getattr(self, "current_target_row_id", None) or str(uuid.uuid4())
+
         chip_data = {
             "id": str(uuid.uuid4()),
             "row_id": row_id,
@@ -3507,7 +3550,15 @@ class OverviewTableGroup:
 
         ui_spinner.set_visibility(False)
         self.chip_dialog.close()
-        ui.notify("内容已添加", type="positive")
+        ui.notify(
+            "内容已添加",
+            type="positive",
+            position="bottom",
+            timeout=1000,
+            progress=True,
+            # multi_line=True,
+            close_button="✖",
+        )
         self._show_related_chip_select_dialog(text, True, "add_chip", config)
 
     # ... 省略了其他几个 Dialog 和 _add 逻辑 (逻辑结构完全与 InteractiveButton 一致，只是 self.label 替换为了 config['label']，具体细节我打包在下方) ...
@@ -3596,7 +3647,7 @@ class OverviewTableGroup:
                 position="bottom",
                 timeout=3000,
                 progress=True,
-                multi_line=True,
+                # multi_line=True,
                 close_button="✖",
             )
             return
@@ -3607,7 +3658,7 @@ class OverviewTableGroup:
                 position="bottom",
                 timeout=3000,
                 progress=True,
-                multi_line=True,
+                # multi_line=True,
                 close_button="✖",
             )
             return
@@ -3618,7 +3669,7 @@ class OverviewTableGroup:
                 position="bottom",
                 timeout=3000,
                 progress=True,
-                multi_line=True,
+                # multi_line=True,
                 close_button="✖",
             )
             return
@@ -3635,7 +3686,7 @@ class OverviewTableGroup:
                 position="bottom",
                 timeout=3000,
                 progress=True,
-                multi_line=True,
+                # multi_line=True,
                 close_button="✖",
             )
             return
@@ -3675,7 +3726,7 @@ class OverviewTableGroup:
             position="bottom",
             timeout=1000,
             progress=True,
-            multi_line=True,
+            # multi_line=True,
             close_button="✖",
         )
         self._show_related_chip_select_dialog(text, True, "add_chip", config)
@@ -3704,7 +3755,15 @@ class OverviewTableGroup:
 
     def _get_file_upload(self):
         if not self.chip_notes.value:
-            ui.notify("注释不能为空!", type="warning")
+            ui.notify(
+                "注释不能为空!",
+                type="warning",
+                position="bottom",
+                timeout=3000,
+                progress=True,
+                # multi_line=True,
+                close_button="✖",
+            )
         else:
             self.uploader.reset()
             self.uploader.run_method("pickFiles")
@@ -3724,7 +3783,7 @@ class OverviewTableGroup:
                 position="bottom",
                 timeout=3000,
                 progress=True,
-                multi_line=True,
+                # multi_line=True,
                 close_button="✖",
             )
             if hasattr(self, "spinner"):
@@ -3737,7 +3796,7 @@ class OverviewTableGroup:
                 position="bottom",
                 timeout=3000,
                 progress=True,
-                multi_line=True,
+                # multi_line=True,
                 close_button="✖",
             )
             if hasattr(self, "spinner"):
@@ -3750,7 +3809,7 @@ class OverviewTableGroup:
                 position="bottom",
                 timeout=3000,
                 progress=True,
-                multi_line=True,
+                # multi_line=True,
                 close_button="✖",
             )
             if hasattr(self, "spinner"):
@@ -3772,7 +3831,7 @@ class OverviewTableGroup:
                 position="bottom",
                 timeout=3000,
                 progress=True,
-                multi_line=True,
+                # multi_line=True,
                 close_button="✖",
             )
             if hasattr(self, "spinner"):
@@ -3803,7 +3862,7 @@ class OverviewTableGroup:
                 position="center",
                 timeout=0,
                 progress=False,
-                multi_line=True,
+                # multi_line=True,
                 close_button="✖",
             )
             if hasattr(self, "spinner"):
@@ -3818,7 +3877,7 @@ class OverviewTableGroup:
             position="bottom",
             timeout=1000,
             progress=True,
-            multi_line=True,
+            # multi_line=True,
             close_button="✖",
         )
 
@@ -3845,7 +3904,7 @@ class OverviewTableGroup:
             position="bottom",
             timeout=1000,
             progress=True,
-            multi_line=True,
+            # multi_line=True,
             close_button="✖",
         )
 
@@ -3903,7 +3962,11 @@ class OverviewTableGroup:
         with self.chip_dialog, ui.card().classes("w-1/2"):
             ui.label(f"添加引用: {config['title']}").classes("text-lg font-bold text-blue-900")
             self.chip_label = (
-                ui.input(label=config.get("dialog_label", ""), placeholder="完整文件名")
+                ui.input(
+                    label=config.get("dialog_label", "填入包括后缀的完整文件名"),
+                    value=config.get("dialog_placeholder", ""),
+                    placeholder=config.get("dialog_placeholder", ""),
+                )
                 .props("outlined")
                 .classes("w-full")
             )
@@ -3925,7 +3988,7 @@ class OverviewTableGroup:
                 position="bottom",
                 timeout=3000,
                 progress=True,
-                multi_line=True,
+                # multi_line=True,
                 close_button="✖",
             )
             return
@@ -3941,7 +4004,7 @@ class OverviewTableGroup:
                 position="bottom",
                 timeout=3000,
                 progress=True,
-                multi_line=True,
+                # multi_line=True,
                 close_button="✖",
             )
             return
@@ -4011,7 +4074,7 @@ class OverviewTableGroup:
                 position="bottom",
                 timeout=1000,
                 progress=True,
-                multi_line=True,
+                # multi_line=True,
                 close_button="✖",
             )
             self._show_related_chip_select_dialog(text, True, "add_chip", config)
@@ -4043,19 +4106,6 @@ class OverviewTableGroup:
                     [f"{self.project}_over_data", config["label"], chip.props["data-chip-id"]]
                 )
             else:
-                # --- 修复 2.1: 补充非管理员的状态阶段拦截 ---
-                allowed_state = config.get("allowed_state", ["研发", "转产"])
-                if app.storage.general["project_summary"][self.project]["state"] not in allowed_state:
-                    ui.notify(
-                        "项目当前状态禁止修改概述激活状态!",
-                        type="info",
-                        position="bottom",
-                        timeout=2000,
-                        progress=True,
-                        multi_line=True,
-                        close_button="✖",
-                    )
-                    return
                 self.current_config = config
                 self._select_set_activ_dialog(chip.props["data-chip-id"], chip.text, config)
 
@@ -4066,19 +4116,6 @@ class OverviewTableGroup:
                     [f"{self.project}_over_data", config["label"], thumbnail.props["data-chip-id"]]
                 )
             else:
-                # --- 修复 2.2: 补充非管理员的状态阶段拦截 ---
-                allowed_state = config.get("allowed_state", ["研发", "转产"])
-                if app.storage.general["project_summary"][self.project]["state"] not in allowed_state:
-                    ui.notify(
-                        "项目当前状态禁止修改概述激活状态!",
-                        type="info",
-                        position="bottom",
-                        timeout=2000,
-                        progress=True,
-                        multi_line=True,
-                        close_button="✖",
-                    )
-                    return
                 self.current_config = config
                 self._select_set_activ_dialog(thumbnail.props["data-chip-id"], "", config)
 
@@ -4308,7 +4345,7 @@ class OverviewTableGroup:
                 position="bottom",
                 timeout=3000,
                 progress=True,
-                multi_line=True,
+                # multi_line=True,
                 close_button="✖",
             )
             self._select_set_activ_dialog(chip_id, chip_text, config)
@@ -4446,7 +4483,7 @@ class OverviewTableGroup:
                 position="center",
                 timeout=0,
                 progress=False,
-                multi_line=True,
+                # multi_line=True,
                 close_button="✖",
             )
 
@@ -4618,7 +4655,7 @@ class OverviewTableGroup:
             position="bottom",
             timeout=1000,
             progress=True,
-            multi_line=True,
+            # multi_line=True,
             close_button="✖",
         )
 
@@ -4790,7 +4827,15 @@ class OverviewTableGroup:
         _, content = await self.get_svn_file_http_async(http_url, username=SVN_USERNAME, password=SVN_PASSWORD)
         if content:
             ui.download(content, file_name)
-            ui.notify(f"已开始下载: {file_name}", type="positive")
+            ui.notify(
+                f"已开始下载: {file_name}",
+                type="positive",
+                position="bottom",
+                timeout=1000,
+                progress=True,
+                # multi_line=True,
+                close_button="✖",
+            )
             if on_finish:
                 on_finish()
 
@@ -4802,7 +4847,7 @@ class OverviewTableGroup:
             position="bottom",
             timeout=2000,
             progress=True,
-            multi_line=True,
+            # multi_line=True,
             close_button="✖",
         )
 
@@ -4820,7 +4865,7 @@ class OverviewTableGroup:
                 position="bottom",
                 timeout=1000,
                 progress=True,
-                multi_line=True,
+                # multi_line=True,
                 close_button="✖",
             )
 
@@ -4832,7 +4877,9 @@ class OverviewTableGroup:
             ui.label(f"添加SVN文件引用: {config['title']}").classes("text-lg font-bold text-blue-900")
             self.chip_label = (
                 ui.input(
-                    label=config.get("dialog_label", "填入包括后缀的完整文件名"), placeholder="填入包括后缀的完整文件名"
+                    label=config.get("dialog_label", "填入包括后缀的完整文件名"),
+                    value=config.get("dialog_placeholder", ""),
+                    placeholder=config.get("dialog_placeholder", ""),
                 )
                 .props("outlined")
                 .classes("w-full")
@@ -4861,14 +4908,30 @@ class OverviewTableGroup:
         file_info = (False, None)
 
         if not text or not notes:
-            ui.notify("引用文件名和注释不能为空!", type="warning")
+            ui.notify(
+                "引用文件名和注释不能为空!",
+                type="warning",
+                position="bottom",
+                timeout=3000,
+                progress=True,
+                # multi_line=True,
+                close_button="✖",
+            )
             return
 
         if (text, warehouse) in [
             (d["content"], d.get("warehouse"))
             for d in db_storage.get_deep_item([f"{self.project}_over_data", config["label"]], {}).values()
         ]:
-            ui.notify(f"{warehouse}仓库下的相同引用文件名已添加过。", type="warning")
+            ui.notify(
+                f"{warehouse}仓库下的相同引用文件名已添加过。",
+                type="warning",
+                position="bottom",
+                timeout=3000,
+                progress=True,
+                # multi_line=True,
+                close_button="✖",
+            )
             return
 
         ui_spinner.set_visibility(True)
@@ -4881,7 +4944,15 @@ class OverviewTableGroup:
                 ui_spinner.set_visibility(False)
                 return
         elif target_url_li and len(target_url_li) > 1:
-            ui.notify("有多个路径，不合规!", type="warning")
+            ui.notify(
+                "有多个路径，不合规!",
+                type="warning",
+                position="bottom",
+                timeout=3000,
+                progress=True,
+                # multi_line=True,
+                close_button="✖",
+            )
             ui_spinner.set_visibility(False)
             return
         else:
@@ -4922,7 +4993,15 @@ class OverviewTableGroup:
         await db_storage.set_deep_item([f"{self.project}_over_data", config["label"], chip_id], chip_data)
         ui_spinner.set_visibility(False)
         self.chip_dialog.close()
-        ui.notify("SVN文件引用已添加。", type="positive")
+        ui.notify(
+            "SVN文件引用已添加。",
+            type="positive",
+            position="bottom",
+            timeout=1000,
+            progress=True,
+            # multi_line=True,
+            close_button="✖",
+        )
         self._show_related_chip_select_dialog(text, True, "add_chip", config)
 
     def _splicing_svn_file_url(self, chip_text, config) -> list:
@@ -4942,7 +5021,7 @@ class OverviewTableGroup:
                     position="bottom",
                     timeout=3000,
                     progress=True,
-                    multi_line=True,
+                    # multi_line=True,
                     close_button="✖",
                 )
             return target_url_li
@@ -4988,7 +5067,15 @@ class OverviewTableGroup:
                             target_url_li.append(f"{upload_path}/{svn_main_folder}/{match.group(1)}/{folder_name}")
                         else:
                             if self._edit_permission_judge(config, notify=False):
-                                ui.notify(f"文件夹{folder_name}命名不符合规则!", type="warning")
+                                ui.notify(
+                                    f"文件夹{folder_name}命名不符合规则!",
+                                    type="warning",
+                                    position="bottom",
+                                    timeout=3000,
+                                    progress=True,
+                                    # multi_line=True,
+                                    close_button="✖",
+                                )
                     if not target_url_li:
                         return target_url_li
                 else:
@@ -5001,7 +5088,15 @@ class OverviewTableGroup:
                     target_url_li.append(f"{upload_path}/{svn_main_folder}/{match.group(1)}")
                 else:
                     if self._edit_permission_judge(config, notify=False):
-                        ui.notify(f"文件{chip_text}命名不符合规则!", type="warning")
+                        ui.notify(
+                            f"文件{chip_text}命名不符合规则!",
+                            type="warning",
+                            position="bottom",
+                            timeout=3000,
+                            progress=True,
+                            # multi_line=True,
+                            close_button="✖",
+                        )
                     return target_url_li
             else:
                 target_url_li.append(f"{upload_path}/{svn_main_folder}")
