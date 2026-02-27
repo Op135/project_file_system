@@ -277,12 +277,15 @@ def information_page():
                             ).props("flat round dense").tooltip("移除记录")
                         else:
                             # 普通提交者视角
+                            ui.button(icon="visibility", on_click=lambda: get_overviow_page(project_name, True)).props(
+                                "flat round dense text-color=grey-7"
+                            ).tooltip("查看需求详情")
                             ui.button(
-                                icon="visibility", on_click=lambda: get_requirement_page(project_name, ver)
-                            ).props("flat round dense text-color=grey-7").tooltip("查看详情")
+                                icon="edit_note", color="blue", on_click=lambda: get_requirement_page(project_name, ver)
+                            ).props("flat round dense").tooltip("配置需求")
 
                             ui.button(
-                                icon="edit", color="orange", on_click=lambda: set_review_revise(project_name, ver)
+                                icon="replay", color="orange", on_click=lambda: set_review_revise(project_name, ver)
                             ).on("click", lambda: refresh_review_row(container, project_name, ver)).props(
                                 "flat round dense"
                             ).tooltip("申请修改")

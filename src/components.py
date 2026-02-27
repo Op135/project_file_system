@@ -2457,7 +2457,8 @@ class InteractiveButton:
                     for folder_name in according_folder_name:
                         match = re.search(self.search_scope_regular, folder_name)
                         if match:
-                            target_url_li.append(f"{self.upload_path}/{svn_main_folder}/{match.group(1)}/{folder_name}")
+                            match_folder = f"{match.group(1)}-{match.group(2)}"
+                            target_url_li.append(f"{self.upload_path}/{svn_main_folder}/{match_folder}/{folder_name}")
                         elif overview_state_show_judge(self.role):
                             ui.notify(
                                 f"文件夹{folder_name}命名不符合规则!",
@@ -2477,7 +2478,8 @@ class InteractiveButton:
             if self.search_scope_regular:
                 match = re.search(self.search_scope_regular, chip_text)
                 if match:
-                    target_url_li.append(f"{self.upload_path}/{svn_main_folder}/{match.group(1)}")
+                    match_folder = f"{match.group(1)}-{match.group(2)}"
+                    target_url_li.append(f"{self.upload_path}/{svn_main_folder}/{match_folder}")
                 else:
                     if overview_state_show_judge(self.role):
                         ui.notify(
@@ -5064,7 +5066,8 @@ class OverviewTableGroup:
                     for folder_name in according_folder_name:
                         match = re.search(search_scope_regular, folder_name)
                         if match:
-                            target_url_li.append(f"{upload_path}/{svn_main_folder}/{match.group(1)}/{folder_name}")
+                            match_folder = f"{match.group(1)}-{match.group(2)}"
+                            target_url_li.append(f"{upload_path}/{svn_main_folder}/{match_folder}/{folder_name}")
                         else:
                             if self._edit_permission_judge(config, notify=False):
                                 ui.notify(
@@ -5085,7 +5088,8 @@ class OverviewTableGroup:
             if search_scope_regular:
                 match = re.search(search_scope_regular, chip_text)
                 if match:
-                    target_url_li.append(f"{upload_path}/{svn_main_folder}/{match.group(1)}")
+                    match_folder = f"{match.group(1)}-{match.group(2)}"
+                    target_url_li.append(f"{upload_path}/{svn_main_folder}/{match_folder}")
                 else:
                     if self._edit_permission_judge(config, notify=False):
                         ui.notify(
