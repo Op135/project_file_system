@@ -685,6 +685,7 @@ class InteractiveButton:
         upload_path: str = SUBMIT_FILES_DIR,
         state_path: dict = {},
         search_scope_regular: str = "",
+        content_regular: list = [],
         search_folder_according_li: list = [],
         search_hierarchy: list = [],
         dialog_label: str = "按规定格式输入",
@@ -708,6 +709,7 @@ class InteractiveButton:
         self.upload_path = upload_path
         self.state_path = state_path
         self.search_scope_regular = search_scope_regular
+        self.content_regular = content_regular
         self.search_folder_according_li = search_folder_according_li
         self.search_hierarchy = search_hierarchy
         self.dialog_placeholder = dialog_placeholder
@@ -1290,6 +1292,25 @@ class InteractiveButton:
 
     async def _add_text_chip_data(self, ui_spinner):
         text, notes = self.chip_label.value.strip(), self.chip_notes.value.strip()
+        # 如果填写内容有正则表达式管控，则分析内容是否符合规则
+        regular_bool = False
+        if self.content_regular:
+            for regular in self.content_regular:
+                if re.search(regular, text):
+                    regular_bool = True
+        else:
+            regular_bool = True
+        if not regular_bool:
+            ui.notify(
+                "内容不符合填写格式规范!",
+                type="warning",
+                position="bottom",
+                timeout=3000,
+                progress=True,
+                # multi_line=True,
+                close_button="✖",
+            )
+            return
         if not text or not notes:
             ui.notify(
                 "内容和注释不能为空!",
@@ -1355,6 +1376,25 @@ class InteractiveButton:
 
     async def _add_search_chip_data(self, ui_spinner):
         text, notes = self.chip_label.value.strip(), self.chip_notes.value.strip()
+        # 如果填写内容有正则表达式管控，则分析内容是否符合规则
+        regular_bool = False
+        if self.content_regular:
+            for regular in self.content_regular:
+                if re.search(regular, text):
+                    regular_bool = True
+        else:
+            regular_bool = True
+        if not regular_bool:
+            ui.notify(
+                "内容不符合填写格式规范!",
+                type="warning",
+                position="bottom",
+                timeout=3000,
+                progress=True,
+                # multi_line=True,
+                close_button="✖",
+            )
+            return
         if not text or not notes:
             ui.notify(
                 "引用文件名和注释不能为空!",
@@ -1458,7 +1498,25 @@ class InteractiveButton:
         text, notes = self.chip_label.value.strip(), self.chip_notes.value.strip()
         project_state = app.storage.general["project_summary"][self.project]["state"]
         warehouse = self.state_path.get(project_state)
-
+        # 如果填写内容有正则表达式管控，则分析内容是否符合规则
+        regular_bool = False
+        if self.content_regular:
+            for regular in self.content_regular:
+                if re.search(regular, text):
+                    regular_bool = True
+        else:
+            regular_bool = True
+        if not regular_bool:
+            ui.notify(
+                "内容不符合填写格式规范!",
+                type="warning",
+                position="bottom",
+                timeout=3000,
+                progress=True,
+                # multi_line=True,
+                close_button="✖",
+            )
+            return
         if not text or not notes:
             ui.notify(
                 "引用文件名和注释不能为空!",
@@ -1560,7 +1618,25 @@ class InteractiveButton:
             other_bool = True
         if test_select_data["instrument_select"] == "其它" and not test_select_data["instrument_other_text"]:
             other_bool = True
-
+        # 如果填写内容有正则表达式管控，则分析内容是否符合规则
+        regular_bool = False
+        if self.content_regular:
+            for regular in self.content_regular:
+                if re.search(regular, text):
+                    regular_bool = True
+        else:
+            regular_bool = True
+        if not regular_bool:
+            ui.notify(
+                "内容不符合填写格式规范!",
+                type="warning",
+                position="bottom",
+                timeout=3000,
+                progress=True,
+                # multi_line=True,
+                close_button="✖",
+            )
+            return
         if (
             not text
             or test_select_data["state_select"] is None
@@ -3500,6 +3576,25 @@ class OverviewTableGroup:
         # 获取要绑定的 row_id，如果没有（理论上现在都有了），就生成一个新的
         row_id = getattr(self, "current_target_row_id", None) or str(uuid.uuid4())
         text, notes = self.chip_label.value.strip(), self.chip_notes.value.strip()
+        # 如果填写内容有正则表达式管控，则分析内容是否符合规则
+        regular_bool = False
+        if config.get("content_regular", []):
+            for regular in config.get("content_regular", []):
+                if re.search(regular, text):
+                    regular_bool = True
+        else:
+            regular_bool = True
+        if not regular_bool:
+            ui.notify(
+                "内容不符合填写格式规范!",
+                type="warning",
+                position="bottom",
+                timeout=3000,
+                progress=True,
+                # multi_line=True,
+                close_button="✖",
+            )
+            return
         if not text or not notes:
             ui.notify(
                 "内容和注释均不能为空!",
@@ -3639,7 +3734,25 @@ class OverviewTableGroup:
             test_select_data[f"{p}_select"] == "其它" and not test_select_data[f"{p}_other_text"]
             for p in ["state", "node", "instrument"]
         )
-
+        # 如果填写内容有正则表达式管控，则分析内容是否符合规则
+        regular_bool = False
+        if config.get("content_regular", []):
+            for regular in config.get("content_regular", []):
+                if re.search(regular, text):
+                    regular_bool = True
+        else:
+            regular_bool = True
+        if not regular_bool:
+            ui.notify(
+                "内容不符合填写格式规范!",
+                type="warning",
+                position="bottom",
+                timeout=3000,
+                progress=True,
+                # multi_line=True,
+                close_button="✖",
+            )
+            return
         if not text or not all(
             test_select_data[f"{p}_select"] for p in ["state", "node", "instrument"] if config.get(f"{p}_options")
         ):
@@ -3982,7 +4095,25 @@ class OverviewTableGroup:
     async def _add_search_chip_data(self, ui_spinner):
         config = self.current_config
         text, notes = self.chip_label.value.strip(), self.chip_notes.value.strip()
-
+        # 如果填写内容有正则表达式管控，则分析内容是否符合规则
+        regular_bool = False
+        if config.get("content_regular", []):
+            for regular in config.get("content_regular", []):
+                if re.search(regular, text):
+                    regular_bool = True
+        else:
+            regular_bool = True
+        if not regular_bool:
+            ui.notify(
+                "内容不符合填写格式规范!",
+                type="warning",
+                position="bottom",
+                timeout=3000,
+                progress=True,
+                # multi_line=True,
+                close_button="✖",
+            )
+            return
         if not text or not notes:
             ui.notify(
                 "引用文件名和注释不能为空!",
@@ -4908,7 +5039,25 @@ class OverviewTableGroup:
         project_state = app.storage.general["project_summary"][self.project]["state"]
         warehouse = config.get("state_path", {}).get(project_state)
         file_info = (False, None)
-
+        # 如果填写内容有正则表达式管控，则分析内容是否符合规则
+        regular_bool = False
+        if config.get("content_regular", []):
+            for regular in config.get("content_regular", []):
+                if re.search(regular, text):
+                    regular_bool = True
+        else:
+            regular_bool = True
+        if not regular_bool:
+            ui.notify(
+                "内容不符合填写格式规范!",
+                type="warning",
+                position="bottom",
+                timeout=3000,
+                progress=True,
+                # multi_line=True,
+                close_button="✖",
+            )
+            return
         if not text or not notes:
             ui.notify(
                 "引用文件名和注释不能为空!",

@@ -7,6 +7,9 @@
                 "nature": "必填",
                 "title": "光源选型",
                 "processing_type": "text",
+                "content_regular": [
+                    "\\S*："
+                ],
                 "dialog_placeholder": "光源名称：规格型号",
                 "allowed_state": [
                     "研发",
@@ -66,6 +69,7 @@
                 "nature": "必填",
                 "title": "光源驱动If",
                 "processing_type": "text",
+                "content_regular": [],
                 "dialog_placeholder": "_A",
                 "allowed_state": [
                     "研发",
@@ -118,6 +122,7 @@
                 "nature": "必填",
                 "title": "光源驱动Vf",
                 "processing_type": "text",
+                "content_regular": [],
                 "dialog_placeholder": "_±_V@_A",
                 "allowed_state": [
                     "研发",
@@ -170,6 +175,7 @@
                 "nature": "必填",
                 "title": "光源阈值电流",
                 "processing_type": "text",
+                "content_regular": [],
                 "dialog_placeholder": "_A",
                 "allowed_state": [
                     "研发",
@@ -222,6 +228,7 @@
                 "nature": "必填",
                 "title": "光源最大热功率",
                 "processing_type": "text",
+                "content_regular": [],
                 "dialog_placeholder": "_W（Vf最大情况）",
                 "allowed_state": [
                     "研发",
@@ -262,6 +269,7 @@
                 "nature": "必填",
                 "title": "光源温敏型号",
                 "processing_type": "text",
+                "content_regular": [],
                 "dialog_placeholder": "温敏规格型号",
                 "allowed_state": [
                     "研发",
@@ -307,6 +315,7 @@
                 "nature": "选填",
                 "title": "光源性能阈温",
                 "processing_type": "text",
+                "content_regular": [],
                 "dialog_placeholder": "NTC≤_℃",
                 "allowed_state": [
                     "研发",
@@ -351,6 +360,7 @@
                 "nature": "必填",
                 "title": "光源保护温度",
                 "processing_type": "text",
+                "content_regular": [],
                 "dialog_placeholder": "NTC≥_℃减半，NTC≥_℃灭灯",
                 "allowed_state": [
                     "研发",
@@ -400,6 +410,7 @@
                 "nature": "必填",
                 "title": "采用光学件",
                 "processing_type": "text",
+                "content_regular": [],
                 "dialog_placeholder": "透镜/二向色/滤光片等种类名：器件名",
                 "allowed_state": [
                     "研发",
@@ -438,6 +449,7 @@
                 "nature": "必填",
                 "title": "需要运动的光学器件",
                 "processing_type": "text",
+                "content_regular": [],
                 "dialog_placeholder": "透镜/二向色/滤光片等种类名：器件名",
                 "allowed_state": [
                     "研发",
@@ -484,6 +496,7 @@
                 "nature": "必填",
                 "title": "光学器件运动逻辑说明",
                 "processing_type": "text",
+                "content_regular": [],
                 "dialog_placeholder": "器件名：逻辑说明",
                 "allowed_state": [
                     "研发",
@@ -528,6 +541,7 @@
                 "nature": "必填",
                 "title": "光电传感器选型",
                 "processing_type": "text",
+                "content_regular": [],
                 "dialog_placeholder": "规格型号：用途说明",
                 "allowed_state": [
                     "研发",
@@ -579,6 +593,7 @@
                 "nature": "必填",
                 "title": "光输出目标面距离",
                 "processing_type": "text",
+                "content_regular": [],
                 "dialog_placeholder": "_mm@距模组输出口透镜顶点",
                 "allowed_state": [
                     "研发",
@@ -624,6 +639,7 @@
                 "nature": "必填",
                 "title": "导光束要求",
                 "processing_type": "text",
+                "content_regular": [],
                 "dialog_placeholder": "普通胶粘导光束/热熔导光束，通光口径≥_mm，NA≥_",
                 "allowed_state": [
                     "研发",
@@ -660,6 +676,7 @@
                 "nature": "必填",
                 "title": "产品标签功率",
                 "processing_type": "text",
+                "content_regular": [],
                 "dialog_placeholder": "_W（直流情况）/_VA（交流情况）",
                 "allowed_state": [
                     "研发",
@@ -699,7 +716,7 @@
                 "nature": "必填",
                 "title": "产品技术规格书（中文版）",
                 "processing_type": "file",
-                "file_name_regular": [],
+                "content_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（量产阶段）\\★产品技术规格书\\中文版",
                 "allowed_state": [
                     "研发",
@@ -735,6 +752,7 @@
                 "nature": "必填",
                 "title": "光学测试项",
                 "processing_type": "test",
+                "content_regular": [],
                 "dialog_placeholder": "白光色温：5500K±500K",
                 "state_options": [
                     "常亮100%亮度档",
@@ -815,6 +833,7 @@
                 "nature": "必填",
                 "title": "驱动输出测试项",
                 "processing_type": "test",
+                "content_regular": [],
                 "dialog_placeholder": "白光电流：5A±8%",
                 "state_options": [
                     "常亮100%亮度档",
@@ -891,7 +910,7 @@
                 "nature": "必填",
                 "title": "产品完整3D图（stp）",
                 "processing_type": "file",
-                "file_name_regular": [],
+                "content_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\2.输出——研发流程输出文档\\产品完整3D图",
                 "allowed_state": [
                     "研发",
@@ -941,7 +960,7 @@
                 "nature": "必填",
                 "title": "产品简化3D图（stp）",
                 "processing_type": "file",
-                "file_name_regular": [],
+                "content_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\2.输出——研发流程输出文档\\★可发客户的资料\\产品简化尺寸图\\模组",
                 "allowed_state": [
                     "研发",
@@ -976,7 +995,7 @@
                 "nature": "必填",
                 "title": "产品2D尺寸图（pdf）",
                 "processing_type": "file",
-                "file_name_regular": [],
+                "content_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\2.输出——研发流程输出文档\\★可发客户的资料\\产品简化尺寸图\\模组",
                 "allowed_state": [
                     "研发",
@@ -1016,7 +1035,7 @@
                 "nature": "必填",
                 "title": "PCBA简化3D图（stp）",
                 "processing_type": "file",
-                "file_name_regular": [],
+                "content_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\2.输出——研发流程输出文档\\★可发客户的资料\\产品简化尺寸图\\PCBA",
                 "allowed_state": [
                     "研发",
@@ -1051,7 +1070,7 @@
                 "nature": "必填",
                 "title": "PCBA 2D尺寸图（pdf）",
                 "processing_type": "file",
-                "file_name_regular": [],
+                "content_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\2.输出——研发流程输出文档\\★可发客户的资料\\产品简化尺寸图\\PCBA",
                 "allowed_state": [
                     "研发",
@@ -1091,6 +1110,7 @@
                 "nature": "必填",
                 "title": "产品出光口位置示意图",
                 "processing_type": "image",
+                "content_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\2.输出——研发流程输出文档\\产品示意图\\产品出光口位置示意图",
                 "allowed_state": [
                     "研发",
@@ -1127,6 +1147,7 @@
                 "nature": "必填",
                 "title": "产品出线位置示意图",
                 "processing_type": "image",
+                "content_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\2.输出——研发流程输出文档\\产品示意图\\产品出线位置示意图",
                 "allowed_state": [
                     "研发",
@@ -1163,6 +1184,7 @@
                 "nature": "必填",
                 "title": "产品风道示意图",
                 "processing_type": "image",
+                "content_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\2.输出——研发流程输出文档\\产品示意图\\产品风道示意图",
                 "allowed_state": [
                     "研发",
@@ -1199,6 +1221,7 @@
                 "nature": "选填",
                 "title": "重点装配细节示意图",
                 "processing_type": "image",
+                "content_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\2.输出——研发流程输出文档\\产品示意图\\重点装配细节示意图",
                 "allowed_state": [
                     "研发",
@@ -1239,6 +1262,7 @@
                 "nature": "选填",
                 "title": "产品结构件选材",
                 "processing_type": "text",
+                "content_regular": [],
                 "dialog_placeholder": "主要零件名：材料型号，考虑其着色/重量/防锈/导电/导磁性能",
                 "allowed_state": [
                     "研发",
@@ -1286,6 +1310,7 @@
                 "nature": "必填",
                 "title": "产品涉及表面处理工艺",
                 "processing_type": "text",
+                "content_regular": [],
                 "dialog_placeholder": "主要零件名：阳极氧化/导电氧化，100目喷砂",
                 "allowed_state": [
                     "研发",
@@ -1332,6 +1357,7 @@
                 "nature": "必填",
                 "title": "产品外观颜色",
                 "processing_type": "text",
+                "content_regular": [],
                 "dialog_placeholder": "公司常规金色/黑色/具体色号",
                 "allowed_state": [
                     "研发",
@@ -1374,6 +1400,7 @@
                 "nature": "必填",
                 "title": "产品实秤重量",
                 "processing_type": "text",
+                "content_regular": [],
                 "dialog_placeholder": "整机/_组件：_kg",
                 "allowed_state": [
                     "研发",
@@ -1416,6 +1443,7 @@
                 "nature": "必填",
                 "title": "产品实测工作环境温湿度",
                 "processing_type": "text",
+                "content_regular": [],
                 "dialog_placeholder": "低温启动：-_℃，RH_%可启动，高温运行：_℃，RH_%临近温敏保护温度_℃",
                 "allowed_state": [
                     "研发",
@@ -1452,6 +1480,7 @@
                 "nature": "选填",
                 "title": "产品实测表面温升/温度",
                 "processing_type": "text",
+                "content_regular": [],
                 "dialog_placeholder": "测试点：温度_℃@环境温度_℃/温升_℃@测试条件",
                 "allowed_state": [
                     "研发",
@@ -1488,6 +1517,7 @@
                 "nature": "选填",
                 "title": "产品实测工作噪声",
                 "processing_type": "text",
+                "content_regular": [],
                 "dialog_placeholder": "_dB(A)@测试条件",
                 "allowed_state": [
                     "研发",
@@ -1526,6 +1556,7 @@
                 "nature": "必填",
                 "title": "产品包材",
                 "processing_type": "text",
+                "content_regular": [],
                 "dialog_placeholder": "纸箱/珍珠棉包装盒名称，_pcs/套",
                 "allowed_state": [
                     "研发",
@@ -1565,6 +1596,7 @@
                 "nature": "必填",
                 "title": "风扇选型",
                 "processing_type": "text",
+                "content_regular": [],
                 "dialog_placeholder": "规格型号，_pcs/套，电压_V",
                 "allowed_state": [
                     "研发",
@@ -1623,6 +1655,7 @@
                 "nature": "必填",
                 "title": "散热器类型",
                 "processing_type": "text",
+                "content_regular": [],
                 "dialog_placeholder": "铝型材/铜管/铝型材嵌铜板散热器",
                 "allowed_state": [
                     "研发",
@@ -1675,6 +1708,7 @@
                 "nature": "必填",
                 "title": "TEC选型",
                 "processing_type": "text",
+                "content_regular": [],
                 "dialog_placeholder": "规格型号，_pcs/套，驱动电流_A，电压_V",
                 "allowed_state": [
                     "研发",
@@ -1727,6 +1761,7 @@
                 "nature": "必填",
                 "title": "转接座选型范围",
                 "processing_type": "text",
+                "content_regular": [],
                 "dialog_placeholder": "普通/悬臂检测/接近开关检测/具体型号",
                 "allowed_state": [
                     "研发",
@@ -1769,6 +1804,7 @@
                 "nature": "必填",
                 "title": "机构传感器选型",
                 "processing_type": "text",
+                "content_regular": [],
                 "dialog_placeholder": "规格型号，_pcs/套",
                 "allowed_state": [
                     "研发",
@@ -1814,7 +1850,7 @@
                 "nature": "选填",
                 "title": "其它图纸",
                 "processing_type": "file",
-                "file_name_regular": [],
+                "content_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\2.输出——研发流程输出文档\\其它图纸",
                 "allowed_state": [
                     "研发",
@@ -1852,7 +1888,7 @@
                 "nature": "必填",
                 "title": "结构件打包目录（txt）",
                 "processing_type": "file",
-                "file_name_regular": [],
+                "content_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（量产阶段）\\★结构件工程图\\结构件工程图打包目录",
                 "allowed_state": [
                     "转产"
@@ -1878,7 +1914,7 @@
                 "nature": "必填",
                 "title": "研发阶段产品总BOM（xlsx）",
                 "processing_type": "file",
-                "file_name_regular": [],
+                "content_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\2.输出——研发流程输出文档\\产品总BOM",
                 "allowed_state": [
                     "研发",
@@ -1913,7 +1949,7 @@
                 "nature": "必填",
                 "title": "装箱清单（xlsx）",
                 "processing_type": "file",
-                "file_name_regular": [],
+                "content_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（量产阶段）\\★装箱清单",
                 "allowed_state": [
                     "研发",
@@ -1949,6 +1985,7 @@
                 "nature": "选填",
                 "title": "机械结构测试项",
                 "processing_type": "test",
+                "content_regular": [],
                 "dialog_placeholder": "测试项名称：测试条件、产品状态、操作步骤、合格标准等信息。",
                 "state_options": [],
                 "node_options": [],
@@ -2002,6 +2039,7 @@
                 "nature": "必填",
                 "title": "产品驱动输入电压",
                 "processing_type": "text",
+                "content_regular": [],
                 "dialog_placeholder": "DC/AC_V±_%",
                 "allowed_state": [
                     "研发",
@@ -2047,6 +2085,7 @@
                 "nature": "必填",
                 "title": "产品驱动输入功率",
                 "processing_type": "text",
+                "content_regular": [],
                 "dialog_placeholder": "_W（直流情况）/_VA（交流情况）",
                 "allowed_state": [
                     "研发",
@@ -2085,6 +2124,7 @@
                 "nature": "必填",
                 "title": "产品输入控制模式",
                 "processing_type": "text",
+                "content_regular": [],
                 "dialog_placeholder": "电位器/按键/PWM/RS232/触摸屏/等等",
                 "allowed_state": [
                     "研发",
@@ -2129,6 +2169,7 @@
                 "nature": "必填",
                 "title": "驱动输出信号类型",
                 "processing_type": "text",
+                "content_regular": [],
                 "dialog_placeholder": "模拟输出/PWM输出",
                 "allowed_state": [
                     "研发",
@@ -2170,6 +2211,7 @@
                 "nature": "必填",
                 "title": "驱动PCB裸板规格",
                 "processing_type": "text",
+                "content_regular": [],
                 "dialog_placeholder": "如：RFFM-1121_DP24A_V02",
                 "allowed_state": [
                     "研发",
@@ -2218,8 +2260,8 @@
                 "nature": "必填",
                 "title": "驱动PCB原理图（pdf）",
                 "processing_type": "search",
+                "content_regular": [],
                 "dialog_placeholder": "裸板规格必须先填",
-                "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
                 "search_scope_regular": "^([^_]+)",
                 "search_folder_according": [
@@ -2269,8 +2311,8 @@
                 "nature": "必填",
                 "title": "驱动PCB丝印图（pdf）",
                 "processing_type": "search",
+                "content_regular": [],
                 "dialog_placeholder": "裸板规格必须先填",
-                "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
                 "search_scope_regular": "^([^_]+)",
                 "search_folder_according": [
@@ -2308,8 +2350,8 @@
                 "nature": "必填",
                 "title": "驱动PCB加工工艺说明（xlsx）",
                 "processing_type": "search",
+                "content_regular": [],
                 "dialog_placeholder": "裸板规格必须先填",
-                "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
                 "search_scope_regular": "^([^_]+)",
                 "search_folder_according": [
@@ -2345,8 +2387,8 @@
                 "nature": "必填",
                 "title": "驱动PCB制板文件压缩包",
                 "processing_type": "search",
+                "content_regular": [],
                 "dialog_placeholder": "裸板规格必须先填",
-                "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
                 "search_scope_regular": "^([^_]+)",
                 "search_folder_according": [
@@ -2380,8 +2422,8 @@
                 "nature": "必填",
                 "title": "驱动PCBA完整3D图（stp）",
                 "processing_type": "search",
+                "content_regular": [],
                 "dialog_placeholder": "裸板规格必须先填",
-                "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
                 "search_scope_regular": "^([^_]+)",
                 "search_folder_according": [
@@ -2421,8 +2463,8 @@
                 "nature": "必填",
                 "title": "驱动板电子BOM（xlsx）",
                 "processing_type": "search",
+                "content_regular": [],
                 "dialog_placeholder": "裸板规格必须先填",
-                "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
                 "search_scope_regular": "^([^_]+)",
                 "search_folder_according": [
@@ -2477,6 +2519,7 @@
                 "nature": "选填",
                 "title": "控制PCB裸板规格",
                 "processing_type": "text",
+                "content_regular": [],
                 "dialog_placeholder": "如：RFFM-1121_CP24A_V02",
                 "allowed_state": [
                     "研发",
@@ -2526,8 +2569,8 @@
                 "nature": "选填",
                 "title": "控制PCB原理图（pdf）",
                 "processing_type": "search",
+                "content_regular": [],
                 "dialog_placeholder": "裸板规格必须先填",
-                "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
                 "search_scope_regular": "^([^_]+)",
                 "search_folder_according": [
@@ -2572,8 +2615,8 @@
                 "nature": "选填",
                 "title": "控制PCB丝印图（pdf）",
                 "processing_type": "search",
+                "content_regular": [],
                 "dialog_placeholder": "裸板规格必须先填",
-                "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
                 "search_scope_regular": "^([^_]+)",
                 "search_folder_according": [
@@ -2611,8 +2654,8 @@
                 "nature": "选填",
                 "title": "控制PCB加工工艺说明（xlsx）",
                 "processing_type": "search",
+                "content_regular": [],
                 "dialog_placeholder": "裸板规格必须先填",
-                "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
                 "search_scope_regular": "^([^_]+)",
                 "search_folder_according": [
@@ -2648,8 +2691,8 @@
                 "nature": "选填",
                 "title": "控制PCB制板文件压缩包",
                 "processing_type": "search",
+                "content_regular": [],
                 "dialog_placeholder": "裸板规格必须先填",
-                "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
                 "search_scope_regular": "^([^_]+)",
                 "search_folder_according": [
@@ -2681,8 +2724,8 @@
                 "nature": "选填",
                 "title": "控制PCBA完整3D图（stp）",
                 "processing_type": "search",
+                "content_regular": [],
                 "dialog_placeholder": "裸板规格必须先填",
-                "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
                 "search_scope_regular": "^([^_]+)",
                 "search_folder_according": [
@@ -2723,8 +2766,8 @@
                 "nature": "选填",
                 "title": "控制板电子BOM（xlsx）",
                 "processing_type": "search",
+                "content_regular": [],
                 "dialog_placeholder": "裸板规格必须先填",
-                "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
                 "search_scope_regular": "^([^_]+)",
                 "search_folder_according": [
@@ -2778,6 +2821,7 @@
                 "nature": "必填",
                 "title": "光源PCB裸板规格",
                 "processing_type": "text",
+                "content_regular": [],
                 "dialog_placeholder": "如：RFFM-1121_LP24A_V02",
                 "allowed_state": [
                     "研发",
@@ -2821,8 +2865,8 @@
                 "nature": "必填",
                 "title": "光源PCB原理图（pdf）",
                 "processing_type": "search",
+                "content_regular": [],
                 "dialog_placeholder": "裸板规格必须先填",
-                "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
                 "search_scope_regular": "^([^_]+)",
                 "search_folder_according": [
@@ -2862,8 +2906,8 @@
                 "nature": "必填",
                 "title": "光源PCB丝印图（pdf）",
                 "processing_type": "search",
+                "content_regular": [],
                 "dialog_placeholder": "裸板规格必须先填",
-                "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
                 "search_scope_regular": "^([^_]+)",
                 "search_folder_according": [
@@ -2901,8 +2945,8 @@
                 "nature": "必填",
                 "title": "光源PCB加工工艺说明（xlsx）",
                 "processing_type": "search",
+                "content_regular": [],
                 "dialog_placeholder": "裸板规格必须先填",
-                "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
                 "search_scope_regular": "^([^_]+)",
                 "search_folder_according": [
@@ -2938,8 +2982,8 @@
                 "nature": "必填",
                 "title": "光源PCB制板文件压缩包",
                 "processing_type": "search",
+                "content_regular": [],
                 "dialog_placeholder": "裸板规格必须先填",
-                "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
                 "search_scope_regular": "^([^_]+)",
                 "search_folder_according": [
@@ -2971,8 +3015,8 @@
                 "nature": "必填",
                 "title": "光源PCBA完整3D图（stp）",
                 "processing_type": "search",
+                "content_regular": [],
                 "dialog_placeholder": "裸板规格必须先填",
-                "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
                 "search_scope_regular": "^([^_]+)",
                 "search_folder_according": [
@@ -3014,8 +3058,8 @@
                 "nature": "必填",
                 "title": "光源板电子BOM（xlsx）",
                 "processing_type": "search",
+                "content_regular": [],
                 "dialog_placeholder": "裸板规格必须先填",
-                "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
                 "search_scope_regular": "^([^_]+)",
                 "search_folder_according": [
@@ -3064,6 +3108,7 @@
                 "nature": "选填",
                 "title": "其它PCB裸板规格",
                 "processing_type": "text",
+                "content_regular": [],
                 "dialog_placeholder": "如：RFFM-1121_OP24A_V02",
                 "allowed_state": [
                     "研发",
@@ -3099,8 +3144,8 @@
                 "nature": "选填",
                 "title": "其它PCB原理图（pdf）",
                 "processing_type": "search",
+                "content_regular": [],
                 "dialog_placeholder": "裸板规格必须先填",
-                "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
                 "search_scope_regular": "^([^_]+)",
                 "search_folder_according": [
@@ -3137,8 +3182,8 @@
                 "nature": "选填",
                 "title": "其它PCB丝印图（pdf）",
                 "processing_type": "search",
+                "content_regular": [],
                 "dialog_placeholder": "裸板规格必须先填",
-                "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
                 "search_scope_regular": "^([^_]+)",
                 "search_folder_according": [
@@ -3176,8 +3221,8 @@
                 "nature": "选填",
                 "title": "其它PCB加工工艺说明（xlsx）",
                 "processing_type": "search",
+                "content_regular": [],
                 "dialog_placeholder": "裸板规格必须先填",
-                "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
                 "search_scope_regular": "^([^_]+)",
                 "search_folder_according": [
@@ -3213,8 +3258,8 @@
                 "nature": "选填",
                 "title": "其它PCB制板文件压缩包",
                 "processing_type": "search",
+                "content_regular": [],
                 "dialog_placeholder": "裸板规格必须先填",
-                "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
                 "search_scope_regular": "^([^_]+)",
                 "search_folder_according": [
@@ -3246,8 +3291,8 @@
                 "nature": "选填",
                 "title": "其它PCBA完整3D图（stp）",
                 "processing_type": "search",
+                "content_regular": [],
                 "dialog_placeholder": "裸板规格必须先填",
-                "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
                 "search_scope_regular": "^([^_]+)",
                 "search_folder_according": [
@@ -3283,8 +3328,8 @@
                 "nature": "选填",
                 "title": "其它电子BOM（xlsx）",
                 "processing_type": "search",
+                "content_regular": [],
                 "dialog_placeholder": "裸板规格必须先填",
-                "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\技术资料备份\\电子硬件",
                 "search_scope_regular": "^([^_]+)",
                 "search_folder_according": [
@@ -3329,6 +3374,7 @@
                 "nature": "必填",
                 "title": "显示类配件",
                 "processing_type": "text",
+                "content_regular": [],
                 "dialog_placeholder": "规格型号，_pcs/套",
                 "allowed_state": [
                     "研发",
@@ -3381,6 +3427,7 @@
                 "nature": "必填",
                 "title": "控制类配件",
                 "processing_type": "text",
+                "content_regular": [],
                 "dialog_placeholder": "规格型号，_pcs/套",
                 "allowed_state": [
                     "研发",
@@ -3434,6 +3481,7 @@
                 "nature": "必填",
                 "title": "线材配件",
                 "processing_type": "text",
+                "content_regular": [],
                 "dialog_placeholder": "线材名称（料号），_pcs/套",
                 "allowed_state": [
                     "研发",
@@ -3485,8 +3533,8 @@
                 "nature": "必填",
                 "title": "硬件使用说明书",
                 "processing_type": "search",
+                "content_regular": [],
                 "dialog_placeholder": "裸板规格必须先填",
-                "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\2.输出——研发流程输出文档\\★可发客户的资料\\产品使用说明\\1.硬件使用说明及图纸",
                 "search_scope_regular": "^([^_]+)",
                 "search_folder_according": [
@@ -3529,8 +3577,8 @@
                 "nature": "必填",
                 "title": "硬件测试报告",
                 "processing_type": "search",
+                "content_regular": [],
                 "dialog_placeholder": "裸板规格必须先填",
-                "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\2.输出——研发流程输出文档\\★可发客户的资料\\产品使用说明\\1.硬件使用说明及图纸",
                 "search_scope_regular": "^([^_]+)",
                 "search_folder_according": [
@@ -3573,8 +3621,8 @@
                 "nature": "必填",
                 "title": "产品接线说明书",
                 "processing_type": "search",
+                "content_regular": [],
                 "dialog_placeholder": "",
-                "file_name_regular": [],
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\2.输出——研发流程输出文档\\★可发客户的资料\\产品使用说明\\6.接线说明",
                 "search_scope_regular": "",
                 "search_folder_according": [],
@@ -3613,6 +3661,7 @@
                 "nature": "必填",
                 "title": "硬件测试项",
                 "processing_type": "test",
+                "content_regular": [],
                 "dialog_placeholder": "特殊测试项名称：值，公差",
                 "state_options": [
                     "常亮100%亮度档",
@@ -3669,7 +3718,7 @@
                 "nature": "必填",
                 "title": "固件执行文件",
                 "processing_type": "svn",
-                "file_name_regular": [],
+                "content_regular": [],
                 "upload_path": "https://rayfine_server:8443/svn",
                 "state_path": {
                     "研发": "Control/Controlled",
@@ -3732,7 +3781,7 @@
                 "nature": "必填",
                 "title": "固件使用说明书",
                 "processing_type": "svn",
-                "file_name_regular": [],
+                "content_regular": [],
                 "upload_path": "https://rayfine_server:8443/svn",
                 "state_path": {
                     "研发": "Control/Controlled",
@@ -3778,7 +3827,7 @@
                 "nature": "必填",
                 "title": "通讯协议文件",
                 "processing_type": "svn",
-                "file_name_regular": [],
+                "content_regular": [],
                 "upload_path": "https://rayfine_server:8443/svn",
                 "state_path": {
                     "研发": "Control/Controlled",
@@ -3826,7 +3875,7 @@
                 "nature": "必填",
                 "title": "XML协议文件",
                 "processing_type": "svn",
-                "file_name_regular": [],
+                "content_regular": [],
                 "upload_path": "https://rayfine_server:8443/svn",
                 "state_path": {
                     "研发": "Control/Controlled",
@@ -3874,6 +3923,7 @@
                 "nature": "选填",
                 "title": "软件功能测试项",
                 "processing_type": "test",
+                "content_regular": [],
                 "dialog_placeholder": "测试项名称：操作步骤、合格标准等信息；或指明依据的文档。",
                 "state_options": [],
                 "node_options": [],
@@ -3917,7 +3967,7 @@
                 "nature": "必填",
                 "title": "UI执行文件压缩包",
                 "processing_type": "svn",
-                "file_name_regular": [],
+                "content_regular": [],
                 "upload_path": "https://rayfine_server:8443/svn",
                 "state_path": {
                     "研发": "Control/Controlled",
@@ -3969,6 +4019,7 @@
                 "nature": "选填",
                 "title": "UI测试项",
                 "processing_type": "test",
+                "content_regular": [],
                 "dialog_placeholder": "写明UI检查内容与要求。",
                 "state_options": [],
                 "node_options": [],
@@ -4012,6 +4063,7 @@
                 "nature": "必填",
                 "title": "工艺重点要求",
                 "processing_type": "text",
+                "content_regular": [],
                 "dialog_placeholder": "序号.要求",
                 "allowed_state": [
                     "研发",
