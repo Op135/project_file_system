@@ -30,6 +30,7 @@ from nicegui.events import GenericEventArguments, MouseEventArguments, ValueChan
 from . import db_storage  # 导入我们创建的模块
 from .config import (
     FILES_URL_DIR,
+    IGNORE_STR,
     IMG_DIR,
     OVER_UPLOADS_FILE_TYPE,
     PDF_PREVIEW_CACHE,
@@ -791,7 +792,14 @@ class InteractiveButton:
 
     async def _update_chip_display(self):
         """核心定时同步函数，对比签名后决定是否刷新"""
-        if self.chip_dialog.value or self.check_down_dialog.value or self.activ_dialog.value:
+        if (
+            self.chip_dialog.value
+            or self.check_down_dialog.value
+            or self.activ_dialog.value
+            or self.img_dialog.value
+            or self.overview_video_dialog.value
+            or self.history_dialog.value
+        ):
             return
 
         chips_dict = db_storage.get_deep_item([f"{self.project}_over_data", self.label], {})
@@ -2944,6 +2952,8 @@ class OverviewTableGroup:
         self.check_down_dialog = ui.dialog().classes("")
         self.activ_dialog = ui.dialog().props("persistent").classes("")
         self.history_dialog = ui.dialog().classes("w-full")
+        # 采用 w-full max-w-screen-md 确保在大中小屏幕下均有良好的自适应宽度表现
+        self.autofill_dialog = ui.dialog().classes("w-full max-w-screen-md px-4 py-2")
 
         # 隐藏的文件上传器
         self.uploader = ui.upload(
@@ -3432,7 +3442,15 @@ class OverviewTableGroup:
 
     async def _update_display(self) -> None:
         """通过轻量级 Hash 校验检测列数据变更，仅刷新变化列对应的待处理状态"""
-        if self.chip_dialog.value or self.check_down_dialog.value or self.activ_dialog.value:
+        if (
+            self.chip_dialog.value
+            or self.check_down_dialog.value
+            or self.activ_dialog.value
+            or self.img_dialog.value
+            or self.overview_video_dialog.value
+            or self.history_dialog.value
+            or self.autofill_dialog.value
+        ):
             return
 
         changed_labels = []
@@ -3657,8 +3675,7 @@ class OverviewTableGroup:
             close_button="✖",
         )
         self._show_related_chip_select_dialog(text, True, "add_chip", config)
-
-    # ... 省略了其他几个 Dialog 和 _add 逻辑 (逻辑结构完全与 InteractiveButton 一致，只是 self.label 替换为了 config['label']，具体细节我打包在下方) ...
+        await self._check_and_trigger_autofill(row_id, text, config)
 
     # ---------------- 补充缺失的方法适配 -----------------
     def _setup_test_chip_dialog(self):
@@ -3845,6 +3862,7 @@ class OverviewTableGroup:
             close_button="✖",
         )
         self._show_related_chip_select_dialog(text, True, "add_chip", config)
+        await self._check_and_trigger_autofill(row_id, text, config)
 
     # ---- 文件处理相关 ----
     def _setup_file_notes_dialog(self):
@@ -4065,6 +4083,7 @@ class OverviewTableGroup:
 
         # 触发关联项选择弹窗
         self._show_related_chip_select_dialog(original_filename, True, "add_chip", config)
+        await self._check_and_trigger_autofill(row_id, original_filename, config)
 
         # 触发哈希变更与表格重绘
         self.last_state_hashes = {}
@@ -4211,6 +4230,7 @@ class OverviewTableGroup:
                 close_button="✖",
             )
             self._show_related_chip_select_dialog(text, True, "add_chip", config)
+            await self._check_and_trigger_autofill(row_id, text, config)
         ui_spinner.set_visibility(False)
 
     # ---------------- 辅助方法重构 -----------------
@@ -4359,6 +4379,242 @@ class OverviewTableGroup:
                     ),
                 ).on("click", self.activ_dialog.close)
         self.activ_dialog.open()
+
+    async def _update_autofill_index(self, first_col_label: str, content: str):
+        """
+        维护首列内容的倒排索引（惰性记录）
+        空间换时间，避免全量扫描项目数据。
+        数据结构: { "第一列标签名": { "填入的主内容": ["项目A", "项目B"] } }
+        """
+        index_data = db_storage.get_item("overview_autofill_index", {})
+
+        if first_col_label not in index_data:
+            index_data[first_col_label] = {}
+
+        if content not in index_data[first_col_label]:
+            index_data[first_col_label][content] = []
+
+        if self.project not in index_data[first_col_label][content]:
+            index_data[first_col_label][content].append(self.project)
+            await db_storage.set_item("overview_autofill_index", index_data)
+
+    async def _check_and_trigger_autofill(self, row_id: str, first_col_content: str, config: dict):
+        """
+        探测并触发快捷填充（基于倒排索引的高效匹配，支持多Chip完整克隆与安全降级）。
+        """
+        col_configs_list = list(self.permitted_configs.values())
+        if not col_configs_list:
+            return
+
+        first_col_label = col_configs_list[0]["label"]
+        if config["label"] != first_col_label:
+            return
+
+        subsequent_configs = col_configs_list[1:]
+        if not subsequent_configs:
+            return
+
+        req_max_ver = app.storage.general["project_req_max_ver"].get(self.project, "1.0")
+        creator = app.storage.user.get("current_user", "匿名用户")
+        time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        # 1. 优雅降级处理：首列为“无”时，强制将同行其他列以 "text" 类型填充为“无”
+        if first_col_content in IGNORE_STR or first_col_content == "无":
+            for col_cfg in subsequent_configs:
+                label = col_cfg["label"]
+                chip_id = str(uuid.uuid4())
+                select_activ_dic = self._get_select_activ_dic(req_max_ver)
+                chip_data = {
+                    "id": chip_id,
+                    "row_id": row_id,
+                    "role": self.role,
+                    "icon": None,
+                    "enabled": True,
+                    "bg_color": "bg-light-blue-1",
+                    "type": "text",  # 强制使用 text 类型，避免 file/image 产生 404
+                    "content": "无",
+                    "notes": "首列为无，系统自动跟随填充",
+                    "creator": creator,
+                    "req_ver": req_max_ver,
+                    "select_activ_dic": select_activ_dic,
+                    "timestamp": {time_str: {"creator": creator, "select_activ_dic": select_activ_dic}},
+                }
+                await db_storage.set_deep_item([f"{self.project}_over_data", label, chip_id], chip_data)
+
+            ui.notify("已自动将同行其他概述列填充为【无】", type="info", position="bottom")
+            self.last_state_hashes = {}
+            await self._update_display()
+            return
+
+        # 2. 读取倒排索引进行精准查找
+        index_data = db_storage.get_item("overview_autofill_index", {})
+        target_projects = index_data.get(first_col_label, {}).get(first_col_content, [])
+        # 排除当前项目，防止自引用循环
+        target_projects = [p for p in target_projects if p != self.project]
+
+        combinations = {}
+        combo_hashes = set()
+
+        if target_projects:
+            for proj in target_projects:
+                proj_data = db_storage.get_item(f"{proj}_over_data", {})
+                if not proj_data:
+                    continue
+
+                first_col_data = proj_data.get(first_col_label, {})
+                for chip in first_col_data.values():
+                    if chip.get("content") == first_col_content and chip.get("enabled") is True:
+                        target_row_id = chip.get("row_id")
+                        if not target_row_id:
+                            continue
+
+                        combo = {}
+                        for col_cfg in subsequent_configs:
+                            label = col_cfg["label"]
+                            title = col_cfg["title"]
+                            col_data = proj_data.get(label, {})
+                            # 获取同单元格内的所有激活 chip（支持多元素克隆）
+                            col_chips = [
+                                c
+                                for c in col_data.values()
+                                if c.get("row_id") == target_row_id and c.get("enabled") is True
+                            ]
+                            if col_chips:
+                                combo[title] = copy.deepcopy(col_chips)
+
+                        if combo:
+                            # 为列表生成指纹去重
+                            combo_fingerprint = str(
+                                {k: [c.get("content") for c in chip_list] for k, chip_list in combo.items()}
+                            )
+                            if combo_fingerprint not in combo_hashes:
+                                combo_hashes.add(combo_fingerprint)
+                                combinations.update({proj: combo})
+
+        # 3. 无论是否找到关联，均将当前录入登记到索引中（惰性维护）
+        await self._update_autofill_index(first_col_label, first_col_content)
+
+        if combinations:
+            self._show_autofill_dialog(row_id, combinations, subsequent_configs)
+
+    def _show_autofill_dialog(self, row_id: str, combinations: dict, col_configs: list):
+        """
+        展示联动组合勾选弹窗 (支持 test 类型的深度条件解析与多终端自适应滚动)
+        """
+        self.autofill_dialog.clear()
+        selected_idx = {"val": list(combinations.keys())[0]}
+
+        with self.autofill_dialog, ui.card().classes("w-full"):
+            ui.label("发现历史项目中存在相同内容的关联配置，是否快捷填充？").classes("text-lg font-bold text-blue-900")
+
+            # 使用 max-h-[50vh] 等限制高度并加上滚动条，保障移动端与小屏显示器的可用性
+            with ui.scroll_area().classes("w-full max-h-[50vh] border p-2 bg-gray-50/50 rounded-sm"):
+                for project_name, combo in combinations.items():
+                    bg_hover = "hover:bg-blue-50"
+                    with (
+                        ui.row()
+                        .classes(
+                            f"w-full items-start border-b border-gray-200 py-3 px-2 cursor-pointer transition-colors {bg_hover}"
+                        )
+                        .on("click", lambda _, i=project_name: selected_idx.update({"val": i}))
+                    ):
+                        ui.radio([project_name], value=selected_idx["val"]).bind_value(selected_idx, "val").classes(
+                            "mt-0"
+                        )
+                        with ui.column().classes("flex-grow gap-1"):
+                            for title, chip_list in combo.items():
+                                display_texts = []
+                                for c in chip_list:
+                                    base_content = c.get("content", "")
+                                    # --- 专门针对 test 类型，解析下拉与文本输入条件 ---
+                                    if c.get("type") == "test" and "test_select_data" in c:
+                                        t_data = c["test_select_data"]
+                                        state = t_data.get("state_select", "")
+                                        if state == "其它":
+                                            state = t_data.get("state_other_text", "")
+
+                                        node = t_data.get("node_select", "")
+                                        if node == "其它":
+                                            node = t_data.get("node_other_text", "")
+
+                                        inst = t_data.get("instrument_select", "")
+                                        if inst == "其它":
+                                            inst = t_data.get("instrument_other_text", "")
+
+                                        details = [x for x in [state, node, inst] if x]
+                                        if details:
+                                            base_content += f" ({', '.join(details)})"
+
+                                    display_texts.append(base_content)
+
+                                content_str = " | ".join(display_texts)
+                                ui.label(f"【{title}】: {content_str}").classes("text-sm text-gray-700 break-all")
+
+            unified_notes = (
+                ui.textarea(label="统一注释 (必填)", placeholder="例如：继承历史项目配置")
+                .props("outlined")
+                .classes("w-full mt-2")
+            )
+
+            with ui.row().classes("w-full justify-end items-center mt-2 gap-2"):
+                ui.button("跳过不填充", color="grey", on_click=self.autofill_dialog.close)
+                ui.button(
+                    "确认填充",
+                    color="green",
+                    on_click=lambda: self._execute_autofill(
+                        row_id, combinations[selected_idx["val"]], col_configs, unified_notes.value
+                    ),
+                )
+
+        self.autofill_dialog.open()
+
+    async def _execute_autofill(self, row_id: str, combo: dict, col_configs: list, notes: str):
+        """
+        将选中的联动组合执行落盘
+        """
+        if not notes.strip():
+            ui.notify("统一注释不能为空!", type="warning", position="bottom", timeout=2000)
+            return
+
+        req_max_ver = app.storage.general["project_req_max_ver"].get(self.project, "1.0")
+        creator = app.storage.user.get("current_user", "匿名用户")
+        time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        select_activ_dic = self._get_select_activ_dic(req_max_ver)
+        for col_cfg in col_configs:
+            label = col_cfg["label"]
+            title = col_cfg["title"]
+            if title in combo:
+                templates = combo[title]
+                for template in templates:
+                    chip_id = str(uuid.uuid4())
+
+                    chip_data = {
+                        "id": chip_id,
+                        "row_id": row_id,
+                        "role": self.role,
+                        "icon": template.get("icon"),
+                        "enabled": True,
+                        "bg_color": template.get("bg_color", "bg-light-blue-1"),
+                        "type": template.get("type", "text"),
+                        "content": template.get("content", ""),
+                        "notes": notes,
+                        "creator": creator,
+                        "req_ver": req_max_ver,
+                        "select_activ_dic": select_activ_dic,
+                        "timestamp": {time_str: {"creator": creator, "select_activ_dic": select_activ_dic}},
+                    }
+
+                    # 安全深度克隆扩展字段
+                    for ext_field in ["file_type", "url_path", "warehouse", "test_select_data"]:
+                        if ext_field in template:
+                            chip_data[ext_field] = copy.deepcopy(template[ext_field])
+
+                    await db_storage.set_deep_item([f"{self.project}_over_data", label, chip_id], chip_data)
+
+        self.autofill_dialog.close()
+        ui.notify("关联数据自动填充成功!", type="positive", position="bottom")
+        self.last_state_hashes = {}
+        await self._update_display()
 
     async def _set_related_chip_state(self, chip_text, chip_state, all_related_bool, related_select_dic, type, config):
         overview_data = copy.deepcopy(db_storage.get_item(f"{self.project}_over_data", {}))
@@ -5154,6 +5410,7 @@ class OverviewTableGroup:
             close_button="✖",
         )
         self._show_related_chip_select_dialog(text, True, "add_chip", config)
+        await self._check_and_trigger_autofill(row_id, text, config)
 
     def _splicing_svn_file_url(self, chip_text, config) -> list:
         return_url_li = []
