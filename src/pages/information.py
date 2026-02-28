@@ -402,7 +402,10 @@ def information_page():
                             user_list.reverse()  # 让图表从上往下排
                             count_list = [len(pending_data[u].keys()) for u in user_list]
 
-                            # ECharts 配置
+                            # 假设每条数据需要 30px 的高度来保证展示不拥挤，基础上下边距预留 40px
+                            # 设置一个最低高度 192px (相当于原先的 h-48) 兜底
+                            dynamic_height = max(192, len(user_list) * 25 + 40)
+
                             ui.echart(
                                 {
                                     "tooltip": {"trigger": "axis"},
@@ -426,7 +429,7 @@ def information_page():
                                         }
                                     ],
                                 }
-                            ).classes("w-full h-48")
+                            ).classes("w-full").style(f"height: {dynamic_height}px;")  # 去掉 h-48，改为动态传入高度
 
                             ui.separator()
 
