@@ -74,7 +74,7 @@
                     "^无$",
                     "\\S*A"
                 ],
-                "dialog_placeholder": "_A",
+                "dialog_placeholder": "_A，注意填写实际驱动电流，而非最大电流",
                 "allowed_state": [
                     "研发",
                     "转产"
@@ -675,9 +675,9 @@
                 "processing_type": "text",
                 "content_regular": [
                     "^无$",
-                    "\\S*?导光束，通光口径\\S*?NA\\S*"
+                    "\\S*?导光束，通光口径≥∅\\S*?NA≥\\S*"
                 ],
-                "dialog_placeholder": "普通胶粘导光束/热熔导光束，通光口径≥_mm，NA≥_",
+                "dialog_placeholder": "普通胶粘导光束/热熔导光束，通光口径≥∅_mm，NA≥_",
                 "allowed_state": [
                     "研发",
                     "转产",
@@ -3731,7 +3731,7 @@
                     "^无$",
                     "\\S*："
                 ],
-                "dialog_placeholder": "特殊测试项名称：值，公差",
+                "dialog_placeholder": "特殊测试项名称：值，公差；tianxie",
                 "state_options": [
                     "常亮100%亮度档",
                     "频闪100%亮度档",
