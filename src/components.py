@@ -1131,13 +1131,31 @@ class InteractiveButton:
     # ==========================================================
     # 2. 弹窗 UI 配置 (Dialog Setups)
     # ==========================================================
+    async def _update_auto_complete_index(self, chip_label: str, content: str):
+        """
+        将填入的文本内容添加到传入的概述标签对应列表里，以供辅助后续填写。
+        """
+        index_data = db_storage.get_item("overview_auto_complete_index", {})
+
+        if chip_label not in index_data:
+            index_data[chip_label] = [content]
+        elif content not in index_data[chip_label]:
+            index_data[chip_label].append(content)
+
+        await db_storage.set_item("overview_auto_complete_index", index_data)
 
     def _setup_text_chip_dialog(self):
         self.chip_dialog.clear()
         with self.chip_dialog, ui.card().classes("w-1/2"):
             ui.label("添加新的概述内容").classes("text-lg font-bold")
+            index_list = db_storage.get_deep_item(["overview_auto_complete_index", self.label], [])
             self.chip_label = (
-                ui.textarea(label=self.dialog_label, value=self.dialog_placeholder, placeholder=self.dialog_placeholder)
+                ui.input(
+                    label=self.dialog_label,
+                    value=self.dialog_placeholder,
+                    autocomplete=index_list,
+                    placeholder=self.dialog_placeholder,
+                )
                 .props("outlined")
                 .classes("w-full")
             )
@@ -1368,6 +1386,7 @@ class InteractiveButton:
         }
 
         await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id], chip_data)
+        await self._update_auto_complete_index(self.label, text)
         self.chip_label.value, self.chip_notes.value = "", ""
         ui_spinner.set_visibility(False)
         self.chip_dialog.close()
