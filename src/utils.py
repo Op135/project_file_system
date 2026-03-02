@@ -53,13 +53,15 @@ def handle_disconnect(client):
 
 def update_overview_charge_pending_dic(scope, des_user="", project_name="", des_label=""):
     """
-    scope传入all时，刷新所有项目概述负责人待定状态字典信息（已进行内存预读与O(n)降维优化）；
+    scope传入all时，刷新所有项目概述负责人待定状态字典信息（采用全量重建策略，自动清理已失效的标题Key）；
     scope传入local时，只刷新指定负责人、指定项目、指定概述标签类的待定状态信息，极致响应速度；
     """
-    pending_storage = app.storage.general.setdefault("overview_charge_pending", {})
-
     if scope == "all":
-        # 1. 静态配置预处理：将嵌套的配置树打平为角色映射表，避免在深层循环中重复提取
+        # 优化核心：放弃在旧字典上原地修改，创建一个全新的空字典
+        # 这样可以彻底丢弃因配置修改而遗留的无效 "title" 键
+        new_pending_storage = {}
+
+        # 1. 静态配置预处理
         role_config_map = {}
         for role, group_dict in app.storage.general.get("over_config_data", {}).items():
             role_config_map[role] = []
@@ -69,9 +71,8 @@ def update_overview_charge_pending_dic(scope, des_user="", project_name="", des_
                         {"nature": ver_dic.get("nature"), "title": ver_dic.get("title"), "label": ver_dic.get("label")}
                     )
 
-        # 2. 遍历项目：将 I/O 读取提升到项目层级，阻断 N*M 次的深层 I/O 调用
+        # 2. 遍历项目：将 I/O 读取提升到项目层级
         for project, project_dic in app.storage.general.get("overview_role", {}).items():
-            # 核心优化：一次性将该项目所有概述数据载入内存字典
             project_over_data = db_storage.get_item(f"{project}_over_data", {})
 
             for role, charge_user_dic in project_dic.items():
@@ -81,8 +82,8 @@ def update_overview_charge_pending_dic(scope, des_user="", project_name="", des_
                 if not latest_user:
                     continue
 
-                # 优雅初始化多层字典
-                user_proj_dict = pending_storage.setdefault(latest_user, {}).setdefault(project, {})
+                # 优雅初始化多层字典到【新字典】中
+                user_proj_dict = new_pending_storage.setdefault(latest_user, {}).setdefault(project, {})
 
                 # 3. 遍历预处理好的配置项
                 for config_item in role_config_map.get(role, []):
@@ -93,47 +94,54 @@ def update_overview_charge_pending_dic(scope, des_user="", project_name="", des_
                     if nature == "必填":
                         user_proj_dict.setdefault(title, False)
 
-                    # 直接从内存级缓存获取芯片数据，复杂度 O(1)
                     label_chip_dic = project_over_data.get(label, {}).values()
 
                     if not label_chip_dic:
-                        # 缺失数据判定
                         if nature == "必填":
                             user_proj_dict[title] = False
                         else:
                             user_proj_dict.pop(title, None)
                         continue
 
-                    # 4. 短路状态判定：寻找是否含有待确认项 (None) 或 激活项 (True)
+                    # 4. 短路状态判定
                     has_none = False
                     has_active = False
                     for chip_info in label_chip_dic:
                         state = chip_info.get("enabled")
                         if state is None:
                             has_none = True
-                            break  # 短路求值：找到待确认项立刻终止当前标签遍历
+                            break
                         elif state is True:
                             has_active = True
 
                     if has_none:
-                        user_proj_dict[title] = None  # 存在未决选项，置为 None（优先显示橙色待办）
+                        user_proj_dict[title] = None
                     elif has_active:
-                        user_proj_dict.pop(title, None)  # 存在激活态，移出待办
+                        user_proj_dict.pop(title, None)
                     else:
                         if nature == "必填":
-                            user_proj_dict[title] = False  # 全为 False，退回未填写状态（显示红色）
+                            user_proj_dict[title] = False
                         else:
                             user_proj_dict.pop(title, None)
 
-                # 5. 清理空项目节点，防止内存泄漏或无效的 UI 渲染树
+                # 5. 清理空项目节点
                 if not user_proj_dict:
-                    pending_storage[latest_user].pop(project, None)
+                    new_pending_storage[latest_user].pop(project, None)
+
+                # 6. 清理空用户节点（进一步防止由于某用户下所有项目都为空造成的内存泄漏）
+                if latest_user in new_pending_storage and not new_pending_storage[latest_user]:
+                    new_pending_storage.pop(latest_user, None)
+
+        # 遍历结束后，一次性覆写回 app.storage 触发 NiceGUI 序列化
+        app.storage.general["overview_charge_pending"] = new_pending_storage
 
     elif scope == "local":
+        # Local 模式直接操作原字典，因为它追求 O(1) 的响应
+        pending_storage = app.storage.general.setdefault("overview_charge_pending", {})
+
         if not des_user or not project_name or not des_label:
             return
 
-        # 优雅初始化多层字典
         user_proj_dict = pending_storage.setdefault(des_user, {}).setdefault(project_name, {})
 
         ver_dic = app.storage.general.get("over_config_data_flat", {}).get(des_label, {})
@@ -144,7 +152,6 @@ def update_overview_charge_pending_dic(scope, des_user="", project_name="", des_
             if nature == "必填":
                 user_proj_dict.setdefault(title, False)
 
-            # Local 模式本就是单项操作，直接通过深层提取即可
             label_chip_dic = db_storage.get_deep_item([f"{project_name}_over_data", des_label], {}).values()
 
             if not label_chip_dic:
@@ -159,7 +166,7 @@ def update_overview_charge_pending_dic(scope, des_user="", project_name="", des_
                     state = chip_info.get("enabled")
                     if state is None:
                         has_none = True
-                        break  # 短路求值
+                        break
                     elif state is True:
                         has_active = True
 
@@ -173,9 +180,12 @@ def update_overview_charge_pending_dic(scope, des_user="", project_name="", des_
                     else:
                         user_proj_dict.pop(title, None)
 
-        # 同样执行空项目清理
         if not user_proj_dict:
             pending_storage[des_user].pop(project_name, None)
+
+        # 同样在 Local 层清理空用户
+        if not pending_storage.get(des_user):
+            pending_storage.pop(des_user, None)
 
 
 # 判断传入的概述负责角色是否与当前登录的角色匹配
