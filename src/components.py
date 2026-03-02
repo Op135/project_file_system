@@ -527,7 +527,7 @@ class FileThumbnail:
             on_complete()
 
     # 我们创建一个新的、更智能的下载处理函数
-    async def check_and_download(self):
+    async def check_and_download(self) -> None:
         """
         检查文件是否已在当前会话下载过。
         如果是，则弹出一个带引导信息的对话框；如果否，则开始下载并标记。
@@ -1171,7 +1171,7 @@ class InteractiveButton:
             with ui.row().classes("w-full justify-end items-center"):
                 ui_spinner = ui.spinner(type="hourglass", size="md", color="amber-8", thickness=8.0)
                 ui_spinner.set_visibility(False)
-                ui.button("添加", on_click=lambda: self._add_text_chip_data(ui_spinner))
+                ui.button("添加", on_click=lambda e: self._add_text_chip_data(ui_spinner, btn=e.sender))
         self.chip_dialog.open()
 
     def _setup_search_chip_dialog(self):
@@ -1196,7 +1196,7 @@ class InteractiveButton:
             with ui.row().classes("w-full justify-end items-center"):
                 ui_spinner = ui.spinner(type="hourglass", size="md", color="amber-8", thickness=8.0)
                 ui_spinner.set_visibility(False)
-                ui.button("添加", on_click=lambda: self._add_search_chip_data(ui_spinner))
+                ui.button("添加", on_click=lambda e: self._add_search_chip_data(ui_spinner, btn=e.sender))
         self.chip_dialog.open()
 
     def _setup_svn_chip_dialog(self):
@@ -1220,7 +1220,7 @@ class InteractiveButton:
             with ui.row().classes("w-full justify-end items-center"):
                 ui_spinner = ui.spinner(type="hourglass", size="md", color="amber-8", thickness=8.0)
                 ui_spinner.set_visibility(False)
-                ui.button("添加", on_click=lambda: self._add_svn_chip_data(ui_spinner))
+                ui.button("添加", on_click=lambda e: self._add_svn_chip_data(ui_spinner, btn=e.sender))
         self.chip_dialog.open()
 
     def _setup_file_notes_dialog(self):
@@ -1240,7 +1240,7 @@ class InteractiveButton:
             with ui.row().classes("w-full justify-end items-center"):
                 self.spinner = ui.spinner(type="hourglass", size="md", color="amber-8", thickness=8.0)
                 self.spinner.set_visibility(False)
-                ui.button("添加", on_click=self._get_file_upload)
+                ui.button("添加", on_click=lambda e: self._get_file_upload(btn=e.sender))
         self.chip_dialog.open()
 
     def _setup_test_chip_dialog(self):
@@ -1304,7 +1304,9 @@ class InteractiveButton:
             with ui.row().classes("w-full justify-end items-center"):
                 ui_spinner = ui.spinner(type="hourglass", size="md", color="amber-8", thickness=8.0)
                 ui_spinner.set_visibility(False)
-                ui.button("添加", on_click=lambda: self._add_test_chip_data(ui_spinner, test_select_data))
+                ui.button(
+                    "添加", on_click=lambda e: self._add_test_chip_data(ui_spinner, test_select_data, btn=e.sender)
+                )
         self.chip_dialog.open()
 
     def _set_other_ui(self, other_ui, select_value):
@@ -1316,183 +1318,329 @@ class InteractiveButton:
     # 3. 数据添加与保存处理逻辑
     # ==========================================================
 
-    async def _add_text_chip_data(self, ui_spinner):
-        text, notes = self.chip_label.value.strip(), self.chip_notes.value.strip()
-        # 如果填写内容有正则表达式管控，则分析内容是否符合规则
-        regular_bool = False
-        if self.content_regular:
-            for regular in self.content_regular:
-                if re.search(regular, text):
-                    regular_bool = True
-        else:
-            regular_bool = True
-        if not regular_bool:
-            ui.notify(
-                "内容不符合填写格式规范!",
-                type="warning",
-                position="bottom",
-                timeout=3000,
-                progress=True,
-                # multi_line=True,
-                close_button="✖",
-            )
-            return
-        if not text or not notes:
-            ui.notify(
-                "内容和注释不能为空!",
-                type="warning",
-                position="bottom",
-                timeout=3000,
-                progress=True,
-                # multi_line=True,
-                close_button="✖",
-            )
-            return
-        if text in [
-            d["content"] for d in db_storage.get_deep_item([f"{self.project}_over_data", self.label], {}).values()
-        ]:
-            ui.notify(
-                "概述内容已存在。",
-                type="warning",
-                position="bottom",
-                timeout=3000,
-                progress=True,
-                # multi_line=True,
-                close_button="✖",
-            )
-            return
+    async def _add_text_chip_data(self, ui_spinner, btn=None):
+        if btn:
+            btn.disable()  # 1. 进门立刻禁用按钮，防止连点
 
-        ui_spinner.set_visibility(True)
-        chip_id = str(uuid.uuid4())
-        req_max_ver = app.storage.general["project_req_max_ver"][self.project]
-        select_activ_dic = self._get_select_activ_dic(req_max_ver)
-        creator = app.storage.user.get("current_user", "匿名用户")
+        try:
+            text, notes = self.chip_label.value.strip(), self.chip_notes.value.strip()
+            # 如果填写内容有正则表达式管控，则分析内容是否符合规则
+            regular_bool = False
+            if self.content_regular:
+                for regular in self.content_regular:
+                    if re.search(regular, text):
+                        regular_bool = True
+            else:
+                regular_bool = True
+            if not regular_bool:
+                ui.notify(
+                    "内容不符合填写格式规范!",
+                    type="warning",
+                    position="bottom",
+                    timeout=3000,
+                    progress=True,
+                    # multi_line=True,
+                    close_button="✖",
+                )
+                return
+            if not text or not notes:
+                ui.notify(
+                    "内容和注释不能为空!",
+                    type="warning",
+                    position="bottom",
+                    timeout=3000,
+                    progress=True,
+                    # multi_line=True,
+                    close_button="✖",
+                )
+                return
+            if text in [
+                d["content"] for d in db_storage.get_deep_item([f"{self.project}_over_data", self.label], {}).values()
+            ]:
+                ui.notify(
+                    "概述内容已存在。",
+                    type="warning",
+                    position="bottom",
+                    timeout=3000,
+                    progress=True,
+                    # multi_line=True,
+                    close_button="✖",
+                )
+                return
 
-        chip_data = {
-            "id": chip_id,
-            "role": self.role,
-            "icon": None,
-            "enabled": True,
-            "bg_color": "bg-light-blue-1",
-            "type": "text",
-            "content": text,
-            "notes": notes,
-            "creator": creator,
-            "req_ver": req_max_ver,
-            "select_activ_dic": select_activ_dic,
-            "timestamp": {
-                datetime.now().strftime("%Y-%m-%d %H:%M:%S"): {"creator": creator, "select_activ_dic": select_activ_dic}
-            },
-        }
-
-        await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id], chip_data)
-        await self._update_auto_complete_index(self.label, text)
-        self.chip_label.value, self.chip_notes.value = "", ""
-        ui_spinner.set_visibility(False)
-        self.chip_dialog.close()
-        ui.notify(
-            "内容已添加。",
-            type="positive",
-            position="bottom",
-            timeout=1000,
-            progress=True,
-            # multi_line=True,
-            close_button="✖",
-        )
-        self._show_related_chip_select_dialog(text, True, "add_chip")
-
-    async def _add_search_chip_data(self, ui_spinner):
-        text, notes = self.chip_label.value.strip(), self.chip_notes.value.strip()
-        # 如果填写内容有正则表达式管控，则分析内容是否符合规则
-        regular_bool = False
-        if self.content_regular:
-            for regular in self.content_regular:
-                if re.search(regular, text):
-                    regular_bool = True
-        else:
-            regular_bool = True
-        if not regular_bool:
-            ui.notify(
-                "内容不符合填写格式规范!",
-                type="warning",
-                position="bottom",
-                timeout=3000,
-                progress=True,
-                # multi_line=True,
-                close_button="✖",
-            )
-            return
-        if not text or not notes:
-            ui.notify(
-                "引用文件名和注释不能为空!",
-                type="warning",
-                position="bottom",
-                timeout=3000,
-                progress=True,
-                # multi_line=True,
-                close_button="✖",
-            )
-            return
-        # 补齐查重逻辑
-        if text in [
-            d["content"] for d in db_storage.get_deep_item([f"{self.project}_over_data", self.label], {}).values()
-        ]:
-            ui.notify(
-                "引用文件名已添加过。",
-                type="warning",
-                position="bottom",
-                timeout=3000,
-                progress=True,
-                # multi_line=True,
-                close_button="✖",
-            )
-            return
-
-        ui_spinner.set_visibility(True)
-        files_li = []
-        target_path_li_str = ""
-        target_path_list = await self._search_file_path(text)
-        for target_path in target_path_list:
-            target_path_li_str += f"{target_path}\n"
-            if target_path and Path(target_path).is_dir():
-                files_li.extend(find_files_pathlib(target_path, text))
-
-        if not files_li:
-            ui.notify(
-                f"引用文件不存在以下所有路径：\n{target_path_li_str}请检查文件命名或相关依赖配置!",
-                type="warning",
-                position="bottom",
-                timeout=3000,
-                progress=True,
-                multi_line=True,
-                close_button="✖",
-            )
-        elif len(files_li) > 1:
-            ui.notify(
-                f"引用文件在以下路径：\n{target_path_li_str}有多个同名文件，请确保唯一!",
-                type="warning",
-                position="bottom",
-                timeout=3000,
-                progress=True,
-                multi_line=True,
-                close_button="✖",
-            )
-        else:
-            file_type_set = get_file_type_by_extension(str(files_li[0]))
+            ui_spinner.set_visibility(True)
             chip_id = str(uuid.uuid4())
             req_max_ver = app.storage.general["project_req_max_ver"][self.project]
             select_activ_dic = self._get_select_activ_dic(req_max_ver)
             creator = app.storage.user.get("current_user", "匿名用户")
+
+            chip_data = {
+                "id": chip_id,
+                "role": self.role,
+                "icon": None,
+                "enabled": True,
+                "bg_color": "bg-light-blue-1",
+                "type": "text",
+                "content": text,
+                "notes": notes,
+                "creator": creator,
+                "req_ver": req_max_ver,
+                "select_activ_dic": select_activ_dic,
+                "timestamp": {
+                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"): {
+                        "creator": creator,
+                        "select_activ_dic": select_activ_dic,
+                    }
+                },
+            }
+
+            await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id], chip_data)
+            await self._update_auto_complete_index(self.label, text)
+            self.chip_label.value, self.chip_notes.value = "", ""
+            ui_spinner.set_visibility(False)
+            self.chip_dialog.close()
+            ui.notify(
+                "内容已添加。",
+                type="positive",
+                position="bottom",
+                timeout=1000,
+                progress=True,
+                # multi_line=True,
+                close_button="✖",
+            )
+            self._show_related_chip_select_dialog(text, True, "add_chip")
+        except Exception as ex:
+            # 捕捉潜在的数据库写入等异常
+            logger.error(f"添加概述失败: {ex}", exc_info=True)
+        finally:
+            if btn:
+                btn.enable()  # 3. 最终防线：无论成功、失败验证不通过还是报错，都恢复按钮状态
+
+    async def _add_search_chip_data(self, ui_spinner, btn=None):
+        if btn:
+            btn.disable()  # 1. 进门立刻禁用按钮，防止连点
+
+        try:
+            text, notes = self.chip_label.value.strip(), self.chip_notes.value.strip()
+            # 如果填写内容有正则表达式管控，则分析内容是否符合规则
+            regular_bool = False
+            if self.content_regular:
+                for regular in self.content_regular:
+                    if re.search(regular, text):
+                        regular_bool = True
+            else:
+                regular_bool = True
+            if not regular_bool:
+                ui.notify(
+                    "内容不符合填写格式规范!",
+                    type="warning",
+                    position="bottom",
+                    timeout=3000,
+                    progress=True,
+                    # multi_line=True,
+                    close_button="✖",
+                )
+                return
+            if not text or not notes:
+                ui.notify(
+                    "引用文件名和注释不能为空!",
+                    type="warning",
+                    position="bottom",
+                    timeout=3000,
+                    progress=True,
+                    # multi_line=True,
+                    close_button="✖",
+                )
+                return
+            # 补齐查重逻辑
+            if text in [
+                d["content"] for d in db_storage.get_deep_item([f"{self.project}_over_data", self.label], {}).values()
+            ]:
+                ui.notify(
+                    "引用文件名已添加过。",
+                    type="warning",
+                    position="bottom",
+                    timeout=3000,
+                    progress=True,
+                    # multi_line=True,
+                    close_button="✖",
+                )
+                return
+
+            ui_spinner.set_visibility(True)
+            files_li = []
+            target_path_li_str = ""
+            target_path_list = await self._search_file_path(text)
+            for target_path in target_path_list:
+                target_path_li_str += f"{target_path}\n"
+                if target_path and Path(target_path).is_dir():
+                    files_li.extend(find_files_pathlib(target_path, text))
+
+            if not files_li:
+                ui.notify(
+                    f"引用文件不存在以下所有路径：\n{target_path_li_str}请检查文件命名或相关依赖配置!",
+                    type="warning",
+                    position="bottom",
+                    timeout=3000,
+                    progress=True,
+                    multi_line=True,
+                    close_button="✖",
+                )
+            elif len(files_li) > 1:
+                ui.notify(
+                    f"引用文件在以下路径：\n{target_path_li_str}有多个同名文件，请确保唯一!",
+                    type="warning",
+                    position="bottom",
+                    timeout=3000,
+                    progress=True,
+                    multi_line=True,
+                    close_button="✖",
+                )
+            else:
+                file_type_set = get_file_type_by_extension(str(files_li[0]))
+                chip_id = str(uuid.uuid4())
+                req_max_ver = app.storage.general["project_req_max_ver"][self.project]
+                select_activ_dic = self._get_select_activ_dic(req_max_ver)
+                creator = app.storage.user.get("current_user", "匿名用户")
+                chip_data = {
+                    "id": chip_id,
+                    "role": self.role,
+                    "icon": "saved_search",
+                    "enabled": True,
+                    "bg_color": "bg-light-blue-1",
+                    "type": "search",
+                    "file_type": file_type_set[0],
+                    "url_path": f"{FILES_URL_DIR}/{text}",
+                    "content": text,
+                    "notes": notes,
+                    "creator": creator,
+                    "req_ver": req_max_ver,
+                    "select_activ_dic": select_activ_dic,
+                    "timestamp": {
+                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"): {
+                            "creator": creator,
+                            "select_activ_dic": select_activ_dic,
+                        }
+                    },
+                }
+                await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id], chip_data)
+                self.chip_label.value, self.chip_notes.value = "", ""
+                ui_spinner.set_visibility(False)
+                self.chip_dialog.close()
+                ui.notify(
+                    "文件引用已添加。",
+                    type="positive",
+                    position="bottom",
+                    timeout=1000,
+                    progress=True,
+                    # multi_line=True,
+                    close_button="✖",
+                )
+                self._show_related_chip_select_dialog(text, True, "add_chip")
+        except Exception as ex:
+            # 捕捉潜在的数据库写入等异常
+            logger.error(f"添加概述失败: {ex}", exc_info=True)
+        finally:
+            if btn:
+                btn.enable()  # 3. 最终防线：无论成功、失败验证不通过还是报错，都恢复按钮状态
+            ui_spinner.set_visibility(False)
+
+    async def _add_svn_chip_data(self, ui_spinner, btn=None):
+        if btn:
+            btn.disable()  # 1. 进门立刻禁用按钮，防止连点
+
+        try:
+            text, notes = self.chip_label.value.strip(), self.chip_notes.value.strip()
+            project_state = app.storage.general["project_summary"][self.project]["state"]
+            warehouse = self.state_path.get(project_state)
+            # 如果填写内容有正则表达式管控，则分析内容是否符合规则
+            regular_bool = False
+            if self.content_regular:
+                for regular in self.content_regular:
+                    if re.search(regular, text):
+                        regular_bool = True
+            else:
+                regular_bool = True
+            if not regular_bool:
+                ui.notify(
+                    "内容不符合填写格式规范!",
+                    type="warning",
+                    position="bottom",
+                    timeout=3000,
+                    progress=True,
+                    # multi_line=True,
+                    close_button="✖",
+                )
+                return
+            if not text or not notes:
+                ui.notify(
+                    "引用文件名和注释不能为空!",
+                    type="warning",
+                    position="bottom",
+                    timeout=3000,
+                    progress=True,
+                    # multi_line=True,
+                    close_button="✖",
+                )
+                return
+            elif (text, warehouse) in [
+                (d["content"], d.get("warehouse"))
+                for d in db_storage.get_deep_item([f"{self.project}_over_data", self.label], {}).values()
+            ]:
+                ui.notify(
+                    f"{warehouse}仓库下的相同引用文件名已添加过。",
+                    type="warning",
+                    position="bottom",
+                    timeout=3000,
+                    progress=True,
+                    # multi_line=True,
+                    close_button="✖",
+                )
+                return
+
+            ui_spinner.set_visibility(True)
+            target_url_li = self._splicing_svn_file_url(text)
+            if target_url_li and len(target_url_li) == 1:
+                target_url = target_url_li[0]
+                file_info = await self.get_url_file_info_async(target_url)
+                if not file_info[0]:
+                    ui_spinner.set_visibility(False)
+                    return
+            elif target_url_li and len(target_url_li) > 1:
+                ui.notify(
+                    "有多个路径，不合规!",
+                    type="warning",
+                    position="bottom",
+                    timeout=3000,
+                    progress=True,
+                    # multi_line=True,
+                    close_button="✖",
+                )
+                ui_spinner.set_visibility(False)
+                return
+            else:
+                ui_spinner.set_visibility(False)
+                return
+
+            chip_id = str(uuid.uuid4())
+            req_max_ver = app.storage.general["project_req_max_ver"][self.project]
+            select_activ_dic = self._get_select_activ_dic(req_max_ver)
+            creator = app.storage.user.get("current_user", "匿名用户")
+            file_type = file_info[1]
+            if (file_type == "application/octet-stream" or file_type is None) and target_url.lower().endswith(".pdf"):
+                file_type = "application/pdf"
+
             chip_data = {
                 "id": chip_id,
                 "role": self.role,
                 "icon": "saved_search",
                 "enabled": True,
                 "bg_color": "bg-light-blue-1",
-                "type": "search",
-                "file_type": file_type_set[0],
-                "url_path": f"{FILES_URL_DIR}/{text}",
+                "type": "svn",
+                "file_type": file_type,
+                "url_path": target_url,
                 "content": text,
+                "warehouse": warehouse,
                 "notes": notes,
                 "creator": creator,
                 "req_ver": req_max_ver,
@@ -1518,261 +1666,173 @@ class InteractiveButton:
                 close_button="✖",
             )
             self._show_related_chip_select_dialog(text, True, "add_chip")
+        except Exception as ex:
+            # 捕捉潜在的数据库写入等异常
+            logger.error(f"添加概述失败: {ex}", exc_info=True)
+        finally:
+            if btn:
+                btn.enable()  # 3. 最终防线：无论成功、失败验证不通过还是报错，都恢复按钮状态
 
-        ui_spinner.set_visibility(False)
+    async def _add_test_chip_data(self, ui_spinner, test_select_data, btn=None):
+        if btn:
+            btn.disable()  # 1. 进门立刻禁用按钮，防止连点
 
-    async def _add_svn_chip_data(self, ui_spinner):
-        text, notes = self.chip_label.value.strip(), self.chip_notes.value.strip()
-        project_state = app.storage.general["project_summary"][self.project]["state"]
-        warehouse = self.state_path.get(project_state)
-        # 如果填写内容有正则表达式管控，则分析内容是否符合规则
-        regular_bool = False
-        if self.content_regular:
-            for regular in self.content_regular:
-                if re.search(regular, text):
-                    regular_bool = True
-        else:
-            regular_bool = True
-        if not regular_bool:
-            ui.notify(
-                "内容不符合填写格式规范!",
-                type="warning",
-                position="bottom",
-                timeout=3000,
-                progress=True,
-                # multi_line=True,
-                close_button="✖",
-            )
-            return
-        if not text or not notes:
-            ui.notify(
-                "引用文件名和注释不能为空!",
-                type="warning",
-                position="bottom",
-                timeout=3000,
-                progress=True,
-                # multi_line=True,
-                close_button="✖",
-            )
-            return
-        elif (text, warehouse) in [
-            (d["content"], d.get("warehouse"))
-            for d in db_storage.get_deep_item([f"{self.project}_over_data", self.label], {}).values()
-        ]:
-            ui.notify(
-                f"{warehouse}仓库下的相同引用文件名已添加过。",
-                type="warning",
-                position="bottom",
-                timeout=3000,
-                progress=True,
-                # multi_line=True,
-                close_button="✖",
-            )
-            return
-
-        ui_spinner.set_visibility(True)
-        target_url_li = self._splicing_svn_file_url(text)
-        if target_url_li and len(target_url_li) == 1:
-            target_url = target_url_li[0]
-            file_info = await self.get_url_file_info_async(target_url)
-            if not file_info[0]:
-                ui_spinner.set_visibility(False)
+        try:
+            text, notes = self.chip_label.value.strip(), self.chip_notes.value.strip()
+            other_bool = False
+            if test_select_data["state_select"] == "其它" and not test_select_data["state_other_text"]:
+                other_bool = True
+            if test_select_data["node_select"] == "其它" and not test_select_data["node_other_text"]:
+                other_bool = True
+            if test_select_data["instrument_select"] == "其它" and not test_select_data["instrument_other_text"]:
+                other_bool = True
+            # 如果填写内容有正则表达式管控，则分析内容是否符合规则
+            regular_bool = False
+            if self.content_regular:
+                for regular in self.content_regular:
+                    if re.search(regular, text):
+                        regular_bool = True
+            else:
+                regular_bool = True
+            if not regular_bool:
+                ui.notify(
+                    "内容不符合填写格式规范!",
+                    type="warning",
+                    position="bottom",
+                    timeout=3000,
+                    progress=True,
+                    # multi_line=True,
+                    close_button="✖",
+                )
                 return
-        elif target_url_li and len(target_url_li) > 1:
-            ui.notify(
-                "有多个路径，不合规!",
-                type="warning",
-                position="bottom",
-                timeout=3000,
-                progress=True,
-                # multi_line=True,
-                close_button="✖",
-            )
+            if (
+                not text
+                or test_select_data["state_select"] is None
+                or test_select_data["node_select"] is None
+                or test_select_data["instrument_select"] is None
+            ):
+                ui.notify(
+                    "测试项内容及选项必须填写和选择!",
+                    type="warning",
+                    position="bottom",
+                    timeout=3000,
+                    progress=True,
+                    # multi_line=True,
+                    close_button="✖",
+                )
+                return
+            elif not notes:
+                ui.notify(
+                    "注释不能为空!",
+                    type="warning",
+                    position="bottom",
+                    timeout=3000,
+                    progress=True,
+                    # multi_line=True,
+                    close_button="✖",
+                )
+                return
+            elif other_bool:
+                ui.notify(
+                    "特殊要求不能为空!",
+                    type="warning",
+                    position="bottom",
+                    timeout=3000,
+                    progress=True,
+                    # multi_line=True,
+                    close_button="✖",
+                )
+                return
+
+            # 更严谨的组合查重判断
+            existing_test_data = [
+                (d["content"], d.get("test_select_data"))
+                for d in db_storage.get_deep_item([f"{self.project}_over_data", self.label], {}).values()
+            ]
+            if (text, test_select_data) in existing_test_data:
+                ui.notify(
+                    "测试项内容标准已存在。",
+                    type="warning",
+                    position="bottom",
+                    timeout=3000,
+                    progress=True,
+                    # multi_line=True,
+                    close_button="✖",
+                )
+                return
+
+            ui_spinner.set_visibility(True)
+            chip_id = str(uuid.uuid4())
+            req_max_ver = app.storage.general["project_req_max_ver"][self.project]
+            select_activ_dic = self._get_select_activ_dic(req_max_ver)
+            creator = app.storage.user.get("current_user", "匿名用户")
+
+            chip_data = {
+                "id": chip_id,
+                "role": self.role,
+                "icon": None,
+                "enabled": True,
+                "bg_color": "bg-light-blue-1",
+                "type": "test",
+                "content": text,
+                "notes": notes,
+                "test_select_data": test_select_data,
+                "creator": creator,
+                "req_ver": req_max_ver,
+                "select_activ_dic": select_activ_dic,
+                "timestamp": {
+                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"): {
+                        "creator": creator,
+                        "select_activ_dic": select_activ_dic,
+                    }
+                },
+            }
+
+            await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id], chip_data)
+            self.chip_notes.value = ""
             ui_spinner.set_visibility(False)
-            return
-        else:
-            ui_spinner.set_visibility(False)
-            return
-
-        chip_id = str(uuid.uuid4())
-        req_max_ver = app.storage.general["project_req_max_ver"][self.project]
-        select_activ_dic = self._get_select_activ_dic(req_max_ver)
-        creator = app.storage.user.get("current_user", "匿名用户")
-        file_type = file_info[1]
-        if (file_type == "application/octet-stream" or file_type is None) and target_url.lower().endswith(".pdf"):
-            file_type = "application/pdf"
-
-        chip_data = {
-            "id": chip_id,
-            "role": self.role,
-            "icon": "saved_search",
-            "enabled": True,
-            "bg_color": "bg-light-blue-1",
-            "type": "svn",
-            "file_type": file_type,
-            "url_path": target_url,
-            "content": text,
-            "warehouse": warehouse,
-            "notes": notes,
-            "creator": creator,
-            "req_ver": req_max_ver,
-            "select_activ_dic": select_activ_dic,
-            "timestamp": {
-                datetime.now().strftime("%Y-%m-%d %H:%M:%S"): {"creator": creator, "select_activ_dic": select_activ_dic}
-            },
-        }
-        await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id], chip_data)
-        self.chip_label.value, self.chip_notes.value = "", ""
-        ui_spinner.set_visibility(False)
-        self.chip_dialog.close()
-        ui.notify(
-            "文件引用已添加。",
-            type="positive",
-            position="bottom",
-            timeout=1000,
-            progress=True,
-            # multi_line=True,
-            close_button="✖",
-        )
-        self._show_related_chip_select_dialog(text, True, "add_chip")
-
-    async def _add_test_chip_data(self, ui_spinner, test_select_data):
-        text, notes = self.chip_label.value.strip(), self.chip_notes.value.strip()
-        other_bool = False
-        if test_select_data["state_select"] == "其它" and not test_select_data["state_other_text"]:
-            other_bool = True
-        if test_select_data["node_select"] == "其它" and not test_select_data["node_other_text"]:
-            other_bool = True
-        if test_select_data["instrument_select"] == "其它" and not test_select_data["instrument_other_text"]:
-            other_bool = True
-        # 如果填写内容有正则表达式管控，则分析内容是否符合规则
-        regular_bool = False
-        if self.content_regular:
-            for regular in self.content_regular:
-                if re.search(regular, text):
-                    regular_bool = True
-        else:
-            regular_bool = True
-        if not regular_bool:
+            self.chip_dialog.close()
             ui.notify(
-                "内容不符合填写格式规范!",
-                type="warning",
+                "内容已添加。",
+                type="positive",
                 position="bottom",
-                timeout=3000,
+                timeout=1000,
                 progress=True,
                 # multi_line=True,
                 close_button="✖",
             )
-            return
-        if (
-            not text
-            or test_select_data["state_select"] is None
-            or test_select_data["node_select"] is None
-            or test_select_data["instrument_select"] is None
-        ):
-            ui.notify(
-                "测试项内容及选项必须填写和选择!",
-                type="warning",
-                position="bottom",
-                timeout=3000,
-                progress=True,
-                # multi_line=True,
-                close_button="✖",
-            )
-            return
-        elif not notes:
-            ui.notify(
-                "注释不能为空!",
-                type="warning",
-                position="bottom",
-                timeout=3000,
-                progress=True,
-                # multi_line=True,
-                close_button="✖",
-            )
-            return
-        elif other_bool:
-            ui.notify(
-                "特殊要求不能为空!",
-                type="warning",
-                position="bottom",
-                timeout=3000,
-                progress=True,
-                # multi_line=True,
-                close_button="✖",
-            )
-            return
+            self._show_related_chip_select_dialog(text, True, "add_chip")
+        except Exception as ex:
+            # 捕捉潜在的数据库写入等异常
+            logger.error(f"添加概述失败: {ex}", exc_info=True)
+        finally:
+            if btn:
+                btn.enable()  # 3. 最终防线：无论成功、失败验证不通过还是报错，都恢复按钮状态
 
-        # 更严谨的组合查重判断
-        existing_test_data = [
-            (d["content"], d.get("test_select_data"))
-            for d in db_storage.get_deep_item([f"{self.project}_over_data", self.label], {}).values()
-        ]
-        if (text, test_select_data) in existing_test_data:
-            ui.notify(
-                "测试项内容标准已存在。",
-                type="warning",
-                position="bottom",
-                timeout=3000,
-                progress=True,
-                # multi_line=True,
-                close_button="✖",
-            )
-            return
+    def _get_file_upload(self, btn=None):
+        if btn:
+            btn.disable()  # 1. 进门立刻禁用按钮，防止连点
 
-        ui_spinner.set_visibility(True)
-        chip_id = str(uuid.uuid4())
-        req_max_ver = app.storage.general["project_req_max_ver"][self.project]
-        select_activ_dic = self._get_select_activ_dic(req_max_ver)
-        creator = app.storage.user.get("current_user", "匿名用户")
-
-        chip_data = {
-            "id": chip_id,
-            "role": self.role,
-            "icon": None,
-            "enabled": True,
-            "bg_color": "bg-light-blue-1",
-            "type": "test",
-            "content": text,
-            "notes": notes,
-            "test_select_data": test_select_data,
-            "creator": creator,
-            "req_ver": req_max_ver,
-            "select_activ_dic": select_activ_dic,
-            "timestamp": {
-                datetime.now().strftime("%Y-%m-%d %H:%M:%S"): {"creator": creator, "select_activ_dic": select_activ_dic}
-            },
-        }
-
-        await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id], chip_data)
-        self.chip_notes.value = ""
-        ui_spinner.set_visibility(False)
-        self.chip_dialog.close()
-        ui.notify(
-            "内容已添加。",
-            type="positive",
-            position="bottom",
-            timeout=1000,
-            progress=True,
-            # multi_line=True,
-            close_button="✖",
-        )
-        self._show_related_chip_select_dialog(text, True, "add_chip")
-
-    def _get_file_upload(self):
-        if not self.chip_notes.value:
-            ui.notify(
-                "注释不能为空!",
-                type="warning",
-                position="bottom",
-                timeout=3000,
-                progress=True,
-                # multi_line=True,
-                close_button="✖",
-            )
-        else:
-            self.uploader.reset()
-            self.uploader.run_method("pickFiles")
+        try:
+            if not self.chip_notes.value:
+                ui.notify(
+                    "注释不能为空!",
+                    type="warning",
+                    position="bottom",
+                    timeout=3000,
+                    progress=True,
+                    # multi_line=True,
+                    close_button="✖",
+                )
+            else:
+                self.uploader.reset()
+                self.uploader.run_method("pickFiles")
+        except Exception as ex:
+            # 捕捉潜在的数据库写入等异常
+            logger.error(f"添加概述失败: {ex}", exc_info=True)
+        finally:
+            if btn:
+                btn.enable()  # 3. 最终防线：无论成功、失败验证不通过还是报错，都恢复按钮状态
 
     async def _handle_file_upload(self, e):
         original_filename = e.file.name
@@ -3605,96 +3665,109 @@ class OverviewTableGroup:
             with ui.row().classes("w-full justify-end items-center"):
                 ui_spinner = ui.spinner(type="hourglass", size="md", color="amber-8", thickness=8.0)
                 ui_spinner.set_visibility(False)
-                ui.button("添加", on_click=lambda: self._add_text_chip_data(ui_spinner))
+                ui.button("添加", on_click=lambda e: self._add_text_chip_data(ui_spinner, btn=e.sender))
         self.chip_dialog.open()
 
-    async def _add_text_chip_data(self, ui_spinner):
-        config = self.current_config
-        # 获取要绑定的 row_id，如果没有（理论上现在都有了），就生成一个新的
-        row_id = getattr(self, "current_target_row_id", None) or str(uuid.uuid4())
-        text, notes = self.chip_label.value.strip(), self.chip_notes.value.strip()
-        # 如果填写内容有正则表达式管控，则分析内容是否符合规则
-        regular_bool = False
-        if config.get("content_regular", []):
-            for regular in config.get("content_regular", []):
-                if re.search(regular, text):
-                    regular_bool = True
-        else:
-            regular_bool = True
-        if not regular_bool:
+    async def _add_text_chip_data(self, ui_spinner, btn=None):
+        if btn:
+            btn.disable()  # 1. 进门立刻禁用按钮，防止连点
+
+        try:
+            config = self.current_config
+            # 获取要绑定的 row_id，如果没有（理论上现在都有了），就生成一个新的
+            row_id = getattr(self, "current_target_row_id", None) or str(uuid.uuid4())
+            text, notes = self.chip_label.value.strip(), self.chip_notes.value.strip()
+            # 如果填写内容有正则表达式管控，则分析内容是否符合规则
+            regular_bool = False
+            if config.get("content_regular", []):
+                for regular in config.get("content_regular", []):
+                    if re.search(regular, text):
+                        regular_bool = True
+            else:
+                regular_bool = True
+            if not regular_bool:
+                ui.notify(
+                    "内容不符合填写格式规范!",
+                    type="warning",
+                    position="bottom",
+                    timeout=3000,
+                    progress=True,
+                    # multi_line=True,
+                    close_button="✖",
+                )
+                return
+            if not text or not notes:
+                ui.notify(
+                    "内容和注释均不能为空!",
+                    type="warning",
+                    position="bottom",
+                    timeout=3000,
+                    progress=True,
+                    # multi_line=True,
+                    close_button="✖",
+                )
+                return
+            if (text, row_id) in [
+                (d["content"], d.get("row_id", ""))
+                for d in db_storage.get_deep_item([f"{self.project}_over_data", config["label"]], {}).values()
+            ]:
+                ui.notify(
+                    "概述内容已存在。",
+                    type="warning",
+                    position="bottom",
+                    timeout=3000,
+                    progress=True,
+                    # multi_line=True,
+                    close_button="✖",
+                )
+                return
+
+            ui_spinner.set_visibility(True)
+            req_max_ver = app.storage.general["project_req_max_ver"].get(self.project, "1.0")
+            select_activ_dic = self._get_select_activ_dic(req_max_ver)
+            creator = app.storage.user.get("current_user", "匿名")
+
+            chip_data = {
+                "id": str(uuid.uuid4()),
+                "row_id": row_id,
+                "role": self.role,
+                "icon": None,
+                "enabled": True,
+                "bg_color": "bg-light-blue-1",
+                "type": "text",
+                "content": text,
+                "notes": notes,
+                "creator": creator,
+                "req_ver": req_max_ver,
+                "select_activ_dic": select_activ_dic,
+                "timestamp": {
+                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"): {
+                        "creator": creator,
+                        "select_activ_dic": select_activ_dic,
+                    }
+                },
+            }
+            await db_storage.set_deep_item([f"{self.project}_over_data", config["label"], chip_data["id"]], chip_data)
+
+            ui_spinner.set_visibility(False)
+            self.chip_dialog.close()
             ui.notify(
-                "内容不符合填写格式规范!",
-                type="warning",
+                "内容已添加",
+                type="positive",
                 position="bottom",
-                timeout=3000,
+                timeout=1000,
                 progress=True,
                 # multi_line=True,
                 close_button="✖",
             )
-            return
-        if not text or not notes:
-            ui.notify(
-                "内容和注释均不能为空!",
-                type="warning",
-                position="bottom",
-                timeout=3000,
-                progress=True,
-                # multi_line=True,
-                close_button="✖",
-            )
-            return
-        if (text, row_id) in [
-            (d["content"], d.get("row_id", ""))
-            for d in db_storage.get_deep_item([f"{self.project}_over_data", config["label"]], {}).values()
-        ]:
-            ui.notify(
-                "概述内容已存在。",
-                type="warning",
-                position="bottom",
-                timeout=3000,
-                progress=True,
-                # multi_line=True,
-                close_button="✖",
-            )
-            return
-
-        ui_spinner.set_visibility(True)
-        req_max_ver = app.storage.general["project_req_max_ver"].get(self.project, "1.0")
-        select_activ_dic = self._get_select_activ_dic(req_max_ver)
-        creator = app.storage.user.get("current_user", "匿名")
-
-        chip_data = {
-            "id": str(uuid.uuid4()),
-            "row_id": row_id,
-            "role": self.role,
-            "icon": None,
-            "enabled": True,
-            "bg_color": "bg-light-blue-1",
-            "type": "text",
-            "content": text,
-            "notes": notes,
-            "creator": creator,
-            "req_ver": req_max_ver,
-            "select_activ_dic": select_activ_dic,
-            "timestamp": {
-                datetime.now().strftime("%Y-%m-%d %H:%M:%S"): {"creator": creator, "select_activ_dic": select_activ_dic}
-            },
-        }
-        await db_storage.set_deep_item([f"{self.project}_over_data", config["label"], chip_data["id"]], chip_data)
-
-        ui_spinner.set_visibility(False)
-        self.chip_dialog.close()
-        ui.notify(
-            "内容已添加",
-            type="positive",
-            position="bottom",
-            timeout=1000,
-            progress=True,
-            # multi_line=True,
-            close_button="✖",
-        )
-        self._show_related_chip_select_dialog(text, True, "add_chip", config)
-        await self._check_and_trigger_autofill(row_id, text, config)
+            self._show_related_chip_select_dialog(text, True, "add_chip", config)
+            await self._check_and_trigger_autofill(row_id, text, config)
+        except Exception as ex:
+            # 捕捉潜在的数据库写入等异常
+            logger.error(f"添加概述失败: {ex}", exc_info=True)
+        finally:
+            if btn:
+                btn.enable()  # 3. 最终防线：无论成功、失败验证不通过还是报错，都恢复按钮状态
 
     # ---------------- 补充缺失的方法适配 -----------------
     def _setup_test_chip_dialog(self):
@@ -3759,129 +3832,144 @@ class OverviewTableGroup:
             with ui.row().classes("w-full justify-end items-center"):
                 ui_spinner = ui.spinner(type="hourglass", size="md", color="amber-8", thickness=8.0)
                 ui_spinner.set_visibility(False)
-                ui.button("添加", on_click=lambda: self._add_test_chip_data(ui_spinner, test_select_data))
+                ui.button(
+                    "添加", on_click=lambda e: self._add_test_chip_data(ui_spinner, test_select_data, btn=e.sender)
+                )
         self.chip_dialog.open()
 
-    async def _add_test_chip_data(self, ui_spinner, test_select_data):
-        config = self.current_config
-        text, notes = self.chip_label.value.strip(), self.chip_notes.value.strip()
+    async def _add_test_chip_data(self, ui_spinner, test_select_data, btn=None):
+        if btn:
+            btn.disable()  # 1. 进门立刻禁用按钮，防止连点
 
-        other_bool = any(
-            test_select_data[f"{p}_select"] == "其它" and not test_select_data[f"{p}_other_text"]
-            for p in ["state", "node", "instrument"]
-        )
-        # 如果填写内容有正则表达式管控，则分析内容是否符合规则
-        regular_bool = False
-        if config.get("content_regular", []):
-            for regular in config.get("content_regular", []):
-                if re.search(regular, text):
-                    regular_bool = True
-        else:
-            regular_bool = True
-        if not regular_bool:
+        try:
+            config = self.current_config
+            text, notes = self.chip_label.value.strip(), self.chip_notes.value.strip()
+
+            other_bool = any(
+                test_select_data[f"{p}_select"] == "其它" and not test_select_data[f"{p}_other_text"]
+                for p in ["state", "node", "instrument"]
+            )
+            # 如果填写内容有正则表达式管控，则分析内容是否符合规则
+            regular_bool = False
+            if config.get("content_regular", []):
+                for regular in config.get("content_regular", []):
+                    if re.search(regular, text):
+                        regular_bool = True
+            else:
+                regular_bool = True
+            if not regular_bool:
+                ui.notify(
+                    "内容不符合填写格式规范!",
+                    type="warning",
+                    position="bottom",
+                    timeout=3000,
+                    progress=True,
+                    # multi_line=True,
+                    close_button="✖",
+                )
+                return
+            if not text or not all(
+                test_select_data[f"{p}_select"] for p in ["state", "node", "instrument"] if config.get(f"{p}_options")
+            ):
+                ui.notify(
+                    "测试项内容及选项必须填写和选择!",
+                    type="warning",
+                    position="bottom",
+                    timeout=3000,
+                    progress=True,
+                    # multi_line=True,
+                    close_button="✖",
+                )
+                return
+            if not notes:
+                ui.notify(
+                    "注释不能为空!",
+                    type="warning",
+                    position="bottom",
+                    timeout=3000,
+                    progress=True,
+                    # multi_line=True,
+                    close_button="✖",
+                )
+                return
+            if other_bool:
+                ui.notify(
+                    "特殊要求不能为空!",
+                    type="warning",
+                    position="bottom",
+                    timeout=3000,
+                    progress=True,
+                    # multi_line=True,
+                    close_button="✖",
+                )
+                return
+
+            # --- 修复 1.2: 补充 Test 类型的组合查重拦截 ---
+            existing_test_data = [
+                (d["content"], d.get("test_select_data"))
+                for d in db_storage.get_deep_item([f"{self.project}_over_data", config["label"]], {}).values()
+            ]
+            if (text, test_select_data) in existing_test_data:
+                ui.notify(
+                    "测试项内容标准已存在。",
+                    type="warning",
+                    position="bottom",
+                    timeout=3000,
+                    progress=True,
+                    # multi_line=True,
+                    close_button="✖",
+                )
+                return
+
+            ui_spinner.set_visibility(True)
+            req_max_ver = app.storage.general["project_req_max_ver"].get(self.project, "1.0")
+            select_activ_dic = self._get_select_activ_dic(req_max_ver)
+            creator = app.storage.user.get("current_user", "匿名用户")
+            row_id = getattr(self, "current_target_row_id", None) or str(uuid.uuid4())
+
+            chip_data = {
+                "id": str(uuid.uuid4()),
+                "row_id": row_id,
+                "role": self.role,
+                "icon": None,
+                "enabled": True,
+                "bg_color": "bg-light-blue-1",
+                "type": "test",
+                "content": text,
+                "notes": notes,
+                "test_select_data": test_select_data,
+                "creator": creator,
+                "req_ver": req_max_ver,
+                "select_activ_dic": select_activ_dic,
+                "timestamp": {
+                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"): {
+                        "creator": creator,
+                        "select_activ_dic": select_activ_dic,
+                    }
+                },
+            }
+            await db_storage.set_deep_item([f"{self.project}_over_data", config["label"], chip_data["id"]], chip_data)
+
+            ui_spinner.set_visibility(False)
+            self.chip_notes.value = ""
+            self.chip_dialog.close()
             ui.notify(
-                "内容不符合填写格式规范!",
-                type="warning",
+                "内容已添加。",
+                type="positive",
                 position="bottom",
-                timeout=3000,
+                timeout=1000,
                 progress=True,
                 # multi_line=True,
                 close_button="✖",
             )
-            return
-        if not text or not all(
-            test_select_data[f"{p}_select"] for p in ["state", "node", "instrument"] if config.get(f"{p}_options")
-        ):
-            ui.notify(
-                "测试项内容及选项必须填写和选择!",
-                type="warning",
-                position="bottom",
-                timeout=3000,
-                progress=True,
-                # multi_line=True,
-                close_button="✖",
-            )
-            return
-        if not notes:
-            ui.notify(
-                "注释不能为空!",
-                type="warning",
-                position="bottom",
-                timeout=3000,
-                progress=True,
-                # multi_line=True,
-                close_button="✖",
-            )
-            return
-        if other_bool:
-            ui.notify(
-                "特殊要求不能为空!",
-                type="warning",
-                position="bottom",
-                timeout=3000,
-                progress=True,
-                # multi_line=True,
-                close_button="✖",
-            )
-            return
-
-        # --- 修复 1.2: 补充 Test 类型的组合查重拦截 ---
-        existing_test_data = [
-            (d["content"], d.get("test_select_data"))
-            for d in db_storage.get_deep_item([f"{self.project}_over_data", config["label"]], {}).values()
-        ]
-        if (text, test_select_data) in existing_test_data:
-            ui.notify(
-                "测试项内容标准已存在。",
-                type="warning",
-                position="bottom",
-                timeout=3000,
-                progress=True,
-                # multi_line=True,
-                close_button="✖",
-            )
-            return
-
-        ui_spinner.set_visibility(True)
-        req_max_ver = app.storage.general["project_req_max_ver"].get(self.project, "1.0")
-        select_activ_dic = self._get_select_activ_dic(req_max_ver)
-        creator = app.storage.user.get("current_user", "匿名用户")
-        row_id = getattr(self, "current_target_row_id", None) or str(uuid.uuid4())
-
-        chip_data = {
-            "id": str(uuid.uuid4()),
-            "row_id": row_id,
-            "role": self.role,
-            "icon": None,
-            "enabled": True,
-            "bg_color": "bg-light-blue-1",
-            "type": "test",
-            "content": text,
-            "notes": notes,
-            "test_select_data": test_select_data,
-            "creator": creator,
-            "req_ver": req_max_ver,
-            "select_activ_dic": select_activ_dic,
-            "timestamp": {
-                datetime.now().strftime("%Y-%m-%d %H:%M:%S"): {"creator": creator, "select_activ_dic": select_activ_dic}
-            },
-        }
-        await db_storage.set_deep_item([f"{self.project}_over_data", config["label"], chip_data["id"]], chip_data)
-
-        ui_spinner.set_visibility(False)
-        self.chip_notes.value = ""
-        self.chip_dialog.close()
-        ui.notify(
-            "内容已添加。",
-            type="positive",
-            position="bottom",
-            timeout=1000,
-            progress=True,
-            # multi_line=True,
-            close_button="✖",
-        )
-        self._show_related_chip_select_dialog(text, True, "add_chip", config)
-        await self._check_and_trigger_autofill(row_id, text, config)
+            self._show_related_chip_select_dialog(text, True, "add_chip", config)
+            await self._check_and_trigger_autofill(row_id, text, config)
+        except Exception as ex:
+            # 捕捉潜在的数据库写入等异常
+            logger.error(f"添加概述失败: {ex}", exc_info=True)
+        finally:
+            if btn:
+                btn.enable()  # 3. 最终防线：无论成功、失败验证不通过还是报错，都恢复按钮状态
 
     # ---- 文件处理相关 ----
     def _setup_file_notes_dialog(self):
@@ -3902,23 +3990,33 @@ class OverviewTableGroup:
             with ui.row().classes("w-full justify-end items-center"):
                 self.spinner = ui.spinner(type="hourglass", size="md", color="amber-8", thickness=8.0)
                 self.spinner.set_visibility(False)
-                ui.button("添加", on_click=self._get_file_upload)
+                ui.button("添加", on_click=lambda e: self._get_file_upload(btn=e.sender))
         self.chip_dialog.open()
 
-    def _get_file_upload(self):
-        if not self.chip_notes.value:
-            ui.notify(
-                "注释不能为空!",
-                type="warning",
-                position="bottom",
-                timeout=3000,
-                progress=True,
-                # multi_line=True,
-                close_button="✖",
-            )
-        else:
-            self.uploader.reset()
-            self.uploader.run_method("pickFiles")
+    def _get_file_upload(self, btn=None):
+        if btn:
+            btn.disable()  # 1. 进门立刻禁用按钮，防止连点
+
+        try:
+            if not self.chip_notes.value:
+                ui.notify(
+                    "注释不能为空!",
+                    type="warning",
+                    position="bottom",
+                    timeout=3000,
+                    progress=True,
+                    # multi_line=True,
+                    close_button="✖",
+                )
+            else:
+                self.uploader.reset()
+                self.uploader.run_method("pickFiles")
+        except Exception as ex:
+            # 捕捉潜在的数据库写入等异常
+            logger.error(f"添加概述失败: {ex}", exc_info=True)
+        finally:
+            if btn:
+                btn.enable()  # 3. 最终防线：无论成功、失败验证不通过还是报错，都恢复按钮状态
 
     async def _handle_file_upload(self, e):
         """处理文件/图片/视频上传事件（已修复同名防覆盖与查重漏洞）"""
@@ -4127,130 +4225,143 @@ class OverviewTableGroup:
             with ui.row().classes("w-full justify-end items-center"):
                 ui_spinner = ui.spinner(type="hourglass", size="md", color="amber-8", thickness=8.0)
                 ui_spinner.set_visibility(False)
-                ui.button("添加", on_click=lambda: self._add_search_chip_data(ui_spinner))
+                ui.button("添加", on_click=lambda e: self._add_search_chip_data(ui_spinner, btn=e.sender))
         self.chip_dialog.open()
 
-    async def _add_search_chip_data(self, ui_spinner):
-        config = self.current_config
-        text, notes = self.chip_label.value.strip(), self.chip_notes.value.strip()
-        # 如果填写内容有正则表达式管控，则分析内容是否符合规则
-        regular_bool = False
-        if config.get("content_regular", []):
-            for regular in config.get("content_regular", []):
-                if re.search(regular, text):
-                    regular_bool = True
-        else:
-            regular_bool = True
-        if not regular_bool:
-            ui.notify(
-                "内容不符合填写格式规范!",
-                type="warning",
-                position="bottom",
-                timeout=3000,
-                progress=True,
-                # multi_line=True,
-                close_button="✖",
-            )
-            return
-        if not text or not notes:
-            ui.notify(
-                "引用文件名和注释不能为空!",
-                type="warning",
-                position="bottom",
-                timeout=3000,
-                progress=True,
-                # multi_line=True,
-                close_button="✖",
-            )
-            return
+    async def _add_search_chip_data(self, ui_spinner, btn=None):
+        if btn:
+            btn.disable()  # 1. 进门立刻禁用按钮，防止连点
 
-        # --- 修复 1.1: 补充 Search 类型的查重拦截 ---
-        existing_contents = [
-            d["content"] for d in db_storage.get_deep_item([f"{self.project}_over_data", config["label"]], {}).values()
-        ]
-        if text in existing_contents:
-            ui.notify(
-                "引用文件名已添加过。",
-                type="warning",
-                position="bottom",
-                timeout=3000,
-                progress=True,
-                # multi_line=True,
-                close_button="✖",
-            )
-            return
+        try:
+            config = self.current_config
+            text, notes = self.chip_label.value.strip(), self.chip_notes.value.strip()
+            # 如果填写内容有正则表达式管控，则分析内容是否符合规则
+            regular_bool = False
+            if config.get("content_regular", []):
+                for regular in config.get("content_regular", []):
+                    if re.search(regular, text):
+                        regular_bool = True
+            else:
+                regular_bool = True
+            if not regular_bool:
+                ui.notify(
+                    "内容不符合填写格式规范!",
+                    type="warning",
+                    position="bottom",
+                    timeout=3000,
+                    progress=True,
+                    # multi_line=True,
+                    close_button="✖",
+                )
+                return
+            if not text or not notes:
+                ui.notify(
+                    "引用文件名和注释不能为空!",
+                    type="warning",
+                    position="bottom",
+                    timeout=3000,
+                    progress=True,
+                    # multi_line=True,
+                    close_button="✖",
+                )
+                return
 
-        ui_spinner.set_visibility(True)
-        target_path_list = await self._search_file_path(text, config)
-        files_li = []
-        target_path_li_str = ""  # 用于 Debug 提示
+            # --- 修复 1.1: 补充 Search 类型的查重拦截 ---
+            existing_contents = [
+                d["content"]
+                for d in db_storage.get_deep_item([f"{self.project}_over_data", config["label"]], {}).values()
+            ]
+            if text in existing_contents:
+                ui.notify(
+                    "引用文件名已添加过。",
+                    type="warning",
+                    position="bottom",
+                    timeout=3000,
+                    progress=True,
+                    # multi_line=True,
+                    close_button="✖",
+                )
+                return
 
-        for target_path in target_path_list:
-            target_path_li_str += f"{target_path}\n"
-            if target_path and Path(target_path).is_dir():
-                files_li.extend(find_files_pathlib(target_path, text))
+            ui_spinner.set_visibility(True)
+            target_path_list = await self._search_file_path(text, config)
+            files_li = []
+            target_path_li_str = ""  # 用于 Debug 提示
 
-        # --- 修复 4.1: 恢复详细的查找失败 Debug 路径提示 ---
-        if not files_li:
-            ui.notify(
-                f"引用文件不存在以下所有路径：\n{target_path_li_str}请检查文件命名或相关依赖配置!",
-                type="warning",
-                position="bottom",
-                timeout=3000,
-                progress=True,
-                multi_line=True,
-                close_button="✖",
-            )
-        elif len(files_li) > 1:
-            ui.notify(
-                f"引用文件在以下路径：\n{target_path_li_str}有多个同名文件，请确保唯一!",
-                type="warning",
-                position="bottom",
-                timeout=3000,
-                progress=True,
-                multi_line=True,
-                close_button="✖",
-            )
-        else:
-            req_max_ver = app.storage.general["project_req_max_ver"].get(self.project, "1.0")
-            creator = app.storage.user.get("current_user", "匿名用户")
-            row_id = getattr(self, "current_target_row_id", None) or str(uuid.uuid4())
-            chip_data = {
-                "id": str(uuid.uuid4()),
-                "row_id": row_id,
-                "role": self.role,
-                "icon": "saved_search",
-                "enabled": True,
-                "bg_color": "bg-light-blue-1",
-                "type": "search",
-                "file_type": get_file_type_by_extension(str(files_li[0]))[0],
-                "content": text,
-                "url_path": f"{FILES_URL_DIR}/{text}",
-                "notes": notes,
-                "creator": creator,
-                "req_ver": req_max_ver,
-                "select_activ_dic": self._get_select_activ_dic(req_max_ver),
-                "timestamp": {
-                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"): {
-                        "creator": creator,
-                        "select_activ_dic": self._get_select_activ_dic(req_max_ver),
-                    }
-                },
-            }
-            await db_storage.set_deep_item([f"{self.project}_over_data", config["label"], chip_data["id"]], chip_data)
-            self.chip_dialog.close()
-            ui.notify(
-                "文件引用已添加。",
-                type="positive",
-                position="bottom",
-                timeout=1000,
-                progress=True,
-                # multi_line=True,
-                close_button="✖",
-            )
-            self._show_related_chip_select_dialog(text, True, "add_chip", config)
-            await self._check_and_trigger_autofill(row_id, text, config)
-        ui_spinner.set_visibility(False)
+            for target_path in target_path_list:
+                target_path_li_str += f"{target_path}\n"
+                if target_path and Path(target_path).is_dir():
+                    files_li.extend(find_files_pathlib(target_path, text))
+
+            # --- 修复 4.1: 恢复详细的查找失败 Debug 路径提示 ---
+            if not files_li:
+                ui.notify(
+                    f"引用文件不存在以下所有路径：\n{target_path_li_str}请检查文件命名或相关依赖配置!",
+                    type="warning",
+                    position="bottom",
+                    timeout=3000,
+                    progress=True,
+                    multi_line=True,
+                    close_button="✖",
+                )
+            elif len(files_li) > 1:
+                ui.notify(
+                    f"引用文件在以下路径：\n{target_path_li_str}有多个同名文件，请确保唯一!",
+                    type="warning",
+                    position="bottom",
+                    timeout=3000,
+                    progress=True,
+                    multi_line=True,
+                    close_button="✖",
+                )
+            else:
+                req_max_ver = app.storage.general["project_req_max_ver"].get(self.project, "1.0")
+                creator = app.storage.user.get("current_user", "匿名用户")
+                row_id = getattr(self, "current_target_row_id", None) or str(uuid.uuid4())
+                chip_data = {
+                    "id": str(uuid.uuid4()),
+                    "row_id": row_id,
+                    "role": self.role,
+                    "icon": "saved_search",
+                    "enabled": True,
+                    "bg_color": "bg-light-blue-1",
+                    "type": "search",
+                    "file_type": get_file_type_by_extension(str(files_li[0]))[0],
+                    "content": text,
+                    "url_path": f"{FILES_URL_DIR}/{text}",
+                    "notes": notes,
+                    "creator": creator,
+                    "req_ver": req_max_ver,
+                    "select_activ_dic": self._get_select_activ_dic(req_max_ver),
+                    "timestamp": {
+                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"): {
+                            "creator": creator,
+                            "select_activ_dic": self._get_select_activ_dic(req_max_ver),
+                        }
+                    },
+                }
+                await db_storage.set_deep_item(
+                    [f"{self.project}_over_data", config["label"], chip_data["id"]], chip_data
+                )
+                self.chip_dialog.close()
+                ui.notify(
+                    "文件引用已添加。",
+                    type="positive",
+                    position="bottom",
+                    timeout=1000,
+                    progress=True,
+                    # multi_line=True,
+                    close_button="✖",
+                )
+                self._show_related_chip_select_dialog(text, True, "add_chip", config)
+                await self._check_and_trigger_autofill(row_id, text, config)
+        except Exception as ex:
+            # 捕捉潜在的数据库写入等异常
+            logger.error(f"添加概述失败: {ex}", exc_info=True)
+        finally:
+            if btn:
+                btn.enable()  # 3. 最终防线：无论成功、失败验证不通过还是报错，都恢复按钮状态
+            ui_spinner.set_visibility(False)
 
     # ---------------- 辅助方法重构 -----------------
     def _get_select_activ_dic(self, req_max_ver):
@@ -5304,132 +5415,145 @@ class OverviewTableGroup:
             with ui.row().classes("w-full justify-end items-center"):
                 ui_spinner = ui.spinner(type="hourglass", size="md", color="amber-8", thickness=8.0)
                 ui_spinner.set_visibility(False)
-                ui.button("添加", on_click=lambda: self._add_svn_chip_data(ui_spinner))
+                ui.button("添加", on_click=lambda e: self._add_svn_chip_data(ui_spinner, btn=e.sender))
         self.chip_dialog.open()
 
-    async def _add_svn_chip_data(self, ui_spinner):
-        config = self.current_config
-        text = self.chip_label.value.strip()
-        notes = self.chip_notes.value.strip()
-        project_state = app.storage.general["project_summary"][self.project]["state"]
-        warehouse = config.get("state_path", {}).get(project_state)
-        file_info = (False, None)
-        # 如果填写内容有正则表达式管控，则分析内容是否符合规则
-        regular_bool = False
-        if config.get("content_regular", []):
-            for regular in config.get("content_regular", []):
-                if re.search(regular, text):
-                    regular_bool = True
-        else:
-            regular_bool = True
-        if not regular_bool:
-            ui.notify(
-                "内容不符合填写格式规范!",
-                type="warning",
-                position="bottom",
-                timeout=3000,
-                progress=True,
-                # multi_line=True,
-                close_button="✖",
-            )
-            return
-        if not text or not notes:
-            ui.notify(
-                "引用文件名和注释不能为空!",
-                type="warning",
-                position="bottom",
-                timeout=3000,
-                progress=True,
-                # multi_line=True,
-                close_button="✖",
-            )
-            return
+    async def _add_svn_chip_data(self, ui_spinner, btn=None):
+        if btn:
+            btn.disable()  # 1. 进门立刻禁用按钮，防止连点
 
-        if (text, warehouse) in [
-            (d["content"], d.get("warehouse"))
-            for d in db_storage.get_deep_item([f"{self.project}_over_data", config["label"]], {}).values()
-        ]:
-            ui.notify(
-                f"{warehouse}仓库下的相同引用文件名已添加过。",
-                type="warning",
-                position="bottom",
-                timeout=3000,
-                progress=True,
-                # multi_line=True,
-                close_button="✖",
-            )
-            return
+        try:
+            config = self.current_config
+            text = self.chip_label.value.strip()
+            notes = self.chip_notes.value.strip()
+            project_state = app.storage.general["project_summary"][self.project]["state"]
+            warehouse = config.get("state_path", {}).get(project_state)
+            file_info = (False, None)
+            # 如果填写内容有正则表达式管控，则分析内容是否符合规则
+            regular_bool = False
+            if config.get("content_regular", []):
+                for regular in config.get("content_regular", []):
+                    if re.search(regular, text):
+                        regular_bool = True
+            else:
+                regular_bool = True
+            if not regular_bool:
+                ui.notify(
+                    "内容不符合填写格式规范!",
+                    type="warning",
+                    position="bottom",
+                    timeout=3000,
+                    progress=True,
+                    # multi_line=True,
+                    close_button="✖",
+                )
+                return
+            if not text or not notes:
+                ui.notify(
+                    "引用文件名和注释不能为空!",
+                    type="warning",
+                    position="bottom",
+                    timeout=3000,
+                    progress=True,
+                    # multi_line=True,
+                    close_button="✖",
+                )
+                return
 
-        ui_spinner.set_visibility(True)
-        target_url_li = self._splicing_svn_file_url(text, config)
+            if (text, warehouse) in [
+                (d["content"], d.get("warehouse"))
+                for d in db_storage.get_deep_item([f"{self.project}_over_data", config["label"]], {}).values()
+            ]:
+                ui.notify(
+                    f"{warehouse}仓库下的相同引用文件名已添加过。",
+                    type="warning",
+                    position="bottom",
+                    timeout=3000,
+                    progress=True,
+                    # multi_line=True,
+                    close_button="✖",
+                )
+                return
 
-        if target_url_li and len(target_url_li) == 1:
-            target_url = target_url_li[0]
-            file_info = await self.get_url_file_info_async(target_url)
-            if not file_info[0]:
+            ui_spinner.set_visibility(True)
+            target_url_li = self._splicing_svn_file_url(text, config)
+
+            if target_url_li and len(target_url_li) == 1:
+                target_url = target_url_li[0]
+                file_info = await self.get_url_file_info_async(target_url)
+                if not file_info[0]:
+                    ui_spinner.set_visibility(False)
+                    return
+            elif target_url_li and len(target_url_li) > 1:
+                ui.notify(
+                    "有多个路径，不合规!",
+                    type="warning",
+                    position="bottom",
+                    timeout=3000,
+                    progress=True,
+                    # multi_line=True,
+                    close_button="✖",
+                )
                 ui_spinner.set_visibility(False)
                 return
-        elif target_url_li and len(target_url_li) > 1:
+            else:
+                ui_spinner.set_visibility(False)
+                return
+
+            chip_id = str(uuid.uuid4())
+            req_max_ver = app.storage.general["project_req_max_ver"].get(self.project, "1.0")
+            select_activ_dic = self._get_select_activ_dic(req_max_ver)
+            creator = app.storage.user.get("current_user", "匿名用户")
+
+            file_type = file_info[1]
+            if (file_type == "application/octet-stream" or file_type is None) and target_url.lower().endswith(".pdf"):
+                file_type = "application/pdf"
+            # 获取要绑定的 row_id，如果没有（理论上现在都有了），就生成一个新的
+            row_id = getattr(self, "current_target_row_id", None) or str(uuid.uuid4())
+            chip_data = {
+                "id": chip_id,
+                "row_id": row_id,
+                "role": self.role,
+                "icon": "saved_search",
+                "enabled": True,
+                "bg_color": "bg-light-blue-1",
+                "type": "svn",
+                "file_type": file_type,
+                "url_path": target_url,
+                "content": text,
+                "warehouse": warehouse,
+                "notes": notes,
+                "creator": creator,
+                "req_ver": req_max_ver,
+                "select_activ_dic": select_activ_dic,
+                "timestamp": {
+                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"): {
+                        "creator": creator,
+                        "select_activ_dic": select_activ_dic,
+                    }
+                },
+            }
+
+            await db_storage.set_deep_item([f"{self.project}_over_data", config["label"], chip_id], chip_data)
+            ui_spinner.set_visibility(False)
+            self.chip_dialog.close()
             ui.notify(
-                "有多个路径，不合规!",
-                type="warning",
+                "SVN文件引用已添加。",
+                type="positive",
                 position="bottom",
-                timeout=3000,
+                timeout=1000,
                 progress=True,
                 # multi_line=True,
                 close_button="✖",
             )
-            ui_spinner.set_visibility(False)
-            return
-        else:
-            ui_spinner.set_visibility(False)
-            return
-
-        chip_id = str(uuid.uuid4())
-        req_max_ver = app.storage.general["project_req_max_ver"].get(self.project, "1.0")
-        select_activ_dic = self._get_select_activ_dic(req_max_ver)
-        creator = app.storage.user.get("current_user", "匿名用户")
-
-        file_type = file_info[1]
-        if (file_type == "application/octet-stream" or file_type is None) and target_url.lower().endswith(".pdf"):
-            file_type = "application/pdf"
-        # 获取要绑定的 row_id，如果没有（理论上现在都有了），就生成一个新的
-        row_id = getattr(self, "current_target_row_id", None) or str(uuid.uuid4())
-        chip_data = {
-            "id": chip_id,
-            "row_id": row_id,
-            "role": self.role,
-            "icon": "saved_search",
-            "enabled": True,
-            "bg_color": "bg-light-blue-1",
-            "type": "svn",
-            "file_type": file_type,
-            "url_path": target_url,
-            "content": text,
-            "warehouse": warehouse,
-            "notes": notes,
-            "creator": creator,
-            "req_ver": req_max_ver,
-            "select_activ_dic": select_activ_dic,
-            "timestamp": {
-                datetime.now().strftime("%Y-%m-%d %H:%M:%S"): {"creator": creator, "select_activ_dic": select_activ_dic}
-            },
-        }
-
-        await db_storage.set_deep_item([f"{self.project}_over_data", config["label"], chip_id], chip_data)
-        ui_spinner.set_visibility(False)
-        self.chip_dialog.close()
-        ui.notify(
-            "SVN文件引用已添加。",
-            type="positive",
-            position="bottom",
-            timeout=1000,
-            progress=True,
-            # multi_line=True,
-            close_button="✖",
-        )
-        self._show_related_chip_select_dialog(text, True, "add_chip", config)
-        await self._check_and_trigger_autofill(row_id, text, config)
+            self._show_related_chip_select_dialog(text, True, "add_chip", config)
+            await self._check_and_trigger_autofill(row_id, text, config)
+        except Exception as ex:
+            # 捕捉潜在的数据库写入等异常
+            logger.error(f"添加概述失败: {ex}", exc_info=True)
+        finally:
+            if btn:
+                btn.enable()  # 3. 最终防线：无论成功、失败验证不通过还是报错，都恢复按钮状态
 
     def _splicing_svn_file_url(self, chip_text, config) -> list:
         return_url_li = []
