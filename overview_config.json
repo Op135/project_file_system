@@ -1618,7 +1618,7 @@
                 "processing_type": "text",
                 "content_regular": [
                     "^无$",
-                    "\\S*?，\\S*?PCS/套"
+                    "\\S*?，\\S*?pcs/套"
                 ],
                 "dialog_placeholder": "纸箱/珍珠棉包装盒名称，_pcs/套",
                 "allowed_state": [
@@ -1661,7 +1661,7 @@
                 "processing_type": "text",
                 "content_regular": [
                     "^无$",
-                    "\\S*?，\\S*?PCS/套，电压\\S*?V"
+                    "\\S*?，\\S*?pcs/套，电压\\S*?V"
                 ],
                 "dialog_placeholder": "规格型号，_pcs/套，电压_V",
                 "allowed_state": [
@@ -1775,7 +1775,7 @@
                 "processing_type": "text",
                 "content_regular": [
                     "^无$",
-                    "\\S*?，\\S*?PCS/套，\\S*"
+                    "\\S*?，\\S*?pcs/套，\\S*"
                 ],
                 "dialog_placeholder": "规格型号，_pcs/套，驱动电流_A，电压_V",
                 "allowed_state": [
@@ -1874,7 +1874,7 @@
                 "processing_type": "text",
                 "content_regular": [
                     "^无$",
-                    "\\S*?，\\S*?PCS/套"
+                    "\\S*?，\\S*?pcs/套"
                 ],
                 "dialog_placeholder": "规格型号，_pcs/套",
                 "allowed_state": [
@@ -3433,7 +3433,7 @@
                 "processing_type": "text",
                 "content_regular": [
                     "^无$",
-                    "\\S*?，\\S*?PCS/套"
+                    "\\S*?，\\S*?pcs/套"
                 ],
                 "dialog_placeholder": "规格型号，_pcs/套",
                 "allowed_state": [
@@ -3489,7 +3489,7 @@
                 "processing_type": "text",
                 "content_regular": [
                     "^无$",
-                    "\\S*?，\\S*?PCS/套"
+                    "\\S*?，\\S*?pcs/套"
                 ],
                 "dialog_placeholder": "规格型号，_pcs/套",
                 "allowed_state": [
@@ -3546,7 +3546,7 @@
                 "processing_type": "text",
                 "content_regular": [
                     "^无$",
-                    "\\S*?，\\S*?PCS/套"
+                    "\\S*?，\\S*?pcs/套"
                 ],
                 "dialog_placeholder": "线材名称（料号），_pcs/套",
                 "allowed_state": [

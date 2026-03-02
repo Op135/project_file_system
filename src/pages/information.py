@@ -331,14 +331,37 @@ def information_page():
                                     false_num = list(state_dic.values()).count(False)
                                     # 待确认的概述分项数量
                                     none_num = list(state_dic.values()).count(None)
+                                    # --- 新增：提取并构建 HTML 格式的 Tooltip 内容 ---
+                                    false_items = [k for k, v in state_dic.items() if v is False]
+                                    none_items = [k for k, v in state_dic.items() if v is None]
+
+                                    tooltip_html = ""
+                                    if false_items:
+                                        tooltip_html += "<b>【无内容】</b><br>" + "<br>".join(
+                                            [f"• {item}" for item in false_items]
+                                        )
+                                    if none_items:
+                                        if tooltip_html:
+                                            tooltip_html += "<br><br>"
+                                        tooltip_html += "<b>【待确认】</b><br>" + "<br>".join(
+                                            [f"• {item}" for item in none_items]
+                                        )
+                                    # ------------------------------------
+
                                     # 每一行项目
                                     row_container = ui.row().classes(
                                         "w-full items-center justify-between p-3 bg-red-50 rounded-lg border border-red-100 hover:bg-red-100 transition-colors"
                                     )
                                     with row_container:
-                                        ui.label(
+                                        title_label = ui.label(
                                             f"{project_name}（{str(false_num)}项必填概述无内容,{str(none_num)}项概述待确认）"
-                                        ).classes("font-medium text-gray-800")
+                                        ).classes("font-medium text-gray-800 cursor-help")
+
+                                        # 使用上下文管理器结合 ui.html 渲染支持换行的原生 HTML
+                                        with title_label:
+                                            with ui.tooltip().classes("text-xs bg-gray-600/90 text-white p-2"):
+                                                ui.html(tooltip_html, sanitize=False)
+
                                         ui.button(
                                             "去处理",
                                             icon="arrow_forward",
@@ -443,9 +466,36 @@ def information_page():
                                                 ui.label(f"{len(pending_project_dic.keys())}").classes(
                                                     "bg-indigo-100 text-indigo-700 px-1.5 rounded-full"
                                                 )
-                                            # 显示前3个，避免太长
-                                            for p in pending_project_dic.keys():
-                                                ui.label(f"• {p}").classes("pl-2 text-gray-500 truncate text-xs")
+                                            # 显示清单，迭代 items() 以获取 state_dic
+                                            for p, p_state_dic in pending_project_dic.items():
+                                                # --- 新增：提取并构建 HTML 格式的 Tooltip 内容 ---
+                                                false_items = [k for k, v in p_state_dic.items() if v is False]
+                                                none_items = [k for k, v in p_state_dic.items() if v is None]
+
+                                                tooltip_html = ""
+                                                if false_items:
+                                                    tooltip_html += "<b>【无内容】</b><br>" + "<br>".join(
+                                                        [f"• {item}" for item in false_items]
+                                                    )
+                                                if none_items:
+                                                    if tooltip_html:
+                                                        tooltip_html += "<br><br>"
+                                                    tooltip_html += "<b>【待确认】</b><br>" + "<br>".join(
+                                                        [f"• {item}" for item in none_items]
+                                                    )
+
+                                                if not tooltip_html:
+                                                    tooltip_html = "状态正常"
+                                                # ------------------------------------
+
+                                                project_label = ui.label(f"• {p}").classes(
+                                                    "pl-2 text-gray-500 truncate text-xs cursor-help"
+                                                )
+
+                                                # 使用上下文管理器渲染多行 tooltip
+                                                with project_label:
+                                                    with ui.tooltip().classes("text-xs bg-gray-600/90 text-white p-2"):
+                                                        ui.html(tooltip_html, sanitize=False)
                         else:
                             ui.label("暂无积压数据").classes("p-4 text-gray-400 text-sm")
 
