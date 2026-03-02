@@ -8,6 +8,7 @@
                 "title": "光源选型",
                 "processing_type": "text",
                 "content_regular": [
+                    "^无$",
                     "\\S*："
                 ],
                 "dialog_placeholder": "光源名称：规格型号",
@@ -69,7 +70,10 @@
                 "nature": "必填",
                 "title": "光源驱动If",
                 "processing_type": "text",
-                "content_regular": [],
+                "content_regular": [
+                    "^无$",
+                    "\\S*A"
+                ],
                 "dialog_placeholder": "_A",
                 "allowed_state": [
                     "研发",
@@ -122,7 +126,10 @@
                 "nature": "必填",
                 "title": "光源驱动Vf",
                 "processing_type": "text",
-                "content_regular": [],
+                "content_regular": [
+                    "^无$",
+                    "V@\\S*A"
+                ],
                 "dialog_placeholder": "_±_V@_A",
                 "allowed_state": [
                     "研发",
@@ -175,7 +182,10 @@
                 "nature": "必填",
                 "title": "光源阈值电流",
                 "processing_type": "text",
-                "content_regular": [],
+                "content_regular": [
+                    "^无$",
+                    "\\S*A"
+                ],
                 "dialog_placeholder": "_A",
                 "allowed_state": [
                     "研发",
@@ -228,7 +238,10 @@
                 "nature": "必填",
                 "title": "光源最大热功率",
                 "processing_type": "text",
-                "content_regular": [],
+                "content_regular": [
+                    "^无$",
+                    "\\S*W"
+                ],
                 "dialog_placeholder": "_W（Vf最大情况）",
                 "allowed_state": [
                     "研发",
@@ -315,7 +328,10 @@
                 "nature": "选填",
                 "title": "光源性能阈温",
                 "processing_type": "text",
-                "content_regular": [],
+                "content_regular": [
+                    "^无$",
+                    "NTC\\S*℃"
+                ],
                 "dialog_placeholder": "NTC≤_℃",
                 "allowed_state": [
                     "研发",
@@ -360,7 +376,10 @@
                 "nature": "必填",
                 "title": "光源保护温度",
                 "processing_type": "text",
-                "content_regular": [],
+                "content_regular": [
+                    "^无$",
+                    "NTC\\S*℃"
+                ],
                 "dialog_placeholder": "NTC≥_℃减半，NTC≥_℃灭灯",
                 "allowed_state": [
                     "研发",
@@ -410,7 +429,10 @@
                 "nature": "必填",
                 "title": "采用光学件",
                 "processing_type": "text",
-                "content_regular": [],
+                "content_regular": [
+                    "^无$",
+                    "\\S*?：\\S*"
+                ],
                 "dialog_placeholder": "透镜/二向色/滤光片等种类名：器件名",
                 "allowed_state": [
                     "研发",
@@ -449,7 +471,10 @@
                 "nature": "必填",
                 "title": "需要运动的光学器件",
                 "processing_type": "text",
-                "content_regular": [],
+                "content_regular": [
+                    "^无$",
+                    "\\S*?：\\S*"
+                ],
                 "dialog_placeholder": "透镜/二向色/滤光片等种类名：器件名",
                 "allowed_state": [
                     "研发",
@@ -496,7 +521,10 @@
                 "nature": "必填",
                 "title": "光学器件运动逻辑说明",
                 "processing_type": "text",
-                "content_regular": [],
+                "content_regular": [
+                    "^无$",
+                    "\\S*?：\\S*"
+                ],
                 "dialog_placeholder": "器件名：逻辑说明",
                 "allowed_state": [
                     "研发",
@@ -541,7 +569,10 @@
                 "nature": "必填",
                 "title": "光电传感器选型",
                 "processing_type": "text",
-                "content_regular": [],
+                "content_regular": [
+                    "^无$",
+                    "\\S*?：\\S*"
+                ],
                 "dialog_placeholder": "规格型号：用途说明",
                 "allowed_state": [
                     "研发",
@@ -593,7 +624,10 @@
                 "nature": "必填",
                 "title": "光输出目标面距离",
                 "processing_type": "text",
-                "content_regular": [],
+                "content_regular": [
+                    "^无$",
+                    "\\S*?@\\S*"
+                ],
                 "dialog_placeholder": "_mm@距模组输出口透镜顶点",
                 "allowed_state": [
                     "研发",
@@ -639,7 +673,10 @@
                 "nature": "必填",
                 "title": "导光束要求",
                 "processing_type": "text",
-                "content_regular": [],
+                "content_regular": [
+                    "^无$",
+                    "\\S*?导光束，通光口径\\S*?NA\\S*"
+                ],
                 "dialog_placeholder": "普通胶粘导光束/热熔导光束，通光口径≥_mm，NA≥_",
                 "allowed_state": [
                     "研发",
@@ -676,7 +713,10 @@
                 "nature": "必填",
                 "title": "产品标签功率",
                 "processing_type": "text",
-                "content_regular": [],
+                "content_regular": [
+                    "^无$",
+                    "\\S*W|\\S*VA"
+                ],
                 "dialog_placeholder": "_W（直流情况）/_VA（交流情况）",
                 "allowed_state": [
                     "研发",
@@ -752,7 +792,10 @@
                 "nature": "必填",
                 "title": "光学测试项",
                 "processing_type": "test",
-                "content_regular": [],
+                "content_regular": [
+                    "^无$",
+                    "\\S*："
+                ],
                 "dialog_placeholder": "白光色温：5500K±500K",
                 "state_options": [
                     "常亮100%亮度档",
@@ -833,7 +876,10 @@
                 "nature": "必填",
                 "title": "驱动输出测试项",
                 "processing_type": "test",
-                "content_regular": [],
+                "content_regular": [
+                    "^无$",
+                    "\\S*："
+                ],
                 "dialog_placeholder": "白光电流：5A±8%",
                 "state_options": [
                     "常亮100%亮度档",
@@ -1261,7 +1307,10 @@
                 "nature": "选填",
                 "title": "产品结构件选材",
                 "processing_type": "text",
-                "content_regular": [],
+                "content_regular": [
+                    "^无$",
+                    "\\S*："
+                ],
                 "dialog_placeholder": "主要零件名：材料型号，考虑其着色/重量/防锈/导电/导磁性能",
                 "allowed_state": [
                     "研发",
@@ -1308,7 +1357,10 @@
                 "nature": "必填",
                 "title": "产品涉及表面处理工艺",
                 "processing_type": "text",
-                "content_regular": [],
+                "content_regular": [
+                    "^无$",
+                    "\\S*："
+                ],
                 "dialog_placeholder": "主要零件名：阳极氧化/导电氧化，100目喷砂",
                 "allowed_state": [
                     "研发",
@@ -1396,7 +1448,10 @@
                 "nature": "必填",
                 "title": "产品实秤重量",
                 "processing_type": "text",
-                "content_regular": [],
+                "content_regular": [
+                    "^无$",
+                    "\\S*："
+                ],
                 "dialog_placeholder": "整机/_组件：_kg",
                 "allowed_state": [
                     "研发",
@@ -1439,7 +1494,10 @@
                 "nature": "必填",
                 "title": "产品实测工作环境温湿度",
                 "processing_type": "text",
-                "content_regular": [],
+                "content_regular": [
+                    "^无$",
+                    "\\S*："
+                ],
                 "dialog_placeholder": "低温启动：-_℃，RH_%可启动，高温运行：_℃，RH_%临近温敏保护温度_℃",
                 "allowed_state": [
                     "研发",
@@ -1476,7 +1534,10 @@
                 "nature": "选填",
                 "title": "产品实测表面温升/温度",
                 "processing_type": "text",
-                "content_regular": [],
+                "content_regular": [
+                    "^无$",
+                    "\\S*?：\\S*?@\\S*"
+                ],
                 "dialog_placeholder": "测试点：温度_℃@环境温度_℃/温升_℃@测试条件",
                 "allowed_state": [
                     "研发",
@@ -1513,7 +1574,10 @@
                 "nature": "选填",
                 "title": "产品实测工作噪声",
                 "processing_type": "text",
-                "content_regular": [],
+                "content_regular": [
+                    "^无$",
+                    "\\S*?@\\S*"
+                ],
                 "dialog_placeholder": "_dB(A)@测试条件",
                 "allowed_state": [
                     "研发",
@@ -1552,7 +1616,10 @@
                 "nature": "必填",
                 "title": "产品包材",
                 "processing_type": "text",
-                "content_regular": [],
+                "content_regular": [
+                    "^无$",
+                    "\\S*?，\\S*?PCS/套"
+                ],
                 "dialog_placeholder": "纸箱/珍珠棉包装盒名称，_pcs/套",
                 "allowed_state": [
                     "研发",
@@ -1592,7 +1659,10 @@
                 "nature": "必填",
                 "title": "风扇选型",
                 "processing_type": "text",
-                "content_regular": [],
+                "content_regular": [
+                    "^无$",
+                    "\\S*?，\\S*?PCS/套，电压\\S*?V"
+                ],
                 "dialog_placeholder": "规格型号，_pcs/套，电压_V",
                 "allowed_state": [
                     "研发",
@@ -1703,7 +1773,10 @@
                 "nature": "必填",
                 "title": "TEC选型",
                 "processing_type": "text",
-                "content_regular": [],
+                "content_regular": [
+                    "^无$",
+                    "\\S*?，\\S*?PCS/套，\\S*"
+                ],
                 "dialog_placeholder": "规格型号，_pcs/套，驱动电流_A，电压_V",
                 "allowed_state": [
                     "研发",
@@ -1799,7 +1872,10 @@
                 "nature": "必填",
                 "title": "机构传感器选型",
                 "processing_type": "text",
-                "content_regular": [],
+                "content_regular": [
+                    "^无$",
+                    "\\S*?，\\S*?PCS/套"
+                ],
                 "dialog_placeholder": "规格型号，_pcs/套",
                 "allowed_state": [
                     "研发",
@@ -1954,7 +2030,10 @@
                 "nature": "选填",
                 "title": "机械结构测试项",
                 "processing_type": "test",
-                "content_regular": [],
+                "content_regular": [
+                    "^无$",
+                    "\\S*?：\\S*"
+                ],
                 "dialog_placeholder": "测试项名称：测试条件、产品状态、操作步骤、合格标准等信息。",
                 "state_options": [],
                 "node_options": [],
@@ -2008,7 +2087,10 @@
                 "nature": "必填",
                 "title": "产品驱动输入电压",
                 "processing_type": "text",
-                "content_regular": [],
+                "content_regular": [
+                    "^无$",
+                    "DC|C\\S*?V±\\S*"
+                ],
                 "dialog_placeholder": "DC/AC_V±_%",
                 "allowed_state": [
                     "研发",
@@ -2054,7 +2136,10 @@
                 "nature": "必填",
                 "title": "产品驱动输入功率",
                 "processing_type": "text",
-                "content_regular": [],
+                "content_regular": [
+                    "^无$",
+                    "\\S*W|\\S*VA"
+                ],
                 "dialog_placeholder": "_W（直流情况）/_VA（交流情况）",
                 "allowed_state": [
                     "研发",
@@ -2138,7 +2223,10 @@
                 "nature": "必填",
                 "title": "驱动输出信号类型",
                 "processing_type": "text",
-                "content_regular": [],
+                "content_regular": [
+                    "^无$",
+                    "\\S*输出"
+                ],
                 "dialog_placeholder": "模拟输出/PWM输出",
                 "allowed_state": [
                     "研发",
@@ -3343,7 +3431,10 @@
                 "nature": "必填",
                 "title": "显示类配件",
                 "processing_type": "text",
-                "content_regular": [],
+                "content_regular": [
+                    "^无$",
+                    "\\S*?，\\S*?PCS/套"
+                ],
                 "dialog_placeholder": "规格型号，_pcs/套",
                 "allowed_state": [
                     "研发",
@@ -3396,7 +3487,10 @@
                 "nature": "必填",
                 "title": "控制类配件",
                 "processing_type": "text",
-                "content_regular": [],
+                "content_regular": [
+                    "^无$",
+                    "\\S*?，\\S*?PCS/套"
+                ],
                 "dialog_placeholder": "规格型号，_pcs/套",
                 "allowed_state": [
                     "研发",
@@ -3450,7 +3544,10 @@
                 "nature": "必填",
                 "title": "线材配件",
                 "processing_type": "text",
-                "content_regular": [],
+                "content_regular": [
+                    "^无$",
+                    "\\S*?，\\S*?PCS/套"
+                ],
                 "dialog_placeholder": "线材名称（料号），_pcs/套",
                 "allowed_state": [
                     "研发",
@@ -3630,7 +3727,10 @@
                 "nature": "选填",
                 "title": "硬件测试项",
                 "processing_type": "test",
-                "content_regular": [],
+                "content_regular": [
+                    "^无$",
+                    "\\S*："
+                ],
                 "dialog_placeholder": "特殊测试项名称：值，公差",
                 "state_options": [
                     "常亮100%亮度档",
@@ -3892,7 +3992,10 @@
                 "nature": "选填",
                 "title": "软件功能测试项",
                 "processing_type": "test",
-                "content_regular": [],
+                "content_regular": [
+                    "^无$",
+                    "\\S*："
+                ],
                 "dialog_placeholder": "测试项名称：操作步骤、合格标准等信息；或指明依据的文档。",
                 "state_options": [],
                 "node_options": [],
@@ -3988,8 +4091,11 @@
                 "nature": "选填",
                 "title": "UI测试项",
                 "processing_type": "test",
-                "content_regular": [],
-                "dialog_placeholder": "写明UI检查内容与要求。",
+                "content_regular": [
+                    "^无$",
+                    "\\S*："
+                ],
+                "dialog_placeholder": "测试项名称：写明UI检查内容与要求。",
                 "state_options": [],
                 "node_options": [],
                 "instrument_options": [],
@@ -4032,7 +4138,10 @@
                 "nature": "必填",
                 "title": "工艺重点要求",
                 "processing_type": "text",
-                "content_regular": [],
+                "content_regular": [
+                    "^无$",
+                    "\\S*."
+                ],
                 "dialog_placeholder": "序号.要求",
                 "allowed_state": [
                     "研发",

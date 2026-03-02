@@ -49,8 +49,6 @@ app.state.init_config_data = app.state.config_service.load_config()
 # 比如：如果你的文件是 src/components.py，这个 logger 的名字就会是 "src.components"
 logger = logging.getLogger(__name__)
 
-updata_overview_config()
-
 
 def setup_logging():
     # 1. 创建 Logger
@@ -85,14 +83,6 @@ def setup_logging():
     logging.info("日志系统初始化完成 (Console + File)")
 
 
-def start_background_task():
-    # 每隔 60 秒在后台静默更新一次全局字典
-    # 1. ui.timer 改用 app.timer，它是纯后端定时器，不会生成 UI Client
-    # 2. 使用 lambda 确保它是被定时器回调，而不是立即执行
-    # app.timer(1200.0, lambda: update_overview_charge_pending_dic("all"))
-    update_overview_charge_pending_dic("all")
-
-
 # 在 main.py 最开始调用
 setup_logging()
 
@@ -123,13 +113,35 @@ def init_backup_service():
 
 
 # ==========================================
+# 🌟 核心重构：统一的异步启动序列
+# ==========================================
+async def master_startup():
+    """
+    主控启动序列：严格保证执行的先后顺序
+    """
+    logger.info("系统启动序列开始执行...")
+
+    # 第一顺位：建立底层基础设施（必须加 await 等待完成）
+    await db_storage.init_db()
+
+    # 第二顺位：执行依赖数据库的全局数据加载与配置更新
+    # 此时可以100%确定数据库已经就绪
+    updata_overview_config()
+
+    # 第三顺位：满足需求，在系统启动时仅执行一次业务字典更新
+    update_overview_charge_pending_dic("all")
+
+    # 第四顺位：启动非核心周边服务
+    init_backup_service()
+
+    logger.info("系统启动序列全部执行完毕。")
+
+
+# ==========================================
 # 生命周期事件注册
 # ==========================================
-app.on_startup(db_storage.init_db)
-# 注册备份初始化
-app.on_startup(init_backup_service)
-# 注册后台定期执行动作
-app.on_startup(start_background_task)
+# ✅ 注册唯一的启动统管函数
+app.on_startup(master_startup)
 # 为了能在系统关闭时顺利执行备份，需将这里外部注册关闭数据库移到init_backup_service函数内部最后
 # app.on_shutdown(db_storage.close_db)
 
@@ -216,8 +228,8 @@ if __name__ in {"__main__", "__mp_main__"}:
         dark=False,
         # 在生产环境中，必须禁用热重载功能，以获得更好的性能和稳定性
         # False 不自动重载，True自动重载
-        reload=True,
-        # reload=False,
+        # reload=True,
+        reload=False,
         # 【关键修改 1】让父进程闭嘴
         # 将 Uvicorn 自身的日志级别设为 warning，
         # 这样它就不会打印 "changes detected" 这种 INFO 级别的废话了
