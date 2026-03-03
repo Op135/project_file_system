@@ -144,10 +144,14 @@ def main_page():
     with ui.column().classes("w-full h-[calc(100vh-5rem)] items-center justify-center"):
         num = min(4, len(menu_items))
         with ui.grid(columns=num).classes("w-[calc(70vw)] gap-4"):
-            # 所有非已审项目数量
-            state_num_sum = 0
-            # 所有登录用户提交的非已审项目数量
-            state_num_user = 0
+            # 所有待修改项目数量
+            revise_num_sum = 0
+            # 所有登录用户提交的待修改项目数量
+            revise_num_user = 0
+            # 所有待审项目数量
+            pending_num_sum = 0
+            # 所有登录用户负责审核的待审核项目数量
+            pending_num_user = 0
             # 所有登录用户负责的概述维护项目数量
             over_charge_num = 0
             # {项目工程师名:[负责项目,负责项目]}
@@ -156,11 +160,17 @@ def main_page():
                 for ver, dic in ver_dic.items():
                     state = dic.get("state")
                     submitter = dic.get("submitter")
-                    if state != "已审":
-                        state_num_sum += 1
-                        # 待审项目提交人与当前用户匹配 或 待审项目的项目工程师由当前用户负责跟进
-                        if submitter == current_user or project_name in project_engineer_dic.get(current_user, []):
-                            state_num_user += 1
+                    if state == "待修改":
+                        revise_num_sum += 1
+                        # 待修改项目提交人与当前用户匹配
+                        if submitter == current_user:
+                            revise_num_user += 1
+                    elif state == "待审":
+                        pending_num_sum += 1
+                        # 待审项目的项目工程师由当前用户负责跟进
+                        if project_name in project_engineer_dic.get(current_user, []):
+                            pending_num_user += 1
+
             if current_user in app.storage.general["overview_charge_pending"]:
                 over_charge_num = len(app.storage.general["overview_charge_pending"][current_user].keys())
 
@@ -171,11 +181,14 @@ def main_page():
                 if target == "/information":
                     # 根据当前用户角色判断统计口径
                     if current_role in ["研发经理"]:
-                        # 经理看到的是所有未审 + 自己负责的概述
-                        pending_count = state_num_sum + over_charge_num
+                        # 经理看到的是所有待审项目数量 + 自己负责的概述
+                        pending_count = pending_num_sum + over_charge_num
+                    elif current_role in ["销售", "销售总监"]:
+                        # 销售看到的是自己提交的待修改项目数量
+                        pending_count = revise_num_user
                     else:
-                        # 普通用户看到的是自己提交的未审 + 自己负责的项目 + 概述
-                        pending_count = state_num_user + over_charge_num
+                        # 其他人看到的是自己负责审核的待审项目数量（项目工程师才有） + 自己负责的概述
+                        pending_count = pending_num_user + over_charge_num
 
                 # 2. 定义动态样式 (Dynamic Styling)
                 #    如果有待办，图标变黄；否则保持原本的蓝色

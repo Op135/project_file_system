@@ -223,19 +223,18 @@ def information_page():
             container.delete()  # 数据丢失，删除UI
             return
 
+        project_engineer_dic = get_project_engineer_project_list_dic()
+        is_manager = current_role in ["研发经理"]
+        # is_engineer = current_user == project_engineer_dic.get(project_name, "")
+        is_engineer = current_user in project_engineer_dic
         # 2. 如果已审，删除该行
-        if review_state == "已审":
+        if review_state == "已审" or review_state == "待修改" and (is_manager or is_engineer):
             container.delete()
             return
 
         # 3. 重新渲染内容
         container.clear()
         with container:
-            project_engineer_dic = get_project_engineer_project_list_dic()
-            is_manager = current_role in ["研发经理"]
-            # is_engineer = current_user == project_engineer_dic.get(project_name, "")
-            is_engineer = current_user in project_engineer_dic
-
             # --- 卡片布局 ---
             with ui.card().classes(
                 "w-full p-3 border-l-4 border-l-blue-500 shadow-sm hover:shadow-md transition-shadow duration-300 bg-white"
@@ -388,8 +387,12 @@ def information_page():
                                         is_engineer = project_name in project_engineer_dic.get(current_user, [])
                                         is_submitter = dic.get("submitter") == current_user
 
-                                        should_show = (is_manager or is_engineer) and dic.get("state") != "已审"
-                                        if not should_show and is_submitter and dic.get("state") != "已审":
+                                        should_show = False
+                                        # 销售查看非已审项目待办项
+                                        if is_submitter and dic.get("state") != "已审":
+                                            should_show = True
+                                        # 研发经理或项目工程师查看待审项目待办项
+                                        elif (is_manager or is_engineer) and dic.get("state") == "待审":
                                             should_show = True
 
                                         if should_show:
