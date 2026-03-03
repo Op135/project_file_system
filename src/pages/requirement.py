@@ -4047,6 +4047,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                                                             impact_list=data["impact_list"],
                                                             dialog_placeholder=data["dialog_placeholder"],
                                                             permission=data["permission"],
+                                                            test_nature_options=data["test_nature_options"],
                                                             state_options=data["state_options"],
                                                             node_options=data["node_options"],
                                                             instrument_options=data["instrument_options"],

@@ -691,6 +691,7 @@ class InteractiveButton:
         search_hierarchy: list = [],
         dialog_label: str = "按规定格式输入",
         dialog_placeholder: str = "",
+        test_nature_options: list = [],
         state_options: list = [],
         node_options: list = [],
         instrument_options: list = [],
@@ -716,6 +717,7 @@ class InteractiveButton:
         self.dialog_placeholder = dialog_placeholder
         self.dialog_label = dialog_label
         self.permission = permission
+        self.test_nature_options = test_nature_options
         self.state_options = state_options
         self.node_options = node_options
         self.instrument_options = instrument_options
@@ -1248,6 +1250,8 @@ class InteractiveButton:
         with self.chip_dialog, ui.card().classes("w-full"):
             ui.label(f"添加产品的{self.title}").classes("text-lg font-bold")
             test_select_data = {
+                "test_nature_select": "",
+                "test_nature_other_text": "",
                 "state_select": "",
                 "state_other_text": "",
                 "node_select": "",
@@ -1288,6 +1292,7 @@ class InteractiveButton:
                         oth.set_visibility(False)
                         sel.on_value_change(lambda: self._set_other_ui(oth, sel.value))
 
+            build_options(self.test_nature_options, "test_nature", "测试性质")
             build_options(self.state_options, "state", "条件/状态")
             build_options(self.node_options, "node", "节点/位置")
             build_options(self.instrument_options, "instrument", "工具/仪器/治具")
@@ -3776,6 +3781,8 @@ class OverviewTableGroup:
         with self.chip_dialog, ui.card().classes("w-full"):
             ui.label(f"添加产品的{config['title']}").classes("text-lg font-bold text-blue-900")
             test_select_data = {
+                "test_nature_select": "",
+                "test_nature_other_text": "",
                 "state_select": "",
                 "state_other_text": "",
                 "node_select": "",
@@ -3816,6 +3823,7 @@ class OverviewTableGroup:
                         oth.set_visibility(False)
                         sel.on_value_change(lambda: self._set_other_ui(oth, sel.value))
 
+            bind_select(config.get("test_nature_options", []), "测试性质", "test_nature")
             bind_select(config.get("state_options", []), "条件/状态", "state")
             bind_select(config.get("node_options", []), "节点/位置", "node")
             bind_select(config.get("instrument_options", []), "工具/仪器/治具", "instrument")

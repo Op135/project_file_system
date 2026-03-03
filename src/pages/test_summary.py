@@ -164,6 +164,7 @@ def test_summary_report(project_name: str):
                             "role": data.get("role", "未知"),
                             "category": label_title,
                             "content": data.get("content", ""),
+                            "test_nature": fmt_option(test_data, "test_nature"),
                             "condition": fmt_option(test_data, "state"),
                             "node": fmt_option(test_data, "node"),
                             "instrument": fmt_option(test_data, "instrument"),
@@ -186,7 +187,9 @@ def test_summary_report(project_name: str):
                 ui.label("输入电压或标签功率数据异常（空白或内容不唯一），无法显示").classes(
                     "text-base font-medium mb-0 text-red-600"
                 )
-
+            ui.label("注：默认任意产品型号均需要测试并记录：产品输入电压与输入电流；").classes(
+                "text-base font-medium mb-0"
+            )
             columns = [
                 {
                     "name": "role",
@@ -202,6 +205,13 @@ def test_summary_report(project_name: str):
                     "field": "content",
                     "align": "left",
                     "style": "white-space: pre-wrap;",
+                },
+                {
+                    "name": "test_nature",
+                    "label": "测试性质",
+                    "field": "test_nature",
+                    "align": "center",
+                    "style": "white-space: pre-wrap; width: 300px;",
                 },
                 {
                     "name": "condition",
