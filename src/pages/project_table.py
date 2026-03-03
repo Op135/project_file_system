@@ -974,6 +974,7 @@ def project_table_page():
             "width": 150,
             "cellClass": "left-auto-break",
             "autoHeight": True,
+            "filter": "agTextColumnFilter",
         },
         {"field": "state", "headerName": "产品状态", "width": 80, "filter": "agTextColumnFilter"},
         {"field": "creation_date", "headerName": "立项日期", "width": 100, "filter": "agDateColumnFilter"},
@@ -991,6 +992,7 @@ def project_table_page():
             "width": 400,
             "cellClass": "left-auto-break",
             "autoHeight": True,
+            "filter": "agTextColumnFilter",
         },
         {
             "field": "light_source",
@@ -1006,6 +1008,7 @@ def project_table_page():
             "width": 250,
             "cellClass": "left-auto-break",
             "autoHeight": True,
+            "filter": "agTextColumnFilter",
         },
         {
             "field": "target_distance",
@@ -1013,6 +1016,7 @@ def project_table_page():
             "width": 100,
             "cellClass": "left-auto-break",
             "autoHeight": True,
+            "filter": "agTextColumnFilter",
         },
         {
             "field": "adapter_options",
@@ -1082,6 +1086,7 @@ def project_table_page():
             "width": 80,
             "cellClass": "left-auto-break",
             "autoHeight": True,
+            "filter": "agTextColumnFilter",
         },
         {
             "field": "structure_charge",
@@ -1089,6 +1094,7 @@ def project_table_page():
             "width": 80,
             "cellClass": "left-auto-break",
             "autoHeight": True,
+            "filter": "agTextColumnFilter",
         },
         {
             "field": "hardware_charge",
@@ -1096,6 +1102,7 @@ def project_table_page():
             "width": 80,
             "cellClass": "left-auto-break",
             "autoHeight": True,
+            "filter": "agTextColumnFilter",
         },
         {
             "field": "software_charge",
@@ -1103,6 +1110,7 @@ def project_table_page():
             "width": 80,
             "cellClass": "left-auto-break",
             "autoHeight": True,
+            "filter": "agTextColumnFilter",
         },
         {
             "field": "ui_charge",
@@ -1110,6 +1118,7 @@ def project_table_page():
             "width": 80,
             "cellClass": "left-auto-break",
             "autoHeight": True,
+            "filter": "agTextColumnFilter",
         },
         {
             "field": "craft_charge",
@@ -1117,6 +1126,7 @@ def project_table_page():
             "width": 80,
             "cellClass": "left-auto-break",
             "autoHeight": True,
+            "filter": "agTextColumnFilter",
         },
     ]
     for col in project_summary_columns:
