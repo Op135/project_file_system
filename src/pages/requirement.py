@@ -3155,7 +3155,8 @@ async def requirement_page(type="", json_path="", project_name=""):
                 # [修复 1] 显式获取并检查变量，确保路径列表是纯字符串
                 current_label = state["label"]
                 current_id = e.value
-
+                # 【重要修复】：清空上一轮的控件引用，防止保存时读取到僵尸控件报错
+                test_inputs.clear()
                 if current_id and current_label:
                     # 获取该chip的完整数据
                     path_list = [f"{project_name}_over_data", str(current_label), str(current_id)]
@@ -3235,6 +3236,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                             test_inputs[f"{key_prefix}_other_text"] = other_input
 
                     # 渲染三组配置
+                    create_test_group("测试性质", "test_nature", config.get("test_nature_options", []))
                     create_test_group("条件/状态", "state", config.get("state_options", []))
                     create_test_group("节点/位置", "node", config.get("node_options", []))
                     create_test_group("工具/仪器", "instrument", config.get("instrument_options", []))

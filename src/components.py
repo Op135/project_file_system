@@ -1685,6 +1685,8 @@ class InteractiveButton:
         try:
             text, notes = self.chip_label.value.strip(), self.chip_notes.value.strip()
             other_bool = False
+            if test_select_data["test_nature_select"] == "其它" and not test_select_data["test_nature_other_text"]:
+                other_bool = True
             if test_select_data["state_select"] == "其它" and not test_select_data["state_other_text"]:
                 other_bool = True
             if test_select_data["node_select"] == "其它" and not test_select_data["node_other_text"]:
@@ -1712,6 +1714,7 @@ class InteractiveButton:
                 return
             if (
                 not text
+                or test_select_data["test_nature_select"] is None
                 or test_select_data["state_select"] is None
                 or test_select_data["node_select"] is None
                 or test_select_data["instrument_select"] is None
@@ -2080,7 +2083,7 @@ class InteractiveButton:
             app.storage.general["over_change_broadcast"][self.project].pop(chip_id, None)
 
     async def _set_related_chip_state(self, chip_text, chip_state, all_related_bool, related_select_dic, type):
-        overview_data = copy.deepcopy(db_storage.get_item(f"{self.project}_over_data", {}))
+        overview_data = db_storage.get_item(f"{self.project}_over_data", {})
         for related_label, chip_dic in overview_data.items():
             if related_label in related_select_dic and (related_select_dic[related_label] or all_related_bool):
                 for related_chip_id, chip_data in chip_dic.items():
@@ -2186,8 +2189,8 @@ class InteractiveButton:
             return
 
         try:
-            OLD_CHIP_SELECT_DIC = copy.deepcopy(
-                db_storage.get_deep_item([f"{self.project}_over_data", self.label, chip_id, "select_activ_dic"], {})
+            OLD_CHIP_SELECT_DIC = db_storage.get_deep_item(
+                [f"{self.project}_over_data", self.label, chip_id, "select_activ_dic"], {}
             )
             if new_select_activ_dic != OLD_CHIP_SELECT_DIC:
                 ui_spinner.set_visibility(True)
@@ -2223,8 +2226,8 @@ class InteractiveButton:
                 self.cancel_checkbox_change(chip_id)
                 ui_spinner.set_visibility(False)
 
-                open_dic = copy.deepcopy(
-                    db_storage.get_deep_item([f"{self.project}_over_related_record", self.label, chip_id, "open"], {})
+                open_dic = db_storage.get_deep_item(
+                    [f"{self.project}_over_related_record", self.label, chip_id, "open"], {}
                 )
                 if open_dic:
                     open_dic["close_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -2254,9 +2257,10 @@ class InteractiveButton:
         self.activ_dialog.clear()
         with self.activ_dialog, ui.card().classes("w-1/2"):
             ui.label("选择概述生效的需求版本").classes("text-lg font-bold")
-            select_activ_dic = copy.deepcopy(
-                db_storage.get_deep_item([f"{self.project}_over_data", self.label, chip_id, "select_activ_dic"], {})
+            select_activ_dic = db_storage.get_deep_item(
+                [f"{self.project}_over_data", self.label, chip_id, "select_activ_dic"], {}
             )
+
             app.storage.general["over_change_broadcast"].setdefault(self.project, {})
             app.storage.general["over_change_broadcast"][self.project].setdefault(chip_id, {})
 
@@ -2284,9 +2288,10 @@ class InteractiveButton:
                         select_label,
                     )
 
-            open_dic = copy.deepcopy(
-                db_storage.get_deep_item([f"{self.project}_over_related_record", self.label, chip_id, "open"], {})
+            open_dic = db_storage.get_deep_item(
+                [f"{self.project}_over_related_record", self.label, chip_id, "open"], {}
             )
+
             if open_dic:
                 ui.label("本次状态变化由以下概述调整引起：").classes("text-base font-bold text-brown")
                 for time_key, record in open_dic.get("record", {}).items():
@@ -4667,6 +4672,11 @@ class OverviewTableGroup:
                                     # --- 专门针对 test 类型，解析下拉与文本输入条件 ---
                                     if c.get("type") == "test" and "test_select_data" in c:
                                         t_data = c["test_select_data"]
+
+                                        test_nature = t_data.get("test_nature_select", "")
+                                        if test_nature == "其它":
+                                            test_nature = t_data.get("test_nature_other_text", "")
+
                                         state = t_data.get("state_select", "")
                                         if state == "其它":
                                             state = t_data.get("state_other_text", "")
@@ -4679,7 +4689,7 @@ class OverviewTableGroup:
                                         if inst == "其它":
                                             inst = t_data.get("instrument_other_text", "")
 
-                                        details = [x for x in [state, node, inst] if x]
+                                        details = [x for x in [test_nature, state, node, inst] if x]
                                         if details:
                                             base_content += f" ({', '.join(details)})"
 
@@ -4755,7 +4765,7 @@ class OverviewTableGroup:
         await self._update_display()
 
     async def _set_related_chip_state(self, chip_text, chip_state, all_related_bool, related_select_dic, type, config):
-        overview_data = copy.deepcopy(db_storage.get_item(f"{self.project}_over_data", {}))
+        overview_data = db_storage.get_item(f"{self.project}_over_data", {})
         for related_label, chip_dic in overview_data.items():
             if related_label in related_select_dic and (related_select_dic[related_label] or all_related_bool):
                 for related_chip_id, chip_data in chip_dic.items():
@@ -4779,9 +4789,10 @@ class OverviewTableGroup:
 
         with self.activ_dialog, ui.card().classes("w-1/2"):
             ui.label("选择概述生效的需求版本").classes("text-lg font-bold")
-            select_activ_dic = copy.deepcopy(
-                db_storage.get_deep_item([f"{self.project}_over_data", label, chip_id, "select_activ_dic"], {})
+            select_activ_dic = db_storage.get_deep_item(
+                [f"{self.project}_over_data", label, chip_id, "select_activ_dic"], {}
             )
+
             app.storage.general["over_change_broadcast"].setdefault(self.project, {})
             app.storage.general["over_change_broadcast"][self.project].setdefault(chip_id, {})
 
@@ -4810,9 +4821,8 @@ class OverviewTableGroup:
                         select_label,
                     )
 
-            open_dic = copy.deepcopy(
-                db_storage.get_deep_item([f"{self.project}_over_related_record", label, chip_id, "open"], {})
-            )
+            open_dic = db_storage.get_deep_item([f"{self.project}_over_related_record", label, chip_id, "open"], {})
+
             if open_dic:
                 ui.label("本次状态变化由以下概述调整引起：").classes("text-base font-bold text-brown")
                 for time_key, record in open_dic.get("record", {}).items():
@@ -4862,9 +4872,10 @@ class OverviewTableGroup:
             app.storage.general["over_change_broadcast"][self.project].pop(chip_id, None)
 
     def _check_version_updated(self, chip_id, new_select_activ_dic, chip_text, config) -> bool:
-        select_activ_dic = copy.deepcopy(
-            db_storage.get_deep_item([f"{self.project}_over_data", config["label"], chip_id, "select_activ_dic"], {})
+        select_activ_dic = db_storage.get_deep_item(
+            [f"{self.project}_over_data", config["label"], chip_id, "select_activ_dic"], {}
         )
+
         if len(new_select_activ_dic) != len(select_activ_dic):
             ui.notify(
                 "需求刚刚升级了，各项概述的激活配置需要重新确定！",
@@ -4919,11 +4930,10 @@ class OverviewTableGroup:
                         )
 
                         # 4. 闭环历史打开记录 (与手动操作逻辑完全一致)
-                        open_dic = copy.deepcopy(
-                            db_storage.get_deep_item(
-                                [f"{self.project}_over_related_record", label, chip_id, "open"], {}
-                            )
+                        open_dic = db_storage.get_deep_item(
+                            [f"{self.project}_over_related_record", label, chip_id, "open"], {}
                         )
+
                         if open_dic:
                             open_dic["close_time"] = time_str
                             open_dic["close_related_user"] = history_creator_label
@@ -4944,9 +4954,10 @@ class OverviewTableGroup:
             return
 
         try:
-            OLD_CHIP_SELECT_DIC = copy.deepcopy(
-                db_storage.get_deep_item([f"{self.project}_over_data", label, chip_id, "select_activ_dic"], {})
+            OLD_CHIP_SELECT_DIC = db_storage.get_deep_item(
+                [f"{self.project}_over_data", label, chip_id, "select_activ_dic"], {}
             )
+
             if new_select_activ_dic != OLD_CHIP_SELECT_DIC:
                 ui_spinner.set_visibility(True)
                 await db_storage.set_deep_item(
@@ -4981,9 +4992,8 @@ class OverviewTableGroup:
                 self.cancel_checkbox_change(chip_id)
                 ui_spinner.set_visibility(False)
 
-                open_dic = copy.deepcopy(
-                    db_storage.get_deep_item([f"{self.project}_over_related_record", label, chip_id, "open"], {})
-                )
+                open_dic = db_storage.get_deep_item([f"{self.project}_over_related_record", label, chip_id, "open"], {})
+
                 if open_dic:
                     open_dic["close_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     open_dic["close_related_user"] = creator

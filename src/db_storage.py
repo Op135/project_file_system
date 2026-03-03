@@ -132,11 +132,13 @@ async def _internal_remove(key: str):
 
 def get_item(key: str, default: Any = None) -> Any:
     """
-    从内存缓存中“即时获取”数据（浅引用）。
-    这是一个同步函数，因为它只访问内存，速度极快。
-    (这个函数是只读的，不需要等待或加锁)
+    从内存缓存中获取数据。
+    【重要修复】：必须返回深拷贝，防止外部代码无意间修改缓存，导致下次写入时数据丢失。
     """
-    return _data_cache.get(key, default)
+    val = _data_cache.get(key, default)
+    if val is default or val is None:
+        return default
+    return copy.deepcopy(val)
 
 
 async def set_item(key: str, value: Any):
@@ -187,7 +189,7 @@ async def remove_item(key: str) -> bool:
 
 def get_deep_item(path: List[str], default: Any = None) -> Any:
     """
-    从 db_storage 中“即时获取”一个任意深度的值（浅引用）。
+    从 db_storage 中“即时获取”一个任意深度的值（深拷贝）。
     (这个函数是只读的，不需要等待或加锁)
 
     :param path: 键的路径列表，第一个必须是第一层键， 例如 ['overview_data', 'project_A', 'chip_1']
@@ -220,7 +222,8 @@ def get_deep_item(path: List[str], default: Any = None) -> Any:
             # 提前在路径中遇到 None
             return default
 
-    return current_level_data if current_level_data is not None else default
+    # 【重要修复】：同样必须返回深拷贝
+    return copy.deepcopy(current_level_data)
 
 
 async def set_deep_item(path: List[str], value: Any) -> None:
@@ -258,15 +261,15 @@ async def set_deep_item(path: List[str], value: Any) -> None:
         # 1. READ (读取)
         #    现在这是安全的，因为 _init_done.wait() 保证了 get_item
         #    会读到完整的数据，而不是默认的 {}
-        original_data = get_item(top_key, {})
-        if not isinstance(original_data, dict):
+        top_level_data_copy = get_item(top_key, {})
+        if not isinstance(top_level_data_copy, dict):
             # 如果原始数据不是字典（例如是个字符串），但我们要深度设置
             # 我们用新字典覆盖它。
-            original_data = {}
+            top_level_data_copy = {}
 
         # 2. COPY
         #    在副本上操作，绝不污染缓存
-        top_level_data_copy = copy.deepcopy(original_data)
+        # top_level_data_copy = copy.deepcopy(original_data)
 
         # 3. MODIFY: 逐层深入，使用 setdefault 确保路径存在
         current_level_data = top_level_data_copy
@@ -326,12 +329,12 @@ async def del_deep_item(path: List[str]) -> bool:
 
         # --- 执行 "Read-Modify-Write" ---
         # 1. READ
-        original_data = get_item(top_key)
-        if not isinstance(original_data, dict):
+        top_level_data_copy = get_item(top_key)
+        if not isinstance(top_level_data_copy, dict):
             return False  # 不是字典，无法删除子项
 
         # 2. COPY
-        top_level_data_copy = copy.deepcopy(original_data)
+        # top_level_data_copy = copy.deepcopy(original_data)
 
         # 3. MODIFY (在副本上)
         current_level_data = top_level_data_copy
@@ -400,8 +403,8 @@ async def atomic_deep_update(path: List[str], update_function: Callable, *args, 
         try:
             # --- 处理边缘情况：路径只有一层 (同 atomic_update) ---
             if not deep_path:
-                current_data = get_item(top_key, None)
-                data_to_process = copy.deepcopy(current_data)
+                data_to_process = get_item(top_key, None)
+                # data_to_process = copy.deepcopy(current_data)
                 new_data = update_function(data_to_process, *args, **kwargs)
                 await _internal_set(top_key, new_data)  # 使用您重构的内部函数
                 return True
@@ -409,13 +412,13 @@ async def atomic_deep_update(path: List[str], update_function: Callable, *args, 
             # --- 处理深层路径 ---
 
             # 3. READ (读取顶层对象)
-            original_data = get_item(top_key, {})
-            if not isinstance(original_data, dict):
+            top_level_data_copy = get_item(top_key, {})
+            if not isinstance(top_level_data_copy, dict):
                 # 如果顶层键存在但不是字典，我们用新字典覆盖它
-                original_data = {}
+                top_level_data_copy = {}
 
             # 4. COPY (创建顶层对象的深拷贝)
-            top_level_data_copy = copy.deepcopy(original_data)
+            # top_level_data_copy = copy.deepcopy(original_data)
 
             # 5. MODIFY (遍历到深层并执行 update_function)
             current_level_data = top_level_data_copy

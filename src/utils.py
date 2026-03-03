@@ -728,7 +728,7 @@ async def set_overview_active_state(project_name: str, ver: str) -> None:
     4. 最高版本为True或None的，生成为None的更高版本记录，其它False的，生成为False的更高版本记录。
     """
     req_ver = int(float(ver))
-    overview_data = copy.deepcopy(db_storage.get_item(f"{project_name}_over_data", {}))
+    overview_data = db_storage.get_item(f"{project_name}_over_data", {})
     # 遍历该项目概述内容，字典键为概述的各分类项，值为该项下chip字典
     for chip_dic in overview_data.values():
         # 遍历各个chip数据
@@ -792,7 +792,7 @@ async def copy_overview_data(project_name, version, target_project_name) -> None
         target_project_name：复制到的目标项目
 
     """
-    overview_data = copy.deepcopy(db_storage.get_item(f"{project_name}_over_data", {}))
+    overview_data = db_storage.get_item(f"{project_name}_over_data", {})
     # 整理设置1.0版本概述激活状态，清空参照项目可能多出的版本激活记录，只复制参照版激活记录
     for chip_dic in overview_data.values():
         # 遍历各个chip数据

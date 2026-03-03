@@ -139,7 +139,12 @@ def test_summary_report(project_name: str):
             other_val = select_data.get(f"{key_prefix}_other_text")
             if select_val == "其它":
                 return f"{other_val}" if other_val else "其它(未填)"
-            return select_val if select_val else "-"
+            if select_val:
+                return select_val
+            elif key_prefix == "test_nature":
+                return "全检，作合格判定标准，写入报告"
+            else:
+                return "——"
 
         # 遍历提取数据
         for label, chips in all_over_data.items():
