@@ -1201,7 +1201,7 @@ def project_table_page():
                 "enableCellTextSelection": True,
                 # 分页相关设置
                 "pagination": True,  # 开启分页
-                "paginationPageSize": 50,  # 每页显示 10 行
+                "paginationPageSize": 30,  # 每页显示 10 行
                 "paginationPageSizeSelector": [10, 30, 50, 70, 90],  # (可选) 允许用户在底部选择每页行数
                 # === 新增：根据状态字段应用 CSS 类 ===
                 "rowClassRules": {
