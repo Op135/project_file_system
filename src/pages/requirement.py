@@ -195,7 +195,7 @@ async def requirement_page(type="", json_path="", project_name=""):
     # 在全局作用域创建对话框（确保在菜单系统之外）
     general_dialog = ui.dialog()
     # 创建项目名修改对话框
-    with ui.dialog().classes("") as project_dialog:
+    with ui.dialog().props("persistent").classes("") as project_dialog:
         project_card = ui.card().classes("w-1/4")
     # 创建并显示对比对话框
     with ui.dialog() as contrast_dialog:
@@ -203,11 +203,11 @@ async def requirement_page(type="", json_path="", project_name=""):
             ui.card().classes("gap-2").style("min-width: 800px; max-width: 90vw; min-hight: 800px; max-hight: 90vw;")
         )
     # 创建用于选择需求版本的对话框
-    with ui.dialog().classes("") as req_version_dialog:
-        version_card = ui.card().classes("w-1/4")
+    with ui.dialog().props("persistent").classes("") as req_version_dialog:
+        version_card = ui.card().classes("w-1/3")
 
-    with ui.dialog().classes("") as over_dialog:
-        over_card = ui.card().classes("w-1/4")
+    with ui.dialog().props("persistent").classes("") as over_dialog:
+        over_card = ui.card().classes("w-1/3")
     # 存储对话框引用
     app.storage.client["page_elements"]["project_card"] = project_card
     app.storage.client["page_elements"]["project_dialog"] = project_dialog
@@ -345,13 +345,42 @@ async def requirement_page(type="", json_path="", project_name=""):
                 ui.button("取消", on_click=on_cancel_action)
         over_dialog.open()
 
-    def set_project_trial_dialog(on_cancel_action):
+    def set_project_trial_dialog(project_name, on_cancel_action):
+        pending_dic = app.storage.general.get("overview_charge_pending", {})
+        # 用于保存导致该项目不能切换状态到试产的相关人员与其未确定概述字典
+        pending_out_dic = {}
+        for charge_user, user_dic in pending_dic.items():
+            for pn, pending_dic in user_dic.items():
+                if (
+                    pn == project_name
+                    and pending_dic
+                    and any([v in ["缺必填", "有待定"] for v in pending_dic.values()])
+                ):
+                    pending_out_dic[charge_user] = [k for k, v in pending_dic.items() if v in ["缺必填", "有待定"]]
+        over_flat = app.storage.general.get("over_config_data_flat", {})
         over_card.clear()
         with over_card:
-            ui.label("确认项目进入试产阶段，概述内容将通过ECN修改，且切换不可逆！").classes("text-base text-red")
-            with ui.row().classes("w-full justify-end"):
-                ui.button("确认", on_click=lambda: over_dialog.close())
-                ui.button("取消", on_click=on_cancel_action)
+            if pending_out_dic:
+                html_str = ""
+                ui.label("下列人员负责的概述未填或状态待定，无法将项目切换为试产状态！").classes("text-base text-red")
+                for user, user_dic in pending_out_dic.items():
+                    html_str += (
+                        f"<b>{user}：</b><br>"
+                        + "<br>".join(
+                            [f"• {over_flat.get(over_label, {}).get('title', '未知概述项')}" for over_label in user_dic]
+                        )
+                        + "<br>"
+                    )
+                ui.html(html_str, sanitize=False).classes("text-sm text-gray-800")
+                with ui.row().classes("w-full justify-end"):
+                    ui.button("确认", on_click=on_cancel_action)
+            else:
+                ui.label("确认项目进入试产阶段，概述内容将只能通过ECN修改，且切换不可逆！").classes(
+                    "text-base text-red"
+                )
+                with ui.row().classes("w-full justify-end"):
+                    ui.button("确认", on_click=lambda: over_dialog.close())
+                    ui.button("取消", on_click=on_cancel_action)
         over_dialog.open()
 
     # 关闭项目概述特殊刷新标记
@@ -400,7 +429,7 @@ async def requirement_page(type="", json_path="", project_name=""):
             elif previous_state == "研发" and state == "转产":
                 set_project_conversion_dialog(project_name, state, on_cancel_action)
             elif previous_state == "转产" and state == "试产":
-                set_project_trial_dialog(on_cancel_action)
+                set_project_trial_dialog(project_name, on_cancel_action)
             else:
                 edit_project_summary(project_name, state, app.storage.client.get("recovery_bool", False))
 
