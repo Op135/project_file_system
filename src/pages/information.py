@@ -328,19 +328,31 @@ def information_page():
                                 over_flat = app.storage.general.get("over_config_data_flat", {})
                                 for project_name, state_dic in list(my_pending.items()):
                                     # 无内容的必填概述分项数量
-                                    false_num = list(state_dic.values()).count(False)
+                                    false_num = list(state_dic.values()).count("缺必填")
+                                    # 无内容的需填概述分项数量
+                                    need_num = list(state_dic.values()).count("缺需填")
                                     # 待确认的概述分项数量
-                                    none_num = list(state_dic.values()).count(None)
+                                    none_num = list(state_dic.values()).count("有待定")
                                     # --- 新增：提取并构建 HTML 格式的 Tooltip 内容 ---
-                                    false_items = [k for k, v in state_dic.items() if v is False]
-                                    none_items = [k for k, v in state_dic.items() if v is None]
+                                    false_items = [k for k, v in state_dic.items() if v == "缺必填"]
+                                    need_items = [k for k, v in state_dic.items() if v == "缺需填"]
+                                    none_items = [k for k, v in state_dic.items() if v == "有待定"]
 
                                     tooltip_html = ""
                                     if false_items:
-                                        tooltip_html += "<b>【无内容】</b><br>" + "<br>".join(
+                                        tooltip_html += "<b>【必填无内容】</b><br>" + "<br>".join(
                                             [
                                                 f"• {over_flat.get(item, {}).get('title', '未知概述项')}"
                                                 for item in false_items
+                                            ]
+                                        )
+                                    if need_items:
+                                        if tooltip_html:
+                                            tooltip_html += "<br><br>"
+                                        tooltip_html += "<b>【需填无内容】</b><br>" + "<br>".join(
+                                            [
+                                                f"• {over_flat.get(item, {}).get('title', '未知概述项')}"
+                                                for item in need_items
                                             ]
                                         )
                                     if none_items:
@@ -355,12 +367,17 @@ def information_page():
                                     # ------------------------------------
 
                                     # 每一行项目
-                                    row_container = ui.row().classes(
-                                        "w-full items-center justify-between p-3 bg-red-50 rounded-lg border border-red-100 hover:bg-red-100 transition-colors"
-                                    )
+                                    if false_num > 0 or none_num > 0:
+                                        row_container = ui.row().classes(
+                                            "w-full items-center justify-between p-3 bg-red-50 rounded-lg border border-red-100 hover:bg-red-100 transition-colors"
+                                        )
+                                    else:
+                                        row_container = ui.row().classes(
+                                            "w-full items-center justify-between p-3 bg-amber-50 rounded-lg border border-amber-100 hover:bg-amber-100 transition-colors"
+                                        )
                                     with row_container:
                                         title_label = ui.label(
-                                            f"{project_name}（{str(false_num)}项必填概述无内容,{str(none_num)}项概述待确认）"
+                                            f"{project_name}（{str(false_num)}项必填概述无内容，{str(need_num)}项需填概述无内容，{str(none_num)}项概述待确认）"
                                         ).classes("font-medium text-gray-800 cursor-help")
 
                                         # 使用上下文管理器结合 ui.html 渲染支持换行的原生 HTML
@@ -480,15 +497,25 @@ def information_page():
                                             over_flat = app.storage.general.get("over_config_data_flat", {})
                                             for p, p_state_dic in pending_project_dic.items():
                                                 # --- 新增：提取并构建 HTML 格式的 Tooltip 内容 ---
-                                                false_items = [k for k, v in p_state_dic.items() if v is False]
-                                                none_items = [k for k, v in p_state_dic.items() if v is None]
+                                                false_items = [k for k, v in p_state_dic.items() if v == "缺必填"]
+                                                need_items = [k for k, v in p_state_dic.items() if v == "缺需填"]
+                                                none_items = [k for k, v in p_state_dic.items() if v == "有待定"]
 
                                                 tooltip_html = ""
                                                 if false_items:
-                                                    tooltip_html += "<b>【无内容】</b><br>" + "<br>".join(
+                                                    tooltip_html += "<b>【必填无内容】</b><br>" + "<br>".join(
                                                         [
                                                             f"• {over_flat.get(item, {}).get('title', '未知概述项')}"
                                                             for item in false_items
+                                                        ]
+                                                    )
+                                                if need_items:
+                                                    if tooltip_html:
+                                                        tooltip_html += "<br><br>"
+                                                    tooltip_html += "<b>【需填无内容】</b><br>" + "<br>".join(
+                                                        [
+                                                            f"• {over_flat.get(item, {}).get('title', '未知概述项')}"
+                                                            for item in need_items
                                                         ]
                                                     )
                                                 if none_items:
@@ -504,10 +531,14 @@ def information_page():
                                                 if not tooltip_html:
                                                     tooltip_html = "状态正常"
                                                 # ------------------------------------
-
-                                                project_label = ui.label(f"• {p}").classes(
-                                                    "pl-2 text-gray-500 truncate text-xs cursor-help"
-                                                )
+                                                if false_items or none_items:
+                                                    project_label = ui.label(f"• {p}").classes(
+                                                        "pl-2 text-red-500 truncate text-xs cursor-help"
+                                                    )
+                                                else:
+                                                    project_label = ui.label(f"• {p}").classes(
+                                                        "pl-2 text-amber-500 truncate text-xs cursor-help"
+                                                    )
 
                                                 # 使用上下文管理器渲染多行 tooltip
                                                 with project_label:

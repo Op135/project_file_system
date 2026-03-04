@@ -92,13 +92,17 @@ def update_overview_charge_pending_dic(scope, des_user="", project_name="", des_
                     label = config_item["label"]
 
                     if nature == "必填":
-                        user_proj_dict.setdefault(label, False)
+                        user_proj_dict.setdefault(label, "缺必填")
+                    elif nature == "需填":
+                        user_proj_dict.setdefault(label, "缺需填")
 
                     label_chip_dic = project_over_data.get(label, {}).values()
 
                     if not label_chip_dic:
                         if nature == "必填":
-                            user_proj_dict[label] = False
+                            user_proj_dict[label] = "缺必填"
+                        elif nature == "需填":
+                            user_proj_dict[label] = "缺需填"
                         else:
                             user_proj_dict.pop(label, None)
                         continue
@@ -115,12 +119,14 @@ def update_overview_charge_pending_dic(scope, des_user="", project_name="", des_
                             has_active = True
 
                     if has_none:
-                        user_proj_dict[label] = None
+                        user_proj_dict[label] = "有待定"
                     elif has_active:
                         user_proj_dict.pop(label, None)
                     else:
                         if nature == "必填":
-                            user_proj_dict[label] = False
+                            user_proj_dict[label] = "缺必填"
+                        elif nature == "需填":
+                            user_proj_dict[label] = "缺需填"
                         else:
                             user_proj_dict.pop(label, None)
 
@@ -150,13 +156,17 @@ def update_overview_charge_pending_dic(scope, des_user="", project_name="", des_
             # title = ver_dic.get("title")
 
             if nature == "必填":
-                user_proj_dict.setdefault(des_label, False)
+                user_proj_dict.setdefault(des_label, "缺必填")
+            elif nature == "需填":
+                user_proj_dict.setdefault(des_label, "缺需填")
 
             label_chip_dic = db_storage.get_deep_item([f"{project_name}_over_data", des_label], {}).values()
 
             if not label_chip_dic:
                 if nature == "必填":
-                    user_proj_dict[des_label] = False
+                    user_proj_dict[des_label] = "缺必填"
+                elif nature == "需填":
+                    user_proj_dict[des_label] = "缺需填"
                 else:
                     user_proj_dict.pop(des_label, None)
             else:
@@ -171,12 +181,14 @@ def update_overview_charge_pending_dic(scope, des_user="", project_name="", des_
                         has_active = True
 
                 if has_none:
-                    user_proj_dict[des_label] = None
+                    user_proj_dict[des_label] = "有待定"
                 elif has_active:
                     user_proj_dict.pop(des_label, None)
                 else:
                     if nature == "必填":
-                        user_proj_dict[des_label] = False
+                        user_proj_dict[des_label] = "缺必填"
+                    elif nature == "需填":
+                        user_proj_dict[des_label] = "缺需填"
                     else:
                         user_proj_dict.pop(des_label, None)
 

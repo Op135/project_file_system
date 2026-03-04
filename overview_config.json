@@ -753,7 +753,7 @@
             "产品技术规格书中文版": {
                 "label": "specifications",
                 "role": "光学",
-                "nature": "必填",
+                "nature": "需填",
                 "title": "产品技术规格书（中文版）",
                 "processing_type": "file",
                 "content_regular": [],
@@ -1376,7 +1376,7 @@
             "产品涉及表面处理工艺": {
                 "label": "product_treatment_process",
                 "role": "结构",
-                "nature": "必填",
+                "nature": "需填",
                 "title": "产品涉及表面处理工艺",
                 "processing_type": "text",
                 "content_regular": [
@@ -1978,7 +1978,7 @@
             "研发阶段产品总BOM": {
                 "label": "product_bom",
                 "role": "结构",
-                "nature": "必填",
+                "nature": "需填",
                 "title": "研发阶段产品总BOM（xlsx）",
                 "processing_type": "file",
                 "content_regular": [],
@@ -3673,7 +3673,7 @@
             "硬件测试报告": {
                 "label": "drive_test_report",
                 "role": "硬件",
-                "nature": "必填",
+                "nature": "需填",
                 "title": "硬件测试报告",
                 "processing_type": "search",
                 "content_regular": [],
@@ -4201,7 +4201,7 @@
             "工艺重点要求": {
                 "label": "craft_key_requirements",
                 "role": "工艺",
-                "nature": "必填",
+                "nature": "需填",
                 "title": "工艺重点要求",
                 "processing_type": "text",
                 "content_regular": [

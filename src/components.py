@@ -761,6 +761,8 @@ class InteractiveButton:
         with btn:
             if self.nature == "必填":
                 self.btn_label = ui.label("●").classes("absolute top-0 left-0 text-[10px] text-red")
+            elif self.nature == "需填":
+                self.btn_label = ui.label("○").classes("absolute top-0 left-0 text-[10px] text-red")
             else:
                 self.btn_label = ui.label("").classes("absolute top-0 left-0 text-[10px] text-red")
 
@@ -3190,9 +3192,6 @@ class OverviewTableGroup:
                     elif chip_states and any(state is True for state in chip_states):
                         dot_color = "text-green"
 
-                    # 判断是否为必填项
-                    is_required = config.get("nature") == "必填"
-
                     # 💡 恢复 2：让表头变成可点击，并绑定 Shift+Click 事件
                     with (
                         ui.column()
@@ -3202,8 +3201,11 @@ class OverviewTableGroup:
                         .on("click", lambda e, c=config: self._handle_header_click(e, c), ["ctrlKey"])
                     ):
                         # 渲染小圆点（仅必填项显示，悬浮在左上角）
-                        if is_required:
+                        if config.get("nature") == "必填":
                             ui.label("●").classes(f"absolute -top-1 left-0 text-[10px] {dot_color}")
+                        # 渲染小圆点（仅必填项显示，悬浮在左上角）
+                        elif config.get("nature") == "需填":
+                            ui.label("○").classes(f"absolute -top-1 left-0 text-[10px] {dot_color}")
 
                         # 渲染标题
                         ui.label(config["title"]).classes("font-bold text-sm text-blue-900 text-center").style(
