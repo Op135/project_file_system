@@ -617,12 +617,12 @@ def project_table_page():
                             for group_dic in role_config.values():
                                 for chip_dic in group_dic.values():
                                     title = chip_dic.get("title")
-                                    # label = chip_dic.get("label")
+                                    label = chip_dic.get("label")
 
                                     # 步骤 A: 抹除原负责人的待办数据（字典树精准修剪）
                                     if old_user and old_user in pending_storage:
                                         if pn in pending_storage[old_user]:
-                                            pending_storage[old_user][pn].pop(title, None)
+                                            pending_storage[old_user][pn].pop(label, None)
                                             # 如果该项目下没有其它待办了，清理空项目节点，防止内存泄漏
                                             if not pending_storage[old_user][pn]:
                                                 pending_storage[old_user].pop(pn, None)

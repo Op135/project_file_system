@@ -325,6 +325,7 @@ def information_page():
                         with ui.card().classes("w-full rounded-xl shadow-sm border border-red-100 bg-white"):
                             ui_card_header("待处理：项目概述", "edit_document", "red-600")
                             with ui.column().classes("w-full gap-2 px-1"):
+                                over_flat = app.storage.general.get("over_config_data_flat", {})
                                 for project_name, state_dic in list(my_pending.items()):
                                     # 无内容的必填概述分项数量
                                     false_num = list(state_dic.values()).count(False)
@@ -337,13 +338,19 @@ def information_page():
                                     tooltip_html = ""
                                     if false_items:
                                         tooltip_html += "<b>【无内容】</b><br>" + "<br>".join(
-                                            [f"• {item}" for item in false_items]
+                                            [
+                                                f"• {over_flat.get(item, {}).get('title', '未知概述项')}"
+                                                for item in false_items
+                                            ]
                                         )
                                     if none_items:
                                         if tooltip_html:
                                             tooltip_html += "<br><br>"
                                         tooltip_html += "<b>【待确认】</b><br>" + "<br>".join(
-                                            [f"• {item}" for item in none_items]
+                                            [
+                                                f"• {over_flat.get(item, {}).get('title', '未知概述项')}"
+                                                for item in none_items
+                                            ]
                                         )
                                     # ------------------------------------
 
@@ -470,6 +477,7 @@ def information_page():
                                                     "bg-indigo-100 text-indigo-700 px-1.5 rounded-full"
                                                 )
                                             # 显示清单，迭代 items() 以获取 state_dic
+                                            over_flat = app.storage.general.get("over_config_data_flat", {})
                                             for p, p_state_dic in pending_project_dic.items():
                                                 # --- 新增：提取并构建 HTML 格式的 Tooltip 内容 ---
                                                 false_items = [k for k, v in p_state_dic.items() if v is False]
@@ -478,13 +486,19 @@ def information_page():
                                                 tooltip_html = ""
                                                 if false_items:
                                                     tooltip_html += "<b>【无内容】</b><br>" + "<br>".join(
-                                                        [f"• {item}" for item in false_items]
+                                                        [
+                                                            f"• {over_flat.get(item, {}).get('title', '未知概述项')}"
+                                                            for item in false_items
+                                                        ]
                                                     )
                                                 if none_items:
                                                     if tooltip_html:
                                                         tooltip_html += "<br><br>"
                                                     tooltip_html += "<b>【待确认】</b><br>" + "<br>".join(
-                                                        [f"• {item}" for item in none_items]
+                                                        [
+                                                            f"• {over_flat.get(item, {}).get('title', '未知概述项')}"
+                                                            for item in none_items
+                                                        ]
                                                     )
 
                                                 if not tooltip_html:

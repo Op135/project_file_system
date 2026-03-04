@@ -4590,6 +4590,7 @@ class OverviewTableGroup:
             return
 
         # 2. 读取倒排索引进行精准查找
+        # 数据结构: { "第一列标签名": { "填入的主内容": ["项目A", "项目B"] } }
         index_data = db_storage.get_item("overview_autofill_index", {})
         target_projects = index_data.get(first_col_label, {}).get(first_col_content, [])
         # 排除当前项目，防止自引用循环

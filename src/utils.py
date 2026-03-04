@@ -88,19 +88,19 @@ def update_overview_charge_pending_dic(scope, des_user="", project_name="", des_
                 # 3. 遍历预处理好的配置项
                 for config_item in role_config_map.get(role, []):
                     nature = config_item["nature"]
-                    title = config_item["title"]
+                    # title = config_item["title"]
                     label = config_item["label"]
 
                     if nature == "必填":
-                        user_proj_dict.setdefault(title, False)
+                        user_proj_dict.setdefault(label, False)
 
                     label_chip_dic = project_over_data.get(label, {}).values()
 
                     if not label_chip_dic:
                         if nature == "必填":
-                            user_proj_dict[title] = False
+                            user_proj_dict[label] = False
                         else:
-                            user_proj_dict.pop(title, None)
+                            user_proj_dict.pop(label, None)
                         continue
 
                     # 4. 短路状态判定
@@ -115,14 +115,14 @@ def update_overview_charge_pending_dic(scope, des_user="", project_name="", des_
                             has_active = True
 
                     if has_none:
-                        user_proj_dict[title] = None
+                        user_proj_dict[label] = None
                     elif has_active:
-                        user_proj_dict.pop(title, None)
+                        user_proj_dict.pop(label, None)
                     else:
                         if nature == "必填":
-                            user_proj_dict[title] = False
+                            user_proj_dict[label] = False
                         else:
-                            user_proj_dict.pop(title, None)
+                            user_proj_dict.pop(label, None)
 
                 # 5. 清理空项目节点
                 if not user_proj_dict:
@@ -147,18 +147,18 @@ def update_overview_charge_pending_dic(scope, des_user="", project_name="", des_
         ver_dic = app.storage.general.get("over_config_data_flat", {}).get(des_label, {})
         if ver_dic:
             nature = ver_dic.get("nature")
-            title = ver_dic.get("title")
+            # title = ver_dic.get("title")
 
             if nature == "必填":
-                user_proj_dict.setdefault(title, False)
+                user_proj_dict.setdefault(des_label, False)
 
             label_chip_dic = db_storage.get_deep_item([f"{project_name}_over_data", des_label], {}).values()
 
             if not label_chip_dic:
                 if nature == "必填":
-                    user_proj_dict[title] = False
+                    user_proj_dict[des_label] = False
                 else:
-                    user_proj_dict.pop(title, None)
+                    user_proj_dict.pop(des_label, None)
             else:
                 has_none = False
                 has_active = False
@@ -171,14 +171,14 @@ def update_overview_charge_pending_dic(scope, des_user="", project_name="", des_
                         has_active = True
 
                 if has_none:
-                    user_proj_dict[title] = None
+                    user_proj_dict[des_label] = None
                 elif has_active:
-                    user_proj_dict.pop(title, None)
+                    user_proj_dict.pop(des_label, None)
                 else:
                     if nature == "必填":
-                        user_proj_dict[title] = False
+                        user_proj_dict[des_label] = False
                     else:
-                        user_proj_dict.pop(title, None)
+                        user_proj_dict.pop(des_label, None)
 
         if not user_proj_dict:
             pending_storage[des_user].pop(project_name, None)
