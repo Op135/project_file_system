@@ -705,6 +705,7 @@ def project_summary_update():
                         "project": project_name_process_string(project_name),
                         # "requirement": "点击录入",
                         "overview": "查阅整理",
+                        "test_summary": "查阅打印",
                     }
                 )
                 # 将临时项目号增加到专门记录临时项目的服务器存储里

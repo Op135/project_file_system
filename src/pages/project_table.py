@@ -931,6 +931,8 @@ def project_table_page():
 
         elif col_id == "overview":
             await get_overviow_page(project_name, False)
+        elif col_id == "test_summary":
+            ui.run_javascript(f'window.open("/report/test_summary/{project_name}", "_blank")')
 
     async def switch_toggle_vis(visible=None):
         # 切换传入列的可见性
@@ -1070,6 +1072,7 @@ def project_table_page():
             "autoHeight": True,
         },
         {"field": "overview", "headerName": "概述整理", "width": 80},
+        {"field": "test_summary", "headerName": "测试项", "width": 80},
         {"field": "customer", "headerName": "客户缩写", "width": 100, "filter": "agTextColumnFilter"},
         {"field": "sale_charge", "headerName": "销售", "width": 80, "filter": "agTextColumnFilter"},
         {
