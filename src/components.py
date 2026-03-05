@@ -836,11 +836,18 @@ class InteractiveButton:
             target_path_list = []
             label_chip_dic = db_storage.get_deep_item([f"{self.project}_over_data", self.label], {}).values()
 
+            latest_user_str = (
+                app.storage.general.get("overview_role", {})
+                .get(self.project, {})
+                .get(self.role, {})
+                .get("latest_user", "")
+            )
+            des_user = latest_user_str.split("：")[1] if latest_user_str else ""
             # 指示灯颜色状态
             chip_enabled_state_list = [chip_info["enabled"] for chip_info in label_chip_dic]
             if chip_enabled_state_list and any(state is None for state in chip_enabled_state_list):
                 self.btn_label.classes("text-orange", remove="text-green text-red")
-            elif chip_enabled_state_list and any(chip_enabled_state_list):
+            elif des_user == "不需要" or chip_enabled_state_list and any(chip_enabled_state_list):
                 self.btn_label.classes("text-green", remove="text-red text-orange")
             else:
                 self.btn_label.classes("text-red", remove="text-green text-orange")
@@ -3202,6 +3209,14 @@ class OverviewTableGroup:
             ):
                 for config in col_configs:
                     label = config["label"]
+                    role = config["role"]
+                    latest_user_str = (
+                        app.storage.general.get("overview_role", {})
+                        .get(self.project, {})
+                        .get(role, {})
+                        .get("latest_user", "")
+                    )
+                    des_user = latest_user_str.split("：")[1] if latest_user_str else ""
 
                     # 💡 恢复 1：计算状态指示灯颜色
                     # 获取该列的所有原始 chip 数据
@@ -3211,7 +3226,7 @@ class OverviewTableGroup:
                     dot_color = "text-red"
                     if chip_states and any(state is None for state in chip_states):
                         dot_color = "text-orange"
-                    elif chip_states and any(state is True for state in chip_states):
+                    elif des_user == "不需要" or chip_states and any(state is True for state in chip_states):
                         dot_color = "text-green"
 
                     # 💡 恢复 2：让表头变成可点击，并绑定 Shift+Click 事件

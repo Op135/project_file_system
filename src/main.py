@@ -127,9 +127,8 @@ async def master_startup():
     # 第二顺位：执行依赖数据库的全局数据加载与配置更新
     # 此时可以100%确定数据库已经就绪
     updata_overview_config()
-
     # 第三顺位：满足需求，在系统启动时仅执行一次业务字典更新
-    update_overview_charge_pending_dic("all")
+    # update_overview_charge_pending_dic("all") 上面updata_overview_config()里已经包含
 
     # 第四顺位：启动非核心周边服务
     init_backup_service()
@@ -228,8 +227,8 @@ if __name__ in {"__main__", "__mp_main__"}:
         dark=False,
         # 在生产环境中，必须禁用热重载功能，以获得更好的性能和稳定性
         # False 不自动重载，True自动重载
-        reload=True,
-        # reload=False,
+        # reload=True,
+        reload=False,
         # 【关键修改 1】让父进程闭嘴
         # 将 Uvicorn 自身的日志级别设为 warning，
         # 这样它就不会打印 "changes detected" 这种 INFO 级别的废话了

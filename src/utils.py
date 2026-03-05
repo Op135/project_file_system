@@ -110,9 +110,8 @@ def update_overview_charge_pending_dic(scope, des_user="", project_name="", des_
                 latest_user_raw = charge_user_dic.get("latest_user", "")
                 latest_user = latest_user_raw.split("：")[1] if "：" in latest_user_raw else latest_user_raw
 
-                if not latest_user:
+                if not latest_user or latest_user == "不需要":
                     continue
-
                 # 优雅初始化多层字典到【新字典】中
                 user_proj_dict = new_pending_storage.setdefault(latest_user, {}).setdefault(project, {})
 
@@ -168,7 +167,6 @@ def update_overview_charge_pending_dic(scope, des_user="", project_name="", des_
                 # 6. 清理空用户节点（进一步防止由于某用户下所有项目都为空造成的内存泄漏）
                 if latest_user in new_pending_storage and not new_pending_storage[latest_user]:
                     new_pending_storage.pop(latest_user, None)
-
         # 遍历结束后，一次性覆写回 app.storage 触发 NiceGUI 序列化
         app.storage.general["overview_charge_pending"] = new_pending_storage
 
@@ -176,7 +174,7 @@ def update_overview_charge_pending_dic(scope, des_user="", project_name="", des_
         # Local 模式直接操作原字典，因为它追求 O(1) 的响应
         pending_storage = app.storage.general.setdefault("overview_charge_pending", {})
 
-        if not des_user or not project_name or not des_label:
+        if not des_user or not project_name or not des_label or des_user == "不需要":
             return
 
         user_proj_dict = pending_storage.setdefault(des_user, {}).setdefault(project_name, {})

@@ -6039,13 +6039,13 @@
         "176": {
             "condition": "7any['硬件']",
             "node_id": "174",
-            "guide_content": "供货是否包含操控类配件",
+            "guide_content": "产品是否包含操控类器件",
             "answer_type": "单选",
             "input_num_accor": "",
             "input_name_accor": "",
             "input_tolerance": "",
             "ref_config": "False",
-            "option_hint": "产品供货时，是否包含控制操作时需要使用的配件，\n例如：按钮、电位器、触摸屏等等。",
+            "option_hint": "产品供货时，是否包含控制操作时需要使用的器件，\n例如：按钮、电位器、触摸屏等等。",
             "placeholder": "",
             "tolerance_placeholder": "",
             "option_group_id": "26",
@@ -6060,14 +6060,14 @@
                     "option_out": "True",
                     "option_bold": "",
                     "option_show": "",
-                    "option_label": "供操控类配件"
+                    "option_label": "含操控类器件"
                 },
                 {
                     "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "无需提供",
-                    "option_show": "{V}操控类配件",
+                    "option_show": "{V}操控类器件",
                     "option_label": ""
                 }
             ]
@@ -6075,13 +6075,13 @@
         "177": {
             "condition": "176==True",
             "node_id": "175",
-            "guide_content": "以下哪些操控类配件需要随货提供",
+            "guide_content": "产品包含以下哪些操控类器件",
             "answer_type": "多选",
             "input_num_accor": "",
             "input_name_accor": "",
             "input_tolerance": "",
             "ref_config": "False",
-            "option_hint": "选择批量供货时具体提供的操控类配件。",
+            "option_hint": "选择产品批量供货时装载或配套的操控类器件。",
             "placeholder": "",
             "tolerance_placeholder": "",
             "option_group_id": "26",
@@ -6095,7 +6095,7 @@
                     "option_content": "按键开关",
                     "option_out": "按键开关",
                     "option_bold": "按键开关",
-                    "option_show": "随货提供{V}操控类配件",
+                    "option_show": "产品包含{V}操控类器件",
                     "option_label": ""
                 },
                 {
@@ -6151,13 +6151,13 @@
         "178": {
             "condition": "176==True",
             "node_id": "176",
-            "guide_content": "是否指定操控类配件的选型规格参数",
+            "guide_content": "是否指定操控类器件的选型规格参数",
             "answer_type": "单选",
             "input_num_accor": "",
             "input_name_accor": "",
             "input_tolerance": "",
             "ref_config": "False",
-            "option_hint": "是否指定供货的控制操作类配件的具体规格型号。",
+            "option_hint": "是否指定控制操作类器件的具体规格型号。",
             "placeholder": "",
             "tolerance_placeholder": "",
             "option_group_id": "26",
@@ -6179,7 +6179,7 @@
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "由我司选型决定",
-                    "option_show": "操控类配件{V}",
+                    "option_show": "操控类器件{V}",
                     "option_label": ""
                 }
             ]
@@ -6187,13 +6187,13 @@
         "179": {
             "condition": "178==True",
             "node_id": "177",
-            "guide_content": "具体的操控类配件选型规格要求",
+            "guide_content": "具体的操控类器件选型规格要求",
             "answer_type": "多行文本",
             "input_num_accor": "",
             "input_name_accor": "",
             "input_tolerance": "",
             "ref_config": "True",
-            "option_hint": "填写具体规格型号要求，必要时附上配件图纸或规格书。",
+            "option_hint": "填写具体规格型号要求，必要时附上器件图纸或规格书。",
             "placeholder": "",
             "tolerance_placeholder": "",
             "option_group_id": "26",
@@ -6207,12 +6207,40 @@
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
-                    "option_show": "操控类配件规格要求：{V}",
+                    "option_show": "操控类器件规格要求：{V}",
                     "option_label": ""
                 }
             ]
         },
         "180": {
+            "condition": "176==True",
+            "node_id": "218",
+            "guide_content": "列明各操控类器件发货形式",
+            "answer_type": "多行文本",
+            "input_num_accor": "",
+            "input_name_accor": "",
+            "input_tolerance": "",
+            "ref_config": "False",
+            "option_hint": "填写产品所含器件的发货形式，多个器件换行逐行添加；\n如：触控屏：集成在产品主体上/触控屏：外置配件/电位器：外置配件。",
+            "placeholder": "",
+            "tolerance_placeholder": "",
+            "option_group_id": "26",
+            "option_view": "结构+硬件+工艺+质量",
+            "user_must_out": {},
+            "option_tolerance_out": {},
+            "ref_out": [],
+            "options": [
+                {
+                    "option_id": "opt_1",
+                    "option_content": "",
+                    "option_out": "字典",
+                    "option_bold": "",
+                    "option_show": "操控类器件发货形式：{V}",
+                    "option_label": ""
+                }
+            ]
+        },
+        "181": {
             "condition": "7any['硬件']",
             "node_id": "178",
             "guide_content": "是否要求具备状态显示界面",
@@ -6248,8 +6276,8 @@
                 }
             ]
         },
-        "181": {
-            "condition": "180==True",
+        "182": {
+            "condition": "181==True",
             "node_id": "179",
             "guide_content": "产品要求哪些状态显示方式",
             "answer_type": "多选",
@@ -6257,7 +6285,7 @@
             "input_name_accor": "",
             "input_tolerance": "",
             "ref_config": "False",
-            "option_hint": "选择用于产品功能状态显示的配件",
+            "option_hint": "选择用于产品功能状态显示的器件",
             "placeholder": "",
             "tolerance_placeholder": "",
             "option_group_id": "26",
@@ -6300,8 +6328,8 @@
                 }
             ]
         },
-        "182": {
-            "condition": "180==True or 160any['触控屏']",
+        "183": {
+            "condition": "181==True or 160any['触控屏']",
             "node_id": "180",
             "guide_content": "具体的状态显示/UI设计与逻辑要求",
             "answer_type": "多行文本",
@@ -6328,16 +6356,16 @@
                 }
             ]
         },
-        "183": {
-            "condition": "180==True",
+        "184": {
+            "condition": "181==True",
             "node_id": "181",
-            "guide_content": "供货是否包含显示类配件",
+            "guide_content": "产品是否包含显示类器件",
             "answer_type": "单选",
             "input_num_accor": "",
             "input_name_accor": "",
             "input_tolerance": "",
             "ref_config": "False",
-            "option_hint": "批量供货是否需要包含显示类配件，还是客户自备，如：指示灯、显示屏等等。",
+            "option_hint": "产品供货时，是否包含显示类器件，还是客户自备，如：指示灯、显示屏等等。",
             "placeholder": "",
             "tolerance_placeholder": "",
             "option_group_id": "26",
@@ -6352,28 +6380,28 @@
                     "option_out": "True",
                     "option_bold": "",
                     "option_show": "",
-                    "option_label": "供显示类配件"
+                    "option_label": "含显示类器件"
                 },
                 {
                     "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "无需提供",
-                    "option_show": "{V}显示类配件",
+                    "option_show": "{V}显示类器件",
                     "option_label": ""
                 }
             ]
         },
-        "184": {
-            "condition": "183==True",
+        "185": {
+            "condition": "184==True",
             "node_id": "182",
-            "guide_content": "以下哪些显示类配件需要随货提供",
+            "guide_content": "产品包含以下哪些显示类器件",
             "answer_type": "多选",
             "input_num_accor": "",
             "input_name_accor": "",
             "input_tolerance": "",
             "ref_config": "False",
-            "option_hint": "选择批量供货时配套的显示类配件。",
+            "option_hint": "选择产品批量供货时装载或配套的显示类器件。",
             "placeholder": "",
             "tolerance_placeholder": "",
             "option_group_id": "26",
@@ -6387,7 +6415,7 @@
                     "option_content": "LED指示灯",
                     "option_out": "LED指示灯",
                     "option_bold": "LED指示灯",
-                    "option_show": "随货提供{V}显示类配件",
+                    "option_show": "产品包含{V}显示类器件",
                     "option_label": ""
                 },
                 {
@@ -6408,16 +6436,16 @@
                 }
             ]
         },
-        "185": {
-            "condition": "183==True",
+        "186": {
+            "condition": "184==True",
             "node_id": "183",
-            "guide_content": "是否指定显示类配件的选型规格参数",
+            "guide_content": "是否指定显示类器件的选型规格参数",
             "answer_type": "单选",
             "input_num_accor": "",
             "input_name_accor": "",
             "input_tolerance": "",
             "ref_config": "False",
-            "option_hint": "是否指定配套的显示类配件的具体规格型号。",
+            "option_hint": "是否指定配套的显示类器件的具体规格型号。",
             "placeholder": "",
             "tolerance_placeholder": "",
             "option_group_id": "26",
@@ -6439,21 +6467,21 @@
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "由我司选型决定",
-                    "option_show": "显示类配件{V}",
+                    "option_show": "显示类器件{V}",
                     "option_label": ""
                 }
             ]
         },
-        "186": {
-            "condition": "185==True",
+        "187": {
+            "condition": "186==True",
             "node_id": "184",
-            "guide_content": "具体的显示类配件选型规格要求",
+            "guide_content": "具体的显示类器件选型规格要求",
             "answer_type": "多行文本",
             "input_num_accor": "",
             "input_name_accor": "",
             "input_tolerance": "",
             "ref_config": "True",
-            "option_hint": "详细列明指定的显示类配件规格信息，必要时提供配件规格书。",
+            "option_hint": "详细列明指定的显示类器件规格信息，必要时提供器件规格书。",
             "placeholder": "",
             "tolerance_placeholder": "",
             "option_group_id": "26",
@@ -6467,12 +6495,40 @@
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
-                    "option_show": "显示类配件规格要求：{V}",
+                    "option_show": "显示类器件规格要求：{V}",
                     "option_label": ""
                 }
             ]
         },
-        "187": {
+        "188": {
+            "condition": "184==True",
+            "node_id": "219",
+            "guide_content": "列明各显示类器件发货形式",
+            "answer_type": "多行文本",
+            "input_num_accor": "",
+            "input_name_accor": "",
+            "input_tolerance": "",
+            "ref_config": "False",
+            "option_hint": "填写产品所含器件的发货形式，多个器件换行逐行添加；\n如：显示屏：集成在产品主体上/显示屏：外置配件/数码管：外置配件。",
+            "placeholder": "",
+            "tolerance_placeholder": "",
+            "option_group_id": "26",
+            "option_view": "结构+硬件+工艺+质量",
+            "user_must_out": {},
+            "option_tolerance_out": {},
+            "ref_out": [],
+            "options": [
+                {
+                    "option_id": "opt_1",
+                    "option_content": "",
+                    "option_out": "字典",
+                    "option_bold": "",
+                    "option_show": "显示类器件发货形式：{V}",
+                    "option_label": ""
+                }
+            ]
+        },
+        "189": {
             "condition": "7any['硬件']",
             "node_id": "185",
             "guide_content": "是否要求随货提供输入配线、是否定制",
@@ -6516,8 +6572,8 @@
                 }
             ]
         },
-        "188": {
-            "condition": "187==供定制",
+        "190": {
+            "condition": "189==供定制",
             "node_id": "186",
             "guide_content": "填写输入配线的定制要求",
             "answer_type": "多行文本",
@@ -6544,7 +6600,7 @@
                 }
             ]
         },
-        "189": {
+        "191": {
             "condition": "7any['硬件']",
             "node_id": "187",
             "guide_content": "是否指定产品调光范围或步距",
@@ -6580,8 +6636,8 @@
                 }
             ]
         },
-        "190": {
-            "condition": "189==True",
+        "192": {
+            "condition": "191==True",
             "node_id": "188",
             "guide_content": "具体的调光范围要求",
             "answer_type": "多行文本",
@@ -6608,8 +6664,8 @@
                 }
             ]
         },
-        "191": {
-            "condition": "189==True",
+        "193": {
+            "condition": "191==True",
             "node_id": "189",
             "guide_content": "具体的调光步距要求",
             "answer_type": "多行文本",
@@ -6636,7 +6692,7 @@
                 }
             ]
         },
-        "192": {
+        "194": {
             "condition": "7any['硬件']",
             "node_id": "190",
             "guide_content": "是否要求产品具备定期校正功能",
@@ -6672,8 +6728,8 @@
                 }
             ]
         },
-        "193": {
-            "condition": "192==True",
+        "195": {
+            "condition": "194==True",
             "node_id": "191",
             "guide_content": "客户对定期校正功能的要求",
             "answer_type": "多行文本",
@@ -6700,8 +6756,8 @@
                 }
             ]
         },
-        "194": {
-            "condition": "192==True",
+        "196": {
+            "condition": "194==True",
             "node_id": "192",
             "guide_content": "校正功能的交付形式",
             "answer_type": "多选",
@@ -6736,7 +6792,7 @@
                 }
             ]
         },
-        "195": {
+        "197": {
             "condition": "7any['硬件']",
             "node_id": "193",
             "guide_content": "是否要求产品具备闭环反馈控制功能",
@@ -6772,8 +6828,8 @@
                 }
             ]
         },
-        "196": {
-            "condition": "195==True",
+        "198": {
+            "condition": "197==True",
             "node_id": "194",
             "guide_content": "客户对闭环反馈控制功能的要求",
             "answer_type": "多行文本",
@@ -6800,7 +6856,7 @@
                 }
             ]
         },
-        "197": {
+        "199": {
             "condition": "7any['硬件']",
             "node_id": "195",
             "guide_content": "是否要求产品具备频闪功能",
@@ -6836,8 +6892,8 @@
                 }
             ]
         },
-        "198": {
-            "condition": "197==True",
+        "200": {
+            "condition": "199==True",
             "node_id": "196",
             "guide_content": "具体的频闪技术要求",
             "answer_type": "多行文本",
@@ -6864,7 +6920,7 @@
                 }
             ]
         },
-        "199": {
+        "201": {
             "condition": "127==True",
             "node_id": "197",
             "guide_content": "是否指定产品调速风扇的工作逻辑",
@@ -6900,8 +6956,8 @@
                 }
             ]
         },
-        "200": {
-            "condition": "199==True",
+        "202": {
+            "condition": "201==True",
             "node_id": "198",
             "guide_content": "具体的调速风扇工作逻辑要求",
             "answer_type": "多行文本",
@@ -6928,7 +6984,7 @@
                 }
             ]
         },
-        "201": {
+        "203": {
             "condition": "7any['硬件']",
             "node_id": "199",
             "guide_content": "是否指定产品超温报警温度与保护逻辑",
@@ -6964,8 +7020,8 @@
                 }
             ]
         },
-        "202": {
-            "condition": "201==True",
+        "204": {
+            "condition": "203==True",
             "node_id": "200",
             "guide_content": "具体的超温报警温度与保护逻辑要求",
             "answer_type": "多行文本",
@@ -6992,7 +7048,7 @@
                 }
             ]
         },
-        "203": {
+        "205": {
             "condition": "1!=代工",
             "node_id": "201",
             "guide_content": "以下哪些认证/测试客户要求提供",
@@ -7052,7 +7108,7 @@
                 }
             ]
         },
-        "204": {
+        "206": {
             "condition": "1!=代工",
             "node_id": "202",
             "guide_content": "是否对ESD(静电放电)作具体要求",
@@ -7088,8 +7144,8 @@
                 }
             ]
         },
-        "205": {
-            "condition": "204==True",
+        "207": {
+            "condition": "206==True",
             "node_id": "203",
             "guide_content": "填写具体的ESD(静电放电)要求",
             "answer_type": "多行文本",
@@ -7116,7 +7172,7 @@
                 }
             ]
         },
-        "206": {
+        "208": {
             "condition": "1!=代工",
             "node_id": "204",
             "guide_content": "是否对产品提出其它可靠性测试要求",
@@ -7152,8 +7208,8 @@
                 }
             ]
         },
-        "207": {
-            "condition": "206==True",
+        "209": {
+            "condition": "208==True",
             "node_id": "205",
             "guide_content": "填写其它可靠性测试要求",
             "answer_type": "多行文本",
@@ -7180,7 +7236,7 @@
                 }
             ]
         },
-        "208": {
+        "210": {
             "condition": "7any['光学','光源']",
             "node_id": "206",
             "guide_content": "是否补充光学/光源需求",
@@ -7216,8 +7272,8 @@
                 }
             ]
         },
-        "209": {
-            "condition": "208==True",
+        "211": {
+            "condition": "210==True",
             "node_id": "207",
             "guide_content": "请提供剩余产品光学/光源补充需求",
             "answer_type": "多行文本",
@@ -7244,7 +7300,7 @@
                 }
             ]
         },
-        "210": {
+        "212": {
             "condition": "7any['结构']",
             "node_id": "208",
             "guide_content": "是否补充结构需求",
@@ -7280,8 +7336,8 @@
                 }
             ]
         },
-        "211": {
-            "condition": "210==True",
+        "213": {
+            "condition": "212==True",
             "node_id": "209",
             "guide_content": "请提供剩余产品结构补充需求",
             "answer_type": "多行文本",
@@ -7308,7 +7364,7 @@
                 }
             ]
         },
-        "212": {
+        "214": {
             "condition": "7any['硬件']",
             "node_id": "210",
             "guide_content": "是否补充硬件需求",
@@ -7344,8 +7400,8 @@
                 }
             ]
         },
-        "213": {
-            "condition": "212==True",
+        "215": {
+            "condition": "214==True",
             "node_id": "211",
             "guide_content": "请提供剩余产品硬件补充需求",
             "answer_type": "多行文本",
@@ -7372,7 +7428,7 @@
                 }
             ]
         },
-        "214": {
+        "216": {
             "condition": "7any['软件']",
             "node_id": "212",
             "guide_content": "是否补充软件需求",
@@ -7408,8 +7464,8 @@
                 }
             ]
         },
-        "215": {
-            "condition": "214==True",
+        "217": {
+            "condition": "216==True",
             "node_id": "213",
             "guide_content": "请提供剩余产品软件补充需求",
             "answer_type": "多行文本",
@@ -7436,7 +7492,7 @@
                 }
             ]
         },
-        "216": {
+        "218": {
             "condition": "1!=代工",
             "node_id": "214",
             "guide_content": "是否补充工艺需求",
@@ -7472,8 +7528,8 @@
                 }
             ]
         },
-        "217": {
-            "condition": "216==True",
+        "219": {
+            "condition": "218==True",
             "node_id": "215",
             "guide_content": "最后请提供剩余产品工艺补充需求",
             "answer_type": "多行文本",
@@ -7501,7 +7557,7 @@
             ]
         }
     },
-    "config_timestamp": "2026-03-05T10:59:48.786780",
-    "excel_version_hash": "04ae4ef4",
+    "config_timestamp": "2026-03-05T18:47:30.592269",
+    "excel_version_hash": "6e10cb57",
     "entry_status": false
 }
