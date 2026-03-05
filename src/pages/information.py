@@ -227,7 +227,7 @@ def information_page():
         is_manager = current_role in ["研发经理"]
         # is_engineer = current_user == project_engineer_dic.get(project_name, "")
         is_engineer = current_user in project_engineer_dic
-        # 2. 如果已审，删除该行
+        # 2. 如果已审 或 属于研发经理或项目工程师的且为待修改，删除该行
         if review_state == "已审" or review_state == "待修改" and (is_manager or is_engineer):
             container.delete()
             return
@@ -244,9 +244,14 @@ def information_page():
                     with ui.column().classes("gap-1"):
                         with ui.row().classes("items-center gap-2"):
                             ui.label(project_name).classes("font-bold text-gray-800 text-base")
+                            project_engineer = app.storage.general.get("project_engineer", {}).get(
+                                project_name, "未指定"
+                            )
                             status_badge(f"V{ver}", "blue")
                             status_badge(review_state)
-                        ui.label(f"提交人: {submitter}").classes("text-xs text-gray-500")
+                        ui.label(f"提交人: {submitter}，项目工程师：{project_engineer}").classes(
+                            "text-xs text-gray-500"
+                        )
 
                     # 右侧：操作按钮组
                     with ui.row().classes("items-center gap-2"):
