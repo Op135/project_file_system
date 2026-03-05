@@ -316,6 +316,129 @@ def manage_page():
 
         dialog.open()
 
+    # --- 用户管理界面的定义 (抛弃 Table，使用原生卡片列表) ---
+    def open_user_management_dialog():
+        # 1. 弹窗容器：响应式尺寸，严格控制内外边距和溢出
+        with ui.dialog() as dialog, ui.card().classes("w-[90vw] max-w-5xl h-[85vh] p-4 flex flex-col no-wrap"):
+            # 2. 顶部标题栏
+            with ui.row().classes("w-full items-center justify-between shrink-0 mb-2"):
+                ui.label("用户账号及权限管理").classes("text-xl font-bold")
+                ui.icon("close", size="sm").classes("cursor-pointer").on("click", dialog.close)
+
+            ui.separator().classes("shrink-0 mb-2")
+
+            # 3. 核心交互函数定义
+            def save_user(action, target_username, form_pwd, form_role, form_dialog):
+                try:
+                    user_svc = app.state.user_service
+                    user_svc.modify_user(action, target_username, form_pwd, form_role)
+                    # 更新内存数据
+                    app.state.users_data = user_svc.load_users()
+                    # 重新渲染列表
+                    render_user_list()
+                    ui.notify("用户数据保存成功！", type="positive")
+                    form_dialog.close()
+                except Exception as e:
+                    ui.notify(f"保存失败: {str(e)}", type="negative")
+
+            def open_form(action="add", target_username=None):
+                user_info = app.state.users_data.get(target_username, {}) if target_username else {}
+
+                with ui.dialog() as form_dialog, ui.card().classes("w-96 p-6"):
+                    title = "新增系统用户" if action == "add" else f"编辑用户: {target_username}"
+                    ui.label(title).classes("text-lg font-bold mb-4")
+
+                    username_input = ui.input("用户名", value=target_username or "").classes("w-full mb-2")
+                    password_input = ui.input("密码", value=user_info.get("password", "")).classes("w-full mb-2")
+
+                    # 【核心修改区】：去掉下拉菜单逻辑，直接使用普通的文本输入框
+                    current_role = user_info.get("role", "普通用户")
+                    role_input = ui.input("角色", value=current_role).classes("w-full mb-6")
+
+                    if action == "edit":
+                        username_input.disable()
+
+                    with ui.row().classes("w-full justify-end gap-4"):
+                        ui.button("取消", on_click=form_dialog.close).props("flat color=grey")
+                        ui.button(
+                            "保存",
+                            on_click=lambda: save_user(
+                                action, username_input.value, password_input.value, role_input.value, form_dialog
+                            ),
+                        ).props("color=primary")
+                form_dialog.open()
+
+            def confirm_delete(target_user):
+                if target_user == "admin":
+                    ui.notify("系统安全限制：禁止删除超级管理员账号", type="warning")
+                    return
+
+                with ui.dialog() as confirm_dialog, ui.card().classes("p-6"):
+                    ui.label(f"高危操作：确认删除用户 【{target_user}】 吗？").classes("text-lg font-bold text-red-600")
+                    ui.label("删除后该用户将无法再登录本系统。").classes("text-sm text-gray-500 mb-6")
+
+                    with ui.row().classes("w-full justify-end gap-4"):
+                        ui.button("取消", on_click=confirm_dialog.close).props("flat")
+                        ui.button(
+                            "确认删除", on_click=lambda: save_user("delete", target_user, None, None, confirm_dialog)
+                        ).props("color=negative")
+                confirm_dialog.open()
+
+            # 4. 手工构建列表头部
+            with ui.row().classes(
+                "w-full bg-blue-50 p-3 font-bold text-blue-900 rounded flex-nowrap shrink-0 items-center border"
+            ):
+                ui.label("用户名").classes("w-1/4 min-w-[100px]")
+                ui.label("密码").classes("w-1/4 min-w-[100px]")
+                ui.label("角色").classes("w-1/4 min-w-[100px]")
+                ui.label("操作").classes("w-1/4 min-w-[120px] text-center")
+
+            # 5. 数据列表挂载点
+            list_container = ui.column().classes("w-full flex-grow min-h-0 overflow-y-auto gap-0 mt-2 border rounded")
+
+            # 6. 列表渲染引擎：每次增删改后，清空容器并重新生成行
+            def render_user_list():
+                list_container.clear()
+                with list_container:
+                    # 【核心修改】：提取字典的键值对，并按照 role 字段进行升序排序
+                    # item[0] 是用户名，item[1] 是包含密码和角色的字典
+                    sorted_users = sorted(app.state.users_data.items(), key=lambda item: item[1].get("role", ""))
+
+                    for username, info in sorted_users:
+                        # 使用 hover 效果增强交互感
+                        with ui.row().classes("w-full items-center p-3 border-b hover:bg-gray-100 flex-nowrap"):
+                            ui.label(username).classes("w-1/4 min-w-[100px] break-all")
+                            # 密码过长自动截断显示省略号
+                            ui.label(info.get("password", "")).classes("w-1/4 min-w-[100px] truncate text-gray-500")
+
+                            with ui.row().classes("w-1/4 min-w-[100px]"):
+                                ui.chip(
+                                    info.get("role", "普通用户"),
+                                    color="primary" if info.get("role") == "管理员" else "default",
+                                ).classes("text-xs")
+
+                            # 原生按钮绑定，绝不会出现点击失效的问题
+                            with ui.row().classes("w-1/4 min-w-[120px] justify-center gap-2"):
+                                # 注意：这里必须使用 u=username 捕获循环变量，防止闭包晚绑定陷阱
+                                ui.button("编辑", on_click=lambda u=username: open_form("edit", u)).props(
+                                    "outline size=sm color=primary"
+                                )
+                                ui.button("删除", on_click=lambda u=username: confirm_delete(u)).props(
+                                    "outline size=sm color=negative"
+                                )
+
+            # 初始加载渲染列表
+            render_user_list()
+
+            # 7. 底部控制区
+            with ui.row().classes("w-full justify-between items-center shrink-0 mt-4 pt-2 border-t"):
+                ui.label("系统管理员专属管理通道").classes("text-gray-500 text-sm font-bold")
+                ui.button("新增用户", on_click=lambda: open_form("add"), icon="person_add").classes(
+                    "bg-green-600 text-white px-6"
+                )
+
+        dialog.open()
+
     with ui.header(elevated=True).classes("flex justify-between items-center bg-blue-500 h-12 px-4"):
         ui.image(f"{IMG_DIR}/Rayfine.png").classes("absolute w-20")
         ui.label("系统管理员界面").classes("text-white text-lg absolute left-1/2 transform -translate-x-1/2")
@@ -395,14 +518,19 @@ def manage_page():
                 ui.button("更新概述配置(JSON->General)", on_click=lambda: updata_overview_config()).props("").classes(
                     ""
                 )
-                ui.button("更新用户数据(JSON->内存)", on_click=lambda: update_users_data()).props("").classes("")
                 ui.button("更新项目列表(JSON->General)", on_click=lambda: project_summary_update()).props("").classes(
                     ""
                 )
                 ui.button(
                     "更新项目总表动态信息更新配置(JSON->General)", on_click=lambda: project_table_update_config_update()
                 ).props("").classes("")
-
+            with ui.row().classes("gap-4"):
+                ui.separator().props("size=1px")
+                # 【新增】用户数据管理按钮
+                ui.button("用户数据管理 (增删改)", on_click=open_user_management_dialog).props(
+                    "icon=manage_accounts"
+                ).classes("bg-blue-600 text-white")
+                ui.button("更新用户数据(JSON->内存)", on_click=lambda: update_users_data()).props("").classes("")
         # 日志监控区域
         with ui.card().classes("w-full -space-y-2 overflow-hidden"):
             # 日志标题栏

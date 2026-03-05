@@ -105,3 +105,64 @@ class UserService:
         if len(new_password.strip()) < 6:  # 添加strip()处理空白字符
             raise ValueError("密码至少需要6位")
         return self._update_excel_password(username, new_password.strip())
+
+    # 统一的用户数据增、删、改函数
+    def modify_user(self, action: str, username: str, password: str = "", role: str = "") -> bool:
+        """
+        执行用户数据的 Excel 更新操作
+        :param action: 操作类型，可选值为 'add' (新增), 'update' (修改), 'delete' (删除)
+        :param username: 用户名 (主键)
+        :param password: 密码
+        :param role: 角色
+        """
+        while self._lock:
+            pass
+
+        try:
+            self._lock = True
+            # 强制全部按字符串读取，防止 pandas 自动推导数据类型带来的格式问题
+            df = pd.read_excel(self.excel_path, dtype=str)
+
+            # 确保关键列存在，防止空表报错
+            for col in ["用户名", "密码", "角色"]:
+                if col not in df.columns:
+                    df[col] = pd.Series(dtype="string")
+
+            if action == "add":
+                if username in df["用户名"].values:
+                    raise ValueError(f"用户 {username} 已存在")
+                new_row = pd.DataFrame(
+                    [
+                        {
+                            "用户名": str(username),
+                            "密码": str(password) if password else "",
+                            "角色": str(role) if role else "普通用户",
+                        }
+                    ]
+                )
+                df = pd.concat([df, new_row], ignore_index=True)
+
+            elif action in ["update", "edit"]:
+                if username not in df["用户名"].values:
+                    raise ValueError(f"用户 {username} 不存在")
+                if password is not None:
+                    df.loc[df["用户名"] == username, "密码"] = str(password)
+                if role is not None:
+                    df.loc[df["用户名"] == username, "角色"] = str(role)
+
+            elif action == "delete":
+                if username not in df["用户名"].values:
+                    raise ValueError(f"用户 {username} 不存在")
+                df = df[df["用户名"] != username]
+            else:
+                raise ValueError(f"未知的操作指令: {action}")
+
+            # 写回 Excel
+            df.to_excel(self.excel_path, index=False, engine="openpyxl")
+            return True
+
+        except Exception as e:
+            logger.error(f"Excel用户数据 {action} 操作失败: {str(e)}", exc_info=True)
+            raise e  # 将异常抛出以便在前端捕获并提示用户
+        finally:
+            self._lock = False
