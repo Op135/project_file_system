@@ -3702,33 +3702,6 @@ class OverviewTableGroup:
                 ui.button("添加", on_click=lambda e: self._add_text_chip_data(ui_spinner, btn=e.sender))
         self.chip_dialog.open()
 
-    def _create_text_chip_date(self, text, notes):
-        req_max_ver = app.storage.general["project_req_max_ver"].get(self.project, "1.0")
-        select_activ_dic = self._get_select_activ_dic(req_max_ver)
-        creator = app.storage.user.get("current_user", "匿名")
-        row_id = getattr(self, "current_target_row_id", None) or str(uuid.uuid4())
-        chip_data = {
-            "id": str(uuid.uuid4()),
-            "row_id": row_id,
-            "role": self.role,
-            "icon": None,
-            "enabled": True,
-            "bg_color": "bg-light-blue-1",
-            "type": "text",
-            "content": text,
-            "notes": notes,
-            "creator": creator,
-            "req_ver": req_max_ver,
-            "select_activ_dic": select_activ_dic,
-            "timestamp": {
-                datetime.now().strftime("%Y-%m-%d %H:%M:%S"): {
-                    "creator": creator,
-                    "select_activ_dic": select_activ_dic,
-                }
-            },
-        }
-        return row_id, chip_data
-
     async def _add_text_chip_data(self, ui_spinner, btn=None):
         if btn:
             btn.disable()  # 1. 进门立刻禁用按钮，防止连点
