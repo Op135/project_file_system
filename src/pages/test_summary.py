@@ -10,7 +10,7 @@ from ..config import (
     IMG_DIR,
 )
 from ..utils import (
-    compare_configs_by_id,
+    generate_watermark_css,
 )
 
 # 获取一个以此模块命名的 logger
@@ -25,7 +25,16 @@ def test_summary_report(project_name: str):
     if not app.storage.user.get("current_user"):
         ui.navigate.to("/login")
         return
-
+    # 运行时初始化水印：透明度调至 0.2，印章缩小至 0.8倍，画布变小使得印章平铺更密集
+    watermark_bg = generate_watermark_css(opacity=0.1, scale=1.2, spacing_width=500, spacing_height=300)
+    # 独立注入动态样式块（双写 {{ }} 防止 f-string 报错）
+    ui.add_head_html(f"""
+        <style>
+            .watermark-controlled::after {{
+                background-image: {watermark_bg} !important;
+            }}
+        </style>
+    """)
     # 2. 注入打印专用样式
     # 作用：打印时隐藏“打印按钮”，强制表格显示边框，优化A4纸显示
     ui.add_head_html("""
@@ -106,6 +115,32 @@ def test_summary_report(project_name: str):
                 z-index: 1000;
                 box-shadow: 0 4px 6px rgba(0,0,0,0.1);
             }
+            /* --- 受控水印的响应式样式 --- */
+            .watermark-controlled {
+                position: relative;
+            }
+            .watermark-controlled::after {
+                content: "";
+                position: absolute;
+                top: 0; left: 0; right: 0; bottom: 0;
+                pointer-events: none; 
+                z-index: 10;
+                
+                /* 使用 Python 动态生成的背景 */
+                background-repeat: repeat;
+                background-position: center;
+                
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
+            
+            /* 针对小屏幕(如移动端或窄窗口)的媒体查询适配，可通过 CSS 进一步缩放平铺密度 */
+            @media (max-width: 768px) {
+                .watermark-controlled::after {
+                    background-size: 150px; /* 强制在窄屏幕上缩小画布背景的视觉尺寸 */
+                }
+            }
+                     
         </style>
     """)
 
@@ -184,17 +219,23 @@ def test_summary_report(project_name: str):
         if not rows:
             ui.label("该项目暂无测试项数据").classes("text-xl text-gray-400 w-full text-center mt-10")
         else:
+            project_state = app.storage.general.get("project_summary", {}).get(project_name, {}).get("state", "待定")
             if drive_voltage_list and power_label_list and len(drive_voltage_list) == 1 and len(power_label_list) == 1:
-                ui.label(f"输入电压：{drive_voltage_list[0].split('±')[0]}，标签功率：{power_label_list[0]}").classes(
-                    "text-base font-medium mb-0"
-                )
+                ui.label(
+                    f"输入电压：{drive_voltage_list[0].split('±')[0]}， 标签功率：{power_label_list[0]}， 产品状态：{project_state}"
+                ).classes("text-base font-medium mb-0")
             else:
                 ui.label("输入电压或标签功率数据异常（空白或内容不唯一），无法显示").classes(
                     "text-base font-medium mb-0 text-red-600"
                 )
-            ui.label("注：默认任意产品型号均需要测试并记录：产品输入电压与输入电流；").classes(
-                "text-base font-medium mb-0"
-            )
+            with ui.column().classes("gap-1"):
+                ui.label("注意：").classes("text-base font-medium mb-0")
+                ui.label(
+                    "1. 默认任意产品型号均需要测试并记录产品输入电压与输入电流，不写入报告，除非下表另行要求；"
+                ).classes("text-sm font-medium mb-0")
+                ui.label(
+                    "2. 本测试项汇总表，试产前随时可能更新，只在产品进入试产或量产状态后，显示受控章进行受控；"
+                ).classes("text-sm font-medium mb-0")
             columns = [
                 {
                     "name": "role",
@@ -243,12 +284,21 @@ def test_summary_report(project_name: str):
             ]
 
             # 使用 dense 和 bordered 样式，使其更像传统的Excel打印单
-            ui.table(
-                columns=columns,
-                rows=rows,
-                row_key="content",
-                pagination={"rowsPerPage": 0},  # 不分页，显示全部
-            ).classes("w-full").props('flat bordered dense hide-bottom separator="cell"')
+            # --- 修改：提取实例到变量，以便动态注入状态类名 ---
+            test_table = (
+                ui.table(
+                    columns=columns,
+                    rows=rows,
+                    row_key="content",
+                    pagination={"rowsPerPage": 0},
+                )
+                .classes("w-full")
+                .props('flat bordered dense hide-bottom separator="cell"')
+            )
+
+            # 根据项目状态追加水印
+            if project_state in ["试产", "量产"]:
+                test_table.classes("watermark-controlled")
 
         # --- 底部页脚 ---
         with ui.row().classes("w-full justify-between mt-8 pt-4 border-t border-gray-300 text-sm"):

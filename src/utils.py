@@ -1,6 +1,7 @@
 # -*- encoding: utf-8 -*-
 
 import asyncio
+import base64
 import copy
 import hashlib
 import json
@@ -26,6 +27,36 @@ logger = logging.getLogger(__name__)
 
 # 内存中的全局字典：{ client.id : { 'username': str, 'login_time': str, 'ip': str } }
 online_users = {}
+
+
+def generate_watermark_css(
+    opacity: float = 0.15, scale: float = 1.0, spacing_width: int = 400, spacing_height: int = 300
+) -> str:
+    """
+    动态生成受控印章的 SVG Base64 背景字符串
+
+    :param opacity: 透明度，0.0 到 1.0 之间。0.15为默认淡红。
+    :param scale: 印章本身的缩放比例。1.0为标准大小。
+    :param spacing_width: SVG 画布宽度（决定平铺时的水平间距）
+    :param spacing_height: SVG 画布高度（决定平铺时的垂直间距）
+    """
+    # 计算画布中心点，以确保印章始终在平铺块的中心
+    cx = spacing_width / 2
+    cy = spacing_height / 2
+
+    # 构造 SVG 字符串（UI 文字使用中文）
+    svg_content = f"""
+    <svg xmlns='http://www.w3.org/2000/svg' width='{spacing_width}' height='{spacing_height}'>
+        <g transform='translate({cx}, {cy}) rotate(-30) scale({scale})'>
+            <rect x='-100' y='-40' width='200' height='80' rx='10' ry='10' stroke='rgba(255,0,0,{opacity})' stroke-width='6' fill='none'/>
+            <text x='0' y='15' font-size='45' fill='rgba(255,0,0,{opacity})' font-family='sans-serif' font-weight='bold' text-anchor='middle' letter-spacing='5'>受 控</text>
+        </g>
+    </svg>
+    """
+
+    # 转换为 Base64
+    b64_encoded = base64.b64encode(svg_content.encode("utf-8")).decode("utf-8")
+    return f"url('data:image/svg+xml;base64,{b64_encoded}')"
 
 
 def handle_connect(client):
