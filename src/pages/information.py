@@ -165,7 +165,17 @@ def information_page():
                         )
                 dialog.open()
             else:
-                await set_temporary_project_dialog(container_row, p_name, v)
+                dialog.clear()
+                with dialog, ui.card():
+                    ui.label("⚠️ 确认通过该项目需求内容的评审吗？").classes("text-lg font-bold text-orange-600")
+                    with ui.row().classes("w-full justify-end mt-4"):
+                        ui.button("取消", on_click=dialog.close).props("flat")
+                        ui.button(
+                            "继续通过",
+                            color="red",
+                            on_click=lambda: set_temporary_project_dialog(container_row, p_name, v),
+                        )
+                dialog.open()
         else:
             ui.notify("需求非待审状态，无法通过，已刷新列表", type="warning")
             refresh_review_row(container_row, p_name, v)
