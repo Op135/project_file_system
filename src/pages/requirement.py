@@ -3907,6 +3907,7 @@ async def requirement_page(type="", json_path="", project_name=""):
 
                             if (
                                 "研发" in app.storage.user.get("current_role", "")
+                                or app.storage.user.get("current_role", "") == "工程"
                                 or app.storage.user.get("current_role", "") == "admin"
                             ):
                                 # 开关：移除 absolute，增加 keep-color 保持颜色鲜艳
