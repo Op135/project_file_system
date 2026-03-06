@@ -808,12 +808,12 @@ class InteractiveButton:
 
         chips_dict = db_storage.get_deep_item([f"{self.project}_over_data", self.label], {})
         show_all = app.storage.client.get("record_switch")
-        conversion_refresh = app.storage.general.get("conversion_refresh", {}).get(self.project)
+        # conversion_refresh = app.storage.general.get("conversion_refresh", {}).get(self.project)
 
         filtered_dict = {}
         for k, v in chips_dict.items():
-            if conversion_refresh and v.get("type") == "svn" and v.get("enabled") not in [True, None]:
-                continue
+            # if conversion_refresh and v.get("type") == "svn" and v.get("enabled") not in [True, None]:
+            #     continue
             if not show_all and v.get("enabled") is False:
                 continue
             filtered_dict[k] = v
@@ -3100,7 +3100,7 @@ class OverviewTableGroup:
         # 初始渲染 & 开启定时器
         ui.timer(1.0, self._update_display)
 
-    async def _group_and_migrate_data(self, col_configs, show_all, conversion_refresh):
+    async def _group_and_migrate_data(self, col_configs, show_all):
         """
         核心方法：将按列存放的数据转换为按行存放，并无缝清洗旧数据。
         修补了跨行移动时跳入“幽灵空行”的 BUG。
@@ -3116,12 +3116,12 @@ class OverviewTableGroup:
 
             valid_chips = []
             for chip_id, chip_data in chips_dict.items():
-                if (
-                    conversion_refresh
-                    and chip_data.get("type") == "svn"
-                    and chip_data.get("enabled") not in [True, None]
-                ):
-                    continue
+                # if (
+                #     conversion_refresh
+                #     and chip_data.get("type") == "svn"
+                #     and chip_data.get("enabled") not in [True, None]
+                # ):
+                # continue
                 if not show_all and chip_data.get("enabled") is False:
                     continue
                 valid_chips.append(chip_data)
@@ -3197,10 +3197,10 @@ class OverviewTableGroup:
 
         req_max_ver = app.storage.general["project_req_max_ver"].get(self.project, "1.0")
         show_all = app.storage.client.get("record_switch")
-        conversion_refresh = app.storage.general.get("conversion_refresh", {}).get(self.project)
+        # conversion_refresh = app.storage.general.get("conversion_refresh", {}).get(self.project)
 
         # 1. 获取按行绑定的数据，并完成旧数据清洗
-        rows_list = await self._group_and_migrate_data(col_configs, show_all, conversion_refresh)
+        rows_list = await self._group_and_migrate_data(col_configs, show_all)
         # 数据准备完毕，此时再瞬间清空并重绘 UI，不会产生折叠坍缩
         self.container.clear()
         # 2. 渲染 UI

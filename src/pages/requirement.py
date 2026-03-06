@@ -331,9 +331,9 @@ async def requirement_page(type="", json_path="", project_name=""):
         # 将该项目所有svn类的chip失活
         await db_storage.atomic_deep_update([f"{project_name}_over_data"], set_overview_data_svn_block, project_name)
         # 必须在数据修改完成后，再激活概述特殊刷新标记
-        app.storage.general["conversion_refresh"][project_name] = True
+        # app.storage.general["conversion_refresh"][project_name] = True
         # 0.8秒比概述定时0.5秒刷新稍长情况下，关闭特殊刷新开关
-        ui.timer(0.8, lambda: close_conversion_refresh(project_name), once=True)
+        # ui.timer(0.8, lambda: close_conversion_refresh(project_name), once=True)
         over_dialog.close()
 
     def set_project_conversion_dialog(project_name, state, on_cancel_action):
@@ -384,8 +384,8 @@ async def requirement_page(type="", json_path="", project_name=""):
         over_dialog.open()
 
     # 关闭项目概述特殊刷新标记
-    def close_conversion_refresh(project_name):
-        app.storage.general["conversion_refresh"][project_name] = False
+    # def close_conversion_refresh(project_name):
+    #     app.storage.general["conversion_refresh"][project_name] = False
 
     # 修改项目状态
     async def set_project_state(project_name, e):

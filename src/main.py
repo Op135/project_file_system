@@ -167,7 +167,7 @@ app.storage.general.setdefault("user_preferences", {})
 # 储存服务器层级 用于存储项目定制信息
 app.storage.general.setdefault("custom_labels", {})
 # 储存服务器层级 用于标记项目概述是否要因转产而刷新
-app.storage.general.setdefault("conversion_refresh", {})
+# app.storage.general.setdefault("conversion_refresh", {})
 # 储存服务器层级 用于记录已经存在的临时项目号
 app.storage.general.setdefault("temp_project_name", [])
 # 储存服务器层级 用于记录各项目的项目工程师负责人

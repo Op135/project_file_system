@@ -1745,7 +1745,7 @@
                 "title": "散热器类型",
                 "processing_type": "text",
                 "content_regular": [],
-                "dialog_placeholder": "铝型材/铜管/铝型材嵌铜板散热器",
+                "dialog_placeholder": "机加工散热器/铝型材/铜管/铝型材嵌铜板散热器",
                 "allowed_state": [
                     "研发",
                     "转产"
