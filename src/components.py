@@ -1159,7 +1159,7 @@ class InteractiveButton:
         self.chip_dialog.clear()
         with self.chip_dialog, ui.card().classes("w-1/2"):
             ui.label("添加新的概述内容").classes("text-lg font-bold")
-            ui.label("注意：一次只添加一个测试项，不要填多个。").classes("text-base font-bold text-red")
+            ui.label("注意：一次只添加一个内容/部件，不要填多个。").classes("text-base font-bold text-red")
             index_list = db_storage.get_deep_item(["overview_auto_complete_index", self.label], [])
             self.chip_label = (
                 ui.input(
@@ -3695,7 +3695,7 @@ class OverviewTableGroup:
         config = self.current_config
         with self.chip_dialog, ui.card().classes("w-1/2"):
             ui.label(f"添加: {config['title']}").classes("text-lg font-bold text-blue-900")
-            ui.label("注意：一次只添加一个测试项，不要填多个。").classes("text-base font-bold text-red")
+            ui.label("注意：一次只添加一个内容/部件，不要填多个。").classes("text-base font-bold text-red")
             self.chip_label = (
                 ui.textarea(
                     label=config.get("dialog_label", "按规定格式填写"),
