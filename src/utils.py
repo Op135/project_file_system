@@ -951,8 +951,8 @@ def overview_role_update(project_name, input_role="all_update"):
                     latest_time = max(list(time_user_dic.values()))
                     # 找出最晚创建概述的用户
                     for user in time_user_dic.keys():
-                        if time_user_dic[user] == latest_time:
-                            # 将这个用户定义为最晚创建概述的人
+                        if time_user_dic[user] == latest_time and "最近指定" not in over_role_dic[role]["latest_user"]:
+                            # 将这个用户定义为最晚创建概述的人，但排除掉最近手动指定过的情况，这种情况只能通过别的人修改概述触发局部更新去改
                             over_role_dic[role]["latest_user"] = f"最近：{user}"
     elif input_role != "initialize" and input_role:
         # 初始化概述角色字典
