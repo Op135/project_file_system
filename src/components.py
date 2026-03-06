@@ -2064,19 +2064,6 @@ class InteractiveButton:
             select_dic[select_label] = select_label == req_max_ver
         return select_dic
 
-    def set_overview_data_svn_block(self, over_data):
-        for label, label_dic in over_data.items():
-            for id, chip_dic in label_dic.items():
-                if chip_dic.get("type") == "svn":
-                    req_max_ver = app.storage.general["project_req_max_ver"][self.project]
-                    select_activ_state = chip_dic.get("select_activ_dic", {}).get(req_max_ver)
-                    if select_activ_state or select_activ_state is None:
-                        over_data[label][id]["select_activ_dic"][req_max_ver] = False
-                        over_data[label][id]["icon"] = "block"
-                        over_data[label][id]["enabled"] = False
-                        over_data[label][id]["bg_color"] = "bg-grey-5"
-        return over_data
-
     def _update_local_pending(self):
         latest_user_str = (
             app.storage.general.get("overview_role", {}).get(self.project, {}).get(self.role, {}).get("latest_user", "")

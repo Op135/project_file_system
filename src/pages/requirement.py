@@ -273,19 +273,27 @@ async def requirement_page(type="", json_path="", project_name=""):
             # app.storage.client["key_state"]["enter"] = 0
 
     # 遍历传入的整个概述资料，找到svn类型chip，如果其最高版本激活状态不是False，则将其设置成False
-    def set_overview_data_svn_block(over_data, project_name):
+    def set_overview_data_not_true(over_data, project_name):
         for label, label_dic in over_data.items():
             for id, chip_dic in label_dic.items():
+                req_max_ver = app.storage.general["project_req_max_ver"][project_name]
+                select_activ_state = chip_dic.get("select_activ_dic", {}).get(req_max_ver)
                 # 只处理svn类型 且 非放在产品仓库的 chip
                 if chip_dic.get("type") == "svn" and chip_dic.get("warehouse") != "Product":
-                    req_max_ver = app.storage.general["project_req_max_ver"][project_name]
-                    select_activ_state = chip_dic.get("select_activ_dic", {}).get(req_max_ver)
                     # 最高激活状态不是False
                     if select_activ_state or select_activ_state is None:
                         over_data[label][id]["select_activ_dic"][req_max_ver] = False
                         over_data[label][id]["icon"] = "block"
                         over_data[label][id]["enabled"] = False
                         over_data[label][id]["bg_color"] = "bg-grey-5"
+                # 其它类型的chip
+                elif chip_dic.get("type") != "svn":
+                    # 最高激活状态是True
+                    if select_activ_state:
+                        over_data[label][id]["select_activ_dic"][req_max_ver] = None
+                        over_data[label][id]["icon"] = "question_mark"
+                        over_data[label][id]["enabled"] = None
+                        over_data[label][id]["bg_color"] = "bg-amber-5"
 
         return over_data
 
@@ -325,11 +333,11 @@ async def requirement_page(type="", json_path="", project_name=""):
                 close_button="✖",
             )
 
-    async def set_conversion_svn_chip(project_name, state):
+    async def conversion_chip_state(project_name, state):
         # 先编辑json文件
         edit_project_summary(project_name, state, app.storage.client.get("recovery_bool", False))
         # 将该项目所有svn类的chip失活
-        await db_storage.atomic_deep_update([f"{project_name}_over_data"], set_overview_data_svn_block, project_name)
+        await db_storage.atomic_deep_update([f"{project_name}_over_data"], set_overview_data_not_true, project_name)
         # 必须在数据修改完成后，再激活概述特殊刷新标记
         # app.storage.general["conversion_refresh"][project_name] = True
         # 0.8秒比概述定时0.5秒刷新稍长情况下，关闭特殊刷新开关
@@ -339,9 +347,10 @@ async def requirement_page(type="", json_path="", project_name=""):
     def set_project_conversion_dialog(project_name, state, on_cancel_action):
         over_card.clear()
         with over_card:
-            ui.label("确认项目开始转产，所有svn概述项将设置为失活状态，且切换不可逆！").classes("text-base text-red")
+            ui.label("确认项目开始转产？").classes("text-base text-red")
+            ui.label("所有svn概述将设置为失活状态，其它激活概述将设置为待定状态！").classes("text-base text-red")
             with ui.row().classes("w-full justify-end"):
-                ui.button("确认", on_click=lambda: set_conversion_svn_chip(project_name, state))
+                ui.button("确认", on_click=lambda: conversion_chip_state(project_name, state))
                 ui.button("取消", on_click=on_cancel_action)
         over_dialog.open()
 
