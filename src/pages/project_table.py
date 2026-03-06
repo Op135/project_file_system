@@ -683,6 +683,16 @@ def project_table_page():
 
     # 按照两个选项的值，更新表格行数据，将概述填写内容同步到简介表，刷新表格显示
     async def update_aggrid(aggrid):
+        # === 【核心优化 1：保存现有状态】 ===
+        # 尝试获取当前表格的筛选模型和列状态（包含排序、列宽、隐藏状态等）
+        # 使用 try...except 是因为在页面首次加载、表格还没在前端完全渲染完成时，获取状态可能会超时或报错
+        try:
+            current_filter_model = await aggrid.run_grid_method("getFilterModel")
+            current_column_state = await aggrid.run_grid_method("getColumnState")
+        except Exception:
+            # 首次加载或获取失败时，设为空
+            current_filter_model = None
+            current_column_state = None
         # step 1: 立即显示 AG Grid 的加载遮罩
         # 这会显示 "Loading..." 或者转圈动画，覆盖在表格上
         aggrid.run_grid_method("showLoadingOverlay")
@@ -848,6 +858,17 @@ def project_table_page():
         # AG Grid 在接收到新数据时，会自动移除 Loading Overlay
         aggrid.options["rowData"] = rows_select
         aggrid.update()
+        # === 【核心优化 2：恢复之前保存的状态】 ===
+        # 必须给前端 DOM 留出一点点渲染新 rowData 的时间，否则立马设置状态可能会失效
+        await asyncio.sleep(0.05)
+
+        # 恢复列筛选状态（例如：客户简称搜索了某个关键字）
+        if current_filter_model:
+            aggrid.run_grid_method("setFilterModel", current_filter_model)
+
+        # 恢复列的排序、宽度、隐藏/显示状态（保证用户的自定义视图不变）
+        if current_column_state:
+            aggrid.run_grid_method("applyColumnState", {"state": current_column_state, "applyOrder": True})
 
     # 设定aggrid元素某列的可见性为传入的visible，如果这个参数不传，则是切换可见性
     async def toggle_visibility(grid, field_li: list, visible=None):
