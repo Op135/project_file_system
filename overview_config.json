@@ -2213,7 +2213,7 @@
                 "title": "产品输入控制模式",
                 "processing_type": "text",
                 "content_regular": [],
-                "dialog_placeholder": "电位器/按键/PWM/RS232/触摸屏/等等",
+                "dialog_placeholder": "电位器/按键/PWM/RS232/触摸屏/等等，只写该产品实际用的",
                 "allowed_state": [
                     "研发",
                     "转产"

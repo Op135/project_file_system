@@ -629,7 +629,7 @@ def project_table_page():
                                                 pending_storage[old_user].pop(pn, None)
 
                                     # 步骤 B: 利用 local 模式，极速刷新新负责人的待办状态
-                                    if new_user and new_user != "不需要" and label:
+                                    if new_user and new_user != "——" and label:
                                         update_overview_charge_pending_dic("local", new_user, pn, label)
 
                     ui.notify(f"项目 {pn} 各角色概述负责人配置成功！", type="positive", position="bottom")

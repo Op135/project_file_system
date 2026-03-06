@@ -110,7 +110,7 @@ def update_overview_charge_pending_dic(scope, des_user="", project_name="", des_
                 latest_user_raw = charge_user_dic.get("latest_user", "")
                 latest_user = latest_user_raw.split("：")[1] if "：" in latest_user_raw else latest_user_raw
 
-                if not latest_user or latest_user == "不需要":
+                if not latest_user or latest_user == "——":
                     continue
                 # 优雅初始化多层字典到【新字典】中
                 user_proj_dict = new_pending_storage.setdefault(latest_user, {}).setdefault(project, {})
@@ -174,7 +174,7 @@ def update_overview_charge_pending_dic(scope, des_user="", project_name="", des_
         # Local 模式直接操作原字典，因为它追求 O(1) 的响应
         pending_storage = app.storage.general.setdefault("overview_charge_pending", {})
 
-        if not des_user or not project_name or not des_label or des_user == "不需要":
+        if not des_user or not project_name or not des_label or des_user == "——":
             return
 
         user_proj_dict = pending_storage.setdefault(des_user, {}).setdefault(project_name, {})
