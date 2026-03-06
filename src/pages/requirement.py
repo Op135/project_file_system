@@ -401,49 +401,50 @@ async def requirement_page(type="", json_path="", project_name=""):
             select_element.value = previous_state  # 视觉上改回旧值
             over_dialog.close()
 
-        if current_role == "研发经理":
-            if (
-                previous_state in ["作废", "待定"]
-                and state in ["转产", "试产", "量产"]
-                or previous_state in ["研发"]
-                and state in ["试产", "量产"]
-                or previous_state in ["转产"]
-                and state in ["量产"]
-                or previous_state in ["试产", "量产"]
-                and state in ["转产"]
-                or previous_state in ["转产", "试产", "量产"]
-                and state in ["研发", "待定", "作废"]
-            ):
+        if (
+            previous_state in ["作废", "待定"]
+            and state in ["转产", "试产", "量产"]
+            or previous_state in ["研发"]
+            and state in ["试产", "量产"]
+            or previous_state in ["转产"]
+            and state in ["量产"]
+            or previous_state in ["试产", "量产"]
+            and state in ["转产"]
+            or previous_state in ["转产", "试产", "量产"]
+            and state in ["研发", "待定", "作废"]
+        ):
+            # 恢复标记打开，防止状态改回时按照正常修改状态操作文件和弹出提示信息
+            app.storage.client["recovery_bool"] = True
+            select_element.value = previous_state
+            ui.notify(
+                "禁止违规状态切换！",
+                type="warning",
+                position="bottom",
+                timeout=3000,
+                progress=True,
+                close_button="✖",
+            )
+        # 如果是从研发状态改为转产或量产，将所有svn概述全部失活掉，然后进行特殊刷新
+        elif previous_state == "研发" and state == "转产":
+            if current_role != "研发经理":
+                # 无权限时，也要把界面改回去
                 # 恢复标记打开，防止状态改回时按照正常修改状态操作文件和弹出提示信息
                 app.storage.client["recovery_bool"] = True
                 select_element.value = previous_state
                 ui.notify(
-                    "禁止违规状态切换！",
-                    type="warning",
+                    "当前用户无权限修改项目状态！",
+                    type="info",
                     position="bottom",
-                    timeout=3000,
+                    timeout=2000,
                     progress=True,
                     close_button="✖",
                 )
-            # 如果是从研发状态改为转产或量产，将所有svn概述全部失活掉，然后进行特殊刷新
-            elif previous_state == "研发" and state == "转产":
-                set_project_conversion_dialog(project_name, state, on_cancel_action)
-            elif previous_state == "转产" and state == "试产":
-                set_project_trial_dialog(project_name, on_cancel_action)
             else:
-                edit_project_summary(project_name, state, app.storage.client.get("recovery_bool", False))
-
+                set_project_conversion_dialog(project_name, state, on_cancel_action)
+        elif previous_state == "转产" and state == "试产":
+            set_project_trial_dialog(project_name, on_cancel_action)
         else:
-            # 无权限时，也要把界面改回去
-            select_element.value = previous_state
-            ui.notify(
-                "当前用户无权限修改项目状态！",
-                type="info",
-                position="bottom",
-                timeout=2000,
-                progress=True,
-                close_button="✖",
-            )
+            edit_project_summary(project_name, state, app.storage.client.get("recovery_bool", False))
 
     # 显示传入数据的用户填写内容
     def show_user_output(data):
@@ -3865,7 +3866,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                     with ui.row().classes("relative w-full items-center justify-between px-2 border-gray-200"):
                         # 1. 左侧操作区：状态 + 负责人
                         with ui.row().classes("items-center gap-3"):
-                            if current_role == "研发经理":
+                            if current_role in ["研发经理", "研发助理"]:
                                 # 下拉框：移除 absolute，保留 small-select
                                 ui.select(
                                     PROJECT_STATE_LIST,
@@ -3874,7 +3875,12 @@ async def requirement_page(type="", json_path="", project_name=""):
                                 ).props("outlined dense options-dense").classes(
                                     "w-24 small-select"
                                 )  # 给个固定宽或者让它自适应
-
+                            else:
+                                # Chip：移除 absolute
+                                ui.chip(icon="star", color="amber-7").props("outline dense").classes(
+                                    "text-sm m-0"
+                                ).bind_text_from(app.storage.general["project_summary"][project_name], "state")
+                            if current_role == "研发经理":
                                 project_engineer = app.storage.general["project_engineer"].get(project_name, "")
                                 engineer_button = ui.button(project_engineer)
                                 engineer_button.on_click(
@@ -3882,10 +3888,6 @@ async def requirement_page(type="", json_path="", project_name=""):
                                 ).props("outline dense").classes("text-sm px-3")  # 移除 absolute, 增加 padding
                                 engineer_button.bind_text_from(app.storage.general["project_engineer"], project_name)
                             else:
-                                # Chip：移除 absolute
-                                ui.chip(icon="star", color="amber-7").props("outline dense").classes(
-                                    "text-sm m-0"
-                                ).bind_text_from(app.storage.general["project_summary"][project_name], "state")
                                 ui.chip(icon="engineering", color="blue-7").props("outline dense").classes(
                                     "text-sm m-0"
                                 ).bind_text_from(app.storage.general["project_engineer"], project_name)
