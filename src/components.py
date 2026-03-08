@@ -3071,6 +3071,8 @@ class OverviewTableGroup:
         self.configs = configs  # 传入整个分组的配置字典，例如 "光源" 下的所有配置
         self.temp_bool = temp_bool
         # --- 💡 细化权限管控到列层级 ---
+        self.current_config = {}  # 当前正在操作的列配置（非常关键，用于让弹窗知道在处理哪个字段）
+        self.current_target_row_id = None  # 当前正在操作的单元格所在行id
         self.permitted_configs = {}
         user_role = app.storage.user.get("current_role", "")
         for key, config in self.configs.items():
@@ -3079,6 +3081,7 @@ class OverviewTableGroup:
                 "permission", {}
             ).get("edit_role", []):
                 self.permitted_configs[key] = config
+
         self.offset = (0, 0)
         self.is_dragging = False
         self.last_pos = (0, 0)
@@ -3102,9 +3105,6 @@ class OverviewTableGroup:
             max_files=1,
         ).props("accept=*/*")
         self.uploader.set_visibility(False)
-
-        # 当前正在操作的列配置（非常关键，用于让弹窗知道在处理哪个字段）
-        self.current_config = {}
 
         # 表格的主容器
         self.container = ui.column().classes(
@@ -3734,11 +3734,11 @@ class OverviewTableGroup:
         return False
 
     def _handle_add_click(self, config: dict, target_row_id: str = ""):
+        req_max_ver = app.storage.general["project_req_max_ver"].get(self.project, "1.0")
         """处理单元格内的添加点击（绑定到特定行）"""
         self.current_config = config
         # 如果传入了 target_row_id，保存到组件状态中，供后续的 _add_xxx_chip_data 使用
         self.current_target_row_id = target_row_id
-
         if app.storage.general["project_summary"][self.project]["state"] not in config.get(
             "allowed_state", ["研发", "转产"]
         ):
@@ -3752,7 +3752,19 @@ class OverviewTableGroup:
                 close_button="✖",
             )
             return
-
+        if not self._get_first_col_any_activ_bool(
+            self.current_target_row_id, self.current_config.get("label"), None, req_max_ver
+        ):
+            ui.notify(
+                "该行的第一列必须存在激活的概述，添加新的概述！",
+                type="warning",
+                position="bottom",
+                timeout=3000,
+                progress=True,
+                # multi_line=True,
+                close_button="✖",
+            )
+            return
         self.current_config = config
         ptype = config["processing_type"]
         if ptype == "text":
@@ -5174,6 +5186,28 @@ class OverviewTableGroup:
                                 open_dic,
                             )
 
+    def _get_first_col_any_activ_bool(self, chip_row_id, label, chip_id, req_max_ver) -> bool:
+        if chip_row_id is None:
+            row_id = db_storage.get_deep_item([f"{self.project}_over_data", label, chip_id, "row_id"])
+        else:
+            row_id = chip_row_id
+
+        # 获取第一列的数据标签
+        first_col_label = list(self.configs.values())[0]["label"]
+        if label == first_col_label:
+            return True
+        FIRST_COL_CHIPS = db_storage.get_deep_item([f"{self.project}_over_data", first_col_label], {})
+        if not any(
+            [
+                chip_dic.get("select_activ_dic", {}).get(req_max_ver, False)
+                for chip_dic in FIRST_COL_CHIPS.values()
+                if chip_dic.get("row_id", "") == row_id
+            ]
+        ):
+            return False
+        else:
+            return True
+
     async def handle_checkbox_change(self, ui_spinner, chip_id, chip_text, config):
         label = config["label"]
         new_select_activ_dic = copy.deepcopy(
@@ -5188,12 +5222,24 @@ class OverviewTableGroup:
             )
 
             if new_select_activ_dic != OLD_CHIP_SELECT_DIC:
+                req_max_ver = f"{str(max([int(float(v)) for v in new_select_activ_dic.keys()]))}.0"
+                if not self._get_first_col_any_activ_bool(None, label, chip_id, req_max_ver):
+                    ui.notify(
+                        "该行的第一列必须存在激活的概述，才能修改当前概述激活状态！",
+                        type="warning",
+                        position="bottom",
+                        timeout=3000,
+                        progress=True,
+                        # multi_line=True,
+                        close_button="✖",
+                    )
+                    return
+
                 ui_spinner.set_visibility(True)
                 await db_storage.set_deep_item(
                     [f"{self.project}_over_data", label, chip_id, "select_activ_dic"], new_select_activ_dic
                 )
 
-                req_max_ver = f"{str(max([int(float(v)) for v in new_select_activ_dic.keys()]))}.0"
                 chip_state = db_storage.get_deep_item(
                     [f"{self.project}_over_data", label, chip_id, "select_activ_dic", req_max_ver]
                 )
