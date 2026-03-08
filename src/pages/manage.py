@@ -79,15 +79,15 @@ def manage_page():
             with open(config_path, "r", encoding="utf-8") as f:
                 config_data = json.load(f)
 
-            for cat, groups in config_data.items():
-                for group, items in groups.items():
-                    for k, v in items.items():
-                        if isinstance(v, dict):
-                            item_map[k] = v
-                            if "label" in v:
-                                label_to_key_map[v["label"]] = k
-                            if "impact_list" not in v:
-                                v["impact_list"] = []
+            for role, groups in config_data.items():
+                for group_name, chip_data_li in groups.items():
+                    for chip_data in chip_data_li:
+                        if isinstance(chip_data, dict):
+                            item_map[chip_data.get("title")] = chip_data
+                            if "label" in chip_data:
+                                label_to_key_map[chip_data["label"]] = chip_data.get("title")
+                            if "impact_list" not in chip_data:
+                                chip_data["impact_list"] = []
 
         except Exception as e:
             ui.notify(f"读取配置文件失败: {e}", type="negative")

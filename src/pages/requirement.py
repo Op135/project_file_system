@@ -3160,8 +3160,8 @@ async def requirement_page(type="", json_path="", project_name=""):
             # 辅助：获取当前 label 对应的配置信息
             def get_button_config(role, label):
                 if role and role in over_config:
-                    for group_data in over_config[role].values():
-                        for item_val in group_data.values():
+                    for group_data_li in over_config[role].values():
+                        for item_val in group_data_li:
                             if item_val["label"] == label:
                                 return item_val
                 return None
@@ -3389,8 +3389,8 @@ async def requirement_page(type="", json_path="", project_name=""):
             # 我们可以遍历 app.storage.general["over_config_data"] 来找到该 role 下的所有 label key
             target_labels = []
             if role in app.storage.general.get("over_config_data", {}):
-                for group in app.storage.general["over_config_data"][role].values():
-                    for item in group.values():
+                for group_li in app.storage.general["over_config_data"][role].values():
+                    for item in group_li:
                         target_labels.append((item["label"], item.get("title", "无标题")))
 
             all_history = []
@@ -3966,10 +3966,10 @@ async def requirement_page(type="", json_path="", project_name=""):
                                     "UI": "screenshot_monitor",
                                     "工艺": "handyman",
                                 }
-                                for data_group, data_dic in over_data.items():
+                                for group_name, chip_data_li in over_data.items():
                                     # === 创建 Expansion ===
                                     exp = ui.expansion(
-                                        data_group,
+                                        group_name,
                                         icon=exp_icon_dic.get(role, "list"),
                                         value=False,
                                         caption="",  # 可应用统计文字
@@ -3979,12 +3979,12 @@ async def requirement_page(type="", json_path="", project_name=""):
                                     exp.set_visibility(False)
 
                                     # 直接从 config.py 中读取渲染策略，找不到则默认 InteractiveButton
-                                    render_type = OVERVIEW_UI_RENDER_REGISTRY.get(data_group, "InteractiveButton")
+                                    render_type = OVERVIEW_UI_RENDER_REGISTRY.get(group_name, "InteractiveButton")
 
                                     # 权限预检：只要分组里有任意一项有权限，就显示这个折叠面板和里面的表格
                                     user_role = app.storage.user["current_role"]
                                     has_permission = False
-                                    for data in data_dic.values():
+                                    for data in chip_data_li:
                                         if (
                                             user_role in data["permission"]["read_role"]
                                             or user_role in data["permission"]["edit_role"]
@@ -3999,13 +3999,13 @@ async def requirement_page(type="", json_path="", project_name=""):
                                                 OverviewTableGroup(
                                                     project=project_name,
                                                     role=role,
-                                                    group_name=data_group,
-                                                    configs=data_dic,
+                                                    group_name=group_name,
+                                                    configs=chip_data_li,
                                                     temp_bool=temp_bool,
                                                 )
                                     else:
                                         with exp:
-                                            for data in data_dic.values():
+                                            for data in chip_data_li:
                                                 user_role = app.storage.user["current_role"]
                                                 if (
                                                     user_role in data["permission"]["read_role"]

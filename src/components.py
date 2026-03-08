@@ -3062,7 +3062,7 @@ class OverviewTableGroup:
         project: str,
         role: str,
         group_name: str,
-        configs: dict,
+        configs: list,
         temp_bool: bool = False,
     ):
         self.project = project
@@ -3075,12 +3075,12 @@ class OverviewTableGroup:
         self.current_target_row_id = None  # 当前正在操作的单元格所在行id
         self.permitted_configs = {}
         user_role = app.storage.user.get("current_role", "")
-        for key, config in self.configs.items():
+        for config in self.configs:
             # 只有当用户具备读取或编辑权限时，该列才会被加入最终渲染和监控的列表中
             if user_role in config.get("permission", {}).get("read_role", []) or user_role in config.get(
                 "permission", {}
             ).get("edit_role", []):
-                self.permitted_configs[key] = config
+                self.permitted_configs[config.get("title")] = config
 
         self.offset = (0, 0)
         self.is_dragging = False
@@ -3304,13 +3304,19 @@ class OverviewTableGroup:
 
                     # 💡 恢复 1：计算状态指示灯颜色
                     # 获取该列的所有原始 chip 数据
-                    RAW_CHIPS_DICT = db_storage.get_deep_item([f"{self.project}_over_data", label], {})
-                    chip_states = [c.get("enabled") for c in RAW_CHIPS_DICT.values()]
+                    # RAW_CHIPS_DICT = db_storage.get_deep_item([f"{self.project}_over_data", label], {})
+                    # chip_states = [c.get("enabled") for c in RAW_CHIPS_DICT.values()]
+                    chip_col_state = (
+                        app.storage.general.get("overview_charge_pending", {})
+                        .get(des_user, {})
+                        .get(self.project, {})
+                        .get(label)
+                    )
 
                     dot_color = "text-red"
-                    if chip_states and any(state is None for state in chip_states):
+                    if chip_col_state == "有待定":
                         dot_color = "text-orange"
-                    elif des_user == "——" or chip_states and any(state is True for state in chip_states):
+                    elif des_user == "——" or chip_col_state is None:
                         dot_color = "text-green"
 
                     # 💡 恢复 2：让表头变成可点击，并绑定 Shift+Click 事件
@@ -3689,10 +3695,10 @@ class OverviewTableGroup:
                 changed_labels.append(label)
 
         if changed_labels:
-            await self._render_table()
             overview_role_update(self.project, self.role)
             for changed_label in changed_labels:
                 self._update_local_pending(changed_label)
+            await self._render_table()
 
     def _get_icon_for_type(self, ptype: str) -> str:
         icons = {
@@ -5221,7 +5227,7 @@ class OverviewTableGroup:
             row_id = chip_row_id
 
         # 获取第一列的数据标签
-        first_col_label = list(self.configs.values())[0]["label"]
+        first_col_label = self.configs[0]["label"]
         if label == first_col_label:
             return True
         FIRST_COL_CHIPS = db_storage.get_deep_item([f"{self.project}_over_data", first_col_label], {})

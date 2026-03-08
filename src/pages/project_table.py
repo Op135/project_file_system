@@ -615,8 +615,8 @@ def project_table_page():
                             # 2. 获取该角色下的所有概述项配置，用于精准剥离旧数据和生成新数据
                             role_config = app.storage.general.get("over_config_data", {}).get(role, {})
 
-                            for group_dic in role_config.values():
-                                for chip_dic in group_dic.values():
+                            for group_li in role_config.values():
+                                for chip_dic in group_li:
                                     # title = chip_dic.get("title")
                                     label = chip_dic.get("label")
 

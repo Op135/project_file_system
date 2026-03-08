@@ -95,8 +95,8 @@ def update_overview_charge_pending_dic(scope, des_user="", project_name="", des_
         role_config_map = {}
         for role, group_dict in app.storage.general.get("over_config_data", {}).items():
             role_config_map[role] = []
-            for group_dic in group_dict.values():
-                for ver_dic in group_dic.values():
+            for group_li in group_dict.values():
+                for ver_dic in group_li:
                     role_config_map[role].append(
                         {"nature": ver_dic.get("nature"), "title": ver_dic.get("title"), "label": ver_dic.get("label")}
                     )
@@ -115,8 +115,11 @@ def update_overview_charge_pending_dic(scope, des_user="", project_name="", des_
                 # 3. 遍历预处理好的配置项
                 for config_item in role_config_map.get(role, []):
                     nature = config_item["nature"]
-                    # title = config_item["title"]
                     label = config_item["label"]
+                    group_name = app.storage.general.get("over_config_data_flat", {}).get(label, {}).get("group_name")
+                    first_col_label = (
+                        app.storage.general.get("over_config_data", {}).get(role, {}).get(group_name, [])[0]["label"]
+                    )
 
                     if nature == "必填":
                         user_proj_dict.setdefault(label, "缺必填")
@@ -124,6 +127,9 @@ def update_overview_charge_pending_dic(scope, des_user="", project_name="", des_
                         user_proj_dict.setdefault(label, "缺需填")
 
                     LABEL_CHIP_DIC = db_storage.get_deep_item([f"{project}_over_data", label], {}).values()
+                    FIRST_COL_LABEL_CHIP_DIC = db_storage.get_deep_item(
+                        [f"{project}_over_data", first_col_label], {}
+                    ).values()
 
                     if not LABEL_CHIP_DIC:
                         if nature == "必填":
@@ -137,13 +143,32 @@ def update_overview_charge_pending_dic(scope, des_user="", project_name="", des_
                     # 4. 短路状态判定
                     has_none = False
                     has_active = False
+
+                    chip_activ_li = []
+                    first_col_chip_activ_li = []
+
+                    for first_chip_info in FIRST_COL_LABEL_CHIP_DIC:
+                        first_chip_state = first_chip_info.get("enabled")
+                        first_chip_row_id = first_chip_info.get("row_id")
+                        if first_chip_row_id and first_chip_row_id not in first_col_chip_activ_li and first_chip_state:
+                            first_col_chip_activ_li.append(first_chip_row_id)
+
                     for chip_info in LABEL_CHIP_DIC:
                         state = chip_info.get("enabled")
+                        chip_row_id = chip_info.get("row_id")
                         if state is None:
                             has_none = True
                             break
-                        elif state is True:
-                            has_active = True
+                        if chip_row_id:
+                            if state and chip_row_id not in chip_activ_li and chip_row_id in first_col_chip_activ_li:
+                                chip_activ_li.append(chip_row_id)
+                        else:
+                            if state is True:
+                                has_active = True
+                                # 不能结束循环，为了发现任何一个可能存在的None情况
+
+                    if chip_activ_li and len(chip_activ_li) == len(first_col_chip_activ_li):
+                        has_active = True
 
                     if has_none:
                         user_proj_dict[label] = "有待定"
@@ -168,6 +193,7 @@ def update_overview_charge_pending_dic(scope, des_user="", project_name="", des_
         app.storage.general["overview_charge_pending"] = new_pending_storage
 
     elif scope == "local":
+        print(des_label)
         # Local 模式直接操作原字典，因为它追求 O(1) 的响应
         pending_storage = app.storage.general.setdefault("overview_charge_pending", {})
 
@@ -179,7 +205,11 @@ def update_overview_charge_pending_dic(scope, des_user="", project_name="", des_
         ver_dic = app.storage.general.get("over_config_data_flat", {}).get(des_label, {})
         if ver_dic:
             nature = ver_dic.get("nature")
-            # title = ver_dic.get("title")
+            role = ver_dic.get("role")
+            group_name = ver_dic.get("group_name")
+            first_col_label = (
+                app.storage.general.get("over_config_data", {}).get(role, {}).get(group_name, [])[0]["label"]
+            )
 
             if nature == "必填":
                 user_proj_dict.setdefault(des_label, "缺必填")
@@ -187,7 +217,9 @@ def update_overview_charge_pending_dic(scope, des_user="", project_name="", des_
                 user_proj_dict.setdefault(des_label, "缺需填")
 
             LABEL_CHIP_DIC = db_storage.get_deep_item([f"{project_name}_over_data", des_label], {}).values()
-
+            FIRST_COL_LABEL_CHIP_DIC = db_storage.get_deep_item(
+                [f"{project_name}_over_data", first_col_label], {}
+            ).values()
             if not LABEL_CHIP_DIC:
                 if nature == "必填":
                     user_proj_dict[des_label] = "缺必填"
@@ -198,17 +230,36 @@ def update_overview_charge_pending_dic(scope, des_user="", project_name="", des_
             else:
                 has_none = False
                 has_active = False
+
+                chip_activ_li = []
+                first_col_chip_activ_li = []
+
+                for first_chip_info in FIRST_COL_LABEL_CHIP_DIC:
+                    first_chip_state = first_chip_info.get("enabled")
+                    first_chip_row_id = first_chip_info.get("row_id")
+                    if first_chip_row_id and first_chip_row_id not in first_col_chip_activ_li and first_chip_state:
+                        first_col_chip_activ_li.append(first_chip_row_id)
                 for chip_info in LABEL_CHIP_DIC:
                     state = chip_info.get("enabled")
+                    chip_row_id = chip_info.get("row_id")
                     if state is None:
                         has_none = True
                         break
-                    elif state is True:
-                        has_active = True
+                    if chip_row_id:
+                        if state and chip_row_id not in chip_activ_li and chip_row_id in first_col_chip_activ_li:
+                            chip_activ_li.append(chip_row_id)
+                    else:
+                        if state is True:
+                            has_active = True
+                            # 不能结束循环，为了发现任何一个可能存在的None情况
 
+                if chip_activ_li and len(chip_activ_li) == len(first_col_chip_activ_li):
+                    has_active = True
+                print(chip_activ_li, first_col_chip_activ_li)
                 if has_none:
                     user_proj_dict[des_label] = "有待定"
                 elif has_active:
+                    print(des_label)
                     user_proj_dict.pop(des_label, None)
                 else:
                     if nature == "必填":
@@ -617,11 +668,18 @@ def updata_overview_config():
         # 配置更新能直接呈现，但配置减项将导致原有数据不呈现
         with open(f"{BASE_DIR}/overview_config.json", "r", encoding="utf-8") as f:
             # 使用 json.load() 读取文件内容并解析
-            app.storage.general["over_config_data"] = json.load(f)
+            over_config_data = json.load(f)
+            # 为概述配置文件增加格式固定内容，在存放到app.storage.general
+            for role, over_data_dic in over_config_data.items():
+                for group_name, over_data_li in over_data_dic.items():
+                    for over_data in over_data_li:
+                        over_data["role"] = role
+                        over_data["group_name"] = group_name
+            app.storage.general["over_config_data"] = over_config_data
             # 扁平化概述项配置字典重新生成
             for role, role_dic in app.storage.general["over_config_data"].items():
-                for group_name, group_dic in role_dic.items():
-                    for chip_button_name, chip_dic in group_dic.items():
+                for group_name, group_li in role_dic.items():
+                    for chip_dic in group_li:
                         app.storage.general["over_config_data_flat"][chip_dic.get("label")] = chip_dic
             logger.info("成功更新概述项配置。")
             # --- 新增：配置结构变更后，强制进行一次全局待定状态重构 ---
@@ -916,13 +974,13 @@ def overview_role_update(project_name, input_role="all_update"):
         over_role_dic = app.storage.general["overview_role"][project_name]
         # 遍历概述配置字典，主要用里面的角色分类，如光学、结构等等，和概述配置里的label
         for role, over_data_dic in app.storage.general["over_config_data"].items():
-            for over_config_dic in over_data_dic.values():
+            for over_config_li in over_data_dic.values():
                 # 初始化临时保存概述里出现过的用户次数字典
                 frequency_user_dic = {}
                 # 初始化临时保存概述里出现过的用户最晚时间字典
                 time_user_dic = {}
                 # 遍历当前角色分类，如光学下，概述配置的各项
-                for over_config in over_config_dic.values():
+                for over_config in over_config_li:
                     # 如果当前概述项的label存在服务器对应项目的概述数据字典键里
                     if over_config["label"] in OVERVIEW_DATA and OVERVIEW_DATA[over_config["label"]] != {}:
                         # 遍历当前label下用户添加过的多个概述数据
@@ -978,13 +1036,13 @@ def overview_role_update(project_name, input_role="all_update"):
         # 初始化概述角色字典
         over_role_dic = app.storage.general["overview_role"][project_name]
         # 遍历概述配置字典指定角色的配置数据
-        for over_config_dic in app.storage.general["over_config_data"].get(input_role, {}).values():
+        for over_config_li in app.storage.general["over_config_data"].get(input_role, {}).values():
             # 初始化临时保存概述里出现过的用户次数字典
             frequency_user_dic = {}
             # 初始化临时保存概述里出现过的用户最晚时间字典
             time_user_dic = {}
             # 遍历当前角色分类，如光学下，概述配置的各项
-            for over_config in over_config_dic.values():
+            for over_config in over_config_li:
                 # 如果当前概述项的label存在服务器对应项目的概述数据字典键里
                 if over_config["label"] in OVERVIEW_DATA and OVERVIEW_DATA[over_config["label"]] != {}:
                     # 遍历当前label下用户添加过的多个概述数据
