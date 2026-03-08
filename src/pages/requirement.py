@@ -3199,20 +3199,20 @@ async def requirement_page(type="", json_path="", project_name=""):
                 if current_id and current_label:
                     # 获取该chip的完整数据
                     path_list = [f"{project_name}_over_data", str(current_label), str(current_id)]
-                    chip_data = db_storage.get_deep_item(path_list, {})
+                    CHIP_DATA = db_storage.get_deep_item(path_list, {})
 
-                    state["current_chip_data"] = copy.deepcopy(chip_data)
-                    chip_type = chip_data.get("type", "text")
+                    state["current_chip_data"] = copy.deepcopy(CHIP_DATA)
+                    chip_type = CHIP_DATA.get("type", "text")
 
                     # --- 1. 基础内容填充 ---
-                    content_input.value = chip_data.get("content", "")
-                    notes_input.value = chip_data.get("notes", "")
+                    content_input.value = CHIP_DATA.get("content", "")
+                    notes_input.value = CHIP_DATA.get("notes", "")
 
                     # --- 2. 类型特殊处理 ---
                     test_ui_container.clear()
 
                     if chip_type == "test":
-                        render_test_editor(chip_data)
+                        render_test_editor(CHIP_DATA)
                         test_ui_container.set_visibility(True)
                         type_warning.set_visibility(False)
                     elif chip_type != "text":
@@ -3293,8 +3293,8 @@ async def requirement_page(type="", json_path="", project_name=""):
             def get_chip_options(label):
                 options = {}
                 if label:
-                    chips = db_storage.get_deep_item([f"{project_name}_over_data", label], {})
-                    for c_id, c_data in chips.items():
+                    CHIPS = db_storage.get_deep_item([f"{project_name}_over_data", label], {})
+                    for c_id, c_data in CHIPS.items():
                         content = c_data.get("content", "无内容")
                         display = content[:30] + "..." if len(content) > 30 else content
                         options[c_id] = display
@@ -3372,9 +3372,14 @@ async def requirement_page(type="", json_path="", project_name=""):
     # 需求显示界面框架构造函数
     async def overview_input_frame(json_data, temp_bool):
         project_name = json_data["1.0"]["project_name"]
+
         # 判断服务器存存器概述数据字典里是否已经存在该项目键值对，没有则创建，用于后续储存该项目需求概述资料
-        if not db_storage.get_item(f"{project_name}_over_data", {}):
-            await db_storage.set_item(f"{project_name}_over_data", {})
+        # 定义更新规则：如果当前存在有效数据则原样返回保留，如果为 None 则初始化为空字典
+        def init_if_missing(current_data):
+            return current_data if current_data is not None else {}
+
+        # 将检查与初始化的动作合并为一个原子操作
+        await db_storage.atomic_deep_update([f"{project_name}_over_data"], init_if_missing)
 
         # --- 新增辅助函数：展示 Role 维度的历史记录 (Feature 1) ---
         def show_role_history_dialog(project_name, role):
@@ -3391,20 +3396,20 @@ async def requirement_page(type="", json_path="", project_name=""):
             all_history = []
             for label, title in target_labels:
                 # 获取该 label 下的所有 chip
-                chips = db_storage.get_deep_item([f"{project_name}_over_data", label], {})
-                for chip_info in chips.values():
-                    timestamps = chip_info.get("timestamp", {})
-                    creation_time = min(timestamps.keys()) if timestamps else "N/A"
+                CHIPS = db_storage.get_deep_item([f"{project_name}_over_data", label], {})
+                for CHIP_INFO in CHIPS.values():
+                    TIMESTAMPS = CHIP_INFO.get("timestamp", {})
+                    creation_time = min(TIMESTAMPS.keys()) if TIMESTAMPS else "N/A"
                     all_history.append(
                         {
                             "label": label,  # 额外记录所属标签
                             "title": title,
-                            "content": chip_info.get("content", "N/A"),
-                            "req_ver": chip_info.get("req_ver", "0.0"),
+                            "content": CHIP_INFO.get("content", "N/A"),
+                            "req_ver": CHIP_INFO.get("req_ver", "0.0"),
                             "creation_time": creation_time,
-                            "creator": chip_info.get("creator", "未知"),
-                            "type": chip_info.get("type", ""),
-                            "enabled": chip_info.get("enabled", True),
+                            "creator": CHIP_INFO.get("creator", "未知"),
+                            "type": CHIP_INFO.get("type", ""),
+                            "enabled": CHIP_INFO.get("enabled", True),
                         }
                     )
 
@@ -3927,8 +3932,6 @@ async def requirement_page(type="", json_path="", project_name=""):
                                 )
                     with ui.column().classes("w-full overflow-y-auto p-1 gap-2 rounded"):
                         overview_role_update(project_name, "initialize")
-                        # 获取项目的实时概述数据 (chip数据)
-                        # project_over_data = db_storage.get_item(f"{project_name}_over_data", {})
                         # 显示概述模块内容
                         for role, over_data in app.storage.general["over_config_data"].items():
                             with ui.card().classes("w-full px-3 gap-0"):

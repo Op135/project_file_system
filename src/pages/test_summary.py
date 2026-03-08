@@ -162,7 +162,7 @@ def test_summary_report(project_name: str):
         ).classes("print-btn text-blue-7 no-print")
 
         # --- 数据处理 (复用之前的逻辑) ---
-        all_over_data = db_storage.get_item(f"{project_name}_over_data", {})
+        ALL_OVER_DATA = db_storage.get_item(f"{project_name}_over_data", {})
         rows = []
         role_order = ["光学", "结构", "硬件", "软件", "UI", "工艺", "质量"]
         drive_voltage_list = []
@@ -182,7 +182,7 @@ def test_summary_report(project_name: str):
                 return "——"
 
         # 遍历提取数据
-        for label, chips in all_over_data.items():
+        for label, chips in ALL_OVER_DATA.items():
             label_title = label
             # 尝试获取中文标题
             if "over_config_data_flat" in app.storage.general:

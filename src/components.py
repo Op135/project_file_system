@@ -1,7 +1,6 @@
 # -*- encoding: utf-8 -*-
 import ast
 import asyncio
-import atexit
 import copy
 import io
 import itertools
@@ -806,12 +805,12 @@ class InteractiveButton:
         ):
             return
 
-        chips_dict = db_storage.get_deep_item([f"{self.project}_over_data", self.label], {})
+        CHIPS_DICT = db_storage.get_deep_item([f"{self.project}_over_data", self.label], {})
         show_all = app.storage.client.get("record_switch")
         # conversion_refresh = app.storage.general.get("conversion_refresh", {}).get(self.project)
 
         filtered_dict = {}
-        for k, v in chips_dict.items():
+        for k, v in CHIPS_DICT.items():
             # if conversion_refresh and v.get("type") == "svn" and v.get("enabled") not in [True, None]:
             #     continue
             if not show_all and v.get("enabled") is False:
@@ -834,7 +833,7 @@ class InteractiveButton:
         with self.chip_container:
             search_bool = False
             target_path_list = []
-            label_chip_dic = db_storage.get_deep_item([f"{self.project}_over_data", self.label], {}).values()
+            LABEL_CHIP_DIC = db_storage.get_deep_item([f"{self.project}_over_data", self.label], {}).values()
 
             latest_user_str = (
                 app.storage.general.get("overview_role", {})
@@ -844,7 +843,7 @@ class InteractiveButton:
             )
             des_user = latest_user_str.split("：")[1] if latest_user_str else ""
             # 指示灯颜色状态
-            chip_enabled_state_list = [chip_info["enabled"] for chip_info in label_chip_dic]
+            chip_enabled_state_list = [chip_info["enabled"] for chip_info in LABEL_CHIP_DIC]
             if chip_enabled_state_list and any(state is None for state in chip_enabled_state_list):
                 self.btn_label.classes("text-orange", remove="text-green text-red")
             elif des_user == "——" or chip_enabled_state_list and any(chip_enabled_state_list):
@@ -852,19 +851,19 @@ class InteractiveButton:
             else:
                 self.btn_label.classes("text-red", remove="text-green text-orange")
 
-            for chip_info in label_chip_dic:
-                if not app.storage.client.get("record_switch") and chip_info.get("enabled") is False:
+            for CHIP_INFO in LABEL_CHIP_DIC:
+                if not app.storage.client.get("record_switch") and CHIP_INFO.get("enabled") is False:
                     continue
 
                 if self.processing_type == "search":
                     if not search_bool:
-                        target_path_list = await self._search_file_path(chip_info["content"])
+                        target_path_list = await self._search_file_path(CHIP_INFO["content"])
                     search_bool = True
-                    await self._create_chip_from_data(chip_info, target_path_list, req_max_ver)
+                    await self._create_chip_from_data(CHIP_INFO, target_path_list, req_max_ver)
                 else:
-                    await self._create_chip_from_data(chip_info, [], req_max_ver)
+                    await self._create_chip_from_data(CHIP_INFO, [], req_max_ver)
 
-    async def _create_chip_from_data(self, chip_info: dict, target_path_list: list, req_max_ver: str):
+    async def _create_chip_from_data(self, chip_info: dict, target_path_list: list, req_max_ver: str) -> None:
         """从字典数据中渲染独立的 ui.chip 组件或图片缩略图"""
         chip_text = chip_info.get("content", "")
         filepath = ""
@@ -1146,26 +1145,30 @@ class InteractiveButton:
         """
         将填入的文本内容添加到传入的概述标签对应列表里，以供辅助后续填写。
         """
-        index_data = db_storage.get_item("overview_auto_complete_index", {})
 
-        if chip_label not in index_data:
-            index_data[chip_label] = [content]
-        elif content not in index_data[chip_label]:
-            index_data[chip_label].append(content)
+        def process_autofill(index_data):
+            # 确保基础结构存在
+            if index_data is None:
+                index_data = {}
+            if chip_label not in index_data:
+                index_data[chip_label] = [content]
+            elif content not in index_data[chip_label]:
+                index_data[chip_label].append(content)
+            return index_data
 
-        await db_storage.set_item("overview_auto_complete_index", index_data)
+        await db_storage.atomic_deep_update(["overview_auto_complete_index"], process_autofill)
 
     def _setup_text_chip_dialog(self):
         self.chip_dialog.clear()
         with self.chip_dialog, ui.card().classes("w-1/2"):
             ui.label("添加新的概述内容").classes("text-lg font-bold")
             ui.label("注意：一次只添加一个内容/部件，不要填多个。").classes("text-base font-bold text-red")
-            index_list = db_storage.get_deep_item(["overview_auto_complete_index", self.label], [])
+            INDEX_LIST = db_storage.get_deep_item(["overview_auto_complete_index", self.label], [])
             self.chip_label = (
                 ui.input(
                     label=self.dialog_label,
                     value=self.dialog_placeholder,
-                    autocomplete=index_list,
+                    autocomplete=INDEX_LIST,
                     placeholder=self.dialog_placeholder,
                 )
                 .props("outlined")
@@ -2075,10 +2078,11 @@ class InteractiveButton:
             )
 
     def _check_version_updated(self, chip_id, new_select_activ_dic, chip_text) -> bool:
-        select_activ_dic = copy.deepcopy(
-            db_storage.get_deep_item([f"{self.project}_over_data", self.label, chip_id, "select_activ_dic"], {})
+        SELECT_ACTIV_DIC = db_storage.get_deep_item(
+            [f"{self.project}_over_data", self.label, chip_id, "select_activ_dic"], {}
         )
-        if len(new_select_activ_dic) != len(select_activ_dic):
+
+        if len(new_select_activ_dic) != len(SELECT_ACTIV_DIC):
             ui.notify(
                 "需求刚刚升级了，各项概述的激活配置需要重新确定！",
                 type="warning",
@@ -2103,69 +2107,86 @@ class InteractiveButton:
             app.storage.general["over_change_broadcast"][self.project].pop(chip_id, None)
 
     async def _set_related_chip_state(self, chip_text, chip_state, all_related_bool, related_select_dic, type):
-        overview_data = db_storage.get_item(f"{self.project}_over_data", {})
-        for related_label, chip_dic in overview_data.items():
+        # 1. 提前获取不需要在锁内计算的静态环境上下文，保证闭包函数（纯函数）的高效执行
+        time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        current_user = app.storage.user.get("current_user", "匿名用户")
+        record_entry = {
+            "operate_user": current_user,
+            "operate_type": type,
+            "operate_chip_content": chip_text,
+            "operate_chip_state": chip_state,
+        }
+
+        # 2. 仅作为“只读地图”获取当前项目的概述清单，用于寻找被影响的目标
+        #    绝对不要在最后将这份数据整个写回数据库！
+        OVERVIEW_DATA_MAP = db_storage.get_item(f"{self.project}_over_data", {})
+
+        for related_label, chip_dic in OVERVIEW_DATA_MAP.items():
+            # 标签存在关联选择清单里，且属于被勾选的 或 用户勾选了全部
             if related_label in related_select_dic and (related_select_dic[related_label] or all_related_bool):
                 for related_chip_id, chip_data in chip_dic.items():
                     over_chip_ver_li = [int(float(k)) for k in chip_data.get("select_activ_dic", {}).keys()]
                     if not over_chip_ver_li:
                         continue
-                    max_over_ver = max(over_chip_ver_li)
-                    if chip_data["select_activ_dic"][f"{max_over_ver}.0"]:
-                        chip_data["select_activ_dic"][f"{max_over_ver}.0"] = None
-                        chip_data["enabled"] = None
-                        chip_data["icon"] = "question_mark"
-                        chip_data["bg_color"] = "bg-amber-5"
 
-                    if chip_data["select_activ_dic"][f"{max_over_ver}.0"] is not False:
-                        open_dic = copy.deepcopy(
-                            db_storage.get_deep_item(
-                                [f"{self.project}_over_related_record", related_label, related_chip_id, "open"], {}
-                            )
+                    max_over_ver = f"{max(over_chip_ver_li)}.0"
+
+                    # 只有目标状态不为明确的 False（已失活）时，才需要受到影响
+                    if chip_data.get("select_activ_dic", {}).get(max_over_ver) is not False:
+                        # ==========================================
+                        # 任务 A：原子化精准更新目标 Chip 本身的激活状态
+                        # ==========================================
+                        def process_chip_state(target_chip):
+                            if not target_chip:
+                                return target_chip
+                            # 如果原本是 True，将其降级为待确认的 None，并修改 UI 呈现参数
+                            if target_chip.get("select_activ_dic", {}).get(max_over_ver):
+                                target_chip["select_activ_dic"][max_over_ver] = None
+                                target_chip["enabled"] = None
+                                target_chip["icon"] = "question_mark"
+                                target_chip["bg_color"] = "bg-amber-5"
+                            return target_chip
+
+                        # 点对点精准写入，将锁的粒度控制在单个 chip 级别
+                        await db_storage.atomic_deep_update(
+                            [f"{self.project}_over_data", related_label, related_chip_id], process_chip_state
                         )
-                        if open_dic:
-                            open_dic["record"].update(
-                                {
-                                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"): {
-                                        "operate_user": app.storage.user.get("current_user", "匿名用户"),
-                                        "operate_type": type,
-                                        "operate_chip_content": chip_text,
-                                        "operate_chip_state": chip_state,
-                                    }
-                                }
-                            )
-                            await db_storage.set_deep_item(
-                                [f"{self.project}_over_related_record", related_label, related_chip_id, "open"],
-                                open_dic,
-                            )
-                        else:
-                            related_role = (
-                                app.storage.general.get("over_config_data_flat", {})
-                                .get(related_label, {})
-                                .get("role", "匿名用户")
-                            )
-                            await db_storage.set_deep_item(
-                                [f"{self.project}_over_related_record", related_label, related_chip_id, "open"],
-                                {
-                                    "open_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                                    "open_related_user": app.storage.general.get("overview_role", {})
-                                    .get(self.project, {})
-                                    .get(related_role, {})
-                                    .get("latest_user", "匿名用户"),
+
+                        # ==========================================
+                        # 任务 B：原子化追加连带影响的打开历史台账 (open记录)
+                        # ==========================================
+                        # 获取初始化关联人所需的静态数据
+                        related_role = (
+                            app.storage.general.get("over_config_data_flat", {})
+                            .get(related_label, {})
+                            .get("role", "匿名用户")
+                        )
+                        related_user = (
+                            app.storage.general.get("overview_role", {})
+                            .get(self.project, {})
+                            .get(related_role, {})
+                            .get("latest_user", "匿名用户")
+                        )
+
+                        def process_open_record(open_dic):
+                            if not open_dic:
+                                # 第一次被影响，新建打开记录字典结构
+                                return {
+                                    "open_time": time_str,
+                                    "open_related_user": related_user,
                                     "close_time": "",
                                     "close_related_user": "",
-                                    "record": {
-                                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"): {
-                                            "operate_user": app.storage.user.get("current_user", "匿名用户"),
-                                            "operate_type": type,
-                                            "operate_chip_content": chip_text,
-                                            "operate_chip_state": chip_state,
-                                        }
-                                    },
-                                },
-                            )
-        if overview_data:
-            await db_storage.set_item(f"{self.project}_over_data", overview_data)
+                                    "record": {time_str: record_entry},
+                                }
+                            else:
+                                # 已有打开记录，安全追加本次影响操作字典
+                                open_dic.setdefault("record", {})[time_str] = record_entry
+                                return open_dic
+
+                        await db_storage.atomic_deep_update(
+                            [f"{self.project}_over_related_record", related_label, related_chip_id, "open"],
+                            process_open_record,
+                        )
 
     def _show_related_chip_select_dialog(self, chip_text, chip_state, type):
         self.activ_dialog.clear()
@@ -2246,16 +2267,25 @@ class InteractiveButton:
                 self.cancel_checkbox_change(chip_id)
                 ui_spinner.set_visibility(False)
 
-                open_dic = db_storage.get_deep_item(
-                    [f"{self.project}_over_related_record", self.label, chip_id, "open"], {}
-                )
-                if open_dic:
-                    open_dic["close_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+                def process_close_record(chip_record_dic):
+                    if not chip_record_dic or "open" not in chip_record_dic:
+                        return chip_record_dic
+
+                    # 提取并修改 open 记录
+                    open_dic = chip_record_dic.pop("open")  # 从字典中弹出（删除 "open" 键）
+                    open_dic["close_time"] = time_str
                     open_dic["close_related_user"] = creator
-                    await db_storage.del_deep_item([f"{self.project}_over_related_record", self.label, chip_id, "open"])
-                    await db_storage.set_deep_item(
-                        [f"{self.project}_over_related_record", self.label, chip_id, open_dic["close_time"]], open_dic
-                    )
+
+                    # 存入归档键
+                    chip_record_dic[time_str] = open_dic
+                    return chip_record_dic
+
+                # 在父层级执行原子更新，同时完成删除和新增
+                await db_storage.atomic_deep_update(
+                    [f"{self.project}_over_related_record", self.label, chip_id], process_close_record
+                )
 
                 self._show_related_chip_select_dialog(chip_text, chip_state, "activ_change")
                 self.last_state_hash = None  # Trigger display update via timer
@@ -2277,7 +2307,7 @@ class InteractiveButton:
         self.activ_dialog.clear()
         with self.activ_dialog, ui.card().classes("w-1/2"):
             ui.label("选择概述生效的需求版本").classes("text-lg font-bold")
-            select_activ_dic = db_storage.get_deep_item(
+            SELECT_ACTIV_DIC = db_storage.get_deep_item(
                 [f"{self.project}_over_data", self.label, chip_id, "select_activ_dic"], {}
             )
 
@@ -2286,14 +2316,14 @@ class InteractiveButton:
 
             if app.storage.general["over_change_broadcast"][self.project][chip_id] and len(
                 app.storage.general["over_change_broadcast"][self.project][chip_id]["select_activ_dic"]
-            ) == len(select_activ_dic):
+            ) == len(SELECT_ACTIV_DIC):
                 editor_list = app.storage.general["over_change_broadcast"][self.project][chip_id]["editor"]
                 editor_list.append(app.storage.user.get("current_user", "匿名用户"))
                 app.storage.general["over_change_broadcast"][self.project][chip_id]["editor"] = list(set(editor_list))
             else:
                 app.storage.general["over_change_broadcast"][self.project][chip_id] = {
                     "editor": [app.storage.user.get("current_user", "匿名用户")],
-                    "select_activ_dic": copy.deepcopy(select_activ_dic),
+                    "select_activ_dic": copy.deepcopy(SELECT_ACTIV_DIC),
                 }
 
             ui_spinner = ui.spinner(type="hourglass", size="md", color="amber-8", thickness=8.0)
@@ -2308,13 +2338,13 @@ class InteractiveButton:
                         select_label,
                     )
 
-            open_dic = db_storage.get_deep_item(
+            OPEN_DIC = db_storage.get_deep_item(
                 [f"{self.project}_over_related_record", self.label, chip_id, "open"], {}
             )
 
-            if open_dic:
+            if OPEN_DIC:
                 ui.label("本次状态变化由以下概述调整引起：").classes("text-base font-bold text-brown")
-                for time_key, record in open_dic.get("record", {}).items():
+                for time_key, record in OPEN_DIC.get("record", {}).items():
                     op_type = record.get("operate_type", "")
                     if op_type == "add_chip":
                         record_label = ui.label(
@@ -2482,10 +2512,10 @@ class InteractiveButton:
 
     def show_label_history(self):
         self.history_dialog.clear()
-        raw_data = db_storage.get_deep_item([f"{self.project}_over_data", self.label], {})
+        RAW_DATA = db_storage.get_deep_item([f"{self.project}_over_data", self.label], {})
         history_list = []
 
-        for chip_id, chip_info in raw_data.items():
+        for chip_id, chip_info in RAW_DATA.items():
             timestamps = chip_info.get("timestamp", {})
             creation_time = min(timestamps.keys()) if timestamps else "N/A"
             history_list.append(
@@ -2627,11 +2657,11 @@ class InteractiveButton:
                     .get("title", "未知项")
                 )
                 according_title = f"{according_title}\n{title_str}"
-                for data in db_storage.get_deep_item(
+                for DATA in db_storage.get_deep_item(
                     [f"{self.project}_over_data", search_folder_according], {}
                 ).values():
-                    if data["enabled"]:
-                        according_folder_name.append(data["content"])
+                    if DATA["enabled"]:
+                        according_folder_name.append(DATA["content"])
 
             if len(according_folder_name) < 1:
                 if overview_state_show_judge(self.role):
@@ -2706,11 +2736,11 @@ class InteractiveButton:
                     .get("title", "未知项")
                 )
                 according_title = f"{according_title}\n{title_str}"
-                for data in db_storage.get_deep_item(
+                for DATA in db_storage.get_deep_item(
                     [f"{self.project}_over_data", search_folder_according], {}
                 ).values():
-                    if data["enabled"]:
-                        according_folder_name_li.append(data["content"])
+                    if DATA["enabled"]:
+                        according_folder_name_li.append(DATA["content"])
 
             if len(according_folder_name_li) < 1:
                 if overview_state_show_judge(self.role):
@@ -3087,105 +3117,153 @@ class OverviewTableGroup:
         # 初始渲染 & 开启定时器
         ui.timer(1.0, self._update_display)
 
+    import uuid
+
     async def _group_and_migrate_data(self, col_configs, show_all):
         """
         核心方法：将按列存放的数据转换为按行存放，并无缝清洗旧数据。
         修复：先排版，最后过滤。过滤条件抛弃容易被污染的 enabled 字段，直击 select_activ_dic 源头。
         """
+        # row_dict 用于建立基于 row_id 的行数据映射：{row_id: {col_label: [chips]}}
         row_dict = {}
+        # 维护一个有序的 row_id 列表，确保前端渲染时的行顺序是稳定可控的
         ordered_row_ids = []
 
-        # 获取当前版本，作为真理依据 (SSOT)
+        # 获取当前项目的最新版本号，作为判断卡片(chip)是否激活的唯一真理依据 (SSOT - Single Source of Truth)
+        # 提前规避运行时的状态不确定性
         req_max_ver = app.storage.general.get("project_req_max_ver", {}).get(self.project, "1.0")
 
-        # 1. 预先拉取所有列的数据（【重要】：不过滤，保留完整二维矩阵的行基准）
+        # ==========================================
+        # 1. 预先拉取所有列的数据
+        # 【重点】：这里坚决不做任何状态过滤，必须保留完整的二维矩阵基准。
+        # 因为如果提前过滤了隐藏的卡片，会导致不同列的数据在索引 (index) 上发生错位，彻底破坏行对应关系。
+        # ==========================================
         all_cols_chips = []
         for config in col_configs:
             label = config["label"]
-            chips_dict = db_storage.get_deep_item([f"{self.project}_over_data", label], {})
-            valid_chips = list(chips_dict.values())
+            # 从数据库的深度路径中获取该列下的所有卡片数据
+            CHIPS_DICT = db_storage.get_deep_item([f"{self.project}_over_data", label], {})
+            valid_chips = list(CHIPS_DICT.values())
             all_cols_chips.append((label, valid_chips))
 
+        # 如果所有列都为空，直接返回，避免后续无意义的计算开销
         if not all_cols_chips:
             return []
 
-        # 2. 建立行基准线 fallback_row_ids
+        # ==========================================
+        # 2. 建立行基准线 fallback_row_ids (兜底的 row_id 列表)
+        # 目的：处理旧数据中缺失 row_id 的情况。通过横向扫描同一索引位置的各列卡片，
+        # 只要有一列在当前索引下存在 row_id，就将其作为这一行的基准 ID；全没有则生成新 UUID。
+        # ==========================================
         fallback_row_ids = []
+        # 获取包含卡片数量最多的一列的长度，以此作为最大行数基准
         max_len = max([len(chips) for _, chips in all_cols_chips]) if all_cols_chips else 0
 
+        # 逐行扫描，一行一行分析，每一行找到或者生成一个代表row_id
         for i in range(max_len):
             found_row_id = None
+            # 横向遍历每一列的第 i 个元素
             for _, chips in all_cols_chips:
+                # 越界检查，并尝试提取现有的 row_id
                 if i < len(chips) and chips[i].get("row_id"):
                     found_row_id = chips[i].get("row_id")
-                    break
+                    break  # 找到了该行的基准 ID，立刻跳出内层循环
+
+            # 如果这一行的所有列在这个索引下都没有 row_id（典型的历史脏数据），则动态分配一个全新的 UUID
             if not found_row_id:
                 found_row_id = str(uuid.uuid4())
             fallback_row_ids.append(found_row_id)
 
-        # 3. 归集数据并分配/清洗 row_id
+        # ==========================================
+        # 3. 归集数据并分配/清洗 row_id (列转行核心逻辑)
+        # ==========================================
+        # 通常以第一列的数据作为界面的主排序依据
         first_col_label = col_configs[0]["label"]
-
+        # 遍历所有列的数据，label为列标签，chips为该列所有chip数据
+        # 为所有没有row_id的chip分配该行代表id，顺便整理好行关系字典row_dict，整理好记录第一列chip顺序的字典ordered_row_ids
         for label, chips in all_cols_chips:
             for i, chip_data in enumerate(chips):
                 row_id = chip_data.get("row_id")
+
+                # 数据清洗与静默修复：发现缺失 row_id 的旧数据
                 if not row_id:
+                    # 使用刚才在步骤 2 中准备好的同行基准 ID
                     row_id = fallback_row_ids[i]
                     chip_data["row_id"] = row_id
+                    # 异步回写到数据库，完成旧数据的无缝自动升级迁移，下次访问时将不再触发此修复逻辑
                     await db_storage.set_deep_item(
                         [f"{self.project}_over_data", label, chip_data["id"], "row_id"], row_id
                     )
 
+                # 按 row_id 将不同列的卡片组装到同一行对象下
                 if row_id not in row_dict:
                     row_dict[row_id] = {}
                 row_dict[row_id].setdefault(label, []).append(chip_data)
 
-                # 建立行显示主序
+                # 建立行显示主序：严格按照第一列中卡片的出现顺序来决定整行的顺序
                 if label == first_col_label:
                     if row_id not in ordered_row_ids:
                         ordered_row_ids.append(row_id)
 
-        # 4. 补漏：如果后面列有不属于第一列主序的零散行，统一追加到表格末尾
+        # ==========================================
+        # 4. 补漏机制 (Orphan Data Handling)
+        # 目的：处理数据断层现象。例如某一行在第一列没有数据，但在后面的列有数据，
+        # 如果不处理，这些数据将丢失显示机会。这里将它们统一追加到表格末尾。
+        # 最终效果，某一行第一列没有数据，就会排到最后行下面去
+        # ==========================================
         for label, chips in all_cols_chips:
             for chip_data in chips:
                 row_id = chip_data.get("row_id")
                 if row_id not in ordered_row_ids:
                     ordered_row_ids.append(row_id)
 
+        # 将确定的行顺序保存到实例变量，可能用于类的其他方法
         self.ordered_row_ids = ordered_row_ids
 
+        # ==========================================
         # 5. 组装并应用【SSOT 加强版过滤】
+        # 目的：在排版彻底完成后，再根据版本号进行精确的状态过滤，剔除被禁用的卡片。
+        # ==========================================
         rows_list = []
         for rid in ordered_row_ids:
+            # 防御性编程：理论上不应发生，但防止 ordered_row_ids 中存在无数据的幻影行
             if rid not in row_dict:
                 continue
 
             row_chips = row_dict[rid]
             filtered_row_chips = {}
-            has_visible_chip = False
+            has_visible_chip = False  # 标记当前行是否包含至少一个可见的卡片
 
             for label, chip_list in row_chips.items():
                 visible_chips = []
                 for chip in chip_list:
                     # ==========================================
                     # 核心修复 3：无视表象，直击核心逻辑字段
-                    # 彻底解决历史残余的 enabled=True 但内部=False 的怪胎
+                    # 彻底解决历史残余的 enabled=True 但内部状态=False 的数据不一致(怪胎)问题。
                     # ==========================================
+                    # 深入底层字典获取当前版本的真实激活状态
                     current_state = chip.get("select_activ_dic", {}).get(req_max_ver)
+                    # 严格判定失效状态：考虑布尔值 False 以及字符串 "false"（防范弱类型带来的数据污染）
                     is_deactivated = (current_state is False) or (str(current_state).lower() == "false")
 
+                    # 如果前端没有勾选“显示所有(show_all)” 且 该卡片确实被停用，则在渲染数据中剔除它
                     if not show_all and is_deactivated:
                         continue
+
+                    # 否则，卡片有效，加入当前列的可见列表
                     visible_chips.append(chip)
                     has_visible_chip = True
 
+                # 只有当该列存在可见卡片时，才将其挂载到过滤后的行数据集中
                 if visible_chips:
                     filtered_row_chips[label] = visible_chips
 
-            # 如果这一行内有内容显示，或者处于"显示所有"状态，则渲染此行
+            # 行级过滤：如果这一行里面至少有一列包含可见卡片，或者当前处于"显示所有"的调试/总览模式，则渲染此行。
+            # 这避免了界面上出现没有任何数据的空白空行。
             if has_visible_chip or show_all:
                 rows_list.append({"row_id": rid, "chips": filtered_row_chips})
 
+        # 返回最终按行结构组织、已完成脏数据迁移且经过强校验过滤的数据列表
         return rows_list
 
     # ================= UI 渲染核心 =================
@@ -3226,8 +3304,8 @@ class OverviewTableGroup:
 
                     # 💡 恢复 1：计算状态指示灯颜色
                     # 获取该列的所有原始 chip 数据
-                    raw_chips_dict = db_storage.get_deep_item([f"{self.project}_over_data", label], {})
-                    chip_states = [c.get("enabled") for c in raw_chips_dict.values()]
+                    RAW_CHIPS_DICT = db_storage.get_deep_item([f"{self.project}_over_data", label], {})
+                    chip_states = [c.get("enabled") for c in RAW_CHIPS_DICT.values()]
 
                     dot_color = "text-red"
                     if chip_states and any(state is None for state in chip_states):
@@ -3593,11 +3671,11 @@ class OverviewTableGroup:
 
         for config in self.permitted_configs.values():
             label = config["label"]
-            chips_dict = db_storage.get_deep_item([f"{self.project}_over_data", label], {})
+            CHIPS_DICT = db_storage.get_deep_item([f"{self.project}_over_data", label], {})
 
             # 【同步修复】：Hash监控也采用 SSOT 过滤
             filtered_dict = {}
-            for k, v in chips_dict.items():
+            for k, v in CHIPS_DICT.items():
                 current_state = v.get("select_activ_dic", {}).get(req_max_ver)
                 is_deactivated = (current_state is False) or (str(current_state).lower() == "false")
 
@@ -4599,17 +4677,24 @@ class OverviewTableGroup:
         空间换时间，避免全量扫描项目数据。
         数据结构: { "第一列标签名": { "填入的主内容": ["项目A", "项目B"] } }
         """
-        index_data = db_storage.get_item("overview_autofill_index", {})
+        """使用原子操作维护首列内容的倒排索引"""
 
-        if first_col_label not in index_data:
-            index_data[first_col_label] = {}
+        def process_autofill(index_data):
+            # 确保基础结构存在
+            if index_data is None:
+                index_data = {}
+            if first_col_label not in index_data:
+                index_data[first_col_label] = {}
+            if content not in index_data[first_col_label]:
+                index_data[first_col_label][content] = []
 
-        if content not in index_data[first_col_label]:
-            index_data[first_col_label][content] = []
+            # 核心追加逻辑
+            if self.project not in index_data[first_col_label][content]:
+                index_data[first_col_label][content].append(self.project)
+            return index_data
 
-        if self.project not in index_data[first_col_label][content]:
-            index_data[first_col_label][content].append(self.project)
-            await db_storage.set_item("overview_autofill_index", index_data)
+        # 一步到位，安全写入
+        await db_storage.atomic_deep_update(["overview_autofill_index"], process_autofill)
 
     async def _check_and_trigger_autofill(self, row_id: str, first_col_content: str, config: dict):
         """
@@ -4661,8 +4746,8 @@ class OverviewTableGroup:
 
         # 2. 读取倒排索引进行精准查找
         # 数据结构: { "第一列标签名": { "填入的主内容": ["项目A", "项目B"] } }
-        index_data = db_storage.get_item("overview_autofill_index", {})
-        target_projects = index_data.get(first_col_label, {}).get(first_col_content, [])
+        INDEX_DATA = db_storage.get_item("overview_autofill_index", {})
+        target_projects = INDEX_DATA.get(first_col_label, {}).get(first_col_content, [])
         # 排除当前项目，防止自引用循环
         target_projects = [p for p in target_projects if p != self.project]
 
@@ -4671,11 +4756,11 @@ class OverviewTableGroup:
 
         if target_projects:
             for proj in target_projects:
-                proj_data = db_storage.get_item(f"{proj}_over_data", {})
-                if not proj_data:
+                PROJ_DATA = db_storage.get_item(f"{proj}_over_data", {})
+                if not PROJ_DATA:
                     continue
 
-                first_col_data = proj_data.get(first_col_label, {})
+                first_col_data = PROJ_DATA.get(first_col_label, {})
                 for chip in first_col_data.values():
                     if chip.get("content") == first_col_content and chip.get("enabled") is True:
                         target_row_id = chip.get("row_id")
@@ -4686,7 +4771,7 @@ class OverviewTableGroup:
                         for col_cfg in subsequent_configs:
                             label = col_cfg["label"]
                             title = col_cfg["title"]
-                            col_data = proj_data.get(label, {})
+                            col_data = PROJ_DATA.get(label, {})
                             # 获取同单元格内的所有激活 chip（支持多元素克隆）
                             col_chips = [
                                 c
@@ -4842,15 +4927,16 @@ class OverviewTableGroup:
         【重构：废除全量快照覆盖，改用点对点精准打击，并完美保留历史追溯台账】
         """
         # 仅将 overview_data 作为“只读地图”来寻找目标
-        overview_data = db_storage.get_item(f"{self.project}_over_data", {})
+        OVERVIEW_DATA = db_storage.get_item(f"{self.project}_over_data", {})
 
-        for related_label, chip_dic in overview_data.items():
+        for related_label, chip_dic in OVERVIEW_DATA.items():
+            # 标签存在关联选择清单里，且属于被勾选的 或 用户勾选了全部
             if related_label in related_select_dic and (related_select_dic[related_label] or all_related_bool):
                 for related_chip_id, chip_data in chip_dic.items():
                     over_chip_ver_li = [
                         int(float(k))
                         for k in chip_data.get("select_activ_dic", {}).keys()
-                        if str(k).replace(".", "", 1).isdigit()
+                        if str(k).replace(".", "", 1).isdigit()  # 替换掉第一个小点后，判断字符串是否全部为数字
                     ]
                     if not over_chip_ver_li:
                         continue
@@ -4872,56 +4958,47 @@ class OverviewTableGroup:
                                 [f"{self.project}_over_data", related_label, related_chip_id], new_chip_data
                             )
 
-                        # --- 2. 独立更新 连带影响的历史台账（点对点写入） ---
-                        open_dic = copy.deepcopy(
-                            db_storage.get_deep_item(
-                                [f"{self.project}_over_related_record", related_label, related_chip_id, "open"], {}
-                            )
-                        )
+                        # --- 独立更新 连带影响的历史台账（原子追加） ---
+                    time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    current_user = app.storage.user.get("current_user", "匿名用户")
+                    record_entry = {
+                        "operate_user": current_user,
+                        "operate_type": type,
+                        "operate_chip_content": chip_text,
+                        "operate_chip_state": chip_state,
+                    }
 
-                        time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        current_user = app.storage.user.get("current_user", "匿名用户")
-                        record_entry = {
-                            "operate_user": current_user,
-                            "operate_type": type,
-                            "operate_chip_content": chip_text,
-                            "operate_chip_state": chip_state,
-                        }
+                    # 获取需要用于初始化的变量（如果原记录不存在时需要）
+                    related_role = (
+                        app.storage.general.get("over_config_data_flat", {})
+                        .get(related_label, {})
+                        .get("role", "匿名用户")
+                    )
+                    related_user = (
+                        app.storage.general.get("overview_role", {})
+                        .get(self.project, {})
+                        .get(related_role, {})
+                        .get("latest_user", "匿名用户")
+                    )
 
-                        if open_dic:
-                            # 已有打开记录，追加本次影响操作
-                            open_dic["record"][time_str] = record_entry
-                            await db_storage.set_deep_item(
-                                [f"{self.project}_over_related_record", related_label, related_chip_id, "open"],
-                                open_dic,
-                            )
-                        else:
-                            # 第一次被影响，新建打开记录
-                            related_role = (
-                                app.storage.general.get("over_config_data_flat", {})
-                                .get(related_label, {})
-                                .get("role", "匿名用户")
-                            )
-                            related_user = (
-                                app.storage.general.get("overview_role", {})
-                                .get(self.project, {})
-                                .get(related_role, {})
-                                .get("latest_user", "匿名用户")
-                            )
-
-                            new_open_dic = {
+                    def process_open_record(open_dic):
+                        if not open_dic:  # 第一次被影响，新建打开记录
+                            return {
                                 "open_time": time_str,
                                 "open_related_user": related_user,
                                 "close_time": "",
                                 "close_related_user": "",
                                 "record": {time_str: record_entry},
                             }
-                            await db_storage.set_deep_item(
-                                [f"{self.project}_over_related_record", related_label, related_chip_id, "open"],
-                                new_open_dic,
-                            )
+                        else:  # 已有打开记录，追加本次影响操作
+                            open_dic.setdefault("record", {})[time_str] = record_entry
+                            return open_dic
 
-        # 彻底移除原有的：await db_storage.set_item(f"{self.project}_over_data", overview_data)
+                    # 执行原子更新
+                    await db_storage.atomic_deep_update(
+                        [f"{self.project}_over_related_record", related_label, related_chip_id, "open"],
+                        process_open_record,
+                    )
 
     def _select_set_activ_dialog(self, chip_id, chip_text="", config=None):
         if config is None:
@@ -4931,7 +5008,7 @@ class OverviewTableGroup:
 
         with self.activ_dialog, ui.card().classes("w-1/2"):
             ui.label("选择概述生效的需求版本").classes("text-lg font-bold")
-            select_activ_dic = db_storage.get_deep_item(
+            SELECT_ACTIV_DIC = db_storage.get_deep_item(
                 [f"{self.project}_over_data", label, chip_id, "select_activ_dic"], {}
             )
 
@@ -4940,14 +5017,14 @@ class OverviewTableGroup:
 
             if app.storage.general["over_change_broadcast"][self.project][chip_id] and len(
                 app.storage.general["over_change_broadcast"][self.project][chip_id]["select_activ_dic"]
-            ) == len(select_activ_dic):
+            ) == len(SELECT_ACTIV_DIC):
                 editor_list = app.storage.general["over_change_broadcast"][self.project][chip_id]["editor"]
                 editor_list.append(app.storage.user.get("current_user", "匿名用户"))
                 app.storage.general["over_change_broadcast"][self.project][chip_id]["editor"] = list(set(editor_list))
             else:
                 app.storage.general["over_change_broadcast"][self.project][chip_id] = {
                     "editor": [app.storage.user.get("current_user", "匿名用户")],
-                    "select_activ_dic": copy.deepcopy(select_activ_dic),
+                    "select_activ_dic": copy.deepcopy(SELECT_ACTIV_DIC),
                 }
 
             ui_spinner = ui.spinner(type="hourglass", size="md", color="amber-8", thickness=8.0)
@@ -4963,11 +5040,11 @@ class OverviewTableGroup:
                         select_label,
                     )
 
-            open_dic = db_storage.get_deep_item([f"{self.project}_over_related_record", label, chip_id, "open"], {})
+            OPEN_DIC = db_storage.get_deep_item([f"{self.project}_over_related_record", label, chip_id, "open"], {})
 
-            if open_dic:
+            if OPEN_DIC:
                 ui.label("本次状态变化由以下概述调整引起：").classes("text-base font-bold text-brown")
-                for time_key, record in open_dic.get("record", {}).items():
+                for time_key, record in OPEN_DIC.get("record", {}).items():
                     op_type = record.get("operate_type", "")
                     if op_type == "add_chip":
                         record_label = ui.label(
@@ -5014,11 +5091,11 @@ class OverviewTableGroup:
             app.storage.general["over_change_broadcast"][self.project].pop(chip_id, None)
 
     def _check_version_updated(self, chip_id, new_select_activ_dic, chip_text, config) -> bool:
-        select_activ_dic = db_storage.get_deep_item(
+        SELECT_ACTIV_DIC = db_storage.get_deep_item(
             [f"{self.project}_over_data", config["label"], chip_id, "select_activ_dic"], {}
         )
 
-        if len(new_select_activ_dic) != len(select_activ_dic):
+        if len(new_select_activ_dic) != len(SELECT_ACTIV_DIC):
             ui.notify(
                 "需求刚刚升级了，各项概述的激活配置需要重新确定！",
                 type="warning",
@@ -5046,8 +5123,8 @@ class OverviewTableGroup:
             if label == first_col_label:
                 continue
 
-            chips_dict = db_storage.get_deep_item([f"{self.project}_over_data", label], {})
-            for chip_id, chip_data in chips_dict.items():
+            CHIPS_DICT = db_storage.get_deep_item([f"{self.project}_over_data", label], {})
+            for chip_id, chip_data in CHIPS_DICT.items():
                 if chip_data.get("row_id") == row_id:
                     # 检查当前是否尚未失活 (True 或 None)
                     current_state = chip_data.get("select_activ_dic", {}).get(req_max_ver)
@@ -5144,15 +5221,25 @@ class OverviewTableGroup:
                 self.cancel_checkbox_change(chip_id)
                 ui_spinner.set_visibility(False)
 
-                open_dic = db_storage.get_deep_item([f"{self.project}_over_related_record", label, chip_id, "open"], {})
+                time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-                if open_dic:
-                    open_dic["close_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                def process_close_record(chip_record_dic):
+                    if not chip_record_dic or "open" not in chip_record_dic:
+                        return chip_record_dic
+
+                    # 提取并修改 open 记录
+                    open_dic = chip_record_dic.pop("open")  # 从字典中弹出（删除 "open" 键）
+                    open_dic["close_time"] = time_str
                     open_dic["close_related_user"] = creator
-                    await db_storage.del_deep_item([f"{self.project}_over_related_record", label, chip_id, "open"])
-                    await db_storage.set_deep_item(
-                        [f"{self.project}_over_related_record", label, chip_id, open_dic["close_time"]], open_dic
-                    )
+
+                    # 存入归档键
+                    chip_record_dic[time_str] = open_dic
+                    return chip_record_dic
+
+                # 在父层级执行原子更新，同时完成删除和新增
+                await db_storage.atomic_deep_update(
+                    [f"{self.project}_over_related_record", label, chip_id], process_close_record
+                )
 
                 self._show_related_chip_select_dialog(chip_text, chip_state, "activ_change", config)
                 # 💡 核心新增：级联失活判断逻辑
@@ -5260,10 +5347,10 @@ class OverviewTableGroup:
         title = config["title"]
 
         # 1. 获取该列所有数据
-        raw_data = db_storage.get_deep_item([f"{self.project}_over_data", label], {})
+        RAW_DATA = db_storage.get_deep_item([f"{self.project}_over_data", label], {})
         history_list = []
 
-        for chip_id, chip_info in raw_data.items():
+        for chip_id, chip_info in RAW_DATA.items():
             # 获取创建时间 (timestamp 字典中最早的时间)
             timestamps = chip_info.get("timestamp", {})
             creation_time = min(timestamps.keys()) if timestamps else "N/A"

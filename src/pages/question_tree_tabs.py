@@ -8,7 +8,6 @@ from collections import defaultdict
 from nicegui import app, ui
 
 # --- 严格按照项目结构导入 ---
-from .. import db_storage
 from ..config import BASE_DIR, IMG_DIR, PRESET_AVATARS
 from ..utils import get_cache_busted_path, logout
 

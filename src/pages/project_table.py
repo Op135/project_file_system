@@ -739,7 +739,7 @@ def project_table_page():
             if s == "all" or (s != "-" and s in row_data["project"]) or (s == "-" and s not in row_data["project"]):
                 # 获取当前行数据所属项目名
                 project_name = row_data["sub_project"]
-                overview_data = db_storage.get_item(f"{project_name}_over_data", {})
+                OVERVIEW_DATA = db_storage.get_item(f"{project_name}_over_data", {})
 
                 # 遍历服务器的项目与概述数据对照字典
                 # 不在这个字典里的数据列，不会被修改，即显示固定内容
@@ -757,30 +757,6 @@ def project_table_page():
 
                         # 获取负责人名
                         charge_person = show_str.split("：")[1] if show_str else ""
-                        # 当前项目的当前over_key_li角色比如“光学”，存在最近编辑者
-                        # if charge_person:
-                        #     selected_bool = False
-                        #     break_bool = False
-                        #     for class_dic in overview_data.values():
-                        #         if break_bool:
-                        #             break
-                        #         for ver_dic in class_dic.values():
-                        #             if break_bool:
-                        #                 break
-                        #             select_activ_dic = ver_dic.get("select_activ_dic", {})
-                        #             if select_activ_dic:
-                        #                 max_ver = max([int(float(ver)) for ver in select_activ_dic.keys()])
-                        #                 # chip处于待选择激活状态下 且 over_key_li角色比如“光学”和当前chip的编辑角色一致
-                        #                 if select_activ_dic[f"{max_ver}.0"] is None and over_key_li == ver_dic.get(
-                        #                     "role", ""
-                        #                 ):
-                        #                     selected_bool = True
-                        #                     # 查到一个需要改变角色显示状态的就不要再继续遍历了
-                        #                     break_bool = True
-                        #     if selected_bool:
-                        #         # 处理表格显示信息
-                        #         charge_person = f"待{charge_person}\n选概述"
-
                         row_data[pro_key] = charge_person
 
                     # 其它需要动态更新且配置非空 或 如：定制要点、需求输入等不用配置也固定动态更新的列
@@ -789,8 +765,8 @@ def project_table_page():
                         # 遍历对照配置列表（可能一个项目简介配置了多个对应的概述数据项）
                         for over_key in over_key_li:
                             # 当前概述数据项label存在服务器概述数据对应项目里，说明可能存在概述内容
-                            if over_key in overview_data:
-                                chip_data_li = overview_data.get(over_key, {}).values()
+                            if over_key in OVERVIEW_DATA:
+                                chip_data_li = OVERVIEW_DATA.get(over_key, {}).values()
                                 # 遍历概述内容每个chip数据
                                 for chip_data in chip_data_li:
                                     # 该chip内容是激活 或者 待定状态 才显示

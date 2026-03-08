@@ -13,7 +13,6 @@ from src.tools.mode_calculator import ModeCalculator
 from src.tools.simple_coupling_calculator import SimpleCouplingCalculator
 from src.tools.spherical_lens_calculator import SphericalLensCalculator
 
-from .. import db_storage
 from ..config import BASE_DIR, IMG_DIR, OVER_DIR, PRESET_AVATARS, REQ_DIR, REQ_REMOVE_DIR
 from ..utils import (
     get_cache_busted_path,

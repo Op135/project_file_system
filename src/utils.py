@@ -11,7 +11,6 @@ import os
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Final
 
 from nicegui import app, ui
 from nicegui.events import KeyEventArguments
@@ -104,8 +103,6 @@ def update_overview_charge_pending_dic(scope, des_user="", project_name="", des_
 
         # 2. 遍历项目：将 I/O 读取提升到项目层级
         for project, project_dic in app.storage.general.get("overview_role", {}).items():
-            project_over_data = db_storage.get_item(f"{project}_over_data", {})
-
             for role, charge_user_dic in project_dic.items():
                 latest_user_raw = charge_user_dic.get("latest_user", "")
                 latest_user = latest_user_raw.split("：")[1] if "：" in latest_user_raw else latest_user_raw
@@ -126,9 +123,9 @@ def update_overview_charge_pending_dic(scope, des_user="", project_name="", des_
                     elif nature == "需填":
                         user_proj_dict.setdefault(label, "缺需填")
 
-                    label_chip_dic = project_over_data.get(label, {}).values()
+                    LABEL_CHIP_DIC = db_storage.get_deep_item([f"{project}_over_data", label], {}).values()
 
-                    if not label_chip_dic:
+                    if not LABEL_CHIP_DIC:
                         if nature == "必填":
                             user_proj_dict[label] = "缺必填"
                         elif nature == "需填":
@@ -140,7 +137,7 @@ def update_overview_charge_pending_dic(scope, des_user="", project_name="", des_
                     # 4. 短路状态判定
                     has_none = False
                     has_active = False
-                    for chip_info in label_chip_dic:
+                    for chip_info in LABEL_CHIP_DIC:
                         state = chip_info.get("enabled")
                         if state is None:
                             has_none = True
@@ -189,9 +186,9 @@ def update_overview_charge_pending_dic(scope, des_user="", project_name="", des_
             elif nature == "需填":
                 user_proj_dict.setdefault(des_label, "缺需填")
 
-            label_chip_dic = db_storage.get_deep_item([f"{project_name}_over_data", des_label], {}).values()
+            LABEL_CHIP_DIC = db_storage.get_deep_item([f"{project_name}_over_data", des_label], {}).values()
 
-            if not label_chip_dic:
+            if not LABEL_CHIP_DIC:
                 if nature == "必填":
                     user_proj_dict[des_label] = "缺必填"
                 elif nature == "需填":
@@ -201,7 +198,7 @@ def update_overview_charge_pending_dic(scope, des_user="", project_name="", des_
             else:
                 has_none = False
                 has_active = False
-                for chip_info in label_chip_dic:
+                for chip_info in LABEL_CHIP_DIC:
                     state = chip_info.get("enabled")
                     if state is None:
                         has_none = True
@@ -770,58 +767,75 @@ async def set_overview_active_state(project_name: str, ver: str) -> None:
     4. 最高版本为True或None的，生成为None的更高版本记录，其它False的，生成为False的更高版本记录。
     """
     req_ver = int(float(ver))
-    overview_data = db_storage.get_item(f"{project_name}_over_data", {})
-    # 遍历该项目概述内容，字典键为概述的各分类项，值为该项下chip字典
-    for chip_dic in overview_data.values():
-        # 遍历各个chip数据
-        for chip_data in chip_dic.values():
-            # 将chip数据里的选项激活设置字典的键，也就是版本整理成列表
-            over_chip_ver_li = [int(float(k)) for k in chip_data.get("select_activ_dic", {}).keys()]
-            # 如果列表非空
-            if over_chip_ver_li:
-                # 获取选项激活设置里最大的版本值
-                max_over_ver = max(over_chip_ver_li)
+    # 状态标记：用于记录是否需要触发前端 UI 通知
+    ui_warning_needed = False
+    warning_max_ver = 0
 
-                # 适用于正常项目迭代，无论是原项目升版本异或其它项目衍生过来升版本，
-                # 概述内容不会复制，需求版本值肯定大于激活设置的最大版本值
-                # 由指定版本衍生到另外一个新项目，需求版本2.0，概述复制了参照项目的指定版本激活设置，并先记录为目标项目1.0版本概述，需求版本值肯定大于激活设置的最大版本值
-                if req_ver > max_over_ver:
-                    # 获取激活设置最大版本值对应的布尔设置值
-                    activ_max_bool = chip_data["select_activ_dic"][f"{max_over_ver}.0"]
-                    # 从现有激活设置最大版本值+1到当前需求版本值开始生成键值对
-                    for key in range(max_over_ver + 1, req_ver + 1):
-                        # 新版本值均设置为激活设置最大值一样的布尔值
-                        # chip_data["select_activ_dic"][f"{key}.0"] = activ_max_bool
+    # 1. 定义数据更新的纯逻辑函数（将在锁的保护下执行）
+    def process_active_state(overview_data):
+        nonlocal ui_warning_needed, warning_max_ver  # 允许修改外部变量以回传状态
 
-                        # 新版本值均设置为None，为第三状态值，待工程师处理
-                        # chip_data["select_activ_dic"][f"{key}.0"] = None
+        if not overview_data:
+            return overview_data
+        # 遍历该项目概述内容，字典键为概述的各分类项，值为该项下chip字典
+        for chip_dic in overview_data.values():
+            # 遍历各个chip数据
+            for chip_data in chip_dic.values():
+                # 将chip数据里的选项激活设置字典的键，也就是版本整理成列表
+                over_chip_ver_li = [int(float(k)) for k in chip_data.get("select_activ_dic", {}).keys()]
+                # 如果列表非空
+                if over_chip_ver_li:
+                    # 获取选项激活设置里最大的版本值
+                    max_over_ver = max(over_chip_ver_li)
 
-                        # 如果最大版本值为True，则新版本都设置为None
-                        if activ_max_bool or activ_max_bool is None:
-                            chip_data["select_activ_dic"][f"{key}.0"] = None
-                        # 如果最大版本值为False或者None，则新版本都设置为False
-                        else:
-                            chip_data["select_activ_dic"][f"{key}.0"] = False
-                # 衍生项目且复制了2.0及以上版本的概述内容
-                # 最高版本的激活状态要改成None，让其黄色显示
-                else:
-                    ui.notify(
-                        f"传入的需求版本{req_ver}小于{project_name}概述激活记录最高版本{max_over_ver}，不做处理。",
-                        type="warning",
-                        position="bottom",
-                        timeout=3000,
-                        progress=True,
-                        close_button="✖",
-                    )
+                    # 适用于正常项目迭代，无论是原项目升版本异或其它项目衍生过来升版本，
+                    # 概述内容不会复制，需求版本值肯定大于激活设置的最大版本值
+                    # 由指定版本衍生到另外一个新项目，需求版本2.0，概述复制了参照项目的指定版本激活设置，并先记录为目标项目1.0版本概述，需求版本值肯定大于激活设置的最大版本值
+                    if req_ver > max_over_ver:
+                        # 获取激活设置最大版本值对应的布尔设置值
+                        activ_max_bool = chip_data["select_activ_dic"][f"{max_over_ver}.0"]
+                        # 从现有激活设置最大版本值+1到当前需求版本值开始生成键值对
+                        for key in range(max_over_ver + 1, req_ver + 1):
+                            # 新版本值均设置为激活设置最大值一样的布尔值
+                            # chip_data["select_activ_dic"][f"{key}.0"] = activ_max_bool
 
-                if chip_data["select_activ_dic"][f"{req_ver}.0"] is None:
-                    # 将这个存在未手动选择激活状态的chip的相关状态配置成特殊显示
-                    # 设置为None，这个chip的内容在项目总表展示时才会表明待选择处理
-                    chip_data["enabled"] = None
-                    chip_data["icon"] = "question_mark"
-                    chip_data["bg_color"] = "bg-amber-5"
-    if overview_data:
-        await db_storage.set_item(f"{project_name}_over_data", overview_data)
+                            # 新版本值均设置为None，为第三状态值，待工程师处理
+                            # chip_data["select_activ_dic"][f"{key}.0"] = None
+
+                            # 如果最大版本值为True，则新版本都设置为None
+                            if activ_max_bool or activ_max_bool is None:
+                                chip_data["select_activ_dic"][f"{key}.0"] = None
+                            # 如果最大版本值为False或者None，则新版本都设置为False
+                            else:
+                                chip_data["select_activ_dic"][f"{key}.0"] = False
+                    else:
+                        # 只记录状态，不执行 ui.notify
+                        ui_warning_needed = True
+                        warning_max_ver = max_over_ver
+
+                    if chip_data["select_activ_dic"][f"{req_ver}.0"] is None:
+                        # 将这个存在未手动选择激活状态的chip的相关状态配置成特殊显示
+                        # 设置为None，这个chip的内容在项目总表展示时才会表明待选择处理
+                        chip_data["enabled"] = None
+                        chip_data["icon"] = "question_mark"
+                        chip_data["bg_color"] = "bg-amber-5"
+            return overview_data
+
+    # 2. 执行原子更新
+    await db_storage.atomic_deep_update([f"{project_name}_over_data"], process_active_state)
+
+    # 3. 释放锁后，再根据记录的状态安全地触发前端 UI 通知
+    if ui_warning_needed:
+        from nicegui import ui  # 确保作用域内可用
+
+        ui.notify(
+            f"传入的需求版本{req_ver}小于{project_name}概述激活记录最高版本{warning_max_ver}，不做处理。",
+            type="warning",
+            position="bottom",
+            timeout=3000,
+            progress=True,
+            close_button="✖",
+        )
 
 
 async def copy_overview_data(project_name, version, target_project_name) -> None:
@@ -834,44 +848,50 @@ async def copy_overview_data(project_name, version, target_project_name) -> None
         target_project_name：复制到的目标项目
 
     """
-    overview_data = db_storage.get_item(f"{project_name}_over_data", {})
-    # 整理设置1.0版本概述激活状态，清空参照项目可能多出的版本激活记录，只复制参照版激活记录
-    for chip_dic in overview_data.values():
-        # 遍历各个chip数据
-        for chip_data in chip_dic.values():
-            # 获取参考版本记录的激活状态
-            reference_state = chip_data["select_activ_dic"][version]
-            # 清空激活状态字典
-            chip_data["select_activ_dic"] = {}
-            # 1.0版本概述状态保留参考项目概述的参考版本记录
-            chip_data["select_activ_dic"]["1.0"] = reference_state
-            # 获取参考版本激活修改记录最后一个记录
-            last_timestamp = chip_data["timestamp"].popitem()
-            # 将记录跟1.0版本记录对齐
-            last_timestamp[1]["select_activ_dic"] = {"1.0": reference_state}
-            # 清空激活状态修改记录
-            chip_data["timestamp"] = {}
-            chip_data["timestamp"][last_timestamp[0]] = last_timestamp[1]
-            # 对齐设置chip状态参数
-            if reference_state:
-                chip_data["enabled"] = True
-                if chip_data["type"] == "file":
-                    chip_data["icon"] = "attachment"
-                if chip_data["type"] == "image":
-                    chip_data["icon"] = "image"
+    # 1. 读取源数据（纯读操作，不加锁）
+    SOURCE_OVERVIEW_DATA = db_storage.get_item(f"{project_name}_over_data", {})
+    if not SOURCE_OVERVIEW_DATA:
+        return
+
+    # 2. 定义处理逻辑（将源数据转换为目标新数据）
+    def init_target_data(current_target_data):
+        # 如果目标项目已经有数据了，出于安全考虑，您可以选择直接返回现有数据(不覆盖)，或者进行合并
+        # 这里假设您的业务逻辑是：只有当目标是空的时候才执行复制初始化
+        if current_target_data:
+            return current_target_data
+
+        # 在这里直接修改源数据副本，安全且不污染原始缓存
+        for chip_dic in SOURCE_OVERVIEW_DATA.values():
+            for chip_data in chip_dic.values():
+                reference_state = chip_data.get("select_activ_dic", {}).get(version)
+                chip_data["select_activ_dic"] = {"1.0": reference_state}
+
+                if chip_data.get("timestamp"):
+                    last_timestamp = chip_data["timestamp"].popitem()
+                    last_timestamp[1]["select_activ_dic"] = {"1.0": reference_state}
+                    chip_data["timestamp"] = {last_timestamp[0]: last_timestamp[1]}
+
+                if reference_state:
+                    chip_data["enabled"] = True
+                    chip_data["icon"] = (
+                        "attachment"
+                        if chip_data.get("type") == "file"
+                        else ("image" if chip_data.get("type") == "image" else None)
+                    )
+                    chip_data["bg_color"] = "bg-light-blue-1"
+                elif reference_state is None:
+                    chip_data["enabled"] = None
+                    chip_data["icon"] = "question_mark"
+                    chip_data["bg_color"] = "bg-amber-5"
                 else:
-                    chip_data["icon"] = None
-                chip_data["bg_color"] = "bg-light-blue-1"
-            elif reference_state is None:
-                chip_data["enabled"] = None
-                chip_data["icon"] = "question_mark"
-                chip_data["bg_color"] = "bg-amber-5"
-            else:
-                chip_data["enabled"] = False
-                chip_data["icon"] = "block"
-                chip_data["bg_color"] = "bg-grey-5"
-    if overview_data:
-        await db_storage.set_item(f"{target_project_name}_over_data", overview_data)
+                    chip_data["enabled"] = False
+                    chip_data["icon"] = "block"
+                    chip_data["bg_color"] = "bg-grey-5"
+
+        return SOURCE_OVERVIEW_DATA
+
+    # 3. 原子化地更新目标项目
+    await db_storage.atomic_deep_update([f"{target_project_name}_over_data"], init_target_data)
 
 
 def overview_role_update(project_name, input_role="all_update"):
@@ -882,7 +902,7 @@ def overview_role_update(project_name, input_role="all_update"):
     当input_role传入具体role时，更新项目指定角色的责任人信息；
     """
     # 将服务器概述资料获取到
-    OVERVIEW_DATA: Final[dict] = db_storage.get_item(f"{project_name}_over_data", {})
+    OVERVIEW_DATA = db_storage.get_item(f"{project_name}_over_data", {})
     # 设置时间对象识别格式
     format_string = "%Y-%m-%d %H:%M:%S"
     # 如果项目名不存在服务器概述数据的键里

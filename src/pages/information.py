@@ -8,7 +8,6 @@ from pathlib import Path
 
 from nicegui import app, ui
 
-from .. import db_storage
 from ..config import BASE_DIR, IMG_DIR, OVER_DIR, PRESET_AVATARS, REQ_DIR, REQ_REMOVE_DIR
 from ..utils import (
     delete_file,
