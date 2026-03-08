@@ -3074,6 +3074,8 @@ class OverviewTableGroup:
         self.current_config = {}  # 当前正在操作的列配置（非常关键，用于让弹窗知道在处理哪个字段）
         self.current_target_row_id = None  # 当前正在操作的单元格所在行id
         self.permitted_configs = {}
+        self.ordered_row_ids = []
+
         user_role = app.storage.user.get("current_role", "")
         for config in self.configs:
             # 只有当用户具备读取或编辑权限时，该列才会被加入最终渲染和监控的列表中
@@ -5200,6 +5202,7 @@ class OverviewTableGroup:
                             "creator": creator,
                             "select_activ_dic": copy.deepcopy(new_chip_data["select_activ_dic"]),
                         }
+                        await db_storage.set_deep_item([f"{self.project}_over_data", label, chip_id], new_chip_data)
 
                         time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
