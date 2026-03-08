@@ -193,7 +193,6 @@ def update_overview_charge_pending_dic(scope, des_user="", project_name="", des_
         app.storage.general["overview_charge_pending"] = new_pending_storage
 
     elif scope == "local":
-        print(des_label)
         # Local 模式直接操作原字典，因为它追求 O(1) 的响应
         pending_storage = app.storage.general.setdefault("overview_charge_pending", {})
 
@@ -255,11 +254,10 @@ def update_overview_charge_pending_dic(scope, des_user="", project_name="", des_
 
                 if chip_activ_li and len(chip_activ_li) == len(first_col_chip_activ_li):
                     has_active = True
-                print(chip_activ_li, first_col_chip_activ_li)
+
                 if has_none:
                     user_proj_dict[des_label] = "有待定"
                 elif has_active:
-                    print(des_label)
                     user_proj_dict.pop(des_label, None)
                 else:
                     if nature == "必填":

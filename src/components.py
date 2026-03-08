@@ -3316,7 +3316,7 @@ class OverviewTableGroup:
                     dot_color = "text-red"
                     if chip_col_state == "有待定":
                         dot_color = "text-orange"
-                    elif des_user == "——" or chip_col_state is None:
+                    elif des_user == "——" or des_user and chip_col_state is None:
                         dot_color = "text-green"
 
                     # 💡 恢复 2：让表头变成可点击，并绑定 Shift+Click 事件
@@ -5191,13 +5191,13 @@ class OverviewTableGroup:
                         new_chip_data["bg_color"] = "bg-grey-5"
 
                         # 3. 产生标准操作记录
-                        history_creator_label = f"{creator}(连带失活)"
-                        new_chip_data["creator"] = history_creator_label
+                        # history_creator_label = f"{creator}(连带失活)"
+                        new_chip_data["creator"] = creator
 
                         if "timestamp" not in new_chip_data:
                             new_chip_data["timestamp"] = {}
                         new_chip_data["timestamp"][time_str] = {
-                            "creator": history_creator_label,
+                            "creator": creator,
                             "select_activ_dic": copy.deepcopy(new_chip_data["select_activ_dic"]),
                         }
 
@@ -5211,7 +5211,7 @@ class OverviewTableGroup:
 
                         if open_dic:
                             open_dic["close_time"] = time_str
-                            open_dic["close_related_user"] = history_creator_label
+                            open_dic["close_related_user"] = creator
                             await db_storage.del_deep_item(
                                 [f"{self.project}_over_related_record", label, chip_id, "open"]
                             )
