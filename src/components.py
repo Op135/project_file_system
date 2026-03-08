@@ -4615,13 +4615,27 @@ class OverviewTableGroup:
                 [f"{self.project}_over_data", current_label], self._move_data, chip_data["id"], -1
             )
         else:
-            # 💡 其他列：跨行跳跃（换行 ID 操作）
-            if current_idx > 0:  # 如果不是第一行，则允许上移
+            if current_idx > 0:
+                req_max_ver = app.storage.general["project_req_max_ver"].get(self.project, "1.0")
+                FIRST_COL_CHIPS = db_storage.get_deep_item([f"{self.project}_over_data", first_col_label], {})
                 target_row_id = self.ordered_row_ids[current_idx - 1]
-                chip_data["row_id"] = target_row_id
-                await db_storage.set_deep_item(
-                    [f"{self.project}_over_data", current_label, chip_data["id"], "row_id"], target_row_id
-                )
+                # 💡 其他列：跨行跳跃（换行 ID 操作）
+                while current_idx > 0:  # 如果不是第一行，则允许上移
+                    if any(
+                        [
+                            chip_dic.get("select_activ_dic", {}).get(req_max_ver, False)
+                            for chip_dic in FIRST_COL_CHIPS.values()
+                            if chip_dic.get("row_id", "") == target_row_id
+                        ]
+                    ):
+                        chip_data["row_id"] = target_row_id
+                        await db_storage.set_deep_item(
+                            [f"{self.project}_over_data", current_label, chip_data["id"], "row_id"], target_row_id
+                        )
+                        break
+                    else:
+                        current_idx -= 1
+                        target_row_id = self.ordered_row_ids[current_idx - 1]
 
         self.last_state_hashes = {}
         await self._update_display()
@@ -4644,13 +4658,27 @@ class OverviewTableGroup:
                 [f"{self.project}_over_data", current_label], self._move_data, chip_data["id"], 1
             )
         else:
-            # 💡 其他列：跨行跳跃（换行 ID 操作）
-            if current_idx < len(self.ordered_row_ids) - 1:  # 如果不是最后一行，则允许下移
+            if current_idx < len(self.ordered_row_ids) - 1:
+                req_max_ver = app.storage.general["project_req_max_ver"].get(self.project, "1.0")
+                FIRST_COL_CHIPS = db_storage.get_deep_item([f"{self.project}_over_data", first_col_label], {})
                 target_row_id = self.ordered_row_ids[current_idx + 1]
-                chip_data["row_id"] = target_row_id
-                await db_storage.set_deep_item(
-                    [f"{self.project}_over_data", current_label, chip_data["id"], "row_id"], target_row_id
-                )
+                # 💡 其他列：跨行跳跃（换行 ID 操作）
+                while current_idx < len(self.ordered_row_ids) - 1:  # 如果不是最后一行，则允许下移
+                    if any(
+                        [
+                            chip_dic.get("select_activ_dic", {}).get(req_max_ver, False)
+                            for chip_dic in FIRST_COL_CHIPS.values()
+                            if chip_dic.get("row_id", "") == target_row_id
+                        ]
+                    ):
+                        chip_data["row_id"] = target_row_id
+                        await db_storage.set_deep_item(
+                            [f"{self.project}_over_data", current_label, chip_data["id"], "row_id"], target_row_id
+                        )
+                        break
+                    else:
+                        current_idx += 1
+                        target_row_id = self.ordered_row_ids[current_idx + 1]
 
         self.last_state_hashes = {}
         await self._update_display()
