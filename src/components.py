@@ -5201,24 +5201,25 @@ class OverviewTableGroup:
                             "select_activ_dic": copy.deepcopy(new_chip_data["select_activ_dic"]),
                         }
 
-                        # 4. 执行单次深层覆盖，绝对保证状态与UI的强制绑定
-                        await db_storage.set_deep_item([f"{self.project}_over_data", label, chip_id], new_chip_data)
+                        time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-                        # 5. 闭环历史打开记录 (保持原有逻辑)
-                        open_dic = db_storage.get_deep_item(
-                            [f"{self.project}_over_related_record", label, chip_id, "open"], {}
-                        )
+                        def process_close_record(chip_record_dic):
+                            if not chip_record_dic or "open" not in chip_record_dic:
+                                return chip_record_dic
 
-                        if open_dic:
+                            # 提取并修改 open 记录
+                            open_dic = chip_record_dic.pop("open")  # 从字典中弹出（删除 "open" 键）
                             open_dic["close_time"] = time_str
                             open_dic["close_related_user"] = creator
-                            await db_storage.del_deep_item(
-                                [f"{self.project}_over_related_record", label, chip_id, "open"]
-                            )
-                            await db_storage.set_deep_item(
-                                [f"{self.project}_over_related_record", label, chip_id, open_dic["close_time"]],
-                                open_dic,
-                            )
+
+                            # 存入归档键
+                            chip_record_dic[time_str] = open_dic
+                            return chip_record_dic
+
+                        # 在父层级执行原子更新，同时完成删除和新增
+                        await db_storage.atomic_deep_update(
+                            [f"{self.project}_over_related_record", label, chip_id], process_close_record
+                        )
 
     def _get_first_col_any_activ_bool(self, chip_row_id, label, chip_id, req_max_ver) -> bool:
         if chip_row_id is None:
@@ -5526,9 +5527,9 @@ class OverviewTableGroup:
 
         if search_folder_according_li:
             for according in search_folder_according_li:
-                for data in db_storage.get_deep_item([f"{self.project}_over_data", according], {}).values():
-                    if data["enabled"]:
-                        according_folder_name_li.append(data["content"])
+                for DATA in db_storage.get_deep_item([f"{self.project}_over_data", according], {}).values():
+                    if DATA["enabled"]:
+                        according_folder_name_li.append(DATA["content"])
             if not according_folder_name_li:
                 return target_path_list
             for folder_name in according_folder_name_li:
@@ -5934,11 +5935,11 @@ class OverviewTableGroup:
                 )
                 according_title = f"{according_title}\n{title_str}"
 
-                for data in db_storage.get_deep_item(
+                for DATA in db_storage.get_deep_item(
                     [f"{self.project}_over_data", search_folder_according], {}
                 ).values():
-                    if data["enabled"]:
-                        according_folder_name.append(data["content"])
+                    if DATA["enabled"]:
+                        according_folder_name.append(DATA["content"])
 
             if len(according_folder_name) < 1:
                 if self._edit_permission_judge(config, notify=False):

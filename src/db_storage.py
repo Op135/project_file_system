@@ -130,15 +130,23 @@ async def _internal_remove(key: str):
         raise  # 抛出异常
 
 
-def get_item(key: str, default: Any = None) -> Any:
+def get_item(key: str, default: Any = None, return_ref: bool = False) -> Any:
     """
     从内存缓存中获取数据。
-    【重要修复】：必须返回深拷贝，防止外部代码无意间修改缓存，导致下次写入时数据丢失。
+
+    :param key: 键名
+    :param default: 默认值
+    :param return_ref: 如果为 True，则返回原始内存引用（极快，但绝对禁止修改返回的对象！）；
+                       如果为 False（默认），返回深拷贝（安全，防篡改）。
+    :return: 查找到的值或默认值
     """
     val = _data_cache.get(key, default)
     if val is default or val is None:
         return default
-    return copy.deepcopy(val)
+    if return_ref:
+        return val  # 极速模式：直接返回引用
+
+    return copy.deepcopy(val)  # 安全模式：返回深拷贝
 
 
 async def set_item(key: str, value: Any):
@@ -187,13 +195,15 @@ async def remove_item(key: str) -> bool:
             return False
 
 
-def get_deep_item(path: List[str], default: Any = None) -> Any:
+def get_deep_item(path: List[str], default: Any = None, return_ref: bool = False) -> Any:
     """
     从 db_storage 中“即时获取”一个任意深度的值（深拷贝）。
     (这个函数是只读的，不需要等待或加锁)
 
     :param path: 键的路径列表，第一个必须是第一层键， 例如 ['overview_data', 'project_A', 'chip_1']
     :param default: 如果找不到，返回的默认值
+    :param return_ref: 如果为 True，则返回原始内存引用（极快，但绝对禁止修改返回的对象！）；
+                       如果为 False（默认），返回深拷贝（安全，防篡改）。
     :return: 查找到的值或默认值
     """
     if not path:
@@ -222,7 +232,9 @@ def get_deep_item(path: List[str], default: Any = None) -> Any:
             # 提前在路径中遇到 None
             return default
 
-    # 【重要修复】：同样必须返回深拷贝
+    if return_ref:
+        return current_level_data
+
     return copy.deepcopy(current_level_data)
 
 

@@ -3228,8 +3228,8 @@ async def requirement_page(type="", json_path="", project_name=""):
                     editor_scroll.set_visibility(True)
 
             # 渲染测试项编辑器
-            def render_test_editor(chip_data):
-                test_data = chip_data.get("test_select_data", {})
+            def render_test_editor(CHIP_DATA):
+                test_data = CHIP_DATA.get("test_select_data", {})
                 config = state["btn_config"] or {}
 
                 with test_ui_container:

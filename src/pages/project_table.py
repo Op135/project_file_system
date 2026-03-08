@@ -18,7 +18,6 @@ from ..utils import (
     overview_role_update,
     project_summary_update,
     project_table_update_config_update,
-    set_project_custom_labels,
     update_overview_charge_pending_dic,
 )
 
@@ -208,67 +207,54 @@ def project_table_page():
     table_dialog = ui.dialog()
 
     # === 新增功能：处理新增项目的逻辑 ===
-    def save_new_project_to_file(new_project_data):
-        """
-        读取JSON，插入新数据，按Key排序，保存文件，并更新内存缓存
-        """
+    # === 新增：将耗时同步逻辑封装为内部函数供线程调用 ===
+    def _sync_process_project_save(new_project_data, is_new=True):
+        """执行实际的文件读写和数据排序计算，在后台线程中运行"""
+        target_file = os.path.join(BASE_DIR, "data/project_summary.json")
+        data = {}
+        if os.path.exists(target_file):
+            with open(target_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        else:
+            data = copy.deepcopy(app.storage.general.get("project_summary", {}))
+
+        key = new_project_data["project_name"]
+
+        if is_new and key in data:
+            return False, f"项目 {key} 已存在！"
+        if not is_new and key not in data:
+            return False, f"项目 {key} 不存在，无法修改！"
+
+        save_value = {
+            "state": new_project_data["state"],
+            "model_notes": new_project_data["model_notes"],
+            "creation_date": new_project_data["creation_date"],
+            "introduction": new_project_data["introduction"],
+            "customer": new_project_data["customer"],
+        }
+        data[key] = save_value
+
+        sorted_keys = sorted(data.keys())
+        sorted_data = {k: data[k] for k in sorted_keys}
+
+        with open(target_file, "w", encoding="utf-8") as f:
+            json.dump(sorted_data, f, ensure_ascii=False, indent=4)
+
+        return True, key
+
+    async def save_new_project_to_file(new_project_data):
         try:
-            # 1. 读取现有文件
-            target_file = os.path.join(BASE_DIR, "data/project_summary.json")
-
-            # 如果找不到文件，尝试使用 storage 里的数据反向生成（兜底策略）
-            data = {}
-            if os.path.exists(target_file):
-                with open(target_file, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-            else:
-                # 假如文件路径配置比较复杂，这里仅作演示，实际请确保路径正确
-                data = copy.deepcopy(app.storage.general.get("project_summary", {}))
-
-            # 2. 检查是否已存在
-            project_name = new_project_data["project_name"]  # 这里仅作为临时变量名，实际JSON key是 sub_project
-
-            key = project_name
-
-            if key in data:
-                ui.notify(
-                    f"项目 {key} 已存在！",
-                    type="info",
-                    position="bottom",
-                    timeout=2000,
-                    progress=True,
-                    close_button="✖",
-                )
+            # === 性能优化：将文件读写推入后台线程执行 ===
+            success, msg = await asyncio.to_thread(_sync_process_project_save, new_project_data, True)
+            if not success:
+                ui.notify(msg, type="info", position="bottom", timeout=2000, progress=True, close_button="✖")
                 return False
 
-            # 3. 构造要保存的结构 (对应截图中的 Value 部分)
-            # 移除临时的 project_name 字段，保留数据字段
-            save_value = {
-                "state": new_project_data["state"],
-                "model_notes": new_project_data["model_notes"],
-                "creation_date": new_project_data["creation_date"],
-                "introduction": new_project_data["introduction"],
-                "customer": new_project_data["customer"],
-            }
-
-            # 4. 插入数据
-            data[key] = save_value
-
-            # 5. 排序逻辑：按 Key 字母顺序排序
-            # 这能保证同一系列在一起，新系列排在后面（如果首字母更靠后）
-            sorted_keys = sorted(data.keys())
-            sorted_data = {k: data[k] for k in sorted_keys}
-
-            # 6. 写入文件
-            with open(target_file, "w", encoding="utf-8") as f:
-                json.dump(sorted_data, f, ensure_ascii=False, indent=4)
-
-            # 7. 更新内存中的全局缓存
             project_summary_update()
-
-            logger.error(f"项目 {key} 创建成功！总项目数增加到{str(len(sorted_data.keys()))}个。")
+            # 获取更新后的字典长度
+            total_count = len(app.storage.general.get("project_summary", {}))
             ui.notify(
-                f"项目 {key} 创建成功！总项目数增加到{str(len(sorted_data.keys()))}个。",
+                f"项目 {msg} 创建成功！总项目数增加到{total_count}个。",
                 type="positive",
                 position="bottom",
                 timeout=2000,
@@ -276,7 +262,6 @@ def project_table_page():
                 close_button="✖",
             )
             return True
-
         except Exception as e:
             logger.error(f"保存项目失败: {e}")
             ui.notify(
@@ -284,36 +269,18 @@ def project_table_page():
                 type="negative",
                 position="center",
                 timeout=0,
-                progress=False,
+                progress=True,
                 close_button="✖",
             )
             return False
 
-    def save_revise_project_to_file(new_project_data):
-        """
-        读取JSON，插入新数据，按Key排序，保存文件，并更新内存缓存
-        """
+    async def save_revise_project_to_file(new_project_data):
         try:
-            # 1. 读取现有文件
-            target_file = os.path.join(BASE_DIR, "data/project_summary.json")
-
-            # 如果找不到文件，尝试使用 storage 里的数据反向生成（兜底策略）
-            data = {}
-            if os.path.exists(target_file):
-                with open(target_file, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-            else:
-                # 假如文件路径配置比较复杂，这里仅作演示，实际请确保路径正确
-                data = copy.deepcopy(app.storage.general.get("project_summary", {}))
-
-            # 2. 检查是否不存在
-            project_name = new_project_data["project_name"]  # 这里仅作为临时变量名，实际JSON key是 sub_project
-
-            key = project_name
-
-            if key not in data:
+            # === 性能优化：将文件读写推入后台线程执行 ===
+            success, msg = await asyncio.to_thread(_sync_process_project_save, new_project_data, False)
+            if not success:
                 ui.notify(
-                    f"项目 {key} 不存在，无法修改！",
+                    msg,
                     type="info",
                     position="bottom",
                     timeout=2000,
@@ -322,34 +289,9 @@ def project_table_page():
                 )
                 return False
 
-            # 3. 构造要保存的结构 (对应截图中的 Value 部分)
-            # 移除临时的 project_name 字段，保留数据字段
-            save_value = {
-                "state": new_project_data["state"],
-                "model_notes": new_project_data["model_notes"],
-                "creation_date": new_project_data["creation_date"],
-                "introduction": new_project_data["introduction"],
-                "customer": new_project_data["customer"],
-            }
-
-            # 4. 插入数据
-            data[key] = save_value
-
-            # 5. 排序逻辑：按 Key 字母顺序排序
-            # 这能保证同一系列在一起，新系列排在后面（如果首字母更靠后）
-            sorted_keys = sorted(data.keys())
-            sorted_data = {k: data[k] for k in sorted_keys}
-
-            # 6. 写入文件
-            with open(target_file, "w", encoding="utf-8") as f:
-                json.dump(sorted_data, f, ensure_ascii=False, indent=4)
-
-            # 7. 更新内存中的全局缓存
             project_summary_update()
-
-            logger.info(f"项目 {key} 修改成功！")
             ui.notify(
-                f"项目 {key} 修改成功！",
+                f"项目 {msg} 修改成功！",
                 type="positive",
                 position="bottom",
                 timeout=2000,
@@ -357,7 +299,6 @@ def project_table_page():
                 close_button="✖",
             )
             return True
-
         except Exception as e:
             logger.error(f"修改项目失败: {e}")
             ui.notify(
@@ -365,7 +306,7 @@ def project_table_page():
                 type="negative",
                 position="center",
                 timeout=0,
-                progress=False,
+                progress=True,
                 close_button="✖",
             )
             return False
@@ -376,16 +317,14 @@ def project_table_page():
         保存后调用：重新加载数据，重新计算分类，并将视图切换到目标项目所在的系列
         """
         # 声明引用外部变量，以便修改它们
-        nonlocal rows, select_dic
+        nonlocal select_dic
 
-        # 1. 重新获取最新数据 (因为 save_... 已经更新了 app.storage 和文件)
-        copy_project_dic = copy.deepcopy(app.storage.general["project_summary"])
-        rows = list(copy_project_dic.values())
+        # 1 & 2. 重新计算分类字典 (防止新增了从未有过的大类或小类)
+        # 高效读取：直接从 app.storage.general 获取引用，提取所需字符，绝对避免深拷贝
+        project_summary_dict = app.storage.general.get("project_summary", {})
+        select_li_new = list(set([data["project"] for data in project_summary_dict.values()]))
 
-        # 2. 重新计算分类字典 (防止新增了从未有过的大类或小类)
-        #    重新生成所有项目名列表
-        select_li_new = list(set([pro_sum["project"] for pro_sum in rows]))
-        #    更新全局的 select_dic
+        # 更新全局的 select_dic
         select_dic = get_select_dic(select_li_new)
 
         # 3. 解析目标项目的分类 (反推它属于哪个大类和小类)
@@ -412,7 +351,6 @@ def project_table_page():
         select_major.value = target_major
 
         # 4.3 手动强制更新一下小类选项
-        #    (update_sub_select 依赖外部变量 select_major_value，此时可能还未同步，所以手动取字典)
         if target_major in select_dic:
             select_sub.set_options(select_dic[target_major])
 
@@ -420,8 +358,6 @@ def project_table_page():
         select_sub.value = target_sub
 
         # 5. 刷新表格
-        #    此时 select_major.value 和 select_sub.value 已经更新
-        #    update_aggrid 会读取这两个值来筛选 rows
         await update_aggrid(aggrid)
 
     # === 新增功能：构建弹窗 UI ===
@@ -497,7 +433,7 @@ def project_table_page():
                         return
 
                     # 执行保存
-                    success = save_new_project_to_file(form_data)
+                    success = await save_new_project_to_file(form_data)
                     if success:
                         # table_dialog.close()
                         # 刷新页面或表格 (最简单是直接刷新页面，或者手动更新 rows)
@@ -518,7 +454,7 @@ def project_table_page():
                         return
 
                     # 执行保存
-                    success = save_revise_project_to_file(form_data)
+                    success = await save_revise_project_to_file(form_data)
                     if success:
                         # table_dialog.close()
                         # 刷新页面或表格 (最简单是直接刷新页面，或者手动更新 rows)
@@ -731,29 +667,40 @@ def project_table_page():
             else:
                 # s = RM3000
                 s = select_sub_value["value"]
-
+        # === 性能优化：在循环外集中提取全局配置字典，避免循环内高频且重复的哈希查找 ===
+        storage = app.storage.general
+        project_summary_dict = storage.get("project_summary", {})
+        table_config_dict = storage.get("project_table_update_config", {})
+        overview_role_dict = storage.get("overview_role", {})
+        custom_labels_dict = storage.get("custom_labels", {})
+        wait_review_dict = storage.get("wait_review", {})
+        project_sale_dict = storage.get("project_sale", {})
+        project_engineer_dict = storage.get("project_engineer", {})
         # 遍历无分类行数据列表，将符合筛选条件的行数据找出来
-        for row_data in rows:
+        # 遍历源数据（直接遍历 storage 引用，不做全局的深拷贝）
+        for project_key, raw_row_data in project_summary_dict.items():
+            project_name_str = raw_row_data.get("project", "")
             # 如果匹配字符不为“-”且匹配字符串在项目名里（筛选正常项目，如具体的RM3000或含RFMM或含RFMM-17的项目）
             # 或 匹配字符为“-”且匹配字符不在项目名里（筛选特殊项目，如RM3000,RM5000,所有不含-字符的项目）
-            if s == "all" or (s != "-" and s in row_data["project"]) or (s == "-" and s not in row_data["project"]):
-                # 获取当前行数据所属项目名
+            # 判断是否符合筛选条件
+            if s == "all" or (s != "-" and s in project_name_str) or (s == "-" and s not in project_name_str):
+                # === 性能优化：仅对筛选通过的行进行浅拷贝(Shallow Copy)，防止污染源数据，避免耗时的全量深拷贝 ===
+                row_data = raw_row_data.copy()
                 project_name = row_data["sub_project"]
-                OVERVIEW_DATA = db_storage.get_item(f"{project_name}_over_data", {})
 
+                # 获取浅引用，但要保证不能修改它
+                OVERVIEW_DATA = db_storage.get_item(f"{project_name}_over_data", {}, True)
                 # 遍历服务器的项目与概述数据对照字典
                 # 不在这个字典里的数据列，不会被修改，即显示固定内容
-                for pro_key, over_key_li in app.storage.general["project_table_update_config"].items():
+                for pro_key, over_key_li in table_config_dict.items():
                     # 专门处理概述负责人配置部分显示内容
                     if (
                         "charge" in pro_key
                         and over_key_li != ""
-                        and project_name in app.storage.general["overview_role"]
-                        and over_key_li in app.storage.general["overview_role"][project_name]
+                        and project_name in overview_role_dict
+                        and over_key_li in overview_role_dict[project_name]
                     ):
-                        show_str = app.storage.general["overview_role"][project_name][over_key_li].get(
-                            "latest_user", ""
-                        )
+                        show_str = overview_role_dict[project_name][over_key_li].get("latest_user", "")
 
                         # 获取负责人名
                         charge_person = show_str.split("：")[1] if show_str else ""
@@ -761,57 +708,63 @@ def project_table_page():
 
                     # 其它需要动态更新且配置非空 或 如：定制要点、需求输入等不用配置也固定动态更新的列
                     elif pro_key in ["custom_labels", "requirement"] or over_key_li != []:
-                        show_str = ""
+                        # === 性能优化：使用 List 作为文本收集器，替代低效的 += 字符串频繁拼接 ===
+                        text_parts = []
                         # 遍历对照配置列表（可能一个项目简介配置了多个对应的概述数据项）
                         for over_key in over_key_li:
                             # 当前概述数据项label存在服务器概述数据对应项目里，说明可能存在概述内容
                             if over_key in OVERVIEW_DATA:
-                                chip_data_li = OVERVIEW_DATA.get(over_key, {}).values()
+                                CHIP_DATA_LI = OVERVIEW_DATA.get(over_key, {}).values()
                                 # 遍历概述内容每个chip数据
-                                for chip_data in chip_data_li:
+                                for CHIP_DATA in CHIP_DATA_LI:
                                     # 该chip内容是激活 或者 待定状态 才显示
-                                    if chip_data["enabled"] or chip_data["enabled"] is None:
+                                    if CHIP_DATA["enabled"] or CHIP_DATA["enabled"] is None:
                                         text = ""
                                         # 文本型内容，直接显示
-                                        if chip_data.get("type") in ["text", "test"]:
-                                            text = chip_data.get("content")
+                                        if CHIP_DATA.get("type") in ["text", "test"]:
+                                            text = CHIP_DATA.get("content")
                                             if text in IGNORE_STR:
                                                 continue
                                         # 文件名类型内容，去除后缀
-                                        elif chip_data.get("type") in ["search", "svn", "file", "image"]:
-                                            text = ".".join(chip_data["content"].split(".")[:-1])
+                                        elif CHIP_DATA.get("type") in ["search", "svn", "file", "image"]:
+                                            text = ".".join(CHIP_DATA["content"].split(".")[:-1])
 
                                         # 待定状态的概述内容串 加上特殊标记符号
-                                        if chip_data["enabled"] is None:
+                                        if CHIP_DATA["enabled"] is None:
                                             text = f"「{text}」?"
 
+                                        if text:
+                                            text_parts.append(text)
                                         # 将文本拼接到待显示字符串上
                                         # 这几类换行拼接
-                                        if pro_key in [
-                                            "light_source",
-                                            "target_distance",
-                                            "pcb",
-                                            "electronic_bom",
-                                            "software_executable_file",
-                                        ]:
-                                            show_str = f"{show_str}\n{text}"
-                                        else:
-                                            show_str = f"{show_str}，{text}"
+                        # 执行高效的字符串合并
+                        if pro_key in [
+                            "light_source",
+                            "target_distance",
+                            "pcb",
+                            "electronic_bom",
+                            "software_executable_file",
+                        ]:
+                            show_str = "\n".join(text_parts)
+                        else:
+                            show_str = "，".join(text_parts)
 
                         # 定制内容列，则在概述内容基础上，拼接添加需求项输出标签内容
                         if pro_key == "custom_labels":
-                            label_list = app.storage.general["custom_labels"].get(project_name, [])
+                            label_list = custom_labels_dict.get(project_name, [])
                             if label_list:
-                                set_project_custom_labels(project_name)
-                                show_str = f"{show_str}，{'，'.join(label_list)}"
+                                # 移除了同步阻塞文件读取 set_project_custom_labels
+                                extra_labels = "，".join(label_list)
+                                show_str = f"{show_str}，{extra_labels}" if show_str else extra_labels
                         # 需求录入列，动态内容设置
                         elif pro_key == "requirement":
-                            project_state_dic = app.storage.general["wait_review"].get(project_name, {})
+                            project_state_dic = wait_review_dict.get(project_name, {})
                             if project_state_dic:
                                 max_num = max([int(float(v)) for v in project_state_dic.keys()])
                                 if max_num:
                                     max_ver = f"{str(max_num)}.0"
-                                    show_str = f"V{max_ver}{project_state_dic[max_ver].get('state', '未知')}\n点击升级"
+                                    state_str = project_state_dic[max_ver].get("state", "未知")
+                                    show_str = f"V{max_ver}{state_str}\n点击升级"
                             else:
                                 show_str = "点击录入"
                         # 待确定的内容，统一更换仅显示一个?号
@@ -823,9 +776,9 @@ def project_table_page():
                         )  # removeprefix移除字符串前缀，strip移除首尾指定字符
 
                 # 单独处理项目简介表里每行 负责销售 单元格的显示
-                row_data["sale_charge"] = app.storage.general["project_sale"].get(project_name, "")
+                row_data["sale_charge"] = project_sale_dict.get(project_name, "")
                 # 单独处理项目简介表里每行 项目工程师 单元格的显示
-                row_data["project_charge"] = app.storage.general["project_engineer"].get(project_name, "")
+                row_data["project_charge"] = project_engineer_dict.get(project_name, "")
                 # 将行数据加入待显示的符合选框的数据列表里
                 rows_select.append(row_data)
 
@@ -1148,13 +1101,14 @@ def project_table_page():
     if not app.storage.general["project_table_update_config"]:
         project_table_update_config_update()
     # 从服务器获取完整项目摘要
-    copy_project_dic = copy.deepcopy(app.storage.general["project_summary"])
+    # copy_project_dic = copy.deepcopy(app.storage.general["project_summary"])
     # 抽取出无分类项目摘要列表
-    rows = list(copy_project_dic.values())
+    # rows = list(copy_project_dic.values())
     # 初始化表格行数据选项列表
     rows_select = []
     # 单独抽取出所有项目名，除重后生成列表
-    select_li = list(set([pro_sum["project"] for pro_sum in rows]))
+    # select_li = list(set([pro_sum["project"] for pro_sum in rows]))
+    select_li = list(set([data["project"] for data in app.storage.general.get("project_summary", {}).values()]))
     # 用于同步两个选项框的选项值
     select_major_value = {"value": "RFFM"}
     select_sub_value = {"value": "10"}
@@ -1197,13 +1151,13 @@ def project_table_page():
                 "rowData": rows_select,
                 "headerHeight": 50,
                 # 强制渲染所有行，禁用虚拟滚动
-                "suppressRowVirtualisation": True,
+                # "suppressRowVirtualisation": True,
                 # 允许单元格文本选择
                 "enableCellTextSelection": True,
                 # 分页相关设置
-                "pagination": True,  # 开启分页
-                "paginationPageSize": 30,  # 每页显示 10 行
-                "paginationPageSizeSelector": [10, 30, 50, 70, 90],  # (可选) 允许用户在底部选择每页行数
+                # "pagination": True,  # 开启分页
+                # "paginationPageSize": 30,  # 每页显示 10 行
+                # "paginationPageSizeSelector": [10, 30, 50, 70, 90],  # (可选) 允许用户在底部选择每页行数
                 # === 新增：根据状态字段应用 CSS 类 ===
                 "rowClassRules": {
                     "row-wait": "data.state == '待定'",
