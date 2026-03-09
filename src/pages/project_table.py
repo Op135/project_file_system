@@ -567,7 +567,8 @@ def project_table_page():
                                     # 步骤 B: 利用 local 模式，极速刷新新负责人的待办状态
                                     if new_user and new_user != "——" and label:
                                         update_overview_charge_pending_dic("local", new_user, pn, label)
-
+                            # 用角色负责人更新函数自动更新一下，确保不会因为代码逻辑问题，导致手动配置无效
+                            overview_role_update(pn, role)
                     ui.notify(f"项目 {pn} 各角色概述负责人配置成功！", type="positive", position="bottom")
                     table_dialog.close()
                     # 刷新表格展示，确保修改后的负责人立刻呈现在表格中

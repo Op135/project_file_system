@@ -972,11 +972,11 @@ def overview_role_update(project_name, input_role="all_update"):
         over_role_dic = app.storage.general["overview_role"][project_name]
         # 遍历概述配置字典，主要用里面的角色分类，如光学、结构等等，和概述配置里的label
         for role, over_data_dic in app.storage.general["over_config_data"].items():
+            # 初始化临时保存概述里出现过的用户次数字典
+            frequency_user_dic = {}
+            # 初始化临时保存概述里出现过的用户最晚时间字典
+            time_user_dic = {}
             for over_config_li in over_data_dic.values():
-                # 初始化临时保存概述里出现过的用户次数字典
-                frequency_user_dic = {}
-                # 初始化临时保存概述里出现过的用户最晚时间字典
-                time_user_dic = {}
                 # 遍历当前角色分类，如光学下，概述配置的各项
                 for over_config in over_config_li:
                     # 如果当前概述项的label存在服务器对应项目的概述数据字典键里
@@ -1003,42 +1003,43 @@ def overview_role_update(project_name, input_role="all_update"):
                                 time_user_dic[over_data["creator"]] = datetime.strptime(
                                     next(reversed(over_data["timestamp"])), format_string
                                 )
-                # 当前角色的所有概述存在创建记录
-                if frequency_user_dic != {}:
-                    # 找到临时保存用户创建概述次数字典里，所有次数的最大值
-                    max_value = max(frequency_user_dic.values())
-                    # 找到跟最大次数相同的对应所有用户
-                    most_user_li = [key for key, value in frequency_user_dic.items() if value == max_value]
-                    # 如果有多个人都创建了最大次数
-                    if len(most_user_li) > 1:
-                        # 找到这些人创建概述数据的最晚时间
-                        lat_time = max([time_user_dic[user] for user in most_user_li])
-                        # 找到这些人里哪个人是最晚创建概述的
-                        for user in most_user_li:
-                            if time_user_dic[user] == lat_time:
-                                # 将找到的用户定义为概述创建最多次的人
-                                over_role_dic[role]["most_user"] = f"最多：{user}"
-                    # 如果创建次数最多的情况只有一个人
-                    else:
-                        # 将这个用户定义为概述创建最多次的人
-                        over_role_dic[role]["most_user"] = f"最多：{most_user_li[0]}"
+            # 当前角色的所有概述存在创建记录
+            if frequency_user_dic != {}:
+                # 找到临时保存用户创建概述次数字典里，所有次数的最大值
+                max_value = max(frequency_user_dic.values())
+                # 找到跟最大次数相同的对应所有用户
+                most_user_li = [key for key, value in frequency_user_dic.items() if value == max_value]
+                # 如果有多个人都创建了最大次数
+                if len(most_user_li) > 1:
+                    # 找到这些人创建概述数据的最晚时间
+                    lat_time = max([time_user_dic[user] for user in most_user_li])
+                    # 找到这些人里哪个人是最晚创建概述的
+                    for user in most_user_li:
+                        if time_user_dic[user] == lat_time:
+                            # 将找到的用户定义为概述创建最多次的人
+                            over_role_dic[role]["most_user"] = f"最多：{user}"
+                # 如果创建次数最多的情况只有一个人
+                else:
+                    # 将这个用户定义为概述创建最多次的人
+                    over_role_dic[role]["most_user"] = f"最多：{most_user_li[0]}"
 
-                    # 找出临时保存用户最晚创建概述时间里最晚的时间点
-                    latest_time = max(list(time_user_dic.values()))
-                    # 找出最晚创建概述的用户
-                    for user in time_user_dic.keys():
-                        if time_user_dic[user] == latest_time and "最近指定" not in over_role_dic[role]["latest_user"]:
-                            # 将这个用户定义为最晚创建概述的人，但排除掉最近手动指定过的情况，这种情况只能通过别的人修改概述触发局部更新去改
-                            over_role_dic[role]["latest_user"] = f"最近：{user}"
+                # 找出临时保存用户最晚创建概述时间里最晚的时间点
+                latest_time = max(list(time_user_dic.values()))
+                print(project_name, role, latest_time)
+                # 找出最晚创建概述的用户
+                for user in time_user_dic.keys():
+                    if time_user_dic[user] == latest_time and "最近指定" not in over_role_dic[role]["latest_user"]:
+                        # 将这个用户定义为最晚创建概述的人，但排除掉最近手动指定过的情况，这种情况只能通过别的人修改概述触发局部更新去改
+                        over_role_dic[role]["latest_user"] = f"最近：{user}"
     elif input_role != "initialize" and input_role:
         # 初始化概述角色字典
         over_role_dic = app.storage.general["overview_role"][project_name]
+        # 初始化临时保存概述里出现过的用户次数字典
+        frequency_user_dic = {}
+        # 初始化临时保存概述里出现过的用户最晚时间字典
+        time_user_dic = {}
         # 遍历概述配置字典指定角色的配置数据
         for over_config_li in app.storage.general["over_config_data"].get(input_role, {}).values():
-            # 初始化临时保存概述里出现过的用户次数字典
-            frequency_user_dic = {}
-            # 初始化临时保存概述里出现过的用户最晚时间字典
-            time_user_dic = {}
             # 遍历当前角色分类，如光学下，概述配置的各项
             for over_config in over_config_li:
                 # 如果当前概述项的label存在服务器对应项目的概述数据字典键里
@@ -1065,33 +1066,33 @@ def overview_role_update(project_name, input_role="all_update"):
                             time_user_dic[over_data["creator"]] = datetime.strptime(
                                 next(reversed(over_data["timestamp"])), format_string
                             )
-            # 当前角色的所有概述存在创建记录
-            if frequency_user_dic != {}:
-                # 找到临时保存用户创建概述次数字典里，所有次数的最大值
-                max_value = max(frequency_user_dic.values())
-                # 找到跟最大次数相同的对应所有用户
-                most_user_li = [key for key, value in frequency_user_dic.items() if value == max_value]
-                # 如果有多个人都创建了最大次数
-                if len(most_user_li) > 1:
-                    # 找到这些人创建概述数据的最晚时间
-                    lat_time = max([time_user_dic[user] for user in most_user_li])
-                    # 找到这些人里哪个人是最晚创建概述的
-                    for user in most_user_li:
-                        if time_user_dic[user] == lat_time:
-                            # 将找到的用户定义为概述创建最多次的人
-                            over_role_dic[input_role]["most_user"] = f"最多：{user}"
-                # 如果创建次数最多的情况只有一个人
-                else:
-                    # 将这个用户定义为概述创建最多次的人
-                    over_role_dic[input_role]["most_user"] = f"最多：{most_user_li[0]}"
+        # 当前角色的所有概述存在创建记录
+        if frequency_user_dic != {}:
+            # 找到临时保存用户创建概述次数字典里，所有次数的最大值
+            max_value = max(frequency_user_dic.values())
+            # 找到跟最大次数相同的对应所有用户
+            most_user_li = [key for key, value in frequency_user_dic.items() if value == max_value]
+            # 如果有多个人都创建了最大次数
+            if len(most_user_li) > 1:
+                # 找到这些人创建概述数据的最晚时间
+                lat_time = max([time_user_dic[user] for user in most_user_li])
+                # 找到这些人里哪个人是最晚创建概述的
+                for user in most_user_li:
+                    if time_user_dic[user] == lat_time:
+                        # 将找到的用户定义为概述创建最多次的人
+                        over_role_dic[input_role]["most_user"] = f"最多：{user}"
+            # 如果创建次数最多的情况只有一个人
+            else:
+                # 将这个用户定义为概述创建最多次的人
+                over_role_dic[input_role]["most_user"] = f"最多：{most_user_li[0]}"
 
-                # 找出临时保存用户最晚创建概述时间里最晚的时间点
-                latest_time = max(list(time_user_dic.values()))
-                # 找出最晚创建概述的用户
-                for user in time_user_dic.keys():
-                    if time_user_dic[user] == latest_time:
-                        # 将这个用户定义为最晚创建概述的人
-                        over_role_dic[input_role]["latest_user"] = f"最近：{user}"
+            # 找出临时保存用户最晚创建概述时间里最晚的时间点
+            latest_time = max(list(time_user_dic.values()))
+            # 找出最晚创建概述的用户
+            for user in time_user_dic.keys():
+                if time_user_dic[user] == latest_time:
+                    # 将这个用户定义为最晚创建概述的人
+                    over_role_dic[input_role]["latest_user"] = f"最近：{user}"
 
 
 # 在指定目录中查找包含特定前缀的文件名，并提取版本号

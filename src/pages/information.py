@@ -236,8 +236,8 @@ def information_page():
         is_manager = current_role in ["研发经理"]
         # is_engineer = current_user == project_engineer_dic.get(project_name, "")
         is_engineer = current_user in project_engineer_dic
-        # 2. 如果已审 或 属于项目工程师的且为待修改，删除该行
-        if review_state == "已审" or review_state == "待修改" and is_engineer:
+        # 2. 如果已审 或 属于项目工程师 且 为待修改 且不是研发经理（研发经理可能也兼任项目工程师），删除该行
+        if review_state == "已审" or review_state == "待修改" and not is_manager and is_engineer:
             container.delete()
             return
 
@@ -427,10 +427,10 @@ def information_page():
 
                                         should_show = False
                                         # 销售查看非已审项目待办项
-                                        if is_submitter and dic.get("state") != "已审":
+                                        if (is_manager or is_submitter) and dic.get("state") != "已审":
                                             should_show = True
                                         # 研发经理或项目工程师查看待审项目待办项
-                                        elif (is_manager or is_engineer) and dic.get("state") == "待审":
+                                        elif is_engineer and dic.get("state") == "待审":
                                             should_show = True
 
                                         if should_show:
