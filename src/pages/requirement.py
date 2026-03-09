@@ -3284,8 +3284,8 @@ async def requirement_page(type="", json_path="", project_name=""):
             def get_label_options(role):
                 options = {}
                 if role and role in over_config:
-                    for group_data in over_config[role].values():
-                        for item_val in group_data.values():
+                    for group_li in over_config[role].values():
+                        for item_val in group_li:
                             options[item_val["label"]] = f"{item_val.get('title', '未命名')} ({item_val.get('label')})"
                 return options
 

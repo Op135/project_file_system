@@ -426,7 +426,7 @@
                     "^无$",
                     "\\S*?：\\S*"
                 ],
-                "dialog_placeholder": "透镜/二向色/滤光片等种类名：器件名",
+                "dialog_placeholder": "透镜/二向色/滤光片/反射镜等种类名：器件名",
                 "allowed_state": [
                     "研发",
                     "转产"
