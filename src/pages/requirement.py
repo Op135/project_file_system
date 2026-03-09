@@ -1,5 +1,6 @@
 # -*- encoding: utf-8 -*-
 import ast
+import asyncio
 import copy
 import hashlib
 import io
@@ -13,7 +14,13 @@ from itertools import islice
 from pathlib import Path
 
 from nicegui import app, events, ui
-from nicegui.events import GenericEventArguments, KeyEventArguments, MouseEventArguments, UploadEventArguments
+from nicegui.events import (
+    GenericEventArguments,
+    KeyEventArguments,
+    MouseEventArguments,
+    UploadEventArguments,
+    ValueChangeEventArguments,
+)
 
 from .. import db_storage  # 导入我们创建的模块
 from ..components import ButtonUploader, FileThumbnail, InteractiveButton, OverviewTableGroup
@@ -3955,9 +3962,20 @@ async def requirement_page(type="", json_path="", project_name=""):
                                     ).props("flat round dense color=grey-7").classes(
                                         "absolute -top-1 right-35"
                                     ).tooltip("查看该角色下所有版本的添加历史")
+
                                     ui.switch("全展开").classes("absolute -top-2 right-2 text-sm").on_value_change(
                                         lambda e, exps=current_role_expansions: [exp.set_value(e.value) for exp in exps]
                                     )
+                                    # async def toggle_all_expansions_async(e: ValueChangeEventArguments, exps: list):
+                                    #     for i, exp in enumerate(exps):
+                                    #         exp.set_value(e.value)
+                                    #         # 🌟 每处理 3 个展开项，让出一次控制权给事件循环，防止 UI 假死
+                                    #         if i % 3 == 0:
+                                    #             await asyncio.sleep(0)
+
+                                    # ui.switch("全展开").classes("absolute -top-2 right-2 text-sm").on_value_change(
+                                    #     lambda e, exps=current_role_expansions: toggle_all_expansions_async(e, exps)
+                                    # )
                                 exp_icon_dic = {
                                     "光学": "flare",
                                     "结构": "view_in_ar",

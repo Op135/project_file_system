@@ -178,6 +178,8 @@ app.storage.general.setdefault("over_change_broadcast", {})
 app.storage.general.setdefault("over_config_data_flat", {})
 # 储存服务器层级 用于扁平化需求配置里的定制标签信息{"node_id": {"option_id":"option_label"}}
 app.storage.general.setdefault("config_service_custom_labels", {})
+# 触发全局同步标记，通知所有监听此项目的客户端
+app.storage.general.setdefault("sync_versions", {})
 
 
 @ui.page("/view/svn_pdf")

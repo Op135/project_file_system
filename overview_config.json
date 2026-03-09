@@ -960,55 +960,6 @@
     "结构": {
         "产品图纸": [
             {
-                "label": "product_complete_diagram",
-                "nature": "必填",
-                "title": "产品完整3D图（stp）",
-                "processing_type": "file",
-                "content_regular": [],
-                "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\2.输出——研发流程输出文档\\产品完整3D图",
-                "allowed_state": [
-                    "研发",
-                    "转产",
-                    "试产",
-                    "量产"
-                ],
-                "permission": {
-                    "read_role": [
-                        "boss",
-                        "销售总监",
-                        "研发助理",
-                        "工程",
-                        "研发电子主管",
-                        "研发光学"
-                    ],
-                    "edit_role": [
-                        "admin",
-                        "研发经理",
-                        "研发结构"
-                    ]
-                },
-                "impact_list": [
-                    "product_simplify_diagram",
-                    "product_size_diagram",
-                    "drive_pcb",
-                    "drive_electronic_bom",
-                    "control_pcb",
-                    "control_electronic_bom",
-                    "wire_accessories",
-                    "product_output_position",
-                    "product_outlet_position",
-                    "product_wind_diagram",
-                    "mechanical_assembly_details",
-                    "product_weight",
-                    "product_type_ambient",
-                    "product_temperature_rise",
-                    "packaging_materials",
-                    "adapter_options",
-                    "product_bom",
-                    "mechanical_testing"
-                ]
-            },
-            {
                 "label": "product_simplify_diagram",
                 "nature": "必填",
                 "title": "产品简化3D图（stp）",
@@ -1076,6 +1027,55 @@
                 },
                 "impact_list": [
                     "specifications"
+                ]
+            },
+            {
+                "label": "product_complete_diagram",
+                "nature": "必填",
+                "title": "产品完整3D图（stp）",
+                "processing_type": "file",
+                "content_regular": [],
+                "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\2.输出——研发流程输出文档\\产品完整3D图",
+                "allowed_state": [
+                    "研发",
+                    "转产",
+                    "试产",
+                    "量产"
+                ],
+                "permission": {
+                    "read_role": [
+                        "boss",
+                        "销售总监",
+                        "研发助理",
+                        "工程",
+                        "研发电子主管",
+                        "研发光学"
+                    ],
+                    "edit_role": [
+                        "admin",
+                        "研发经理",
+                        "研发结构"
+                    ]
+                },
+                "impact_list": [
+                    "product_simplify_diagram",
+                    "product_size_diagram",
+                    "drive_pcb",
+                    "drive_electronic_bom",
+                    "control_pcb",
+                    "control_electronic_bom",
+                    "wire_accessories",
+                    "product_output_position",
+                    "product_outlet_position",
+                    "product_wind_diagram",
+                    "mechanical_assembly_details",
+                    "product_weight",
+                    "product_type_ambient",
+                    "product_temperature_rise",
+                    "packaging_materials",
+                    "adapter_options",
+                    "product_bom",
+                    "mechanical_testing"
                 ]
             }
         ],

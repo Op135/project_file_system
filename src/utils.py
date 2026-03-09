@@ -9,6 +9,7 @@ import logging
 import mimetypes
 import os
 import re
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -26,6 +27,12 @@ logger = logging.getLogger(__name__)
 
 # 内存中的全局字典：{ client.id : { 'username': str, 'login_time': str, 'ip': str } }
 online_users = {}
+
+
+def trigger_global_sync(project_name: str):
+    """触发全局同步标记，通知所有监听此项目的客户端"""
+    # 用当前时间戳作为版本号
+    app.storage.general["sync_versions"][project_name] = time.time()
 
 
 def generate_watermark_css(
