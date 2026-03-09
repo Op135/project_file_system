@@ -17,13 +17,13 @@ import uuid
 from copy import deepcopy
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Callable, Dict, Final, Optional, Tuple
+from typing import Callable, Final, Optional, Tuple
 
 import httpx
 import wcwidth
 from html_sanitizer import Sanitizer
 from httpx import BasicAuth
-from nicegui import app, background_tasks, events, ui
+from nicegui import app, events, ui
 from nicegui.events import GenericEventArguments, MouseEventArguments, ValueChangeEventArguments
 
 from . import db_storage  # 导入我们创建的模块
@@ -46,7 +46,6 @@ from .utils import (
     move_element,
     overview_role_update,
     overview_state_show_judge,
-    trigger_global_sync,
     ui_hide,
     ui_show,
     update_overview_charge_pending_dic,
@@ -779,7 +778,7 @@ class InteractiveButton:
             self.uploader.set_visibility(False)
 
         # 设置定时器，监控并更新数据
-        ui.timer(0.5, self._update_chip_display)
+        ui.timer(1.0, self._update_chip_display)
 
     # ==========================================================
     # 1. 核心状态同步与 UI 刷新逻辑
@@ -796,42 +795,36 @@ class InteractiveButton:
 
     async def _update_chip_display(self):
         """核心定时同步函数，对比签名后决定是否刷新"""
-        # if (
-        #     self.chip_dialog.value
-        #     or self.check_down_dialog.value
-        #     or self.activ_dialog.value
-        #     or self.img_dialog.value
-        #     or self.overview_video_dialog.value
-        #     or self.history_dialog.value
-        # ):
-        #     return
-        # 1. 极速检查：只读取一个浮点数进行比对（O(1) 复杂度）
-        global_version = app.storage.general.get("sync_versions", {}).get(self.project, 0)
-        # 如果版本号没变，说明没有任何人修改数据，直接 return 结束，什么都不做
-        if getattr(self, "local_sync_version", 0) == global_version:
+        if (
+            self.chip_dialog.value
+            or self.check_down_dialog.value
+            or self.activ_dialog.value
+            or self.img_dialog.value
+            or self.overview_video_dialog.value
+            or self.history_dialog.value
+        ):
             return
-        # 2. 发现版本号变了（有人修改了数据），才进行全量重绘
-        self.local_sync_version = global_version
-        # CHIPS_DICT = db_storage.get_deep_item([f"{self.project}_over_data", self.label], {})
+
+        CHIPS_DICT = db_storage.get_deep_item([f"{self.project}_over_data", self.label], {})
         # show_all = app.storage.client.get("record_switch")
         # conversion_refresh = app.storage.general.get("conversion_refresh", {}).get(self.project)
 
-        # filtered_dict = {}
-        # for k, v in CHIPS_DICT.items():
-        # if conversion_refresh and v.get("type") == "svn" and v.get("enabled") not in [True, None]:
-        #     continue
-        # if not show_all and v.get("enabled") is False:
-        #     continue
-        # 新逻辑：不跳过，全部加入可见列表，依靠 UI 绑定处理隐藏
-        # filtered_dict[k] = v
+        filtered_dict = {}
+        for k, v in CHIPS_DICT.items():
+            # if conversion_refresh and v.get("type") == "svn" and v.get("enabled") not in [True, None]:
+            #     continue
+            # if not show_all and v.get("enabled") is False:
+            #     continue
+            # 新逻辑：不跳过，全部加入可见列表，依靠 UI 绑定处理隐藏
+            filtered_dict[k] = v
 
-        # current_hash = self._generate_signature(filtered_dict)
+        current_hash = self._generate_signature(filtered_dict)
 
-        # if self.last_state_hash != current_hash:
-        # self.last_state_hash = current_hash
-        await self._refresh_chip_container()
-        overview_role_update(self.project, self.role)
-        self._update_local_pending()
+        if self.last_state_hash != current_hash:
+            self.last_state_hash = current_hash
+            await self._refresh_chip_container()
+            overview_role_update(self.project, self.role)
+            self._update_local_pending()
 
     async def _refresh_chip_container(self) -> None:
         """物理重绘整个芯片容器"""
@@ -1436,7 +1429,6 @@ class InteractiveButton:
 
             await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id], chip_data)
             await self._update_auto_complete_index(self.label, text)
-
             self.chip_label.value, self.chip_notes.value = "", ""
             ui_spinner.set_visibility(False)
             self.chip_dialog.close()
@@ -1449,8 +1441,6 @@ class InteractiveButton:
                 # multi_line=True,
                 close_button="✖",
             )
-            # 通知所有看着这个项目的人（包括自己）刷新 UI
-            trigger_global_sync(self.project)
             self._show_related_chip_select_dialog(text, True, "add_chip")
         except Exception as ex:
             # 捕捉潜在的数据库写入等异常
@@ -1571,7 +1561,6 @@ class InteractiveButton:
                         },
                     }
                     await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id], chip_data)
-
                     self.chip_label.value, self.chip_notes.value = "", ""
                     ui_spinner.set_visibility(False)
                     self.chip_dialog.close()
@@ -1584,8 +1573,6 @@ class InteractiveButton:
                         # multi_line=True,
                         close_button="✖",
                     )
-                    # 通知所有看着这个项目的人（包括自己）刷新 UI
-                    trigger_global_sync(self.project)
                     self._show_related_chip_select_dialog(text, True, "add_chip")
             except Exception as ex:
                 # 捕捉潜在的数据库写入等异常
@@ -1708,7 +1695,6 @@ class InteractiveButton:
                     },
                 }
                 await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id], chip_data)
-
                 self.chip_label.value, self.chip_notes.value = "", ""
                 ui_spinner.set_visibility(False)
                 self.chip_dialog.close()
@@ -1721,8 +1707,6 @@ class InteractiveButton:
                     # multi_line=True,
                     close_button="✖",
                 )
-                # 通知所有看着这个项目的人（包括自己）刷新 UI
-                trigger_global_sync(self.project)
                 self._show_related_chip_select_dialog(text, True, "add_chip")
             except Exception as ex:
                 # 捕捉潜在的数据库写入等异常
@@ -1853,7 +1837,6 @@ class InteractiveButton:
                 }
 
                 await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id], chip_data)
-
                 self.chip_notes.value = ""
                 ui_spinner.set_visibility(False)
                 self.chip_dialog.close()
@@ -1866,8 +1849,6 @@ class InteractiveButton:
                     # multi_line=True,
                     close_button="✖",
                 )
-                # 通知所有看着这个项目的人（包括自己）刷新 UI
-                trigger_global_sync(self.project)
                 self._show_related_chip_select_dialog(text, True, "add_chip")
             except Exception as ex:
                 # 捕捉潜在的数据库写入等异常
@@ -2016,7 +1997,6 @@ class InteractiveButton:
                 },
             }
             await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id], chip_data)
-
             self.chip_notes.value = ""
             self.spinner.set_visibility(False)
             self.chip_dialog.close()
@@ -2029,8 +2009,6 @@ class InteractiveButton:
                 # multi_line=True,
                 close_button="✖",
             )
-            # 通知所有看着这个项目的人（包括自己）刷新 UI
-            trigger_global_sync(self.project)
             self._show_related_chip_select_dialog(original_filename, True, "add_chip")
 
     def _select_file_show(self, original_filename, file_type, url_path):
@@ -2076,7 +2054,6 @@ class InteractiveButton:
         self.chip_notes.value = ""
         self.chip_dialog.close()
         await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id], chip_data)
-
         ui.notify(
             f'文件 "{original_filename}" 显示成功!',
             type="positive",
@@ -2086,8 +2063,6 @@ class InteractiveButton:
             # multi_line=True,
             close_button="✖",
         )
-        # 通知所有看着这个项目的人（包括自己）刷新 UI
-        trigger_global_sync(self.project)
 
     # ==========================================================
     # 4. 状态更改与版本联控逻辑
@@ -2319,11 +2294,9 @@ class InteractiveButton:
                     [f"{self.project}_over_related_record", self.label, chip_id], process_close_record
                 )
 
-                # 通知所有看着这个项目的人（包括自己）刷新 UI
-                trigger_global_sync(self.project)
                 self._show_related_chip_select_dialog(chip_text, chip_state, "activ_change")
-                # self.last_state_hash = None  # Trigger display update via timer
-                # await self._update_chip_display()
+                self.last_state_hash = None  # Trigger display update via timer
+                await self._update_chip_display()
 
         except Exception as ex:
             logger.error("数据库更新失败", exc_info=True)
@@ -2461,8 +2434,6 @@ class InteractiveButton:
         if self._edit_permission_judge():
             if app.storage.user["current_user"] == "admin":
                 await db_storage.del_deep_item([f"{self.project}_over_data", self.label, chip.props["data-chip-id"]])
-                # 通知所有看着这个项目的人（包括自己）刷新 UI
-                trigger_global_sync(self.project)
             else:
                 self._select_set_activ_dialog(chip.props["data-chip-id"], chip.text)
 
@@ -2473,8 +2444,6 @@ class InteractiveButton:
                 await db_storage.del_deep_item(
                     [f"{self.project}_over_data", self.label, thumbnail.props["data-chip-id"]]
                 )
-                # 通知所有看着这个项目的人（包括自己）刷新 UI
-                trigger_global_sync(self.project)
             else:
                 self._select_set_activ_dialog(thumbnail.props["data-chip-id"])
 
@@ -2503,20 +2472,16 @@ class InteractiveButton:
             await db_storage.atomic_deep_update(
                 [f"{self.project}_over_data", self.label], self._move_data, chip_data["id"], -1
             )
-            # self.last_state_hash = None
-            # await self._update_chip_display()
-            # 通知所有看着这个项目的人（包括自己）刷新 UI
-            trigger_global_sync(self.project)
+            self.last_state_hash = None
+            await self._update_chip_display()
 
     async def move_down_data(self, chip_data):
         if self._edit_permission_judge():
             await db_storage.atomic_deep_update(
                 [f"{self.project}_over_data", self.label], self._move_data, chip_data["id"], 1
             )
-            # self.last_state_hash = None
-            # await self._update_chip_display()
-            # 通知所有看着这个项目的人（包括自己）刷新 UI
-            trigger_global_sync(self.project)
+            self.last_state_hash = None
+            await self._update_chip_display()
 
     async def _update_chip_block_parameter(self, chip_id):
         await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "icon"], "block")
@@ -3159,7 +3124,9 @@ class OverviewTableGroup:
         self.last_state_hashes = {}
 
         # 初始渲染 & 开启定时器
-        ui.timer(0.5, self._update_display)
+        ui.timer(1.0, self._update_display)
+
+    import uuid
 
     async def _group_and_migrate_data(self, col_configs, show_all):
         """
@@ -3388,10 +3355,6 @@ class OverviewTableGroup:
             # 提取第一列的 label 用于判断
             first_col_label = list(self.permitted_configs.values())[0]["label"]
             for index, row_data in enumerate(rows_list):
-                # 丝滑秘诀：每渲染 5 行，主动让出事件循环，避免阻塞主线程导致卡顿
-                if index > 0 and index % 5 == 0:
-                    await asyncio.sleep(0)
-
                 bg_color = "bg-white" if index % 2 == 0 else "bg-gray-50/40"
                 row_id = row_data["row_id"]
                 row_chips = row_data["chips"]
@@ -3688,6 +3651,8 @@ class OverviewTableGroup:
             # wrapper.on("mousemove", lambda e: check_shift_and_show(e, history_button), ["shiftKey"])
             # wrapper.on("mouseleave", lambda: history_button.style("display: none;"))
 
+    from typing import Any, Dict
+
     # 一个专门用于生成轻量级哈希的方法，并加入类型提示
     def _generate_col_signature(self, filtered_dict: Dict[str, Any]) -> int:
         """
@@ -3710,45 +3675,39 @@ class OverviewTableGroup:
 
     async def _update_display(self) -> None:
         """通过轻量级 Hash 校验检测列数据变更，仅刷新变化列对应的待处理状态"""
-        # if (
-        #     self.chip_dialog.value
-        #     or self.check_down_dialog.value
-        #     or self.activ_dialog.value
-        #     or self.img_dialog.value
-        #     or self.overview_video_dialog.value
-        #     or self.history_dialog.value
-        #     or self.autofill_dialog.value
-        # ):
-        #     return
-        # 1. 极速检查：只读取一个浮点数进行比对（O(1) 复杂度）
-        global_version = app.storage.general.get("sync_versions", {}).get(self.project, 0)
-        # 如果版本号没变，说明没有任何人修改数据，直接 return 结束，什么都不做
-        if getattr(self, "local_sync_version", 0) == global_version:
+        if (
+            self.chip_dialog.value
+            or self.check_down_dialog.value
+            or self.activ_dialog.value
+            or self.img_dialog.value
+            or self.overview_video_dialog.value
+            or self.history_dialog.value
+            or self.autofill_dialog.value
+        ):
             return
-        # 2. 发现版本号变了（有人修改了数据），才进行全量重绘
-        self.local_sync_version = global_version
+
         changed_labels = []
-        # show_all = app.storage.client.get("record_switch")
-        # req_max_ver = app.storage.general.get("project_req_max_ver", {}).get(self.project, "1.0")
+        show_all = app.storage.client.get("record_switch")
+        req_max_ver = app.storage.general.get("project_req_max_ver", {}).get(self.project, "1.0")
 
         for config in self.permitted_configs.values():
             label = config["label"]
-            # CHIPS_DICT = db_storage.get_deep_item([f"{self.project}_over_data", label], {})
+            CHIPS_DICT = db_storage.get_deep_item([f"{self.project}_over_data", label], {})
 
             # 【同步修复】：Hash监控也采用 SSOT 过滤
-            # filtered_dict = {}
-            # for k, v in CHIPS_DICT.items():
-            #     current_state = v.get("select_activ_dic", {}).get(req_max_ver)
-            #     is_deactivated = (current_state is False) or (str(current_state).lower() == "false")
+            filtered_dict = {}
+            for k, v in CHIPS_DICT.items():
+                current_state = v.get("select_activ_dic", {}).get(req_max_ver)
+                is_deactivated = (current_state is False) or (str(current_state).lower() == "false")
 
-            #     if show_all or not is_deactivated:
-            #         filtered_dict[k] = v
+                if show_all or not is_deactivated:
+                    filtered_dict[k] = v
 
-            # col_hash = self._generate_col_signature(filtered_dict)
+            col_hash = self._generate_col_signature(filtered_dict)
 
-            # if self.last_state_hashes.get(label) != col_hash:
-            # self.last_state_hashes[label] = col_hash
-            changed_labels.append(label)
+            if self.last_state_hashes.get(label) != col_hash:
+                self.last_state_hashes[label] = col_hash
+                changed_labels.append(label)
 
         if changed_labels:
             overview_role_update(self.project, self.role)
@@ -3970,8 +3929,6 @@ class OverviewTableGroup:
                 # multi_line=True,
                 close_button="✖",
             )
-            # 通知所有看着这个项目的人（包括自己）刷新 UI
-            trigger_global_sync(self.project)
             self._show_related_chip_select_dialog(text, True, "add_chip", config)
             await self._check_and_trigger_autofill(row_id, text, config)
         except Exception as ex:
@@ -4184,8 +4141,6 @@ class OverviewTableGroup:
                     # multi_line=True,
                     close_button="✖",
                 )
-                # 通知所有看着这个项目的人（包括自己）刷新 UI
-                trigger_global_sync(self.project)
                 self._show_related_chip_select_dialog(text, True, "add_chip", config)
                 await self._check_and_trigger_autofill(row_id, text, config)
             except Exception as ex:
@@ -4433,15 +4388,13 @@ class OverviewTableGroup:
             self.spinner.set_visibility(False)
         self.chip_dialog.close()
 
-        # 通知所有看着这个项目的人（包括自己）刷新 UI
-        trigger_global_sync(self.project)
         # 触发关联项选择弹窗
         self._show_related_chip_select_dialog(original_filename, True, "add_chip", config)
         await self._check_and_trigger_autofill(row_id, original_filename, config)
 
         # 触发哈希变更与表格重绘
-        # self.last_state_hashes = {}
-        # await self._update_display()
+        self.last_state_hashes = {}
+        await self._update_display()
 
     # ---------------- 搜索与SVN弹窗 (保留通用结构传Config) ----------------
     def _setup_search_chip_dialog(self):
@@ -4583,7 +4536,6 @@ class OverviewTableGroup:
                     await db_storage.set_deep_item(
                         [f"{self.project}_over_data", config["label"], chip_data["id"]], chip_data
                     )
-
                     self.chip_dialog.close()
                     ui.notify(
                         "文件引用已添加。",
@@ -4596,7 +4548,6 @@ class OverviewTableGroup:
                     )
                     self._show_related_chip_select_dialog(text, True, "add_chip", config)
                     await self._check_and_trigger_autofill(row_id, text, config)
-
             except Exception as ex:
                 # 捕捉潜在的数据库写入等异常
                 logger.error(f"添加概述失败: {ex}", exc_info=True)
@@ -4631,8 +4582,6 @@ class OverviewTableGroup:
                 await db_storage.del_deep_item(
                     [f"{self.project}_over_data", config["label"], chip.props["data-chip-id"]]
                 )
-                # 通知所有看着这个项目的人（包括自己）刷新 UI
-                trigger_global_sync(self.project)
             else:
                 self.current_config = config
                 self._select_set_activ_dialog(chip.props["data-chip-id"], chip.text, config)
@@ -4643,8 +4592,6 @@ class OverviewTableGroup:
                 await db_storage.del_deep_item(
                     [f"{self.project}_over_data", config["label"], thumbnail.props["data-chip-id"]]
                 )
-                # 通知所有看着这个项目的人（包括自己）刷新 UI
-                trigger_global_sync(self.project)
             else:
                 self.current_config = config
                 self._select_set_activ_dialog(thumbnail.props["data-chip-id"], "", config)
@@ -4711,10 +4658,8 @@ class OverviewTableGroup:
                         current_idx -= 1
                         target_row_id = self.ordered_row_ids[current_idx - 1]
 
-        # self.last_state_hashes = {}
-        # await self._update_display()
-        # 通知所有看着这个项目的人（包括自己）刷新 UI
-        trigger_global_sync(self.project)
+        self.last_state_hashes = {}
+        await self._update_display()
 
     async def move_down_data(self, chip_data, config):
         if not self._edit_permission_judge(config):
@@ -4756,10 +4701,8 @@ class OverviewTableGroup:
                         current_idx += 1
                         target_row_id = self.ordered_row_ids[current_idx + 1]
 
-        # self.last_state_hashes = {}
-        # await self._update_display()
-        # 通知所有看着这个项目的人（包括自己）刷新 UI
-        trigger_global_sync(self.project)
+        self.last_state_hashes = {}
+        await self._update_display()
 
     # -------------- 对话框和联动刷新 --------------
     def _show_related_chip_select_dialog(self, chip_text, chip_state, type, config):
@@ -5395,8 +5338,6 @@ class OverviewTableGroup:
                     [f"{self.project}_over_related_record", label, chip_id], process_close_record
                 )
 
-                # 通知所有看着这个项目的人（包括自己）刷新 UI
-                trigger_global_sync(self.project)
                 self._show_related_chip_select_dialog(chip_text, chip_state, "activ_change", config)
                 # 💡 核心新增：级联失活判断逻辑
                 first_col_label = list(self.permitted_configs.values())[0]["label"]
@@ -5405,8 +5346,8 @@ class OverviewTableGroup:
                     current_row_id = db_storage.get_deep_item([f"{self.project}_over_data", label, chip_id, "row_id"])
                     if current_row_id:
                         await self._cascade_deactivate_row(current_row_id, req_max_ver, creator)
-                # self.last_state_hashes = {}  # 触发整体重绘
-                # await self._update_display()
+                self.last_state_hashes = {}  # 触发整体重绘
+                await self._update_display()
 
         except Exception as ex:
             ui.notify(
@@ -5953,7 +5894,6 @@ class OverviewTableGroup:
                 }
 
                 await db_storage.set_deep_item([f"{self.project}_over_data", config["label"], chip_id], chip_data)
-
                 ui_spinner.set_visibility(False)
                 self.chip_dialog.close()
                 ui.notify(
@@ -5965,8 +5905,6 @@ class OverviewTableGroup:
                     # multi_line=True,
                     close_button="✖",
                 )
-                # 通知所有看着这个项目的人（包括自己）刷新 UI
-                trigger_global_sync(self.project)
                 self._show_related_chip_select_dialog(text, True, "add_chip", config)
                 await self._check_and_trigger_autofill(row_id, text, config)
             except Exception as ex:
