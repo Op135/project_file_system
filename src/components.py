@@ -14,10 +14,11 @@ import ssl
 import sys
 import time
 import uuid
+from collections import defaultdict
 from copy import deepcopy
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Callable, Final, Optional, Tuple
+from typing import Callable, DefaultDict, Final, Optional, Tuple
 
 import httpx
 import wcwidth
@@ -54,6 +55,25 @@ from .utils import (
 # 获取一个以此模块命名的 logger
 # 比如：如果你的文件是 src/components.py，这个 logger 的名字就会是 "src.components"
 logger = logging.getLogger(__name__)
+
+
+class OverviewVersionManager:
+    """
+    全局数据版本管理器 (脏标记法中心)
+    数据结构: _versions[project_name][label_name] = integer_version
+    """
+
+    _versions: DefaultDict[str, DefaultDict[str, int]] = defaultdict(lambda: defaultdict(int))
+
+    @classmethod
+    def bump(cls, project: str, label: str) -> None:
+        """标记数据已脏（更新版本号）"""
+        cls._versions[project][label] += 1
+
+    @classmethod
+    def get_version(cls, project: str, label: str) -> int:
+        """获取当前版本号"""
+        return cls._versions[project][label]
 
 
 class StorageBackupManager:
@@ -738,7 +758,9 @@ class InteractiveButton:
         self.history_dialog = ui.dialog().classes("w-full")
 
         # 轻量级同步哈希值
-        self.last_state_hash = None
+        # self.last_state_hash = None
+        # 替换 self.last_state_hash = None
+        self.local_version = -1
 
         if self.processing_type == "file":
             btn_icon = "file_present"
@@ -795,33 +817,38 @@ class InteractiveButton:
 
     async def _update_chip_display(self):
         """核心定时同步函数，对比签名后决定是否刷新"""
-        if (
-            self.chip_dialog.value
-            or self.check_down_dialog.value
-            or self.activ_dialog.value
-            or self.img_dialog.value
-            or self.overview_video_dialog.value
-            or self.history_dialog.value
-        ):
-            return
+        # if (
+        #     self.chip_dialog.value
+        #     or self.check_down_dialog.value
+        #     or self.activ_dialog.value
+        #     or self.img_dialog.value
+        #     or self.overview_video_dialog.value
+        #     or self.history_dialog.value
+        # ):
+        #     return
 
-        CHIPS_DICT = db_storage.get_deep_item([f"{self.project}_over_data", self.label], {})
+        # CHIPS_DICT = db_storage.get_deep_item([f"{self.project}_over_data", self.label], {})
         # show_all = app.storage.client.get("record_switch")
         # conversion_refresh = app.storage.general.get("conversion_refresh", {}).get(self.project)
 
-        filtered_dict = {}
-        for k, v in CHIPS_DICT.items():
-            # if conversion_refresh and v.get("type") == "svn" and v.get("enabled") not in [True, None]:
-            #     continue
-            # if not show_all and v.get("enabled") is False:
-            #     continue
-            # 新逻辑：不跳过，全部加入可见列表，依靠 UI 绑定处理隐藏
-            filtered_dict[k] = v
+        # filtered_dict = {}
+        # for k, v in CHIPS_DICT.items():
+        # if conversion_refresh and v.get("type") == "svn" and v.get("enabled") not in [True, None]:
+        #     continue
+        # if not show_all and v.get("enabled") is False:
+        #     continue
+        # 新逻辑：不跳过，全部加入可见列表，依靠 UI 绑定处理隐藏
+        # filtered_dict[k] = v
 
-        current_hash = self._generate_signature(filtered_dict)
+        # current_hash = self._generate_signature(filtered_dict)
 
-        if self.last_state_hash != current_hash:
-            self.last_state_hash = current_hash
+        # if self.last_state_hash != current_hash:
+        #     self.last_state_hash = current_hash
+
+        # O(1) 复杂度的获取
+        current_version = OverviewVersionManager.get_version(self.project, self.label)
+        if self.local_version != current_version:
+            self.local_version = current_version
             await self._refresh_chip_container()
             overview_role_update(self.project, self.role)
             self._update_local_pending()
@@ -1428,6 +1455,8 @@ class InteractiveButton:
             }
 
             await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id], chip_data)
+            # 数据写入完毕后，推高全局版本号
+            OverviewVersionManager.bump(self.project, self.label)
             await self._update_auto_complete_index(self.label, text)
             self.chip_label.value, self.chip_notes.value = "", ""
             ui_spinner.set_visibility(False)
@@ -1561,6 +1590,8 @@ class InteractiveButton:
                         },
                     }
                     await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id], chip_data)
+                    # 数据写入完毕后，推高全局版本号
+                    OverviewVersionManager.bump(self.project, self.label)
                     self.chip_label.value, self.chip_notes.value = "", ""
                     ui_spinner.set_visibility(False)
                     self.chip_dialog.close()
@@ -1695,6 +1726,8 @@ class InteractiveButton:
                     },
                 }
                 await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id], chip_data)
+                # 数据写入完毕后，推高全局版本号
+                OverviewVersionManager.bump(self.project, self.label)
                 self.chip_label.value, self.chip_notes.value = "", ""
                 ui_spinner.set_visibility(False)
                 self.chip_dialog.close()
@@ -1837,6 +1870,8 @@ class InteractiveButton:
                 }
 
                 await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id], chip_data)
+                # 数据写入完毕后，推高全局版本号
+                OverviewVersionManager.bump(self.project, self.label)
                 self.chip_notes.value = ""
                 ui_spinner.set_visibility(False)
                 self.chip_dialog.close()
@@ -1997,6 +2032,8 @@ class InteractiveButton:
                 },
             }
             await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id], chip_data)
+            # 数据写入完毕后，推高全局版本号
+            OverviewVersionManager.bump(self.project, self.label)
             self.chip_notes.value = ""
             self.spinner.set_visibility(False)
             self.chip_dialog.close()
@@ -2194,6 +2231,8 @@ class InteractiveButton:
                             [f"{self.project}_over_related_record", related_label, related_chip_id, "open"],
                             process_open_record,
                         )
+                # 数据写入完毕后，推高全局版本号
+                OverviewVersionManager.bump(self.project, related_label)
 
     def _show_related_chip_select_dialog(self, chip_text, chip_state, type):
         self.activ_dialog.clear()
@@ -2234,6 +2273,7 @@ class InteractiveButton:
             app.storage.general["over_change_broadcast"][self.project][chip_id]["select_activ_dic"]
         )
         if self._check_version_updated(chip_id, new_select_activ_dic, chip_text):
+            self.cancel_checkbox_change(chip_id)
             return
 
         try:
@@ -2270,6 +2310,8 @@ class InteractiveButton:
                     ],
                     {"creator": creator, "select_activ_dic": new_select_activ_dic},
                 )
+                # 数据写入完毕后，推高全局版本号
+                OverviewVersionManager.bump(self.project, self.label)
 
                 self.cancel_checkbox_change(chip_id)
                 ui_spinner.set_visibility(False)
@@ -2295,8 +2337,8 @@ class InteractiveButton:
                 )
 
                 self._show_related_chip_select_dialog(chip_text, chip_state, "activ_change")
-                self.last_state_hash = None  # Trigger display update via timer
-                await self._update_chip_display()
+                # self.last_state_hash = None  # Trigger display update via timer
+                # await self._update_chip_display()
 
         except Exception as ex:
             logger.error("数据库更新失败", exc_info=True)
@@ -2434,6 +2476,8 @@ class InteractiveButton:
         if self._edit_permission_judge():
             if app.storage.user["current_user"] == "admin":
                 await db_storage.del_deep_item([f"{self.project}_over_data", self.label, chip.props["data-chip-id"]])
+                # 数据写入完毕后，推高全局版本号
+                OverviewVersionManager.bump(self.project, self.label)
             else:
                 self._select_set_activ_dialog(chip.props["data-chip-id"], chip.text)
 
@@ -2444,6 +2488,8 @@ class InteractiveButton:
                 await db_storage.del_deep_item(
                     [f"{self.project}_over_data", self.label, thumbnail.props["data-chip-id"]]
                 )
+                # 数据写入完毕后，推高全局版本号
+                OverviewVersionManager.bump(self.project, self.label)
             else:
                 self._select_set_activ_dialog(thumbnail.props["data-chip-id"])
 
@@ -2472,16 +2518,20 @@ class InteractiveButton:
             await db_storage.atomic_deep_update(
                 [f"{self.project}_over_data", self.label], self._move_data, chip_data["id"], -1
             )
-            self.last_state_hash = None
-            await self._update_chip_display()
+            # 数据写入完毕后，推高全局版本号
+            OverviewVersionManager.bump(self.project, self.label)
+            # self.last_state_hash = None
+            # await self._update_chip_display()
 
     async def move_down_data(self, chip_data):
         if self._edit_permission_judge():
             await db_storage.atomic_deep_update(
                 [f"{self.project}_over_data", self.label], self._move_data, chip_data["id"], 1
             )
-            self.last_state_hash = None
-            await self._update_chip_display()
+            # 数据写入完毕后，推高全局版本号
+            OverviewVersionManager.bump(self.project, self.label)
+            # self.last_state_hash = None
+            # await self._update_chip_display()
 
     async def _update_chip_block_parameter(self, chip_id):
         await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "icon"], "block")
@@ -3121,7 +3171,8 @@ class OverviewTableGroup:
         )
 
         # --- 状态追踪细化到列 (字典结构) ---
-        self.last_state_hashes = {}
+        # self.last_state_hashes = {}
+        self.local_versions = {}
 
         # 初始渲染 & 开启定时器
         ui.timer(1.0, self._update_display)
@@ -3675,38 +3726,39 @@ class OverviewTableGroup:
 
     async def _update_display(self) -> None:
         """通过轻量级 Hash 校验检测列数据变更，仅刷新变化列对应的待处理状态"""
-        if (
-            self.chip_dialog.value
-            or self.check_down_dialog.value
-            or self.activ_dialog.value
-            or self.img_dialog.value
-            or self.overview_video_dialog.value
-            or self.history_dialog.value
-            or self.autofill_dialog.value
-        ):
-            return
+        # if (
+        #     self.chip_dialog.value
+        #     or self.check_down_dialog.value
+        #     or self.activ_dialog.value
+        #     or self.img_dialog.value
+        #     or self.overview_video_dialog.value
+        #     or self.history_dialog.value
+        #     or self.autofill_dialog.value
+        # ):
+        #     return
 
         changed_labels = []
-        show_all = app.storage.client.get("record_switch")
-        req_max_ver = app.storage.general.get("project_req_max_ver", {}).get(self.project, "1.0")
+        # show_all = app.storage.client.get("record_switch")
+        # req_max_ver = app.storage.general.get("project_req_max_ver", {}).get(self.project, "1.0")
 
         for config in self.permitted_configs.values():
             label = config["label"]
-            CHIPS_DICT = db_storage.get_deep_item([f"{self.project}_over_data", label], {})
-
+            # CHIPS_DICT = db_storage.get_deep_item([f"{self.project}_over_data", label], {})
             # 【同步修复】：Hash监控也采用 SSOT 过滤
-            filtered_dict = {}
-            for k, v in CHIPS_DICT.items():
-                current_state = v.get("select_activ_dic", {}).get(req_max_ver)
-                is_deactivated = (current_state is False) or (str(current_state).lower() == "false")
+            # filtered_dict = {}
+            # for k, v in CHIPS_DICT.items():
+            #     current_state = v.get("select_activ_dic", {}).get(req_max_ver)
+            #     is_deactivated = (current_state is False) or (str(current_state).lower() == "false")
 
-                if show_all or not is_deactivated:
-                    filtered_dict[k] = v
+            #     if show_all or not is_deactivated:
+            #         filtered_dict[k] = v
+            # col_hash = self._generate_col_signature(filtered_dict)
 
-            col_hash = self._generate_col_signature(filtered_dict)
-
-            if self.last_state_hashes.get(label) != col_hash:
-                self.last_state_hashes[label] = col_hash
+            current_version = OverviewVersionManager.get_version(self.project, label)
+            # if self.last_state_hashes.get(label) != col_hash:
+            #     self.last_state_hashes[label] = col_hash
+            if self.local_versions.get(label) != current_version:
+                self.local_versions[label] = current_version
                 changed_labels.append(label)
 
         if changed_labels:
@@ -3917,6 +3969,8 @@ class OverviewTableGroup:
                 },
             }
             await db_storage.set_deep_item([f"{self.project}_over_data", config["label"], chip_data["id"]], chip_data)
+            # 数据写入完毕后，推高全局版本号
+            OverviewVersionManager.bump(self.project, config["label"])
 
             ui_spinner.set_visibility(False)
             self.chip_dialog.close()
@@ -4128,6 +4182,8 @@ class OverviewTableGroup:
                 await db_storage.set_deep_item(
                     [f"{self.project}_over_data", config["label"], chip_data["id"]], chip_data
                 )
+                # 数据写入完毕后，推高全局版本号
+                OverviewVersionManager.bump(self.project, config["label"])
 
                 ui_spinner.set_visibility(False)
                 self.chip_notes.value = ""
@@ -4381,7 +4437,8 @@ class OverviewTableGroup:
 
         # 写入数据库
         await db_storage.set_deep_item([f"{self.project}_over_data", config["label"], chip_id], chip_data)
-
+        # 数据写入完毕后，推高全局版本号
+        OverviewVersionManager.bump(self.project, config["label"])
         # 清理状态与UI收尾
         self.chip_notes.value = ""
         if hasattr(self, "spinner"):
@@ -4393,8 +4450,8 @@ class OverviewTableGroup:
         await self._check_and_trigger_autofill(row_id, original_filename, config)
 
         # 触发哈希变更与表格重绘
-        self.last_state_hashes = {}
-        await self._update_display()
+        # self.last_state_hashes = {}
+        # await self._update_display()
 
     # ---------------- 搜索与SVN弹窗 (保留通用结构传Config) ----------------
     def _setup_search_chip_dialog(self):
@@ -4536,6 +4593,9 @@ class OverviewTableGroup:
                     await db_storage.set_deep_item(
                         [f"{self.project}_over_data", config["label"], chip_data["id"]], chip_data
                     )
+                    # 数据写入完毕后，推高全局版本号
+                    OverviewVersionManager.bump(self.project, config["label"])
+
                     self.chip_dialog.close()
                     ui.notify(
                         "文件引用已添加。",
@@ -4582,6 +4642,8 @@ class OverviewTableGroup:
                 await db_storage.del_deep_item(
                     [f"{self.project}_over_data", config["label"], chip.props["data-chip-id"]]
                 )
+                # 数据写入完毕后，推高全局版本号
+                OverviewVersionManager.bump(self.project, config["label"])
             else:
                 self.current_config = config
                 self._select_set_activ_dialog(chip.props["data-chip-id"], chip.text, config)
@@ -4592,6 +4654,8 @@ class OverviewTableGroup:
                 await db_storage.del_deep_item(
                     [f"{self.project}_over_data", config["label"], thumbnail.props["data-chip-id"]]
                 )
+                # 数据写入完毕后，推高全局版本号
+                OverviewVersionManager.bump(self.project, config["label"])
             else:
                 self.current_config = config
                 self._select_set_activ_dialog(thumbnail.props["data-chip-id"], "", config)
@@ -4657,9 +4721,10 @@ class OverviewTableGroup:
                     else:
                         current_idx -= 1
                         target_row_id = self.ordered_row_ids[current_idx - 1]
-
-        self.last_state_hashes = {}
-        await self._update_display()
+        # 数据写入完毕后，推高全局版本号
+        OverviewVersionManager.bump(self.project, config["label"])
+        # self.last_state_hashes = {}
+        # await self._update_display()
 
     async def move_down_data(self, chip_data, config):
         if not self._edit_permission_judge(config):
@@ -4700,9 +4765,10 @@ class OverviewTableGroup:
                     else:
                         current_idx += 1
                         target_row_id = self.ordered_row_ids[current_idx + 1]
-
-        self.last_state_hashes = {}
-        await self._update_display()
+        # 数据写入完毕后，推高全局版本号
+        OverviewVersionManager.bump(self.project, config["label"])
+        # self.last_state_hashes = {}
+        # await self._update_display()
 
     # -------------- 对话框和联动刷新 --------------
     def _show_related_chip_select_dialog(self, chip_text, chip_state, type, config):
@@ -4799,10 +4865,11 @@ class OverviewTableGroup:
                     "timestamp": {time_str: {"creator": creator, "select_activ_dic": select_activ_dic}},
                 }
                 await db_storage.set_deep_item([f"{self.project}_over_data", label, chip_id], chip_data)
-
+                # 数据写入完毕后，推高全局版本号
+                OverviewVersionManager.bump(self.project, label)
             ui.notify("已自动将同行其他概述列填充为【无】", type="info", position="bottom")
-            self.last_state_hashes = {}
-            await self._update_display()
+            # self.last_state_hashes = {}
+            # await self._update_display()
             return
 
         # 2. 读取倒排索引进行精准查找
@@ -4975,11 +5042,12 @@ class OverviewTableGroup:
                             chip_data[ext_field] = copy.deepcopy(template[ext_field])
 
                     await db_storage.set_deep_item([f"{self.project}_over_data", label, chip_id], chip_data)
-
+                # 数据写入完毕后，推高全局版本号
+                OverviewVersionManager.bump(self.project, label)
         self.autofill_dialog.close()
         ui.notify("关联数据自动填充成功!", type="positive", position="bottom")
-        self.last_state_hashes = {}
-        await self._update_display()
+        # self.last_state_hashes = {}
+        # await self._update_display()
 
     async def _set_related_chip_state(
         self, chip_text, chip_state, all_related_bool, related_select_dic, type, config=None
@@ -5020,46 +5088,48 @@ class OverviewTableGroup:
                             )
 
                         # --- 独立更新 连带影响的历史台账（原子追加） ---
-                    time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    current_user = app.storage.user.get("current_user", "匿名用户")
-                    record_entry = {
-                        "operate_user": current_user,
-                        "operate_type": type,
-                        "operate_chip_content": chip_text,
-                        "operate_chip_state": chip_state,
-                    }
+                        time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        current_user = app.storage.user.get("current_user", "匿名用户")
+                        record_entry = {
+                            "operate_user": current_user,
+                            "operate_type": type,
+                            "operate_chip_content": chip_text,
+                            "operate_chip_state": chip_state,
+                        }
 
-                    # 获取需要用于初始化的变量（如果原记录不存在时需要）
-                    related_role = (
-                        app.storage.general.get("over_config_data_flat", {})
-                        .get(related_label, {})
-                        .get("role", "匿名用户")
-                    )
-                    related_user = (
-                        app.storage.general.get("overview_role", {})
-                        .get(self.project, {})
-                        .get(related_role, {})
-                        .get("latest_user", "匿名用户")
-                    )
+                        # 获取需要用于初始化的变量（如果原记录不存在时需要）
+                        related_role = (
+                            app.storage.general.get("over_config_data_flat", {})
+                            .get(related_label, {})
+                            .get("role", "匿名用户")
+                        )
+                        related_user = (
+                            app.storage.general.get("overview_role", {})
+                            .get(self.project, {})
+                            .get(related_role, {})
+                            .get("latest_user", "匿名用户")
+                        )
 
-                    def process_open_record(open_dic):
-                        if not open_dic:  # 第一次被影响，新建打开记录
-                            return {
-                                "open_time": time_str,
-                                "open_related_user": related_user,
-                                "close_time": "",
-                                "close_related_user": "",
-                                "record": {time_str: record_entry},
-                            }
-                        else:  # 已有打开记录，追加本次影响操作
-                            open_dic.setdefault("record", {})[time_str] = record_entry
-                            return open_dic
+                        def process_open_record(open_dic):
+                            if not open_dic:  # 第一次被影响，新建打开记录
+                                return {
+                                    "open_time": time_str,
+                                    "open_related_user": related_user,
+                                    "close_time": "",
+                                    "close_related_user": "",
+                                    "record": {time_str: record_entry},
+                                }
+                            else:  # 已有打开记录，追加本次影响操作
+                                open_dic.setdefault("record", {})[time_str] = record_entry
+                                return open_dic
 
-                    # 执行原子更新
-                    await db_storage.atomic_deep_update(
-                        [f"{self.project}_over_related_record", related_label, related_chip_id, "open"],
-                        process_open_record,
-                    )
+                        # 执行原子更新
+                        await db_storage.atomic_deep_update(
+                            [f"{self.project}_over_related_record", related_label, related_chip_id, "open"],
+                            process_open_record,
+                        )
+            # 数据写入完毕后，推高全局版本号
+            OverviewVersionManager.bump(self.project, related_label)
 
     def _select_set_activ_dialog(self, chip_id, chip_text="", config=None):
         if config is None:
@@ -5185,6 +5255,7 @@ class OverviewTableGroup:
                 continue
 
             CHIPS_DICT = db_storage.get_deep_item([f"{self.project}_over_data", label], {})
+            change_bool = False
             for chip_id, chip_data in CHIPS_DICT.items():
                 if chip_data.get("row_id") == row_id:
                     # 检查当前是否尚未失活 (True 或 None)
@@ -5216,6 +5287,7 @@ class OverviewTableGroup:
                             "select_activ_dic": copy.deepcopy(new_chip_data["select_activ_dic"]),
                         }
                         await db_storage.set_deep_item([f"{self.project}_over_data", label, chip_id], new_chip_data)
+                        change_bool = True
 
                         time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -5236,6 +5308,9 @@ class OverviewTableGroup:
                         await db_storage.atomic_deep_update(
                             [f"{self.project}_over_related_record", label, chip_id], process_close_record
                         )
+            if change_bool:
+                # 数据写入完毕后，推高全局版本号
+                OverviewVersionManager.bump(self.project, label)
 
     def _get_first_col_any_activ_bool(self, chip_row_id, label, chip_id, req_max_ver) -> bool:
         if chip_row_id is None:
@@ -5265,6 +5340,7 @@ class OverviewTableGroup:
             app.storage.general["over_change_broadcast"][self.project][chip_id]["select_activ_dic"]
         )
         if self._check_version_updated(chip_id, new_select_activ_dic, chip_text, config):
+            self.cancel_checkbox_change(chip_id)
             return
 
         try:
@@ -5284,6 +5360,7 @@ class OverviewTableGroup:
                         # multi_line=True,
                         close_button="✖",
                     )
+                    self.cancel_checkbox_change(chip_id)
                     return
 
                 ui_spinner.set_visibility(True)
@@ -5314,6 +5391,8 @@ class OverviewTableGroup:
                     ],
                     {"creator": creator, "select_activ_dic": new_select_activ_dic},
                 )
+                # 数据写入完毕后，推高全局版本号
+                OverviewVersionManager.bump(self.project, config["label"])
 
                 self.cancel_checkbox_change(chip_id)
                 ui_spinner.set_visibility(False)
@@ -5346,8 +5425,8 @@ class OverviewTableGroup:
                     current_row_id = db_storage.get_deep_item([f"{self.project}_over_data", label, chip_id, "row_id"])
                     if current_row_id:
                         await self._cascade_deactivate_row(current_row_id, req_max_ver, creator)
-                self.last_state_hashes = {}  # 触发整体重绘
-                await self._update_display()
+                # self.last_state_hashes = {}  # 触发整体重绘
+                # await self._update_display()
 
         except Exception as ex:
             ui.notify(
@@ -5894,6 +5973,9 @@ class OverviewTableGroup:
                 }
 
                 await db_storage.set_deep_item([f"{self.project}_over_data", config["label"], chip_id], chip_data)
+                # 数据写入完毕后，推高全局版本号
+                OverviewVersionManager.bump(self.project, config["label"])
+
                 ui_spinner.set_visibility(False)
                 self.chip_dialog.close()
                 ui.notify(
