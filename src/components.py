@@ -806,15 +806,16 @@ class InteractiveButton:
             return
 
         CHIPS_DICT = db_storage.get_deep_item([f"{self.project}_over_data", self.label], {})
-        show_all = app.storage.client.get("record_switch")
+        # show_all = app.storage.client.get("record_switch")
         # conversion_refresh = app.storage.general.get("conversion_refresh", {}).get(self.project)
 
         filtered_dict = {}
         for k, v in CHIPS_DICT.items():
             # if conversion_refresh and v.get("type") == "svn" and v.get("enabled") not in [True, None]:
             #     continue
-            if not show_all and v.get("enabled") is False:
-                continue
+            # if not show_all and v.get("enabled") is False:
+            #     continue
+            # 新逻辑：不跳过，全部加入可见列表，依靠 UI 绑定处理隐藏
             filtered_dict[k] = v
 
         current_hash = self._generate_signature(filtered_dict)
@@ -1043,6 +1044,12 @@ class InteractiveButton:
                     .style("font-size: 8px; display: none;")
                     .on("click", js_handler="(e) => {e.stopPropagation()}")
                 )
+            # 🌟 核心性能优化：如果是失活状态，将其可见性与全局开关绑定
+            current_state = chip_info.get("select_activ_dic", {}).get(req_max_ver)
+            is_deactivated = (current_state is False) or (str(current_state).lower() == "false")
+            if is_deactivated:
+                # 当 record_switch 为 True 时显示，False 时隐藏。不再需要重新渲染整个表格！
+                chip.bind_visibility_from(app.storage.client, "record_switch")
 
             def check_ctrl_and_show(e, btns):
                 if e.args.get("ctrlKey"):
@@ -3133,7 +3140,7 @@ class OverviewTableGroup:
 
         # 获取当前项目的最新版本号，作为判断卡片(chip)是否激活的唯一真理依据 (SSOT - Single Source of Truth)
         # 提前规避运行时的状态不确定性
-        req_max_ver = app.storage.general.get("project_req_max_ver", {}).get(self.project, "1.0")
+        # req_max_ver = app.storage.general.get("project_req_max_ver", {}).get(self.project, "1.0")
 
         # ==========================================
         # 1. 预先拉取所有列的数据
@@ -3244,15 +3251,15 @@ class OverviewTableGroup:
                     # 彻底解决历史残余的 enabled=True 但内部状态=False 的数据不一致(怪胎)问题。
                     # ==========================================
                     # 深入底层字典获取当前版本的真实激活状态
-                    current_state = chip.get("select_activ_dic", {}).get(req_max_ver)
+                    # current_state = chip.get("select_activ_dic", {}).get(req_max_ver)
                     # 严格判定失效状态：考虑布尔值 False 以及字符串 "false"（防范弱类型带来的数据污染）
-                    is_deactivated = (current_state is False) or (str(current_state).lower() == "false")
+                    # is_deactivated = (current_state is False) or (str(current_state).lower() == "false")
 
                     # 如果前端没有勾选“显示所有(show_all)” 且 该卡片确实被停用，则在渲染数据中剔除它
-                    if not show_all and is_deactivated:
-                        continue
-
-                    # 否则，卡片有效，加入当前列的可见列表
+                    # if not show_all and is_deactivated:
+                    # continue
+                    # 新逻辑：不跳过，全部加入可见列表，依靠 UI 绑定处理隐藏
+                    # 卡片有效，加入当前列的可见列表
                     visible_chips.append(chip)
                     has_visible_chip = True
 
@@ -3550,6 +3557,12 @@ class OverviewTableGroup:
                     .style("font-size: 8px; display: none;")
                     .on("click", js_handler="(e) => {e.stopPropagation()}")
                 )
+            # 🌟 核心性能优化：如果是失活状态，将其可见性与全局开关绑定
+            current_state = chip_info.get("select_activ_dic", {}).get(req_max_ver)
+            is_deactivated = (current_state is False) or (str(current_state).lower() == "false")
+            if is_deactivated:
+                # 当 record_switch 为 True 时显示，False 时隐藏。不再需要重新渲染整个表格！
+                wrapper.bind_visibility_from(app.storage.client, "record_switch")
 
             # 交互事件
             # 💡 优化 7：使用 display: flex 保持按钮圆圈内的图标居中

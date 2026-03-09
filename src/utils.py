@@ -1237,6 +1237,14 @@ async def extract_requirement(over_data_file_dic, file_path) -> dict:
     new_data = {}
     latest_data = {}
     try:
+        ui.notify(
+            "跳转中......",
+            type="info",
+            position="bottom",
+            timeout=2000,
+            progress=True,
+            close_button="✖",
+        )
         # 第一步，准备旧版本数据
         # 获取更早版本文件数据，如果没有，将当做空数据来处理
         if version_a >= 1:
@@ -1266,16 +1274,16 @@ async def extract_requirement(over_data_file_dic, file_path) -> dict:
                 )
                 await asyncio.sleep(2)
         # 当前版本的上一版为0.0，意味着当前版本为初版1.0
-        else:
-            ui.notify(
-                "本次处理需求为初版，将做第一次记录！",
-                type="info",
-                position="bottom",
-                timeout=2000,
-                progress=True,
-                close_button="✖",
-            )
-            await asyncio.sleep(2)
+        # else:
+        #     ui.notify(
+        #         "本次处理需求为初版，将做第一次记录！",
+        #         type="info",
+        #         position="bottom",
+        #         timeout=2000,
+        #         progress=True,
+        #         close_button="✖",
+        #     )
+        #     await asyncio.sleep(2)
 
         # 第二部，准备新版本数据
         # 检查传入地址是否存在文件
@@ -1704,11 +1712,11 @@ async def requirement_version_tidy(project_name, review: bool) -> str:
                 return ""
             overviow_version = float(overviow_data["version"])
             # 可追加情况
-            if v_max > overviow_version:
+            if v_max >= overviow_version:
                 # 遍历需求配置文件版本号
                 for pro_ver in project_version_li:
                     # 版本小于概述整理文件版本的跳过
-                    if pro_ver <= overviow_version:
+                    if pro_ver < overviow_version:
                         continue
                     # 以项目配置文件 版本 为键，该版本配置文件的 增删改内容及状态信息 为值，保存到概述字典里
                     temp_dict = await extract_requirement(
@@ -1735,21 +1743,21 @@ async def requirement_version_tidy(project_name, review: bool) -> str:
                 except Exception:
                     logger.error("写入概述文件时发生错误", exc_info=True)
                     return ""
-            elif v_max == overviow_version:
-                # 虽然需求没有新版本，但概述文件已经不是第一次创建
-                # 也需将标记改为False，防止初版概述chip激活状态修改记录被抹除
-                if overviow_data["first_create"]:
-                    overviow_data["first_create"] = False
-                    try:
-                        # 将字典转换为 JSON 字符串
-                        overviow_str = json.dumps(overviow_data, indent=4, ensure_ascii=False)
-                        # 写入文件
-                        with open(overview_file_path, "w", encoding="utf-8") as f:
-                            f.write(overviow_str)
-                    except Exception:
-                        logger.error("写入概述文件时发生错误", exc_info=True)
-                        return ""
-                return overview_file_path
+            # elif v_max == overviow_version:
+            #     # 虽然需求没有新版本，但概述文件已经不是第一次创建
+            #     # 也需将标记改为False，防止初版概述chip激活状态修改记录被抹除
+            #     if overviow_data["first_create"]:
+            #         overviow_data["first_create"] = False
+            #         try:
+            #             # 将字典转换为 JSON 字符串
+            #             overviow_str = json.dumps(overviow_data, indent=4, ensure_ascii=False)
+            #             # 写入文件
+            #             with open(overview_file_path, "w", encoding="utf-8") as f:
+            #                 f.write(overviow_str)
+            #         except Exception:
+            #             logger.error("写入概述文件时发生错误", exc_info=True)
+            #             return ""
+            #     return overview_file_path
             else:
                 ui.notify(
                     "出现需求配置丢失现象，请联系管理员处理，否则该项目资料将一直无法展示！",
