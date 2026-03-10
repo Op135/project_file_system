@@ -30,8 +30,8 @@ from nicegui.events import GenericEventArguments, MouseEventArguments, ValueChan
 from . import db_storage  # 导入我们创建的模块
 from .config import (
     FILES_URL_DIR,
-    IGNORE_STR,
     IMG_DIR,
+    NONE_REGULAR,
     OVER_UPLOADS_FILE_TYPE,
     PDF_PREVIEW_CACHE,
     SUBMIT_FILES_DIR,
@@ -1479,14 +1479,19 @@ class InteractiveButton:
                 btn.enable()  # 3. 最终防线：无论成功、失败验证不通过还是报错，都恢复按钮状态
 
     async def _add_search_chip_data(self, ui_spinner, btn=None):
+        text, notes = self.chip_label.value.strip(), self.chip_notes.value.strip()
         # 主内容填写“无”等无效内容情况，转交纯文本方式处理
-        if self.chip_label.value.strip() in IGNORE_STR:
+        ignore_bool = False
+        for regular in NONE_REGULAR:
+            match = re.search(regular, text)
+            if match:
+                ignore_bool = True
+        if ignore_bool:
             await self._add_text_chip_data(ui_spinner, btn)
         else:
             if btn:
                 btn.disable()  # 1. 进门立刻禁用按钮，防止连点
             try:
-                text, notes = self.chip_label.value.strip(), self.chip_notes.value.strip()
                 # 如果填写内容有正则表达式管控，则分析内容是否符合规则
                 regular_bool = False
                 if self.content_regular:
@@ -1614,14 +1619,19 @@ class InteractiveButton:
                 ui_spinner.set_visibility(False)
 
     async def _add_svn_chip_data(self, ui_spinner, btn=None):
+        text, notes = self.chip_label.value.strip(), self.chip_notes.value.strip()
         # 主内容填写“无”等无效内容情况，转交纯文本方式处理
-        if self.chip_label.value.strip() in IGNORE_STR:
+        ignore_bool = False
+        for regular in NONE_REGULAR:
+            match = re.search(regular, text)
+            if match:
+                ignore_bool = True
+        if ignore_bool:
             await self._add_text_chip_data(ui_spinner, btn)
         else:
             if btn:
                 btn.disable()  # 1. 进门立刻禁用按钮，防止连点
             try:
-                text, notes = self.chip_label.value.strip(), self.chip_notes.value.strip()
                 project_state = app.storage.general["project_summary"][self.project]["state"]
                 warehouse = self.state_path.get(project_state)
                 # 如果填写内容有正则表达式管控，则分析内容是否符合规则
@@ -1749,14 +1759,19 @@ class InteractiveButton:
                     btn.enable()  # 3. 最终防线：无论成功、失败验证不通过还是报错，都恢复按钮状态
 
     async def _add_test_chip_data(self, ui_spinner, test_select_data, btn=None):
+        text, notes = self.chip_label.value.strip(), self.chip_notes.value.strip()
         # 主内容填写“无”等无效内容情况，转交纯文本方式处理
-        if self.chip_label.value.strip() in IGNORE_STR:
+        ignore_bool = False
+        for regular in NONE_REGULAR:
+            match = re.search(regular, text)
+            if match:
+                ignore_bool = True
+        if ignore_bool:
             await self._add_text_chip_data(ui_spinner, btn)
         else:
             if btn:
                 btn.disable()  # 1. 进门立刻禁用按钮，防止连点
             try:
-                text, notes = self.chip_label.value.strip(), self.chip_notes.value.strip()
                 other_bool = False
                 if test_select_data["test_nature_select"] == "其它" and not test_select_data["test_nature_other_text"]:
                     other_bool = True
@@ -1893,14 +1908,20 @@ class InteractiveButton:
                     btn.enable()  # 3. 最终防线：无论成功、失败验证不通过还是报错，都恢复按钮状态
 
     async def _get_file_upload(self, btn=None):
+        text = self.chip_notes.value.strip()
         # 主内容填写“无”等无效内容情况，转交纯文本方式处理
-        if self.chip_label.value.strip() in IGNORE_STR:
+        ignore_bool = False
+        for regular in NONE_REGULAR:
+            match = re.search(regular, text)
+            if match:
+                ignore_bool = True
+        if ignore_bool:
             await self._add_text_chip_data(self.spinner, btn)
         else:
             if btn:
                 btn.disable()  # 1. 进门立刻禁用按钮，防止连点
             try:
-                if not self.chip_notes.value:
+                if not text:
                     ui.notify(
                         "注释不能为空!",
                         type="warning",
@@ -4065,14 +4086,19 @@ class OverviewTableGroup:
         self.chip_dialog.open()
 
     async def _add_test_chip_data(self, ui_spinner, test_select_data, btn=None):
+        text, notes = self.chip_label.value.strip(), self.chip_notes.value.strip()
         # 主内容填写“无”等无效内容情况，转交纯文本方式处理
-        if self.chip_label.value.strip() in IGNORE_STR:
+        ignore_bool = False
+        for regular in NONE_REGULAR:
+            match = re.search(regular, text)
+            if match:
+                ignore_bool = True
+        if ignore_bool:
             await self._add_text_chip_data(ui_spinner, btn)
         else:
             if btn:
                 btn.disable()  # 1. 进门立刻禁用按钮，防止连点
             try:
-                text, notes = self.chip_label.value.strip(), self.chip_notes.value.strip()
                 config = self.current_config
                 other_bool = any(
                     test_select_data[f"{p}_select"] == "其它" and not test_select_data[f"{p}_other_text"]
@@ -4237,14 +4263,20 @@ class OverviewTableGroup:
         self.chip_dialog.open()
 
     async def _get_file_upload(self, btn=None):
+        text = self.chip_notes.value.strip()
         # 主内容填写“无”等无效内容情况，转交纯文本方式处理
-        if self.chip_label.value.strip() in IGNORE_STR:
+        ignore_bool = False
+        for regular in NONE_REGULAR:
+            match = re.search(regular, text)
+            if match:
+                ignore_bool = True
+        if ignore_bool:
             await self._add_text_chip_data(self.spinner, btn)
         else:
             if btn:
                 btn.disable()  # 1. 进门立刻禁用按钮，防止连点
             try:
-                if not self.chip_notes.value:
+                if not text:
                     ui.notify(
                         "注释不能为空!",
                         type="warning",
@@ -4476,15 +4508,20 @@ class OverviewTableGroup:
         self.chip_dialog.open()
 
     async def _add_search_chip_data(self, ui_spinner, btn=None):
+        text, notes = self.chip_label.value.strip(), self.chip_notes.value.strip()
         # 主内容填写“无”等无效内容情况，转交纯文本方式处理
-        if self.chip_label.value.strip() in IGNORE_STR:
+        ignore_bool = False
+        for regular in NONE_REGULAR:
+            match = re.search(regular, text)
+            if match:
+                ignore_bool = True
+        if ignore_bool:
             await self._add_text_chip_data(ui_spinner, btn)
         else:
             if btn:
                 btn.disable()  # 1. 进门立刻禁用按钮，防止连点
             try:
                 config = self.current_config
-                text, notes = self.chip_label.value.strip(), self.chip_notes.value.strip()
                 # 如果填写内容有正则表达式管控，则分析内容是否符合规则
                 regular_bool = False
                 if config.get("content_regular", []):
@@ -4844,7 +4881,12 @@ class OverviewTableGroup:
         time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         # 1. 优雅降级处理：首列为“无”时，强制将同行其他列以 "text" 类型填充为“无”
-        if first_col_content in IGNORE_STR or first_col_content == "无":
+        ignore_bool = False
+        for regular in NONE_REGULAR:
+            match = re.search(regular, first_col_content)
+            if match:
+                ignore_bool = True
+        if ignore_bool:
             for col_cfg in subsequent_configs:
                 label = col_cfg["label"]
                 chip_id = str(uuid.uuid4())
@@ -5852,16 +5894,21 @@ class OverviewTableGroup:
         self.chip_dialog.open()
 
     async def _add_svn_chip_data(self, ui_spinner, btn=None):
+        text = self.chip_label.value.strip()
+        notes = self.chip_notes.value.strip()
         # 主内容填写“无”等无效内容情况，转交纯文本方式处理
-        if self.chip_label.value.strip() in IGNORE_STR:
+        ignore_bool = False
+        for regular in NONE_REGULAR:
+            match = re.search(regular, text)
+            if match:
+                ignore_bool = True
+        if ignore_bool:
             await self._add_text_chip_data(ui_spinner, btn)
         else:
             if btn:
                 btn.disable()  # 1. 进门立刻禁用按钮，防止连点
             try:
                 config = self.current_config
-                text = self.chip_label.value.strip()
-                notes = self.chip_notes.value.strip()
                 project_state = app.storage.general["project_summary"][self.project]["state"]
                 warehouse = config.get("state_path", {}).get(project_state)
                 file_info = (False, None)
