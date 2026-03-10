@@ -3941,8 +3941,10 @@ async def requirement_page(type="", json_path="", project_name=""):
                         overview_role_update(project_name, "initialize")
                         # 显示概述模块内容
                         num_chip_dic = {}
+                        group_li_dic = {}
 
                         async def _update_num_chip_text():
+                            over_flat = app.storage.general.get("over_config_data_flat", {})
                             for role in app.storage.general["over_config_data"].keys():
                                 num_chip_dic.setdefault(role, {})
                                 latest_user = (
@@ -3952,22 +3954,22 @@ async def requirement_page(type="", json_path="", project_name=""):
                                     .get("latest_user", "")
                                     .split("：")[1]
                                 )
-                                pending_li = (
+                                pending_dic = (
                                     app.storage.general["overview_charge_pending"]
                                     .get(latest_user, {})
                                     .get(project_name, {})
-                                    .values()
                                 )
                                 none_num = 0
                                 pending_num = 0
                                 need_num = 0
-                                for p in pending_li:
-                                    if p == "缺必填":
-                                        none_num += 1
-                                    elif p == "有待定":
-                                        pending_num += 1
-                                    elif p == "缺需填":
-                                        need_num += 1
+                                for k, p in pending_dic.items():
+                                    if over_flat.get(k, {}).get("role", "") == role:
+                                        if p == "缺必填":
+                                            none_num += 1
+                                        elif p == "有待定":
+                                            pending_num += 1
+                                        elif p == "缺需填":
+                                            need_num += 1
                                 num_chip_dic[role]["none_num_text"] = f"必填项缺：{none_num}项"
                                 num_chip_dic[role]["pending_num_text"] = f"待定项：{pending_num}项"
                                 num_chip_dic[role]["need_num_text"] = f"需填项缺：{need_num}项"
@@ -3984,6 +3986,38 @@ async def requirement_page(type="", json_path="", project_name=""):
                                 else:
                                     num_chip_dic[role]["need_chip_visibility"] = False
 
+                                # --- 提取并构建 HTML 格式的 Tooltip 内容 ---
+                                # tooltip_str_dic.setdefault(role, {})
+                                none_group_li = [
+                                    over_flat.get(k, {}).get("group_name", "")
+                                    for k, v in pending_dic.items()
+                                    if v == "缺必填"
+                                ]
+                                need_group_li = [
+                                    over_flat.get(k, {}).get("group_name", "")
+                                    for k, v in pending_dic.items()
+                                    if v == "缺需填"
+                                ]
+                                pending_group_li = [
+                                    over_flat.get(k, {}).get("group_name", "")
+                                    for k, v in pending_dic.items()
+                                    if v == "有待定"
+                                ]
+                                group_li_dic[role] = {
+                                    "none_group_li": none_group_li,
+                                    "need_group_li": need_group_li,
+                                    "pending_group_li": pending_group_li,
+                                }
+                                # tooltip_str_dic[role][false_tooltip_html]=false_tooltip_html
+                                # tooltip_str_dic[role][need_tooltip_html]=need_tooltip_html
+                                # tooltip_str_dic[role][none_tooltip_html]=none_tooltip_html
+
+                        def _chip_onclick(role_expansions, group_li):
+                            for ex in role_expansions:
+                                for group_name in group_li:
+                                    if ex.text == group_name:
+                                        ex.set_value(True)
+
                         await _update_num_chip_text()
                         for role, over_data in app.storage.general["over_config_data"].items():
                             with ui.card().classes("w-full px-3 gap-0"):
@@ -3999,16 +4033,42 @@ async def requirement_page(type="", json_path="", project_name=""):
                                         "text-xs"
                                     ).bind_text(app.storage.general["overview_role"][project_name][role], "latest_user")
 
-                                    ui.chip(icon="error", color="red-5").props("outline").classes("text-xs").bind_text(
-                                        num_chip_dic[role], "none_num_text"
-                                    ).bind_visibility_from(num_chip_dic[role], "none_chip_visibility")
-                                    ui.chip(icon="help", color="amber-5").props("outline").classes("text-xs").bind_text(
-                                        num_chip_dic[role], "pending_num_text"
-                                    ).bind_visibility_from(num_chip_dic[role], "pending_chip_visibility")
-                                    ui.chip(icon="info", color="blue-5").props("outline").classes("text-xs").bind_text(
-                                        num_chip_dic[role], "need_num_text"
-                                    ).bind_visibility_from(num_chip_dic[role], "need_chip_visibility")
-
+                                    none_num_chip = (
+                                        ui.chip(icon="error", color="red-5")
+                                        .props("outline")
+                                        .classes("text-xs")
+                                        .bind_text(num_chip_dic[role], "none_num_text")
+                                        .bind_visibility_from(num_chip_dic[role], "none_chip_visibility")
+                                    )
+                                    pending_num_chip = (
+                                        ui.chip(icon="help", color="amber-5")
+                                        .props("outline")
+                                        .classes("text-xs")
+                                        .bind_text(num_chip_dic[role], "pending_num_text")
+                                        .bind_visibility_from(num_chip_dic[role], "pending_chip_visibility")
+                                    )
+                                    need_num_chip = (
+                                        ui.chip(icon="info", color="blue-5")
+                                        .props("outline")
+                                        .classes("text-xs")
+                                        .bind_text(num_chip_dic[role], "need_num_text")
+                                        .bind_visibility_from(num_chip_dic[role], "need_chip_visibility")
+                                    )
+                                    none_num_chip.on_click(
+                                        lambda exps=current_role_expansions, group_li=group_li_dic[role]["none_group_li"]: (
+                                            _chip_onclick(exps, group_li)
+                                        )
+                                    )
+                                    pending_num_chip.on_click(
+                                        lambda exps=current_role_expansions, group_li=group_li_dic[role]["pending_group_li"]: (
+                                            _chip_onclick(exps, group_li)
+                                        )
+                                    )
+                                    need_num_chip.on_click(
+                                        lambda exps=current_role_expansions, group_li=group_li_dic[role]["need_group_li"]: (
+                                            _chip_onclick(exps, group_li)
+                                        )
+                                    )
                                     # --- 修改点：在 switch 左边增加历史记录按钮 (Feature 1) ---
                                     # 使用 absolute 定位放到 switch 左边，或者重新布局
                                     # 原有的 switch 是 absolute top-0 right-2
