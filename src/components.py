@@ -3198,8 +3198,6 @@ class OverviewTableGroup:
         # 初始渲染 & 开启定时器
         ui.timer(1.0, self._update_display)
 
-    import uuid
-
     async def _group_and_migrate_data(self, col_configs, show_all):
         """
         核心方法：将按列存放的数据转换为按行存放，并无缝清洗旧数据。
@@ -3430,10 +3428,25 @@ class OverviewTableGroup:
                 bg_color = "bg-white" if index % 2 == 0 else "bg-gray-50/40"
                 row_id = row_data["row_id"]
                 row_chips = row_data["chips"]
-
-                with ui.row().classes(
+                # 💡 核心优化 1：前置预判当前行是否【完全失活】
+                is_row_totally_deactivated = True
+                for chips_in_col in row_chips.values():
+                    for chip in chips_in_col:
+                        current_state = chip.get("select_activ_dic", {}).get(req_max_ver)
+                        is_deactivated = (current_state is False) or (str(current_state).lower() == "false")
+                        if not is_deactivated:
+                            is_row_totally_deactivated = False
+                            break
+                    if not is_row_totally_deactivated:
+                        break
+                row_container = ui.row().classes(
                     f"w-full flex-nowrap border-b border-gray-100 {bg_color} items-stretch p-0 m-0  -space-x-4 hover:bg-amber-50/40 transition-colors"
-                ):
+                )
+                # 💡 核心优化 2：将可见性与前端全局开关绑定，直接作用于 UI 行容器
+                if is_row_totally_deactivated:
+                    row_container.bind_visibility_from(app.storage.client, "record_switch")
+
+                with row_container:
                     for config in col_configs:
                         label = config["label"]
 
@@ -3705,6 +3718,12 @@ class OverviewTableGroup:
                     .style("font-size: 8px; display: none;")
                     .on("click", js_handler="(e) => {e.stopPropagation()}")  # 阻止事件冒泡
                 )
+            # 🌟 核心性能优化：如果是失活状态，将其可见性与全局开关绑定
+            current_state = chip_info.get("select_activ_dic", {}).get(req_max_ver)
+            is_deactivated = (current_state is False) or (str(current_state).lower() == "false")
+            if is_deactivated:
+                # 当 record_switch 为 True 时显示，False 时隐藏。不再需要重新渲染整个表格！
+                wrapper.bind_visibility_from(app.storage.client, "record_switch")
 
             # 交互事件
             # 💡 优化 7：使用 display: flex 保持按钮圆圈内的图标居中
