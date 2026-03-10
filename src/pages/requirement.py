@@ -3940,6 +3940,51 @@ async def requirement_page(type="", json_path="", project_name=""):
                     with ui.column().classes("w-full overflow-y-auto p-1 gap-2 rounded"):
                         overview_role_update(project_name, "initialize")
                         # 显示概述模块内容
+                        num_chip_dic = {}
+
+                        async def _update_num_chip_text():
+                            for role in app.storage.general["over_config_data"].keys():
+                                num_chip_dic.setdefault(role, {})
+                                latest_user = (
+                                    app.storage.general["overview_role"]
+                                    .get(project_name, {})
+                                    .get(role, {})
+                                    .get("latest_user", "")
+                                    .split("：")[1]
+                                )
+                                pending_li = (
+                                    app.storage.general["overview_charge_pending"]
+                                    .get(latest_user, {})
+                                    .get(project_name, {})
+                                    .values()
+                                )
+                                none_num = 0
+                                pending_num = 0
+                                need_num = 0
+                                for p in pending_li:
+                                    if p == "缺必填":
+                                        none_num += 1
+                                    elif p == "有待定":
+                                        pending_num += 1
+                                    elif p == "缺需填":
+                                        need_num += 1
+                                num_chip_dic[role]["none_num_text"] = f"必填项缺：{none_num}项"
+                                num_chip_dic[role]["pending_num_text"] = f"待定项：{pending_num}项"
+                                num_chip_dic[role]["need_num_text"] = f"需填项缺：{need_num}项"
+                                if none_num:
+                                    num_chip_dic[role]["none_chip_visibility"] = True
+                                else:
+                                    num_chip_dic[role]["none_chip_visibility"] = False
+                                if pending_num:
+                                    num_chip_dic[role]["pending_chip_visibility"] = True
+                                else:
+                                    num_chip_dic[role]["pending_chip_visibility"] = False
+                                if need_num:
+                                    num_chip_dic[role]["need_chip_visibility"] = True
+                                else:
+                                    num_chip_dic[role]["need_chip_visibility"] = False
+
+                        await _update_num_chip_text()
                         for role, over_data in app.storage.general["over_config_data"].items():
                             with ui.card().classes("w-full px-3 gap-0"):
                                 # 创建一个空列表，用于存储当前分组下的所有 expansion 对象
@@ -3949,9 +3994,21 @@ async def requirement_page(type="", json_path="", project_name=""):
                                     ui.chip(icon="history", color="brown-7").props("outline").classes(
                                         "text-xs"
                                     ).bind_text(app.storage.general["overview_role"][project_name][role], "most_user")
+
                                     ui.chip(icon="add_reaction", color="green-7").props("outline").classes(
                                         "text-xs"
                                     ).bind_text(app.storage.general["overview_role"][project_name][role], "latest_user")
+
+                                    ui.chip(icon="error", color="red-5").props("outline").classes("text-xs").bind_text(
+                                        num_chip_dic[role], "none_num_text"
+                                    ).bind_visibility_from(num_chip_dic[role], "none_chip_visibility")
+                                    ui.chip(icon="help", color="amber-5").props("outline").classes("text-xs").bind_text(
+                                        num_chip_dic[role], "pending_num_text"
+                                    ).bind_visibility_from(num_chip_dic[role], "pending_chip_visibility")
+                                    ui.chip(icon="info", color="blue-5").props("outline").classes("text-xs").bind_text(
+                                        num_chip_dic[role], "need_num_text"
+                                    ).bind_visibility_from(num_chip_dic[role], "need_chip_visibility")
+
                                     # --- 修改点：在 switch 左边增加历史记录按钮 (Feature 1) ---
                                     # 使用 absolute 定位放到 switch 左边，或者重新布局
                                     # 原有的 switch 是 absolute top-0 right-2
@@ -4119,7 +4176,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                                                             nature=is_required_btn,
                                                             # delete_bool=False,
                                                         )
-
+                            ui.timer(1.0, _update_num_chip_text)
             with ui.row().classes("fixed bottom-0 left-0 right-0 bg-sky-50 p-3 items-center shadow-inner"):
                 ui.label(text="参考文件：").classes("text-lg text-black m-0")
                 # 创建一个按钮组件，组件里有一个空白行，待后续往里面放缩略图
