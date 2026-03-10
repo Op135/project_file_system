@@ -1,7 +1,7 @@
 # -*- encoding: utf-8 -*-
-import json
 import logging
 import os
+import time
 import warnings
 from logging.handlers import RotatingFileHandler
 
@@ -24,7 +24,6 @@ from .utils import (  # 导入上面定义的函数
     handle_connect,
     handle_disconnect,
     updata_overview_config,
-    update_overview_charge_pending_dic,
 )
 
 # 注册这两个钩子，实现监控用户连线与下线
@@ -178,8 +177,8 @@ app.storage.general.setdefault("over_change_broadcast", {})
 app.storage.general.setdefault("over_config_data_flat", {})
 # 储存服务器层级 用于扁平化需求配置里的定制标签信息{"node_id": {"option_id":"option_label"}}
 app.storage.general.setdefault("config_service_custom_labels", {})
-# 触发全局同步标记，通知所有监听此项目的客户端，暂时不用
-app.storage.general.setdefault("sync_versions", {})
+# 用于全局更新标记，通知所有监听此项目的客户端，暂时不用
+app.storage.general.setdefault("overview_last_update", {})
 
 
 @ui.page("/view/svn_pdf")

@@ -93,6 +93,7 @@ def update_overview_charge_pending_dic(scope, des_user="", project_name="", des_
     scope传入all时，刷新所有项目概述负责人待定状态字典信息（采用全量重建策略，自动清理已失效的标题Key）；
     scope传入local时，只刷新指定负责人、指定项目、指定概述标签类的待定状态信息，极致响应速度；
     """
+
     if scope == "all":
         # 优化核心：放弃在旧字典上原地修改，创建一个全新的空字典
         # 这样可以彻底丢弃因配置修改而遗留的无效 "title" 键
@@ -280,6 +281,8 @@ def update_overview_charge_pending_dic(scope, des_user="", project_name="", des_
         # 同样在 Local 层清理空用户
         if not pending_storage.get(des_user):
             pending_storage.pop(des_user, None)
+
+    app.storage.general["overview_last_update"][project_name] = time.time()
 
 
 # 判断传入的概述负责角色是否与当前登录的角色匹配

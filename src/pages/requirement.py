@@ -3942,17 +3942,30 @@ async def requirement_page(type="", json_path="", project_name=""):
                         # 显示概述模块内容
                         num_chip_dic = {}
                         group_li_dic = {}
+                        client_last_sync_time = 0
 
                         async def _update_num_chip_text():
+                            nonlocal client_last_sync_time
+                            # 1. 极低成本获取全局最后更新时间（如果没有，默认为1）
+                            global_update_time = app.storage.general.get("overview_last_update", {}).get(
+                                project_name, 1
+                            )
+                            # 2. 如果全局时间戳没有变，直接 return，阻断后续所有高昂的计算！
+                            if client_last_sync_time == global_update_time:
+                                return
+                            # 3. 记录新的时间戳
+                            client_last_sync_time = global_update_time
                             over_flat = app.storage.general.get("over_config_data_flat", {})
                             for role in app.storage.general["over_config_data"].keys():
                                 num_chip_dic.setdefault(role, {})
-                                latest_user = (
+                                raw_latest_user = (
                                     app.storage.general["overview_role"]
                                     .get(project_name, {})
                                     .get(role, {})
                                     .get("latest_user", "")
-                                    .split("：")[1]
+                                )
+                                latest_user = (
+                                    raw_latest_user.split("：")[1] if "：" in raw_latest_user else raw_latest_user
                                 )
                                 pending_dic = (
                                     app.storage.general["overview_charge_pending"]
@@ -4008,9 +4021,6 @@ async def requirement_page(type="", json_path="", project_name=""):
                                     "need_group_li": need_group_li,
                                     "pending_group_li": pending_group_li,
                                 }
-                                # tooltip_str_dic[role][false_tooltip_html]=false_tooltip_html
-                                # tooltip_str_dic[role][need_tooltip_html]=need_tooltip_html
-                                # tooltip_str_dic[role][none_tooltip_html]=none_tooltip_html
 
                         def _chip_onclick(role_expansions, group_li):
                             for ex in role_expansions:
@@ -4025,37 +4035,37 @@ async def requirement_page(type="", json_path="", project_name=""):
                                 current_role_expansions = []
                                 with ui.row().classes("relative flex-nowrap -space-x-2 items-center w-full"):
                                     ui.label(f"{role}概述：").classes("text-base text-left px-1 font-bold")
-                                    ui.chip(icon="history", color="brown-7").props("outline").classes(
+                                    ui.chip(icon="history", color="blue-5").props("outline").classes(
                                         "text-xs"
                                     ).bind_text(app.storage.general["overview_role"][project_name][role], "most_user")
 
-                                    ui.chip(icon="add_reaction", color="green-7").props("outline").classes(
+                                    ui.chip(icon="add_reaction", color="cyan-5").props("outline").classes(
                                         "text-xs"
                                     ).bind_text(app.storage.general["overview_role"][project_name][role], "latest_user")
 
-                                    none_num_chip = (
-                                        ui.chip(icon="error", color="red-5")
-                                        .props("outline")
-                                        .classes("text-xs")
-                                        .bind_text(num_chip_dic[role], "none_num_text")
-                                        .bind_visibility_from(num_chip_dic[role], "none_chip_visibility")
-                                    )
-                                    pending_num_chip = (
-                                        ui.chip(icon="help", color="amber-5")
-                                        .props("outline")
-                                        .classes("text-xs")
-                                        .bind_text(num_chip_dic[role], "pending_num_text")
-                                        .bind_visibility_from(num_chip_dic[role], "pending_chip_visibility")
-                                    )
                                     need_num_chip = (
-                                        ui.chip(icon="info", color="blue-5")
+                                        ui.chip(icon="info", color="green-5")
                                         .props("outline")
                                         .classes("text-xs")
                                         .bind_text(num_chip_dic[role], "need_num_text")
                                         .bind_visibility_from(num_chip_dic[role], "need_chip_visibility")
                                     )
-                                    none_num_chip.on_click(
-                                        lambda exps=current_role_expansions, group_li=group_li_dic[role]["none_group_li"]: (
+                                    pending_num_chip = (
+                                        ui.chip(icon="help", color="orange-5")
+                                        .props("outline")
+                                        .classes("text-xs")
+                                        .bind_text(num_chip_dic[role], "pending_num_text")
+                                        .bind_visibility_from(num_chip_dic[role], "pending_chip_visibility")
+                                    )
+                                    none_num_chip = (
+                                        ui.chip(icon="error", color="red-4")
+                                        .props("outline")
+                                        .classes("text-xs")
+                                        .bind_text(num_chip_dic[role], "none_num_text")
+                                        .bind_visibility_from(num_chip_dic[role], "none_chip_visibility")
+                                    )
+                                    need_num_chip.on_click(
+                                        lambda exps=current_role_expansions, group_li=group_li_dic[role]["need_group_li"]: (
                                             _chip_onclick(exps, group_li)
                                         )
                                     )
@@ -4064,8 +4074,8 @@ async def requirement_page(type="", json_path="", project_name=""):
                                             _chip_onclick(exps, group_li)
                                         )
                                     )
-                                    need_num_chip.on_click(
-                                        lambda exps=current_role_expansions, group_li=group_li_dic[role]["need_group_li"]: (
+                                    none_num_chip.on_click(
+                                        lambda exps=current_role_expansions, group_li=group_li_dic[role]["none_group_li"]: (
                                             _chip_onclick(exps, group_li)
                                         )
                                     )
@@ -4236,7 +4246,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                                                             nature=is_required_btn,
                                                             # delete_bool=False,
                                                         )
-                            ui.timer(1.0, _update_num_chip_text)
+                            ui.timer(2.0, _update_num_chip_text)
             with ui.row().classes("fixed bottom-0 left-0 right-0 bg-sky-50 p-3 items-center shadow-inner"):
                 ui.label(text="参考文件：").classes("text-lg text-black m-0")
                 # 创建一个按钮组件，组件里有一个空白行，待后续往里面放缩略图
