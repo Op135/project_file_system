@@ -3190,11 +3190,6 @@ class OverviewTableGroup:
         ).props("accept=*/*")
         self.uploader.set_visibility(False)
 
-        # 表格的主容器
-        self.container = ui.column().classes(
-            "w-full gap-0 border border-blue-200 rounded-sm overflow-hidden mt-2 bg-white"
-        )
-
         # --- 状态追踪细化到列 (字典结构) ---
         # self.last_state_hashes = {}
         self.local_versions = {}
@@ -3582,6 +3577,7 @@ class OverviewTableGroup:
             # 场景 1：这是一行全新的数据（首次加载，或刚刚新增）
             if row_id not in self.row_containers:
                 with self.body_container:
+                    # 这里的 class 是横向排列的根本保证，绝不能被替换掉
                     row_container = ui.row().classes(
                         "w-full flex-nowrap border-b border-gray-100 items-stretch p-0 m-0 -space-x-4 hover:bg-amber-50/40 transition-colors"
                     )
@@ -3593,22 +3589,21 @@ class OverviewTableGroup:
                 )
                 self.row_hashes[row_id] = new_hash
 
-            # 场景 2：这行数据已存在，但 Hash 发生了变化（被编辑、添加或删除了 Chip）
+            # 场景 2：这行数据已存在，但 Hash 发生了变化
             elif self.row_hashes.get(row_id) != new_hash:
                 row_container = self.row_containers[row_id]
-                row_container.clear()  # 只清空这一行，不影响其他行！
+                row_container.clear()  # 只清空这一行的内部元素
 
                 await self._render_single_row_content(
                     row_container, row_data, col_configs, req_max_ver, is_row_totally_deactivated
                 )
                 self.row_hashes[row_id] = new_hash
 
-            # 无论是否更新，根据索引动态调整行的斑马纹背景色
+            # 💡 核心修复：使用 remove 和 add 来精准切换背景色，保留原有的 Flex 布局类
             bg_color = "bg-white" if index % 2 == 0 else "bg-gray-50/40"
-            self.row_containers[row_id].classes(replace=bg_color)
+            self.row_containers[row_id].classes(remove="bg-white bg-gray-50/40", add=bg_color)
 
-            # 核心机制：强制重新对齐 DOM 树顺序（处理行上移/下移逻辑）
-            # NiceGUI 的 move 方法非常轻量，仅仅是改变 DOM 节点的位置，不会重新渲染内部元素
+            # 重新对齐 DOM 树顺序（处理行上移/下移逻辑）
             self.row_containers[row_id].move(self.body_container, index)
 
         # 场景 3：处理被删除的废弃行
@@ -3630,12 +3625,15 @@ class OverviewTableGroup:
         if is_row_totally_deactivated:
             row_container.bind_visibility_from(app.storage.client, "record_switch")
         else:
-            # 如果原来被隐藏，现在激活了，需要清除绑定并强行可见
+            # 💡 安全修复：如果一行原本是失活的（被绑定了隐藏开关），重新激活时必须解绑，否则会显示不出来
+            if hasattr(row_container, "_bindings") and "visible" in row_container._bindings:
+                del row_container._bindings["visible"]
             row_container.set_visibility(True)
 
         with row_container:
             for config in col_configs:
                 label = config["label"]
+                # 这里的 flex-1 保证了每一列等宽并横向铺开
                 with ui.column().classes(
                     "flex-1 p-2 pb-4 border-r border-gray-100 last:border-r-0 items-start justify-start min-w-[100px] relative group gap-1"
                 ):
@@ -4010,7 +4008,7 @@ class OverviewTableGroup:
             if self.temp_bool:
                 msg = "当前处于需求审核界面，概述内容锁定不可编辑!"
             elif app.storage.user["current_role"] not in config.get("permission", {}).get("edit_role", []):
-                msg = "当前用户无该项编辑权限，请联系管理员申请2!"
+                msg = "当前用户无该项编辑权限，请联系管理员申请!"
             else:
                 msg = "项目当前状态禁止编辑概述!"
             ui.notify(
