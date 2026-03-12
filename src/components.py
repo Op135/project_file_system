@@ -3154,6 +3154,9 @@ class OverviewTableGroup:
         self.permitted_configs = {}
         self.ordered_row_ids = []
         self._is_refreshing = False  # 在开始重绘表格前检查为Ture则放弃本次重绘（因为前面已经在重绘中还没结束），重绘过程中设置为True，重绘后设置为False，
+        # 新增：用于追踪每一行的容器和状态签名
+        self.row_containers = {}  # 格式: {row_id: ui.row()}
+        self.row_hashes = {}  # 格式: {row_id: int(hash)}
 
         user_role = app.storage.user.get("current_role", "")
         for config in self.configs:
@@ -3195,9 +3198,39 @@ class OverviewTableGroup:
         # --- 状态追踪细化到列 (字典结构) ---
         # self.last_state_hashes = {}
         self.local_versions = {}
+        # 表格的主容器
+        self.container = ui.column().classes(
+            "w-full gap-0 border border-blue-200 rounded-sm overflow-hidden mt-2 bg-white"
+        )
+
+        # 【核心修改 1】：划分三大独立渲染区域
+        with self.container:
+            self.header_container = ui.row().classes(
+                "w-full flex-nowrap bg-blue-50/80 border-b border-blue-200 p-0 m-0 items-center -space-x-4"
+            )
+            self.body_container = ui.column().classes("w-full gap-0 p-0 m-0")
+            self.footer_container = ui.row().classes("w-full bg-blue-50/30 justify-center p-0")
+
+        # 初始化静态表尾（因为底部添加按钮逻辑不变，只需要渲染一次）
+        with self.footer_container:
+            ui.button("", icon="add", on_click=lambda: self._handle_add_new_row()).classes("w-full text-[8px]").props(
+                "flat"
+            )
 
         # 初始渲染 & 开启定时器
         ui.timer(1.0, self._update_display)
+
+    def _compute_row_hash(self, row_data: dict) -> int:
+        """为单行数据生成轻量级指纹，用于判断该行是否需要重绘"""
+        signature = []
+        # 遍历该行的所有列及芯片
+        for label, chips in row_data.get("chips", {}).items():
+            for chip in chips:
+                timestamps = chip.get("timestamp", {})
+                latest_time = max(timestamps.keys()) if timestamps else ""
+                # 提取影响 UI 显示的核心元素：ID、启用状态、修改时间、行ID
+                signature.append((chip.get("id"), chip.get("enabled"), latest_time, chip.get("row_id")))
+        return hash(tuple(signature))
 
     async def _group_and_migrate_data(self, col_configs, show_all):
         """
@@ -3483,6 +3516,149 @@ class OverviewTableGroup:
                 ui.button("", icon="add", on_click=lambda: self._handle_add_new_row()).classes(
                     "w-full text-[8px]"
                 ).props("flat")
+
+    async def _render_header(self, col_configs):
+        """仅重绘表头（因为表头的小红点状态可能会变，但节点很少，重绘极快）"""
+        self.header_container.clear()
+        with self.header_container:
+            for config in col_configs:
+                label = config["label"]
+                role = config["role"]
+                latest_user_str = (
+                    app.storage.general.get("overview_role", {})
+                    .get(self.project, {})
+                    .get(role, {})
+                    .get("latest_user", "")
+                )
+                des_user = latest_user_str.split("：")[1] if latest_user_str else ""
+
+                chip_col_state = (
+                    app.storage.general.get("overview_charge_pending", {})
+                    .get(des_user, {})
+                    .get(self.project, {})
+                    .get(label)
+                )
+                dot_color = "text-red"
+                if chip_col_state == "有待定":
+                    dot_color = "text-orange"
+                elif des_user == "——" or des_user and chip_col_state is None:
+                    dot_color = "text-green"
+
+                with (
+                    ui.column()
+                    .classes(
+                        "flex-1 p-1 border-r border-blue-200 last:border-r-0 items-center justify-center min-w-[100px] relative cursor-pointer hover:bg-blue-100 transition-colors"
+                    )
+                    .on("click", lambda e, c=config: self._handle_header_click(e, c), ["ctrlKey"])
+                ):
+                    if config.get("nature") == "必填":
+                        ui.label("●").classes(f"absolute -top-1 left-0 text-[10px] {dot_color}")
+                    elif config.get("nature") == "需填":
+                        ui.label("○").classes(f"absolute -top-1 left-0 text-[10px] {dot_color}")
+                    ui.label(config["title"]).classes("font-bold text-sm text-blue-900 text-center").style(
+                        "white-space: pre-wrap;"
+                    )
+
+    async def _diff_and_update_rows(self, rows_list, col_configs, req_max_ver):
+        """核心：通过 Diff 算法，仅重绘发生变化的行，并自动排序"""
+        current_row_ids = []
+
+        for index, row_data in enumerate(rows_list):
+            row_id = row_data["row_id"]
+            current_row_ids.append(row_id)
+            new_hash = self._compute_row_hash(row_data)
+
+            # 判断这行是否需要完全隐藏
+            is_row_totally_deactivated = True
+            for chips_in_col in row_data["chips"].values():
+                for chip in chips_in_col:
+                    current_state = chip.get("select_activ_dic", {}).get(req_max_ver)
+                    if not ((current_state is False) or (str(current_state).lower() == "false")):
+                        is_row_totally_deactivated = False
+                        break
+                if not is_row_totally_deactivated:
+                    break
+
+            # 场景 1：这是一行全新的数据（首次加载，或刚刚新增）
+            if row_id not in self.row_containers:
+                with self.body_container:
+                    row_container = ui.row().classes(
+                        "w-full flex-nowrap border-b border-gray-100 items-stretch p-0 m-0 -space-x-4 hover:bg-amber-50/40 transition-colors"
+                    )
+                    self.row_containers[row_id] = row_container
+
+                # 执行具体单元格的渲染
+                await self._render_single_row_content(
+                    row_container, row_data, col_configs, req_max_ver, is_row_totally_deactivated
+                )
+                self.row_hashes[row_id] = new_hash
+
+            # 场景 2：这行数据已存在，但 Hash 发生了变化（被编辑、添加或删除了 Chip）
+            elif self.row_hashes.get(row_id) != new_hash:
+                row_container = self.row_containers[row_id]
+                row_container.clear()  # 只清空这一行，不影响其他行！
+
+                await self._render_single_row_content(
+                    row_container, row_data, col_configs, req_max_ver, is_row_totally_deactivated
+                )
+                self.row_hashes[row_id] = new_hash
+
+            # 无论是否更新，根据索引动态调整行的斑马纹背景色
+            bg_color = "bg-white" if index % 2 == 0 else "bg-gray-50/40"
+            self.row_containers[row_id].classes(replace=bg_color)
+
+            # 核心机制：强制重新对齐 DOM 树顺序（处理行上移/下移逻辑）
+            # NiceGUI 的 move 方法非常轻量，仅仅是改变 DOM 节点的位置，不会重新渲染内部元素
+            self.row_containers[row_id].move(self.body_container, index)
+
+        # 场景 3：处理被删除的废弃行
+        for old_row_id in list(self.row_containers.keys()):
+            if old_row_id not in current_row_ids:
+                self.row_containers[old_row_id].delete()  # 从页面移除
+                del self.row_containers[old_row_id]
+                del self.row_hashes[old_row_id]
+
+    async def _render_single_row_content(
+        self, row_container, row_data, col_configs, req_max_ver, is_row_totally_deactivated
+    ):
+        """负责填充单独一行内部的所有 Column 和 Chip"""
+        first_col_label = col_configs[0]["label"]
+        row_id = row_data["row_id"]
+        row_chips = row_data["chips"]
+
+        # 绑定整行隐藏逻辑
+        if is_row_totally_deactivated:
+            row_container.bind_visibility_from(app.storage.client, "record_switch")
+        else:
+            # 如果原来被隐藏，现在激活了，需要清除绑定并强行可见
+            row_container.set_visibility(True)
+
+        with row_container:
+            for config in col_configs:
+                label = config["label"]
+                with ui.column().classes(
+                    "flex-1 p-2 pb-4 border-r border-gray-100 last:border-r-0 items-start justify-start min-w-[100px] relative group gap-1"
+                ):
+                    is_first_col = label == first_col_label
+                    has_chip = bool(label in row_chips and row_chips[label])
+
+                    # 1. 渲染该单元格内的所有 chip
+                    if has_chip:
+                        for chip_data in row_chips[label]:
+                            # 直接复用你现有的单个芯片渲染函数
+                            await self._render_single_chip(chip_data, config, req_max_ver)
+
+                    # 2. 渲染添加按钮：
+                    if self._edit_permission_judge(config, notify=False):
+                        if not (is_first_col and has_chip):
+                            icon_name = self._get_icon_for_type(config["processing_type"])
+                            btn = ui.button(
+                                icon=icon_name,
+                                on_click=lambda _, c=config, rid=row_id: self._handle_add_click(c, target_row_id=rid),
+                            ).props("flat round dense size=sm")
+                            btn.classes(
+                                "absolute -bottom-1 -right-1 text-blue-500 opacity-0 group-hover:opacity-100 transition-all m-0 p-0 z-10"
+                            ).tooltip(f"添加 {config['title']}")
 
     async def _render_single_chip(self, chip_info: dict, config: dict, req_max_ver: str):
         """渲染单个单元格内的 Chip (移植自原 _create_chip_from_data)"""
@@ -3777,41 +3953,35 @@ class OverviewTableGroup:
         #     or self.autofill_dialog.value
         # ):
         #     return
-        # 增加一个简单的运行锁，防止重绘过程中再次触发重绘
+        # 防重入锁，防止渲染堆积
         if getattr(self, "_is_refreshing", False):
             return
-        changed_labels = []
-        # show_all = app.storage.client.get("record_switch")
-        # req_max_ver = app.storage.general.get("project_req_max_ver", {}).get(self.project, "1.0")
 
+        changed_labels = []
         for config in self.permitted_configs.values():
             label = config["label"]
-            # CHIPS_DICT = db_storage.get_deep_item([f"{self.project}_over_data", label], {})
-            # 【同步修复】：Hash监控也采用 SSOT 过滤
-            # filtered_dict = {}
-            # for k, v in CHIPS_DICT.items():
-            #     current_state = v.get("select_activ_dic", {}).get(req_max_ver)
-            #     is_deactivated = (current_state is False) or (str(current_state).lower() == "false")
-
-            #     if show_all or not is_deactivated:
-            #         filtered_dict[k] = v
-            # col_hash = self._generate_col_signature(filtered_dict)
-
             current_version = OverviewVersionManager.get_version(self.project, label)
-            # if self.last_state_hashes.get(label) != col_hash:
-            #     self.last_state_hashes[label] = col_hash
             if self.local_versions.get(label) != current_version:
                 self.local_versions[label] = current_version
                 changed_labels.append(label)
 
-        if changed_labels:
+        if changed_labels or not self.row_containers:  # 如果有变更，或者是首次加载
             try:
                 self._is_refreshing = True
                 overview_role_update(self.project, self.role)
                 for changed_label in changed_labels:
                     self._update_local_pending(changed_label)
-                # 执行耗时的物理重绘
-                await self._render_table()
+
+                # 1. 准备数据
+                col_configs = list(self.permitted_configs.values())
+                show_all = app.storage.client.get("record_switch")
+                req_max_ver = app.storage.general.get("project_req_max_ver", {}).get(self.project, "1.0")
+                rows_list = await self._group_and_migrate_data(col_configs, show_all)
+
+                # 2. 执行局部渲染
+                await self._render_header(col_configs)
+                await self._diff_and_update_rows(rows_list, col_configs, req_max_ver)
+
             finally:
                 self._is_refreshing = False
 
