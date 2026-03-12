@@ -3153,6 +3153,7 @@ class OverviewTableGroup:
         self.current_target_row_id = None  # 当前正在操作的单元格所在行id
         self.permitted_configs = {}
         self.ordered_row_ids = []
+        self._is_refreshing = False  # 在开始重绘表格前检查为Ture则放弃本次重绘（因为前面已经在重绘中还没结束），重绘过程中设置为True，重绘后设置为False，
 
         user_role = app.storage.user.get("current_role", "")
         for config in self.configs:
@@ -3776,7 +3777,9 @@ class OverviewTableGroup:
         #     or self.autofill_dialog.value
         # ):
         #     return
-
+        # 增加一个简单的运行锁，防止重绘过程中再次触发重绘
+        if getattr(self, "_is_refreshing", False):
+            return
         changed_labels = []
         # show_all = app.storage.client.get("record_switch")
         # req_max_ver = app.storage.general.get("project_req_max_ver", {}).get(self.project, "1.0")
@@ -3802,10 +3805,15 @@ class OverviewTableGroup:
                 changed_labels.append(label)
 
         if changed_labels:
-            overview_role_update(self.project, self.role)
-            for changed_label in changed_labels:
-                self._update_local_pending(changed_label)
-            await self._render_table()
+            try:
+                self._is_refreshing = True
+                overview_role_update(self.project, self.role)
+                for changed_label in changed_labels:
+                    self._update_local_pending(changed_label)
+                # 执行耗时的物理重绘
+                await self._render_table()
+            finally:
+                self._is_refreshing = False
 
     def _get_icon_for_type(self, ptype: str) -> str:
         icons = {
@@ -4011,6 +4019,8 @@ class OverviewTableGroup:
             await db_storage.set_deep_item([f"{self.project}_over_data", config["label"], chip_data["id"]], chip_data)
             # 数据写入完毕后，推高全局版本号
             OverviewVersionManager.bump(self.project, config["label"])
+            # 这一行是关键：主动调用更新函数，而不是等 1.0s 的 timer
+            await self._update_display()
 
             ui_spinner.set_visibility(False)
             self.chip_dialog.close()
@@ -4229,6 +4239,8 @@ class OverviewTableGroup:
                 )
                 # 数据写入完毕后，推高全局版本号
                 OverviewVersionManager.bump(self.project, config["label"])
+                # 这一行是关键：主动调用更新函数，而不是等 1.0s 的 timer
+                await self._update_display()
 
                 ui_spinner.set_visibility(False)
                 self.chip_notes.value = ""
@@ -4490,6 +4502,9 @@ class OverviewTableGroup:
         await db_storage.set_deep_item([f"{self.project}_over_data", config["label"], chip_id], chip_data)
         # 数据写入完毕后，推高全局版本号
         OverviewVersionManager.bump(self.project, config["label"])
+        # 这一行是关键：主动调用更新函数，而不是等 1.0s 的 timer
+        await self._update_display()
+
         # 清理状态与UI收尾
         self.chip_notes.value = ""
         if hasattr(self, "spinner"):
@@ -4651,6 +4666,8 @@ class OverviewTableGroup:
                     )
                     # 数据写入完毕后，推高全局版本号
                     OverviewVersionManager.bump(self.project, config["label"])
+                    # 这一行是关键：主动调用更新函数，而不是等 1.0s 的 timer
+                    await self._update_display()
 
                     self.chip_dialog.close()
                     ui.notify(
@@ -4700,6 +4717,8 @@ class OverviewTableGroup:
                 )
                 # 数据写入完毕后，推高全局版本号
                 OverviewVersionManager.bump(self.project, config["label"])
+                # 这一行是关键：主动调用更新函数，而不是等 1.0s 的 timer
+                await self._update_display()
             else:
                 self.current_config = config
                 self._select_set_activ_dialog(chip.props["data-chip-id"], chip.text, config)
@@ -4712,6 +4731,8 @@ class OverviewTableGroup:
                 )
                 # 数据写入完毕后，推高全局版本号
                 OverviewVersionManager.bump(self.project, config["label"])
+                # 这一行是关键：主动调用更新函数，而不是等 1.0s 的 timer
+                await self._update_display()
             else:
                 self.current_config = config
                 self._select_set_activ_dialog(thumbnail.props["data-chip-id"], "", config)
@@ -4779,6 +4800,8 @@ class OverviewTableGroup:
                         target_row_id = self.ordered_row_ids[current_idx - 1]
         # 数据写入完毕后，推高全局版本号
         OverviewVersionManager.bump(self.project, config["label"])
+        # 这一行是关键：主动调用更新函数，而不是等 1.0s 的 timer
+        await self._update_display()
         # self.last_state_hashes = {}
         # await self._update_display()
 
@@ -4823,6 +4846,8 @@ class OverviewTableGroup:
                         target_row_id = self.ordered_row_ids[current_idx + 1]
         # 数据写入完毕后，推高全局版本号
         OverviewVersionManager.bump(self.project, config["label"])
+        # 这一行是关键：主动调用更新函数，而不是等 1.0s 的 timer
+        await self._update_display()
         # self.last_state_hashes = {}
         # await self._update_display()
 
@@ -5454,6 +5479,8 @@ class OverviewTableGroup:
                 )
                 # 数据写入完毕后，推高全局版本号
                 OverviewVersionManager.bump(self.project, config["label"])
+                # 这一行是关键：主动调用更新函数，而不是等 1.0s 的 timer
+                await self._update_display()
 
                 self.cancel_checkbox_change(chip_id)
                 ui_spinner.set_visibility(False)
@@ -6041,6 +6068,8 @@ class OverviewTableGroup:
                 await db_storage.set_deep_item([f"{self.project}_over_data", config["label"], chip_id], chip_data)
                 # 数据写入完毕后，推高全局版本号
                 OverviewVersionManager.bump(self.project, config["label"])
+                # 这一行是关键：主动调用更新函数，而不是等 1.0s 的 timer
+                await self._update_display()
 
                 ui_spinner.set_visibility(False)
                 self.chip_dialog.close()
