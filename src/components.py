@@ -1044,7 +1044,7 @@ class InteractiveButton:
 
                 # 功能按钮
                 delete_button = (
-                    ui.button(on_click=lambda c=chip: self.delete_chip_info(c))
+                    ui.button(on_click=lambda d=chip_info: self.delete_chip_info(d))
                     .classes(f"absolute -top-1 -right-2 m-0 p-0 q-py-0 {delete_bg}")
                     .props(f'round padding="0px 0px" icon={delete_icon}')
                     .style("font-size: 8px; display: none;")
@@ -1125,7 +1125,7 @@ class InteractiveButton:
                     ui.html(tooltip_text, sanitize=Sanitizer().sanitize)
 
                 delete_button = (
-                    ui.button(on_click=lambda t=thumbnail: self.clear_thumbnail(t))
+                    ui.button(on_click=lambda d=chip_info: self.clear_thumbnail(d))
                     .classes(f"absolute -top-1 -right-2 m-0 p-0 q-py-1 {delete_bg}")
                     .props(f'round padding="0px 0px" icon={delete_icon}')
                     .style("font-size: 8px; display: none;")
@@ -2493,26 +2493,25 @@ class InteractiveButton:
             )
             return False
 
-    async def delete_chip_info(self, chip):
+    async def delete_chip_info(self, chip_info):
         if self._edit_permission_judge():
             if app.storage.user["current_user"] == "admin":
-                await db_storage.del_deep_item([f"{self.project}_over_data", self.label, chip.props["data-chip-id"]])
-                # 数据写入完毕后，推高全局版本号
+                # 直接使用 chip_info 获取 ID，杜绝 UI props 报错
+                await db_storage.del_deep_item([f"{self.project}_over_data", self.label, chip_info["id"]])
                 OverviewVersionManager.bump(self.project, self.label)
+                await self._refresh_chip_container()  # 🌟 核心修复：不等待定时器，立刻重绘 UI
             else:
-                self._select_set_activ_dialog(chip.props["data-chip-id"], chip.text)
+                self._select_set_activ_dialog(chip_info["id"], chip_info.get("content", ""))
 
-    async def clear_thumbnail(self, thumbnail):
+    async def clear_thumbnail(self, chip_info):
         if self._edit_permission_judge():
             if app.storage.user["current_user"] == "admin":
-                thumbnail.delete()
-                await db_storage.del_deep_item(
-                    [f"{self.project}_over_data", self.label, thumbnail.props["data-chip-id"]]
-                )
-                # 数据写入完毕后，推高全局版本号
+                # 删除了 thumbnail.delete()，统一由 _refresh_chip_container 去刷新销毁
+                await db_storage.del_deep_item([f"{self.project}_over_data", self.label, chip_info["id"]])
                 OverviewVersionManager.bump(self.project, self.label)
+                await self._refresh_chip_container()  # 🌟 核心修复：立刻重绘
             else:
-                self._select_set_activ_dialog(thumbnail.props["data-chip-id"])
+                self._select_set_activ_dialog(chip_info["id"], chip_info.get("content", ""))
 
     def _move_data(self, old_data, chip_id, move_num):
         temp_data = {}
@@ -3236,11 +3235,6 @@ class OverviewTableGroup:
         row_dict = {}
         # 维护一个有序的 row_id 列表，确保前端渲染时的行顺序是稳定可控的
         ordered_row_ids = []
-
-        # 获取当前项目的最新版本号，作为判断卡片(chip)是否激活的唯一真理依据 (SSOT - Single Source of Truth)
-        # 提前规避运行时的状态不确定性
-        # req_max_ver = app.storage.general.get("project_req_max_ver", {}).get(self.project, "1.0")
-
         # ==========================================
         # 1. 预先拉取所有列的数据
         # 【重点】：这里坚决不做任何状态过滤，必须保留完整的二维矩阵基准。
@@ -3345,18 +3339,6 @@ class OverviewTableGroup:
             for label, chip_list in row_chips.items():
                 visible_chips = []
                 for chip in chip_list:
-                    # ==========================================
-                    # 核心修复 3：无视表象，直击核心逻辑字段
-                    # 彻底解决历史残余的 enabled=True 但内部状态=False 的数据不一致(怪胎)问题。
-                    # ==========================================
-                    # 深入底层字典获取当前版本的真实激活状态
-                    # current_state = chip.get("select_activ_dic", {}).get(req_max_ver)
-                    # 严格判定失效状态：考虑布尔值 False 以及字符串 "false"（防范弱类型带来的数据污染）
-                    # is_deactivated = (current_state is False) or (str(current_state).lower() == "false")
-
-                    # 如果前端没有勾选“显示所有(show_all)” 且 该卡片确实被停用，则在渲染数据中剔除它
-                    # if not show_all and is_deactivated:
-                    # continue
                     # 新逻辑：不跳过，全部加入可见列表，依靠 UI 绑定处理隐藏
                     # 卡片有效，加入当前列的可见列表
                     visible_chips.append(chip)
@@ -3379,138 +3361,6 @@ class OverviewTableGroup:
         """处理表头点击事件"""
         if e.args.get("ctrlKey"):
             self.show_label_history(config)
-
-    async def _render_table(self):
-        col_configs = list(self.permitted_configs.values())
-        if not col_configs:
-            return
-
-        req_max_ver = app.storage.general["project_req_max_ver"].get(self.project, "1.0")
-        show_all = app.storage.client.get("record_switch")
-        # conversion_refresh = app.storage.general.get("conversion_refresh", {}).get(self.project)
-
-        # 1. 获取按行绑定的数据，并完成旧数据清洗
-        rows_list = await self._group_and_migrate_data(col_configs, show_all)
-        # 数据准备完毕，此时再瞬间清空并重绘 UI，不会产生折叠坍缩
-        self.container.clear()
-        # 2. 渲染 UI
-        with self.container:
-            # --- 渲染表头 ---
-            with ui.row().classes(
-                "w-full flex-nowrap bg-blue-50/80 border-b border-blue-200 p-0 m-0 items-center -space-x-4"
-            ):
-                for config in col_configs:
-                    label = config["label"]
-                    role = config["role"]
-                    latest_user_str = (
-                        app.storage.general.get("overview_role", {})
-                        .get(self.project, {})
-                        .get(role, {})
-                        .get("latest_user", "")
-                    )
-                    des_user = latest_user_str.split("：")[1] if latest_user_str else ""
-
-                    # 💡 恢复 1：计算状态指示灯颜色
-                    # 获取该列的所有原始 chip 数据
-                    # RAW_CHIPS_DICT = db_storage.get_deep_item([f"{self.project}_over_data", label], {})
-                    # chip_states = [c.get("enabled") for c in RAW_CHIPS_DICT.values()]
-                    chip_col_state = (
-                        app.storage.general.get("overview_charge_pending", {})
-                        .get(des_user, {})
-                        .get(self.project, {})
-                        .get(label)
-                    )
-
-                    dot_color = "text-red"
-                    if chip_col_state == "有待定":
-                        dot_color = "text-orange"
-                    elif des_user == "——" or des_user and chip_col_state is None:
-                        dot_color = "text-green"
-
-                    # 💡 恢复 2：让表头变成可点击，并绑定 Shift+Click 事件
-                    with (
-                        ui.column()
-                        .classes(
-                            "flex-1 p-1 border-r border-blue-200 last:border-r-0 items-center justify-center min-w-[100px] relative cursor-pointer hover:bg-blue-100 transition-colors"
-                        )
-                        .on("click", lambda e, c=config: self._handle_header_click(e, c), ["ctrlKey"])
-                    ):
-                        # 渲染小圆点（仅必填项显示，悬浮在左上角）
-                        if config.get("nature") == "必填":
-                            ui.label("●").classes(f"absolute -top-1 left-0 text-[10px] {dot_color}")
-                        # 渲染小圆点（仅必填项显示，悬浮在左上角）
-                        elif config.get("nature") == "需填":
-                            ui.label("○").classes(f"absolute -top-1 left-0 text-[10px] {dot_color}")
-
-                        # 渲染标题
-                        ui.label(config["title"]).classes("font-bold text-sm text-blue-900 text-center").style(
-                            "white-space: pre-wrap;"
-                        )
-
-                        # 增加贴心的浮动提示
-                        # ui.tooltip("按住 Shift 点击查看该列历史记录").classes("text-xs bg-gray-800")
-
-            # --- 渲染数据行 ---
-            # 提取第一列的 label 用于判断
-            first_col_label = list(self.permitted_configs.values())[0]["label"]
-            for index, row_data in enumerate(rows_list):
-                bg_color = "bg-white" if index % 2 == 0 else "bg-gray-50/40"
-                row_id = row_data["row_id"]
-                row_chips = row_data["chips"]
-                # 💡 核心优化 1：前置预判当前行是否【完全失活】
-                is_row_totally_deactivated = True
-                for chips_in_col in row_chips.values():
-                    for chip in chips_in_col:
-                        current_state = chip.get("select_activ_dic", {}).get(req_max_ver)
-                        is_deactivated = (current_state is False) or (str(current_state).lower() == "false")
-                        if not is_deactivated:
-                            is_row_totally_deactivated = False
-                            break
-                    if not is_row_totally_deactivated:
-                        break
-                row_container = ui.row().classes(
-                    f"w-full flex-nowrap border-b border-gray-100 {bg_color} items-stretch p-0 m-0  -space-x-4 hover:bg-amber-50/40 transition-colors"
-                )
-                # 💡 核心优化 2：将可见性与前端全局开关绑定，直接作用于 UI 行容器
-                if is_row_totally_deactivated:
-                    row_container.bind_visibility_from(app.storage.client, "record_switch")
-
-                with row_container:
-                    for config in col_configs:
-                        label = config["label"]
-
-                        # 💡 优化 1：取消居中对齐改为顶部对齐(items-start)，并增加 pb-6 给绝对定位的按钮留出一点底边距
-                        with ui.column().classes(
-                            "flex-1 p-2 pb-4 border-r border-gray-100 last:border-r-0 items-start justify-start min-w-[100px] relative group gap-1"
-                        ):
-                            is_first_col = label == first_col_label
-                            has_chip = bool(label in row_chips and row_chips[label])
-
-                            # 1. 渲染该单元格内的所有 chip
-                            if has_chip:
-                                for chip_data in row_chips[label]:
-                                    await self._render_single_chip(chip_data, config, req_max_ver)
-
-                            # 2. 渲染添加按钮：
-                            if self._edit_permission_judge(config, notify=False):
-                                if not (is_first_col and has_chip):
-                                    icon_name = self._get_icon_for_type(config["processing_type"])
-                                    btn = ui.button(
-                                        icon=icon_name,
-                                        on_click=lambda _, c=config, rid=row_id: self._handle_add_click(
-                                            c, target_row_id=rid
-                                        ),
-                                    ).props("flat round dense size=sm")
-                                    # 💡 优化 2：绝对定位到右下角，完全脱离文档流，不撑大表格高度
-                                    btn.classes(
-                                        "absolute -bottom-1 -right-1 text-blue-500 opacity-0 group-hover:opacity-100 transition-all m-0 p-0 z-10"
-                                    ).tooltip(f"添加 {config['title']}")
-            # --- 渲染表格底部的“添加新行”栏 ---
-            # 只有具有任意列的编辑权限时才显示
-            with ui.row().classes("w-full bg-blue-50/30 justify-center p-0"):
-                ui.button("", icon="add", on_click=lambda: self._handle_add_new_row()).classes(
-                    "w-full text-[8px]"
-                ).props("flat")
 
     async def _render_header(self, col_configs):
         """仅重绘表头（因为表头的小红点状态可能会变，但节点很少，重绘极快）"""
@@ -3591,8 +3441,15 @@ class OverviewTableGroup:
 
             # 场景 2：这行数据已存在，但 Hash 发生了变化
             elif self.row_hashes.get(row_id) != new_hash:
-                row_container = self.row_containers[row_id]
-                row_container.clear()  # 只清空这一行的内部元素
+                # 🌟 核心修复：彻底删除旧行，确保 NiceGUI 会同步清理掉底层的 bind_visibility_from 监听器
+                self.row_containers[row_id].delete()
+
+                # 重新实例化一个干净的行容器
+                with self.body_container:
+                    row_container = ui.row().classes(
+                        "w-full flex-nowrap border-b border-gray-100 items-stretch p-0 m-0 -space-x-4 hover:bg-amber-50/40 transition-colors"
+                    )
+                    self.row_containers[row_id] = row_container
 
                 await self._render_single_row_content(
                     row_container, row_data, col_configs, req_max_ver, is_row_totally_deactivated
@@ -3625,9 +3482,8 @@ class OverviewTableGroup:
         if is_row_totally_deactivated:
             row_container.bind_visibility_from(app.storage.client, "record_switch")
         else:
-            # 💡 安全修复：如果一行原本是失活的（被绑定了隐藏开关），重新激活时必须解绑，否则会显示不出来
-            if hasattr(row_container, "_bindings") and "visible" in row_container._bindings:
-                del row_container._bindings["visible"]
+            # 🌟 核心修复：由于我们在上一步每次 Hash 变更都确保传递进来的是一个全新的 row_container
+            # 所以这里绝对不可能带有旧的 visible binding，直接设置为可见即可。
             row_container.set_visibility(True)
 
         with row_container:
@@ -3786,7 +3642,7 @@ class OverviewTableGroup:
                     # 💡 优化 6：悬浮按钮放在 div 容器内（与 chip 平级），绝对定位，利用 z-20 浮在 chip 上方
                 # 注意 style 中 display 设置为 flex 而非 block，防止图标偏离中心
                 delete_button = (
-                    ui.button(on_click=lambda c=chip, cfg=config: self.delete_chip_info(c, cfg))
+                    ui.button(on_click=lambda d=chip_info, cfg=config: self.delete_chip_info(d, cfg))
                     .classes(f"absolute -top-1 -right-2 m-0 p-0 q-py-0 z-20 {delete_bg} shadow-md")
                     .props(f'round padding="0px 0px" icon={delete_icon}')
                     .style("font-size: 8px; display: none;")
@@ -3866,7 +3722,7 @@ class OverviewTableGroup:
                         ui.html(tooltip_text, sanitize=Sanitizer().sanitize)
 
                 delete_button = (
-                    ui.button(on_click=lambda t=thumbnail, cfg=config: self.clear_thumbnail(t, cfg))
+                    ui.button(on_click=lambda d=chip_info, cfg=config: self.clear_thumbnail(d, cfg))
                     .classes(f"absolute -top-1 -right-2 z-20 m-0 p-0 q-py-1 {delete_bg}")
                     .props(f'round padding="0px 0px" icon={delete_icon}')
                     .style("font-size: 8px; display: none;")
@@ -4877,33 +4733,25 @@ class OverviewTableGroup:
                 scope="local", des_user=des_user, project_name=self.project, des_label=label
             )
 
-    async def delete_chip_info(self, chip, config):
+    async def delete_chip_info(self, chip_info, config):
         if self._edit_permission_judge(config):
             if app.storage.user["current_user"] == "admin":
-                await db_storage.del_deep_item(
-                    [f"{self.project}_over_data", config["label"], chip.props["data-chip-id"]]
-                )
-                # 数据写入完毕后，推高全局版本号
+                await db_storage.del_deep_item([f"{self.project}_over_data", config["label"], chip_info["id"]])
                 OverviewVersionManager.bump(self.project, config["label"])
-                # 这一行是关键：主动调用更新函数，而不是等 1.0s 的 timer
                 await self._update_display()
             else:
                 self.current_config = config
-                self._select_set_activ_dialog(chip.props["data-chip-id"], chip.text, config)
+                self._select_set_activ_dialog(chip_info["id"], chip_info.get("content", ""), config)
 
-    async def clear_thumbnail(self, thumbnail, config):
+    async def clear_thumbnail(self, chip_info, config):
         if self._edit_permission_judge(config):
             if app.storage.user["current_user"] == "admin":
-                await db_storage.del_deep_item(
-                    [f"{self.project}_over_data", config["label"], thumbnail.props["data-chip-id"]]
-                )
-                # 数据写入完毕后，推高全局版本号
+                await db_storage.del_deep_item([f"{self.project}_over_data", config["label"], chip_info["id"]])
                 OverviewVersionManager.bump(self.project, config["label"])
-                # 这一行是关键：主动调用更新函数，而不是等 1.0s 的 timer
                 await self._update_display()
             else:
                 self.current_config = config
-                self._select_set_activ_dialog(thumbnail.props["data-chip-id"], "", config)
+                self._select_set_activ_dialog(chip_info["id"], chip_info.get("content", ""), config)
 
     def _move_data(self, old_data, chip_id, move_num):
         temp_data = {}

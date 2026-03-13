@@ -20,7 +20,16 @@ from nicegui.events import KeyEventArguments
 from . import db_storage
 
 # import config
-from .config import AVATAR_DIR, AVATAR_URL_DIR, BASE_DIR, IMG_DIR, IMG_URL_DIR, OVER_DIR, REQ_DIR
+from .config import (
+    AVATAR_DIR,
+    AVATAR_URL_DIR,
+    BASE_DIR,
+    IMG_DIR,
+    IMG_URL_DIR,
+    OVER_DIR,
+    OVERVIEW_UI_RENDER_REGISTRY,
+    REQ_DIR,
+)
 
 # 获取一个以此模块命名的 logger
 # 比如：如果你的文件是 src/components.py，这个 logger 的名字就会是 "src.components"
@@ -128,8 +137,6 @@ def update_overview_charge_pending_dic(scope, des_user="", project_name="", des_
     """
 
     if scope == "all":
-        # 优化核心：放弃在旧字典上原地修改，创建一个全新的空字典
-        # 这样可以彻底丢弃因配置修改而遗留的无效 "title" 键
         new_pending_storage = {}
 
         # 1. 静态配置预处理
@@ -142,7 +149,7 @@ def update_overview_charge_pending_dic(scope, des_user="", project_name="", des_
                         {"nature": ver_dic.get("nature"), "title": ver_dic.get("title"), "label": ver_dic.get("label")}
                     )
 
-        # 2. 遍历项目：将 I/O 读取提升到项目层级
+        # 2. 遍历项目
         for project, project_dic in app.storage.general.get("overview_role", {}).items():
             for role, charge_user_dic in project_dic.items():
                 latest_user_raw = charge_user_dic.get("latest_user", "")
@@ -150,7 +157,7 @@ def update_overview_charge_pending_dic(scope, des_user="", project_name="", des_
 
                 if not latest_user or latest_user == "——":
                     continue
-                # 优雅初始化多层字典到【新字典】中
+
                 user_proj_dict = new_pending_storage.setdefault(latest_user, {}).setdefault(project, {})
 
                 # 3. 遍历预处理好的配置项
@@ -158,9 +165,9 @@ def update_overview_charge_pending_dic(scope, des_user="", project_name="", des_
                     nature = config_item["nature"]
                     label = config_item["label"]
                     group_name = app.storage.general.get("over_config_data_flat", {}).get(label, {}).get("group_name")
-                    first_col_label = (
-                        app.storage.general.get("over_config_data", {}).get(role, {}).get(group_name, [])[0]["label"]
-                    )
+
+                    # 💡 核心新增：判断当前组是否为表格模式
+                    is_table_group = OVERVIEW_UI_RENDER_REGISTRY.get(group_name) == "OverviewTableGroup"
 
                     if nature == "必填":
                         user_proj_dict.setdefault(label, "缺必填")
@@ -168,9 +175,6 @@ def update_overview_charge_pending_dic(scope, des_user="", project_name="", des_
                         user_proj_dict.setdefault(label, "缺需填")
 
                     LABEL_CHIP_DIC = db_storage.get_deep_item([f"{project}_over_data", label], {}).values()
-                    FIRST_COL_LABEL_CHIP_DIC = db_storage.get_deep_item(
-                        [f"{project}_over_data", first_col_label], {}
-                    ).values()
 
                     if not LABEL_CHIP_DIC:
                         if nature == "必填":
@@ -181,9 +185,128 @@ def update_overview_charge_pending_dic(scope, des_user="", project_name="", des_
                             user_proj_dict.pop(label, None)
                         continue
 
-                    # 4. 短路状态判定
+                    # 4. 状态判定分流
                     has_none = False
                     has_active = False
+
+                    if is_table_group:
+                        # ================= 表格模式逻辑（严格行匹配） =================
+                        first_col_label = (
+                            app.storage.general.get("over_config_data", {})
+                            .get(role, {})
+                            .get(group_name, [])[0]["label"]
+                        )
+                        FIRST_COL_LABEL_CHIP_DIC = db_storage.get_deep_item(
+                            [f"{project}_over_data", first_col_label], {}
+                        ).values()
+
+                        chip_activ_li = []
+                        first_col_chip_activ_li = []
+
+                        for first_chip_info in FIRST_COL_LABEL_CHIP_DIC:
+                            first_chip_state = first_chip_info.get("enabled")
+                            first_chip_row_id = first_chip_info.get("row_id")
+                            if (
+                                first_chip_row_id
+                                and first_chip_row_id not in first_col_chip_activ_li
+                                and first_chip_state
+                            ):
+                                first_col_chip_activ_li.append(first_chip_row_id)
+
+                        for chip_info in LABEL_CHIP_DIC:
+                            state = chip_info.get("enabled")
+                            chip_row_id = chip_info.get("row_id")
+                            if state is None:
+                                has_none = True
+                                break
+                            if chip_row_id:
+                                if (
+                                    state
+                                    and chip_row_id not in chip_activ_li
+                                    and chip_row_id in first_col_chip_activ_li
+                                ):
+                                    chip_activ_li.append(chip_row_id)
+                            else:
+                                if state is True:
+                                    has_active = True
+
+                        if chip_activ_li and len(chip_activ_li) == len(first_col_chip_activ_li):
+                            has_active = True
+                    else:
+                        # ================= 独立按钮模式逻辑（散装独立匹配） =================
+                        for chip_info in LABEL_CHIP_DIC:
+                            state = chip_info.get("enabled")
+                            if state is None:
+                                has_none = True
+                                break
+                            elif state is True:
+                                has_active = True
+                                # 这里不 break 是为了继续寻找可能存在的 None（待定优先级最高）
+
+                    # 统一收尾判定
+                    if has_none:
+                        user_proj_dict[label] = "有待定"
+                    elif has_active:
+                        user_proj_dict.pop(label, None)
+                    else:
+                        if nature == "必填":
+                            user_proj_dict[label] = "缺必填"
+                        elif nature == "需填":
+                            user_proj_dict[label] = "缺需填"
+                        else:
+                            user_proj_dict.pop(label, None)
+
+                # 5. 清理空节点
+                if not user_proj_dict:
+                    new_pending_storage[latest_user].pop(project, None)
+                if latest_user in new_pending_storage and not new_pending_storage[latest_user]:
+                    new_pending_storage.pop(latest_user, None)
+
+        app.storage.general["overview_charge_pending"] = new_pending_storage
+
+    elif scope == "local":
+        pending_storage = app.storage.general.setdefault("overview_charge_pending", {})
+
+        if not des_user or not project_name or not des_label or des_user == "——":
+            return
+
+        user_proj_dict = pending_storage.setdefault(des_user, {}).setdefault(project_name, {})
+
+        ver_dic = app.storage.general.get("over_config_data_flat", {}).get(des_label, {})
+        if ver_dic:
+            nature = ver_dic.get("nature")
+            role = ver_dic.get("role")
+            group_name = ver_dic.get("group_name")
+
+            # 💡 核心新增：判断当前组是否为表格模式
+            is_table_group = OVERVIEW_UI_RENDER_REGISTRY.get(group_name) == "OverviewTableGroup"
+
+            if nature == "必填":
+                user_proj_dict.setdefault(des_label, "缺必填")
+            elif nature == "需填":
+                user_proj_dict.setdefault(des_label, "缺需填")
+
+            LABEL_CHIP_DIC = db_storage.get_deep_item([f"{project_name}_over_data", des_label], {}).values()
+
+            if not LABEL_CHIP_DIC:
+                if nature == "必填":
+                    user_proj_dict[des_label] = "缺必填"
+                elif nature == "需填":
+                    user_proj_dict[des_label] = "缺需填"
+                else:
+                    user_proj_dict.pop(des_label, None)
+            else:
+                has_none = False
+                has_active = False
+
+                if is_table_group:
+                    # ================= 表格模式逻辑 =================
+                    first_col_label = (
+                        app.storage.general.get("over_config_data", {}).get(role, {}).get(group_name, [])[0]["label"]
+                    )
+                    FIRST_COL_LABEL_CHIP_DIC = db_storage.get_deep_item(
+                        [f"{project_name}_over_data", first_col_label], {}
+                    ).values()
 
                     chip_activ_li = []
                     first_col_chip_activ_li = []
@@ -206,95 +329,18 @@ def update_overview_charge_pending_dic(scope, des_user="", project_name="", des_
                         else:
                             if state is True:
                                 has_active = True
-                                # 不能结束循环，为了发现任何一个可能存在的None情况
 
                     if chip_activ_li and len(chip_activ_li) == len(first_col_chip_activ_li):
                         has_active = True
-
-                    if has_none:
-                        user_proj_dict[label] = "有待定"
-                    elif has_active:
-                        user_proj_dict.pop(label, None)
-                    else:
-                        if nature == "必填":
-                            user_proj_dict[label] = "缺必填"
-                        elif nature == "需填":
-                            user_proj_dict[label] = "缺需填"
-                        else:
-                            user_proj_dict.pop(label, None)
-
-                # 5. 清理空项目节点
-                if not user_proj_dict:
-                    new_pending_storage[latest_user].pop(project, None)
-
-                # 6. 清理空用户节点（进一步防止由于某用户下所有项目都为空造成的内存泄漏）
-                if latest_user in new_pending_storage and not new_pending_storage[latest_user]:
-                    new_pending_storage.pop(latest_user, None)
-        # 遍历结束后，一次性覆写回 app.storage 触发 NiceGUI 序列化
-        app.storage.general["overview_charge_pending"] = new_pending_storage
-
-    elif scope == "local":
-        # Local 模式直接操作原字典，因为它追求 O(1) 的响应
-        pending_storage = app.storage.general.setdefault("overview_charge_pending", {})
-
-        if not des_user or not project_name or not des_label or des_user == "——":
-            return
-
-        user_proj_dict = pending_storage.setdefault(des_user, {}).setdefault(project_name, {})
-
-        ver_dic = app.storage.general.get("over_config_data_flat", {}).get(des_label, {})
-        if ver_dic:
-            nature = ver_dic.get("nature")
-            role = ver_dic.get("role")
-            group_name = ver_dic.get("group_name")
-            first_col_label = (
-                app.storage.general.get("over_config_data", {}).get(role, {}).get(group_name, [])[0]["label"]
-            )
-
-            if nature == "必填":
-                user_proj_dict.setdefault(des_label, "缺必填")
-            elif nature == "需填":
-                user_proj_dict.setdefault(des_label, "缺需填")
-
-            LABEL_CHIP_DIC = db_storage.get_deep_item([f"{project_name}_over_data", des_label], {}).values()
-            FIRST_COL_LABEL_CHIP_DIC = db_storage.get_deep_item(
-                [f"{project_name}_over_data", first_col_label], {}
-            ).values()
-            if not LABEL_CHIP_DIC:
-                if nature == "必填":
-                    user_proj_dict[des_label] = "缺必填"
-                elif nature == "需填":
-                    user_proj_dict[des_label] = "缺需填"
                 else:
-                    user_proj_dict.pop(des_label, None)
-            else:
-                has_none = False
-                has_active = False
-
-                chip_activ_li = []
-                first_col_chip_activ_li = []
-
-                for first_chip_info in FIRST_COL_LABEL_CHIP_DIC:
-                    first_chip_state = first_chip_info.get("enabled")
-                    first_chip_row_id = first_chip_info.get("row_id")
-                    if first_chip_row_id and first_chip_row_id not in first_col_chip_activ_li and first_chip_state:
-                        first_col_chip_activ_li.append(first_chip_row_id)
-                for chip_info in LABEL_CHIP_DIC:
-                    state = chip_info.get("enabled")
-                    chip_row_id = chip_info.get("row_id")
-                    if state is None:
-                        has_none = True
-                        break
-                    if chip_row_id:
-                        if state and chip_row_id not in chip_activ_li and chip_row_id in first_col_chip_activ_li:
-                            chip_activ_li.append(chip_row_id)
-                    else:
-                        if state is True:
+                    # ================= 独立按钮模式逻辑 =================
+                    for chip_info in LABEL_CHIP_DIC:
+                        state = chip_info.get("enabled")
+                        if state is None:
+                            has_none = True
+                            break
+                        elif state is True:
                             has_active = True
-                            # 不能结束循环，为了发现任何一个可能存在的None情况
-
-                if chip_activ_li and len(chip_activ_li) == len(first_col_chip_activ_li):
-                    has_active = True
 
                 if has_none:
                     user_proj_dict[des_label] = "有待定"
@@ -310,12 +356,10 @@ def update_overview_charge_pending_dic(scope, des_user="", project_name="", des_
 
         if not user_proj_dict:
             pending_storage[des_user].pop(project_name, None)
-
-        # 同样在 Local 层清理空用户
         if not pending_storage.get(des_user):
             pending_storage.pop(des_user, None)
 
-    app.storage.general["overview_last_update"][project_name] = time.time()
+    app.storage.general.setdefault("overview_last_update", {})[project_name] = time.time()
 
 
 # 判断传入的概述负责角色是否与当前登录的角色匹配
@@ -993,6 +1037,9 @@ async def copy_overview_data(project_name, version, target_project_name) -> None
     await db_storage.atomic_deep_update([f"{target_project_name}_over_data"], init_target_data)
 
 
+# 请确保头部已经引入了 update_overview_charge_pending_dic 函数
+
+
 def overview_role_update(project_name, input_role="all_update"):
     """
     app.storage.general["overview_role"][project_name]={"光学":{"most_user":"用户名","latest_user":"用户名"},...}
@@ -1004,137 +1051,132 @@ def overview_role_update(project_name, input_role="all_update"):
     OVERVIEW_DATA = db_storage.get_item(f"{project_name}_over_data", {})
     # 设置时间对象识别格式
     format_string = "%Y-%m-%d %H:%M:%S"
+
+    # ---------------------------------------------------------
+    # 核心新增：封装交接逻辑闭包函数，用于处理待办数据的抹除与继承
+    # ---------------------------------------------------------
+    def _execute_role_handover(role_name, new_user):
+        over_role_dic = app.storage.general["overview_role"][project_name]
+        old_user_raw = over_role_dic.get(role_name, {}).get("latest_user", "")
+        old_user = old_user_raw.split("：")[1] if "：" in old_user_raw else old_user_raw
+
+        # 只有负责人发生实质性变化时，才执行清洗和重建
+        if old_user != new_user:
+            pending_storage = app.storage.general.setdefault("overview_charge_pending", {})
+            role_config = app.storage.general.get("over_config_data", {}).get(role_name, {})
+
+            for group_li in role_config.values():
+                for chip_dic in group_li:
+                    label = chip_dic.get("label")
+                    if not label:
+                        continue
+
+                    # 步骤 A: 抹除原负责人的待办数据（精准修剪）
+                    if old_user and old_user in pending_storage:
+                        if project_name in pending_storage[old_user]:
+                            pending_storage[old_user][project_name].pop(label, None)
+                            if not pending_storage[old_user][project_name]:
+                                pending_storage[old_user].pop(project_name, None)
+
+                    # 步骤 B: 为新负责人极速刷新待办状态（完美继承）
+                    if new_user and new_user != "——":
+                        update_overview_charge_pending_dic("local", new_user, project_name, label)
+
+            # 步骤 C: 清理旧负责人的空节点，防止内存泄漏
+            if old_user and old_user in pending_storage and not pending_storage[old_user]:
+                pending_storage.pop(old_user, None)
+
+    # ---------------------------------------------------------
+
     # 如果项目名不存在服务器概述数据的键里
     if project_name not in app.storage.general["overview_role"]:
         temp_dic = {}
         for role in app.storage.general["over_config_data"].keys():
             temp_dic[role] = {"most_user": "", "latest_user": ""}
         app.storage.general["overview_role"][project_name] = temp_dic
-    elif input_role != "initialize" and input_role == "all":
+
+    # 兼容 "all" 或 "all_update" 的传参
+    elif input_role != "initialize" and input_role in ["all", "all_update"]:
         # 初始化概述角色字典
         over_role_dic = app.storage.general["overview_role"][project_name]
         # 遍历概述配置字典，主要用里面的角色分类，如光学、结构等等，和概述配置里的label
         for role, over_data_dic in app.storage.general["over_config_data"].items():
-            # 初始化临时保存概述里出现过的用户次数字典
             frequency_user_dic = {}
-            # 初始化临时保存概述里出现过的用户最晚时间字典
             time_user_dic = {}
             for over_config_li in over_data_dic.values():
-                # 遍历当前角色分类，如光学下，概述配置的各项
                 for over_config in over_config_li:
-                    # 如果当前概述项的label存在服务器对应项目的概述数据字典键里
                     if over_config["label"] in OVERVIEW_DATA and OVERVIEW_DATA[over_config["label"]] != {}:
-                        # 遍历当前label下用户添加过的多个概述数据
                         for over_data in OVERVIEW_DATA[over_config["label"]].values():
-                            # 如果数据的创建用户已经存在临时记录字典里
                             if over_data["creator"] in frequency_user_dic:
-                                # 将该用户创建次数加1次
-                                frequency_user_dic[over_data["creator"]] = frequency_user_dic[over_data["creator"]] + 1
-                                # 生成用户本次概述创建的时间对象
+                                frequency_user_dic[over_data["creator"]] += 1
                                 time_obj_new = datetime.strptime(next(reversed(over_data["timestamp"])), format_string)
-                                # 获取已保存的该用户概述最晚创建时间对象
                                 time_obj_old = time_user_dic[over_data["creator"]]
-                                # 两个时间对比，如果本次时间比已保存的时间更晚
                                 if time_obj_new > time_obj_old:
-                                    # 将本次时间更新为该用户所有概述的最晚创建时间
                                     time_user_dic[over_data["creator"]] = time_obj_new
-                            # 如果数据的创建用户不存在临时记录字典里
                             else:
-                                # 记该用户创建一次
                                 frequency_user_dic[over_data["creator"]] = 1
-                                # 记该用户首次创建时间
                                 time_user_dic[over_data["creator"]] = datetime.strptime(
                                     next(reversed(over_data["timestamp"])), format_string
                                 )
-            # 当前角色的所有概述存在创建记录
             if frequency_user_dic != {}:
-                # 找到临时保存用户创建概述次数字典里，所有次数的最大值
                 max_value = max(frequency_user_dic.values())
-                # 找到跟最大次数相同的对应所有用户
                 most_user_li = [key for key, value in frequency_user_dic.items() if value == max_value]
-                # 如果有多个人都创建了最大次数
                 if len(most_user_li) > 1:
-                    # 找到这些人创建概述数据的最晚时间
                     lat_time = max([time_user_dic[user] for user in most_user_li])
-                    # 找到这些人里哪个人是最晚创建概述的
                     for user in most_user_li:
                         if time_user_dic[user] == lat_time:
-                            # 将找到的用户定义为概述创建最多次的人
                             over_role_dic[role]["most_user"] = f"最多：{user}"
-                # 如果创建次数最多的情况只有一个人
                 else:
-                    # 将这个用户定义为概述创建最多次的人
                     over_role_dic[role]["most_user"] = f"最多：{most_user_li[0]}"
 
-                # 找出临时保存用户最晚创建概述时间里最晚的时间点
                 latest_time = max(list(time_user_dic.values()))
-                print(project_name, role, latest_time)
-                # 找出最晚创建概述的用户
                 for user in time_user_dic.keys():
                     if time_user_dic[user] == latest_time and "最近指定" not in over_role_dic[role]["latest_user"]:
-                        # 将这个用户定义为最晚创建概述的人，但排除掉最近手动指定过的情况，这种情况只能通过别的人修改概述触发局部更新去改
+                        # 💡 核心修复：在赋值新负责人前，执行交接逻辑
+                        _execute_role_handover(role, user)
                         over_role_dic[role]["latest_user"] = f"最近：{user}"
+
     elif input_role != "initialize" and input_role:
         # 初始化概述角色字典
         over_role_dic = app.storage.general["overview_role"][project_name]
-        # 初始化临时保存概述里出现过的用户次数字典
         frequency_user_dic = {}
-        # 初始化临时保存概述里出现过的用户最晚时间字典
         time_user_dic = {}
         # 遍历概述配置字典指定角色的配置数据
         for over_config_li in app.storage.general["over_config_data"].get(input_role, {}).values():
-            # 遍历当前角色分类，如光学下，概述配置的各项
             for over_config in over_config_li:
-                # 如果当前概述项的label存在服务器对应项目的概述数据字典键里
                 if over_config["label"] in OVERVIEW_DATA and OVERVIEW_DATA[over_config["label"]] != {}:
-                    # 遍历当前label下用户添加过的多个概述数据
                     for over_data in OVERVIEW_DATA[over_config["label"]].values():
-                        # 如果数据的创建用户已经存在临时记录字典里
                         if over_data["creator"] in frequency_user_dic:
-                            # 将该用户创建次数加1次
-                            frequency_user_dic[over_data["creator"]] = frequency_user_dic[over_data["creator"]] + 1
-                            # 生成用户本次概述创建的时间对象
+                            frequency_user_dic[over_data["creator"]] += 1
                             time_obj_new = datetime.strptime(next(reversed(over_data["timestamp"])), format_string)
-                            # 获取已保存的该用户概述最晚创建时间对象
                             time_obj_old = time_user_dic[over_data["creator"]]
-                            # 两个时间对比，如果本次时间比已保存的时间更晚
                             if time_obj_new > time_obj_old:
-                                # 将本次时间更新为该用户所有概述的最晚创建时间
                                 time_user_dic[over_data["creator"]] = time_obj_new
-                        # 如果数据的创建用户不存在临时记录字典里
                         else:
-                            # 记该用户创建一次
                             frequency_user_dic[over_data["creator"]] = 1
-                            # 记该用户首次创建时间
                             time_user_dic[over_data["creator"]] = datetime.strptime(
                                 next(reversed(over_data["timestamp"])), format_string
                             )
-        # 当前角色的所有概述存在创建记录
+
         if frequency_user_dic != {}:
-            # 找到临时保存用户创建概述次数字典里，所有次数的最大值
             max_value = max(frequency_user_dic.values())
-            # 找到跟最大次数相同的对应所有用户
             most_user_li = [key for key, value in frequency_user_dic.items() if value == max_value]
-            # 如果有多个人都创建了最大次数
             if len(most_user_li) > 1:
-                # 找到这些人创建概述数据的最晚时间
                 lat_time = max([time_user_dic[user] for user in most_user_li])
-                # 找到这些人里哪个人是最晚创建概述的
                 for user in most_user_li:
                     if time_user_dic[user] == lat_time:
-                        # 将找到的用户定义为概述创建最多次的人
                         over_role_dic[input_role]["most_user"] = f"最多：{user}"
-            # 如果创建次数最多的情况只有一个人
             else:
-                # 将这个用户定义为概述创建最多次的人
                 over_role_dic[input_role]["most_user"] = f"最多：{most_user_li[0]}"
 
-            # 找出临时保存用户最晚创建概述时间里最晚的时间点
             latest_time = max(list(time_user_dic.values()))
-            # 找出最晚创建概述的用户
             for user in time_user_dic.keys():
-                if time_user_dic[user] == latest_time:
-                    # 将这个用户定义为最晚创建概述的人
+                # 💡 核心修复：补上了之前遗漏的 "最近指定" 防覆盖校验
+                if time_user_dic[user] == latest_time and "最近指定" not in over_role_dic[input_role].get(
+                    "latest_user", ""
+                ):
+                    # 💡 核心修复：在赋值新负责人前，执行交接逻辑
+                    _execute_role_handover(input_role, user)
                     over_role_dic[input_role]["latest_user"] = f"最近：{user}"
 
 

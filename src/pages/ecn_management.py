@@ -915,6 +915,8 @@ async def ecn_management_page():
                 ui.menu_item(f"你好, {current_user}")
                 ui.separator()
                 ui.menu_item("返回主界面", on_click=lambda: ui.navigate.to("/main"))
+                ui.separator().props("size=1px")
+                ui.menu_item("注销登录", on_click=lambda: logout())
 
     with ui.column().classes("w-full p-4 h-[calc(100vh-4rem)] bg-gray-50"):
         with ui.row().classes("w-full justify-between items-center bg-white p-4 shadow-sm rounded-md"):
