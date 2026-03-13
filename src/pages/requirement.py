@@ -361,7 +361,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                 ui.button("取消", on_click=on_cancel_action)
         over_dialog.open()
 
-    def set_project_trial_dialog(project_name, on_cancel_action):
+    def set_project_trial_dialog(project_name, state, on_cancel_action):
         pending_dic = app.storage.general.get("overview_charge_pending", {})
         # 用于保存导致该项目不能切换状态到试产的相关人员与其未确定概述字典
         pending_out_dic = {}
@@ -395,7 +395,12 @@ async def requirement_page(type="", json_path="", project_name=""):
                     "text-base text-red"
                 )
                 with ui.row().classes("w-full justify-end"):
-                    ui.button("确认", on_click=lambda: over_dialog.close())
+                    ui.button(
+                        "确认",
+                        on_click=lambda: edit_project_summary(
+                            project_name, state, app.storage.client.get("recovery_bool", False)
+                        ),
+                    ).on("click", lambda: over_dialog.close())
                     ui.button("取消", on_click=on_cancel_action)
         over_dialog.open()
 
@@ -458,7 +463,7 @@ async def requirement_page(type="", json_path="", project_name=""):
             else:
                 set_project_conversion_dialog(project_name, state, on_cancel_action)
         elif previous_state == "转产" and state == "试产":
-            set_project_trial_dialog(project_name, on_cancel_action)
+            set_project_trial_dialog(project_name, state, on_cancel_action)
         else:
             edit_project_summary(project_name, state, app.storage.client.get("recovery_bool", False))
 

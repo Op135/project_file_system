@@ -10,6 +10,7 @@ import mimetypes
 import os
 import re
 import time
+import uuid
 from datetime import datetime
 from pathlib import Path
 
@@ -27,6 +28,38 @@ logger = logging.getLogger(__name__)
 
 # 内存中的全局字典：{ client.id : { 'username': str, 'login_time': str, 'ip': str } }
 online_users = {}
+
+
+def generate_initial_ecn_data(applicant: str, target_projects: list) -> dict:
+    """
+    生成标准化的 ECN 初始数据模型，彻底避免运行时字段缺失。
+    """
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    ecn_id = f"ECN-{datetime.now().strftime('%Y%m%d%H%M%S')}-{str(uuid.uuid4())[:4].upper()}"
+
+    return {
+        "ecn_id": ecn_id,
+        "basic_info": {
+            "title": "",
+            "nature": "永久变更",  # 永久变更 / 临时变更
+            "reason_type": "设计改善",  # 需求更改 / 设计改善 / 工艺调整 / 物料替换等
+            "reason_desc": "",
+            "applicant": applicant,
+            "apply_date": now_str,
+        },
+        "target_projects": target_projects,  # 受影响的项目列表
+        "change_items": [],  # 存放具体的变更项 (需求变更、概述变更、物料变更等)
+        "workflow": {
+            "current_state": "草稿",  # 对应 ECNState
+            "current_phase": "",  # ECR_PHASE / ECN_SCHEME_PHASE / ECN_EXECUTION_PHASE
+            "current_step_index": 0,  # 当前所处二维数组的外层索引
+            "route_type": "",  # 记录走的是 SALES_INITIATED 还是 RD_INITIATED
+            "pending_roles": [],  # 当前正在等待哪些角色审批
+            "step_approvals": {},  # 记录当前步骤中各角色的同意状态 e.g. {"质量": True, "工程": False}
+        },
+        "approval_log": [],  # 扁平化审批日志，记录 [{"user": "x", "role": "y", "action": "同意", "note": "...", "time": "..."}]
+        "timestamp": {now_str: f"由 {applicant} 创建草稿"},
+    }
 
 
 def trigger_global_sync(project_name: str):

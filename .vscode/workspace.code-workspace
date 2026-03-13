@@ -26,6 +26,8 @@
 		}
 	],
 	"settings": {
+		"editor.inlineSuggest.enabled": true, // 启用内联建议功能，提供代码补全建议
+		"editor.tabCompletion": "on",
 		// 设置默认的Python解释器路径
 		"python.defaultInterpreterPath": "D:\\miniforge3\\envs\\python_nicegui\\python.exe",
 		"python.terminal.activateEnvironment": true, // 启用自动环境激活（需配合 Conda 初始化）

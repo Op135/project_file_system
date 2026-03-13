@@ -14,7 +14,39 @@ ST = os.environ.get("STORAGE_SECRET", "this_is_not_a_secret_for_development_only
 
 SVN_USERNAME = "temp_t1"
 SVN_PASSWORD = "123456"
+# ==========================================
+# 工程变更 (ECN) 模块核心配置
+# ==========================================
 
+# 1. 允许发起 ECN 变更的项目状态（严格模式）
+ECN_ALLOWED_PROJECT_STATES = ["试产", "量产"]
+
+
+# 1. ECN 状态机枚举增加
+class ECNState:
+    DRAFT = "草稿"
+    ECR_REVIEWING = "ECR 审批中"
+    ECN_SCHEMING = "ECN 方案编写与确认中"  # <--- 协同编辑阶段
+    ECN_REVIEWING = "ECN 方案评审中"  # <--- 评审阶段
+    ECN_EXECUTING = "ECN 等待各部执行确认"
+    PENDING_FINAL_EXECUTE = "等待最终数据变更"
+    CLOSED = "变更已完成"
+    REJECTED = "已被驳回"  # <--- 驳回态
+
+
+# 2. 方案协同控制角色
+# 有权限点击“发起 ECN 方案审批”的总控角色
+ECN_SCHEME_INITIATOR_ROLES = ["研发经理", "admin"]
+# 允许进入方案区编写方案的角色
+ECN_SCHEME_WRITER_ROLES = ["研发", "工程", "工艺", "质量", "PMC", "硬件", "软件", "结构", "光学"]
+
+# 3. 审批流动态路由配置 (剥离了编写阶段，只保留审批)
+ECN_WORKFLOW_ROUTES = {
+    "ECR_PHASE": {"SALES_INITIATED": [["销售总监"], ["研发经理"]], "RD_INITIATED": [["研发经理"], ["销售总监"]]},
+    # 纯方案评审阶段
+    "ECN_SCHEME_REVIEW_PHASE": [["研发经理"], ["销售总监"], ["工程", "质量", "PMC"]],
+    "ECN_EXECUTION_PHASE": [["工程", "生产", "PMC", "质量"], ["研发经理_EXECUTE"]],
+}
 # 如果某个分组没在这里配置，代码里默认它使用 InteractiveButton。
 OVERVIEW_UI_RENDER_REGISTRY = {
     "光源": "OverviewTableGroup",

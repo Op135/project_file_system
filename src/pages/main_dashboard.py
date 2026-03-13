@@ -3,6 +3,7 @@ import logging
 
 from nicegui import app, ui
 
+from .. import db_storage  # 导入我们创建的模块
 from ..config import IMG_DIR, PRESET_AVATARS
 from ..utils import (
     get_cache_busted_path,
@@ -85,6 +86,7 @@ def main_page():
         ("rule", "项目待办项", "查阅项目相关待办项", "/information"),
         ("handyman", "分析工具", "提供用于专业分析计算的工具", "/tool"),
         ("account_tree", "需求项结构", "查阅需求项结构", "/question_tree_tabs"),
+        ("published_with_changes", "工程变更", "ECR与ECN流程管理", "/ecn_management"),
     ]
     menu_items = []
     for items in menu_items_metadata:
@@ -154,8 +156,27 @@ def main_page():
             pending_num_user = 0
             # 所有登录用户负责的概述维护项目数量
             over_charge_num = 0
+            # --- 新增：统计工程变更 (ECN) 的待办数量 ---
+            ecn_pending_num_user = 0
             # {项目工程师名:[负责项目,负责项目]}
             project_engineer_dic = get_project_engineer_project_list_dic()
+            # 假设你的 ECN 数据统一存在 db_storage 的 ecn_management_data 键下
+            # 注意：实际使用时如果觉得每次在主页拉取全量 ECN 较慢，可以像 overview 那样做个概要缓存，这里按直接读取演示
+            all_ecns = db_storage.get_item("ecn_management_data", {})
+            for ecn_id, ecn_data in all_ecns.items():
+                workflow = ecn_data.get("workflow", {})
+                pending_roles = workflow.get("pending_roles", [])
+
+                # 如果当前用户角色在待审批角色列表中，或者当前用户是目标项目的 PROJECT_ENGINEER 且等待工程师处理
+                if current_role in pending_roles:
+                    ecn_pending_num_user += 1
+                elif "PROJECT_ENGINEER" in pending_roles:
+                    # 检查当前用户是否是目标项目列表中的负责人
+                    target_projects = ecn_data.get("target_projects", [])
+                    for proj in target_projects:
+                        if proj in project_engineer_dic.get(current_user, []):
+                            ecn_pending_num_user += 1
+                            break  # 算一次待办即可
             for project_name, ver_dic in app.storage.general["wait_review"].items():
                 for ver, dic in ver_dic.items():
                     state = dic.get("state")
@@ -189,6 +210,9 @@ def main_page():
                     else:
                         # 其他人看到的是自己负责审核的待审项目数量（项目工程师才有） + 自己负责的概述
                         pending_count = pending_num_user + over_charge_num
+                elif target == "/ecn_management":
+                    # 将算出的 ECN 待办数量赋给这个卡片
+                    pending_count = ecn_pending_num_user
 
                 # 2. 定义动态样式 (Dynamic Styling)
                 #    如果有待办，图标变黄；否则保持原本的蓝色
