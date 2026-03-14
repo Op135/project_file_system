@@ -761,6 +761,7 @@ class InteractiveButton:
         # self.last_state_hash = None
         # 替换 self.last_state_hash = None
         self.local_version = -1
+        self._is_refreshing = False  # 在开始重绘概述前检查为Ture则放弃本次重绘（因为前面已经在重绘中还没结束），重绘过程中设置为True，重绘后设置为False，
 
         if self.processing_type == "file":
             btn_icon = "file_present"
@@ -844,14 +845,20 @@ class InteractiveButton:
 
         # if self.last_state_hash != current_hash:
         #     self.last_state_hash = current_hash
-
+        # 防重入锁，防止渲染堆积
+        if getattr(self, "_is_refreshing", False):
+            return
         # O(1) 复杂度的获取
         current_version = OverviewVersionManager.get_version(self.project, self.label)
         if self.local_version != current_version:
-            self.local_version = current_version
-            await self._refresh_chip_container()
-            overview_role_update(self.project, self.role)
-            self._update_local_pending()
+            try:
+                self.local_version = current_version
+                self._is_refreshing = True
+                await self._refresh_chip_container()
+                overview_role_update(self.project, self.role)
+                self._update_local_pending()
+            finally:
+                self._is_refreshing = False
 
     async def _refresh_chip_container(self) -> None:
         """物理重绘整个芯片容器"""
@@ -1908,7 +1915,7 @@ class InteractiveButton:
                     btn.enable()  # 3. 最终防线：无论成功、失败验证不通过还是报错，都恢复按钮状态
 
     async def _get_file_upload(self, btn=None):
-        text = self.chip_notes.value.strip()
+        text, notes = self.chip_label.value.strip(), self.chip_notes.value.strip()
         # 主内容填写“无”等无效内容情况，转交纯文本方式处理
         ignore_bool = False
         for regular in NONE_REGULAR:
@@ -1921,7 +1928,7 @@ class InteractiveButton:
             if btn:
                 btn.disable()  # 1. 进门立刻禁用按钮，防止连点
             try:
-                if not text:
+                if not notes:
                     ui.notify(
                         "注释不能为空!",
                         type="warning",
@@ -2004,9 +2011,10 @@ class InteractiveButton:
         else:
             try:
                 file_content = await e.file.read()
-                file_content_object = io.BytesIO(file_content)
+                # file_content_object = io.BytesIO(file_content)
                 with open(filepath, "wb") as f:
-                    f.write(file_content_object.read())
+                    # f.write(file_content_object.read())
+                    f.write(file_content)
             except Exception as ex:
                 logger.error("上传处理失败", exc_info=True)
                 ui.notify(
@@ -2041,7 +2049,7 @@ class InteractiveButton:
                 "file_type": file_type,
                 "content": original_filename,
                 "url_path": url_path,
-                "notes": self.chip_notes.value,
+                "notes": self.chip_notes.value.strip(),
                 "creator": creator,
                 "req_ver": req_max_ver,
                 "select_activ_dic": select_activ_dic,
@@ -3037,9 +3045,20 @@ class InteractiveButton:
         _, pdf_bytes = await self.get_svn_file_http_async(http_url, username=SVN_USERNAME, password=SVN_PASSWORD)
 
         if pdf_bytes:
-            client_id = ui.context.client.id
+            client = ui.context.client
+            client_id = client.id
             PDF_PREVIEW_CACHE[client_id] = pdf_bytes
             cache_buster = int(time.time())
+
+            # 【新增：生命周期绑定清理机制】
+            def cleanup_on_disconnect():
+                if client_id in PDF_PREVIEW_CACHE:
+                    PDF_PREVIEW_CACHE.pop(client_id, None)
+                    logger.info(f"客户端 {client_id} 断开连接，已清理其 PDF 缓存")
+
+            # 绑定断开事件 (当用户关闭、刷新该网页，或网络断开超时后触发)
+            client.on_disconnect(cleanup_on_disconnect)
+
             ui.run_javascript(f'window.open("/view/svn_pdf?id={client_id}&v={cache_buster}", "_blank");')
             ui.notify(
                 f"已在新标签页中打开: {file_name}",
@@ -3153,6 +3172,8 @@ class OverviewTableGroup:
         self.permitted_configs = {}
         self.ordered_row_ids = []
         self._is_refreshing = False  # 在开始重绘表格前检查为Ture则放弃本次重绘（因为前面已经在重绘中还没结束），重绘过程中设置为True，重绘后设置为False，
+        self._is_first_load = True  # 新增：专门用于精准判断首次加载
+
         # 新增：用于追踪每一行的容器和状态签名
         self.row_containers = {}  # 格式: {row_id: ui.row()}
         self.row_hashes = {}  # 格式: {row_id: int(hash)}
@@ -3504,6 +3525,7 @@ class OverviewTableGroup:
 
                     # 2. 渲染添加按钮：
                     if self._edit_permission_judge(config, notify=False):
+                        # 确保第一列只能有一个chip
                         if not (is_first_col and has_chip):
                             icon_name = self._get_icon_for_type(config["processing_type"])
                             btn = ui.button(
@@ -3819,7 +3841,10 @@ class OverviewTableGroup:
                 self.local_versions[label] = current_version
                 changed_labels.append(label)
 
-        if changed_labels or not self.row_containers:  # 如果有变更，或者是首次加载
+        # if changed_labels or not self.row_containers:  # 首次加载遇到当前表格本来就没有任何数据，就会无限触发，平繁更新app.storage.general
+        # 修复：使用专门的 _is_first_load 标记，避免空数据表格陷入死循环
+        if changed_labels or getattr(self, "_is_first_load", True):
+            self._is_first_load = False  # 进门后立刻把首次标记改为 False
             try:
                 self._is_refreshing = True
                 overview_role_update(self.project, self.role)
@@ -4318,7 +4343,7 @@ class OverviewTableGroup:
         self.chip_dialog.open()
 
     async def _get_file_upload(self, btn=None):
-        text = self.chip_notes.value.strip()
+        text, notes = self.chip_label.value.strip(), self.chip_notes.value.strip()
         # 主内容填写“无”等无效内容情况，转交纯文本方式处理
         ignore_bool = False
         for regular in NONE_REGULAR:
@@ -4331,7 +4356,7 @@ class OverviewTableGroup:
             if btn:
                 btn.disable()  # 1. 进门立刻禁用按钮，防止连点
             try:
-                if not text:
+                if not notes:
                     ui.notify(
                         "注释不能为空!",
                         type="warning",
@@ -4436,7 +4461,8 @@ class OverviewTableGroup:
         try:
             file_content = await e.file.read()
             with open(filepath, "wb") as f:
-                f.write(io.BytesIO(file_content).read())
+                # f.write(io.BytesIO(file_content).read())
+                f.write(file_content)
         except Exception as ex:
             logger.error("上传处理失败", exc_info=True)
             ui.notify(
@@ -4510,7 +4536,7 @@ class OverviewTableGroup:
             "file_type": file_type,
             "content": original_filename,
             "url_path": url_path,
-            "notes": self.chip_notes.value,
+            "notes": self.chip_notes.value.strip(),
             "creator": creator,
             "req_ver": req_max_ver,
             "select_activ_dic": select_activ_dic,
@@ -4859,7 +4885,10 @@ class OverviewTableGroup:
                         break
                     else:
                         current_idx += 1
-                        target_row_id = self.ordered_row_ids[current_idx + 1]
+                        if current_idx < len(self.ordered_row_ids) - 1:
+                            target_row_id = self.ordered_row_ids[current_idx + 1]
+                        else:
+                            break  # 已经到底，无法继续下移
         # 数据写入完毕后，推高全局版本号
         OverviewVersionManager.bump(self.project, config["label"])
         # 这一行是关键：主动调用更新函数，而不是等 1.0s 的 timer
@@ -5314,12 +5343,12 @@ class OverviewTableGroup:
         self.activ_dialog.open()
 
     def cancel_checkbox_change(self, chip_id):
-        try:
-            app.storage.general["over_change_broadcast"][self.project][chip_id]["editor"].remove(
-                app.storage.user.get("current_user", "匿名用户")
-            )
-        except ValueError:
-            pass
+        broadcast_data = app.storage.general.get("over_change_broadcast", {}).get(self.project, {}).get(chip_id)
+        if broadcast_data and "editor" in broadcast_data:
+            try:
+                broadcast_data["editor"].remove(app.storage.user.get("current_user", "匿名用户"))
+            except ValueError:
+                pass
         if not app.storage.general["over_change_broadcast"][self.project].get(chip_id, {}).get("editor"):
             app.storage.general["over_change_broadcast"][self.project].pop(chip_id, None)
 
@@ -5910,9 +5939,20 @@ class OverviewTableGroup:
         _, pdf_bytes = await self.get_svn_file_http_async(http_url, username=SVN_USERNAME, password=SVN_PASSWORD)
 
         if pdf_bytes:
-            client_id = ui.context.client.id
+            client = ui.context.client
+            client_id = client.id
             PDF_PREVIEW_CACHE[client_id] = pdf_bytes
             cache_buster = int(time.time())
+
+            # 【新增：生命周期绑定清理机制】
+            def cleanup_on_disconnect():
+                if client_id in PDF_PREVIEW_CACHE:
+                    PDF_PREVIEW_CACHE.pop(client_id, None)
+                    logger.info(f"客户端 {client_id} 断开连接，已清理其 PDF 缓存")
+
+            # 绑定断开事件 (当用户关闭、刷新该网页，或网络断开超时后触发)
+            client.on_disconnect(cleanup_on_disconnect)
+
             ui.run_javascript(f'window.open("/view/svn_pdf?id={client_id}&v={cache_buster}", "_blank");')
 
             ui.notify(

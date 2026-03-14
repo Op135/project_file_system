@@ -41,6 +41,7 @@ def generate_ecn_id(all_ecns: dict) -> str:
 # --- 辅助：数据模型生成 ---
 def generate_initial_ecn_data(applicant: str, all_ecns: dict) -> dict:
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    # 查找所有记录在案的当天ECN的编号，自动在最大序号上加1，成为当前新ECN的编号
     ecn_id = generate_ecn_id(all_ecns)
     return {
         "ecn_id": ecn_id,
@@ -71,6 +72,13 @@ def generate_initial_ecn_data(applicant: str, all_ecns: dict) -> dict:
 
 @ui.page("/ecn_management")
 async def ecn_management_page():
+    ui.add_head_html("""
+        <style>
+            .q-dialog__inner--minimized>div {
+                    max-width: 1000px;
+                }
+        </style>
+    """)
     if not app.storage.user.get("current_user"):
         ui.navigate.to("/login")
         return
@@ -86,18 +94,20 @@ async def ecn_management_page():
     page_state = {"search_keyword": "", "filter_state": "全部"}
 
     # ==========================================
-    # 弹窗 1：概述变更项添加
+    # 弹窗 1：概述变更项添加 / 编辑 (深度对齐底层数据)
     # ==========================================
-    def open_add_overview_change_dialog(ecn_data, on_save_callback):
+    def open_add_overview_change_dialog(ecn_data, on_save_callback, edit_item={}):
         dialog = ui.dialog().props("persistent")
+        is_edit = edit_item != {}
+
         sel_state = {
-            "project": None,
-            "role": None,
-            "label": None,
-            "chip_id": None,
-            "old_content": "",
-            "new_content": "",
-            "req_idxs": [],
+            "project": edit_item["project"] if is_edit else None,
+            "role": edit_item["role"] if is_edit else None,
+            "label": edit_item["label"] if is_edit else None,
+            "chip_id": edit_item["chip_id"] if is_edit else None,
+            "old_data": edit_item.get("old_data", {}) if is_edit else {},
+            "new_data": edit_item.get("new_data", {}) if is_edit else {},
+            "req_idxs": edit_item["req_idxs"] if is_edit else [],
         }
 
         target_projects = ecn_data.get("target_projects", [])
@@ -113,143 +123,277 @@ async def ecn_management_page():
                 for i in gl
             }
 
-        def get_chips(p, l):
+        def get_chips(p, ll):
             return {
                 c_id: c.get("content", "")[:30] + "..."
-                for c_id, c in db_storage.get_deep_item([f"{p}_over_data", l], {}).items()
+                for c_id, c in db_storage.get_deep_item([f"{p}_over_data", ll], {}).items()
                 if c.get("enabled")
             }
 
-        with dialog, ui.card().classes("w-[600px] max-w-full flex flex-col"):
-            ui.label("添加概述数据变更方案").classes("text-lg font-bold text-blue-900 shrink-0")
+        with dialog, ui.card().classes("w-[800px] max-w-full flex flex-col"):
+            ui.label("修改概述数据变更方案" if is_edit else "添加概述数据变更方案").classes(
+                "text-lg font-bold text-blue-900 shrink-0"
+            )
 
             with ui.column().classes("w-full gap-2 flex-1 min-h-0 overflow-y-auto"):
                 ui.select(options=req_options, multiple=True, label="关联解决的要求序号 (支持多选)").classes(
                     "w-full"
                 ).bind_value(sel_state, "req_idxs")
-                with ui.grid(columns=2).classes("w-full gap-2"):
-                    sel_proj = ui.select(
-                        options=target_projects,
-                        label="1. 目标项目",
-                        on_change=lambda e: [
-                            sel_state.update(project=e.value),
-                            sel_chip.set_options(get_chips(e.value, sel_state["label"])),
-                            sel_chip.set_value(None),
-                        ],
-                    ).classes("w-full")
-                    sel_role = ui.select(
-                        options=roles,
-                        label="2. 技术维度",
-                        on_change=lambda e: [
-                            sel_state.update(role=e.value),
-                            sel_label.set_options(get_labels(e.value)),
-                            sel_label.set_value(None),
-                        ],
-                    ).classes("w-full")
-                    sel_label = ui.select(
-                        options={},
-                        label="3. 具体参数",
-                        on_change=lambda e: [
-                            sel_state.update(label=e.value),
-                            sel_chip.set_options(get_chips(sel_state["project"], e.value)),
-                            sel_chip.set_value(None),
-                        ],
-                    ).classes("w-full")
-                    sel_chip = ui.select(options={}, label="4. 原数据").classes("w-full")
 
-                with ui.card().classes("w-full bg-gray-50 shadow-inner mt-2 shrink-0"):
-                    ui.label("原内容：").classes("text-xs text-gray-500 font-bold")
-                    old_text_ui = ui.label("请先选择上方数据...").classes("text-sm text-gray-700 mb-2 break-all")
-                    new_text_ui = (
-                        ui.textarea(label="变更后的新内容 (必填)").classes("w-full").props("outlined auto-grow")
+                # 顶部选择区域 (编辑模式下锁定目标以防错乱)
+                with ui.grid(columns=2).classes("w-full gap-2"):
+                    sel_proj = (
+                        ui.select(
+                            options=target_projects,
+                            label="1. 目标项目",
+                            value=sel_state["project"],
+                            on_change=lambda e: (
+                                [
+                                    sel_state.update(project=e.value),
+                                    sel_chip.set_options(get_chips(e.value, sel_state["label"])),
+                                    sel_chip.set_value(None),
+                                ]
+                                if not is_edit
+                                else None
+                            ),
+                        )
+                        .classes("w-full")
+                        .props(f"readonly={is_edit}")
                     )
 
+                    sel_role = (
+                        ui.select(
+                            options=roles,
+                            label="2. 技术维度",
+                            value=sel_state["role"],
+                            on_change=lambda e: (
+                                [
+                                    sel_state.update(role=e.value),
+                                    sel_label.set_options(get_labels(e.value)),
+                                    sel_label.set_value(None),
+                                ]
+                                if not is_edit
+                                else None
+                            ),
+                        )
+                        .classes("w-full")
+                        .props(f"readonly={is_edit}")
+                    )
+
+                    sel_label = (
+                        ui.select(
+                            options=get_labels(sel_state["role"]) if is_edit else {},
+                            label="3. 具体参数",
+                            value=sel_state["label"],
+                            on_change=lambda e: (
+                                [
+                                    sel_state.update(label=e.value),
+                                    sel_chip.set_options(get_chips(sel_state["project"], e.value)),
+                                    sel_chip.set_value(None),
+                                ]
+                                if not is_edit
+                                else None
+                            ),
+                        )
+                        .classes("w-full")
+                        .props(f"readonly={is_edit}")
+                    )
+
+                    sel_chip = (
+                        ui.select(
+                            options=get_chips(sel_state["project"], sel_state["label"]) if is_edit else {},
+                            label="4. 原数据",
+                            value=sel_state["chip_id"],
+                        )
+                        .classes("w-full")
+                        .props(f"readonly={is_edit}")
+                    )
+
+                # 动态表单容器
+                dynamic_form_container = ui.column().classes("w-full gap-2 mt-2")
+
+                def render_dynamic_form():
+                    dynamic_form_container.clear()
+                    if not sel_state["old_data"]:
+                        return
+
+                    chip_type = sel_state["old_data"].get("type", "text")
+
+                    with dynamic_form_container:
+                        ui.label(f"检测到底层数据类型为: {chip_type.upper()}").classes(
+                            "text-xs font-bold text-teal-700 bg-teal-50 px-2 py-1 rounded"
+                        )
+
+                        with ui.grid(columns=2).classes("w-full gap-4"):
+                            # 左侧：原数据展示
+                            with ui.card().classes("w-full bg-gray-50 shadow-inner p-3"):
+                                ui.label("现状 / 原内容").classes("text-xs text-gray-500 font-bold mb-2")
+                                ui.label(sel_state["old_data"].get("content", "无")).classes(
+                                    "text-sm text-gray-700 break-all"
+                                )
+                                if chip_type == "test":
+                                    old_test = sel_state["old_data"].get("test_select_data", {})
+                                    ui.label(f"性质: {old_test.get('test_nature_select', '')}").classes(
+                                        "text-xs text-gray-500 mt-1"
+                                    )
+                                    ui.label(f"状态: {old_test.get('state_select', '')}").classes(
+                                        "text-xs text-gray-500"
+                                    )
+                                    ui.label(f"节点: {old_test.get('node_select', '')}").classes(
+                                        "text-xs text-gray-500"
+                                    )
+                                    ui.label(f"工具: {old_test.get('instrument_select', '')}").classes(
+                                        "text-xs text-gray-500"
+                                    )
+
+                            # 右侧：新方案填写
+                            with ui.card().classes("w-full bg-blue-50 shadow-inner p-3 border border-blue-100"):
+                                ui.label("方案 / 新内容 (必填)").classes("text-xs text-blue-700 font-bold mb-2")
+
+                                if chip_type == "text":
+                                    ui.textarea("新文本内容").bind_value(sel_state["new_data"], "content").classes(
+                                        "w-full"
+                                    ).props("outlined auto-grow rows=2")
+                                elif chip_type == "test":
+                                    ui.textarea("新检测内容与标准").bind_value(
+                                        sel_state["new_data"], "content"
+                                    ).classes("w-full").props("outlined auto-grow rows=2")
+                                    test_data = sel_state["new_data"].setdefault("test_select_data", {})
+                                    with ui.grid(columns=2).classes("w-full gap-2 mt-2"):
+                                        ui.input("测试性质").bind_value(test_data, "test_nature_select").props(
+                                            "outlined dense"
+                                        )
+                                        ui.input("条件/状态").bind_value(test_data, "state_select").props(
+                                            "outlined dense"
+                                        )
+                                        ui.input("节点/位置").bind_value(test_data, "node_select").props(
+                                            "outlined dense"
+                                        )
+                                        ui.input("工具/仪器/治具").bind_value(test_data, "instrument_select").props(
+                                            "outlined dense"
+                                        )
+                                elif chip_type in ["file", "image", "video", "search", "svn"]:
+                                    ui.input("新文件名/新引用").bind_value(sel_state["new_data"], "content").classes(
+                                        "w-full"
+                                    ).props("outlined")
+
+                                ui.textarea("修改原因/注释").bind_value(sel_state["new_data"], "notes").classes(
+                                    "w-full mt-2"
+                                ).props("outlined auto-grow rows=1")
+
             def on_chip_change(e):
+                if is_edit:
+                    return
                 sel_state["chip_id"] = e.value
                 if all([sel_state["project"], sel_state["label"], sel_state["chip_id"]]):
-                    sel_state["old_content"] = db_storage.get_deep_item(
+                    old_chip_data = db_storage.get_deep_item(
                         [f"{sel_state['project']}_over_data", sel_state["label"], sel_state["chip_id"]], {}
-                    ).get("content", "")
-                    old_text_ui.set_text(sel_state["old_content"])
+                    )
+                    sel_state["old_data"] = copy.deepcopy(old_chip_data)
+                    sel_state["new_data"] = copy.deepcopy(old_chip_data)
+                    render_dynamic_form()
 
-            sel_chip.on_value_change(on_chip_change)
+            if not is_edit:
+                sel_chip.on_value_change(on_chip_change)
+            else:
+                render_dynamic_form()
 
-            def save_item():
+            async def save_item():
                 if (
                     not all([sel_state["project"], sel_state["label"], sel_state["chip_id"]])
-                    or not new_text_ui.value.strip()
+                    or not sel_state["new_data"].get("content", "").strip()
                 ):
                     ui.notify("请完善必填信息", type="warning")
                     return
-                on_save_callback(
-                    {
-                        "item_id": str(uuid.uuid4()),
-                        "type": "overview_update",
-                        "author": current_user,
-                        "req_idxs": sel_state["req_idxs"],
-                        "project": sel_state["project"],
-                        "role": sel_state["role"],
-                        "label": sel_state["label"],
-                        "chip_id": sel_state["chip_id"],
-                        "old_content": sel_state["old_content"],
-                        "new_content": new_text_ui.value.strip(),
-                        "execute_status": "pending",
-                    }
-                )
+
+                item_data = {
+                    "item_id": edit_item["item_id"] if is_edit else str(uuid.uuid4()),
+                    "type": "overview_update",
+                    "author": current_user,
+                    "req_idxs": sel_state["req_idxs"],
+                    "project": sel_state["project"],
+                    "role": sel_state["role"],
+                    "label": sel_state["label"],
+                    "chip_id": sel_state["chip_id"],
+                    "old_data": copy.deepcopy(sel_state["old_data"]),
+                    "new_data": copy.deepcopy(sel_state["new_data"]),
+                    "execute_status": "pending",
+                }
+                await on_save_callback(item_data, is_edit)
                 dialog.close()
 
             with ui.row().classes("w-full justify-end mt-4 shrink-0"):
                 ui.button("取消", on_click=dialog.close).props("flat color=grey")
-                ui.button("确认添加", on_click=save_item).props("color=primary")
+                ui.button("确认修改" if is_edit else "确认添加", on_click=save_item).props("color=primary")
         dialog.open()
 
     # ==========================================
-    # 弹窗 2：其他文本描述方案添加
+    # 弹窗 2：其他文本描述方案添加 / 编辑 (双列布局)
     # ==========================================
-    def open_add_text_change_dialog(ecn_data, on_save_callback):
+    def open_add_text_change_dialog(ecn_data, on_save_callback, edit_item={}):
         dialog = ui.dialog().props("persistent")
-        sel_state = {"req_idxs": [], "change_type": "物料变更", "content": ""}
+        is_edit = edit_item != {}
+        sel_state = {
+            "req_idxs": edit_item["req_idxs"] if is_edit else [],
+            "change_type": edit_item["change_type"] if is_edit else "物料变更",
+        }
         req_options = {
             req["idx"]: f"[{req['idx']}] {req['content'][:15]}..." for req in ecn_data["basic_info"]["requirements"]
         }
 
-        with dialog, ui.card().classes("w-[500px]"):
-            ui.label("添加补充说明方案 (物料/图纸/工艺等)").classes("text-lg font-bold text-blue-900")
-            ui.select(options=req_options, multiple=True, label="关联解决的要求序号").classes("w-full").bind_value(
-                sel_state, "req_idxs"
-            )
-            ui.select(["物料变更", "图纸更新", "工艺调整", "SOP修改", "其它"], label="方案分类").classes(
-                "w-full"
-            ).bind_value(sel_state, "change_type")
-            content_ui = ui.textarea(label="方案详细描述 (必填)").classes("w-full").props("outlined auto-grow rows=4")
+        with dialog, ui.card().classes("w-[800px] max-w-full"):
+            ui.label("修改补充说明方案" if is_edit else "添加补充说明方案").classes("text-lg font-bold text-blue-900")
 
-            def save_item():
-                if not content_ui.value.strip():
-                    ui.notify("描述不能为空", type="warning")
-                    return
-                on_save_callback(
-                    {
-                        "item_id": str(uuid.uuid4()),
-                        "type": "text_desc",
-                        "author": current_user,
-                        "req_idxs": sel_state["req_idxs"],
-                        "change_type": sel_state["change_type"],
-                        "content": content_ui.value.strip(),
-                        "execute_status": "manual_record",
-                    }
+            with ui.row().classes("w-full gap-4"):
+                ui.select(options=req_options, multiple=True, label="关联解决的要求序号").classes("flex-1").bind_value(
+                    sel_state, "req_idxs"
                 )
+                ui.select(["物料变更", "图纸更新", "工艺调整", "SOP修改", "其它"], label="方案分类").classes(
+                    "w-48"
+                ).bind_value(sel_state, "change_type")
+
+            with ui.grid(columns=2).classes("w-full gap-4 mt-2"):
+                old_content_ui = (
+                    ui.textarea(label="现状 / 原内容 (必填)", value=edit_item.get("old_content", "") if is_edit else "")
+                    .classes("w-full")
+                    .props("outlined auto-grow rows=4")
+                )
+
+                new_content_ui = (
+                    ui.textarea(
+                        label="变更方案 / 新内容 (必填)", value=edit_item.get("new_content", "") if is_edit else ""
+                    )
+                    .classes("w-full")
+                    .props("outlined auto-grow rows=4 bg-blue-50")
+                )
+
+            async def save_item():
+                if not old_content_ui.value.strip() or not new_content_ui.value.strip():
+                    ui.notify("原内容与新内容均不能为空", type="warning")
+                    return
+                item_data = {
+                    "item_id": edit_item["item_id"] if is_edit else str(uuid.uuid4()),
+                    "type": "text_desc",
+                    "author": current_user,
+                    "req_idxs": sel_state["req_idxs"],
+                    "change_type": sel_state["change_type"],
+                    "old_content": old_content_ui.value.strip(),
+                    "new_content": new_content_ui.value.strip(),
+                    "execute_status": "manual_record",
+                }
+                await on_save_callback(item_data, is_edit)
                 dialog.close()
 
-            with ui.row().classes("w-full justify-end mt-2"):
+            with ui.row().classes("w-full justify-end mt-4"):
                 ui.button("取消", on_click=dialog.close).props("flat color=grey")
-                ui.button("确认添加", on_click=save_item).props("color=primary")
+                ui.button("确认修改" if is_edit else "确认添加", on_click=save_item).props("color=primary")
         dialog.open()
 
     # ==========================================
     # 弹窗 3：ECN 详情与操作主控台
     # ==========================================
     async def open_ecn_detail_dialog(ecn_id=None):
-        dialog = ui.dialog().classes("w-[1000px] max-w-[95vw]")
+        dialog = ui.dialog().classes("w-full max-w-[95vw]")
         is_new = ecn_id is None
         all_ecns = db_storage.get_item("ecn_management_data", {})
 
@@ -499,7 +643,6 @@ async def ecn_management_page():
 
                                 async def toggle_part_status(new_status):
                                     parts[current_user] = new_status
-                                    # 实时静默保存个人状态，防止丢失
                                     await db_storage.set_deep_item(
                                         [
                                             "ecn_management_data",
@@ -533,6 +676,34 @@ async def ecn_management_page():
 
                                 render_my_actions()
 
+                        # 统一保存回调逻辑
+                        async def handle_save_item(item_data, is_edit=False):
+                            if is_edit:
+                                for idx, existing_item in enumerate(local_data["change_items"]):
+                                    if existing_item["item_id"] == item_data["item_id"]:
+                                        local_data["change_items"][idx] = item_data
+                                        break
+                            else:
+                                local_data["change_items"].append(item_data)
+
+                            parts[current_user] = "editing"
+                            await db_storage.set_deep_item(
+                                ["ecn_management_data", local_data["ecn_id"], "workflow", "scheme_participants"], parts
+                            )
+                            await db_storage.set_deep_item(
+                                ["ecn_management_data", local_data["ecn_id"], "change_items"],
+                                local_data["change_items"],
+                            )
+                            render_parts()
+                            render_my_actions()
+                            render_items()
+
+                        def open_edit_dialog(item_to_edit):
+                            if item_to_edit["type"] == "overview_update":
+                                open_add_overview_change_dialog(local_data, handle_save_item, edit_item=item_to_edit)
+                            else:
+                                open_add_text_change_dialog(local_data, handle_save_item, edit_item=item_to_edit)
+
                         # 方案列表与添加区域
                         with ui.column().classes("w-full p-4 gap-3"):
                             if (
@@ -544,12 +715,12 @@ async def ecn_management_page():
                                     ui.button(
                                         "添加概述自动修改方案",
                                         icon="auto_fix_high",
-                                        on_click=lambda: open_add_overview_change_dialog(local_data, handle_add_item),
+                                        on_click=lambda: open_add_overview_change_dialog(local_data, handle_save_item),
                                     ).props("color=primary outline")
                                     ui.button(
                                         "添加文本描述方案 (物料/工艺等)",
                                         icon="text_snippet",
-                                        on_click=lambda: open_add_text_change_dialog(local_data, handle_add_item),
+                                        on_click=lambda: open_add_text_change_dialog(local_data, handle_save_item),
                                     ).props("color=secondary outline")
 
                             item_container = ui.column().classes("w-full gap-3")
@@ -581,57 +752,46 @@ async def ecn_management_page():
                                                         )
                                                 ui.label(f"作者: {item['author']}").classes("text-xs text-gray-500")
 
-                                                # 删除权限：草稿期 作者自己可以删 (前提是自己还没点确认)
-                                                can_del = (
+                                                # 操作权限：草稿期 作者自己可以编辑和删除 (前提是自己还没点确认)
+                                                can_edit = (
                                                     is_scheming_phase
                                                     and item["author"] == current_user
                                                     and parts.get(current_user) != "confirmed"
                                                 )
-                                                if can_del:
-                                                    ui.button(
-                                                        icon="delete", on_click=lambda i=item: remove_item(i)
-                                                    ).props("flat round text-color=red size=sm").classes(
-                                                        "absolute top-1 right-1"
-                                                    )
+                                                if can_edit:
+                                                    with ui.row().classes("absolute top-1 right-1 gap-1"):
+                                                        ui.button(
+                                                            icon="edit", on_click=lambda i=item: open_edit_dialog(i)
+                                                        ).props("flat round text-color=blue size=sm")
+                                                        ui.button(
+                                                            icon="delete", on_click=lambda i=item: remove_item(i)
+                                                        ).props("flat round text-color=red size=sm")
 
-                                            # 条目 Body
+                                            # 条目 Body (双列表现)
                                             with ui.column().classes("w-full p-3 gap-1"):
                                                 if item["type"] == "overview_update":
                                                     ui.label(
                                                         f"【{item['project']} - {item['role']} - {item['label']}】"
                                                     ).classes("text-xs font-bold text-blue-900")
                                                     with ui.row().classes("w-full items-center gap-2"):
-                                                        ui.label(item["old_content"]).classes(
-                                                            "text-sm text-gray-500 line-through bg-gray-50 p-1 rounded"
+                                                        ui.label(item.get("old_data", {}).get("content", "")).classes(
+                                                            "text-sm text-gray-500 line-through bg-gray-50 p-1 rounded break-all"
                                                         )
                                                         ui.icon("arrow_forward", color="gray")
-                                                        ui.label(item["new_content"]).classes(
-                                                            "text-sm font-bold text-green-700 bg-green-50 p-1 rounded"
+                                                        ui.label(item.get("new_data", {}).get("content", "")).classes(
+                                                            "text-sm font-bold text-green-700 bg-green-50 p-1 rounded break-all"
                                                         )
                                                 else:
                                                     ui.label(f"分类: {item['change_type']}").classes(
                                                         "text-xs font-bold text-teal-900"
                                                     )
-                                                    ui.label(item["content"]).classes(
-                                                        "text-sm text-gray-800 whitespace-pre-wrap bg-gray-50 p-2 rounded w-full border border-dashed"
-                                                    )
-
-                            async def handle_add_item(new_item):
-                                local_data["change_items"].append(new_item)
-                                # 只要添加了方案，自动加入参与者池并标记为 editing
-                                parts[current_user] = "editing"
-                                # 同步到数据库确保协作不丢失
-                                await db_storage.set_deep_item(
-                                    ["ecn_management_data", local_data["ecn_id"], "workflow", "scheme_participants"],
-                                    parts,
-                                )
-                                await db_storage.set_deep_item(
-                                    ["ecn_management_data", local_data["ecn_id"], "change_items"],
-                                    local_data["change_items"],
-                                )
-                                render_parts()
-                                render_my_actions()
-                                render_items()
+                                                    with ui.grid(columns=2).classes("w-full gap-2"):
+                                                        ui.label(item.get("old_content", "")).classes(
+                                                            "text-sm text-gray-500 bg-gray-50 p-2 rounded w-full border border-dashed line-through break-all"
+                                                        )
+                                                        ui.label(item.get("new_content", "")).classes(
+                                                            "text-sm text-gray-800 bg-blue-50 p-2 rounded w-full border border-solid border-blue-200 break-all"
+                                                        )
 
                             async def remove_item(item_to_remove):
                                 local_data["change_items"].remove(item_to_remove)
@@ -643,15 +803,13 @@ async def ecn_management_page():
 
                             render_items()
 
-                            # 异步刷新定时器 (仅在编辑阶段拉取别人的更新)
+                            # 异步刷新定时器
                             async def sync_schemes():
                                 if local_data["workflow"]["current_state"] == ECNState.ECN_SCHEMING and ecn_id:
                                     fresh_data = db_storage.get_deep_item(["ecn_management_data", ecn_id])
                                     if fresh_data:
-                                        # 仅同步方案项和参与者状态，不覆盖当前用户可能在 Tab1 填的东西
                                         fresh_items = fresh_data.get("change_items", [])
                                         fresh_parts = fresh_data["workflow"].get("scheme_participants", {})
-                                        # 简单比对长度或内容判断是否需刷新 UI
                                         if str(fresh_items) != str(local_data["change_items"]) or fresh_parts != parts:
                                             local_data["change_items"] = copy.deepcopy(fresh_items)
                                             parts.clear()
@@ -726,7 +884,6 @@ async def ecn_management_page():
                 else:
                     is_pending_user = current_role in wf["pending_roles"]
 
-                    # 场景 1：终极执行 (研发经理最后一步)
                     if wf["current_state"] == ECNState.PENDING_FINAL_EXECUTE and "研发经理" in current_role:
                         ui.button(
                             "驳回至方案阶段", color="red", on_click=lambda: process_approval(local_data, "驳回", "")
@@ -737,7 +894,6 @@ async def ecn_management_page():
                             on_click=lambda: execute_ecn_data(local_data),
                         ).props("color=red")
 
-                    # 场景 2：发起方案评审 (由总控人员在大家都 Confirm 后发起)
                     elif wf["current_state"] == ECNState.ECN_SCHEMING and any(
                         r in current_role for r in ECN_SCHEME_INITIATOR_ROLES
                     ):
@@ -750,7 +906,6 @@ async def ecn_management_page():
                         if not all_confirmed:
                             btn.tooltip("需要所有提供方案的人员点击'确认完成'后方可发起")
 
-                    # 场景 3：常规并行审批
                     elif is_pending_user and wf["current_state"] not in [
                         ECNState.CLOSED,
                         ECNState.REJECTED,
@@ -825,20 +980,16 @@ async def ecn_management_page():
             wf = data_to_save["workflow"]
 
             if action == "驳回":
-                # 异常流：降级与重开
                 if wf["current_phase"] == "ECR_PHASE":
                     wf["current_state"] = ECNState.REJECTED
                     wf["pending_roles"] = []
                 else:
-                    # 方案评审或执行被驳回，打回方案编写阶段
-                    wf["current_phase"] = "ECN_SCHEME_PHASE"  # 虚拟的编辑态
+                    wf["current_phase"] = "ECN_SCHEME_PHASE"
                     wf["current_state"] = ECNState.ECN_SCHEMING
                     wf["pending_roles"] = []
-                    # 强制所有人重新确认
                     for u in wf.setdefault("scheme_participants", {}):
                         wf["scheme_participants"][u] = "editing"
             else:
-                # 正常流：节点推进
                 wf["step_approvals"][current_role] = True
                 if all(wf["step_approvals"].get(role, False) for role in wf["pending_roles"]):
                     wf["current_step_index"] += 1
@@ -854,7 +1005,7 @@ async def ecn_management_page():
                         if wf["current_phase"] == "ECR_PHASE":
                             wf["current_phase"] = "ECN_SCHEME_PHASE"
                             wf["current_state"] = ECNState.ECN_SCHEMING
-                            wf["pending_roles"] = []  # 等待总控点击发起评审
+                            wf["pending_roles"] = []
                         elif wf["current_phase"] == "ECN_SCHEME_REVIEW_PHASE":
                             wf["current_phase"] = "ECN_EXECUTION_PHASE"
                             wf["current_state"] = ECNState.ECN_EXECUTING
@@ -871,6 +1022,7 @@ async def ecn_management_page():
             dialog.close()
             refresh_list()
 
+        # 核心修复：更新字典执行逻辑对齐底层模型
         async def execute_ecn_data(data_to_save):
             now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             try:
@@ -879,7 +1031,11 @@ async def ecn_management_page():
                         path = [f"{item['project']}_over_data", item["label"], item["chip_id"]]
                         target_chip = db_storage.get_deep_item(path)
                         if target_chip:
-                            target_chip["content"] = item["new_content"]
+                            # 提取修改并覆盖底层芯片数据
+                            new_data = item.get("new_data", {})
+                            keys_to_update = ["content", "notes", "test_select_data", "file_type", "url_path"]
+                            target_chip.update({k: v for k, v in new_data.items() if k in keys_to_update})
+
                             target_chip.setdefault("timestamp", {})[now_str] = {
                                 "creator": f"ECN自动执行 ({data_to_save['ecn_id']})",
                                 "select_activ_dic": copy.deepcopy(target_chip.get("select_activ_dic", {})),
@@ -940,10 +1096,7 @@ async def ecn_management_page():
                 ).props("dense outlined").bind_value(page_state, "filter_state").classes("w-40")
                 ui.button("查询", icon="search", on_click=lambda: refresh_list()).props("color=primary outline")
 
-            if current_role in ["销售", "销售总监", "研发", "研发经理"]:
-                ui.button("新建 ECR 申请", icon="add_box", on_click=lambda: open_ecn_detail_dialog()).props(
-                    "color=red-7"
-                )
+            ui.button("新建 ECR 申请", icon="add_box", on_click=lambda: open_ecn_detail_dialog()).props("color=red-7")
 
         list_container = ui.column().classes("w-full mt-4 gap-2 flex-grow overflow-y-auto")
 

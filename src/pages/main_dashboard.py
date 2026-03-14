@@ -95,6 +95,8 @@ def main_page():
             k in str(current_role) for k in ["销售", "研发", "boss", "admin"]
         ):
             continue
+        elif items[3] == "/ecn_management" and not any(k in str(current_role) for k in ["研发经理", "admin"]):
+            continue
         menu_items.append(items)
 
     # 主界面
