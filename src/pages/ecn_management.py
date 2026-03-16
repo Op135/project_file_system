@@ -28,17 +28,16 @@ def get_dept_from_role(role: str) -> str:
     role_to_dept_map = {
         "研发": "研发部",
         "销售": "销售部",
-        "测试": "测试部",
         "工程": "工程部",
         "生产": "生产部",
         "质量": "质量部",
         "采购": "采购部",
-        "PMC": "PMC部",
+        "PMC": "物资部",
     }
     for key, dept in role_to_dept_map.items():
         if key in role:
             return dept
-    return "综合部"
+    return "其它部门"
 
 
 def generate_ecn_id(all_ecns: dict) -> str:
@@ -1666,11 +1665,11 @@ async def ecn_management_page():
 
         def refresh_list():
             list_container.clear()
-            all_ecns = db_storage.get_item("ecn_management_data", {})
+            ALL_ECNS = db_storage.get_item("ecn_management_data", {})
             kw = page_state["search_keyword"].lower()
             f_state = page_state["filter_state"]
 
-            sorted_ecns = sorted(all_ecns.values(), key=lambda x: x["basic_info"]["apply_date"], reverse=True)
+            sorted_ecns = sorted(ALL_ECNS.values(), key=lambda x: x["basic_info"]["apply_date"], reverse=True)
 
             with list_container:
                 if not sorted_ecns:
