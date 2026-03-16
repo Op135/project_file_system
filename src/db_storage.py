@@ -29,7 +29,7 @@ _init_done = asyncio.Event()  # 相当于创建一个红灯告示牌，所有操
 _write_lock = asyncio.Lock()
 
 
-async def init_db():
+async def init_db() -> None:
     """
     在服务器启动时调用的初始化函数。
     1. 连接数据库。
