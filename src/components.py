@@ -915,7 +915,19 @@ class InteractiveButton:
 
             if chip_info["type"] == "file":
                 filepath = f"{self.upload_path}/{chip_text}"
-                app.add_static_file(local_file=filepath, url_path=chip_info.get("url_path"))
+                try:
+                    app.add_static_file(local_file=filepath, url_path=chip_info.get("url_path"))
+                except Exception as e:
+                    ui.notify(
+                        f"引用文件不存在，路径：{filepath}!",
+                        type="warning",
+                        position="bottom",
+                        timeout=3000,
+                        progress=True,
+                        multi_line=True,
+                        close_button="✖",
+                    )
+                    logger.error(f"添加静态文件失败，路径：{filepath}，错误：{e}")
             elif chip_info["type"] == "search":
                 files_li = []
                 target_path_li_str = ""
@@ -946,7 +958,19 @@ class InteractiveButton:
                     )
                 else:
                     filepath = str(files_li[0])
-                    app.add_static_file(local_file=filepath, url_path=chip_info.get("url_path"))
+                    try:
+                        app.add_static_file(local_file=filepath, url_path=chip_info.get("url_path"))
+                    except Exception as e:
+                        ui.notify(
+                            f"引用文件不存在，路径：{filepath}!",
+                            type="warning",
+                            position="bottom",
+                            timeout=3000,
+                            progress=True,
+                            multi_line=True,
+                            close_button="✖",
+                        )
+                        logger.error(f"添加静态文件失败，路径：{filepath}，错误：{e}")
             elif chip_info["type"] == "svn":
                 target_url = chip_info.get("url_path", "")
                 file_info = await self.get_url_file_info_async(target_url)
@@ -3548,7 +3572,19 @@ class OverviewTableGroup:
             file_info = (False, None)
             if chip_info["type"] == "file":
                 filepath = f"{upload_path}/{chip_text}"
-                app.add_static_file(local_file=filepath, url_path=chip_info.get("url_path"))
+                try:
+                    app.add_static_file(local_file=filepath, url_path=chip_info.get("url_path"))
+                except Exception as e:
+                    ui.notify(
+                        f"引用文件不存在，路径：{filepath}!",
+                        type="warning",
+                        position="bottom",
+                        timeout=3000,
+                        progress=True,
+                        multi_line=True,
+                        close_button="✖",
+                    )
+                    logger.error(f"添加静态文件失败，路径：{filepath}，错误：{e}")
             elif chip_info["type"] == "search":
                 target_path_list = await self._search_file_path(chip_text, config)
                 files_li = []
@@ -3557,7 +3593,19 @@ class OverviewTableGroup:
                         files_li.extend(find_files_pathlib(target_path, chip_text))
                 if len(files_li) == 1:
                     filepath = str(files_li[0])
-                    app.add_static_file(local_file=filepath, url_path=chip_info.get("url_path"))
+                    try:
+                        app.add_static_file(local_file=filepath, url_path=chip_info.get("url_path"))
+                    except Exception as e:
+                        ui.notify(
+                            f"引用文件不存在，路径：{filepath}!",
+                            type="warning",
+                            position="bottom",
+                            timeout=3000,
+                            progress=True,
+                            multi_line=True,
+                            close_button="✖",
+                        )
+                        logger.error(f"添加静态文件失败，路径：{filepath}，错误：{e}")
             elif chip_info["type"] == "svn":
                 target_url = chip_info.get("url_path", "")
                 file_info = await self.get_url_file_info_async(target_url)
