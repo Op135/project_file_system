@@ -8,6 +8,7 @@ from datetime import datetime
 from nicegui import app, ui
 
 from src.tools.etendue_calculator import EtendueCalculator
+from src.tools.material_matcher import MaterialMatcherTool
 from src.tools.microlens_calculator import MicrolensCalculator
 from src.tools.mode_calculator import ModeCalculator
 from src.tools.simple_coupling_calculator import SimpleCouplingCalculator
@@ -93,6 +94,14 @@ def tool_page():
             "icon": "trip_origin",
             "color": "teal",
             "cls": SphericalLensCalculator,
+        },
+        {
+            "key": "material_matcher",
+            "title": "智能物料请购核算",
+            "subtitle": "多BOM聚合与ERP库存匹配",
+            "icon": "inventory_2",
+            "color": "green",
+            "cls": MaterialMatcherTool,
         },
     ]
 
