@@ -331,7 +331,7 @@ def information_page():
             # =========================================================
             # 左侧列 (主要工作流)
             # =========================================================
-            with ui.column().classes("col-span-12 lg:col-span-6 gap-4"):
+            with ui.column().classes("col-span-12 lg:col-span-5 gap-4"):
                 # A. 待判断概述 (Priority Task)
                 if current_role in module_show_data.get("overview_charge_pending_module", []):
                     my_pending = app.storage.general["overview_charge_pending"].get(current_user, {})
@@ -447,57 +447,63 @@ def information_page():
             # =========================================================
             # 右侧列 (辅助与统计)
             # =========================================================
-            with ui.column().classes("col-span-12 lg:col-span-6 gap-4"):
+            with ui.column().classes("col-span-12 lg:col-span-7 gap-4"):
                 # C. 统计图表 (Statistics)
                 if current_role in module_show_data.get("overview_charge_pending_statistics", []):
                     pending_data = app.storage.general.get("overview_charge_pending", {})
                     for user, pending_project_dic in list(pending_data.items()):
                         if not pending_project_dic:
                             pending_data.pop(user, None)
+                    # ----------------- 图表 1：团队待办概览 (已修改横纵轴及排序) -----------------
                     with ui.card().classes(
-                        "w-full rounded-xl shadow-sm border border-gray-100 p-0 overflow-hidden bg-white"
+                        "w-full rounded-xl shadow-sm border border-gray-100 p-0 overflow-hidden bg-white mb-4"
                     ):
                         with ui.column().classes("p-4 pb-0"):
                             ui_card_header("团队待办概览", "bar_chart", "indigo-500")
 
                         if pending_data:
-                            # 数据准备：横向图表适合人名展示
-                            user_list = list(pending_data.keys())
-                            user_list.reverse()  # 让图表从上往下排
-                            count_list = [len(pending_data[u].keys()) for u in user_list]
+                            # 数据准备：按待办项目数降序排序
+                            sorted_users = sorted(pending_data.items(), key=lambda x: len(x[1].keys()), reverse=True)
+                            user_list = [item[0] for item in sorted_users]
+                            count_list = [len(item[1].keys()) for item in sorted_users]
 
-                            # 假设每条数据需要 30px 的高度来保证展示不拥挤，基础上下边距预留 40px
-                            # 设置一个最低高度 192px (相当于原先的 h-48) 兜底
-                            dynamic_height = max(192, len(user_list) * 25 + 40)
+                            # 动态调整 Echarts 配置以适应 X 轴名称显示
+                            echart_config = {
+                                "tooltip": {"trigger": "axis"},
+                                "grid": {"top": 30, "bottom": 40, "left": 40, "right": 20, "containLabel": True},
+                                "xAxis": {
+                                    "type": "category",
+                                    "data": user_list,
+                                    "axisTick": {"show": False},
+                                    "axisLabel": {"interval": 0, "rotate": 30},  # 倾斜文字防止人名重叠
+                                },
+                                "yAxis": {
+                                    "type": "value",
+                                    "splitLine": {"show": True, "lineStyle": {"type": "dashed"}},
+                                    "minInterval": 1,
+                                },
+                                "series": [
+                                    {
+                                        "name": "待办项目数",
+                                        "data": count_list,
+                                        "type": "bar",
+                                        "barWidth": 25,
+                                        "itemStyle": {"color": "#6366f1", "borderRadius": [4, 4, 0, 0]},
+                                        "label": {"show": True, "position": "top", "color": "#666"},
+                                    }
+                                ],
+                            }
+                            # 当人数过多时启用内部滚动
+                            # if len(user_list) > 8:
+                            #     echart_config["dataZoom"] = [
+                            #         {"type": "slider", "show": True, "xAxisIndex": [0], "bottom": 0, "height": 15}
+                            #     ]
+                            #     echart_config["grid"]["bottom"] = 60
 
-                            ui.echart(
-                                {
-                                    "tooltip": {"trigger": "axis"},
-                                    "grid": {"top": 10, "bottom": 10, "left": 70, "right": 40, "containLabel": False},
-                                    "xAxis": {"type": "value", "splitLine": {"show": False}, "minInterval": 1},
-                                    "yAxis": {
-                                        "type": "category",
-                                        "data": user_list,
-                                        "axisTick": {"show": False},
-                                        "axisLine": {"show": False},
-                                        "axisLabel": {"width": 65, "overflow": "truncate"},
-                                    },
-                                    "series": [
-                                        {
-                                            "name": "待办数",
-                                            "data": count_list,
-                                            "type": "bar",
-                                            "barWidth": 15,
-                                            "itemStyle": {"color": "#6366f1", "borderRadius": [0, 4, 4, 0]},
-                                            "label": {"show": True, "position": "right", "color": "#666"},
-                                        }
-                                    ],
-                                }
-                            ).classes("w-full").style(f"height: {dynamic_height}px;")  # 去掉 h-48，改为动态传入高度
-
+                            ui.echart(echart_config).classes("w-full h-72")
                             ui.separator()
 
-                            # 详情折叠
+                            # 原有的详情折叠逻辑保持不变
                             with ui.expansion("查看详细清单").classes("w-full text-sm text-gray-600 bg-gray-50"):
                                 with ui.column().classes("p-3 gap-2 w-full"):
                                     for user, pending_project_dic in pending_data.items():
@@ -507,10 +513,9 @@ def information_page():
                                                 ui.label(f"{len(pending_project_dic.keys())}").classes(
                                                     "bg-indigo-100 text-indigo-700 px-1.5 rounded-full"
                                                 )
-                                            # 显示清单，迭代 items() 以获取 state_dic
                                             over_flat = app.storage.general.get("over_config_data_flat", {})
                                             for p, p_state_dic in pending_project_dic.items():
-                                                # --- 新增：提取并构建 HTML 格式的 Tooltip 内容 ---
+                                                # HTML Tooltip 构建
                                                 false_items = [k for k, v in p_state_dic.items() if v == "缺必填"]
                                                 need_items = [k for k, v in p_state_dic.items() if v == "缺需填"]
                                                 none_items = [k for k, v in p_state_dic.items() if v == "有待定"]
@@ -544,7 +549,7 @@ def information_page():
 
                                                 if not tooltip_html:
                                                     tooltip_html = "状态正常"
-                                                # ------------------------------------
+
                                                 if false_items or none_items:
                                                     project_label = ui.label(f"• {p}").classes(
                                                         "pl-2 text-red-500 truncate text-xs cursor-help"
@@ -554,13 +559,82 @@ def information_page():
                                                         "pl-2 text-amber-500 truncate text-xs cursor-help"
                                                     )
 
-                                                # 使用上下文管理器渲染多行 tooltip
                                                 with project_label:
                                                     with ui.tooltip().classes("text-xs bg-gray-600/90 text-white p-2"):
                                                         ui.html(tooltip_html, sanitize=False)
                         else:
                             ui.label("暂无积压数据").classes("p-4 text-gray-400 text-sm")
 
+                    # ----------------- 图表 2：近7日待办项趋势 (新增) -----------------
+                    with ui.card().classes(
+                        "w-full rounded-xl shadow-sm border border-gray-100 p-0 overflow-hidden bg-white"
+                    ):
+                        with ui.column().classes("p-4 pb-0"):
+                            ui_card_header("近一周待办项趋势", "trending_up", "teal-500")
+
+                        history = app.storage.general.get("overview_pending_history", {})
+                        dates = sorted(history.keys())[-7:]  # 取最后7天
+
+                        if len(dates) < 2:
+                            ui.label("数据累积中... 至少需要两天记录才能生成趋势对比。").classes(
+                                "p-4 text-gray-400 text-sm"
+                            )
+                        else:
+                            # 找出这几天内有过待办项的所有人员
+                            all_users = set()
+                            for d in dates:
+                                all_users.update(history[d].keys())
+
+                            series_list = []
+                            for user in all_users:
+                                user_data = []
+                                for i, d in enumerate(dates):
+                                    curr_state = history[d].get(user, {})
+                                    # 统计总待办 具体条目数 (而非项目数)
+                                    curr_item_count = sum(len(v) for v in curr_state.values())
+
+                                    # 如果是第一天，只展示基数，无法计算增减
+                                    prev_state = history[dates[i - 1]].get(user, {}) if i > 0 else curr_state
+
+                                    # 对比昨日计算增减项
+                                    diff_texts = []
+                                    all_projs = set(curr_state.keys()) | set(prev_state.keys())
+                                    for p in all_projs:
+                                        c_count = len(curr_state.get(p, {}))
+                                        p_count = len(prev_state.get(p, {}))
+                                        if c_count > p_count:
+                                            diff_texts.append(f"{p} (+{c_count - p_count}项)")
+                                        elif c_count < p_count:
+                                            diff_texts.append(f"{p} ({c_count - p_count}项)")
+
+                                    diff_str = "<br>".join(diff_texts) if diff_texts else "无增减"
+
+                                    # 关键技巧：将计算好的定制化文字存放到这个数据点的 name 属性中
+                                    point_name = f"{d}<br><span style='font-size:12px;color:#999'>较昨日变化：<br>{diff_str}</span>"
+                                    user_data.append({"value": curr_item_count, "name": point_name})
+
+                                series_list.append(
+                                    {"name": user, "type": "line", "smooth": True, "symbolSize": 6, "data": user_data}
+                                )
+
+                            ui.echart(
+                                {
+                                    "tooltip": {
+                                        "trigger": "item",  # 设置为 item，鼠标悬停具体节点时触发
+                                        # 重点：{a}=系列名(人名), {b}=数据名(即我们上面构建的 point_name), {c}=数值
+                                        "formatter": "<b>{a}</b> <br/> {b} <br/><br/> 当日总待办项: <b>{c}</b>",
+                                    },
+                                    "legend": {"type": "scroll", "bottom": 0},
+                                    "grid": {"top": 30, "bottom": 50, "left": 40, "right": 20, "containLabel": True},
+                                    "xAxis": {"type": "category", "data": dates, "axisTick": {"show": False}},
+                                    "yAxis": {
+                                        "type": "value",
+                                        "minInterval": 1,
+                                        "splitLine": {"lineStyle": {"type": "dashed"}},
+                                    },
+                                    "series": series_list,
+                                }
+                            ).classes("w-full h-80")
                 # D. 草稿箱 (Drafts)
                 if current_role in module_show_data.get("temp_req_module", []):
                     with ui.card().classes("w-full rounded-xl shadow-sm border border-gray-100 bg-white"):

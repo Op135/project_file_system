@@ -1,7 +1,6 @@
 # -*- encoding: utf-8 -*-
 import logging
 import os
-import time
 import warnings
 from logging.handlers import RotatingFileHandler
 
@@ -111,6 +110,40 @@ def init_backup_service():
     app.on_shutdown(db_storage.close_db)
 
 
+def init_pending_history_task():
+    """初始化每日待办数据快照任务 (修复版全局任务)"""
+    import asyncio  # 引入Python标准异步I/O框架
+    import copy
+    from datetime import datetime
+
+    async def record_daily_pending_history():
+        # 构建死循环维持后台常驻运行
+        while True:
+            try:
+                now = datetime.now()
+                today_str = now.strftime("%Y-%m-%d")
+                # 获取存储结构
+                history = app.storage.general.setdefault("overview_pending_history", {})
+                current_pending = app.storage.general.get("overview_charge_pending", {})
+
+                # 记录当天的最新快照（如果服务器一天内多次重启，会不断刷新当天的最终结果）
+                history[today_str] = copy.deepcopy(current_pending)
+
+                # 为了防止数据无限膨胀，仅保留近 14 天的记录
+                sorted_dates = sorted(history.keys())
+                if len(sorted_dates) > 14:
+                    for d in sorted_dates[:-14]:
+                        history.pop(d, None)
+            except Exception as e:
+                logger.error(f"每日待办项快照记录出错: {e}")
+
+            # asyncio.sleep(): 异步休眠函数，挂起当前任务并让出事件循环控制权，3600秒(1小时)后恢复
+            await asyncio.sleep(3600)
+
+    # asyncio.create_task(): 将协程封装为一个Task对象并提交给事件循环调度并发执行，适用于独立生命周期的后台服务
+    asyncio.create_task(record_daily_pending_history())
+
+
 # ==========================================
 # 🌟 核心重构：统一的异步启动序列
 # ==========================================
@@ -129,8 +162,11 @@ async def master_startup():
     # 第三顺位：满足需求，在系统启动时仅执行一次业务字典更新
     # update_overview_charge_pending_dic("all") 上面updata_overview_config()里已经包含
 
-    # 第四顺位：启动非核心周边服务
+    # 第三顺位：启动非核心周边服务
     init_backup_service()
+
+    # 第四顺位：启动每日历史记录统一定时任务
+    init_pending_history_task()
 
     logger.info("系统启动序列全部执行完毕。")
 
@@ -179,6 +215,8 @@ app.storage.general.setdefault("over_config_data_flat", {})
 app.storage.general.setdefault("config_service_custom_labels", {})
 # 用于全局更新标记，通知所有监听此项目的客户端，暂时不用
 app.storage.general.setdefault("overview_last_update", {})
+# 储存服务器层级 用于记录概述数据的历史快照，键为日期字符串，值为当日概述数据的快照
+app.storage.general.setdefault("overview_pending_history", {})
 
 
 @ui.page("/view/svn_pdf")
