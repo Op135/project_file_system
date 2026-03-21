@@ -453,52 +453,52 @@ def manage_page():
 
     with ui.column().classes("w-full h-calc(100vh-9rem) -space-y-2"):
         # --- 【新增】在线用户监控区域 ---
-        with ui.card().classes("w-full -space-y-2 border-l-4 border-green-500"):
-            with ui.row().classes("items-center justify-between w-full"):
-                ui.label("当前在线用户监控").classes("text-lg font-bold mb-2")
-                # 显示实时在线人数
-                online_count_label = ui.label("检测中...").classes("text-sm font-mono bg-gray-200 px-2 rounded")
+        # with ui.card().classes("w-full -space-y-2 border-l-4 border-green-500"):
+        #     with ui.row().classes("items-center justify-between w-full"):
+        #         ui.label("当前在线用户监控").classes("text-lg font-bold mb-2")
+        #         # 显示实时在线人数
+        #         online_count_label = ui.label("检测中...").classes("text-sm font-mono bg-gray-200 px-2 rounded")
 
-            # 定义表格列
-            columns = [
-                {"name": "username", "label": "用户名称", "field": "username", "align": "left"},
-                {"name": "login_time", "label": "登录/连接时间", "field": "login_time", "align": "center"},
-                {"name": "ip", "label": "IP来源", "field": "ip", "align": "left"},
-                {"name": "status", "label": "状态", "field": "status", "align": "center"},
-            ]
+        #     # 定义表格列
+        #     columns = [
+        #         {"name": "username", "label": "用户名称", "field": "username", "align": "left"},
+        #         {"name": "login_time", "label": "登录/连接时间", "field": "login_time", "align": "center"},
+        #         {"name": "ip", "label": "IP来源", "field": "ip", "align": "left"},
+        #         {"name": "status", "label": "状态", "field": "status", "align": "center"},
+        #     ]
 
-            # 在线用户表格
-            online_table = ui.table(columns=columns, rows=[], pagination=5).classes("w-full h-40")
-            online_table.props("dense flat bordered")  # 紧凑样式
+        #     # 在线用户表格
+        #     online_table = ui.table(columns=columns, rows=[], pagination=5).classes("w-full h-40")
+        #     online_table.props("dense flat bordered")  # 紧凑样式
 
-            def refresh_online_data():
-                """刷新表格数据的函数"""
-                # 将全局字典转换为表格需要的列表格式
-                # 注意：这里需要根据您的 online_users 实际结构调整
-                rows = []
-                # 过滤掉 admin 自己，或者保留，看您需求。这里全部显示。
-                # current_connected_ids = online_users.keys()
+        #     def refresh_online_data():
+        #         """刷新表格数据的函数"""
+        #         # 将全局字典转换为表格需要的列表格式
+        #         # 注意：这里需要根据您的 online_users 实际结构调整
+        #         rows = []
+        #         # 过滤掉 admin 自己，或者保留，看您需求。这里全部显示。
+        #         # current_connected_ids = online_users.keys()
 
-                for client_id, info in online_users.items():
-                    rows.append(
-                        {
-                            "username": info.get("username", "未知"),
-                            "login_time": info.get("login_time", "-"),
-                            "ip": info.get("ip", "127.0.0.1"),
-                            "status": "🟢 在线",
-                        }
-                    )
+        #         for client_id, info in online_users.items():
+        #             rows.append(
+        #                 {
+        #                     "username": info.get("username", "未知"),
+        #                     "login_time": info.get("login_time", "-"),
+        #                     "ip": info.get("ip", "127.0.0.1"),
+        #                     "status": "🟢 在线",
+        #                 }
+        #             )
 
-                # 更新表格和计数器
-                online_table.rows = rows
-                online_table.update()  # 显式触发更新
-                online_count_label.set_text(f"当前在线: {len(rows)} 人")
+        #         # 更新表格和计数器
+        #         online_table.rows = rows
+        #         online_table.update()  # 显式触发更新
+        #         online_count_label.set_text(f"当前在线: {len(rows)} 人")
 
-                # 如果只有 admin 一人在线，且 admin 正在看这个页面，可以将背景变绿提示安全
-                if len(rows) <= 1:
-                    online_count_label.classes(remove="bg-red-200 text-red-800", add="bg-green-200 text-green-800")
-                else:
-                    online_count_label.classes(remove="bg-green-200 text-green-800", add="bg-red-200 text-red-800")
+        #         # 如果只有 admin 一人在线，且 admin 正在看这个页面，可以将背景变绿提示安全
+        #         if len(rows) <= 1:
+        #             online_count_label.classes(remove="bg-red-200 text-red-800", add="bg-green-200 text-green-800")
+        #         else:
+        #             online_count_label.classes(remove="bg-green-200 text-green-800", add="bg-red-200 text-red-800")
 
         with ui.card().classes("w-full -space-y-2"):
             ui.label("系统配置更新").classes("text-lg font-bold mb-2")
@@ -625,4 +625,4 @@ def manage_page():
     # --- 【新增】定时刷新在线用户列表 ---
     # 每 3 秒检查一次全局字典，更新UI
     # 这样如果有用户下线或上线，管理员在3秒内就能看到变化
-    ui.timer(3.0, refresh_online_data)
+    # ui.timer(3.0, refresh_online_data)
