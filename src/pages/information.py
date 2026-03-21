@@ -456,10 +456,9 @@ def information_page():
                             pending_data.pop(user, None)
                     # ----------------- 图表 1：团队待办概览 (已修改横纵轴及排序) -----------------
                     with ui.card().classes(
-                        "w-full rounded-xl shadow-sm border border-gray-100 p-0 overflow-hidden bg-white mb-4"
+                        "w-full rounded-xl shadow-sm border border-gray-100 overflow-hidden bg-white mb-4"
                     ):
-                        with ui.column().classes("p-4 pb-0"):
-                            ui_card_header("团队待办概览", "bar_chart", "indigo-500")
+                        ui_card_header("团队待办概览", "bar_chart", "indigo-500")
 
                         if pending_data:
                             # 数据准备：按待办项目数降序排序
@@ -561,10 +560,9 @@ def information_page():
 
                     # ----------------- 图表 2：近7日待办项趋势 (新增) -----------------
                     with ui.card().classes(
-                        "w-full rounded-xl shadow-sm border border-gray-100 p-0 overflow-hidden bg-white"
+                        "w-full rounded-xl shadow-sm border border-gray-100 overflow-hidden bg-white relative"
                     ):
-                        with ui.column().classes("p-4 pb-0 relative"):
-                            ui_card_header("近一周待办项趋势", "trending_up", "teal-500")
+                        ui_card_header("近一周待办项趋势", "trending_up", "teal-500")
                         # history 数据结构示例：{"2024-06-01": {"人名": {"项目名": label:状态,...},...}, "2024-06-02": {...},...}
                         history = app.storage.general.get("overview_pending_history", {})
                         # 1. 强制生成固定的连续 7 天日期列表
