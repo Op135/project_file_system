@@ -1,5 +1,6 @@
 # -*- encoding: utf-8 -*-
 import logging
+from typing import Any, Dict  # 引入类型提示，便于静态类型检查
 
 from nicegui import app, ui
 
@@ -20,6 +21,16 @@ logger = logging.getLogger(__name__)
 @ui.page("/main")
 def main_page():
     ui.add_head_html("""
+        <script>
+            // 记录页面加载时的初始时间戳
+            window.lastActivityTime = Date.now();
+            const updateActivity = () => { window.lastActivityTime = Date.now(); };
+            
+            // 监听真实的物理交互事件（鼠标、键盘、滚动、触屏）
+            ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart'].forEach(evt =>
+                document.addEventListener(evt, updateActivity, {passive: true})
+            );
+        </script>
         <style>
             @keyframes hard-shake {
                 0% { transform: translateX(0); }
@@ -38,33 +49,63 @@ def main_page():
     """)
     online_data = {"online_count": "", "online_users": [], "tooltip_text": ""}
 
+    # --- 新增：心跳上报机制 ---
+    async def report_heartbeat() -> None:
+        """定时向后端同步当前客户端的空闲时间"""
+        try:
+            # ui.run_javascript: NiceGUI (基于 Vue/Quasar) 提供的在客户端浏览器异步执行 JavaScript 代码并获取返回结果的函数。
+            # 这里用于获取自上次用户交互后经过的毫秒数。
+            idle_time_ms = await ui.run_javascript("return Date.now() - window.lastActivityTime;", timeout=2.0)
+
+            if idle_time_ms is not None:
+                # 遍历全局 online_users 字典，将当前用户的 idle_time 写入
+                # 注意：如果同一用户开了多个标签页，此操作会更新该用户在系统中的最新活跃状态
+                for client_id, user_data in online_users.items():
+                    if user_data.get("username") == current_user:
+                        user_data["idle_time_ms"] = idle_time_ms
+        except Exception as e:
+            # 捕获因网络波动或页面正在跳转导致的 JS 执行超时
+            logger.debug(f"用户 {current_user} 心跳状态上报超时: {e}")
+
+    # ui.timer: NiceGUI 提供的定时器类，用于在 Asyncio 事件循环中非阻塞地周期性执行指定的函数。
+    # 这里设置为每 10 秒从客户端拉取一次活跃状态。
+    ui.timer(10.0, report_heartbeat)
+
+    # --- 修改：刷新在线人数的逻辑，加入活跃阈值过滤 ---
     def refresh_online_num():
-        # --- 新增去重逻辑 ---
-        # 使用一个临时字典，以 username 为 Key 来存储用户信息
-        # 这样同一个 username 无论开多少个网页，在这个字典里只会保留一份
-        unique_users_map = {}
+        unique_users_map: Dict[str, Any] = {}
+        # 定义真实活跃阈值：5分钟（300000 毫秒）。超过此时间无键鼠动作视为挂机
+        ACTIVE_THRESHOLD_MS = 5 * 60 * 1000
 
         for user_data in online_users.values():
             username = user_data.get("username", "未知用户")
-            # 如果该用户还没被记录，或者你希望更新到最新的连接信息，就存入
-            if username not in unique_users_map:
-                unique_users_map[username] = user_data
+            # 获取记录的空闲时间，如果尚未记录过，默认为 0（视为刚进入页面）
+            idle_time = user_data.get("idle_time_ms", 0)
 
-        # --- 更新统计数据 ---
+            # 仅统计真实在操作的用户（过滤掉单纯挂机标签页）
+            if idle_time < ACTIVE_THRESHOLD_MS:
+                if username not in unique_users_map:
+                    unique_users_map[username] = user_data
+                else:
+                    # 如果多标签页存在不同状态，保留最活跃（空闲时间最短）的状态
+                    if idle_time < unique_users_map[username].get("idle_time_ms", float("inf")):
+                        unique_users_map[username] = user_data
 
-        # 1. 数量：计算去重后的字典长度
         online_data["online_count"] = str(len(unique_users_map))
 
-        # 2. Tooltip 文本：基于去重后的数据生成
-        tooltip_text = ""
+        tooltip_text = "当前活跃用户:<br>"
         for user in unique_users_map.values():
-            # 这里的 user 已经是去重后的单条数据了
             u_name = user.get("username", "未知用户")
-            # u_ip = user.get("ip", "未知IP")
             u_time = user.get("login_time", "未知时间")
             tooltip_text += f"{u_name} - {u_time}<br>"
 
+        if not unique_users_map:
+            tooltip_text = "当前无活跃用户"
+
         online_data["tooltip_text"] = tooltip_text
+
+    # 每 3 秒刷新一次 UI 显示
+    ui.timer(3.0, refresh_online_num)
 
     # 检查用户是否已登录
     # {'current_user': '用户名', 'is_admin': False}
@@ -125,10 +166,10 @@ def main_page():
             ui.icon("groups", size="xs").classes("opacity-90")
             # 3. 数字显示
             # 使用 bind_text 绑定数据，实现实时更新
-            label = ui.label().bind_text_from(online_data, "online_count", backward=lambda x: f"在线: {x}")
+            label = ui.label().bind_text_from(online_data, "online_count", backward=lambda x: f"活跃在线: {x}")
             label.classes("text-sm font-medium tracking-wide")
             with label:
-                with ui.tooltip("在线用户列表"):
+                with ui.tooltip(""):
                     ui.html(sanitize=False).bind_content_from(online_data, "tooltip_text")
 
         with ui.avatar(size="lg").classes("cursor-pointer ml-auto -mt-3"):  # 右侧对齐
