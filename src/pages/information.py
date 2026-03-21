@@ -3,7 +3,7 @@ import copy
 import json
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from nicegui import app, ui
@@ -493,17 +493,11 @@ def information_page():
                                     }
                                 ],
                             }
-                            # 当人数过多时启用内部滚动
-                            # if len(user_list) > 8:
-                            #     echart_config["dataZoom"] = [
-                            #         {"type": "slider", "show": True, "xAxisIndex": [0], "bottom": 0, "height": 15}
-                            #     ]
-                            #     echart_config["grid"]["bottom"] = 60
-
+                            # ui.echart: 创建并渲染一个 Apache ECharts 数据可视化实例
                             ui.echart(echart_config).classes("w-full h-72")
                             ui.separator()
 
-                            # 原有的详情折叠逻辑保持不变
+                            # ui.expansion: 创建一个可折叠的扩展面板组件
                             with ui.expansion("查看详细清单").classes("w-full text-sm text-gray-600 bg-gray-50"):
                                 with ui.column().classes("p-3 gap-2 w-full"):
                                     for user, pending_project_dic in pending_data.items():
@@ -569,72 +563,129 @@ def information_page():
                     with ui.card().classes(
                         "w-full rounded-xl shadow-sm border border-gray-100 p-0 overflow-hidden bg-white"
                     ):
-                        with ui.column().classes("p-4 pb-0"):
+                        with ui.column().classes("p-4 pb-0 relative"):
                             ui_card_header("近一周待办项趋势", "trending_up", "teal-500")
-
+                        # history 数据结构示例：{"2024-06-01": {"人名": {"项目名": label:状态,...},...}, "2024-06-02": {...},...}
                         history = app.storage.general.get("overview_pending_history", {})
-                        dates = sorted(history.keys())[-7:]  # 取最后7天
-
-                        if len(dates) < 2:
-                            ui.label("数据累积中... 至少需要两天记录才能生成趋势对比。").classes(
-                                "p-4 text-gray-400 text-sm"
-                            )
+                        # 1. 强制生成固定的连续 7 天日期列表
+                        if history:
+                            latest_date_str = max(history.keys())
+                            latest_date = datetime.strptime(latest_date_str, "%Y-%m-%d")
                         else:
-                            # 找出这几天内有过待办项的所有人员
-                            all_users = set()
-                            for d in dates:
-                                all_users.update(history[d].keys())
+                            latest_date = datetime.now()
 
-                            series_list = []
-                            for user in all_users:
-                                user_data = []
-                                for i, d in enumerate(dates):
-                                    curr_state = history[d].get(user, {})
-                                    # 统计总待办 具体条目数 (而非项目数)
-                                    curr_item_count = sum(len(v) for v in curr_state.values())
+                        # full_dates: 用于在字典中查询实际数据 (例如 "2026-03-21")
+                        full_dates = [(latest_date - timedelta(days=6 - i)).strftime("%Y-%m-%d") for i in range(7)]
+                        # display_dates: 截取掉 "YYYY-"，仅保留 "MM-DD" 用于横轴显示 (例如 "03-21")
+                        display_dates = [d[5:] for d in full_dates]
 
-                                    # 如果是第一天，只展示基数，无法计算增减
-                                    prev_state = history[dates[i - 1]].get(user, {}) if i > 0 else curr_state
+                        # 2. 找出这 7 天内有过待办项的所有人员
+                        all_users = set()
+                        for d in full_dates:
+                            # 使用 .get(d, {}) 防御性读取，即使某天没数据也不会报错
+                            all_users.update(history.get(d, {}).keys())
 
-                                    # 对比昨日计算增减项
-                                    diff_texts = []
-                                    all_projs = set(curr_state.keys()) | set(prev_state.keys())
-                                    for p in all_projs:
-                                        c_count = len(curr_state.get(p, {}))
-                                        p_count = len(prev_state.get(p, {}))
-                                        if c_count > p_count:
-                                            diff_texts.append(f"{p} (+{c_count - p_count}项)")
-                                        elif c_count < p_count:
-                                            diff_texts.append(f"{p} ({c_count - p_count}项)")
+                        all_users_list = sorted(list(all_users))
 
-                                    diff_str = "<br>".join(diff_texts) if diff_texts else "无增减"
+                        if not all_users_list:
+                            ui.label("近一周暂无待办记录。").classes("p-4 text-gray-400 text-sm")
+                        else:
+                            # 默认选择前3名人员，防止图表拥挤
+                            default_selected = all_users_list[:3] if len(all_users_list) > 3 else all_users_list
 
-                                    # 关键技巧：将计算好的定制化文字存放到这个数据点的 name 属性中
-                                    point_name = f"{d}<br><span style='font-size:12px;color:#999'>较昨日变化：<br>{diff_str}</span>"
-                                    user_data.append({"value": curr_item_count, "name": point_name})
-
-                                series_list.append(
-                                    {"name": user, "type": "line", "smooth": True, "symbolSize": 6, "data": user_data}
+                            ui_select_user = (
+                                ui.select(
+                                    options=all_users_list,
+                                    value=default_selected,
+                                    multiple=True,
+                                    label="请选择要查看的人员趋势",
                                 )
+                                .props("borderless")
+                                .classes("max-w-1/3 min-w-1/4 px-4 mb-2 absolute top-0 right-0")
+                            )
 
-                            ui.echart(
+                            # 辅助函数：依据当前勾选的人员动态生成图表数据
+                            def get_series_data(selected_users):
+                                series_list = []
+                                for user in selected_users:
+                                    user_data = []
+                                    for i, d in enumerate(full_dates):
+                                        # 1. 判断当天该人员是否有数据，如果没有，则填入 None，ECharts 会自动断开折线
+                                        if user not in history.get(d, {}):
+                                            user_data.append({"value": None, "name": d})
+                                            continue
+
+                                        curr_state = history.get(d, {}).get(user, {})
+                                        curr_item_count = sum(len(v) for v in curr_state.values())
+
+                                        prev_state = (
+                                            history.get(full_dates[i - 1], {}).get(user, {}) if i > 0 else curr_state
+                                        )
+
+                                        diff_texts = []
+                                        all_projs = set(curr_state.keys()) | set(prev_state.keys())
+                                        for p in all_projs:
+                                            c_count = len(curr_state.get(p, {}))
+                                            p_count = len(prev_state.get(p, {}))
+                                            if c_count > p_count:
+                                                diff_texts.append(f"• {p} (+{c_count - p_count}项)")
+                                            elif c_count < p_count:
+                                                diff_texts.append(f"• {p} ({c_count - p_count}项)")
+
+                                        # 2. 使用 \n 作为换行符，配合 tooltip 的 white-space: pre-wrap 样式实现优雅换行
+                                        if diff_texts:
+                                            diff_str = "\n".join(diff_texts)
+                                            point_name = f"{d} [较昨日变化]\n{diff_str}"
+                                        else:
+                                            point_name = f"{d} [较昨日变化: 无增减]"
+
+                                        user_data.append({"value": curr_item_count, "name": point_name})
+
+                                    series_list.append(
+                                        # 3. 将 smooth 改为 False，使用直线折线图
+                                        {
+                                            "name": user,
+                                            "type": "line",
+                                            "smooth": False,
+                                            "symbolSize": 6,
+                                            # connectNulls: ECharts 系列配置项，设为 True 可以在包含 null 的数据点之间连线
+                                            "connectNulls": True,
+                                            "data": user_data,
+                                        }
+                                    )
+                                return series_list
+
+                            trend_chart = ui.echart(
                                 {
                                     "tooltip": {
-                                        "trigger": "item",  # 设置为 item，鼠标悬停具体节点时触发
-                                        # 重点：{a}=系列名(人名), {b}=数据名(即我们上面构建的 point_name), {c}=数值
+                                        "trigger": "item",
                                         "formatter": "<b>{a}</b> <br/> {b} <br/><br/> 当日总待办项: <b>{c}</b>",
+                                        # 开启 pre-wrap，使得字符串中的 \n 能被 CSS 识别为真实的换行
+                                        "extraCssText": "white-space: pre-wrap;",
                                     },
                                     "legend": {"type": "scroll", "bottom": 0},
                                     "grid": {"top": 30, "bottom": 50, "left": 40, "right": 20, "containLabel": True},
-                                    "xAxis": {"type": "category", "data": dates, "axisTick": {"show": False}},
+                                    "xAxis": {
+                                        "type": "category",
+                                        "data": display_dates,
+                                        "axisTick": {"show": False},
+                                        "boundaryGap": False,
+                                        "splitLine": {"show": True, "lineStyle": {"type": "dashed"}},
+                                    },
                                     "yAxis": {
                                         "type": "value",
                                         "minInterval": 1,
                                         "splitLine": {"lineStyle": {"type": "dashed"}},
                                     },
-                                    "series": series_list,
+                                    "series": get_series_data(default_selected),
                                 }
                             ).classes("w-full h-80")
+
+                            def update_chart(e):
+                                trend_chart.options["series"] = get_series_data(e.value)
+                                trend_chart.update()
+
+                            ui_select_user.on_value_change(update_chart)
                 # D. 草稿箱 (Drafts)
                 if current_role in module_show_data.get("temp_req_module", []):
                     with ui.card().classes("w-full rounded-xl shadow-sm border border-gray-100 bg-white"):
