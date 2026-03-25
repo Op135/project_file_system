@@ -127,6 +127,7 @@ def main_page():
         ("rule", "项目待办项", "查阅项目相关待办项", "/information"),
         ("handyman", "分析工具", "提供用于专业分析计算的工具", "/tool"),
         ("account_tree", "需求项结构", "查阅需求项结构", "/question_tree_tabs"),
+        ("equalizer", "统计信息", "查阅系统统计信息", "/statistics"),
         ("published_with_changes", "工程变更", "ECR与ECN流程管理", "/ecn_management"),
     ]
     menu_items = []

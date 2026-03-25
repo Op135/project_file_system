@@ -11,6 +11,7 @@ from . import (
     project_table,
     question_tree_tabs,
     requirement,
+    statistics,
     test_summary,
     tool,
     user_profile,
