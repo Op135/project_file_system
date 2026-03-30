@@ -323,7 +323,7 @@ def information_page():
                 ui.menu_item("注销登录", on_click=lambda: logout())
 
     # 2. 主内容区域 (Grid布局)
-    with ui.element("div").classes("w-full h-[calc(100vh-5rem)] bg-gray-50 p-4 md:p-6"):
+    with ui.element("div").classes("w-full h-[calc(100vh-5rem)] p-4 md:p-6"):
         project_engineer_dic = get_project_engineer_project_list_dic()
 
         # Grid: 大屏12列，左8右4；小屏自动换行

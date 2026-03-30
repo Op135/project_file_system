@@ -31,6 +31,7 @@ class ECNState:
     ECN_EXECUTING = "ECN 等待各部执行确认"
     PENDING_FINAL_EXECUTE = "等待最终数据变更"
     CLOSED = "变更已完成"
+    CANCEL = "变更已作废"
     REJECTED = "已被驳回"  # <--- 驳回态
 
 
@@ -38,7 +39,7 @@ class ECNState:
 # 有权限点击“发起 ECN 方案审批”的总控角色
 ECN_SCHEME_INITIATOR_ROLES = ["研发经理", "admin"]
 # 允许进入方案区编写方案的角色
-ECN_SCHEME_WRITER_ROLES = ["研发", "工程", "工艺", "质量", "PMC", "硬件", "软件", "结构", "光学"]
+ECN_SCHEME_WRITER_ROLES = ["研发", "工程", "质量"]
 
 # 3. 审批流动态路由配置 (剥离了编写阶段，只保留审批)
 ECN_WORKFLOW_ROUTES = {

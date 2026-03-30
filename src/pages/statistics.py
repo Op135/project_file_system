@@ -97,7 +97,7 @@ def statistics_page():
                 ui.menu_item("注销登录", on_click=lambda: logout())
 
     # 2. 主内容区域 (Grid布局)
-    with ui.element("div").classes("w-full h-[calc(100vh-5rem)] bg-gray-50 p-4 md:p-6"):
+    with ui.element("div").classes("w-full h-[calc(100vh-5rem)] p-4 md:p-6"):
         # Grid: 大屏12列，左8右4；小屏自动换行
         with ui.grid(columns=12).classes("w-full gap-4"):
             # 数据结构：{项目名："state":"状态"，....其它信息}，用于后续统计分析，状态主要有：作废、待定、研发、转产、试产、量产

@@ -5,7 +5,7 @@ from typing import Any, Dict  # 引入类型提示，便于静态类型检查
 from nicegui import app, ui
 
 from .. import db_storage  # 导入我们创建的模块
-from ..config import IMG_DIR, PRESET_AVATARS
+from ..config import ECN_SCHEME_WRITER_ROLES, IMG_DIR, PRESET_AVATARS, ECNState
 from ..utils import (
     get_cache_busted_path,
     get_project_engineer_project_list_dic,
@@ -112,8 +112,8 @@ def main_page():
     if not app.storage.user.get("current_user"):
         ui.navigate.to("/login")  # 如果未登录，跳转到登录页
         return
-    current_user = app.storage.user.get("current_user")
-    current_role = app.storage.user.get("current_role")
+    current_user = app.storage.user.get("current_user", "匿名用户")
+    current_role = app.storage.user.get("current_role", "未知角色")
     # 从全局存储中获取用户当前的头像设置
     # (在 main.py 中定义 "user_preferences")
     user_prefs = app.storage.general.get("user_preferences", {}).get(current_user, {})
@@ -209,18 +209,34 @@ def main_page():
             all_ecns = db_storage.get_item("ecn_management_data", {})
             for ecn_id, ecn_data in all_ecns.items():
                 workflow = ecn_data.get("workflow", {})
+                basic_info = ecn_data.get("basic_info", {})
+                current_state = workflow.get("current_state")
                 pending_roles = workflow.get("pending_roles", [])
+                applicant = basic_info.get("applicant")
 
-                # 如果当前用户角色在待审批角色列表中，或者当前用户是目标项目的 PROJECT_ENGINEER 且等待工程师处理
+                # 1. 常规审批流待办：如果当前用户角色在待审批角色列表中
                 if current_role in pending_roles:
                     ecn_pending_num_user += 1
-                elif "PROJECT_ENGINEER" in pending_roles:
-                    # 检查当前用户是否是目标项目列表中的负责人
-                    target_projects = ecn_data.get("target_projects", [])
-                    for proj in target_projects:
-                        if proj in project_engineer_dic.get(current_user, []):
-                            ecn_pending_num_user += 1
-                            break  # 算一次待办即可
+
+                # 2. 项目工程师专属待办：遇到动态角色且当前用户是目标项目的负责人
+                # elif "PROJECT_ENGINEER" in pending_roles:
+                #     target_projects = ecn_data.get("target_projects", [])
+                #     for proj in target_projects:
+                #         if proj in project_engineer_dic.get(current_user, []):
+                #             ecn_pending_num_user += 1
+                #             break  # 该单已算过，跳出当前项目遍历
+
+                # 3. 申请人专属待办：申请被驳回 (REJECTED) 或 已撤回/草稿 (DRAFT)，需要申请人操作
+                elif current_state in [ECNState.REJECTED, ECNState.DRAFT] and applicant == current_user:
+                    ecn_pending_num_user += 1
+
+                # 4. 方案编写人专属待办：处于方案设计阶段，当前用户有权限编写且尚未点击“确认完成”
+                elif current_state == ECNState.ECN_SCHEMING and any(r in current_role for r in ECN_SCHEME_WRITER_ROLES):
+                    # 获取参与方案编写的人员状态字典
+                    participants = workflow.get("scheme_participants", {})
+                    # 如果状态不是已确认 (confirmed)，则视为有待办事项
+                    if participants.get(current_user) != "confirmed":
+                        ecn_pending_num_user += 1
             for project_name, ver_dic in app.storage.general["wait_review"].items():
                 for ver, dic in ver_dic.items():
                     state = dic.get("state")
