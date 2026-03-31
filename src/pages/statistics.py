@@ -162,7 +162,7 @@ def statistics_page():
                                 with ui.column().classes("p-3 gap-2 w-full"):
                                     for user, pending_project_dic in pending_data.items():
                                         if pending_project_dic:
-                                            with ui.row().classes("w-full justify-between text-xs"):
+                                            with ui.row().classes("w-full justify-left text-xs"):
                                                 ui.label(user).classes("font-bold text-gray-700")
                                                 ui.label(f"{len(pending_project_dic.keys())}").classes(
                                                     "bg-indigo-100 text-indigo-700 px-1.5 rounded-full"
@@ -205,13 +205,13 @@ def statistics_page():
                                                     tooltip_html = "状态正常"
 
                                                 if false_items or none_items:
-                                                    project_label = ui.label(f"• {p}").classes(
-                                                        "pl-2 text-red-500 truncate text-xs cursor-help"
-                                                    )
+                                                    project_label = ui.label(
+                                                        f"• {p} —— {project_summary.get(p, {}).get('state', '未知')} —— {len(p_state_dic)}"
+                                                    ).classes("pl-2 text-red-500 truncate text-xs cursor-help")
                                                 else:
-                                                    project_label = ui.label(f"• {p}").classes(
-                                                        "pl-2 text-amber-500 truncate text-xs cursor-help"
-                                                    )
+                                                    project_label = ui.label(
+                                                        f"• {p} —— {project_summary.get(p, {}).get('state', '未知')} —— {len(p_state_dic)}"
+                                                    ).classes("pl-2 text-amber-500 truncate text-xs cursor-help")
 
                                                 with project_label:
                                                     with ui.tooltip().classes("text-xs bg-gray-600/90 text-white p-2"):

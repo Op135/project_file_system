@@ -3681,6 +3681,51 @@
                 "impact_list": []
             },
             {
+                "label": "emc_baseline_test",
+                "nature": "需填",
+                "title": "EMC摸底测试情况",
+                "processing_type": "text",
+                "content_regular": [],
+                "dialog_placeholder": "无需摸底/未摸底/已摸底但未达标/已摸底且达标",
+                "allowed_state": [
+                    "研发",
+                    "转产",
+                    "试产",
+                    "量产"
+                ],
+                "permission": {
+                    "read_role": [
+                        "boss",
+                        "销售总监",
+                        "销售",
+                        "客服主管",
+                        "客服",
+                        "研发助理",
+                        "研发结构",
+                        "研发软件",
+                        "研发光学",
+                        "研发样品",
+                        "工程",
+                        "质量"
+                    ],
+                    "edit_role": [
+                        "admin",
+                        "研发经理",
+                        "研发硬件",
+                        "研发电子主管"
+                    ]
+                },
+                "impact_list": [
+                    "drive_pcb",
+                    "control_pcb",
+                    "other_pcb",
+                    "drive_test_report",
+                    "drive_manual",
+                    "software_executable_file",
+                    "craft_key_requirements"
+                ]
+            },
+            {
                 "label": "electronic_testing",
                 "nature": "选填",
                 "title": "硬件测试项",

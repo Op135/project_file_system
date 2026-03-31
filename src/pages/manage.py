@@ -241,7 +241,7 @@ def manage_page():
                 main_item.value = None
 
                 if cat and grp and grp in config_data.get(cat, {}):
-                    items = list(config_data[cat][grp].keys())
+                    items = [dic.get("title", "未知标题") for dic in config_data[cat][grp]]
                     main_item.options = items
                     main_item.enable()
                 else:
@@ -280,7 +280,7 @@ def manage_page():
                 target_item.value = None
 
                 if cat and grp and grp in config_data.get(cat, {}):
-                    items = list(config_data[cat][grp].keys())
+                    items = [dic.get("title", "未知标题") for dic in config_data[cat][grp]]
                     target_item.options = items
                     target_item.enable()
                 else:
