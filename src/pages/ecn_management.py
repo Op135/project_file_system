@@ -655,232 +655,262 @@ async def ecn_management_page():
                 tab_exec = ui.tab("3. ECN-执行 (归档)", icon="assignment_turned_in")
                 tab_workflow = ui.tab("审批流转记录", icon="timeline")
 
-            with ui.tab_panels(tabs, value=tab_ecr).classes("w-full flex-1 min-h-0 overflow-y-auto p-4 md:p-8"):
+            # --- 定义 ECR 阶段专属的编辑权限变量 ---
+            # --- 定义 ECR 阶段专属的编辑权限变量 ---
+            # 权限收紧核心逻辑：
+            # 1. 处于新建(is_new)状态时，允许编辑。
+            # 2. 已存在的单据：必须同时满足“当前登录人是申请人”且“当前流程状态为草稿(DRAFT)或被驳回(REJECTED)”。
+            # 一旦发起评审，状态流转，前端运行时将严格锁定为只读，直至用户主动触发“撤回修改”将状态重置。
+            is_ecr_editable = is_new or (
+                basic.get("applicant") == current_user
+                and wf.get("current_state") in [ECNState.DRAFT, ECNState.REJECTED]
+            )
+
+            with ui.tab_panels(tabs, value=tab_ecr).classes("w-full flex-1 min-h-0 overflow-y-auto p-2 md:p-4"):
                 # --- [TAB 1] ECR 申请表单 ---
-                with ui.tab_panel(tab_ecr).classes("gap-0 p-0 bg-white pdf-border shadow-sm max-w-[1000px] mx-auto"):
-                    ui.label("ECR-申请").classes(
-                        "text-lg font-bold bg-blue-100 text-blue-900 w-full p-2 pdf-border-b text-center tracking-wider"
-                    )
 
-                    with ui.grid().classes(
-                        "w-full grid-cols-2 md:grid-cols-5 gap-4 p-4 pdf-border-b bg-gray-50 items-center"
+                # 【优化1】：移除原生 ui.tab_panel 上的 pdf-border 和 max-w 限制，保持背景透明 (bg-transparent)
+                # 转而在其内部新增一个 ui.column() 作为物理边界，配合 h-auto 让边框完美跟随 auto-grow 高度伸缩
+                with ui.tab_panel(tab_ecr).classes("p-0 bg-transparent"):
+                    with ui.column().classes(
+                        "gap-0 p-0 bg-white pdf-border shadow-sm w-full max-w-[1000px] mx-auto h-auto"
                     ):
-                        ui.input("申请部门", value=basic["applicant_dept"]).props(
-                            "outlined dense readonly bg-gray-100"
-                        ).classes("w-full")
-                        ui.input("申请人", value=basic["applicant"]).props(
-                            "outlined dense readonly bg-gray-100"
-                        ).classes("w-full")
-                        ui.input("申请日期", value=basic["apply_date"].split(" ")[0]).props(
-                            "outlined dense readonly bg-gray-100"
-                        ).classes("w-full")
-                        ui.input("需求日期(可选)").bind_value(basic, "requirement_date").props(
-                            f"outlined dense {'readonly bg-gray-100' if not is_draft_or_reject else 'bg-white'}"
-                        ).classes("w-full")
-                        ui.input("文件编号", value=basic["file_no"]).props(
-                            "outlined dense readonly bg-gray-100"
-                        ).classes("w-full")
-
-                    with ui.row().classes("w-full p-3 pdf-border-b items-center gap-6 hover:bg-gray-50"):
-                        ui.label("变更性质:").classes("font-bold text-gray-700 w-20")
-                        with ui.row().classes("gap-6 items-center flex-1"):
-                            ui.radio(["永久变更", "临时变更"]).bind_value(basic, "nature").props(
-                                f"inline {'disable' if not is_draft_or_reject else ''}"
-                            )
-                            if basic.get("nature") == "临时变更":
-                                ui.input("涉及ERP系统单号为:").bind_value(basic, "erp_no").props(
-                                    f"outlined dense {'readonly' if not is_draft_or_reject else ''}"
-                                ).classes("flex-1 max-w-[300px]")
-
-                    with ui.row().classes("w-full p-3 pdf-border-b items-start gap-6 hover:bg-gray-50"):
-                        ui.label("变更原因:").classes("font-bold text-gray-700 w-20 pt-1")
-                        with ui.row().classes("gap-x-8 gap-y-2 flex-1"):
-                            for reason_key in basic["reasons"].keys():
-                                ui.checkbox(reason_key).bind_value(basic["reasons"], reason_key).props(
-                                    f"{'disable' if not is_draft_or_reject else ''}"
-                                )
-                            ui.input("其他说明").bind_value(basic, "other_reason_desc").props(
-                                f"outlined dense {'readonly' if not is_draft_or_reject else ''}"
-                            ).classes("w-full mt-2")
-
-                    with ui.row().classes("w-full p-3 pdf-border-b items-start gap-6 hover:bg-gray-50"):
-                        ui.label("变更对象:").classes("font-bold text-gray-700 w-20 pt-1")
-                        with ui.column().classes("flex-1 gap-2"):
-                            if is_draft_or_reject:
-                                proj_sel_state = {"l1": None, "l2": None, "l3": None}
-                                with ui.row().classes("w-full items-center gap-2"):
-                                    sel_l1 = (
-                                        ui.select(
-                                            options=list(proj_dict_mass.keys()),
-                                            label="大系列",
-                                            on_change=lambda e: [
-                                                proj_sel_state.update(l1=e.value),
-                                                sel_l2.set_options(
-                                                    list(proj_dict_mass.get(e.value, {}).keys()) if e.value else []
-                                                ),
-                                                sel_l2.set_value(None),
-                                                sel_l3.set_options({}),
-                                                sel_l3.set_value(None),
-                                            ],
-                                        )
-                                        .classes("flex-grow")
-                                        .props("dense outlined bg-white")
-                                    )
-                                    sel_l2 = (
-                                        ui.select(
-                                            options=[],
-                                            label="小系列",
-                                            on_change=lambda e: [
-                                                proj_sel_state.update(l2=e.value),
-                                                sel_l3.set_options(
-                                                    proj_dict_mass[proj_sel_state["l1"]][e.value]
-                                                    if proj_sel_state["l1"] and e.value
-                                                    else {}
-                                                ),
-                                                sel_l3.set_value(None),
-                                            ],
-                                        )
-                                        .classes("flex-grow")
-                                        .props("dense outlined bg-white")
-                                    )
-                                    sel_l3 = (
-                                        ui.select(
-                                            options={},
-                                            label="具体型号",
-                                            on_change=lambda e: proj_sel_state.update(l3=e.value),
-                                        )
-                                        .classes("flex-grow")
-                                        .props("dense outlined bg-white")
-                                    )
-
-                                    def add_proj():
-                                        target = proj_sel_state.get("l3")
-                                        if target and target not in local_data["target_projects"]:
-                                            local_data["target_projects"].append(target)
-                                            render_proj_chips()
-                                        elif not target:
-                                            ui.notify("请先选择具体型号后再添加", type="warning")
-                                        else:
-                                            ui.notify("该项目已在变更对象列表中", type="info")
-
-                                    ui.button("添加", on_click=add_proj).props(
-                                        f"outline color=primary dense {'disable' if not is_draft_or_reject else ''}"
-                                    )
-
-                            proj_chip_container = ui.row().classes("w-full gap-2 mt-1")
-
-                            def render_proj_chips():
-                                proj_chip_container.clear()
-                                with proj_chip_container:
-                                    if not local_data["target_projects"]:
-                                        ui.label("尚未添加变更对象 (项目)").classes("text-xs text-red-400 italic mt-1")
-                                    for p in local_data["target_projects"]:
-                                        with ui.chip(color="primary", text_color="white").classes("gap-1 items-center"):
-                                            ui.label(p)
-                                            if is_draft_or_reject:
-                                                ui.icon("cancel", size="xs").classes(
-                                                    "cursor-pointer hover:text-red-300 ml-1"
-                                                ).on(
-                                                    "click",
-                                                    lambda e, proj=p: [
-                                                        local_data["target_projects"].remove(proj),
-                                                        render_proj_chips(),
-                                                    ],
-                                                )
-
-                            render_proj_chips()
-
-                    with ui.row().classes("w-full p-3 pdf-border-b items-start gap-6 hover:bg-gray-50"):
-                        ui.label("变更要求:").classes("font-bold text-gray-700 w-20 pt-1")
-                        with ui.column().classes("flex-1 gap-2"):
-                            ui.label("(内容过多则以附件形式，一并发送)").classes("text-xs text-gray-400")
-                            if is_draft_or_reject:
-                                with ui.row().classes("w-full gap-2 mb-2 items-center"):
-                                    req_input = (
-                                        ui.input("输入具体的变更要求...")
-                                        .props(
-                                            f"dense outlined bg-white {'readonly' if not is_draft_or_reject else ''}"
-                                        )
-                                        .classes("flex-grow")
-                                    )
-
-                                    def add_req():
-                                        val = req_input.value
-                                        if val and val.strip():
-                                            local_data["basic_info"]["requirements"].append(
-                                                {
-                                                    "idx": len(local_data["basic_info"]["requirements"]) + 1,
-                                                    "content": val.strip(),
-                                                }
-                                            )
-                                            req_input.set_value("")
-                                            render_reqs()
-                                        else:
-                                            ui.notify("变更要求不能为空", type="warning")
-
-                                    ui.button("添加条目", on_click=add_req).props("dense color=primary")
-
-                            req_container = ui.column().classes("w-full gap-1")
-
-                            def render_reqs():
-                                req_container.clear()
-                                with req_container:
-                                    if not local_data["basic_info"]["requirements"]:
-                                        ui.label("尚未填写具体的变更要求").classes("text-xs text-red-400 italic")
-                                    for req in local_data["basic_info"]["requirements"]:
-                                        with ui.row().classes(
-                                            "w-full items-center gap-2 border-b border-dashed pb-1 group"
-                                        ):
-                                            ui.label(f"{req['idx']}.").classes("font-bold text-gray-600")
-                                            ui.label(req["content"]).classes("text-sm text-gray-800 flex-1 break-all")
-                                            if is_draft_or_reject:
-                                                ui.icon("close", size="sm").classes(
-                                                    "cursor-pointer text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
-                                                ).on(
-                                                    "click",
-                                                    lambda e, r=req: [
-                                                        local_data["basic_info"]["requirements"].remove(r),
-                                                        [
-                                                            req.update(idx=i + 1)
-                                                            for i, req in enumerate(
-                                                                local_data["basic_info"]["requirements"]
-                                                            )
-                                                        ],
-                                                        render_reqs(),
-                                                    ],
-                                                )
-
-                            render_reqs()
-
-                    with ui.column().classes("w-full p-3 items-start gap-2 hover:bg-gray-50"):
-                        ui.label("原因说明:").classes("font-bold text-gray-700 w-20")
-                        ui.textarea(placeholder="详细说明变更的原因及背景 (必填)...").bind_value(
-                            basic, "reason_desc"
-                        ).classes("w-full").props(
-                            f"outlined auto-grow {'readonly bg-gray-100' if not is_draft_or_reject else 'bg-white'}"
+                        ui.label("ECR-申请").classes(
+                            "text-lg font-bold bg-blue-100 text-blue-900 w-full p-1 pdf-border-b text-center tracking-wider"
                         )
 
+                        with ui.grid().classes(
+                            "w-full grid-cols-2 md:grid-cols-5 gap-2 p-2 pdf-border-b bg-gray-50 items-center"
+                        ):
+                            ui.input("申请部门", value=basic["applicant_dept"]).props(
+                                "outlined dense readonly bg-gray-100"
+                            ).classes("w-full")
+                            ui.input("申请人", value=basic["applicant"]).props(
+                                "outlined dense readonly bg-gray-100"
+                            ).classes("w-full")
+                            ui.input("申请日期", value=basic["apply_date"].split(" ")[0]).props(
+                                "outlined dense readonly bg-gray-100"
+                            ).classes("w-full")
+                            # 【优化3】：用 is_ecr_editable 全局替换原来的 is_draft_or_reject
+                            ui.input("需求日期(可选)").bind_value(basic, "requirement_date").props(
+                                f"outlined dense {'readonly bg-gray-100' if not is_ecr_editable else 'bg-white'}"
+                            ).classes("w-full")
+                            ui.input("文件编号", value=basic["file_no"]).props(
+                                "outlined dense readonly bg-gray-100"
+                            ).classes("w-full")
+
+                        with ui.row().classes("w-full p-2 pdf-border-b items-center gap-2 hover:bg-gray-50"):
+                            # 增加 shrink-0 防止前端页面缩放时文字被挤压
+                            ui.label("变更性质:").classes("font-bold text-gray-700 w-20 shrink-0")
+                            with ui.row().classes("gap-6 items-center flex-1"):
+                                ui.radio(["永久变更", "临时变更"]).bind_value(basic, "nature").props(
+                                    f"inline {'disable' if not is_ecr_editable else ''}"
+                                )
+                                if basic.get("nature") == "临时变更":
+                                    ui.input("涉及ERP系统单号为:").bind_value(basic, "erp_no").props(
+                                        f"outlined dense {'readonly' if not is_ecr_editable else ''}"
+                                    ).classes("flex-1 max-w-[300px]")
+
+                        with ui.row().classes("w-full p-2 pdf-border-b items-start gap-2 hover:bg-gray-50"):
+                            ui.label("变更原因:").classes("font-bold text-gray-700 w-20 shrink-0 pt-1")
+                            with ui.row().classes("gap-x-4 gap-y-2 flex-1"):
+                                for reason_key in basic["reasons"].keys():
+                                    ui.checkbox(reason_key).bind_value(basic["reasons"], reason_key).props(
+                                        f"{'disable' if not is_ecr_editable else ''}"
+                                    )
+
+                                # 【优化2】：动态显示“其他说明”
+                                # bind_visibility_from: NiceGUI框架函数，用于将其所在UI组件的可见性(display)与给定字典中特定键的布尔值相绑定
+                                ui.input("其他说明").bind_value(basic, "other_reason_desc").bind_visibility_from(
+                                    basic["reasons"], "其他"
+                                ).props(f"outlined dense {'readonly' if not is_ecr_editable else ''}").classes(
+                                    "w-full mt-2 transition-all duration-300"
+                                )
+
+                        with ui.row().classes("w-full p-2 pdf-border-b items-start gap-2 hover:bg-gray-50"):
+                            ui.label("变更对象:").classes("font-bold text-gray-700 w-20 shrink-0 pt-1")
+                            with ui.column().classes("flex-1 gap-2"):
+                                if is_ecr_editable:
+                                    proj_sel_state = {"l1": None, "l2": None, "l3": None}
+                                    with ui.row().classes("w-full items-center gap-2"):
+                                        sel_l1 = (
+                                            ui.select(
+                                                options=list(proj_dict_mass.keys()),
+                                                label="大系列",
+                                                on_change=lambda e: [
+                                                    proj_sel_state.update(l1=e.value),
+                                                    sel_l2.set_options(
+                                                        list(proj_dict_mass.get(e.value, {}).keys()) if e.value else []
+                                                    ),
+                                                    sel_l2.set_value(None),
+                                                    sel_l3.set_options({}),
+                                                    sel_l3.set_value(None),
+                                                ],
+                                            )
+                                            .classes("flex-grow")
+                                            .props("dense outlined bg-white")
+                                        )
+                                        sel_l2 = (
+                                            ui.select(
+                                                options=[],
+                                                label="小系列",
+                                                on_change=lambda e: [
+                                                    proj_sel_state.update(l2=e.value),
+                                                    sel_l3.set_options(
+                                                        proj_dict_mass[proj_sel_state["l1"]][e.value]
+                                                        if proj_sel_state["l1"] and e.value
+                                                        else {}
+                                                    ),
+                                                    sel_l3.set_value(None),
+                                                ],
+                                            )
+                                            .classes("flex-grow")
+                                            .props("dense outlined bg-white")
+                                        )
+                                        sel_l3 = (
+                                            ui.select(
+                                                options={},
+                                                label="具体型号",
+                                                on_change=lambda e: proj_sel_state.update(l3=e.value),
+                                            )
+                                            .classes("flex-grow")
+                                            .props("dense outlined bg-white")
+                                        )
+
+                                        def add_proj():
+                                            target = proj_sel_state.get("l3")
+                                            if target and target not in local_data["target_projects"]:
+                                                local_data["target_projects"].append(target)
+                                                render_proj_chips()
+                                            elif not target:
+                                                ui.notify("请先选择具体型号后再添加", type="warning")
+                                            else:
+                                                ui.notify("该项目已在变更对象列表中", type="info")
+
+                                        ui.button("添加", on_click=add_proj).props(
+                                            f"outline color=primary dense {'disable' if not is_ecr_editable else ''}"
+                                        )
+
+                                proj_chip_container = ui.row().classes("w-full gap-2 mt-1")
+
+                                def render_proj_chips():
+                                    proj_chip_container.clear()
+                                    with proj_chip_container:
+                                        if not local_data["target_projects"]:
+                                            ui.label("尚未添加变更对象 (项目)").classes(
+                                                "text-xs text-red-400 italic mt-1"
+                                            )
+                                        for p in local_data["target_projects"]:
+                                            with ui.chip(color="primary", text_color="white").classes(
+                                                "gap-1 items-center"
+                                            ):
+                                                ui.label(p)
+                                                if is_ecr_editable:
+                                                    ui.icon("cancel", size="xs").classes(
+                                                        "cursor-pointer hover:text-red-300 ml-1"
+                                                    ).on(
+                                                        "click",
+                                                        lambda e, proj=p: [
+                                                            local_data["target_projects"].remove(proj),
+                                                            render_proj_chips(),
+                                                        ],
+                                                    )
+
+                                render_proj_chips()
+
+                        with ui.row().classes("w-full p-2 pdf-border-b items-start gap-2 hover:bg-gray-50"):
+                            ui.label("变更要求:").classes("font-bold text-gray-700 w-20 shrink-0 pt-1")
+                            with ui.column().classes("flex-1 gap-2"):
+                                # ui.label("(内容过多则以附件形式，一并发送)").classes("text-xs text-gray-400")
+                                if is_ecr_editable:
+                                    with ui.row().classes("w-full gap-2 mb-2 items-center"):
+                                        req_input = (
+                                            ui.input("输入具体的变更要求...")
+                                            .props(
+                                                f"dense outlined bg-white {'readonly' if not is_ecr_editable else ''}"
+                                            )
+                                            .classes("flex-grow")
+                                        )
+
+                                        def add_req():
+                                            val = req_input.value
+                                            if val and val.strip():
+                                                local_data["basic_info"]["requirements"].append(
+                                                    {
+                                                        "idx": len(local_data["basic_info"]["requirements"]) + 1,
+                                                        "content": val.strip(),
+                                                    }
+                                                )
+                                                req_input.set_value("")
+                                                render_reqs()
+                                            else:
+                                                ui.notify("变更要求不能为空", type="warning")
+
+                                        ui.button("添加条目", on_click=add_req).props("dense color=primary")
+
+                                req_container = ui.column().classes("w-full gap-1")
+
+                                def render_reqs():
+                                    req_container.clear()
+                                    with req_container:
+                                        if not local_data["basic_info"]["requirements"]:
+                                            ui.label("尚未填写具体的变更要求").classes("text-xs text-red-400 italic")
+                                        for req in local_data["basic_info"]["requirements"]:
+                                            with ui.row().classes(
+                                                "w-full items-center gap-2 border-b border-dashed pb-1 group"
+                                            ):
+                                                ui.label(f"{req['idx']}.").classes("font-bold text-gray-600")
+                                                ui.label(req["content"]).classes(
+                                                    "text-sm text-gray-800 flex-1 break-all"
+                                                )
+                                                if is_ecr_editable:
+                                                    ui.icon("close", size="sm").classes(
+                                                        "cursor-pointer text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                                                    ).on(
+                                                        "click",
+                                                        lambda e, r=req: [
+                                                            local_data["basic_info"]["requirements"].remove(r),
+                                                            [
+                                                                req.update(idx=i + 1)
+                                                                for i, req in enumerate(
+                                                                    local_data["basic_info"]["requirements"]
+                                                                )
+                                                            ],
+                                                            render_reqs(),
+                                                        ],
+                                                    )
+
+                                render_reqs()
+
+                        with ui.row().classes("w-full p-2 items-start gap-2 hover:bg-gray-50"):
+                            ui.label("原因说明:").classes("font-bold text-gray-700 w-20 shrink-0")
+                            ui.textarea(placeholder="详细说明变更的原因及背景 (必填)...").bind_value(
+                                basic, "reason_desc"
+                            ).classes("w-full flex-1").props(
+                                f"outlined auto-grow {'readonly bg-gray-100' if not is_ecr_editable else 'bg-white'}"
+                            )
+
                 # --- [TAB 2] ECN 评审表单 ---
-                with ui.tab_panel(tab_ecn).classes("gap-4 p-0 max-w-[1000px] mx-auto"):
+                with ui.tab_panel(tab_ecn).classes("gap-0 p-0 max-w-[1000px] mx-auto"):
                     if wf["current_phase"] == "ECR_PHASE" and not is_new:
                         ui.label("当前处于 ECR 申请阶段，ECN 方案将在评审通过后由工程师协同填写。").classes(
-                            "text-gray-500 m-8 text-center bg-white p-4 border rounded"
+                            "text-gray-500 m-8 text-center bg-white p-2 border rounded"
                         )
                     elif is_new:
                         ui.label("请先完成 ECR 申请并发起流程。").classes(
-                            "text-gray-500 m-8 text-center bg-white p-4 border rounded"
+                            "text-gray-500 m-8 text-center bg-white p-2 border rounded"
                         )
                     else:
                         with ui.card().classes("w-full p-0 pdf-border bg-white shadow-sm"):
                             ui.label("ECN-评审").classes(
-                                "text-lg font-bold bg-indigo-100 text-indigo-900 w-full p-2 pdf-border-b text-center tracking-wider"
+                                "text-lg font-bold bg-indigo-100 text-indigo-900 w-full p-1 pdf-border-b text-center tracking-wider"
                             )
 
-                            with ui.column().classes("w-full p-3 pdf-border-b gap-2 hover:bg-gray-50"):
-                                ui.label("变更涉及产品 (ECN扩充):").classes("font-bold text-gray-700")
+                            with ui.column().classes("w-full p-2 pdf-border-b gap-2 hover:bg-gray-50"):
+                                ui.label("变更涉及产品:").classes("font-bold text-gray-700")
                                 with ui.column().classes("gap-3 ml-4 w-full"):
                                     with ui.row().classes("items-start gap-2"):
-                                        ui.label("ECR申请涵盖项目 (只读):").classes(
+                                        ui.label("ECR申请涵盖项目:").classes(
                                             "text-xs font-bold text-gray-500 w-36 pt-1"
                                         )
                                         with ui.row().classes("gap-1"):
@@ -955,7 +985,7 @@ async def ecn_management_page():
 
                                                         ui.button(icon="add", on_click=add_exp_proj).props(
                                                             f"outline dense {'disable' if not is_scheming_phase else ''}"
-                                                        ).classes("mt-1")
+                                                        ).classes("mt-0")
 
                                                 chip_container = ui.row().classes("gap-1")
 
@@ -995,20 +1025,20 @@ async def ecn_management_page():
                                         color="teal",
                                     )
 
-                            with ui.column().classes("w-full p-3 pdf-border-b gap-2 hover:bg-gray-50"):
+                            with ui.column().classes("w-full p-2 pdf-border-b gap-2 hover:bg-gray-50"):
                                 ui.label("相关影响 (方案编写工程师勾选):").classes("font-bold text-gray-700")
-                                with ui.grid(columns=4).classes(
-                                    "w-full grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-x-2 gap-y-1 ml-4 items-center"
+                                with ui.grid().classes(
+                                    "w-full grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-2 gap-y-1 ml-4 items-center"
                                 ):
                                     for imp_key in review["impacts"].keys():
                                         ui.checkbox(imp_key).bind_value(review["impacts"], imp_key).props(
                                             f"{'disable' if not is_scheming_phase else ''} dense"
                                         ).on_value_change(auto_save_review)
 
-                            with ui.column().classes("w-full p-3 pdf-border-b gap-2 hover:bg-gray-50"):
+                            with ui.column().classes("w-full p-2 pdf-border-b gap-2 hover:bg-gray-50"):
                                 ui.label("变更涉及文档/图纸:").classes("font-bold text-gray-700")
-                                with ui.grid(columns=5).classes(
-                                    "w-full grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-x-2 gap-y-2 ml-4 bg-gray-50 p-3 border rounded shadow-inner max-w-[900px]"
+                                with ui.grid().classes(
+                                    "w-full grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-2 gap-y-1 ml-4 p-1 max-w-[900px]"
                                 ):
                                     for doc_key in review["involved_docs"].keys():
                                         ui.checkbox(doc_key).bind_value(review["involved_docs"], doc_key).props(
@@ -1018,51 +1048,57 @@ async def ecn_management_page():
                                     f"outlined dense {'readonly bg-gray-100' if not is_scheming_phase else 'bg-white'}"
                                 ).classes("w-full ml-4 mt-2 max-w-[500px]").on("blur", auto_save_review)
 
-                            with ui.column().classes("w-full p-3 pdf-border-b gap-2 hover:bg-gray-50"):
+                            # 优化点：父级增加 overflow-hidden 防止整体页面出现非预期的横向滚动条
+                            with ui.column().classes("w-full p-2 pdf-border-b gap-2 hover:bg-gray-50 overflow-hidden"):
                                 ui.label("变更涉及物料:").classes("font-bold text-gray-700")
                                 mat_acts = ["新增", "弃用", "返修", "更换", "调量"]
-                                with ui.grid(columns=6).classes(
-                                    "w-full grid-cols-[120px_1fr_1fr_1fr_1fr_1fr] ml-4 gap-y-1 items-center bg-gray-50 p-2 border rounded shadow-inner max-w-[800px]"
-                                ):
-                                    ui.label("物料类别").classes(
-                                        "font-bold text-gray-600 border-b border-gray-300 pb-1 text-center"
-                                    )
-                                    for a in mat_acts:
-                                        ui.label(a).classes(
-                                            "font-bold text-gray-600 text-center border-b border-gray-300 pb-1"
+                                # 优化点：引入 overflow-x-auto。在大屏幕上正常显示，在小屏幕上自动出现局部横向滚动条
+                                with ui.row().classes("w-full overflow-x-auto scrollbar-hide pl-4"):
+                                    # 优化点：
+                                    # 1. 移除 ml-4 (改用父级的 pl-4 替代)，避免 w-full 撑破容器。
+                                    # 2. 增加 min-w-[550px]，确保在极小视口下，网格也能维持良好的可读性，多出部分用户可以滑动查看。
+                                    with ui.grid(columns=6).classes(
+                                        "w-full min-w-[550px] grid-cols-[100px_1fr_1fr_1fr_1fr_1fr] gap-y-1 items-center p-1 max-w-[800px]"
+                                    ):
+                                        ui.label("物料类别").classes(
+                                            "font-bold text-gray-600 border-b border-gray-300 pb-1 text-center"
                                         )
-                                    for mat_key in review["involved_materials"].keys():
-                                        ui.label(mat_key).classes("text-sm font-bold text-gray-700 text-right pr-4")
-                                        for act in mat_acts:
-                                            with ui.row().classes("justify-center w-full"):
-                                                ui.checkbox("").bind_value(
-                                                    review["involved_materials"][mat_key], act
-                                                ).props(
-                                                    f"{'disable' if not is_scheming_phase else ''} dense"
-                                                ).on_value_change(auto_save_review)
+                                        for a in mat_acts:
+                                            ui.label(a).classes(
+                                                "font-bold text-gray-600 text-center border-b border-gray-300 pb-1"
+                                            )
+                                        for mat_key in review["involved_materials"].keys():
+                                            ui.label(mat_key).classes("text-sm font-bold text-gray-700 text-right pr-4")
+                                            for act in mat_acts:
+                                                with ui.row().classes("justify-center w-full"):
+                                                    ui.checkbox("").bind_value(
+                                                        review["involved_materials"][mat_key], act
+                                                    ).props(
+                                                        f"{'disable' if not is_scheming_phase else ''} dense"
+                                                    ).on_value_change(auto_save_review)
 
                             with ui.grid(columns=1).classes(
                                 "w-full grid-cols-1 md:grid-cols-3 pdf-border-b bg-gray-50"
                             ):
-                                with ui.column().classes("p-3 pdf-border-r gap-1 hover:bg-white"):
+                                with ui.column().classes("p-2 pdf-border-r gap-1 hover:bg-white"):
                                     ui.label("SOP:").classes("font-bold text-gray-700")
                                     ui.radio(["无影响", "更新SOP"]).bind_value(review, "sop_impact").props(
                                         f"{'disable' if not is_scheming_phase else ''} dense inline"
                                     ).on_value_change(auto_save_review)
-                                with ui.column().classes("p-3 pdf-border-r gap-1 hover:bg-white"):
+                                with ui.column().classes("p-2 pdf-border-r gap-1 hover:bg-white"):
                                     ui.label("治具:").classes("font-bold text-gray-700")
                                     ui.radio(["无影响", "新做治具", "修改治具"]).bind_value(
                                         review, "fixture_impact"
                                     ).props(
                                         f"{'disable' if not is_scheming_phase else ''} dense inline"
                                     ).on_value_change(auto_save_review)
-                                with ui.column().classes("p-3 gap-1 hover:bg-white"):
+                                with ui.column().classes("p-2 gap-1 hover:bg-white"):
                                     ui.label("工具:").classes("font-bold text-gray-700")
                                     ui.radio(["无影响", "新购工具", "其它"]).bind_value(review, "tool_impact").props(
                                         f"{'disable' if not is_scheming_phase else ''} dense inline"
                                     ).on_value_change(auto_save_review)
 
-                            with ui.column().classes("w-full p-4 gap-3 bg-blue-50/30"):
+                            with ui.column().classes("w-full p-2 gap-3 bg-blue-50/30"):
                                 with ui.row().classes("w-full justify-between items-center"):
                                     ui.label("产品设计与工艺变更方案明细").classes("font-bold text-gray-800 text-lg")
                                     if is_scheming_phase and any(
@@ -1301,7 +1337,7 @@ async def ecn_management_page():
                 with ui.tab_panel(tab_exec).classes("gap-4 p-0 max-w-[1000px] mx-auto"):
                     if wf["current_state"] in [ECNState.DRAFT, ECNState.ECR_REVIEWING, ECNState.REJECTED]:
                         ui.label("当前尚未进入执行环节。").classes(
-                            "text-gray-500 m-8 text-center bg-white p-4 border rounded"
+                            "text-gray-500 m-8 text-center bg-white p-2 border rounded"
                         )
                     else:
                         is_exec_phase = wf["current_state"] in [ECNState.ECN_EXECUTING, ECNState.PENDING_FINAL_EXECUTE]
@@ -1310,7 +1346,7 @@ async def ecn_management_page():
                         )
                         with ui.card().classes("w-full p-0 pdf-border bg-white shadow-sm"):
                             ui.label("ECN-执行 & 试产").classes(
-                                "text-lg font-bold bg-green-100 text-green-900 w-full p-2 pdf-border-b text-center tracking-wider"
+                                "text-lg font-bold bg-green-100 text-green-900 w-full p-1 pdf-border-b text-center tracking-wider"
                             )
                             with ui.row().classes("w-full p-3 pdf-border-b items-start gap-6 hover:bg-gray-50"):
                                 ui.label("追溯等级:").classes("font-bold text-gray-700 w-20 pt-1")
