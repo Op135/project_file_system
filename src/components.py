@@ -935,8 +935,17 @@ class InteractiveButton:
                     target_path_li_str += f"{target_path}\n"
                     if target_path and Path(target_path).is_dir():
                         files_li.extend(find_files_pathlib(target_path, chip_text))
-
-                if not files_li:
+                if not target_path_list:
+                    ui.notify(
+                        "文件存放的路径层级可能不符合规则!",
+                        type="warning",
+                        position="bottom",
+                        timeout=3000,
+                        progress=True,
+                        multi_line=True,
+                        close_button="✖",
+                    )
+                elif not files_li:
                     ui.notify(
                         f"引用文件不存在以下所有路径：\n{target_path_li_str}请检查文件命名或相关依赖配置!",
                         type="warning",
@@ -1577,8 +1586,17 @@ class InteractiveButton:
                     target_path_li_str += f"{target_path}\n"
                     if target_path and Path(target_path).is_dir():
                         files_li.extend(find_files_pathlib(target_path, text))
-
-                if not files_li:
+                if not target_path_list:
+                    ui.notify(
+                        "文件存放的路径层级可能不符合规则!",
+                        type="warning",
+                        position="bottom",
+                        timeout=3000,
+                        progress=True,
+                        multi_line=True,
+                        close_button="✖",
+                    )
+                elif not files_li:
                     ui.notify(
                         f"引用文件不存在以下所有路径：\n{target_path_li_str}请检查文件命名或相关依赖配置!",
                         type="warning",
@@ -2836,7 +2854,7 @@ class InteractiveButton:
 
     async def _search_file_path(self, chip_text) -> list:
         target_path_list, folder_according_li, according_folder_name_li, according_title = [], [], [], ""
-
+        # 如果有配置搜索依据项，则先根据依据项找到对应的文件夹名称，再去上传目录下寻找对应文件夹，最后在对应文件夹下寻找目标文件
         if self.search_folder_according_li:
             for search_folder_according in self.search_folder_according_li:
                 title_str = (
@@ -2850,7 +2868,7 @@ class InteractiveButton:
                 ).values():
                     if DATA["enabled"]:
                         according_folder_name_li.append(DATA["content"])
-
+            # 依据的概述项内容为真的，相当于配置文件夹名的列表少于一个，没有有效的文件夹名可供寻找，直接返回无效提示
             if len(according_folder_name_li) < 1:
                 if overview_state_show_judge(self.role):
                     ui.notify(
@@ -2864,10 +2882,12 @@ class InteractiveButton:
                     )
                 return target_path_list
             else:
+                # 如果有按照正则表达式缩小寻找范围
                 if self.search_scope_regular:
                     for according_folder_name in according_folder_name_li:
                         match = re.search(self.search_scope_regular, according_folder_name)
                         if match:
+                            # 将符合正则表达式的文件夹名进行二次确认寻找，确保上传目录下存在对应文件夹
                             folder_according_li.extend(
                                 await find_dirs_by_name_os_walk(
                                     f"{self.upload_path}\\{match.group(1)}", according_folder_name
@@ -4712,8 +4732,17 @@ class OverviewTableGroup:
                     if target_path and Path(target_path).is_dir():
                         files_li.extend(find_files_pathlib(target_path, text))
 
-                # --- 修复 4.1: 恢复详细的查找失败 Debug 路径提示 ---
-                if not files_li:
+                if not target_path_list:
+                    ui.notify(
+                        "文件存放的路径层级可能不符合规则!",
+                        type="warning",
+                        position="bottom",
+                        timeout=3000,
+                        progress=True,
+                        multi_line=True,
+                        close_button="✖",
+                    )
+                elif not files_li:
                     ui.notify(
                         f"引用文件不存在以下所有路径：\n{target_path_li_str}请检查文件命名或相关依赖配置!",
                         type="warning",
