@@ -268,6 +268,9 @@ if __name__ in {"__main__", "__mp_main__"}:
         # False 不自动重载，True自动重载
         reload=True,
         # reload=False,
+        # 🚀 核心新增配置：增加断线重连宽容期（默认是 3.0 秒）
+        # 设置为 300.0 秒（5分钟），允许前端 WebSocket 断开长达5分钟。
+        reconnect_timeout=300.0,
         # 【关键修改 1】让父进程闭嘴
         # 将 Uvicorn 自身的日志级别设为 warning，
         # 这样它就不会打印 "changes detected" 这种 INFO 级别的废话了

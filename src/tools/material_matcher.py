@@ -161,9 +161,10 @@ class MaterialMatcherTool:
                 with ui.row().classes("w-full grid grid-cols-1 md:grid-cols-3 gap-4"):
                     with ui.column().classes("border rounded-lg p-3 bg-gray-50 hover:bg-gray-100 transition-colors"):
                         ui.label("1. 非电子物料清单").classes("font-bold text-xs")
+                        # nicegui (第三方UI框架): upload组件用于创建文件拖拽与选择上传区域。props用于透传底层Quasar框架的HTML原生属性，限制上传文件格式。
                         ui.upload(on_upload=lambda e: self._handle_upload(e, "non_elec"), auto_upload=True).classes(
                             "w-full"
-                        ).props('accept=".csv, .xlsx, .xlsm" max-files="1" flat')
+                        ).props('accept=".csv, .xls, .xlsx, .xlsm" max-files="1" flat')
                         ui.label().bind_text_from(self, "status_non_elec").classes(
                             "text-xs text-blue-600 font-bold mt-1"
                         )
@@ -172,14 +173,14 @@ class MaterialMatcherTool:
                         ui.label("2. 电子物料清单").classes("font-bold text-xs")
                         ui.upload(on_upload=lambda e: self._handle_upload(e, "elec"), auto_upload=True).classes(
                             "w-full"
-                        ).props('accept=".csv, .xlsx" max-files="1" flat')
+                        ).props('accept=".csv, .xls, .xlsx" max-files="1" flat')
                         ui.label().bind_text_from(self, "status_elec").classes("text-xs text-blue-600 font-bold mt-1")
 
                     with ui.column().classes("border rounded-lg p-3 bg-gray-50 hover:bg-gray-100 transition-colors"):
                         ui.label("3. 企业库存数据表").classes("font-bold text-xs")
                         ui.upload(on_upload=lambda e: self._handle_upload(e, "erp"), auto_upload=True).classes(
                             "w-full"
-                        ).props('accept=".csv, .xlsx" max-files="1" flat')
+                        ).props('accept=".csv, .xls, .xlsx" max-files="1" flat')
                         ui.label().bind_text_from(self, "status_erp").classes("text-xs text-blue-600 font-bold mt-1")
 
                 with ui.row().classes("w-full justify-end mt-3"):
@@ -187,7 +188,6 @@ class MaterialMatcherTool:
                         self, "can_start"
                     ).props("color=primary icon=play_arrow size=sm")
 
-            # 👉 改造计算进度区域，实现内部百分比 + 底部双轨分子进度
             with (
                 ui.column()
                 .bind_visibility_from(self, "is_calculating")
@@ -198,16 +198,15 @@ class MaterialMatcherTool:
                     "text-lg font-bold text-gray-600 animate-pulse"
                 )
 
-                # 使用相对定位父容器包裹进度条，打破自带组件无法内置文本的限制
-                with ui.element("div").classes("w-1/2 mt-4 relative"):
-                    ui.linear_progress(value=0.0).bind_value_from(self, "calc_progress").classes("w-full").props(
-                        "rounded size=20px color=blue-400"
-                    )
-                    ui.label().bind_text_from(self, "calc_progress_percent").classes(
-                        "absolute inset-0 flex items-center justify-center text-white text-xs font-bold drop-shadow-sm"
-                    )
+                # 🚀 修复点 1：移除相对定位div，使用 NiceGUI 的插槽机制直接嵌入文字，避免 Quasar 默认数字重叠
+                with (
+                    ui.linear_progress(value=0.0, show_value=True)
+                    .bind_value_from(self, "calc_progress")
+                    .classes("w-1/2 mt-4")
+                    .props("rounded size=20px color=blue-400 text-color=white")
+                ):
+                    ui.label().bind_text_from(self, "calc_progress_percent").classes("text-xs font-bold")
 
-                # 底部改为显示分子进度的文字
                 ui.label().bind_text_from(self, "calc_progress_text").classes("text-xs text-gray-500 font-mono")
 
             with (
@@ -395,17 +394,17 @@ class MaterialMatcherTool:
             match = r.get("best_match")
             status = r.get("status", 0)
 
-            # 原BOM信息的格式化拼接，方便溯源
-            bom_trace_info = f"{r['bom_desc']} (需求:{r['bom_qty']})"
-            if r.get("bom_code"):
-                bom_trace_info = f"[{r['bom_code']}] {bom_trace_info}"
+            # 拆分：提取独立的原BOM料号与纯粹的追溯描述
+            bom_code_str = str(r.get("bom_code", "")).strip()
+            bom_code_display = bom_code_str if bom_code_str else "无料号"
+            bom_desc_only = r["bom_desc"]  # 纯描述，不带数量
+            bom_qty = r["bom_qty"]
 
             # 情况A：已成功匹配 ERP 料号，且非直购，进入聚合池
             if not is_direct and status == 2 and match:
                 erp_code = match.get("code", "无")
 
                 if erp_code not in aggregated_erp_demands:
-                    # 初始化该 ERP 料号的聚合数据结构
                     aggregated_erp_demands[erp_code] = {
                         "erp_code": erp_code,
                         "erp_desc": match.get("search_str", ""),
@@ -414,17 +413,19 @@ class MaterialMatcherTool:
                         "stock": match.get("stock", 0.0),
                         "safety_stock": match.get("safety_stock", 0.0),
                         "total_bom_qty": 0.0,
-                        "bom_trace_list": [],  # 记录是由哪些 BOM 物料合并而来的
+                        "bom_code_list": [],  # 独立的料号列汇总
+                        "bom_trace_list": [],  # 独立的追溯描述汇总
                     }
 
-                # 累加总需求量
-                aggregated_erp_demands[erp_code]["total_bom_qty"] += r["bom_qty"]
-                # 将当前 BOM 物料信息压入追溯列表
-                aggregated_erp_demands[erp_code]["bom_trace_list"].append(bom_trace_info)
+                aggregated_erp_demands[erp_code]["total_bom_qty"] += bom_qty
+
+                # 将拆解后的数据压入各自阵营
+                aggregated_erp_demands[erp_code]["bom_code_list"].append(bom_code_display)
+                # 🚀 修改点：存入 (描述, 数量) 元组，供后续判断是否需要合并显示需求量
+                aggregated_erp_demands[erp_code]["bom_trace_list"].append((bom_desc_only, bom_qty))
 
             # 情况B：直购 或 未确认/未匹配的物料，独立成行
             else:
-                final_qty = r["bom_qty"]
                 status_text = "⚪ 直接请购" if is_direct else "🔴 需请购(未匹配)"
 
                 other_demands.append(
@@ -432,33 +433,43 @@ class MaterialMatcherTool:
                         "状态": status_text,
                         "商品分类": "未分类",
                         "ERP料号": "无",
-                        "原BOM清单物料追溯": bom_trace_info,
-                        "核算总需求量": final_qty,
-                        "有效库存(含安全存量)": "-",
                         "ERP物料描述": "无",
-                        "实际需请购量": final_qty,
+                        "原BOM料号": bom_code_display,
+                        "原BOM清单物料追溯": bom_desc_only,  # 🚀 修改点：独立成行，肯定没合并，直接给纯描述
+                        "核算总需求量": bom_qty,
+                        "有效库存(含安全存量)": "-",
+                        "实际需请购量": bom_qty,
                         "单位": "PCS",
                     }
                 )
 
         export_data = []
 
-        # 处理聚合池中的 ERP 物料，进行统一的库存扣减计算
+        # 处理聚合池中的 ERP 物料
         for erp_code, data in aggregated_erp_demands.items():
             total_qty = data["total_bom_qty"]
             effective_stock = data["stock"] + data["safety_stock"]
-            # 实际请购量 = 总需求量 - 总有效库存，若小于0则取0
             purchase_qty = max(0.0, total_qty - effective_stock)
 
             status_text = "🔴 需请购" if purchase_qty > 0 else "🟢 库存满足"
+
+            # 🚀 修改点：根据合并数量动态生成追溯文本
+            trace_list = data["bom_trace_list"]
+            if len(trace_list) > 1:
+                # 发生合并，加上后缀 (需求:xxx) 以示区分
+                trace_display_str = " +\n".join([f"{desc} (需求:{qty})" for desc, qty in trace_list])
+            else:
+                # 只有单条，直接取纯描述
+                trace_display_str = trace_list[0][0]
 
             export_data.append(
                 {
                     "状态": status_text,
                     "商品分类": data["category"],
                     "ERP料号": erp_code,
-                    "ERP物料描述": data["erp_desc"],  # 核心修复：导出 ERP 自己的标准描述
-                    "原BOM清单物料追溯": " +\n".join(data["bom_trace_list"]),  # 多条BOM记录用换行符拼接
+                    "ERP物料描述": data["erp_desc"],
+                    "原BOM料号": " +\n".join(data["bom_code_list"]),
+                    "原BOM清单物料追溯": trace_display_str,  # 动态内容
                     "核算总需求量": total_qty,
                     "有效库存(含安全存量)": effective_stock,
                     "实际需请购量": purchase_qty,
@@ -466,13 +477,11 @@ class MaterialMatcherTool:
                 }
             )
 
-        # 将两部分数据合并
         export_data.extend(other_demands)
 
         # pandas (强大的第三方数据分析处理库): 将组装好的字典列表转化为DataFrame表格对象
         df = pd.DataFrame(export_data)
 
-        # 建立排序辅助列，确保需要采购的排在前面
         df["_sort_status"] = df["状态"].map(
             {"🔴 需请购": 0, "🔴 需请购(未匹配)": 1, "⚪ 直接请购": 2, "🟢 库存满足": 3}
         )
@@ -488,16 +497,12 @@ class MaterialMatcherTool:
 
     async def _handle_upload(self, e: Any, target: str):
         try:
-            # 获取执行结果，避免在判断语句中产生孤儿协程
             read_result = e.file.read()
-
-            # 检查结果是否为协程对象，如果是则进行 await
             if asyncio.iscoroutine(read_result):
                 file_bytes = await read_result
             else:
                 file_bytes = read_result
 
-            # io.BytesIO: Python 内置库，将字节流封装为内存文件对象，以便 pandas(第三方数据分析库) 读取
             df = self._smart_read_dataframe(io.BytesIO(file_bytes), e.file.name)
 
             if target == "non_elec":
@@ -508,7 +513,6 @@ class MaterialMatcherTool:
                 self.erp_data, self.status_erp = df, f"成功载入库存档案 {len(df)} 行"
             self._check_ready()
         except Exception as ex:
-            # ui.notify: nicegui(第三方UI框架) 的消息提示组件，用于在浏览器前端弹出通知
             ui.notify(f"文件读取失败，请检查格式: {str(ex)}", type="negative")
 
     def _reset_and_show_upload(self):
@@ -549,7 +553,7 @@ class MaterialMatcherTool:
                 ["品号", "料号"],
                 ["名称", "品名"],
                 ["规格", "型号", "comment"],
-                ["可用量", "数量", "quantity"],
+                ["可用量"],
                 ["商品分类"],
                 ["单位"],
                 ["安全存量", "安全库存"],
@@ -568,7 +572,6 @@ class MaterialMatcherTool:
             e_tokens_orig = set(TOKEN_PATTERN.findall(f"{erp_name_orig} {erp_spec_orig}"))
 
             stock = self._safe_float(row.get(stock_col) if stock_col else 0.0)
-            # 提取安全存量，如果表里没有这一列或数据为空，则安全地默认设为 0.0
             safety_stock = self._safe_float(row.get(safety_stock_col) if safety_stock_col else 0.0)
             self.erp_search_pool.append(
                 {
@@ -589,7 +592,7 @@ class MaterialMatcherTool:
 
     def _extract_demands(self, df: pd.DataFrame, source_name: str) -> List[Dict]:
         demands = []
-        code_col, name_col, spec_col, qty_col, footprint_col, desig_col, comment_col = (
+        code_col, name_col, spec_col, qty_col, footprint_col, desig_col, comment_col, desc_col = (
             self._find_col(df.columns, keys, ex)
             for keys, ex in [
                 (["料号", "品号"], None),
@@ -599,6 +602,7 @@ class MaterialMatcherTool:
                 (["封装", "footprint"], ["原理图"]),
                 (["元件标号", "designator"], None),
                 (["comment"], None),
+                (["描述", "description", "明细"], None),
             ]
         )
 
@@ -609,6 +613,7 @@ class MaterialMatcherTool:
                 self._get_val(row, spec_col),
                 self._get_val(row, footprint_col),
             )
+            bom_description = self._get_val(row, desc_col)
             source_for_item = source_name
 
             if source_name == "电子物料清单" and PCB_PATTERN.search(spec):
@@ -638,6 +643,7 @@ class MaterialMatcherTool:
                         "name": name,
                         "spec": spec,
                         "footprint": footprint,
+                        "description_col": bom_description,
                         "qty": qty,
                         "source": source_for_item,
                     }
@@ -749,7 +755,14 @@ class MaterialMatcherTool:
         return {"score": base_score, "w_n": w_n, "w_s": w_s, "w_f": w_f}
 
     def _match_single_item(
-        self, bom_code: str, bom_name: str, bom_spec: str, bom_footprint: str, bom_qty: float, source: str
+        self,
+        bom_code: str,
+        bom_name: str,
+        bom_spec: str,
+        bom_footprint: str,
+        bom_description: str,
+        bom_qty: float,
+        source: str,
     ) -> Dict[str, Any]:
 
         bom_desc_raw = " ".join(filter(None, [str(bom_name), str(bom_spec), str(bom_footprint)])).strip()
@@ -783,10 +796,41 @@ class MaterialMatcherTool:
                         }
                     )
 
+        use_alt = source == "电子物料清单" and bool(bom_description)
+        bom_spec_alt_orig = ""
+        # 🚀 修复点：提前在外部作用域初始化为空列表，彻底消除潜在的 UnboundLocalError 风险
+        bom_spec_alt_variants = []
+        bom_variant_matrix_alt = []
+        orig_num_alt = set()
+        orig_zh_alt = set()
+
+        if use_alt:
+            bom_spec_alt_orig = self._clean_str_calc(self._clean_str_display(bom_description))
+            bom_spec_alt_variants = self._fission_text(bom_spec_alt_orig)
+
+            for vn in bom_name_variants:
+                for vs in bom_spec_alt_variants:
+                    if vn == bom_name_orig and vs == bom_spec_alt_orig:
+                        continue
+                    v_text = f"{vs}"
+                    v_tokens = set(TOKEN_PATTERN.findall(v_text))
+                    bom_variant_matrix_alt.append(
+                        {
+                            "n": vn,
+                            "s": vs,
+                            "f": "",
+                            "num": {t for t in v_tokens if NUM_PATTERN.search(t)},
+                            "zh": {t for t in v_tokens if ZH_PATTERN.search(t)},
+                        }
+                    )
+
+            orig_tokens_alt = set(TOKEN_PATTERN.findall(bom_spec_alt_orig))
+            orig_num_alt = {t for t in orig_tokens_alt if NUM_PATTERN.search(t)}
+            orig_zh_alt = {t for t in orig_tokens_alt if ZH_PATTERN.search(t)}
+
         expanded_text_pool = " ".join(bom_name_variants + bom_spec_variants + bom_footprint_variants)
         expanded_source_tokens = set(t.upper() for t in TOKEN_PATTERN.findall(expanded_text_pool))
 
-        # 💡 核心修复1：提前拉取映射库记忆
         history_dict = db_storage.get_deep_item(["bom_erp_mapping", bom_desc_raw], {})
         history_list = [
             {"erp_code": k, "hit_count": v.get("hit_count", 0)} for k, v in history_dict.items() if isinstance(v, dict)
@@ -800,7 +844,6 @@ class MaterialMatcherTool:
         for erp_item in self.erp_search_pool:
             e_code = str(erp_item["code"]).strip()
 
-            # 💡 核心修复2：免死金牌，只要是历史绑定的料号，无视前缀过滤规则，直接保送进比对候选池
             if top_history_code and top_history_code in (e_code, erp_item["search_str"]):
                 filtered_erp_pool.append(erp_item)
                 continue
@@ -827,6 +870,7 @@ class MaterialMatcherTool:
         debug_weights = {"w_n": 0.0, "w_s": 0.0, "w_f": 0.0}
 
         for erp_item in filtered_erp_pool:
+            # 方案 A (Comment + Footprint)
             res_orig = self._calculate_similarity(
                 bom_name_orig,
                 bom_spec_orig,
@@ -843,6 +887,7 @@ class MaterialMatcherTool:
 
             best_res = res_orig
             used_syn = False
+            used_alt = False  # 🚀 新增记录变量：该ERP物料是否靠独立描述打败了原方案
 
             if best_res["score"] < self.SCORE_GREEN and bom_variant_matrix:
                 for var in bom_variant_matrix:
@@ -865,6 +910,51 @@ class MaterialMatcherTool:
                         if best_res["score"] >= self.SCORE_GREEN:
                             break
 
+            # 方案 B (独立 Description)
+            if use_alt:
+                res_alt = self._calculate_similarity(
+                    bom_name_orig,
+                    bom_spec_alt_orig,
+                    "",
+                    erp_item["erp_name_orig"],
+                    erp_item["erp_spec_orig"],
+                    erp_item["erp_footprint_orig"],
+                    orig_num_alt,
+                    orig_zh_alt,
+                    erp_item["e_num_orig"],
+                    erp_item["e_zh_orig"],
+                    source,
+                )
+                best_res_alt = res_alt
+                used_syn_alt = False
+
+                if best_res_alt["score"] < self.SCORE_GREEN and bom_variant_matrix_alt:
+                    for var in bom_variant_matrix_alt:
+                        temp_res = self._calculate_similarity(
+                            var["n"],
+                            var["s"],
+                            var["f"],
+                            erp_item["erp_name_orig"],
+                            erp_item["erp_spec_orig"],
+                            erp_item["erp_footprint_orig"],
+                            var["num"],
+                            var["zh"],
+                            erp_item["e_num_orig"],
+                            erp_item["e_zh_orig"],
+                            source,
+                        )
+                        if temp_res["score"] > best_res_alt["score"]:
+                            best_res_alt = temp_res
+                            used_syn_alt = True
+                            if best_res_alt["score"] >= self.SCORE_GREEN:
+                                break
+
+                # 择优录取
+                if best_res_alt["score"] > best_res["score"]:
+                    best_res = best_res_alt
+                    used_syn = used_syn_alt
+                    used_alt = True
+
             score = best_res["score"]
             debug_weights = {"w_n": best_res["w_n"], "w_s": best_res["w_s"], "w_f": best_res["w_f"]}
             is_history = top_history_code in (erp_item["code"], erp_item["search_str"])
@@ -873,15 +963,22 @@ class MaterialMatcherTool:
 
             if score >= self.SCORE_MIN:
                 candidates.append(
-                    {**erp_item, "score": min(score, 100.0), "is_history": is_history, "used_syn": used_syn}
+                    {
+                        **erp_item,
+                        "score": min(score, 100.0),
+                        "is_history": is_history,
+                        "used_syn": used_syn,
+                        "used_alt": used_alt,  # 压入记录
+                    }
                 )
 
-        # 💡 核心修复3：同分时，历史记忆项具有绝对优先权（排在前面）
         candidates.sort(key=lambda x: (x["score"], x.get("is_history", False)), reverse=True)
-        is_memorized, is_synonym_boosted = False, False
+        is_memorized, is_synonym_boosted, is_alt_boosted = False, False, False
         if candidates:
             best_match, best_score = candidates[0], candidates[0]["score"]
-            is_memorized, is_synonym_boosted = best_match.get("is_history", False), best_match.get("used_syn", False)
+            is_memorized = best_match.get("is_history", False)
+            is_synonym_boosted = best_match.get("used_syn", False)
+            is_alt_boosted = best_match.get("used_alt", False)
 
         status = (
             2
@@ -891,23 +988,37 @@ class MaterialMatcherTool:
         )
         is_always_ignored = db_storage.get_deep_item(["bom_erp_ignored", bom_desc_raw], False)
 
+        # 🚀 修复点 2：在最终回传时，如果独立描述在算法中打败了原逻辑，则使用备用方案的词元作为前端渲染依据
+        if is_alt_boosted:
+            final_kw_spec = TOKEN_PATTERN.findall(bom_spec_alt_orig)
+            final_kw_footprint = []  # 描述方案不依赖封装词元
+            final_expanded_source_tokens = set(
+                t.upper() for t in TOKEN_PATTERN.findall(" ".join(bom_name_variants + bom_spec_alt_variants))
+            )
+        else:
+            final_kw_spec = TOKEN_PATTERN.findall(bom_spec_orig)
+            final_kw_footprint = TOKEN_PATTERN.findall(bom_footprint_orig)
+            final_expanded_source_tokens = expanded_source_tokens
+
         return {
             "source": source,
             "bom_code": bom_code_str,
             "bom_name": bom_name,
             "bom_spec": bom_spec,
             "bom_footprint": bom_footprint,
+            "bom_description": bom_description,
             "bom_desc": bom_desc_raw,
             "bom_qty": bom_qty,
             "kw_name": TOKEN_PATTERN.findall(bom_name_orig),
-            "kw_spec": TOKEN_PATTERN.findall(bom_spec_orig),
-            "kw_footprint": TOKEN_PATTERN.findall(bom_footprint_orig),
-            "expanded_source_tokens": expanded_source_tokens,
+            "kw_spec": final_kw_spec,  # 动态词元
+            "kw_footprint": final_kw_footprint,  # 动态词元
+            "expanded_source_tokens": final_expanded_source_tokens,  # 用于比对列的高亮渲染依据
             "debug_weights": debug_weights,
             "is_always_ignored": is_always_ignored,
             "is_direct": is_always_ignored,
             "is_memorized": is_memorized,
             "is_synonym_boosted": is_synonym_boosted,
+            "is_alt_boosted": is_alt_boosted,  # 用于前端 UI 渲染专属徽章标记
             "status": status,
             "best_match": best_match,
             "candidates": candidates[:5],
@@ -915,7 +1026,6 @@ class MaterialMatcherTool:
 
     async def _process_and_match(self):
         if self.erp_data is None or (self.non_elec_df is None and self.elec_df is None):
-            # ui.notify: nicegui(第三方UI框架) 的消息提示组件
             ui.notify("请至少上传一份物料清单数据与库存数据！", type="warning")
             return
 
@@ -928,13 +1038,11 @@ class MaterialMatcherTool:
         pool2 = self._extract_demands(self.elec_df, "电子物料清单") if self.elec_df is not None else []
 
         merged_dict = {}
-        # 提取最新填写的套数，兜底值为 1
         sets_multiplier = int(self.assessment_sets) if self.assessment_sets else 1
 
         for item in pool1 + pool2:
-            key = f"{item['source']}_{item['code']}_{item['name']}_{item['spec']}_{item['footprint']}".upper().strip()
+            key = f"{item['source']}_{item['code']}_{item['name']}_{item['spec']}_{item['footprint']}_{item.get('description_col', '')}".upper().strip()
 
-            # 🚨 核心改动：用量 = 单套用量 × 评估套数
             total_qty_for_item = item["qty"] * sets_multiplier
 
             if key in merged_dict:
@@ -955,7 +1063,6 @@ class MaterialMatcherTool:
             self._check_export_status()
             return
 
-        # asyncio.get_running_loop: Python 异步库方法，获取当前事件循环，用于将计算密集型任务放入线程池
         results, loop = [], asyncio.get_running_loop()
         for i, item in enumerate(self.unified_bom_pool):
             res = await loop.run_in_executor(
@@ -965,20 +1072,17 @@ class MaterialMatcherTool:
                 item["name"],
                 item["spec"],
                 item["footprint"],
+                item.get("description_col", ""),
                 item["qty"],
                 item["source"],
             )
             results.append(res)
 
-            # 🚨 进度条文本状态派发
             if i % 3 == 0 or i == total_items - 1:
                 progress_value = (i + 1) / total_items
-                self.calc_progress = round(progress_value, 4)
-                # 派发内部百分比
+                self.calc_progress = round(progress_value, 2)
                 self.calc_progress_percent = f"{self.calc_progress * 100:.1f}%"
-                # 派发底部分子形式进度
                 self.calc_progress_text = f"后台多线程疾速核算：已完成 {i + 1} / {total_items}"
-                # asyncio.sleep (Python内置): 主动让出 CPU 控制权，保障主线程 UI 渲染刷新
                 await asyncio.sleep(0.001)
 
         self.match_results = results
@@ -988,9 +1092,6 @@ class MaterialMatcherTool:
         self._check_export_status()
         self.render_result_grid.refresh()  # type: ignore
 
-    # ==========================================
-    # 核心渲染引擎
-    # ==========================================
     def _generate_diff_html(self, expanded_source_tokens: Set[str], target: str) -> str:
         if not target:
             return "<span class='text-gray-400'>-</span>"
@@ -1094,6 +1195,12 @@ class MaterialMatcherTool:
             icon_color = {0: "text-red-500", 1: "text-yellow-500", 2: "text-green-500"}[res["status"]]
             status_text = {0: "未匹配", 1: "待确认", 2: "已确认"}[res["status"]]
 
+        # 🚀 核心修复：调用 container.classes 的 remove 参数，显式剥离所有可能的旧状态背景色。
+        # 避免多次状态切换导致 CSS 类名无限堆叠和优先级覆盖失效。
+        container.classes(
+            remove="bg-red-50/40 hover:bg-red-100/40 bg-yellow-50/40 hover:bg-yellow-100/40 bg-green-50/40 hover:bg-green-100/40 bg-gray-50 opacity-70"
+        )
+
         with container.classes(f"w-full py-2 px-2 items-center flex-nowrap transition-colors {row_bg}"):
             with ui.row().classes(f"{self.COL_STATUS} items-center justify-center gap-1 shrink-0 pt-1"):
                 ui.icon(icon_name).classes(f"text-lg {icon_color}")
@@ -1101,10 +1208,10 @@ class MaterialMatcherTool:
 
             with ui.column().classes(f"{self.COL_DESC} px-2 -space-y-3 shrink-0"):
                 ui.label(res["bom_desc"]).classes("text-sm font-bold break-words line-clamp-2")
-                # ui.label(f"[{res['source']}]").classes("text-[10px] text-gray-400")
 
             if SHOW_EXTRACTED_KEYWORDS:
                 with ui.column().classes(f"{self.COL_KW_NAME} px-1 shrink-0"):
+                    # ui.html: nicegui(第三方UI框架) 用于渲染原生HTML节点组件
                     ui.html(self._generate_tokens_html(res.get("kw_name", []), "blue"), sanitize=False).classes(
                         "break-words w-full leading-tight"
                     )
@@ -1137,6 +1244,11 @@ class MaterialMatcherTool:
                                     "text-[9px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 px-1 rounded"
                                 )
 
+                            if res.get("is_alt_boosted"):
+                                ui.label("📄 独立描述优先").classes(
+                                    "text-[9px] font-bold text-teal-600 bg-teal-50 border border-teal-200 px-1 rounded"
+                                )
+
                             if res.get("is_memorized"):
                                 ui.label("🧠 映射库记忆").classes(
                                     "text-[9px] font-bold text-orange-600 bg-orange-50 border border-orange-200 px-1 rounded"
@@ -1144,20 +1256,14 @@ class MaterialMatcherTool:
                     else:
                         ui.label("0.0% (无疑似项)").classes("text-xs text-red-500 font-bold")
 
-            # 获取统一计算的请购量
-            # final_qty = self._calculate_final_purchase_qty(res)
-
             with ui.column().classes(f"{self.COL_QTY} items-center px-1 shrink-0 pt-1"):
-                # 顶部固定显示：当前清单行的“单项需求量”
                 ui.label(f"{res['bom_qty']}").classes("text-sm text-gray-800 font-bold leading-tight")
 
                 if is_direct:
                     ui.label("直购全量").classes("text-[10px] text-gray-500 font-bold mt-1")
                 elif res["status"] == 2 and res.get("best_match"):
-                    # 🚀 核心优化：动态统计当前所有指向该 ERP 料号的总需求量
                     target_erp_code = res["best_match"].get("code", "")
 
-                    # 遍历整个 match_results，累加所有状态为已确认(2)且非直购的同款 ERP 需求
                     global_demand = sum(
                         r["bom_qty"]
                         for r in self.match_results
@@ -1170,10 +1276,8 @@ class MaterialMatcherTool:
                     safety_stock = res["best_match"].get("safety_stock", 0.0)
                     effective_stock = stock + safety_stock
 
-                    # 实际缺口 = 全局总需求 - 有效库存
                     global_shortage = max(0.0, global_demand - effective_stock)
 
-                    # 如果有多行 BOM 指向同一个 ERP，增加“合并总需”的视觉提示
                     if global_demand > res["bom_qty"]:
                         ui.label(f"总需:{global_demand}").classes(
                             "text-[9px] text-blue-700 font-bold mt-1 leading-tight"
@@ -1196,15 +1300,43 @@ class MaterialMatcherTool:
                         if always:
                             r["is_always_ignored"] = False
                             await db_storage.atomic_deep_update(["bom_erp_ignored", r["bom_desc"]], lambda _: False)
+                            # ui.notify: nicegui(第三方UI框架) 用于在界面弹出提示通知
                             ui.notify("已取消永远直购", type="info")
                         refresh_row()
 
+                    # ui.button: nicegui(第三方UI框架) 用于生成可点击的交互按钮组件
                     ui.button("取消直购", on_click=toggle_off).props(self.BTN_FLAT)
                     ui.space()
                 else:
+
+                    async def undo_correction(r=res):
+                        if "backup_state" in r:
+                            backup = r.pop("backup_state")
+                            if backup.get("is_memorized") and backup.get("best_match"):
+                                code = backup["best_match"].get("code") or backup["best_match"].get("search_str")
+                                if code:
+                                    await self._update_memory_dict(r["bom_desc"], code)
+                            r.update(backup)
+                            refresh_row()
+
                     if res["status"] == 2:
 
                         async def on_manual_correct(r=res):
+                            if not r.get("manually_mapped", False):
+                                r["backup_state"] = {
+                                    "status": r["status"],
+                                    "best_match": r.get("best_match"),
+                                    "is_memorized": r.get("is_memorized"),
+                                    "is_synonym_boosted": r.get("is_synonym_boosted"),
+                                    "is_alt_boosted": r.get("is_alt_boosted"),
+                                    "candidates": r.get("candidates"),
+                                    "kw_spec": r.get("kw_spec"),
+                                    "kw_footprint": r.get("kw_footprint"),
+                                    "expanded_source_tokens": r.get("expanded_source_tokens"),
+                                }
+
+                            r.pop("manually_mapped", None)
+
                             if r.get("is_memorized"):
                                 await db_storage.del_deep_item(
                                     [
@@ -1219,10 +1351,14 @@ class MaterialMatcherTool:
                                     r.get("bom_name", ""),
                                     r.get("bom_spec", ""),
                                     r.get("bom_footprint", ""),
+                                    r.get("bom_description", ""),
                                     r.get("bom_qty", 0.0),
                                     r.get("source", ""),
                                 )
+                                backup = r.pop("backup_state", None)
                                 r.update(new_state)
+                                if backup:
+                                    r["backup_state"] = backup
                             else:
                                 r["status"] = 0
                                 r["best_match"] = None
@@ -1232,9 +1368,8 @@ class MaterialMatcherTool:
                         ui.button(btn_text, on_click=on_manual_correct).props(self.BTN_WARNING)
 
                     elif res["status"] == 1:
-                        # 检查当前是否处于“请求手动输入”的临时状态
                         if res.get("show_manual_input", False):
-                            # nicegui: 渲染与状态0（未匹配）相同的输入框组件
+                            # ui.input: nicegui(第三方UI框架) 用于生成单行文本输入框
                             manual_input = (
                                 ui.input("请输入确切品号").classes("w-28 text-xs bg-white").props("dense outlined")
                             )
@@ -1246,28 +1381,27 @@ class MaterialMatcherTool:
                                         (item for item in self.erp_search_pool if item["code"] == code), None
                                     )
                                     if not erp_item:
-                                        # nicegui: 弹出负面提示通知
                                         ui.notify("未找到该品号！", type="negative")
                                         return
                                     await self._update_memory_dict(r["bom_desc"], code)
 
                                     bind_item = erp_item.copy()
-                                    bind_item["score"] = 100.0  # 补丁：赋予100分防止UI渲染错误
+                                    bind_item["score"] = 100.0
 
-                                    # 更新状态并清除手动输入标记
+                                    r.pop("backup_state", None)
                                     r.update(
                                         {
                                             "status": 2,
                                             "best_match": bind_item,
                                             "is_memorized": True,
                                             "show_manual_input": False,
+                                            "manually_mapped": True,
                                         }
                                     )
                                     refresh_row()
 
                             ui.button("强制绑定", on_click=on_bind_yellow).props(self.BTN_DANGER)
 
-                            # 反悔操作：取消手动输入，切回下拉推荐列表
                             def cancel_manual(r=res):
                                 r["show_manual_input"] = False
                                 refresh_row()
@@ -1275,8 +1409,7 @@ class MaterialMatcherTool:
                             ui.button("返回推荐", on_click=cancel_manual).props(self.BTN_FLAT)
 
                         else:
-                            # 默认显示：算法推荐下拉框
-                            # nicegui: 下拉选择组件，此处构建候选物料索引字典
+                            # ui.select: nicegui(第三方UI框架) 用于生成下拉单选框组件
                             dropdown = (
                                 ui.select({i: c["display"] for i, c in enumerate(res["candidates"])}, value=0)
                                 .classes("w-[140px] text-xs bg-white")
@@ -1287,17 +1420,25 @@ class MaterialMatcherTool:
                                 if drop.value is not None:
                                     sel = cands[drop.value]
                                     await self._update_memory_dict(r["bom_desc"], sel["code"] or sel["search_str"])
-                                    r.update({"status": 2, "best_match": sel, "is_memorized": True})
+
+                                    r.pop("backup_state", None)
+                                    r.update(
+                                        {"status": 2, "best_match": sel, "is_memorized": True, "manually_mapped": True}
+                                    )
                                     refresh_row()
 
                             ui.button("映射", on_click=on_confirm).props(self.BTN_PRIMARY)
 
-                            # 切换操作：点击后进入手动输入模式
                             def switch_to_manual(r=res):
                                 r["show_manual_input"] = True
                                 refresh_row()
 
                             ui.button("指定", on_click=switch_to_manual).props(self.BTN_OUTLINE)
+
+                        if res.get("backup_state"):
+                            ui.button("撤销纠错", on_click=undo_correction).props(
+                                "flat color=gray size=sm text-gray-500 px-1"
+                            )
 
                     elif res["status"] == 0:
                         manual_input = (
@@ -1314,12 +1455,25 @@ class MaterialMatcherTool:
                                 await self._update_memory_dict(r["bom_desc"], code)
 
                                 bind_item = erp_item.copy()
-                                bind_item["score"] = 100.0  # 补丁：赋予100分防止UI渲染错误
+                                bind_item["score"] = 100.0
 
-                                r.update({"status": 2, "best_match": bind_item, "is_memorized": True})
+                                r.pop("backup_state", None)
+                                r.update(
+                                    {
+                                        "status": 2,
+                                        "best_match": bind_item,
+                                        "is_memorized": True,
+                                        "manually_mapped": True,
+                                    }
+                                )
                                 refresh_row()
 
                         ui.button("强制绑定", on_click=on_bind).props(self.BTN_DANGER)
+
+                        if res.get("backup_state"):
+                            ui.button("撤销纠错", on_click=undo_correction).props(
+                                "flat color=gray size=sm text-gray-500 px-1"
+                            )
 
                     ui.space()
 
