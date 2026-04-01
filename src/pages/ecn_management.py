@@ -250,23 +250,23 @@ async def ecn_management_page():
 
         dialog.clear()
         with dialog, ui.card().classes("w-[900px] max-w-full flex flex-col"):
-            ui.label("修改底层数据变更方案" if is_edit else "添加底层数据变更方案").classes(
+            ui.label("修改概述数据变更方案" if is_edit else "添加概述数据变更方案").classes(
                 "text-lg font-bold text-blue-900 shrink-0"
             )
             with ui.column().classes("w-full gap-2 flex-1 min-h-0 overflow-y-auto pr-2"):
                 with ui.card().classes("w-full p-3 bg-gray-50 border border-gray-200 shadow-sm gap-2"):
-                    ui.label("闭环映射关联 (必填)").classes("text-xs font-bold text-indigo-700")
+                    ui.label("对应关联 (必填)").classes("text-xs font-bold text-indigo-700")
                     # bind_value: NiceGUI框架实现前后端数据双向绑定的核心方法
-                    ui.select(options=req_options, multiple=True, label="关联解决的要求序号").classes(
+                    ui.select(options=req_options, multiple=True, label="对应解决的要求序号").classes(
                         "w-full"
                     ).bind_value(sel_state, "req_idxs")
                     with ui.row().classes("w-full gap-2"):
                         if req_docs:
-                            ui.select(options=req_docs, multiple=True, label="关联文档/图纸 (评审勾选项)").classes(
+                            ui.select(options=req_docs, multiple=True, label="对应勾选的文档/图纸项").classes(
                                 "flex-1"
                             ).bind_value(sel_state, "linked_docs")
                         if req_mats:
-                            ui.select(options=req_mats, multiple=True, label="关联物料动作 (评审勾选项)").classes(
+                            ui.select(options=req_mats, multiple=True, label="对应勾选的物料动作").classes(
                                 "flex-1"
                             ).bind_value(sel_state, "linked_materials")
 
@@ -349,7 +349,7 @@ async def ecn_management_page():
 
                     chip_type = sel_state["old_data"].get("type", "text")
                     with dynamic_form_container:
-                        ui.label(f"检测到底层数据类型为: {chip_type.upper()}").classes(
+                        ui.label(f"检测到概述数据类型为: {chip_type.upper()}").classes(
                             "text-xs font-bold text-teal-700 bg-teal-50 px-2 py-1 rounded"
                         )
                         with ui.grid(columns=2).classes("w-full gap-4"):
@@ -465,19 +465,19 @@ async def ecn_management_page():
         with dialog, ui.card().classes("w-[900px] max-w-full"):
             ui.label("修改文本方案" if is_edit else "添加文本方案").classes("text-lg font-bold text-blue-900")
             with ui.card().classes("w-full p-3 bg-gray-50 border border-gray-200 shadow-sm gap-2 mt-2"):
-                ui.label("闭环映射关联 (必填)").classes("text-xs font-bold text-indigo-700")
-                ui.select(options=req_options, multiple=True, label="关联解决的要求序号").classes("w-full").bind_value(
+                ui.label("对应关联 (必填)").classes("text-xs font-bold text-indigo-700")
+                ui.select(options=req_options, multiple=True, label="对应解决的要求序号").classes("w-full").bind_value(
                     sel_state, "req_idxs"
                 )
                 with ui.row().classes("w-full gap-2"):
                     if req_docs:
-                        ui.select(options=req_docs, multiple=True, label="关联文档/图纸").classes("flex-1").bind_value(
-                            sel_state, "linked_docs"
-                        )
+                        ui.select(options=req_docs, multiple=True, label="对应勾选的文档/图纸项").classes(
+                            "flex-1"
+                        ).bind_value(sel_state, "linked_docs")
                     if req_mats:
-                        ui.select(options=req_mats, multiple=True, label="关联物料动作").classes("flex-1").bind_value(
-                            sel_state, "linked_materials"
-                        )
+                        ui.select(options=req_mats, multiple=True, label="对应勾选的物料动作").classes(
+                            "flex-1"
+                        ).bind_value(sel_state, "linked_materials")
 
             ui.select(["物料变更", "图纸更新", "工艺调整", "SOP修改", "其它"], label="方案分类").classes(
                 "w-48 mt-4"
@@ -1038,7 +1038,7 @@ async def ecn_management_page():
                                     ):
                                         with ui.row().classes("gap-2"):
                                             ui.button(
-                                                "添加底层修改方案",
+                                                "添加概述修改方案",
                                                 icon="auto_fix_high",
                                                 on_click=lambda: open_overview_change_dialog(
                                                     local_data, current_user, handle_save_item
@@ -1160,7 +1160,7 @@ async def ecn_management_page():
                                                     with ui.row().classes("gap-2 items-center flex-wrap"):
                                                         ui.badge(str(idx + 1), color="grey-7")
                                                         ui.badge(
-                                                            "研发底层修改"
+                                                            "研发概述修改"
                                                             if item["type"] == "overview_update"
                                                             else f"文本/工艺: {item.get('change_type', '')}",
                                                             color="blue"
@@ -1175,13 +1175,13 @@ async def ecn_management_page():
                                                             )
                                                         if item.get("linked_docs"):
                                                             ui.label(
-                                                                f"映射文档: {', '.join(item['linked_docs'])}"
+                                                                f"对应勾选文档: {', '.join(item['linked_docs'])}"
                                                             ).classes(
                                                                 "text-xs font-bold text-indigo-800 bg-indigo-100 px-1 rounded"
                                                             )
                                                         if item.get("linked_materials"):
                                                             ui.label(
-                                                                f"映射物料: {', '.join(item['linked_materials'])}"
+                                                                f"对应勾选物料: {', '.join(item['linked_materials'])}"
                                                             ).classes(
                                                                 "text-xs font-bold text-pink-800 bg-pink-100 px-1 rounded"
                                                             )
