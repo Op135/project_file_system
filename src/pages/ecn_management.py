@@ -173,7 +173,7 @@ def generate_initial_ecn_data(applicant: str, role: str, all_ecns: dict) -> dict
 async def ecn_management_page():
     ui.add_head_html("""
         <style>
-            .q-dialog__inner--minimized>div { max-width: 1200px; }
+            .q-dialog__inner--minimized>div { max-width: 4000px; }
             .pdf-border { border: 1px solid #cbd5e1; }
             .pdf-border-b { border-bottom: 1px solid #cbd5e1; }
             .pdf-border-r { border-right: 1px solid #cbd5e1; }
@@ -193,7 +193,7 @@ async def ecn_management_page():
 
     # ui.dialog: NiceGUI框架提供的模态对话框组件
     dialog = ui.dialog().props("persistent")
-    root_dialog = ui.dialog().classes("w-full max-w-[95vw]")
+    root_dialog = ui.dialog().props("maximized persistent")
 
     # ==========================================
     # 独立解耦弹窗 1：底层数据变更方案设计
@@ -201,9 +201,10 @@ async def ecn_management_page():
     def open_overview_change_dialog(ecn_data, current_user, on_save_callback, edit_item=None):
         is_edit = edit_item is not None
         edit_data = edit_item or {}
+        edit_projects = edit_data.get("projects") or ([edit_data.get("project")] if edit_data.get("project") else [])
 
         sel_state = {
-            "project": edit_data.get("project"),
+            "projects": edit_projects,
             "role": edit_data.get("role"),
             "label": edit_data.get("label"),
             "chip_id": edit_data.get("chip_id"),
@@ -236,7 +237,7 @@ async def ecn_management_page():
 
         def get_labels(r):
             return {
-                i["label"]: f"{i.get('title', '未命名')} ({i['label']})"
+                i["label"]: f"{i.get('title', '未命名')}"
                 for gl in app.storage.general.get("over_config_data", {}).get(r, {}).values()
                 for i in gl
             }
@@ -270,75 +271,74 @@ async def ecn_management_page():
                                 "flex-1"
                             ).bind_value(sel_state, "linked_materials")
 
-                def on_proj_change(e):
-                    if is_edit:
-                        return
-                    sel_state["project"] = e.value
-                    sel_chip.set_options(get_chips(e.value, sel_state["label"]))
+                def get_primary_project():
+                    projects = sel_state.get("projects", [])
+                    return projects[0] if projects else None
+
+                def refresh_chip_options():
+                    primary_project = get_primary_project()
+                    if primary_project and sel_state["label"]:
+                        sel_chip.set_options(get_chips(primary_project, sel_state["label"]))
+                    else:
+                        sel_chip.set_options({})
                     sel_chip.set_value(None)
+                    sel_state["chip_id"] = None
+                    sel_state["old_data"] = {}
+                    sel_state["new_data"] = {}
+                    render_dynamic_form()
+
+                def on_proj_change(e):
+                    sel_state["projects"] = e.value or []
+                    if not is_edit:
+                        refresh_chip_options()
 
                 def on_role_change(e):
-                    if is_edit:
-                        return
                     sel_state["role"] = e.value
                     sel_label.set_options(get_labels(e.value))
                     sel_label.set_value(None)
+                    sel_state["label"] = None
+                    refresh_chip_options()
 
                 def on_label_change(e):
-                    if is_edit:
-                        return
                     sel_state["label"] = e.value
-                    sel_chip.set_options(get_chips(sel_state["project"], e.value))
-                    sel_chip.set_value(None)
+                    refresh_chip_options()
 
                 def on_chip_change(e):
-                    if is_edit:
-                        return
                     sel_state["chip_id"] = e.value
-                    if all([sel_state["project"], sel_state["label"], sel_state["chip_id"]]):
+                    primary_project = get_primary_project()
+                    if all([primary_project, sel_state["label"], sel_state["chip_id"]]):
                         old_chip_data = db_storage.get_deep_item(
-                            [f"{sel_state['project']}_over_data", sel_state["label"], sel_state["chip_id"]], {}
+                            [f"{primary_project}_over_data", sel_state["label"], sel_state["chip_id"]], {}
                         )
                         sel_state["old_data"] = copy.deepcopy(old_chip_data)
                         sel_state["new_data"] = copy.deepcopy(old_chip_data)
                         render_dynamic_form()
 
                 with ui.grid(columns=2).classes("w-full gap-2 mt-2"):
-                    sel_proj = (
-                        ui.select(
-                            options=target_projects,
-                            label="1. 目标项目",
-                            value=sel_state["project"],
-                            on_change=on_proj_change,
-                        )
-                        .classes("w-full")
-                        .props(f"readonly={is_edit}")
-                    )
-                    sel_role = (
-                        ui.select(options=roles, label="2. 技术维度", value=sel_state["role"], on_change=on_role_change)
-                        .classes("w-full")
-                        .props(f"readonly={is_edit}")
-                    )
-                    sel_label = (
-                        ui.select(
-                            options=get_labels(sel_state["role"]) if is_edit else {},
-                            label="3. 具体参数",
-                            value=sel_state["label"],
-                            on_change=on_label_change,
-                        )
-                        .classes("w-full")
-                        .props(f"readonly={is_edit}")
-                    )
-                    sel_chip = (
-                        ui.select(
-                            options=get_chips(sel_state["project"], sel_state["label"]) if is_edit else {},
-                            label="4. 原数据",
-                            value=sel_state["chip_id"],
-                            on_change=on_chip_change,
-                        )
-                        .classes("w-full")
-                        .props(f"readonly={is_edit}")
-                    )
+                    sel_proj = ui.select(
+                        options=target_projects,
+                        label="1. 目标项目",
+                        value=sel_state["projects"],
+                        multiple=True,
+                        on_change=on_proj_change,
+                    ).classes("w-full")
+                    sel_role = ui.select(
+                        options=roles, label="2. 技术维度", value=sel_state["role"], on_change=on_role_change
+                    ).classes("w-full")
+                    sel_label = ui.select(
+                        options=get_labels(sel_state["role"]) if sel_state["role"] else {},
+                        label="3. 具体参数",
+                        value=sel_state["label"],
+                        on_change=on_label_change,
+                    ).classes("w-full")
+                    sel_chip = ui.select(
+                        options=get_chips(get_primary_project(), sel_state["label"])
+                        if get_primary_project() and sel_state["label"]
+                        else {},
+                        label="4. 原数据",
+                        value=sel_state["chip_id"],
+                        on_change=on_chip_change,
+                    ).classes("w-full")
 
                 dynamic_form_container = ui.column().classes("w-full gap-2 mt-2")
 
@@ -410,6 +410,8 @@ async def ecn_management_page():
                 render_dynamic_form()
 
             async def save_item():
+                if not sel_state["projects"]:
+                    return ui.notify("请至少选择一个目标项目", type="warning")
                 if not sel_state["new_data"].get("content", "").strip():
                     return ui.notify("请完善新内容", type="warning")
                 payload = {
@@ -419,7 +421,8 @@ async def ecn_management_page():
                     "req_idxs": sel_state["req_idxs"],
                     "linked_docs": sel_state["linked_docs"],
                     "linked_materials": sel_state["linked_materials"],
-                    "project": sel_state["project"],
+                    "projects": copy.deepcopy(sel_state["projects"]),
+                    "project": sel_state["projects"][0],
                     "role": sel_state["role"],
                     "label": sel_state["label"],
                     "chip_id": sel_state["chip_id"],
@@ -569,7 +572,10 @@ async def ecn_management_page():
 
         # ------------------- 渲染 UI -------------------
         root_dialog.clear()
-        with root_dialog, ui.card().classes("w-full h-[90vh] flex flex-col p-0 overflow-hidden bg-gray-100 -space-y-3"):
+        with (
+            root_dialog,
+            ui.card().classes("w-full h-[100vh] flex flex-col p-0 overflow-hidden bg-gray-100 -space-y-3"),
+        ):
             with ui.row().classes(
                 "w-full bg-white px-4 py-2 border-b border-gray-300 justify-between items-start shrink-0"
             ):
@@ -589,8 +595,9 @@ async def ecn_management_page():
             # ui.tabs: NiceGUI框架用于创建选项卡导航容器的类
             with ui.tabs().classes("w-full shrink-0 bg-white") as tabs:
                 tab_ecr = ui.tab("1. ECR-申请", icon="assignment")
-                tab_ecn = ui.tab("2. ECN-方案", icon="fact_check")
-                tab_exec = ui.tab("3. ECN-执行", icon="assignment_turned_in")
+                tab_impact = ui.tab("2. ECN-影响", icon="fact_check")
+                tab_scheme = ui.tab("3. ECN-方案", icon="design_services")
+                tab_exec = ui.tab("4. ECN-执行", icon="assignment_turned_in")
                 tab_workflow = ui.tab("审批记录", icon="timeline")
 
             is_ecr_editable = is_new or (
@@ -602,7 +609,7 @@ async def ecn_management_page():
                 # --- [TAB 1] ECR 申请表单 ---
                 with ui.tab_panel(tab_ecr).classes("p-0 bg-transparent"):
                     with ui.column().classes(
-                        "gap-0 p-0 bg-white pdf-border shadow-sm w-full max-w-[1000px] mx-auto h-auto"
+                        "gap-0 p-0 bg-white pdf-border shadow-sm w-full max-w-[1500px] mx-auto h-auto"
                     ):
                         ui.label("ECR-申请").classes(
                             "text-lg font-bold bg-blue-100 text-blue-900 w-full p-1 pdf-border-b text-center tracking-wider"
@@ -816,10 +823,10 @@ async def ecn_management_page():
                                 f"outlined auto-grow {'readonly bg-gray-100' if not is_ecr_editable else 'bg-white'}"
                             )
 
-                # --- [TAB 2] ECN 评审表单 ---
-                with ui.tab_panel(tab_ecn).classes("gap-0 p-0 max-w-[1000px] mx-auto"):
+                # --- [TAB 2] ECN 影响表单 ---
+                with ui.tab_panel(tab_impact).classes("gap-0 p-0 max-w-[1500px] mx-auto"):
                     if wf["current_phase"] == "ECR_PHASE" and not is_new:
-                        ui.label("当前处于 ECR 申请阶段，ECN 方案将在评审通过后由工程师协同填写。").classes(
+                        ui.label("当前处于 ECR 申请阶段，ECN 影响将在评审通过后由工程师协同填写。").classes(
                             "text-gray-500 m-8 text-center bg-white p-2 border rounded"
                         )
                     elif is_new:
@@ -828,7 +835,7 @@ async def ecn_management_page():
                         )
                     else:
                         with ui.card().classes("w-full p-0 pdf-border bg-white shadow-sm"):
-                            ui.label("ECN-评审").classes(
+                            ui.label("ECN-影响").classes(
                                 "text-lg font-bold bg-indigo-100 text-indigo-900 w-full p-1 pdf-border-b text-center tracking-wider"
                             )
 
@@ -1030,6 +1037,22 @@ async def ecn_management_page():
                                         f"{'disable' if not is_scheming_phase else ''} dense inline"
                                     ).on_value_change(auto_save_review)
 
+                # --- [TAB 3] ECN 方案表单 ---
+                with ui.tab_panel(tab_scheme).classes("gap-0 p-0 max-w-[1500px] mx-auto"):
+                    if wf["current_phase"] == "ECR_PHASE" and not is_new:
+                        ui.label("当前处于 ECR 申请阶段，ECN 方案将在评审通过后由工程师协同填写。").classes(
+                            "text-gray-500 m-8 text-center bg-white p-2 border rounded"
+                        )
+                    elif is_new:
+                        ui.label("请先完成 ECR 申请并发起流程。").classes(
+                            "text-gray-500 m-8 text-center bg-white p-2 border rounded"
+                        )
+                    else:
+                        with ui.card().classes("w-full p-0 pdf-border bg-white shadow-sm"):
+                            ui.label("ECN-方案").classes(
+                                "text-lg font-bold bg-blue-100 text-blue-900 w-full p-1 pdf-border-b text-center tracking-wider"
+                            )
+
                             with ui.column().classes("w-full p-2 gap-3 bg-blue-50/30"):
                                 with ui.row().classes("w-full justify-between items-center"):
                                     ui.label("产品设计与工艺变更方案明细").classes("font-bold text-gray-800 text-lg")
@@ -1060,7 +1083,7 @@ async def ecn_management_page():
                                     "w-full p-2 bg-white rounded border border-gray-200 items-center justify-between"
                                 ):
                                     with ui.row().classes("gap-2 items-center"):
-                                        ui.label("提供人员确认状态:").classes("text-sm font-bold text-gray-600")
+                                        ui.label("提供人员确认状态").classes("text-sm font-bold text-gray-600")
                                         parts_container = ui.row().classes("gap-1")
 
                                         def render_parts():
@@ -1073,7 +1096,7 @@ async def ecn_management_page():
                                                         f"{p}: {'已确认' if status == 'confirmed' else '编写中'}",
                                                         color="green" if status == "confirmed" else "orange",
                                                         icon="check_circle" if status == "confirmed" else "edit",
-                                                    ).props("size=sm")
+                                                    ).props("size=sm").classes("text-white")
 
                                         render_parts()
 
@@ -1143,6 +1166,12 @@ async def ecn_management_page():
                                     render_my_actions()
                                     render_items()
 
+                                def get_item_projects(item):
+                                    projects = item.get("projects")
+                                    if projects:
+                                        return [p for p in projects if p]
+                                    return [item.get("project")] if item.get("project") else []
+
                                 def render_items():
                                     item_container.clear()
                                     with item_container:
@@ -1160,32 +1189,30 @@ async def ecn_management_page():
                                                     with ui.row().classes("gap-2 items-center flex-wrap"):
                                                         ui.badge(str(idx + 1), color="grey-7")
                                                         ui.badge(
-                                                            "研发概述修改"
+                                                            "概述修改"
                                                             if item["type"] == "overview_update"
                                                             else f"文本/工艺: {item.get('change_type', '')}",
                                                             color="blue"
                                                             if item["type"] == "overview_update"
                                                             else "teal",
                                                         )
+                                                        ui.label(item["author"]).classes(
+                                                            "text-xs text-white bg-cyan-500 px-1 rounded"
+                                                        )
                                                         if item.get("req_idxs"):
                                                             ui.label(
                                                                 f"解决要求: {', '.join(map(str, item['req_idxs']))}"
-                                                            ).classes(
-                                                                "text-xs font-bold text-amber-800 bg-amber-100 px-1 rounded"
-                                                            )
+                                                            ).classes("text-xs text-white bg-lime-500 px-1 rounded")
                                                         if item.get("linked_docs"):
                                                             ui.label(
                                                                 f"对应勾选文档: {', '.join(item['linked_docs'])}"
-                                                            ).classes(
-                                                                "text-xs font-bold text-indigo-800 bg-indigo-100 px-1 rounded"
-                                                            )
+                                                            ).classes("text-xs text-white bg-orange-500 px-1 rounded")
                                                         if item.get("linked_materials"):
                                                             ui.label(
                                                                 f"对应勾选物料: {', '.join(item['linked_materials'])}"
                                                             ).classes(
-                                                                "text-xs font-bold text-pink-800 bg-pink-100 px-1 rounded"
+                                                                "text-xs font-bold text-white bg-red-400 px-1 rounded"
                                                             )
-                                                    ui.label(f"作者: {item['author']}").classes("text-xs text-gray-500")
 
                                                     if (
                                                         is_scheming_phase
@@ -1211,8 +1238,9 @@ async def ecn_management_page():
 
                                                 with ui.column().classes("w-full p-3 gap-1 bg-white"):
                                                     if item["type"] == "overview_update":
+                                                        item_projects = get_item_projects(item)
                                                         ui.label(
-                                                            f"【{item.get('project')} - {item.get('role')} - {item.get('label')}】"
+                                                            f"【{', '.join(item_projects)} - {item.get('role')} - {item.get('label')}】"
                                                         ).classes("text-xs font-bold text-blue-900")
                                                         with ui.row().classes("w-full items-start gap-2"):
                                                             ui.label(
@@ -1256,16 +1284,33 @@ async def ecn_management_page():
 
                                 async def remove_item(item_to_remove):
                                     local_data["change_items"].remove(item_to_remove)
+                                    author = item_to_remove.get("author")
+                                    if author and not any(
+                                        existing_item.get("author") == author
+                                        for existing_item in local_data["change_items"]
+                                    ):
+                                        parts.pop(author, None)
+                                        await db_storage.set_deep_item(
+                                            [
+                                                "ecn_management_data",
+                                                local_data["ecn_id"],
+                                                "workflow",
+                                                "scheme_participants",
+                                            ],
+                                            parts,
+                                        )
                                     await db_storage.set_deep_item(
                                         ["ecn_management_data", local_data["ecn_id"], "change_items"],
                                         local_data["change_items"],
                                     )
+                                    render_parts()
+                                    render_my_actions()
                                     render_items()
 
                                 render_items()
 
-                # --- [TAB 3] ECN 执行与试产 ---
-                with ui.tab_panel(tab_exec).classes("gap-4 p-0 max-w-[1000px] mx-auto"):
+                # --- [TAB 4] ECN 执行与试产 ---
+                with ui.tab_panel(tab_exec).classes("gap-4 p-0 max-w-[1500px] mx-auto"):
                     if wf["current_state"] in [ECNState.DRAFT, ECNState.ECR_REVIEWING, ECNState.REJECTED]:
                         ui.label("当前尚未进入执行环节。").classes(
                             "text-gray-500 m-8 text-center bg-white p-2 border rounded"
@@ -1373,35 +1418,33 @@ async def ecn_management_page():
             ):
                 if is_draft_or_reject:
                     if basic["applicant"] == current_user or is_new:
-                        ui.button("保存为草稿", on_click=lambda: execute_db_action("save_draft")).props(
-                            "color=grey-7 size=lg"
-                        )
+                        ui.button("保存为草稿", on_click=lambda: execute_db_action("save_draft")).props("color=grey-7")
                         ui.button("发起/重新发起 ECR", on_click=lambda: execute_db_action("submit_ecr")).props(
-                            "color=primary size=lg"
+                            "color=primary"
                         )
                 else:
                     is_pending_user = current_role in wf["pending_roles"]
                     if wf["current_state"] == ECNState.ECR_REVIEWING and basic["applicant"] == current_user:
                         ui.button("撤回修改", icon="undo", on_click=lambda: execute_db_action("withdraw")).props(
-                            "color=orange size=lg"
+                            "color=orange"
                         )
                         ui.button("作废", icon="delete_forever", on_click=lambda: execute_db_action("cancel")).props(
-                            "color=red size=lg"
+                            "color=red"
                         )
                     if wf["current_state"] == ECNState.PENDING_FINAL_EXECUTE and "研发经理" in current_role:
                         ui.button(
-                            "驳回至方案阶段", color="red", on_click=lambda: execute_db_action("reject", note="")
-                        ).props("size=lg")
+                            "驳回至影响/方案阶段", color="red", on_click=lambda: execute_db_action("reject", note="")
+                        )
                         ui.button(
                             "确认各部已就绪，立刻执行数据变更并归档",
                             icon="warning",
                             on_click=lambda: execute_db_action("final_execute"),
-                        ).props("color=red size=lg")
+                        ).props("color=red")
                     elif is_scheming_phase and any(r in current_role for r in ECN_SCHEME_INITIATOR_ROLES):
                         all_confirmed = len(parts) > 0 and all(s == "confirmed" for s in parts.values())
                         btn = ui.button(
                             "发起 ECN 方案评审", on_click=lambda: execute_db_action("initiate_scheme_review")
-                        ).props(f"color=purple size=lg {'disabled' if not all_confirmed else ''}")
+                        ).props(f"color=purple {'disabled' if not all_confirmed else ''}")
                         if not all_confirmed:
                             btn.tooltip("需要所有提供方案的人员点击'确认完成'后方可发起")
                     elif is_pending_user and wf["current_state"] not in [
@@ -1413,10 +1456,10 @@ async def ecn_management_page():
                         note_input = ui.input("审批意见 (选填)").props("dense outlined").classes("w-64")
                         ui.button(
                             "驳回", color="red", on_click=lambda: execute_db_action("reject", note=note_input.value)
-                        ).props("size=lg")
+                        )
                         ui.button(
                             "同意", color="green", on_click=lambda: execute_db_action("approve", note=note_input.value)
-                        ).props("size=lg")
+                        )
 
             # ------------------------------------------
             # 提取的数据库与流转控制逻辑中心
@@ -1545,21 +1588,27 @@ async def ecn_management_page():
                     try:
                         for item in local_data["change_items"]:
                             if item["type"] == "overview_update":
-                                path = [f"{item['project']}_over_data", item["label"], item["chip_id"]]
-                                t_chip = db_storage.get_deep_item(path)
-                                if t_chip:
-                                    t_chip.update(
-                                        {
-                                            k: v
-                                            for k, v in item.get("new_data", {}).items()
-                                            if k in ["content", "notes", "test_select_data", "file_type", "url_path"]
+                                target_projects = item.get("projects") or [item.get("project")]
+                                updated = False
+                                for project in [p for p in target_projects if p]:
+                                    path = [f"{project}_over_data", item["label"], item["chip_id"]]
+                                    t_chip = db_storage.get_deep_item(path)
+                                    if t_chip:
+                                        t_chip.update(
+                                            {
+                                                k: v
+                                                for k, v in item.get("new_data", {}).items()
+                                                if k
+                                                in ["content", "notes", "test_select_data", "file_type", "url_path"]
+                                            }
+                                        )
+                                        t_chip.setdefault("timestamp", {})[now_str] = {
+                                            "creator": f"ECN自动执行 ({local_data['ecn_id']})",
+                                            "select_activ_dic": copy.deepcopy(t_chip.get("select_activ_dic", {})),
                                         }
-                                    )
-                                    t_chip.setdefault("timestamp", {})[now_str] = {
-                                        "creator": f"ECN自动执行 ({local_data['ecn_id']})",
-                                        "select_activ_dic": copy.deepcopy(t_chip.get("select_activ_dic", {})),
-                                    }
-                                    await db_storage.set_deep_item(path, t_chip)
+                                        await db_storage.set_deep_item(path, t_chip)
+                                        updated = True
+                                if updated:
                                     item["execute_status"] = "success"
                         wf["current_state"], wf["pending_roles"] = ECNState.CLOSED, []
                         local_data["approval_log"].append(
