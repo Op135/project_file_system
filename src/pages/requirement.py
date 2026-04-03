@@ -2203,20 +2203,22 @@ async def requirement_page(type="", json_path="", project_name=""):
         # 当前项目已审，可正常更新
         if original_review_state == "已审":
             # 记录项目名
-            data_json["project_name"] = target_project_name  # 该项操作导出时会被覆盖掉，不起效
+            data_json["project_name"] = target_project_name  # 该项操作提交正常生效、导出时会被覆盖掉不起效
             # 记录参照当前版本
-            data_json["original_version"] = version
+            data_json["original_version"] = version  # 已审项目，提交时无论升版本还是衍生其它项目，当前版本作为参照版本
             # 参照项目名为当前项目名
-            data_json["original_project"] = project_name
-        # 待修改，不动作就保持了原有数据；待审后面拦截不能导出和提交
+            data_json["original_project"] = (
+                project_name  # 已审项目，提交时无论升版本还是衍生其它项目，当前项目名作为参照项目名
+            )
+        # 待修改，不动作就保持了原有数据；
         elif original_review_state == "待修改":
             # 记录项目名
-            data_json["project_name"] = project_name
+            data_json["project_name"] = project_name  # 待修改项目，项目名不改
             # 记录参照当前版本
-            data_json["original_version"] = original_version
+            data_json["original_version"] = original_version  # 待修改项目，参照版本不迭代，照抄原来
             # 项目名相当于没变，接着记录
-            data_json["original_project"] = original_project
-        # 查不到待审状态（初次、导出版本上再导出提交）,及其它状态
+            data_json["original_project"] = original_project  # 待修改项目，参照项目名不迭代，照抄原来
+        # 查不到待审状态（初次、导出版本上再导出提交）,及其它状态，待审后面拦截不能导出和提交
         # 项目名可迭代，参照信息不迭代
         else:
             # 记录项目名
@@ -2462,19 +2464,33 @@ async def requirement_page(type="", json_path="", project_name=""):
                 # if new_temp_project_bool:
                 #     app.storage.general["temp_project_name"].remove(target_project_name)
                 return
-            if original_review_state == "待修改" and current_user != original_submitter:
-                ui.notify(
-                    "参照项目的需求处于待修改状态，只有原提交人能修改，禁止提交！",
-                    type="warning",
-                    position="bottom",
-                    timeout=3000,
-                    progress=True,
-                    close_button="✖",
-                )
-                # 如果属于新创建临时项目，失败则删除占位的临时项目号
-                if new_temp_project_bool:
-                    app.storage.general["temp_project_name"].remove(target_project_name)
-                return
+            if original_review_state == "待修改":
+                if current_user != original_submitter:
+                    ui.notify(
+                        "参照项目的需求处于待修改状态，只有原提交人能修改，禁止提交！",
+                        type="warning",
+                        position="bottom",
+                        timeout=3000,
+                        progress=True,
+                        close_button="✖",
+                    )
+                    # 如果属于新创建临时项目，失败则删除占位的临时项目号
+                    if new_temp_project_bool:
+                        app.storage.general["temp_project_name"].remove(target_project_name)
+                    return
+                elif project_name != target_project_name:
+                    ui.notify(
+                        "参照项目的需求处于待修改状态，禁止衍生成新项目！",
+                        type="warning",
+                        position="bottom",
+                        timeout=3000,
+                        progress=True,
+                        close_button="✖",
+                    )
+                    # 如果属于新创建临时项目，失败则删除占位的临时项目号
+                    if new_temp_project_bool:
+                        app.storage.general["temp_project_name"].remove(target_project_name)
+                    return
             # 如果最近一次需求配置文件还处于未审状态，本次需求还不能提交
             if original_review_state == "待审":
                 ui.notify(
@@ -2962,19 +2978,30 @@ async def requirement_page(type="", json_path="", project_name=""):
                                 app.storage.client["version"]
                             ]["state"]
                             == "待修改"
-                            and current_user
-                            != app.storage.general["wait_review"][app.storage.client["project_name"]][
-                                app.storage.client["version"]
-                            ]["submitter"]
                         ):
-                            ui.notify(
-                                "当前需求处于待修改状态，只有原提交人可修改后提交或暂存，其他人不能！",
-                                type="warning",
-                                position="center",
-                                timeout=0,
-                                progress=False,
-                                close_button="✖",
-                            )
+                            if (
+                                current_user
+                                == app.storage.general["wait_review"][app.storage.client["project_name"]][
+                                    app.storage.client["version"]
+                                ]["submitter"]
+                            ):
+                                ui.notify(
+                                    "当前需求处于待修改状态，可修改后提交或暂存，但不能衍生成其它项目！",
+                                    type="warning",
+                                    position="center",
+                                    timeout=0,
+                                    progress=False,
+                                    close_button="✖",
+                                )
+                            else:
+                                ui.notify(
+                                    "当前需求处于待修改状态，只有原提交人可修改后提交或暂存，其他人不能！",
+                                    type="warning",
+                                    position="center",
+                                    timeout=0,
+                                    progress=False,
+                                    close_button="✖",
+                                )
             # ignore不设定默认导致键盘事件在'input', 'select', 'button', 'textarea'元素聚焦时被忽略
             ui.keyboard(on_key=requirement_handle_key, ignore=["input", "textarea"])
 
