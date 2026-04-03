@@ -3699,7 +3699,8 @@ async def requirement_page(type="", json_path="", project_name=""):
                                     timestamp = version_data.get("req_timestamp", "N/A").replace("T", " ").split(".")[0]
 
                                     # 处理新增
-                                    for node_id, item_data in version_data.get("added", {}).items():
+                                    for item_data in version_data.get("added", {}).values():
+                                        node_id = item_data.get("node_id")
                                         if node_id in ui_elements:
                                             target = ui_elements[node_id]
                                             show_str = format_show_string(item_data)
@@ -3749,7 +3750,8 @@ async def requirement_page(type="", json_path="", project_name=""):
                                                             add_role_badge(role)
 
                                     # 处理删除
-                                    for node_id, item_data in version_data.get("deleted", {}).items():
+                                    for item_data in version_data.get("deleted", {}).values():
+                                        node_id = item_data.get("node_id")
                                         if node_id in ui_elements:
                                             target = ui_elements[node_id]
                                             show_str = format_show_string(item_data)
@@ -3784,7 +3786,8 @@ async def requirement_page(type="", json_path="", project_name=""):
                                                         for role in item_data["option_view"].split("+"):
                                                             add_role_badge(role)
                                     # 处理修改
-                                    for node_id, item_data in version_data.get("modified", {}).items():
+                                    for item_data in version_data.get("modified", {}).values():
+                                        node_id = item_data.get("new_data", {}).get("node_id")
                                         if node_id in ui_elements:
                                             target = ui_elements[node_id]
                                             new_text = format_show_string(item_data["new_data"])
