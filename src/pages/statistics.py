@@ -114,14 +114,129 @@ def statistics_page():
                         ui_card_header("团队待办概览", "bar_chart", "indigo-500")
 
                         if pending_data:
-                            # 数据准备：按待办项目数降序排序
-                            sorted_users = sorted(pending_data.items(), key=lambda x: len(x[1].keys()), reverse=True)
-                            user_list = [item[0] for item in sorted_users]
-                            count_list = [len(item[1].keys()) for item in sorted_users]
+
+                            def classify_pending_project(p_state_dic):
+                                statuses = set(p_state_dic.values())
+                                if "缺必填" in statuses:
+                                    return "存在缺必填"
+                                if "有待定" in statuses:
+                                    return "无缺必填有待定"
+                                if "缺需填" in statuses:
+                                    return "仅缺需填"
+                                return None
+
+                            stack_meta = {
+                                "存在缺必填": {"color": "#ef4444"},
+                                "无缺必填有待定": {"color": "#f59e0b"},
+                                "仅缺需填": {"color": "#3b82f6"},
+                            }
+                            stack_order = list(stack_meta.keys())
+
+                            user_stack_details = {}
+                            for user, pending_project_dic in pending_data.items():
+                                stack_details = {key: [] for key in stack_order}
+                                for project_name, p_state_dic in pending_project_dic.items():
+                                    category = classify_pending_project(p_state_dic)
+                                    if category:
+                                        stack_details[category].append(project_name)
+                                user_stack_details[user] = stack_details
+
+                            # 数据准备：按待办项目总数降序，同分时按紧急程度排序
+                            sorted_users = sorted(
+                                pending_data.keys(),
+                                key=lambda user: (
+                                    -sum(len(user_stack_details[user][key]) for key in stack_order),
+                                    -len(user_stack_details[user]["存在缺必填"]),
+                                    -len(user_stack_details[user]["无缺必填有待定"]),
+                                    -len(user_stack_details[user]["仅缺需填"]),
+                                    user,
+                                ),
+                            )
+                            user_list = sorted_users
+                            user_top_stack = {
+                                user: next(
+                                    (stack_name for stack_name in reversed(stack_order) if user_stack_details[user][stack_name]),
+                                    None,
+                                )
+                                for user in user_list
+                            }
+
+                            series = []
+                            for stack_name in stack_order:
+                                series.append(
+                                    {
+                                        "name": stack_name,
+                                        "type": "bar",
+                                        "stack": "pending",
+                                        "barWidth": "50%",
+                                        "data": [
+                                            {
+                                                "value": len(user_stack_details[user][stack_name]),
+                                                "projects": user_stack_details[user][stack_name],
+                                                "user": user,
+                                                "itemStyle": {
+                                                    "borderRadius": [4, 4, 0, 0]
+                                                    if user_top_stack[user] == stack_name
+                                                    else [0, 0, 0, 0]
+                                                },
+                                            }
+                                            for user in user_list
+                                        ],
+                                        "itemStyle": {
+                                            "color": stack_meta[stack_name]["color"],
+                                        },
+                                        "emphasis": {"focus": "series"},
+                                        "blur": {"itemStyle": {"opacity": 0.5}},
+                                        "label": {"show": False},
+                                    }
+                                )
 
                             # 动态调整 Echarts 配置以适应 X 轴名称显示
                             echart_config = {
-                                "tooltip": {"trigger": "axis"},
+                                "tooltip": {
+                                    "trigger": "item",
+                                    "confine": True,
+                                    "axisPointer": {"type": "shadow"},
+                                    ":formatter": """
+                                        function(params) {
+                                            const projects = (params.data && params.data.projects) || [];
+                                            const count = typeof params.value === 'number' ? params.value : 0;
+                                            let html = `<b>${params.name}</b><br/>${params.seriesName}: <b>${count}</b>`;
+                                            if (projects.length) {
+                                                html += '<br/><br/>' + projects.map(p => `• ${p}`).join('<br/>');
+                                            } else {
+                                                html += '<br/><br/>暂无项目';
+                                            }
+                                            return html;
+                                        }
+                                        """,
+                                    ":position": """
+                                        function(point, params, dom, rect, size) {
+                                            const boxWidth = size.contentSize[0];
+                                            const boxHeight = size.contentSize[1];
+                                            const viewWidth = size.viewSize[0];
+                                            const viewHeight = size.viewSize[1];
+
+                                            let left = point[0] + 12;
+                                            if (left + boxWidth > viewWidth - 8) {
+                                                left = point[0] - boxWidth - 12;
+                                            }
+                                            if (left < 8) {
+                                                left = 8;
+                                            }
+
+                                            let top = point[1] - boxHeight - 12;
+                                            if (top < 8) {
+                                                top = point[1] + 12;
+                                            }
+                                            if (top + boxHeight > viewHeight - 8) {
+                                                top = Math.max(8, viewHeight - boxHeight - 8);
+                                            }
+
+                                            return [left, top];
+                                        }
+                                        """,
+                                },
                                 "grid": {"top": 30, "bottom": 30, "left": 20, "right": 20, "containLabel": True},
                                 "xAxis": {
                                     "type": "category",
@@ -134,16 +249,8 @@ def statistics_page():
                                     "splitLine": {"show": True, "lineStyle": {"type": "dashed"}},
                                     "minInterval": 1,
                                 },
-                                "series": [
-                                    {
-                                        "name": "待办项目数",
-                                        "data": count_list,
-                                        "type": "bar",
-                                        "barWidth": "50%",
-                                        "itemStyle": {"color": "#6366f1", "borderRadius": [4, 4, 0, 0]},
-                                        "label": {"show": True, "position": "top", "color": "#666"},
-                                    }
-                                ],
+                                "legend": {"top": 0},
+                                "series": series,
                             }
                             # ui.echart: 创建并渲染一个 Apache ECharts 数据可视化实例
                             ui.echart(echart_config).classes("w-full h-68")
