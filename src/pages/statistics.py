@@ -1,4 +1,4 @@
-# -*- encoding: utf-8 -*-
+﻿# -*- encoding: utf-8 -*-
 import copy
 import json
 import logging
@@ -10,16 +10,8 @@ from nicegui import app, ui
 
 from ..config import BASE_DIR, IMG_DIR, OVER_DIR, PRESET_AVATARS, REQ_DIR, REQ_REMOVE_DIR
 from ..utils import (
-    delete_file,
     get_cache_busted_path,
-    get_overviow_page,
-    get_project_engineer_project_list_dic,
     logout,
-    move_file_with_timestamp_pathlib,
-    project_summary_update,
-    requirement_version_tidy,
-    set_overview_active_state,
-    set_project_custom_labels,
 )
 
 # 获取 logger
@@ -112,12 +104,12 @@ def statistics_page():
             # =========================================================
             # 左侧列 (主要工作流)
             # =========================================================
-            with ui.column().classes("col-span-12 lg:col-span-5 gap-4"):
+            with ui.column().classes("col-span-12 lg:col-span-6 gap-4"):
                 # C. 概述统计图表 (Statistics)
                 if current_role in module_show_data.get("overview_charge_pending_statistics", []):
                     # ----------------- 图表 1：团队待办概览 (已修改横纵轴及排序) -----------------
                     with ui.card().classes(
-                        "w-full rounded-xl shadow-sm border border-gray-100 overflow-hidden bg-white mb-4"
+                        "w-full rounded-xl shadow-sm border border-gray-100 overflow-hidden bg-white mb-2"
                     ):
                         ui_card_header("团队待办概览", "bar_chart", "indigo-500")
 
@@ -130,7 +122,7 @@ def statistics_page():
                             # 动态调整 Echarts 配置以适应 X 轴名称显示
                             echart_config = {
                                 "tooltip": {"trigger": "axis"},
-                                "grid": {"top": 30, "bottom": 40, "left": 40, "right": 20, "containLabel": True},
+                                "grid": {"top": 30, "bottom": 30, "left": 20, "right": 20, "containLabel": True},
                                 "xAxis": {
                                     "type": "category",
                                     "data": user_list,
@@ -147,15 +139,15 @@ def statistics_page():
                                         "name": "待办项目数",
                                         "data": count_list,
                                         "type": "bar",
-                                        "barWidth": 25,
+                                        "barWidth": "50%",
                                         "itemStyle": {"color": "#6366f1", "borderRadius": [4, 4, 0, 0]},
                                         "label": {"show": True, "position": "top", "color": "#666"},
                                     }
                                 ],
                             }
                             # ui.echart: 创建并渲染一个 Apache ECharts 数据可视化实例
-                            ui.echart(echart_config).classes("w-full h-72")
-                            ui.separator()
+                            ui.echart(echart_config).classes("w-full h-68")
+                            # ui.separator()
 
                             # ui.expansion: 创建一个可折叠的扩展面板组件
                             with ui.expansion("查看详细清单").classes("w-full text-sm text-gray-600 bg-gray-50"):
@@ -226,6 +218,14 @@ def statistics_page():
                         ui_card_header("近一周待办项趋势", "trending_up", "teal-500")
                         # history 数据结构示例：{"2024-06-01": {"人名": {"项目名": label:状态,...},...}, "2024-06-02": {...},...}
                         history = app.storage.general.get("overview_pending_history", {})
+                        # 每次查阅都会刷新当前日期的待办快照，确保数据的时效性和准确性
+                        now = datetime.now()
+                        today_str = now.strftime("%Y-%m-%d")
+                        # 获取存储结构
+                        current_pending = app.storage.general.get("overview_charge_pending", {})
+                        # 记录当天的最新快照（如果服务器一天内多次重启，会不断刷新当天的最终结果）
+                        history[today_str] = copy.deepcopy(current_pending)
+
                         # 1. 强制生成固定的连续 7 天日期列表
                         if history:
                             latest_date_str = max(history.keys())
@@ -244,7 +244,25 @@ def statistics_page():
                             # 使用 .get(d, {}) 防御性读取，即使某天没数据也不会报错
                             all_users.update(history.get(d, {}).keys())
 
-                        all_users_list = sorted(list(all_users))
+                        def get_user_pending_count(date_str, user):
+                            user_state = history.get(date_str, {}).get(user, {})
+                            return sum(len(v) for v in user_state.values())
+
+                        latest_day = full_dates[-1]
+                        previous_day = full_dates[-2] if len(full_dates) > 1 else full_dates[-1]
+
+                        all_users_list = sorted(
+                            list(all_users),
+                            # 3. 排序逻辑：先按近一天待办项数与前一天的差值降序，再按近一天待办项数降序，最后按姓名升序
+                            key=lambda user: (
+                                -(
+                                    get_user_pending_count(latest_day, user)
+                                    - get_user_pending_count(previous_day, user)
+                                ),
+                                -get_user_pending_count(latest_day, user),
+                                user,
+                            ),
+                        )
 
                         if not all_users_list:
                             ui.label("近一周暂无待办记录。").classes("p-4 text-gray-400 text-sm")
@@ -349,7 +367,7 @@ def statistics_page():
             # =========================================================
             # 右侧列
             # =========================================================
-            with ui.column().classes("col-span-12 lg:col-span-7 gap-4"):
+            with ui.column().classes("col-span-12 lg:col-span-6 gap-4"):
                 # D. 其他统计信息 (Other Statistics)
                 if current_role in module_show_data.get("overview_charge_pending_statistics", []):
                     with ui.card().classes(

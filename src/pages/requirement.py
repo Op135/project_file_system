@@ -3529,7 +3529,7 @@ async def requirement_page(type="", json_path="", project_name=""):
 
             with ui.row().classes("font-sans h-[calc(100vh-9rem)] items-stretch flex-nowrap w-full mt-3 text-black"):
                 # 需求内容列
-                with ui.column().classes("w-4/12 min-w-[400px]"):
+                with ui.column().classes("w-5/12 min-w-[400px]"):
                     ui.label(f"{project_name} 需求内容").classes("text-xl text-center w-full")
                     with ui.column().classes("w-full overflow-y-auto p-1 gap-4"):
                         # === 步骤 1: 预处理 - 收集所有条目并获取其排序/分组信息 ===
@@ -3915,7 +3915,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                 ui.separator().props("vertical size=1px")
 
                 # 概述内容列
-                with ui.column().classes("w-8/12 min-w-[800px] items-center"):
+                with ui.column().classes("w-7/12 min-w-[800px] items-center"):
                     # 只要有人查阅过项目的概述，就会创建该项目 项目工程师负责人 的条目
                     app.storage.general["project_engineer"].setdefault(project_name, "未指定")
                     # 优化容器：使用 justify-between 分隔左右，items-center 垂直居中，增加内边距和底部留白

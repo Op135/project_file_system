@@ -918,15 +918,6 @@ class InteractiveButton:
                 try:
                     app.add_static_file(local_file=filepath, url_path=chip_info.get("url_path"))
                 except Exception as e:
-                    ui.notify(
-                        f"引用文件不存在，路径：{filepath}!",
-                        type="warning",
-                        position="bottom",
-                        timeout=3000,
-                        progress=True,
-                        multi_line=True,
-                        close_button="✖",
-                    )
                     logger.error(f"添加静态文件失败，路径：{filepath}，错误：{e}")
             elif chip_info["type"] == "search":
                 files_li = []
@@ -970,15 +961,6 @@ class InteractiveButton:
                     try:
                         app.add_static_file(local_file=filepath, url_path=chip_info.get("url_path"))
                     except Exception as e:
-                        ui.notify(
-                            f"引用文件不存在，路径：{filepath}!",
-                            type="warning",
-                            position="bottom",
-                            timeout=3000,
-                            progress=True,
-                            multi_line=True,
-                            close_button="✖",
-                        )
                         logger.error(f"添加静态文件失败，路径：{filepath}，错误：{e}")
             elif chip_info["type"] == "svn":
                 target_url = chip_info.get("url_path", "")
@@ -1142,8 +1124,10 @@ class InteractiveButton:
             image_name = chip_info.get("content")
             image_path = f"{self.upload_path}/{image_name}"
             url_path = f"{FILES_URL_DIR}/{image_name}"
-            app.add_static_file(local_file=image_path, url_path=url_path)
-
+            try:
+                app.add_static_file(local_file=image_path, url_path=url_path)
+            except Exception as e:
+                logger.error(f"添加静态文件失败，路径：{image_path}，错误：{e}")
             thumbnail = (
                 ui.interactive_image(url_path)
                 .props(f"data-chip-id={chip_info.get('id')} enabled-state={chip_info.get('enabled')}")
@@ -3595,15 +3579,6 @@ class OverviewTableGroup:
                 try:
                     app.add_static_file(local_file=filepath, url_path=chip_info.get("url_path"))
                 except Exception as e:
-                    ui.notify(
-                        f"引用文件不存在，路径：{filepath}!",
-                        type="warning",
-                        position="bottom",
-                        timeout=3000,
-                        progress=True,
-                        multi_line=True,
-                        close_button="✖",
-                    )
                     logger.error(f"添加静态文件失败，路径：{filepath}，错误：{e}")
             elif chip_info["type"] == "search":
                 target_path_list = await self._search_file_path(chip_text, config)
@@ -3616,15 +3591,6 @@ class OverviewTableGroup:
                     try:
                         app.add_static_file(local_file=filepath, url_path=chip_info.get("url_path"))
                     except Exception as e:
-                        ui.notify(
-                            f"引用文件不存在，路径：{filepath}!",
-                            type="warning",
-                            position="bottom",
-                            timeout=3000,
-                            progress=True,
-                            multi_line=True,
-                            close_button="✖",
-                        )
                         logger.error(f"添加静态文件失败，路径：{filepath}，错误：{e}")
             elif chip_info["type"] == "svn":
                 target_url = chip_info.get("url_path", "")
@@ -3792,8 +3758,10 @@ class OverviewTableGroup:
             image_name = chip_info.get("content")
             image_path = f"{upload_path}/{image_name}"
             url_path = f"{FILES_URL_DIR}/{image_name}"
-            app.add_static_file(local_file=image_path, url_path=url_path)
-
+            try:
+                app.add_static_file(local_file=image_path, url_path=url_path)
+            except Exception as e:
+                logger.error(f"添加静态文件失败，路径：{image_path}，错误：{e}")
             with ui.element("div").classes("relative w-full") as wrapper:
                 thumbnail = (
                     ui.interactive_image(url_path)
