@@ -323,177 +323,182 @@ def information_page():
                 ui.menu_item("注销登录", on_click=lambda: logout())
 
     # 2. 主内容区域 (Grid布局)
-    with ui.element("div").classes("w-full h-[calc(100vh-5rem)] p-4 md:p-6"):
-        project_engineer_dic = get_project_engineer_project_list_dic()
+    # 将滚动限制在 header 下方的内容区内，避免浏览器主滚动条覆盖到顶部导航栏
+    with ui.element("div").classes("fixed top-12 bottom-0 left-0 right-0 overflow-hidden bg-gray-50"):
+        with ui.element("div").classes("w-full h-full overflow-y-auto overflow-x-hidden p-4 md:p-6"):
+            project_engineer_dic = get_project_engineer_project_list_dic()
 
-        # Grid: 大屏12列，左8右4；小屏自动换行
-        with ui.grid(columns=12).classes("w-full gap-4"):
-            # =========================================================
-            # 左侧列 (主要工作流)
-            # =========================================================
-            with ui.column().classes("col-span-12 lg:col-span-6 gap-4"):
-                # A. 待判断概述 (Priority Task)
-                if current_role in module_show_data.get("overview_charge_pending_module", []):
-                    my_pending = app.storage.general["overview_charge_pending"].get(current_user, {})
-                    if my_pending:
-                        with ui.card().classes("w-full rounded-xl shadow-sm border border-red-100 bg-white"):
-                            ui_card_header("待处理：项目概述", "edit_document", "red-600")
-                            with ui.column().classes("w-full gap-2 px-1"):
-                                over_flat = app.storage.general.get("over_config_data_flat", {})
-                                for project_name, state_dic in list(my_pending.items()):
-                                    # 无内容的必填概述分项数量
-                                    false_num = list(state_dic.values()).count("缺必填")
-                                    # 无内容的需填概述分项数量
-                                    need_num = list(state_dic.values()).count("缺需填")
-                                    # 待确认的概述分项数量
-                                    none_num = list(state_dic.values()).count("有待定")
-                                    # --- 新增：提取并构建 HTML 格式的 Tooltip 内容 ---
-                                    false_items = [k for k, v in state_dic.items() if v == "缺必填"]
-                                    need_items = [k for k, v in state_dic.items() if v == "缺需填"]
-                                    none_items = [k for k, v in state_dic.items() if v == "有待定"]
+            # Grid: 大屏12列，左8右4；小屏自动换行
+            with ui.grid(columns=12).classes("w-full gap-4"):
+                # =========================================================
+                # 左侧列 (主要工作流)
+                # =========================================================
+                with ui.column().classes("col-span-12 lg:col-span-6 gap-4"):
+                    # A. 待判断概述 (Priority Task)
+                    if current_role in module_show_data.get("overview_charge_pending_module", []):
+                        my_pending = app.storage.general["overview_charge_pending"].get(current_user, {})
+                        if my_pending:
+                            with ui.card().classes("w-full rounded-xl shadow-sm border border-red-100 bg-white"):
+                                ui_card_header("待处理：项目概述", "edit_document", "red-600")
+                                with ui.column().classes("w-full gap-2 px-1"):
+                                    over_flat = app.storage.general.get("over_config_data_flat", {})
+                                    for project_name, state_dic in list(my_pending.items()):
+                                        # 无内容的必填概述分项数量
+                                        false_num = list(state_dic.values()).count("缺必填")
+                                        # 无内容的需填概述分项数量
+                                        need_num = list(state_dic.values()).count("缺需填")
+                                        # 待确认的概述分项数量
+                                        none_num = list(state_dic.values()).count("有待定")
+                                        # --- 新增：提取并构建 HTML 格式的 Tooltip 内容 ---
+                                        false_items = [k for k, v in state_dic.items() if v == "缺必填"]
+                                        need_items = [k for k, v in state_dic.items() if v == "缺需填"]
+                                        none_items = [k for k, v in state_dic.items() if v == "有待定"]
 
-                                    tooltip_html = ""
-                                    if false_items:
-                                        tooltip_html += "<b>【必填无内容】</b><br>" + "<br>".join(
-                                            [
-                                                f"• {over_flat.get(item, {}).get('title', '未知概述项')}"
-                                                for item in false_items
-                                            ]
-                                        )
-                                    if need_items:
-                                        if tooltip_html:
-                                            tooltip_html += "<br><br>"
-                                        tooltip_html += "<b>【需填无内容】</b><br>" + "<br>".join(
-                                            [
-                                                f"• {over_flat.get(item, {}).get('title', '未知概述项')}"
-                                                for item in need_items
-                                            ]
-                                        )
-                                    if none_items:
-                                        if tooltip_html:
-                                            tooltip_html += "<br><br>"
-                                        tooltip_html += "<b>【待确认】</b><br>" + "<br>".join(
-                                            [
-                                                f"• {over_flat.get(item, {}).get('title', '未知概述项')}"
-                                                for item in none_items
-                                            ]
-                                        )
-                                    # ------------------------------------
-
-                                    # 每一行项目
-                                    if false_num > 0 or none_num > 0:
-                                        row_container = ui.row().classes(
-                                            "w-full items-center justify-between p-3 bg-red-50 rounded-lg border border-red-100 hover:bg-red-100 transition-colors"
-                                        )
-                                    else:
-                                        row_container = ui.row().classes(
-                                            "w-full items-center justify-between p-3 bg-amber-50 rounded-lg border border-amber-100 hover:bg-amber-100 transition-colors"
-                                        )
-                                    with row_container:
-                                        title_label = ui.label(
-                                            f"{project_name}（{str(false_num)}项必填概述无内容，{str(need_num)}项需填概述无内容，{str(none_num)}项概述待确认）"
-                                        ).classes("font-medium text-gray-800 cursor-help")
-
-                                        # 使用上下文管理器结合 ui.html 渲染支持换行的原生 HTML
-                                        with title_label:
-                                            with ui.tooltip().classes("text-xs bg-gray-600/90 text-white p-2"):
-                                                ui.html(tooltip_html, sanitize=False)
-
-                                        ui.button(
-                                            "去处理",
-                                            icon="arrow_forward",
-                                            on_click=lambda pn=project_name: get_overviow_page(pn, False),
-                                        ).props("flat dense color=red size=sm")
-
-                # B. 需求评审队列 (Review Queue)
-                if (
-                    current_role in module_show_data.get("wait_review_module", [])
-                    or current_user in project_engineer_dic
-                ):
-                    with ui.card().classes("w-full rounded-xl shadow-sm border border-gray-100 bg-white"):
-                        ui_card_header("需求评审看板", "rate_review", "blue-600")
-
-                        review_container = ui.column().classes("w-full gap-3")
-                        has_review_data = False
-
-                        with review_container:
-                            if app.storage.general.get("wait_review", {}):
-                                for project_name, ver_dic in app.storage.general["wait_review"].items():
-                                    for ver, dic in ver_dic.items():
-                                        # 过滤显示逻辑
-                                        is_manager = current_role in ["研发经理"]
-                                        is_engineer = project_name in project_engineer_dic.get(current_user, [])
-                                        is_submitter = dic.get("submitter") == current_user
-
-                                        should_show = False
-                                        # 销售查看非已审项目待办项
-                                        if (is_manager or is_submitter) and dic.get("state") != "已审":
-                                            should_show = True
-                                        # 研发经理或项目工程师查看待审项目待办项
-                                        elif is_engineer and dic.get("state") == "待审":
-                                            should_show = True
-
-                                        if should_show:
-                                            has_review_data = True
-                                            # 创建行容器
-                                            row = ui.row().classes("w-full p-0 gap-0")
-                                            refresh_review_row(row, project_name, ver)
-
-                        if not has_review_data:
-                            with ui.column().classes("w-full items-center py-8 text-gray-400"):
-                                ui.icon("task_alt", size="4em").classes("mb-2 opacity-50")
-                                ui.label("当前没有待评审的需求").classes("text-sm")
-
-            # =========================================================
-            # 右侧列
-            # =========================================================
-            with ui.column().classes("col-span-12 lg:col-span-6 gap-4"):
-                # D. 草稿箱 (Drafts)
-                if current_role in module_show_data.get("temp_req_module", []):
-                    with ui.card().classes("w-full rounded-xl shadow-sm border border-gray-100 bg-white"):
-                        ui_card_header("需求草稿箱", "save_as", "amber-600")
-
-                        temp_req_dic = app.storage.general.get("temp_req", {})
-                        has_drafts = False
-
-                        with ui.scroll_area().classes("h-64 w-full pr-2"):
-                            for user, project_dic in temp_req_dic.items():
-                                if user == current_user or current_role == "研发经理":
-                                    for project_name, version_li in project_dic.items():
-                                        for version in version_li:
-                                            has_drafts = True
-                                            row = ui.row().classes(
-                                                "w-full items-center justify-between py-2 border-b border-gray-100 last:border-0"
+                                        tooltip_html = ""
+                                        if false_items:
+                                            tooltip_html += "<b>【必填无内容】</b><br>" + "<br>".join(
+                                                [
+                                                    f"• {over_flat.get(item, {}).get('title', '未知概述项')}"
+                                                    for item in false_items
+                                                ]
                                             )
-                                            with row:
-                                                with ui.column().classes("gap-0"):
-                                                    ui.label(project_name).classes("font-medium text-sm text-gray-700")
-                                                    ui.label(f"V{version} • {user}").classes("text-xs text-gray-400")
+                                        if need_items:
+                                            if tooltip_html:
+                                                tooltip_html += "<br><br>"
+                                            tooltip_html += "<b>【需填无内容】</b><br>" + "<br>".join(
+                                                [
+                                                    f"• {over_flat.get(item, {}).get('title', '未知概述项')}"
+                                                    for item in need_items
+                                                ]
+                                            )
+                                        if none_items:
+                                            if tooltip_html:
+                                                tooltip_html += "<br><br>"
+                                            tooltip_html += "<b>【待确认】</b><br>" + "<br>".join(
+                                                [
+                                                    f"• {over_flat.get(item, {}).get('title', '未知概述项')}"
+                                                    for item in none_items
+                                                ]
+                                            )
+                                        # ------------------------------------
 
-                                                with ui.row().classes("gap-1"):
-                                                    # 经理只能看，本人可编辑
-                                                    btn_icon = (
-                                                        "visibility"
-                                                        if (current_role == "研发经理" and user != current_user)
-                                                        else "edit"
-                                                    )
-                                                    ui.button(
-                                                        icon=btn_icon,
-                                                        on_click=lambda pn=project_name, v=version: get_req_page(pn, v),
-                                                    ).props("flat dense size=sm color=amber").tooltip("查看/编辑")
+                                        # 每一行项目
+                                        if false_num > 0 or none_num > 0:
+                                            row_container = ui.row().classes(
+                                                "w-full items-center justify-between p-3 bg-red-50 rounded-lg border border-red-100 hover:bg-red-100 transition-colors"
+                                            )
+                                        else:
+                                            row_container = ui.row().classes(
+                                                "w-full items-center justify-between p-3 bg-amber-50 rounded-lg border border-amber-100 hover:bg-amber-100 transition-colors"
+                                            )
+                                        with row_container:
+                                            title_label = ui.label(
+                                                f"{project_name}（{str(false_num)}项必填概述无内容，{str(need_num)}项需填概述无内容，{str(none_num)}项概述待确认）"
+                                            ).classes("font-medium text-gray-800 cursor-help")
 
-                                                    # 只有非经理(本人)可以删除
-                                                    if current_role != "研发经理":
+                                            # 使用上下文管理器结合 ui.html 渲染支持换行的原生 HTML
+                                            with title_label:
+                                                with ui.tooltip().classes("text-xs bg-gray-600/90 text-white p-2"):
+                                                    ui.html(tooltip_html, sanitize=False)
+
+                                            ui.button(
+                                                "去处理",
+                                                icon="arrow_forward",
+                                                on_click=lambda pn=project_name: get_overviow_page(pn, False),
+                                            ).props("flat dense color=red size=sm")
+
+                    # B. 需求评审队列 (Review Queue)
+                    if (
+                        current_role in module_show_data.get("wait_review_module", [])
+                        or current_user in project_engineer_dic
+                    ):
+                        with ui.card().classes("w-full rounded-xl shadow-sm border border-gray-100 bg-white"):
+                            ui_card_header("需求评审看板", "rate_review", "blue-600")
+
+                            review_container = ui.column().classes("w-full gap-3")
+                            has_review_data = False
+
+                            with review_container:
+                                if app.storage.general.get("wait_review", {}):
+                                    for project_name, ver_dic in app.storage.general["wait_review"].items():
+                                        for ver, dic in ver_dic.items():
+                                            # 过滤显示逻辑
+                                            is_manager = current_role in ["研发经理"]
+                                            is_engineer = project_name in project_engineer_dic.get(current_user, [])
+                                            is_submitter = dic.get("submitter") == current_user
+
+                                            should_show = False
+                                            # 销售查看非已审项目待办项
+                                            if (is_manager or is_submitter) and dic.get("state") != "已审":
+                                                should_show = True
+                                            # 研发经理或项目工程师查看待审项目待办项
+                                            elif is_engineer and dic.get("state") == "待审":
+                                                should_show = True
+
+                                            if should_show:
+                                                has_review_data = True
+                                                # 创建行容器
+                                                row = ui.row().classes("w-full p-0 gap-0")
+                                                refresh_review_row(row, project_name, ver)
+
+                            if not has_review_data:
+                                with ui.column().classes("w-full items-center py-8 text-gray-400"):
+                                    ui.icon("task_alt", size="4em").classes("mb-2 opacity-50")
+                                    ui.label("当前没有待评审的需求").classes("text-sm")
+
+                # =========================================================
+                # 右侧列
+                # =========================================================
+                with ui.column().classes("col-span-12 lg:col-span-6 gap-4"):
+                    # D. 草稿箱 (Drafts)
+                    if current_role in module_show_data.get("temp_req_module", []):
+                        with ui.card().classes("w-full rounded-xl shadow-sm border border-gray-100 bg-white"):
+                            ui_card_header("需求草稿箱", "save_as", "amber-600")
+
+                            temp_req_dic = app.storage.general.get("temp_req", {})
+                            has_drafts = False
+
+                            with ui.scroll_area().classes("h-64 w-full pr-2"):
+                                for user, project_dic in temp_req_dic.items():
+                                    if user == current_user or current_role == "研发经理":
+                                        for project_name, version_li in project_dic.items():
+                                            for version in version_li:
+                                                has_drafts = True
+                                                row = ui.row().classes(
+                                                    "w-full items-center justify-between py-2 border-b border-gray-100 last:border-0"
+                                                )
+                                                with row:
+                                                    with ui.column().classes("gap-0"):
+                                                        ui.label(project_name).classes(
+                                                            "font-medium text-sm text-gray-700"
+                                                        )
+                                                        ui.label(f"V{version} • {user}").classes(
+                                                            "text-xs text-gray-400"
+                                                        )
+
+                                                    with ui.row().classes("gap-1"):
+                                                        # 经理只能看，本人可编辑
+                                                        btn_icon = (
+                                                            "visibility"
+                                                            if (current_role == "研发经理" and user != current_user)
+                                                            else "edit"
+                                                        )
                                                         ui.button(
-                                                            icon="close",
-                                                            color="red",
-                                                            on_click=lambda r=row, pn=project_name, v=version: (
-                                                                dele_temp_req_row(r, pn, v)
+                                                            icon=btn_icon,
+                                                            on_click=lambda pn=project_name, v=version: get_req_page(
+                                                                pn, v
                                                             ),
-                                                        ).props("flat dense size=sm").tooltip("丢弃草稿")
+                                                        ).props("flat dense size=sm color=amber").tooltip("查看/编辑")
 
-                        if not has_drafts:
-                            ui.label("暂无草稿记录").classes("text-sm text-gray-400 p-2")
+                                                        # 只有非经理(本人)可以删除
+                                                        if current_role != "研发经理":
+                                                            ui.button(
+                                                                icon="close",
+                                                                color="red",
+                                                                on_click=lambda r=row, pn=project_name, v=version: (
+                                                                    dele_temp_req_row(r, pn, v)
+                                                                ),
+                                                            ).props("flat dense size=sm").tooltip("丢弃草稿")
 
-
-# 注意：此文件被设计为模块导入模式，不需要 ui.run()
+                            if not has_drafts:
+                                ui.label("暂无草稿记录").classes("text-sm text-gray-400 p-2")
