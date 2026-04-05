@@ -1,6 +1,7 @@
 # -*- encoding: utf-8 -*-
 import copy  # copy: Python标准库，用于创建对象的副本
 import logging
+import os
 import uuid  # uuid: Python标准库，用于生成全局唯一的标识符
 from datetime import datetime
 
@@ -13,8 +14,10 @@ from ..config import (
     ECN_SCHEME_INITIATOR_ROLES,
     ECN_SCHEME_WRITER_ROLES,
     ECN_WORKFLOW_ROUTES,
+    FILES_URL_DIR,
     IMG_DIR,
     PRESET_AVATARS,
+    UPLOADS_DIR,
     ECNState,
 )
 from ..utils import get_cache_busted_path, logout
@@ -198,6 +201,9 @@ async def ecn_management_page():
     # ==========================================
     # 独立解耦弹窗 1：底层数据变更方案设计
     # ==========================================
+    # ==========================================
+    # 独立解耦弹窗 1：底层数据变更方案设计 (修复缩进版)
+    # ==========================================
     def open_overview_change_dialog(ecn_data, current_user, on_save_callback, edit_item=None):
         is_edit = edit_item is not None
         edit_data = edit_item or {}
@@ -213,6 +219,12 @@ async def ecn_management_page():
             "req_idxs": edit_data.get("req_idxs", []),
             "linked_docs": edit_data.get("linked_docs", []),
             "linked_materials": edit_data.get("linked_materials", []),
+            # --- 增加动态上下文 ---
+            "config": edit_data.get("config", {}),
+            "processing_type": edit_data.get("config_processing_type", "text"),
+            "is_valid": is_edit,  # 编辑模式下默认认为之前已有效，新增必须重新校验
+            "validated_url": edit_data.get("new_data", {}).get("url_path", ""),
+            "validated_file_type": edit_data.get("new_data", {}).get("file_type", ""),
         }
 
         target_projects = list(
@@ -250,170 +262,297 @@ async def ecn_management_page():
             }
 
         dialog.clear()
-        with dialog, ui.card().classes("w-[900px] max-w-full flex flex-col"):
+        # 1. 增加 max-h-[90vh] 限制最大高度，增加 flex-nowrap 绝对禁止横向折行
+        with dialog, ui.card().classes("w-[900px] max-w-full max-h-[90vh] flex flex-col flex-nowrap"):
+            # 头部保持 shrink-0 (禁止压缩)
             ui.label("修改概述数据变更方案" if is_edit else "添加概述数据变更方案").classes(
                 "text-lg font-bold text-blue-900 shrink-0"
             )
-            with ui.column().classes("w-full gap-2 flex-1 min-h-0 overflow-y-auto pr-2"):
-                with ui.card().classes("w-full p-3 bg-gray-50 border border-gray-200 shadow-sm gap-2"):
-                    ui.label("对应关联 (必填)").classes("text-xs font-bold text-indigo-700")
-                    # bind_value: NiceGUI框架实现前后端数据双向绑定的核心方法
-                    ui.select(options=req_options, multiple=True, label="对应解决的要求序号").classes(
-                        "w-full"
-                    ).bind_value(sel_state, "req_idxs")
-                    with ui.row().classes("w-full gap-2"):
-                        if req_docs:
-                            ui.select(options=req_docs, multiple=True, label="对应勾选的文档/图纸项").classes(
-                                "flex-1"
-                            ).bind_value(sel_state, "linked_docs")
-                        if req_mats:
-                            ui.select(options=req_mats, multiple=True, label="对应勾选的物料动作").classes(
-                                "flex-1"
-                            ).bind_value(sel_state, "linked_materials")
 
-                def get_primary_project():
-                    projects = sel_state.get("projects", [])
-                    return projects[0] if projects else None
+            # flex-1 min-h-0 overflow-y-auto 是解决弹性盒子内部完美滚动的 Tailwind 标准答案
+            with ui.element("div").classes("w-full flex-1 min-h-0 overflow-y-auto pr-2"):
+                with ui.column().classes("w-full gap-2"):
+                    # === 区域 1：对应关联卡片 ===
+                    with ui.card().classes("w-full p-3 bg-gray-50 border border-gray-200 shadow-sm gap-2"):
+                        ui.label("对应关联 (必填)").classes("text-xs font-bold text-indigo-700")
+                        ui.select(options=req_options, multiple=True, label="对应解决的要求序号").classes(
+                            "w-full"
+                        ).bind_value(sel_state, "req_idxs")
+                        with ui.row().classes("w-full gap-2"):
+                            if req_docs:
+                                ui.select(options=req_docs, multiple=True, label="对应勾选的文档/图纸项").classes(
+                                    "flex-1"
+                                ).bind_value(sel_state, "linked_docs")
+                            if req_mats:
+                                ui.select(options=req_mats, multiple=True, label="对应勾选的物料动作").classes(
+                                    "flex-1"
+                                ).bind_value(sel_state, "linked_materials")
 
-                def refresh_chip_options():
-                    primary_project = get_primary_project()
-                    if primary_project and sel_state["label"]:
-                        sel_chip.set_options(get_chips(primary_project, sel_state["label"]))
-                    else:
-                        sel_chip.set_options({})
-                    sel_chip.set_value(None)
-                    sel_state["chip_id"] = None
-                    sel_state["old_data"] = {}
-                    sel_state["new_data"] = {}
-                    render_dynamic_form()
+                    # === 退出卡片 1，下面这些是和卡片 1 平级的逻辑和 UI ===
+                    def get_primary_project():
+                        projects = sel_state.get("projects", [])
+                        return projects[0] if projects else None
 
-                def on_proj_change(e):
-                    sel_state["projects"] = e.value or []
-                    if not is_edit:
-                        refresh_chip_options()
-
-                def on_role_change(e):
-                    sel_state["role"] = e.value
-                    sel_label.set_options(get_labels(e.value))
-                    sel_label.set_value(None)
-                    sel_state["label"] = None
-                    refresh_chip_options()
-
-                def on_label_change(e):
-                    sel_state["label"] = e.value
-                    refresh_chip_options()
-
-                def on_chip_change(e):
-                    sel_state["chip_id"] = e.value
-                    primary_project = get_primary_project()
-                    if all([primary_project, sel_state["label"], sel_state["chip_id"]]):
-                        old_chip_data = db_storage.get_deep_item(
-                            [f"{primary_project}_over_data", sel_state["label"], sel_state["chip_id"]], {}
-                        )
-                        sel_state["old_data"] = copy.deepcopy(old_chip_data)
-                        sel_state["new_data"] = copy.deepcopy(old_chip_data)
+                    def refresh_chip_options():
+                        primary_project = get_primary_project()
+                        if primary_project and sel_state["label"]:
+                            sel_chip.set_options(get_chips(primary_project, sel_state["label"]))
+                        else:
+                            sel_chip.set_options({})
+                        sel_chip.set_value(None)
+                        sel_state["chip_id"] = None
+                        sel_state["old_data"] = {}
+                        sel_state["new_data"] = {}
                         render_dynamic_form()
 
-                with ui.grid(columns=2).classes("w-full gap-2 mt-2"):
-                    sel_proj = ui.select(
-                        options=target_projects,
-                        label="1. 目标项目",
-                        value=sel_state["projects"],
-                        multiple=True,
-                        on_change=on_proj_change,
-                    ).classes("w-full")
-                    sel_role = ui.select(
-                        options=roles, label="2. 技术维度", value=sel_state["role"], on_change=on_role_change
-                    ).classes("w-full")
-                    sel_label = ui.select(
-                        options=get_labels(sel_state["role"]) if sel_state["role"] else {},
-                        label="3. 具体参数",
-                        value=sel_state["label"],
-                        on_change=on_label_change,
-                    ).classes("w-full")
-                    sel_chip = ui.select(
-                        options=get_chips(get_primary_project(), sel_state["label"])
-                        if get_primary_project() and sel_state["label"]
-                        else {},
-                        label="4. 原数据",
-                        value=sel_state["chip_id"],
-                        on_change=on_chip_change,
-                    ).classes("w-full")
+                    def on_proj_change(e):
+                        sel_state["projects"] = e.value or []
+                        if not is_edit:
+                            refresh_chip_options()
 
-                dynamic_form_container = ui.column().classes("w-full gap-2 mt-2")
+                    def on_role_change(e):
+                        sel_state["role"] = e.value
+                        sel_label.set_options(get_labels(e.value))
+                        sel_label.set_value(None)
+                        sel_state["label"] = None
+                        refresh_chip_options()
 
-                def render_dynamic_form():
-                    dynamic_form_container.clear()
-                    if not sel_state["old_data"]:
-                        return
+                    def on_label_change(e):
+                        sel_state["label"] = e.value
+                        # 同步获取并更新该字段的真实配置
+                        sel_state["config"] = app.storage.general.get("over_config_data_flat", {}).get(e.value, {})
+                        sel_state["processing_type"] = sel_state["config"].get("processing_type", "text")
+                        refresh_chip_options()
 
-                    chip_type = sel_state["old_data"].get("type", "text")
-                    with dynamic_form_container:
-                        ui.label(f"检测到概述数据类型为: {chip_type.upper()}").classes(
-                            "text-xs font-bold text-teal-700 bg-teal-50 px-2 py-1 rounded"
-                        )
-                        with ui.grid(columns=2).classes("w-full gap-4"):
-                            with ui.card().classes("w-full bg-gray-50 shadow-inner p-3"):
-                                ui.label("现状 / 原内容").classes("text-xs text-gray-500 font-bold mb-2")
-                                ui.label(sel_state["old_data"].get("content", "无")).classes(
-                                    "text-sm text-gray-700 break-all"
-                                )
-                                if chip_type == "test":
-                                    old_test = sel_state["old_data"].get("test_select_data", {})
-                                    ui.label(f"性质: {old_test.get('test_nature_select', '')}").classes(
-                                        "text-xs text-gray-500 mt-1"
+                    def on_chip_change(e):
+                        sel_state["chip_id"] = e.value
+                        primary_project = get_primary_project()
+                        if all([primary_project, sel_state["label"], sel_state["chip_id"]]):
+                            old_chip_data = db_storage.get_deep_item(
+                                [f"{primary_project}_over_data", sel_state["label"], sel_state["chip_id"]], {}
+                            )
+                            sel_state["old_data"] = copy.deepcopy(old_chip_data)
+                            sel_state["new_data"] = copy.deepcopy(old_chip_data)
+
+                            # 重置校验锁与元数据，取消由于底层直接修改 notes 的输入框
+                            sel_state["is_valid"] = False
+                            sel_state["validated_url"] = ""
+                            sel_state["validated_file_type"] = ""
+                            sel_state["new_data"].pop("notes", None)
+                            render_dynamic_form()
+
+                    # === 区域 2：目标项目与具体参数下拉框 ===
+                    with ui.grid(columns=2).classes("w-full gap-2 mt-2"):
+                        sel_proj = ui.select(
+                            options=target_projects,
+                            label="1. 目标项目",
+                            value=sel_state["projects"],
+                            multiple=True,
+                            on_change=on_proj_change,
+                        ).classes("w-full")
+                        sel_role = ui.select(
+                            options=roles, label="2. 技术维度", value=sel_state["role"], on_change=on_role_change
+                        ).classes("w-full")
+                        sel_label = ui.select(
+                            options=get_labels(sel_state["role"]) if sel_state["role"] else {},
+                            label="3. 具体参数",
+                            value=sel_state["label"],
+                            on_change=on_label_change,
+                        ).classes("w-full")
+                        sel_chip = ui.select(
+                            options=get_chips(get_primary_project(), sel_state["label"])
+                            if get_primary_project() and sel_state["label"]
+                            else {},
+                            label="4. 原数据",
+                            value=sel_state["chip_id"],
+                            on_change=on_chip_change,
+                        ).classes("w-full")
+
+                    # === 区域 3：动态表单容器 ===
+                    dynamic_form_container = ui.column().classes("w-full gap-2 mt-2")
+
+                    def render_dynamic_form():
+                        dynamic_form_container.clear()
+                        if not sel_state["old_data"]:
+                            return
+
+                        ptype = sel_state["processing_type"]
+                        config = sel_state["config"]
+
+                        with dynamic_form_container:
+                            ui.label(f"检测到对应的业务数据类型为: {ptype.upper()}").classes(
+                                "text-xs font-bold text-teal-700 bg-teal-50 px-2 py-1 rounded"
+                            )
+
+                            with ui.grid(columns=2).classes("w-full gap-4"):
+                                # 左侧卡片：原数据
+                                with ui.card().classes("w-full bg-gray-50 shadow-inner p-3"):
+                                    ui.label("现状 / 原内容").classes("text-xs text-gray-500 font-bold mb-2")
+                                    ui.label(sel_state["old_data"].get("content", "无")).classes(
+                                        "text-sm text-gray-700 break-all"
                                     )
-                                    ui.label(f"状态: {old_test.get('state_select', '')}").classes(
-                                        "text-xs text-gray-500"
+                                    if ptype == "test":
+                                        old_test = sel_state["old_data"].get("test_select_data", {})
+                                        ui.label(f"性质: {old_test.get('test_nature_select', '')}").classes(
+                                            "text-xs text-gray-500 mt-1"
+                                        )
+                                        ui.label(f"状态: {old_test.get('state_select', '')}").classes(
+                                            "text-xs text-gray-500"
+                                        )
+                                        ui.label(f"节点: {old_test.get('node_select', '')}").classes(
+                                            "text-xs text-gray-500"
+                                        )
+                                        ui.label(f"工具: {old_test.get('instrument_select', '')}").classes(
+                                            "text-xs text-gray-500"
+                                        )
+
+                                # 右侧卡片：新方案
+                                with ui.card().classes("w-full bg-blue-50 shadow-inner p-3 border border-blue-100"):
+                                    ui.label("方案 / 新内容 (必填)").classes("text-xs text-blue-700 font-bold mb-2")
+
+                                    # 核心分支重构
+                                    if ptype == "text":
+                                        ui.textarea("新文本内容").bind_value(sel_state["new_data"], "content").classes(
+                                            "w-full"
+                                        ).props("outlined auto-grow rows=2 bg-white")
+                                        sel_state["is_valid"] = True
+
+                                    elif ptype == "test":
+                                        ui.textarea("新检测内容与标准").bind_value(
+                                            sel_state["new_data"], "content"
+                                        ).classes("w-full").props("outlined auto-grow rows=2 bg-white")
+                                        test_data = sel_state["new_data"].setdefault("test_select_data", {})
+
+                                        def build_test_options(options_list, key_prefix, label_str):
+                                            if options_list:
+                                                with ui.column().classes("w-full gap-0 m-0 p-0"):
+                                                    sel = (
+                                                        ui.select(options_list, label=label_str)
+                                                        .bind_value(test_data, f"{key_prefix}_select")
+                                                        .props("outlined dense")
+                                                        .classes("w-full bg-white")
+                                                    )
+                                                    oth = (
+                                                        ui.input(f"{label_str}特殊要求")
+                                                        .bind_value(test_data, f"{key_prefix}_other_text")
+                                                        .props("outlined dense")
+                                                        .classes("w-full mt-1 bg-white")
+                                                    )
+                                                    oth.bind_visibility_from(sel, "value", value="其它")
+
+                                        with ui.grid(columns=2).classes("w-full gap-2 mt-2"):
+                                            build_test_options(
+                                                config.get("test_nature_options", []), "test_nature", "测试性质"
+                                            )
+                                            build_test_options(config.get("state_options", []), "state", "条件/状态")
+                                            build_test_options(config.get("node_options", []), "node", "节点/位置")
+                                            build_test_options(
+                                                config.get("instrument_options", []), "instrument", "工具/仪器/治具"
+                                            )
+                                        sel_state["is_valid"] = True
+
+                                    elif ptype in ["search", "svn"]:
+                                        with ui.row().classes("w-full items-center gap-2"):
+                                            ui.input("新引用文件名").bind_value(sel_state["new_data"], "content").props(
+                                                "outlined dense bg-white"
+                                            ).classes("flex-grow")
+
+                                            async def validate_path():
+                                                val = sel_state["new_data"].get("content", "").strip()
+                                                if not val:
+                                                    return ui.notify("请先填写文件名", type="warning")
+                                                if not sel_state["projects"]:
+                                                    return ui.notify("请先在上方选择目标项目", type="warning")
+
+                                                # 动态调用抽离出来的底层核心功能
+                                                from ..utils import validate_search_path, validate_svn_url
+
+                                                if ptype == "search":
+                                                    is_valid, url, ftype, _, msg = await validate_search_path(
+                                                        val, config, sel_state["projects"]
+                                                    )
+                                                else:
+                                                    is_valid, url, ftype, msg = await validate_svn_url(
+                                                        val, config, sel_state["projects"]
+                                                    )
+
+                                                if is_valid:
+                                                    sel_state["is_valid"] = True
+                                                    sel_state["validated_url"] = url
+                                                    sel_state["validated_file_type"] = ftype
+                                                    ui.notify(msg, type="positive")
+                                                else:
+                                                    sel_state["is_valid"] = False
+                                                    ui.notify(msg, type="negative")
+
+                                            ui.button("校验有效性", on_click=validate_path).props(
+                                                "color=primary outline dense"
+                                            )
+                                            ui.icon("check_circle", color="green", size="sm").bind_visibility_from(
+                                                sel_state, "is_valid"
+                                            )
+
+                                    elif ptype in ["file", "image", "video"]:
+                                        ui.label("上传新文件").classes("text-xs text-gray-500 mb-1")
+
+                                        async def handle_upload(e):
+                                            from ..config import FILES_URL_DIR, UPLOADS_DIR
+
+                                            original_filename = e.file.name
+                                            file_type = e.file.content_type
+                                            upload_path = config.get("upload_path", UPLOADS_DIR)
+                                            filepath = f"{upload_path}/{original_filename}"
+                                            url_path = f"{FILES_URL_DIR}/{original_filename}"
+
+                                            try:
+                                                file_content = await e.file.read()
+                                                os.makedirs(upload_path, exist_ok=True)
+                                                with open(filepath, "wb") as f:
+                                                    f.write(file_content)
+
+                                                sel_state["new_data"]["content"] = original_filename
+                                                sel_state["validated_url"] = url_path
+                                                sel_state["validated_file_type"] = file_type
+                                                sel_state["is_valid"] = True
+                                                ui.notify(f"文件 {original_filename} 上传并暂存成功", type="positive")
+                                            except Exception as ex:
+                                                sel_state["is_valid"] = False
+                                                ui.notify(f"上传失败: {ex}", type="negative")
+
+                                        ui.upload(on_upload=handle_upload, auto_upload=True, max_files=1).props(
+                                            "accept=*/*"
+                                        )
+                                        ui.label().bind_text_from(
+                                            sel_state["new_data"],
+                                            "content",
+                                            backward=lambda x: f"暂存文件: {x}" if x else "",
+                                        ).classes("text-sm text-green-600 mt-1")
+
+                                    # 彻底摘除 notes 输入框
+                                    ui.label("注: 原因和记录将被系统自动接管").classes(
+                                        "text-[10px] text-gray-400 mt-2 block"
                                     )
-                                    ui.label(f"节点: {old_test.get('node_select', '')}").classes(
-                                        "text-xs text-gray-500"
-                                    )
-                                    ui.label(f"工具: {old_test.get('instrument_select', '')}").classes(
-                                        "text-xs text-gray-500"
-                                    )
 
-                            with ui.card().classes("w-full bg-blue-50 shadow-inner p-3 border border-blue-100"):
-                                ui.label("方案 / 新内容 (必填)").classes("text-xs text-blue-700 font-bold mb-2")
-                                if chip_type == "text":
-                                    ui.textarea("新文本内容").bind_value(sel_state["new_data"], "content").classes(
-                                        "w-full"
-                                    ).props("outlined auto-grow rows=2")
-                                elif chip_type == "test":
-                                    ui.textarea("新检测内容与标准").bind_value(
-                                        sel_state["new_data"], "content"
-                                    ).classes("w-full").props("outlined auto-grow rows=2")
-                                    test_data = sel_state["new_data"].setdefault("test_select_data", {})
-                                    with ui.grid(columns=2).classes("w-full gap-2 mt-2"):
-                                        ui.input("测试性质").bind_value(test_data, "test_nature_select").props(
-                                            "outlined dense"
-                                        )
-                                        ui.input("条件/状态").bind_value(test_data, "state_select").props(
-                                            "outlined dense"
-                                        )
-                                        ui.input("节点/位置").bind_value(test_data, "node_select").props(
-                                            "outlined dense"
-                                        )
-                                        ui.input("工具/仪器/治具").bind_value(test_data, "instrument_select").props(
-                                            "outlined dense"
-                                        )
-                                else:
-                                    ui.input("新文件名/新引用").bind_value(sel_state["new_data"], "content").classes(
-                                        "w-full"
-                                    ).props("outlined")
+                    if is_edit:
+                        render_dynamic_form()
 
-                                ui.textarea("修改原因/注释").bind_value(sel_state["new_data"], "notes").classes(
-                                    "w-full mt-2"
-                                ).props("outlined auto-grow rows=1")
-
-            if is_edit:
-                render_dynamic_form()
-
+            # === 退出 scroll_area，和 scroll_area 平级，以下是底部固定逻辑 ===
             async def save_item():
                 if not sel_state["projects"]:
                     return ui.notify("请至少选择一个目标项目", type="warning")
+                if not sel_state["is_valid"]:
+                    return ui.notify("未完成文件校验/上传，或数据不合法", type="warning")
                 if not sel_state["new_data"].get("content", "").strip():
                     return ui.notify("请完善新内容", type="warning")
+
+                # 打包有效路径与类型
+                if sel_state["processing_type"] in ["search", "svn", "file", "image", "video"]:
+                    sel_state["new_data"]["url_path"] = sel_state["validated_url"]
+                    sel_state["new_data"]["file_type"] = sel_state["validated_file_type"]
+
+                # 清除残留手填的 notes，强制由执行期注入
+                sel_state["new_data"].pop("notes", None)
+
                 payload = {
                     "item_id": edit_data.get("item_id", str(uuid.uuid4())),
                     "type": "overview_update",
@@ -428,6 +567,7 @@ async def ecn_management_page():
                     "chip_id": sel_state["chip_id"],
                     "old_data": copy.deepcopy(sel_state["old_data"]),
                     "new_data": copy.deepcopy(sel_state["new_data"]),
+                    "config_processing_type": sel_state["processing_type"],  # 锁定底层执行类型
                     "execute_status": "pending",
                 }
                 await on_save_callback(payload, is_edit)
@@ -436,6 +576,7 @@ async def ecn_management_page():
             with ui.row().classes("w-full justify-end mt-4 shrink-0"):
                 ui.button("取消", on_click=dialog.close).props("flat color=grey")
                 ui.button("确认修改" if is_edit else "确认添加", on_click=save_item).props("color=primary")
+
         dialog.open()
 
     # ==========================================
@@ -1589,33 +1730,98 @@ async def ecn_management_page():
                         for item in local_data["change_items"]:
                             if item["type"] == "overview_update":
                                 target_projects = item.get("projects") or [item.get("project")]
+                                processing_type = item.get("config_processing_type", "text")
+                                icon_map = {
+                                    "file": "attachment",
+                                    "search": "saved_search",
+                                    "svn": "saved_search",
+                                    "image": "image",
+                                    "video": "play_circle",
+                                }
+                                new_icon = icon_map.get(processing_type, None)
+
                                 updated = False
                                 for project in [p for p in target_projects if p]:
                                     path = [f"{project}_over_data", item["label"], item["chip_id"]]
-                                    t_chip = db_storage.get_deep_item(path)
-                                    if t_chip:
-                                        t_chip.update(
-                                            {
-                                                k: v
-                                                for k, v in item.get("new_data", {}).items()
-                                                if k
-                                                in ["content", "notes", "test_select_data", "file_type", "url_path"]
-                                            }
+                                    old_chip = db_storage.get_deep_item(path)
+
+                                    if old_chip:
+                                        # 实时获取最新版本需求节点
+                                        req_max_ver = app.storage.general.get("project_req_max_ver", {}).get(
+                                            project, "1.0"
                                         )
-                                        t_chip.setdefault("timestamp", {})[now_str] = {
+
+                                        # ==========================================
+                                        # 动作 A：旧数据就地失活并归档历史
+                                        # ==========================================
+                                        deactivated_chip = copy.deepcopy(old_chip)
+                                        deactivated_chip.setdefault("select_activ_dic", {})[req_max_ver] = False
+                                        deactivated_chip["enabled"] = False
+                                        deactivated_chip["bg_color"] = "bg-grey-5"
+                                        deactivated_chip["icon"] = "block"
+                                        deactivated_chip.setdefault("timestamp", {})[now_str] = {
                                             "creator": f"ECN自动执行 ({local_data['ecn_id']})",
-                                            "select_activ_dic": copy.deepcopy(t_chip.get("select_activ_dic", {})),
+                                            "select_activ_dic": copy.deepcopy(deactivated_chip["select_activ_dic"]),
                                         }
-                                        await db_storage.set_deep_item(path, t_chip)
+                                        await db_storage.set_deep_item(path, deactivated_chip)
+
+                                        # ==========================================
+                                        # 动作 B：生成平行的新生强类型数据节点
+                                        # ==========================================
+                                        new_chip_id = str(uuid.uuid4())
+                                        new_activ_dic = copy.deepcopy(old_chip.get("select_activ_dic", {}))
+                                        new_activ_dic[req_max_ver] = True  # 激活当前版本
+
+                                        new_chip = {
+                                            "id": new_chip_id,
+                                            "row_id": old_chip.get("row_id"),  # 继承同一物理行
+                                            "role": old_chip.get("role"),
+                                            "type": processing_type,
+                                            "icon": new_icon,
+                                            "enabled": True,
+                                            "bg_color": "bg-light-blue-1",
+                                            "content": item.get("new_data", {}).get("content", ""),
+                                            # 系统底层静默接管权威注释
+                                            "notes": f"依据: {local_data['ecn_id']} 执行修改",
+                                            "creator": item.get("author", current_user),
+                                            "req_ver": req_max_ver,
+                                            "select_activ_dic": new_activ_dic,
+                                            "timestamp": {
+                                                now_str: {
+                                                    "creator": item.get("author", current_user),
+                                                    "select_activ_dic": copy.deepcopy(new_activ_dic),
+                                                }
+                                            },
+                                        }
+
+                                        # 注入复杂强类型独有字段
+                                        if "test_select_data" in item.get("new_data", {}):
+                                            new_chip["test_select_data"] = copy.deepcopy(
+                                                item["new_data"]["test_select_data"]
+                                            )
+                                        if "file_type" in item.get("new_data", {}):
+                                            new_chip["file_type"] = item["new_data"]["file_type"]
+                                        if "url_path" in item.get("new_data", {}):
+                                            new_chip["url_path"] = item["new_data"]["url_path"]
+                                        # === 补充：如果是 SVN 类型，继承仓库地址 ===
+                                        if "warehouse" in item.get("new_data", {}):
+                                            new_chip["warehouse"] = item["new_data"]["warehouse"]
+
+                                        # 写入新分裂节点
+                                        await db_storage.set_deep_item(
+                                            [f"{project}_over_data", item["label"], new_chip_id], new_chip
+                                        )
                                         updated = True
+
                                 if updated:
                                     item["execute_status"] = "success"
+
                         wf["current_state"], wf["pending_roles"] = ECNState.CLOSED, []
                         local_data["approval_log"].append(
                             {"user": current_user, "role": current_role, "action": "执行变更", "time": now_str}
                         )
                     except Exception as e:
-                        logger.error(f"执行ECN变更失败: {e}", exc_info=True)
+                        logger.error(f"执行ECN分裂变更失败: {e}", exc_info=True)
                         return ui.notify(f"执行失败: {e}", type="negative")
 
                 await db_storage.set_deep_item(["ecn_management_data", local_data["ecn_id"]], local_data)

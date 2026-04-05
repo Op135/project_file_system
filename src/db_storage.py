@@ -149,7 +149,7 @@ def get_item(key: str, default: Any = None, return_ref: bool = False) -> Any:
     return copy.deepcopy(val)  # 安全模式：返回深拷贝
 
 
-async def set_item(key: str, value: Any):
+async def set_item(key: str, value: Any) -> None:
     """
     深拷贝，设置一个值。
 

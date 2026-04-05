@@ -9,11 +9,14 @@ import logging
 import mimetypes
 import os
 import re
+import ssl
 import time
 import uuid
 from datetime import datetime
 from pathlib import Path
 
+import httpx
+from httpx import BasicAuth
 from nicegui import app, ui
 from nicegui.events import KeyEventArguments
 
@@ -24,11 +27,14 @@ from .config import (
     AVATAR_DIR,
     AVATAR_URL_DIR,
     BASE_DIR,
+    FILES_URL_DIR,
     IMG_DIR,
     IMG_URL_DIR,
     OVER_DIR,
     OVERVIEW_UI_RENDER_REGISTRY,
     REQ_DIR,
+    SVN_PASSWORD,
+    SVN_USERNAME,
 )
 
 # 获取一个以此模块命名的 logger
@@ -128,6 +134,158 @@ def handle_disconnect(client):
     """当用户断开连接时触发"""
     if client.id in online_users:
         del online_users[client.id]
+
+
+async def validate_search_path(content: str, config: dict, projects: list) -> tuple:
+    """
+    校验 search 类型的路径引用是否合法
+    返回: (is_valid: bool, url_path: str, file_type: str, local_filepath: str, message: str)
+    """
+    upload_path = config.get("upload_path", "")
+    search_scope_regular = config.get("search_scope_regular", "")
+    search_folder_according_li = config.get("search_folder_according", [])
+    search_hierarchy = config.get("search_hierarchy", [])
+
+    primary_project = projects[0] if projects else ""
+    target_path_list = []
+    according_folder_name_li = []
+
+    if search_folder_according_li and primary_project:
+        for according in search_folder_according_li:
+            for DATA in db_storage.get_deep_item([f"{primary_project}_over_data", according], {}).values():
+                if DATA.get("enabled"):
+                    according_folder_name_li.append(DATA["content"])
+        if not according_folder_name_li:
+            return False, "", "", "项目缺少依赖的目录项配置，无法构建路径"
+
+        for folder_name in according_folder_name_li:
+            if search_scope_regular:
+                match = re.search(search_scope_regular, folder_name)
+                if match:
+                    target_path_list.extend(
+                        await find_dirs_by_name_os_walk(f"{upload_path}\\{match.group(1)}", folder_name)
+                    )
+            else:
+                target_path_list.extend(await find_dirs_by_name_os_walk(upload_path, folder_name))
+    else:
+        if search_scope_regular:
+            match = re.search(search_scope_regular, content)
+            if match:
+                target_path_list = await find_dirs_by_name_os_walk(upload_path, match.group(1))
+        else:
+            target_path_list = [upload_path]
+
+    if search_hierarchy:
+        target_path_list = [f"{tp}\\{h}" for tp in target_path_list for h in search_hierarchy]
+
+    files_li = []
+    for target_path in target_path_list:
+        if target_path and Path(target_path).is_dir():
+            files_li.extend(find_files_pathlib(str(target_path), content))
+
+    if not files_li:
+        return False, "", "", "", f"未找到文件: {content}。请检查依赖配置或文件名规范。"
+    if len(files_li) > 1:
+        return False, "", "", "", f"存在多个同名文件: {content}。请确保唯一性。"
+
+    file_type = get_file_type_by_extension(str(files_li[0]))[0]
+    url_path = f"{FILES_URL_DIR}/{content}"
+    local_filepath = str(files_li[0])  # 新增：提取本地绝对路径
+
+    # 返回值变为 5 个
+    return True, url_path, file_type, local_filepath, "校验通过，文件存在！"
+
+
+async def validate_svn_url(content: str, config: dict, projects: list) -> tuple:
+    """
+    校验 svn 类型的网络引用是否合法
+    返回: (is_valid: bool, url_path: str, file_type: str, message: str)
+    """
+    from nicegui import app
+
+    primary_project = projects[0] if projects else ""
+    project_state = app.storage.general.get("project_summary", {}).get(primary_project, {}).get("state", "")
+    svn_main_folder = config.get("state_path", {}).get(project_state)
+
+    if not svn_main_folder:
+        return False, "", "", f"当前项目状态({project_state})下未配置SVN仓库路径"
+
+    upload_path = config.get("upload_path", "")
+    search_scope_regular = config.get("search_scope_regular", "")
+    search_folder_according_li = config.get("search_folder_according", [])
+    search_hierarchy = config.get("search_hierarchy", [])
+
+    according_folder_name = []
+    target_url_li = []
+
+    if search_folder_according_li and primary_project:
+        for according in search_folder_according_li:
+            for DATA in db_storage.get_deep_item([f"{primary_project}_over_data", according], {}).values():
+                if DATA.get("enabled"):
+                    according_folder_name.append(DATA["content"])
+        if not according_folder_name:
+            return False, "", "", "项目缺少依赖的目录项配置，无法构建SVN路径"
+
+        if search_scope_regular:
+            for folder_name in according_folder_name:
+                match = re.search(search_scope_regular, folder_name)
+                if match:
+                    match_folder = f"{match.group(1)}-{match.group(2)}"
+                    target_url_li.append(f"{upload_path}/{svn_main_folder}/{match_folder}/{folder_name}")
+        else:
+            for folder_name in according_folder_name:
+                target_url_li.append(f"{upload_path}/{svn_main_folder}/{folder_name}")
+    else:
+        if search_scope_regular:
+            match = re.search(search_scope_regular, content)
+            if match:
+                match_folder = f"{match.group(1)}-{match.group(2)}"
+                target_url_li.append(f"{upload_path}/{svn_main_folder}/{match_folder}")
+        else:
+            target_url_li.append(f"{upload_path}/{svn_main_folder}")
+
+    if not target_url_li:
+        return False, "", "", "未能生成有效的 SVN 校验路径"
+
+    return_url_li = []
+    for target_url in target_url_li:
+        if search_hierarchy:
+            for h in search_hierarchy:
+                target_url = f"{target_url}/{h}"
+        return_url_li.append(f"{target_url}/{content}")
+
+    if len(return_url_li) > 1:
+        return False, "", "", "生成了多个 SVN 路径，存在歧义不合规"
+
+    target_url = return_url_li[0]
+
+    # HTTP 探测
+    headers = {"User-Agent": "Mozilla/5.0"}
+    ssl_context = ssl.create_default_context()
+    ssl_context.check_hostname = False
+    ssl_context.verify_mode = ssl.CERT_NONE
+    auth = BasicAuth(SVN_USERNAME, SVN_PASSWORD) if SVN_USERNAME and SVN_PASSWORD else None
+
+    file_type = None
+    is_valid = False
+    try:
+        async with httpx.AsyncClient(follow_redirects=False, verify=ssl_context, auth=auth) as client:
+            async with client.stream("GET", target_url, timeout=15, headers=headers) as response:
+                if response.status_code < 400:
+                    ct = response.headers.get("Content-Type")
+                    file_type = ct.split(";")[0].strip() if ct else None
+                    if (file_type == "application/octet-stream" or file_type is None) and target_url.lower().endswith(
+                        ".pdf"
+                    ):
+                        file_type = "application/pdf"
+                    is_valid = True
+    except Exception as e:
+        return False, "", "", f"SVN 连接异常: {str(e)}"
+
+    if is_valid:
+        return True, target_url, file_type, "SVN 文件校验通过！"
+    else:
+        return False, "", "", f"SVN 文件不存在: {target_url}"
 
 
 def update_overview_charge_pending_dic(scope, des_user="", project_name="", des_label=""):

@@ -50,6 +50,8 @@ from .utils import (
     ui_hide,
     ui_show,
     update_overview_charge_pending_dic,
+    validate_search_path,
+    validate_svn_url,
 )
 
 # 获取一个以此模块命名的 logger
@@ -866,8 +868,8 @@ class InteractiveButton:
         self.chip_container.clear()
 
         with self.chip_container:
-            search_bool = False
-            target_path_list = []
+            # search_bool = False
+            # target_path_list = []
             LABEL_CHIP_DIC = db_storage.get_deep_item([f"{self.project}_over_data", self.label], {}).values()
 
             latest_user_str = (
@@ -890,15 +892,15 @@ class InteractiveButton:
                 if not app.storage.client.get("record_switch") and CHIP_INFO.get("enabled") is False:
                     continue
 
-                if self.processing_type == "search":
-                    if not search_bool:
-                        target_path_list = await self._search_file_path(CHIP_INFO["content"])
-                    search_bool = True
-                    await self._create_chip_from_data(CHIP_INFO, target_path_list, req_max_ver)
-                else:
-                    await self._create_chip_from_data(CHIP_INFO, [], req_max_ver)
+                # if self.processing_type == "search":
+                #     if not search_bool:
+                #         target_path_list = await self._search_file_path(CHIP_INFO["content"])
+                #     search_bool = True
+                #     await self._create_chip_from_data(CHIP_INFO, target_path_list, req_max_ver)
+                # else:
+                await self._create_chip_from_data(CHIP_INFO, req_max_ver)
 
-    async def _create_chip_from_data(self, chip_info: dict, target_path_list: list, req_max_ver: str) -> None:
+    async def _create_chip_from_data(self, chip_info: dict, req_max_ver: str) -> None:
         """从字典数据中渲染独立的 ui.chip 组件或图片缩略图"""
         chip_text = chip_info.get("content", "")
         filepath = ""
@@ -920,61 +922,91 @@ class InteractiveButton:
                 except Exception as e:
                     logger.error(f"添加静态文件失败，路径：{filepath}，错误：{e}")
             elif chip_info["type"] == "search":
-                files_li = []
-                target_path_li_str = ""
-                for target_path in target_path_list:
-                    target_path_li_str += f"{target_path}\n"
-                    if target_path and Path(target_path).is_dir():
-                        files_li.extend(find_files_pathlib(target_path, chip_text))
-                if not target_path_list:
-                    ui.notify(
-                        "文件存放的路径层级可能不符合规则!",
-                        type="warning",
-                        position="bottom",
-                        timeout=3000,
-                        progress=True,
-                        multi_line=True,
-                        close_button="✖",
-                    )
-                elif not files_li:
-                    ui.notify(
-                        f"引用文件不存在以下所有路径：\n{target_path_li_str}请检查文件命名或相关依赖配置!",
-                        type="warning",
-                        position="bottom",
-                        timeout=3000,
-                        progress=True,
-                        multi_line=True,
-                        close_button="✖",
-                    )
-                elif len(files_li) > 1:
-                    ui.notify(
-                        f"引用文件在以下路径：\n{target_path_li_str}有多个同名文件，请确保唯一!",
-                        type="warning",
-                        position="bottom",
-                        timeout=3000,
-                        progress=True,
-                        multi_line=True,
-                        close_button="✖",
-                    )
-                else:
-                    filepath = str(files_li[0])
+                # files_li = []
+                # target_path_li_str = ""
+                # for target_path in target_path_list:
+                #     target_path_li_str += f"{target_path}\n"
+                #     if target_path and Path(target_path).is_dir():
+                #         files_li.extend(find_files_pathlib(target_path, chip_text))
+                # if not target_path_list:
+                #     ui.notify(
+                #         "文件存放的路径层级可能不符合规则!",
+                #         type="warning",
+                #         position="bottom",
+                #         timeout=3000,
+                #         progress=True,
+                #         multi_line=True,
+                #         close_button="✖",
+                #     )
+                # elif not files_li:
+                #     ui.notify(
+                #         f"引用文件不存在以下所有路径：\n{target_path_li_str}请检查文件命名或相关依赖配置!",
+                #         type="warning",
+                #         position="bottom",
+                #         timeout=3000,
+                #         progress=True,
+                #         multi_line=True,
+                #         close_button="✖",
+                #     )
+                # elif len(files_li) > 1:
+                #     ui.notify(
+                #         f"引用文件在以下路径：\n{target_path_li_str}有多个同名文件，请确保唯一!",
+                #         type="warning",
+                #         position="bottom",
+                #         timeout=3000,
+                #         progress=True,
+                #         multi_line=True,
+                #         close_button="✖",
+                #     )
+                # else:
+                #     filepath = str(files_li[0])
+                #     try:
+                #         app.add_static_file(local_file=filepath, url_path=chip_info.get("url_path"))
+                #     except Exception as e:
+                #         logger.error(f"添加静态文件失败，路径：{filepath}，错误：{e}")
+                # 组装配置上下文
+                config_mock = {
+                    "upload_path": self.upload_path,
+                    "search_scope_regular": self.search_scope_regular,
+                    "search_folder_according_li": self.search_folder_according_li,
+                    "search_hierarchy": self.search_hierarchy,
+                }
+                # 接收 5 个参数
+                is_valid, _, _, local_filepath, msg = await validate_search_path(chip_text, config_mock, [self.project])
+                if is_valid and local_filepath:
+                    filepath = local_filepath
                     try:
                         app.add_static_file(local_file=filepath, url_path=chip_info.get("url_path"))
                     except Exception as e:
                         logger.error(f"添加静态文件失败，路径：{filepath}，错误：{e}")
+                else:
+                    # 如果渲染时发现文件丢失，后台记录日志，不要在 UI 弹窗干扰用户
+                    logger.warning(f"渲染时检查失败: {msg}")
             elif chip_info["type"] == "svn":
-                target_url = chip_info.get("url_path", "")
-                file_info = await self.get_url_file_info_async(target_url)
-                if not file_info[0]:
-                    ui.notify(
-                        f"引用文件：{chip_text}，已丢失!",
-                        type="warning",
-                        position="bottom",
-                        timeout=3000,
-                        progress=True,
-                        # multi_line=True,
-                        close_button="✖",
-                    )
+                # target_url = chip_info.get("url_path", "")
+                # file_info = await self.get_url_file_info_async(target_url)
+                # if not file_info[0]:
+                #     ui.notify(
+                #         f"引用文件：{chip_text}，已丢失!",
+                #         type="warning",
+                #         position="bottom",
+                #         timeout=3000,
+                #         progress=True,
+                #         # multi_line=True,
+                #         close_button="✖",
+                #     )
+                config_mock = {
+                    "upload_path": self.upload_path,
+                    "search_scope_regular": self.search_scope_regular,
+                    "search_folder_according_li": self.search_folder_according_li,
+                    "search_hierarchy": self.search_hierarchy,
+                    "state_path": self.state_path,
+                }
+                # SVN 校验
+                is_valid, _, file_type, msg = await validate_svn_url(chip_text, config_mock, [self.project])
+                file_info = (is_valid, file_type)
+                if not is_valid:
+                    logger.warning(f"渲染时 SVN 检查失败: {msg}")
 
             chip = (
                 ui.chip(text=chip_text, removable=False, icon=chip_info.get("icon"))
@@ -1563,86 +1595,102 @@ class InteractiveButton:
                     return
 
                 ui_spinner.set_visibility(True)
-                files_li = []
-                target_path_li_str = ""
-                target_path_list = await self._search_file_path(text)
-                for target_path in target_path_list:
-                    target_path_li_str += f"{target_path}\n"
-                    if target_path and Path(target_path).is_dir():
-                        files_li.extend(find_files_pathlib(target_path, text))
-                if not target_path_list:
-                    ui.notify(
-                        "文件存放的路径层级可能不符合规则!",
-                        type="warning",
-                        position="bottom",
-                        timeout=3000,
-                        progress=True,
-                        multi_line=True,
-                        close_button="✖",
-                    )
-                elif not files_li:
-                    ui.notify(
-                        f"引用文件不存在以下所有路径：\n{target_path_li_str}请检查文件命名或相关依赖配置!",
-                        type="warning",
-                        position="bottom",
-                        timeout=3000,
-                        progress=True,
-                        multi_line=True,
-                        close_button="✖",
-                    )
-                elif len(files_li) > 1:
-                    ui.notify(
-                        f"引用文件在以下路径：\n{target_path_li_str}有多个同名文件，请确保唯一!",
-                        type="warning",
-                        position="bottom",
-                        timeout=3000,
-                        progress=True,
-                        multi_line=True,
-                        close_button="✖",
-                    )
-                else:
-                    file_type_set = get_file_type_by_extension(str(files_li[0]))
-                    chip_id = str(uuid.uuid4())
-                    req_max_ver = app.storage.general["project_req_max_ver"][self.project]
-                    select_activ_dic = self._get_select_activ_dic(req_max_ver)
-                    creator = app.storage.user.get("current_user", "匿名用户")
-                    chip_data = {
-                        "id": chip_id,
-                        "role": self.role,
-                        "icon": "saved_search",
-                        "enabled": True,
-                        "bg_color": "bg-light-blue-1",
-                        "type": "search",
-                        "file_type": file_type_set[0],
-                        "url_path": f"{FILES_URL_DIR}/{text}",
-                        "content": text,
-                        "notes": notes,
-                        "creator": creator,
-                        "req_ver": req_max_ver,
-                        "select_activ_dic": select_activ_dic,
-                        "timestamp": {
-                            datetime.now().strftime("%Y-%m-%d %H:%M:%S"): {
-                                "creator": creator,
-                                "select_activ_dic": select_activ_dic,
-                            }
-                        },
-                    }
-                    await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id], chip_data)
-                    # 数据写入完毕后，推高全局版本号
-                    OverviewVersionManager.bump(self.project, self.label)
-                    self.chip_label.value, self.chip_notes.value = "", ""
+                # files_li = []
+                # target_path_li_str = ""
+                # target_path_list = await self._search_file_path(text)
+                # for target_path in target_path_list:
+                #     target_path_li_str += f"{target_path}\n"
+                #     if target_path and Path(target_path).is_dir():
+                #         files_li.extend(find_files_pathlib(target_path, text))
+                # if not target_path_list:
+                #     ui.notify(
+                #         "文件存放的路径层级可能不符合规则!",
+                #         type="warning",
+                #         position="bottom",
+                #         timeout=3000,
+                #         progress=True,
+                #         multi_line=True,
+                #         close_button="✖",
+                #     )
+                # elif not files_li:
+                #     ui.notify(
+                #         f"引用文件不存在以下所有路径：\n{target_path_li_str}请检查文件命名或相关依赖配置!",
+                #         type="warning",
+                #         position="bottom",
+                #         timeout=3000,
+                #         progress=True,
+                #         multi_line=True,
+                #         close_button="✖",
+                #     )
+                # elif len(files_li) > 1:
+                #     ui.notify(
+                #         f"引用文件在以下路径：\n{target_path_li_str}有多个同名文件，请确保唯一!",
+                #         type="warning",
+                #         position="bottom",
+                #         timeout=3000,
+                #         progress=True,
+                #         multi_line=True,
+                #         close_button="✖",
+                #     )
+                # else:
+                #     file_type_set = get_file_type_by_extension(str(files_li[0]))
+                # --- 组装 config 供 utils 消费 ---
+                config_mock = {
+                    "upload_path": self.upload_path,
+                    "search_scope_regular": self.search_scope_regular,
+                    "search_folder_according_li": self.search_folder_according_li,
+                    "search_hierarchy": self.search_hierarchy,
+                }
+
+                is_valid, url_path, file_type, _, msg = await validate_search_path(text, config_mock, [self.project])
+
+                if not is_valid:
+                    ui.notify(msg, type="warning", position="bottom", timeout=3000)
                     ui_spinner.set_visibility(False)
-                    self.chip_dialog.close()
-                    ui.notify(
-                        "文件引用已添加。",
-                        type="positive",
-                        position="bottom",
-                        timeout=1000,
-                        progress=True,
-                        # multi_line=True,
-                        close_button="✖",
-                    )
-                    self._show_related_chip_select_dialog(text, True, "add_chip")
+                    return
+                chip_id = str(uuid.uuid4())
+                req_max_ver = app.storage.general["project_req_max_ver"][self.project]
+                select_activ_dic = self._get_select_activ_dic(req_max_ver)
+                creator = app.storage.user.get("current_user", "匿名用户")
+                chip_data = {
+                    "id": chip_id,
+                    "role": self.role,
+                    "icon": "saved_search",
+                    "enabled": True,
+                    "bg_color": "bg-light-blue-1",
+                    "type": "search",
+                    # "file_type": file_type_set[0],
+                    # "url_path": f"{FILES_URL_DIR}/{text}",
+                    "file_type": file_type,
+                    "url_path": url_path,
+                    "content": text,
+                    "notes": notes,
+                    "creator": creator,
+                    "req_ver": req_max_ver,
+                    "select_activ_dic": select_activ_dic,
+                    "timestamp": {
+                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"): {
+                            "creator": creator,
+                            "select_activ_dic": select_activ_dic,
+                        }
+                    },
+                }
+                await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id], chip_data)
+                # 数据写入完毕后，推高全局版本号
+                OverviewVersionManager.bump(self.project, self.label)
+                self.chip_label.value, self.chip_notes.value = "", ""
+                ui_spinner.set_visibility(False)
+                self.chip_dialog.close()
+                ui.notify(
+                    "文件引用已添加。",
+                    type="positive",
+                    position="bottom",
+                    timeout=1000,
+                    progress=True,
+                    # multi_line=True,
+                    close_button="✖",
+                )
+                self._show_related_chip_select_dialog(text, True, "add_chip")
             except Exception as ex:
                 # 捕捉潜在的数据库写入等异常
                 logger.error(f"添加概述失败: {ex}", exc_info=True)
@@ -1713,26 +1761,41 @@ class InteractiveButton:
                     return
 
                 ui_spinner.set_visibility(True)
-                target_url_li = self._splicing_svn_file_url(text)
-                if target_url_li and len(target_url_li) == 1:
-                    target_url = target_url_li[0]
-                    file_info = await self.get_url_file_info_async(target_url)
-                    if not file_info[0]:
-                        ui_spinner.set_visibility(False)
-                        return
-                elif target_url_li and len(target_url_li) > 1:
-                    ui.notify(
-                        "有多个路径，不合规!",
-                        type="warning",
-                        position="bottom",
-                        timeout=3000,
-                        progress=True,
-                        # multi_line=True,
-                        close_button="✖",
-                    )
-                    ui_spinner.set_visibility(False)
-                    return
-                else:
+                # target_url_li = self._splicing_svn_file_url(text)
+                # if target_url_li and len(target_url_li) == 1:
+                #     target_url = target_url_li[0]
+                #     file_info = await self.get_url_file_info_async(target_url)
+                #     if not file_info[0]:
+                #         ui_spinner.set_visibility(False)
+                #         return
+                # elif target_url_li and len(target_url_li) > 1:
+                #     ui.notify(
+                #         "有多个路径，不合规!",
+                #         type="warning",
+                #         position="bottom",
+                #         timeout=3000,
+                #         progress=True,
+                #         # multi_line=True,
+                #         close_button="✖",
+                #     )
+                #     ui_spinner.set_visibility(False)
+                #     return
+                # else:
+                #     ui_spinner.set_visibility(False)
+                #     return
+                # --- 组装 config 供 utils 消费 ---
+                config_mock = {
+                    "upload_path": self.upload_path,
+                    "search_scope_regular": self.search_scope_regular,
+                    "search_folder_according_li": self.search_folder_according_li,
+                    "search_hierarchy": self.search_hierarchy,
+                    "state_path": self.state_path,
+                }
+
+                is_valid, url_path, file_type, msg = await validate_svn_url(text, config_mock, [self.project])
+
+                if not is_valid:
+                    ui.notify(msg, type="warning", position="bottom", timeout=3000)
                     ui_spinner.set_visibility(False)
                     return
 
@@ -1740,11 +1803,11 @@ class InteractiveButton:
                 req_max_ver = app.storage.general["project_req_max_ver"][self.project]
                 select_activ_dic = self._get_select_activ_dic(req_max_ver)
                 creator = app.storage.user.get("current_user", "匿名用户")
-                file_type = file_info[1]
-                if (file_type == "application/octet-stream" or file_type is None) and target_url.lower().endswith(
-                    ".pdf"
-                ):
-                    file_type = "application/pdf"
+                # file_type = file_info[1]
+                # if (file_type == "application/octet-stream" or file_type is None) and target_url.lower().endswith(
+                #     ".pdf"
+                # ):
+                #     file_type = "application/pdf"
 
                 chip_data = {
                     "id": chip_id,
@@ -1754,7 +1817,8 @@ class InteractiveButton:
                     "bg_color": "bg-light-blue-1",
                     "type": "svn",
                     "file_type": file_type,
-                    "url_path": target_url,
+                    # "url_path": target_url,
+                    "url_path": url_path,
                     "content": text,
                     "warehouse": warehouse,
                     "notes": notes,
@@ -2597,17 +2661,36 @@ class InteractiveButton:
         if c_type == "file":
             await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "icon"], "attachment")
         elif c_type == "search":
-            target_path_list = await self._search_file_path(chip_text)
-            if target_path_list and find_files_pathlib(target_path_list[0], chip_text):
-                await db_storage.set_deep_item(
-                    [f"{self.project}_over_data", self.label, chip_id, "icon"], "saved_search"
-                )
-            else:
-                await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "icon"], "search_off")
+            # target_path_list = await self._search_file_path(chip_text)
+            # if target_path_list and find_files_pathlib(target_path_list[0], chip_text):
+            #     await db_storage.set_deep_item(
+            #         [f"{self.project}_over_data", self.label, chip_id, "icon"], "saved_search"
+            #     )
+            # else:
+            #     await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "icon"], "search_off")
+            config_mock = {
+                "upload_path": self.upload_path,
+                "search_scope_regular": self.search_scope_regular,
+                "search_folder_according_li": self.search_folder_according_li,
+                "search_hierarchy": self.search_hierarchy,
+            }
+            is_valid, _, _, _, _ = await validate_search_path(chip_text, config_mock, [self.project])
+            icon_val = "saved_search" if is_valid else "search_off"
+            await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "icon"], icon_val)
         elif c_type == "svn":
-            url = db_storage.get_deep_item([f"{self.project}_over_data", self.label, chip_id, "url_path"])
-            file_info = await self.get_url_file_info_async(url)
-            icon_val = "saved_search" if file_info[0] else "search_off"
+            # url = db_storage.get_deep_item([f"{self.project}_over_data", self.label, chip_id, "url_path"])
+            # file_info = await self.get_url_file_info_async(url)
+            # icon_val = "saved_search" if file_info[0] else "search_off"
+            # await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "icon"], icon_val)
+            config_mock = {
+                "upload_path": self.upload_path,
+                "search_scope_regular": self.search_scope_regular,
+                "search_folder_according_li": self.search_folder_according_li,
+                "search_hierarchy": self.search_hierarchy,
+                "state_path": self.state_path,
+            }
+            is_valid, _, _, _ = await validate_svn_url(chip_text, config_mock, [self.project])
+            icon_val = "saved_search" if is_valid else "search_off"
             await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "icon"], icon_val)
         else:
             await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "icon"], None)
@@ -2742,182 +2825,182 @@ class InteractiveButton:
     # 7. 路径与 SVN 寻址逻辑
     # ==========================================================
 
-    def _splicing_svn_file_url(self, chip_text) -> list:
-        return_url_li, target_url_li, according_folder_name, according_title = [], [], [], ""
-        project_state = app.storage.general["project_summary"][self.project]["state"]
-        svn_main_folder = self.state_path.get(project_state)
+    # def _splicing_svn_file_url(self, chip_text) -> list:
+    #     return_url_li, target_url_li, according_folder_name, according_title = [], [], [], ""
+    #     project_state = app.storage.general["project_summary"][self.project]["state"]
+    #     svn_main_folder = self.state_path.get(project_state)
 
-        if not svn_main_folder:
-            if overview_state_show_judge(self.role):
-                ui.notify(
-                    f"该项概述，在当前项目{project_state}状态下，无相应svn管控仓库配置，无法添加概述内容!",
-                    type="warning",
-                    position="bottom",
-                    timeout=3000,
-                    progress=True,
-                    # multi_line=True,
-                    close_button="✖",
-                )
-            return target_url_li
+    #     if not svn_main_folder:
+    #         if overview_state_show_judge(self.role):
+    #             ui.notify(
+    #                 f"该项概述，在当前项目{project_state}状态下，无相应svn管控仓库配置，无法添加概述内容!",
+    #                 type="warning",
+    #                 position="bottom",
+    #                 timeout=3000,
+    #                 progress=True,
+    #                 # multi_line=True,
+    #                 close_button="✖",
+    #             )
+    #         return target_url_li
 
-        if self.search_folder_according_li:
-            for search_folder_according in self.search_folder_according_li:
-                title_str = (
-                    app.storage.general.get("over_config_data_flat", {})
-                    .get(search_folder_according, {})
-                    .get("title", "未知项")
-                )
-                according_title = f"{according_title}\n{title_str}"
-                for DATA in db_storage.get_deep_item(
-                    [f"{self.project}_over_data", search_folder_according], {}
-                ).values():
-                    if DATA["enabled"]:
-                        according_folder_name.append(DATA["content"])
+    #     if self.search_folder_according_li:
+    #         for search_folder_according in self.search_folder_according_li:
+    #             title_str = (
+    #                 app.storage.general.get("over_config_data_flat", {})
+    #                 .get(search_folder_according, {})
+    #                 .get("title", "未知项")
+    #             )
+    #             according_title = f"{according_title}\n{title_str}"
+    #             for DATA in db_storage.get_deep_item(
+    #                 [f"{self.project}_over_data", search_folder_according], {}
+    #             ).values():
+    #                 if DATA["enabled"]:
+    #                     according_folder_name.append(DATA["content"])
 
-            if len(according_folder_name) < 1:
-                if overview_state_show_judge(self.role):
-                    ui.notify(
-                        f"概述项：\n{according_title}\n均无有效配置，链接无效!",
-                        type="warning",
-                        position="bottom",
-                        timeout=3000,
-                        progress=True,
-                        multi_line=True,
-                        close_button="✖",
-                    )
-                return target_url_li
-            else:
-                if self.search_scope_regular:
-                    for folder_name in according_folder_name:
-                        match = re.search(self.search_scope_regular, folder_name)
-                        if match:
-                            match_folder = f"{match.group(1)}-{match.group(2)}"
-                            target_url_li.append(f"{self.upload_path}/{svn_main_folder}/{match_folder}/{folder_name}")
-                        elif overview_state_show_judge(self.role):
-                            ui.notify(
-                                f"文件夹{folder_name}命名不符合规则!",
-                                type="warning",
-                                position="bottom",
-                                timeout=3000,
-                                progress=True,
-                                # multi_line=True,
-                                close_button="✖",
-                            )
-                    if not target_url_li:
-                        return target_url_li
-                else:
-                    for folder_name in according_folder_name:
-                        target_url_li.append(f"{self.upload_path}/{svn_main_folder}/{folder_name}")
-        else:
-            if self.search_scope_regular:
-                match = re.search(self.search_scope_regular, chip_text)
-                if match:
-                    match_folder = f"{match.group(1)}-{match.group(2)}"
-                    target_url_li.append(f"{self.upload_path}/{svn_main_folder}/{match_folder}")
-                else:
-                    if overview_state_show_judge(self.role):
-                        ui.notify(
-                            f"文件{chip_text}命名不符合规则!",
-                            type="warning",
-                            position="bottom",
-                            timeout=3000,
-                            progress=True,
-                            # multi_line=True,
-                            close_button="✖",
-                        )
-                    return target_url_li
-            else:
-                target_url_li.append(f"{self.upload_path}/{svn_main_folder}")
+    #         if len(according_folder_name) < 1:
+    #             if overview_state_show_judge(self.role):
+    #                 ui.notify(
+    #                     f"概述项：\n{according_title}\n均无有效配置，链接无效!",
+    #                     type="warning",
+    #                     position="bottom",
+    #                     timeout=3000,
+    #                     progress=True,
+    #                     multi_line=True,
+    #                     close_button="✖",
+    #                 )
+    #             return target_url_li
+    #         else:
+    #             if self.search_scope_regular:
+    #                 for folder_name in according_folder_name:
+    #                     match = re.search(self.search_scope_regular, folder_name)
+    #                     if match:
+    #                         match_folder = f"{match.group(1)}-{match.group(2)}"
+    #                         target_url_li.append(f"{self.upload_path}/{svn_main_folder}/{match_folder}/{folder_name}")
+    #                     elif overview_state_show_judge(self.role):
+    #                         ui.notify(
+    #                             f"文件夹{folder_name}命名不符合规则!",
+    #                             type="warning",
+    #                             position="bottom",
+    #                             timeout=3000,
+    #                             progress=True,
+    #                             # multi_line=True,
+    #                             close_button="✖",
+    #                         )
+    #                 if not target_url_li:
+    #                     return target_url_li
+    #             else:
+    #                 for folder_name in according_folder_name:
+    #                     target_url_li.append(f"{self.upload_path}/{svn_main_folder}/{folder_name}")
+    #     else:
+    #         if self.search_scope_regular:
+    #             match = re.search(self.search_scope_regular, chip_text)
+    #             if match:
+    #                 match_folder = f"{match.group(1)}-{match.group(2)}"
+    #                 target_url_li.append(f"{self.upload_path}/{svn_main_folder}/{match_folder}")
+    #             else:
+    #                 if overview_state_show_judge(self.role):
+    #                     ui.notify(
+    #                         f"文件{chip_text}命名不符合规则!",
+    #                         type="warning",
+    #                         position="bottom",
+    #                         timeout=3000,
+    #                         progress=True,
+    #                         # multi_line=True,
+    #                         close_button="✖",
+    #                     )
+    #                 return target_url_li
+    #         else:
+    #             target_url_li.append(f"{self.upload_path}/{svn_main_folder}")
 
-        for target_url in target_url_li:
-            if self.search_hierarchy:
-                for h in self.search_hierarchy:
-                    target_url = f"{target_url}/{h}"
-            return_url_li.append(f"{target_url}/{chip_text}")
-        return return_url_li
+    #     for target_url in target_url_li:
+    #         if self.search_hierarchy:
+    #             for h in self.search_hierarchy:
+    #                 target_url = f"{target_url}/{h}"
+    #         return_url_li.append(f"{target_url}/{chip_text}")
+    #     return return_url_li
 
-    async def _search_file_path(self, chip_text) -> list:
-        target_path_list, folder_according_li, according_folder_name_li, according_title = [], [], [], ""
-        # 如果有配置搜索依据项，则先根据依据项找到对应的文件夹名称，再去上传目录下寻找对应文件夹，最后在对应文件夹下寻找目标文件
-        if self.search_folder_according_li:
-            for search_folder_according in self.search_folder_according_li:
-                title_str = (
-                    app.storage.general.get("over_config_data_flat", {})
-                    .get(search_folder_according, {})
-                    .get("title", "未知项")
-                )
-                according_title = f"{according_title}\n{title_str}"
-                for DATA in db_storage.get_deep_item(
-                    [f"{self.project}_over_data", search_folder_according], {}
-                ).values():
-                    if DATA["enabled"]:
-                        according_folder_name_li.append(DATA["content"])
-            # 依据的概述项内容为真的，相当于配置文件夹名的列表少于一个，没有有效的文件夹名可供寻找，直接返回无效提示
-            if len(according_folder_name_li) < 1:
-                if overview_state_show_judge(self.role):
-                    ui.notify(
-                        f"概述项：\n{according_title}\n均无有效配置，链接无效!",
-                        type="warning",
-                        position="bottom",
-                        timeout=3000,
-                        progress=True,
-                        multi_line=True,
-                        close_button="✖",
-                    )
-                return target_path_list
-            else:
-                # 如果有按照正则表达式缩小寻找范围
-                if self.search_scope_regular:
-                    for according_folder_name in according_folder_name_li:
-                        match = re.search(self.search_scope_regular, according_folder_name)
-                        if match:
-                            # 将符合正则表达式的文件夹名进行二次确认寻找，确保上传目录下存在对应文件夹
-                            folder_according_li.extend(
-                                await find_dirs_by_name_os_walk(
-                                    f"{self.upload_path}\\{match.group(1)}", according_folder_name
-                                )
-                            )
-                        elif overview_state_show_judge(self.role):
-                            ui.notify(
-                                f"文件夹{according_folder_name}命名不符合规则!",
-                                type="warning",
-                                position="bottom",
-                                timeout=3000,
-                                progress=True,
-                                # multi_line=True,
-                                close_button="✖",
-                            )
-                else:
-                    for according_folder_name in according_folder_name_li:
-                        folder_according_li.extend(
-                            await find_dirs_by_name_os_walk(f"{self.upload_path}", according_folder_name)
-                        )
-                target_path_list = folder_according_li
-        else:
-            if self.search_scope_regular:
-                match = re.search(self.search_scope_regular, chip_text)
-                if match:
-                    folder_according_li = await find_dirs_by_name_os_walk(f"{self.upload_path}", match.group(1))
-                    if folder_according_li:
-                        target_path_list = folder_according_li
-                elif overview_state_show_judge(self.role):
-                    ui.notify(
-                        f"文件{chip_text}命名不符合规则!",
-                        type="warning",
-                        position="bottom",
-                        timeout=3000,
-                        progress=True,
-                        # multi_line=True,
-                        close_button="✖",
-                    )
-            else:
-                target_path_list = [self.upload_path]
+    # async def _search_file_path(self, chip_text) -> list:
+    #     target_path_list, folder_according_li, according_folder_name_li, according_title = [], [], [], ""
+    #     # 如果有配置搜索依据项，则先根据依据项找到对应的文件夹名称，再去上传目录下寻找对应文件夹，最后在对应文件夹下寻找目标文件
+    #     if self.search_folder_according_li:
+    #         for search_folder_according in self.search_folder_according_li:
+    #             title_str = (
+    #                 app.storage.general.get("over_config_data_flat", {})
+    #                 .get(search_folder_according, {})
+    #                 .get("title", "未知项")
+    #             )
+    #             according_title = f"{according_title}\n{title_str}"
+    #             for DATA in db_storage.get_deep_item(
+    #                 [f"{self.project}_over_data", search_folder_according], {}
+    #             ).values():
+    #                 if DATA["enabled"]:
+    #                     according_folder_name_li.append(DATA["content"])
+    #         # 依据的概述项内容为真的，相当于配置文件夹名的列表少于一个，没有有效的文件夹名可供寻找，直接返回无效提示
+    #         if len(according_folder_name_li) < 1:
+    #             if overview_state_show_judge(self.role):
+    #                 ui.notify(
+    #                     f"概述项：\n{according_title}\n均无有效配置，链接无效!",
+    #                     type="warning",
+    #                     position="bottom",
+    #                     timeout=3000,
+    #                     progress=True,
+    #                     multi_line=True,
+    #                     close_button="✖",
+    #                 )
+    #             return target_path_list
+    #         else:
+    #             # 如果有按照正则表达式缩小寻找范围
+    #             if self.search_scope_regular:
+    #                 for according_folder_name in according_folder_name_li:
+    #                     match = re.search(self.search_scope_regular, according_folder_name)
+    #                     if match:
+    #                         # 将符合正则表达式的文件夹名进行二次确认寻找，确保上传目录下存在对应文件夹
+    #                         folder_according_li.extend(
+    #                             await find_dirs_by_name_os_walk(
+    #                                 f"{self.upload_path}\\{match.group(1)}", according_folder_name
+    #                             )
+    #                         )
+    #                     elif overview_state_show_judge(self.role):
+    #                         ui.notify(
+    #                             f"文件夹{according_folder_name}命名不符合规则!",
+    #                             type="warning",
+    #                             position="bottom",
+    #                             timeout=3000,
+    #                             progress=True,
+    #                             # multi_line=True,
+    #                             close_button="✖",
+    #                         )
+    #             else:
+    #                 for according_folder_name in according_folder_name_li:
+    #                     folder_according_li.extend(
+    #                         await find_dirs_by_name_os_walk(f"{self.upload_path}", according_folder_name)
+    #                     )
+    #             target_path_list = folder_according_li
+    #     else:
+    #         if self.search_scope_regular:
+    #             match = re.search(self.search_scope_regular, chip_text)
+    #             if match:
+    #                 folder_according_li = await find_dirs_by_name_os_walk(f"{self.upload_path}", match.group(1))
+    #                 if folder_according_li:
+    #                     target_path_list = folder_according_li
+    #             elif overview_state_show_judge(self.role):
+    #                 ui.notify(
+    #                     f"文件{chip_text}命名不符合规则!",
+    #                     type="warning",
+    #                     position="bottom",
+    #                     timeout=3000,
+    #                     progress=True,
+    #                     # multi_line=True,
+    #                     close_button="✖",
+    #                 )
+    #         else:
+    #             target_path_list = [self.upload_path]
 
-        if self.search_hierarchy:
-            target_path_list = [
-                f"{target_path}\\{h}" for target_path in target_path_list for h in self.search_hierarchy
-            ]
-        return target_path_list
+    #     if self.search_hierarchy:
+    #         target_path_list = [
+    #             f"{target_path}\\{h}" for target_path in target_path_list for h in self.search_hierarchy
+    #         ]
+    #     return target_path_list
 
     # ==========================================================
     # 8. 网络交互与文件查看/下载辅助函数
@@ -2989,24 +3072,24 @@ class InteractiveButton:
         self.offset = (0, 0)
         self.update_transform()
 
-    async def get_url_file_info_async(self, url: str, timeout: int = 15) -> Tuple[bool, Optional[str]]:
-        headers = {"User-Agent": "Mozilla/5.0"}
-        ssl_context = ssl.create_default_context()
-        ssl_context.check_hostname = False
-        ssl_context.verify_mode = ssl.CERT_NONE
-        auth = BasicAuth(SVN_USERNAME, SVN_PASSWORD) if SVN_USERNAME and SVN_PASSWORD else None
+    # async def get_url_file_info_async(self, url: str, timeout: int = 15) -> Tuple[bool, Optional[str]]:
+    #     headers = {"User-Agent": "Mozilla/5.0"}
+    #     ssl_context = ssl.create_default_context()
+    #     ssl_context.check_hostname = False
+    #     ssl_context.verify_mode = ssl.CERT_NONE
+    #     auth = BasicAuth(SVN_USERNAME, SVN_PASSWORD) if SVN_USERNAME and SVN_PASSWORD else None
 
-        try:
-            async with httpx.AsyncClient(follow_redirects=False, verify=ssl_context, auth=auth) as client:
-                async with client.stream("GET", url, timeout=timeout, headers=headers) as response:
-                    if 300 <= response.status_code < 400:
-                        return False, None
-                    if response.status_code < 400:
-                        ct = response.headers.get("Content-Type")
-                        return True, ct.split(";")[0].strip() if ct else None
-                    return False, None
-        except Exception:
-            return False, None
+    #     try:
+    #         async with httpx.AsyncClient(follow_redirects=False, verify=ssl_context, auth=auth) as client:
+    #             async with client.stream("GET", url, timeout=timeout, headers=headers) as response:
+    #                 if 300 <= response.status_code < 400:
+    #                     return False, None
+    #                 if response.status_code < 400:
+    #                     ct = response.headers.get("Content-Type")
+    #                     return True, ct.split(";")[0].strip() if ct else None
+    #                 return False, None
+    #     except Exception:
+    #         return False, None
 
     async def get_svn_file_http_async(self, http_url: str, username: str = "", password: str = "") -> tuple:
         auth = BasicAuth(username, password) if username and password else None
@@ -3581,20 +3664,30 @@ class OverviewTableGroup:
                 except Exception as e:
                     logger.error(f"添加静态文件失败，路径：{filepath}，错误：{e}")
             elif chip_info["type"] == "search":
-                target_path_list = await self._search_file_path(chip_text, config)
-                files_li = []
-                for target_path in target_path_list:
-                    if target_path and Path(target_path).is_dir():
-                        files_li.extend(find_files_pathlib(target_path, chip_text))
-                if len(files_li) == 1:
-                    filepath = str(files_li[0])
+                # target_path_list = await self._search_file_path(chip_text, config)
+                # files_li = []
+                # for target_path in target_path_list:
+                #     if target_path and Path(target_path).is_dir():
+                #         files_li.extend(find_files_pathlib(target_path, chip_text))
+                # if len(files_li) == 1:
+                #     filepath = str(files_li[0])
+                #     try:
+                #         app.add_static_file(local_file=filepath, url_path=chip_info.get("url_path"))
+                #     except Exception as e:
+                #         logger.error(f"添加静态文件失败，路径：{filepath}，错误：{e}")
+                # 直接使用传入的 config
+                is_valid, _, _, local_filepath, msg = await validate_search_path(chip_text, config, [self.project])
+                if is_valid and local_filepath:
+                    filepath = local_filepath
                     try:
                         app.add_static_file(local_file=filepath, url_path=chip_info.get("url_path"))
                     except Exception as e:
                         logger.error(f"添加静态文件失败，路径：{filepath}，错误：{e}")
             elif chip_info["type"] == "svn":
-                target_url = chip_info.get("url_path", "")
-                file_info = await self.get_url_file_info_async(target_url)
+                # target_url = chip_info.get("url_path", "")
+                # file_info = await self.get_url_file_info_async(target_url)
+                is_valid, _, file_type, msg = await validate_svn_url(chip_text, config, [self.project])
+                file_info = (is_valid, file_type)
 
             # 💡 优化 3：新增一个相对定位的容器包裹 Chip，这是解决小按钮被裁切的关键！
             with ui.element("div").classes("relative w-full flex items-center justify-start") as wrapper:
@@ -4691,91 +4784,107 @@ class OverviewTableGroup:
                     return
 
                 ui_spinner.set_visibility(True)
-                target_path_list = await self._search_file_path(text, config)
-                files_li = []
-                target_path_li_str = ""  # 用于 Debug 提示
+                # target_path_list = await self._search_file_path(text, config)
+                # files_li = []
+                # target_path_li_str = ""  # 用于 Debug 提示
 
-                for target_path in target_path_list:
-                    target_path_li_str += f"{target_path}\n"
-                    if target_path and Path(target_path).is_dir():
-                        files_li.extend(find_files_pathlib(target_path, text))
+                # for target_path in target_path_list:
+                #     target_path_li_str += f"{target_path}\n"
+                #     if target_path and Path(target_path).is_dir():
+                #         files_li.extend(find_files_pathlib(target_path, text))
 
-                if not target_path_list:
+                # if not target_path_list:
+                #     ui.notify(
+                #         "文件存放的路径层级可能不符合规则!",
+                #         type="warning",
+                #         position="bottom",
+                #         timeout=3000,
+                #         progress=True,
+                #         multi_line=True,
+                #         close_button="✖",
+                #     )
+                # elif not files_li:
+                #     ui.notify(
+                #         f"引用文件不存在以下所有路径：\n{target_path_li_str}请检查文件命名或相关依赖配置!",
+                #         type="warning",
+                #         position="bottom",
+                #         timeout=3000,
+                #         progress=True,
+                #         multi_line=True,
+                #         close_button="✖",
+                #     )
+                # elif len(files_li) > 1:
+                #     ui.notify(
+                #         f"引用文件在以下路径：\n{target_path_li_str}有多个同名文件，请确保唯一!",
+                #         type="warning",
+                #         position="bottom",
+                #         timeout=3000,
+                #         progress=True,
+                #         multi_line=True,
+                #         close_button="✖",
+                #     )
+                # --- 核心修改：调用 utils.py 的公共方法 ---
+                is_valid, url_path, file_type, _, msg = await validate_search_path(text, config, [self.project])
+
+                if not is_valid:
                     ui.notify(
-                        "文件存放的路径层级可能不符合规则!",
+                        msg,
                         type="warning",
                         position="bottom",
                         timeout=3000,
                         progress=True,
-                        multi_line=True,
                         close_button="✖",
                     )
-                elif not files_li:
-                    ui.notify(
-                        f"引用文件不存在以下所有路径：\n{target_path_li_str}请检查文件命名或相关依赖配置!",
-                        type="warning",
-                        position="bottom",
-                        timeout=3000,
-                        progress=True,
-                        multi_line=True,
-                        close_button="✖",
-                    )
-                elif len(files_li) > 1:
-                    ui.notify(
-                        f"引用文件在以下路径：\n{target_path_li_str}有多个同名文件，请确保唯一!",
-                        type="warning",
-                        position="bottom",
-                        timeout=3000,
-                        progress=True,
-                        multi_line=True,
-                        close_button="✖",
-                    )
-                else:
-                    req_max_ver = app.storage.general["project_req_max_ver"].get(self.project, "1.0")
-                    creator = app.storage.user.get("current_user", "匿名用户")
-                    row_id = getattr(self, "current_target_row_id", None) or str(uuid.uuid4())
-                    chip_data = {
-                        "id": str(uuid.uuid4()),
-                        "row_id": row_id,
-                        "role": self.role,
-                        "icon": "saved_search",
-                        "enabled": True,
-                        "bg_color": "bg-light-blue-1",
-                        "type": "search",
-                        "file_type": get_file_type_by_extension(str(files_li[0]))[0],
-                        "content": text,
-                        "url_path": f"{FILES_URL_DIR}/{text}",
-                        "notes": notes,
-                        "creator": creator,
-                        "req_ver": req_max_ver,
-                        "select_activ_dic": self._get_select_activ_dic(req_max_ver),
-                        "timestamp": {
-                            datetime.now().strftime("%Y-%m-%d %H:%M:%S"): {
-                                "creator": creator,
-                                "select_activ_dic": self._get_select_activ_dic(req_max_ver),
-                            }
-                        },
-                    }
-                    await db_storage.set_deep_item(
-                        [f"{self.project}_over_data", config["label"], chip_data["id"]], chip_data
-                    )
-                    # 数据写入完毕后，推高全局版本号
-                    OverviewVersionManager.bump(self.project, config["label"])
-                    # 这一行是关键：主动调用更新函数，而不是等 1.0s 的 timer
-                    await self._update_display()
+                    ui_spinner.set_visibility(False)
+                    return
+                # else:
+                req_max_ver = app.storage.general["project_req_max_ver"].get(self.project, "1.0")
+                creator = app.storage.user.get("current_user", "匿名用户")
+                row_id = getattr(self, "current_target_row_id", None) or str(uuid.uuid4())
+                chip_data = {
+                    "id": str(uuid.uuid4()),
+                    "row_id": row_id,
+                    "role": self.role,
+                    "icon": "saved_search",
+                    "enabled": True,
+                    "bg_color": "bg-light-blue-1",
+                    "type": "search",
+                    # "file_type": get_file_type_by_extension(str(files_li[0]))[0],
+                    "file_type": file_type,  # 使用返回的 file_type
+                    "content": text,
+                    # "url_path": f"{FILES_URL_DIR}/{text}",
+                    "url_path": url_path,  # 使用返回的 url_path
+                    "notes": notes,
+                    "creator": creator,
+                    "req_ver": req_max_ver,
+                    "select_activ_dic": self._get_select_activ_dic(req_max_ver),
+                    "timestamp": {
+                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"): {
+                            "creator": creator,
+                            "select_activ_dic": self._get_select_activ_dic(req_max_ver),
+                        }
+                    },
+                }
+                await db_storage.set_deep_item(
+                    [f"{self.project}_over_data", config["label"], chip_data["id"]], chip_data
+                )
+                # 数据写入完毕后，推高全局版本号
+                OverviewVersionManager.bump(self.project, config["label"])
+                # 这一行是关键：主动调用更新函数，而不是等 1.0s 的 timer
+                await self._update_display()
 
-                    self.chip_dialog.close()
-                    ui.notify(
-                        "文件引用已添加。",
-                        type="positive",
-                        position="bottom",
-                        timeout=1000,
-                        progress=True,
-                        # multi_line=True,
-                        close_button="✖",
-                    )
-                    self._show_related_chip_select_dialog(text, True, "add_chip", config)
-                    await self._check_and_trigger_autofill(row_id, text, config)
+                self.chip_dialog.close()
+                ui.notify(
+                    "文件引用已添加。",
+                    type="positive",
+                    position="bottom",
+                    timeout=1000,
+                    progress=True,
+                    # multi_line=True,
+                    close_button="✖",
+                )
+                self._show_related_chip_select_dialog(text, True, "add_chip", config)
+                await self._check_and_trigger_autofill(row_id, text, config)
             except Exception as ex:
                 # 捕捉潜在的数据库写入等异常
                 logger.error(f"添加概述失败: {ex}", exc_info=True)
@@ -5629,15 +5738,23 @@ class OverviewTableGroup:
         if c_type == "file":
             await db_storage.set_deep_item([f"{self.project}_over_data", label, chip_id, "icon"], "attachment")
         elif c_type == "search":
-            target_path_list = await self._search_file_path(chip_text, config)
-            if target_path_list and find_files_pathlib(target_path_list[0], chip_text):
-                await db_storage.set_deep_item([f"{self.project}_over_data", label, chip_id, "icon"], "saved_search")
-            else:
-                await db_storage.set_deep_item([f"{self.project}_over_data", label, chip_id, "icon"], "search_off")
+            # target_path_list = await self._search_file_path(chip_text, config)
+            # if target_path_list and find_files_pathlib(target_path_list[0], chip_text):
+            #     await db_storage.set_deep_item([f"{self.project}_over_data", label, chip_id, "icon"], "saved_search")
+            # else:
+            #     await db_storage.set_deep_item([f"{self.project}_over_data", label, chip_id, "icon"], "search_off")
+            # --- 核心修改：调用 utils.py ---
+            is_valid, _, _, _, _ = await validate_search_path(chip_text, config, [self.project])
+            icon_val = "saved_search" if is_valid else "search_off"
+            await db_storage.set_deep_item([f"{self.project}_over_data", label, chip_id, "icon"], icon_val)
         elif c_type == "svn":
-            url = db_storage.get_deep_item([f"{self.project}_over_data", label, chip_id, "url_path"])
-            file_info = await self.get_url_file_info_async(url)
-            icon_val = "saved_search" if file_info[0] else "search_off"
+            # url = db_storage.get_deep_item([f"{self.project}_over_data", label, chip_id, "url_path"])
+            # file_info = await self.get_url_file_info_async(url)
+            # icon_val = "saved_search" if file_info[0] else "search_off"
+            # await db_storage.set_deep_item([f"{self.project}_over_data", label, chip_id, "icon"], icon_val)
+            # --- 核心修改：调用 utils.py ---
+            is_valid, _, _, _ = await validate_svn_url(chip_text, config, [self.project])
+            icon_val = "saved_search" if is_valid else "search_off"
             await db_storage.set_deep_item([f"{self.project}_over_data", label, chip_id, "icon"], icon_val)
         else:
             await db_storage.set_deep_item([f"{self.project}_over_data", label, chip_id, "icon"], None)
@@ -5790,41 +5907,41 @@ class OverviewTableGroup:
         )
 
     # ------ 依赖原 InteractiveButton 的文件路径搜索方法 ------
-    async def _search_file_path(self, chip_text, config) -> list:
-        target_path_list = []
-        according_folder_name_li = []
-        search_folder_according_li = config.get("search_folder_according", [])
-        upload_path = config.get("upload_path", "")
-        search_scope_regular = config.get("search_scope_regular", "")
-        search_hierarchy = config.get("search_hierarchy", [])
+    # async def _search_file_path(self, chip_text, config) -> list:
+    #     target_path_list = []
+    #     according_folder_name_li = []
+    #     search_folder_according_li = config.get("search_folder_according", [])
+    #     upload_path = config.get("upload_path", "")
+    #     search_scope_regular = config.get("search_scope_regular", "")
+    #     search_hierarchy = config.get("search_hierarchy", [])
 
-        if search_folder_according_li:
-            for according in search_folder_according_li:
-                for DATA in db_storage.get_deep_item([f"{self.project}_over_data", according], {}).values():
-                    if DATA["enabled"]:
-                        according_folder_name_li.append(DATA["content"])
-            if not according_folder_name_li:
-                return target_path_list
-            for folder_name in according_folder_name_li:
-                if search_scope_regular:
-                    match = re.search(search_scope_regular, folder_name)
-                    if match:
-                        target_path_list.extend(
-                            await find_dirs_by_name_os_walk(f"{upload_path}\\{match.group(1)}", folder_name)
-                        )
-                else:
-                    target_path_list.extend(await find_dirs_by_name_os_walk(upload_path, folder_name))
-        else:
-            if search_scope_regular:
-                match = re.search(search_scope_regular, chip_text)
-                if match:
-                    target_path_list = await find_dirs_by_name_os_walk(upload_path, match.group(1))
-            else:
-                target_path_list = [upload_path]
+    #     if search_folder_according_li:
+    #         for according in search_folder_according_li:
+    #             for DATA in db_storage.get_deep_item([f"{self.project}_over_data", according], {}).values():
+    #                 if DATA["enabled"]:
+    #                     according_folder_name_li.append(DATA["content"])
+    #         if not according_folder_name_li:
+    #             return target_path_list
+    #         for folder_name in according_folder_name_li:
+    #             if search_scope_regular:
+    #                 match = re.search(search_scope_regular, folder_name)
+    #                 if match:
+    #                     target_path_list.extend(
+    #                         await find_dirs_by_name_os_walk(f"{upload_path}\\{match.group(1)}", folder_name)
+    #                     )
+    #             else:
+    #                 target_path_list.extend(await find_dirs_by_name_os_walk(upload_path, folder_name))
+    #     else:
+    #         if search_scope_regular:
+    #             match = re.search(search_scope_regular, chip_text)
+    #             if match:
+    #                 target_path_list = await find_dirs_by_name_os_walk(upload_path, match.group(1))
+    #         else:
+    #             target_path_list = [upload_path]
 
-        if search_hierarchy:
-            target_path_list = [f"{tp}\\{h}" for tp in target_path_list for h in search_hierarchy]
-        return target_path_list
+    #     if search_hierarchy:
+    #         target_path_list = [f"{tp}\\{h}" for tp in target_path_list for h in search_hierarchy]
+    #     return target_path_list
 
     # 模拟通用文件/PDF/视频操作
     def open_pdf_in_browser(self, url_path):
@@ -5899,24 +6016,24 @@ class OverviewTableGroup:
         self.offset = (0, 0)
         self.update_transform()
 
-    async def get_url_file_info_async(self, url: str, timeout: int = 15):
-        # 请直接复制 InteractiveButton 原有的 get_url_file_info_async 内部实现
-        headers = {"User-Agent": "Mozilla/5.0"}
-        ssl_context = ssl.create_default_context()
-        ssl_context.check_hostname = False
-        ssl_context.verify_mode = ssl.CERT_NONE
-        auth = BasicAuth(SVN_USERNAME, SVN_PASSWORD) if SVN_USERNAME and SVN_PASSWORD else None
-        try:
-            async with httpx.AsyncClient(follow_redirects=False, verify=ssl_context, auth=auth) as client:
-                async with client.stream("GET", url, timeout=timeout, headers=headers) as response:
-                    if 300 <= response.status_code < 400:
-                        return False, None
-                    if response.status_code < 400:
-                        ct = response.headers.get("Content-Type")
-                        return True, ct.split(";")[0].strip() if ct else None
-                    return False, None
-        except Exception:
-            return False, None
+    # async def get_url_file_info_async(self, url: str, timeout: int = 15):
+    #     # 请直接复制 InteractiveButton 原有的 get_url_file_info_async 内部实现
+    #     headers = {"User-Agent": "Mozilla/5.0"}
+    #     ssl_context = ssl.create_default_context()
+    #     ssl_context.check_hostname = False
+    #     ssl_context.verify_mode = ssl.CERT_NONE
+    #     auth = BasicAuth(SVN_USERNAME, SVN_PASSWORD) if SVN_USERNAME and SVN_PASSWORD else None
+    #     try:
+    #         async with httpx.AsyncClient(follow_redirects=False, verify=ssl_context, auth=auth) as client:
+    #             async with client.stream("GET", url, timeout=timeout, headers=headers) as response:
+    #                 if 300 <= response.status_code < 400:
+    #                     return False, None
+    #                 if response.status_code < 400:
+    #                     ct = response.headers.get("Content-Type")
+    #                     return True, ct.split(";")[0].strip() if ct else None
+    #                 return False, None
+    #     except Exception:
+    #         return False, None
 
     async def get_svn_file_http_async(self, http_url: str, username: str = "", password: str = ""):
         auth = BasicAuth(username, password) if username and password else None
@@ -6058,7 +6175,7 @@ class OverviewTableGroup:
                 config = self.current_config
                 project_state = app.storage.general["project_summary"][self.project]["state"]
                 warehouse = config.get("state_path", {}).get(project_state)
-                file_info = (False, None)
+                # file_info = (False, None)
                 # 如果填写内容有正则表达式管控，则分析内容是否符合规则
                 regular_bool = False
                 if config.get("content_regular", []):
@@ -6106,40 +6223,53 @@ class OverviewTableGroup:
                     return
 
                 ui_spinner.set_visibility(True)
-                target_url_li = self._splicing_svn_file_url(text, config)
+                # target_url_li = self._splicing_svn_file_url(text, config)
 
-                if target_url_li and len(target_url_li) == 1:
-                    target_url = target_url_li[0]
-                    file_info = await self.get_url_file_info_async(target_url)
-                    if not file_info[0]:
-                        ui_spinner.set_visibility(False)
-                        return
-                elif target_url_li and len(target_url_li) > 1:
+                # if target_url_li and len(target_url_li) == 1:
+                #     target_url = target_url_li[0]
+                #     file_info = await self.get_url_file_info_async(target_url)
+                #     if not file_info[0]:
+                #         ui_spinner.set_visibility(False)
+                #         return
+                # elif target_url_li and len(target_url_li) > 1:
+                #     ui.notify(
+                #         "有多个路径，不合规!",
+                #         type="warning",
+                #         position="bottom",
+                #         timeout=3000,
+                #         progress=True,
+                #         # multi_line=True,
+                #         close_button="✖",
+                #     )
+                #     ui_spinner.set_visibility(False)
+                #     return
+                # else:
+                #     ui_spinner.set_visibility(False)
+                #     return
+                # --- 核心修改：调用 utils.py 的公共方法 ---
+                is_valid, url_path, file_type, msg = await validate_svn_url(text, config, [self.project])
+
+                if not is_valid:
                     ui.notify(
-                        "有多个路径，不合规!",
+                        msg,
                         type="warning",
                         position="bottom",
                         timeout=3000,
                         progress=True,
-                        # multi_line=True,
                         close_button="✖",
                     )
                     ui_spinner.set_visibility(False)
                     return
-                else:
-                    ui_spinner.set_visibility(False)
-                    return
-
                 chip_id = str(uuid.uuid4())
                 req_max_ver = app.storage.general["project_req_max_ver"].get(self.project, "1.0")
                 select_activ_dic = self._get_select_activ_dic(req_max_ver)
                 creator = app.storage.user.get("current_user", "匿名用户")
 
-                file_type = file_info[1]
-                if (file_type == "application/octet-stream" or file_type is None) and target_url.lower().endswith(
-                    ".pdf"
-                ):
-                    file_type = "application/pdf"
+                # file_type = file_info[1]
+                # if (file_type == "application/octet-stream" or file_type is None) and target_url.lower().endswith(
+                #     ".pdf"
+                # ):
+                #     file_type = "application/pdf"
                 # 获取要绑定的 row_id，如果没有（理论上现在都有了），就生成一个新的
                 row_id = getattr(self, "current_target_row_id", None) or str(uuid.uuid4())
                 chip_data = {
@@ -6150,8 +6280,8 @@ class OverviewTableGroup:
                     "enabled": True,
                     "bg_color": "bg-light-blue-1",
                     "type": "svn",
-                    "file_type": file_type,
-                    "url_path": target_url,
+                    "file_type": file_type,  # 使用返回的 url_path
+                    "url_path": url_path,  # 使用返回的 url_path
                     "content": text,
                     "warehouse": warehouse,
                     "notes": notes,
@@ -6192,111 +6322,111 @@ class OverviewTableGroup:
                 if btn:
                     btn.enable()  # 3. 最终防线：无论成功、失败验证不通过还是报错，都恢复按钮状态
 
-    def _splicing_svn_file_url(self, chip_text, config) -> list:
-        return_url_li = []
-        target_url_li = []
-        according_folder_name = []
-        according_title = ""  # --- 修复 4.2: 恢复收集依赖项的标题名称 ---
+    # def _splicing_svn_file_url(self, chip_text, config) -> list:
+    #     return_url_li = []
+    #     target_url_li = []
+    #     according_folder_name = []
+    #     according_title = ""  # --- 修复 4.2: 恢复收集依赖项的标题名称 ---
 
-        project_state = app.storage.general["project_summary"][self.project]["state"]
-        svn_main_folder = config.get("state_path", {}).get(project_state)
+    #     project_state = app.storage.general["project_summary"][self.project]["state"]
+    #     svn_main_folder = config.get("state_path", {}).get(project_state)
 
-        if not svn_main_folder:
-            if self._edit_permission_judge(config, notify=False):
-                ui.notify(
-                    f"该项概述，在当前项目{project_state}状态下，无相应svn管控仓库配置!",
-                    type="warning",
-                    position="bottom",
-                    timeout=3000,
-                    progress=True,
-                    # multi_line=True,
-                    close_button="✖",
-                )
-            return target_url_li
+    #     if not svn_main_folder:
+    #         if self._edit_permission_judge(config, notify=False):
+    #             ui.notify(
+    #                 f"该项概述，在当前项目{project_state}状态下，无相应svn管控仓库配置!",
+    #                 type="warning",
+    #                 position="bottom",
+    #                 timeout=3000,
+    #                 progress=True,
+    #                 # multi_line=True,
+    #                 close_button="✖",
+    #             )
+    #         return target_url_li
 
-        search_folder_according_li = config.get("search_folder_according", [])
-        search_scope_regular = config.get("search_scope_regular", "")
-        upload_path = config.get("upload_path", "")
-        search_hierarchy = config.get("search_hierarchy", [])
+    #     search_folder_according_li = config.get("search_folder_according", [])
+    #     search_scope_regular = config.get("search_scope_regular", "")
+    #     upload_path = config.get("upload_path", "")
+    #     search_hierarchy = config.get("search_hierarchy", [])
 
-        if search_folder_according_li:
-            for search_folder_according in search_folder_according_li:
-                # 抓取中文配置标题，方便报错时精准定位
-                title_str = (
-                    app.storage.general.get("over_config_data_flat", {})
-                    .get(search_folder_according, {})
-                    .get("title", "未知项")
-                )
-                according_title = f"{according_title}\n{title_str}"
+    #     if search_folder_according_li:
+    #         for search_folder_according in search_folder_according_li:
+    #             # 抓取中文配置标题，方便报错时精准定位
+    #             title_str = (
+    #                 app.storage.general.get("over_config_data_flat", {})
+    #                 .get(search_folder_according, {})
+    #                 .get("title", "未知项")
+    #             )
+    #             according_title = f"{according_title}\n{title_str}"
 
-                for DATA in db_storage.get_deep_item(
-                    [f"{self.project}_over_data", search_folder_according], {}
-                ).values():
-                    if DATA["enabled"]:
-                        according_folder_name.append(DATA["content"])
+    #             for DATA in db_storage.get_deep_item(
+    #                 [f"{self.project}_over_data", search_folder_according], {}
+    #             ).values():
+    #                 if DATA["enabled"]:
+    #                     according_folder_name.append(DATA["content"])
 
-            if len(according_folder_name) < 1:
-                if self._edit_permission_judge(config, notify=False):
-                    ui.notify(
-                        f"概述项：\n{according_title}\n均无有效配置，链接无效!",
-                        type="warning",
-                        position="bottom",
-                        timeout=3000,
-                        progress=True,
-                        multi_line=True,
-                        close_button="✖",
-                    )
-                return target_url_li
-            else:
-                if search_scope_regular:
-                    for folder_name in according_folder_name:
-                        match = re.search(search_scope_regular, folder_name)
-                        if match:
-                            match_folder = f"{match.group(1)}-{match.group(2)}"
-                            target_url_li.append(f"{upload_path}/{svn_main_folder}/{match_folder}/{folder_name}")
-                        else:
-                            if self._edit_permission_judge(config, notify=False):
-                                ui.notify(
-                                    f"文件夹{folder_name}命名不符合规则!",
-                                    type="warning",
-                                    position="bottom",
-                                    timeout=3000,
-                                    progress=True,
-                                    # multi_line=True,
-                                    close_button="✖",
-                                )
-                    if not target_url_li:
-                        return target_url_li
-                else:
-                    for folder_name in according_folder_name:
-                        target_url_li.append(f"{upload_path}/{svn_main_folder}/{folder_name}")
-        else:
-            if search_scope_regular:
-                match = re.search(search_scope_regular, chip_text)
-                if match:
-                    match_folder = f"{match.group(1)}-{match.group(2)}"
-                    target_url_li.append(f"{upload_path}/{svn_main_folder}/{match_folder}")
-                else:
-                    if self._edit_permission_judge(config, notify=False):
-                        ui.notify(
-                            f"文件{chip_text}命名不符合规则!",
-                            type="warning",
-                            position="bottom",
-                            timeout=3000,
-                            progress=True,
-                            # multi_line=True,
-                            close_button="✖",
-                        )
-                    return target_url_li
-            else:
-                target_url_li.append(f"{upload_path}/{svn_main_folder}")
+    #         if len(according_folder_name) < 1:
+    #             if self._edit_permission_judge(config, notify=False):
+    #                 ui.notify(
+    #                     f"概述项：\n{according_title}\n均无有效配置，链接无效!",
+    #                     type="warning",
+    #                     position="bottom",
+    #                     timeout=3000,
+    #                     progress=True,
+    #                     multi_line=True,
+    #                     close_button="✖",
+    #                 )
+    #             return target_url_li
+    #         else:
+    #             if search_scope_regular:
+    #                 for folder_name in according_folder_name:
+    #                     match = re.search(search_scope_regular, folder_name)
+    #                     if match:
+    #                         match_folder = f"{match.group(1)}-{match.group(2)}"
+    #                         target_url_li.append(f"{upload_path}/{svn_main_folder}/{match_folder}/{folder_name}")
+    #                     else:
+    #                         if self._edit_permission_judge(config, notify=False):
+    #                             ui.notify(
+    #                                 f"文件夹{folder_name}命名不符合规则!",
+    #                                 type="warning",
+    #                                 position="bottom",
+    #                                 timeout=3000,
+    #                                 progress=True,
+    #                                 # multi_line=True,
+    #                                 close_button="✖",
+    #                             )
+    #                 if not target_url_li:
+    #                     return target_url_li
+    #             else:
+    #                 for folder_name in according_folder_name:
+    #                     target_url_li.append(f"{upload_path}/{svn_main_folder}/{folder_name}")
+    #     else:
+    #         if search_scope_regular:
+    #             match = re.search(search_scope_regular, chip_text)
+    #             if match:
+    #                 match_folder = f"{match.group(1)}-{match.group(2)}"
+    #                 target_url_li.append(f"{upload_path}/{svn_main_folder}/{match_folder}")
+    #             else:
+    #                 if self._edit_permission_judge(config, notify=False):
+    #                     ui.notify(
+    #                         f"文件{chip_text}命名不符合规则!",
+    #                         type="warning",
+    #                         position="bottom",
+    #                         timeout=3000,
+    #                         progress=True,
+    #                         # multi_line=True,
+    #                         close_button="✖",
+    #                     )
+    #                 return target_url_li
+    #         else:
+    #             target_url_li.append(f"{upload_path}/{svn_main_folder}")
 
-        for target_url in target_url_li:
-            if search_hierarchy:
-                for h in search_hierarchy:
-                    target_url = f"{target_url}/{h}"
-            return_url_li.append(f"{target_url}/{chip_text}")
-        return return_url_li
+    #     for target_url in target_url_li:
+    #         if search_hierarchy:
+    #             for h in search_hierarchy:
+    #                 target_url = f"{target_url}/{h}"
+    #         return_url_li.append(f"{target_url}/{chip_text}")
+    #     return return_url_li
 
 
 class ConfigValidator:
