@@ -180,6 +180,14 @@ async def ecn_management_page():
             .pdf-border { border: 1px solid #cbd5e1; }
             .pdf-border-b { border-bottom: 1px solid #cbd5e1; }
             .pdf-border-r { border-right: 1px solid #cbd5e1; }
+            
+            /*::-webkit-scrollbar {
+                width: 3px; /* 极细滚动条 */
+                background-color: transparent; /* 轨道透明，不占视觉空间 */
+            }
+            ::-webkit-scrollbar-thumb {
+                background-color: #cbd5e1; /* 滚动条颜色 */
+                border-radius: 1px;*/
         </style>
     """)
     if not app.storage.user.get("current_user"):
@@ -875,7 +883,7 @@ async def ecn_management_page():
                 and wf.get("current_state") in [ECNState.DRAFT, ECNState.REJECTED]
             )
 
-            with ui.tab_panels(tabs, value=tab_ecr).classes("w-full flex-1 min-h-0 overflow-y-auto p-2 md:p-4"):
+            with ui.tab_panels(tabs, value=tab_ecr).classes("w-full flex-1 min-h-0 p-2 md:p-4"):
                 # --- [TAB 1] ECR 申请表单 ---
                 with ui.tab_panel(tab_ecr).classes("p-0 bg-transparent"):
                     with ui.column().classes(
@@ -1094,7 +1102,9 @@ async def ecn_management_page():
                             )
 
                 # --- [TAB 2] ECN 影响表单 ---
-                with ui.tab_panel(tab_impact).classes("gap-0 p-0 max-w-[1500px] mx-auto"):
+                with ui.tab_panel(tab_impact).classes(
+                    "gap-0 p-0 max-w-[1500px] mx-auto overflow-y-scroll overflow-x-hidden"
+                ):
                     if wf["current_phase"] == "ECR_PHASE" and not is_new:
                         ui.label("当前处于 ECR 申请阶段，ECN 影响将在评审通过后由工程师协同填写。").classes(
                             "text-gray-500 m-8 text-center bg-white p-2 border rounded"
@@ -1308,7 +1318,7 @@ async def ecn_management_page():
                                     ).on_value_change(auto_save_review)
 
                 # --- [TAB 3] ECN 方案表单 ---
-                with ui.tab_panel(tab_scheme).classes("gap-0 p-0 max-w-[1500px] mx-auto"):
+                with ui.tab_panel(tab_scheme).classes("gap-0 p-0 max-w-[1500px] mx-auto overflow-y-scroll"):
                     if wf["current_phase"] == "ECR_PHASE" and not is_new:
                         ui.label("当前处于 ECR 申请阶段，ECN 方案将在评审通过后由工程师协同填写。").classes(
                             "text-gray-500 m-8 text-center bg-white p-2 border rounded"
@@ -1449,141 +1459,210 @@ async def ecn_management_page():
                                             ui.label("暂未添加具体的方案条目").classes(
                                                 "text-sm text-gray-400 m-auto mt-4"
                                             )
-                                        for idx, item in enumerate(local_data["change_items"]):
-                                            with ui.card().classes(
-                                                "w-full p-0 shadow-sm border border-gray-200 relative"
+                                            return
+
+                                        # --- 核心修改：数据按类型预处理分组，并绑定全局序号 ---
+                                        grouped_items = {}
+                                        for global_idx, item in enumerate(local_data["change_items"]):
+                                            i_type = item.get("type", "unknown")
+                                            if i_type not in grouped_items:
+                                                grouped_items[i_type] = []
+                                            grouped_items[i_type].append((global_idx, item))
+
+                                        # 定义分组 UI 的映射配置
+                                        group_configs = {
+                                            "overview_update": {
+                                                "title": "概述数据变更方案",
+                                                "icon": "auto_fix_high",
+                                                "color": "blue",
+                                            },
+                                            "text_desc": {
+                                                "title": "文本/工艺变更方案",
+                                                "icon": "text_snippet",
+                                                "color": "teal",
+                                            },
+                                        }
+
+                                        # 遍历分组，生成折叠面板
+                                        for g_type, items_in_group in grouped_items.items():
+                                            cfg = group_configs.get(
+                                                g_type, {"title": "其它变更方案", "icon": "list", "color": "grey"}
+                                            )
+
+                                            # ui.expansion: NiceGUI框架中用于创建可折叠/展开面板的组件。
+                                            # 未传入 value=True 参数，故面板默认为收起状态。
+                                            with (
+                                                ui.expansion(
+                                                    f"{cfg['title']} (共 {len(items_in_group)} 项)", icon=cfg["icon"]
+                                                )
+                                                .classes(
+                                                    f"w-full bg-white border border-{cfg['color']}-200 rounded shadow-sm mb-2"
+                                                )
+                                                .props(
+                                                    f'header-class="text-{cfg["color"]}-900 font-bold bg-{cfg["color"]}-50"'
+                                                )
                                             ):
-                                                with ui.row().classes(
-                                                    "w-full bg-gray-100 p-2 justify-between items-center"
-                                                ):
-                                                    with ui.row().classes("gap-2 items-center flex-wrap"):
-                                                        ui.badge(str(idx + 1), color="grey-7")
-                                                        ui.badge(
-                                                            "概述修改"
-                                                            if item["type"] == "overview_update"
-                                                            else f"文本/工艺: {item.get('change_type', '')}",
-                                                            color="blue"
-                                                            if item["type"] == "overview_update"
-                                                            else "teal",
-                                                        )
-                                                        ui.label(item["author"]).classes(
-                                                            "text-xs text-white bg-cyan-500 px-1 rounded"
-                                                        )
-                                                        if item.get("req_idxs"):
-                                                            ui.label(
-                                                                f"解决要求: {', '.join(map(str, item['req_idxs']))}"
-                                                            ).classes("text-xs text-white bg-lime-500 px-1 rounded")
-                                                        if item.get("linked_docs"):
-                                                            ui.label(
-                                                                f"对应勾选文档: {', '.join(item['linked_docs'])}"
-                                                            ).classes("text-xs text-white bg-orange-500 px-1 rounded")
-                                                        if item.get("linked_materials"):
-                                                            ui.label(
-                                                                f"对应勾选物料: {', '.join(item['linked_materials'])}"
-                                                            ).classes(
-                                                                "text-xs font-bold text-white bg-red-400 px-1 rounded"
-                                                            )
-
-                                                    if (
-                                                        is_scheming_phase
-                                                        and item["author"] == current_user
-                                                        and parts.get(current_user) != "confirmed"
-                                                    ):
-                                                        with ui.row().classes("absolute top-1 right-1 gap-1"):
-                                                            ui.button(
-                                                                icon="edit",
-                                                                on_click=lambda _, i=item: (
-                                                                    open_overview_change_dialog(
-                                                                        local_data, current_user, handle_save_item, i
+                                                with ui.column().classes("w-full p-3 gap-3"):
+                                                    # 在折叠面板内部渲染具体的卡片，解包全局序号 (idx) 和项目数据 (item)
+                                                    for idx, item in items_in_group:
+                                                        with ui.card().classes(
+                                                            "w-full p-0 shadow-sm border border-gray-200 relative"
+                                                        ):
+                                                            with ui.row().classes(
+                                                                "w-full bg-gray-100 p-2 justify-between items-center"
+                                                            ):
+                                                                with ui.row().classes("gap-2 items-center flex-wrap"):
+                                                                    ui.badge(str(idx + 1), color="grey-7")
+                                                                    ui.badge(
+                                                                        "概述修改"
+                                                                        if item["type"] == "overview_update"
+                                                                        else f"文本/工艺: {item.get('change_type', '')}",
+                                                                        color="blue"
+                                                                        if item["type"] == "overview_update"
+                                                                        else "teal",
                                                                     )
-                                                                    if i["type"] == "overview_update"
-                                                                    else open_text_change_dialog(
-                                                                        local_data, current_user, handle_save_item, i
+                                                                    ui.label(item["author"]).classes(
+                                                                        "text-xs text-white bg-cyan-500 px-1 rounded"
                                                                     )
-                                                                ),
-                                                            ).props("flat round text-color=blue size=sm")
-                                                            ui.button(
-                                                                icon="delete", on_click=lambda _, i=item: remove_item(i)
-                                                            ).props("flat round text-color=red size=sm")
+                                                                    if item.get("req_idxs"):
+                                                                        ui.label(
+                                                                            f"解决要求: {', '.join(map(str, item['req_idxs']))}"
+                                                                        ).classes(
+                                                                            "text-xs text-white bg-lime-500 px-1 rounded"
+                                                                        )
+                                                                    if item.get("linked_docs"):
+                                                                        ui.label(
+                                                                            f"对应勾选文档: {', '.join(item['linked_docs'])}"
+                                                                        ).classes(
+                                                                            "text-xs text-white bg-orange-500 px-1 rounded"
+                                                                        )
+                                                                    if item.get("linked_materials"):
+                                                                        ui.label(
+                                                                            f"对应勾选物料: {', '.join(item['linked_materials'])}"
+                                                                        ).classes(
+                                                                            "text-xs font-bold text-white bg-red-400 px-1 rounded"
+                                                                        )
 
-                                                with ui.column().classes("w-full p-3 gap-1 bg-white"):
-                                                    if item["type"] == "overview_update":
-                                                        item_projects = get_item_projects(item)
-                                                        # --- 核心修改：通过 label 获取对应的中文 title ---
-                                                        item_label = item.get("label", "")
-                                                        # 从全局配置中查找，如果找不到 title（容错防御），则退级显示 label 本身
-                                                        item_title = (
-                                                            app.storage.general.get("over_config_data_flat", {})
-                                                            .get(item_label, {})
-                                                            .get("title", item_label)
-                                                        )
-                                                        ui.label(
-                                                            f"【{', '.join(item_projects)} - {item.get('role')} - {item_title}】"
-                                                        ).classes("text-xs font-bold text-blue-900")
-                                                        with ui.row().classes("w-full items-start gap-2"):
-                                                            # --- 重构左侧旧数据展示，适配多项目矩阵结构 ---
-                                                            project_states = item.get("project_states", {})
-
-                                                            if project_states:
-                                                                # 1vN 新结构渲染
-                                                                with ui.column().classes(
-                                                                    "gap-1 bg-gray-50 p-2 rounded max-h-[150px] overflow-y-auto border border-dashed border-gray-200 shrink-0 min-w-[150px]"
+                                                                if (
+                                                                    is_scheming_phase
+                                                                    and item["author"] == current_user
+                                                                    and parts.get(current_user) != "confirmed"
                                                                 ):
-                                                                    for p, p_state in project_states.items():
-                                                                        if p_state.get("action") == "add":
-                                                                            ui.label(f"[{p}] 将全新添加").classes(
-                                                                                "text-[10px] text-orange-500 font-bold bg-orange-50 px-1 rounded"
-                                                                            )
+                                                                    with ui.row().classes(
+                                                                        "absolute top-1 right-1 gap-1"
+                                                                    ):
+                                                                        ui.button(
+                                                                            icon="edit",
+                                                                            on_click=lambda _, i=item: (
+                                                                                open_overview_change_dialog(
+                                                                                    local_data,
+                                                                                    current_user,
+                                                                                    handle_save_item,
+                                                                                    i,
+                                                                                )
+                                                                                if i["type"] == "overview_update"
+                                                                                else open_text_change_dialog(
+                                                                                    local_data,
+                                                                                    current_user,
+                                                                                    handle_save_item,
+                                                                                    i,
+                                                                                )
+                                                                            ),
+                                                                        ).props("flat round text-color=blue size=sm")
+                                                                        ui.button(
+                                                                            icon="delete",
+                                                                            on_click=lambda _, i=item: remove_item(i),
+                                                                        ).props("flat round text-color=red size=sm")
+
+                                                            with ui.column().classes("w-full p-3 gap-1 bg-white"):
+                                                                if item["type"] == "overview_update":
+                                                                    item_projects = get_item_projects(item)
+                                                                    item_label = item.get("label", "")
+                                                                    item_title = (
+                                                                        app.storage.general.get(
+                                                                            "over_config_data_flat", {}
+                                                                        )
+                                                                        .get(item_label, {})
+                                                                        .get("title", item_label)
+                                                                    )
+                                                                    ui.label(
+                                                                        f"【{', '.join(item_projects)} - {item.get('role')} - {item_title}】"
+                                                                    ).classes("text-xs font-bold text-blue-900")
+                                                                    with ui.row().classes("w-full items-start gap-2"):
+                                                                        project_states = item.get("project_states", {})
+
+                                                                        if project_states:
+                                                                            with ui.column().classes(
+                                                                                "gap-1 bg-gray-50 p-2 rounded max-h-[150px] overflow-y-auto border border-dashed border-gray-200 shrink-0 min-w-[150px]"
+                                                                            ):
+                                                                                for (
+                                                                                    p,
+                                                                                    p_state,
+                                                                                ) in project_states.items():
+                                                                                    if p_state.get("action") == "add":
+                                                                                        ui.label(
+                                                                                            f"[{p}] 将全新添加"
+                                                                                        ).classes(
+                                                                                            "text-[10px] text-orange-500 font-bold bg-orange-50 px-1 rounded"
+                                                                                        )
+                                                                                    else:
+                                                                                        old_content = p_state.get(
+                                                                                            "old_data", {}
+                                                                                        ).get("content", "无")
+                                                                                        ui.label(
+                                                                                            f"[{p}] {old_content}"
+                                                                                        ).classes(
+                                                                                            "text-[10px] text-gray-500 line-through break-all"
+                                                                                        )
                                                                         else:
-                                                                            old_content = p_state.get(
-                                                                                "old_data", {}
-                                                                            ).get("content", "无")
-                                                                            ui.label(f"[{p}] {old_content}").classes(
-                                                                                "text-[10px] text-gray-500 line-through break-all"
+                                                                            ui.label(
+                                                                                item.get("old_data", {}).get(
+                                                                                    "content", "无"
+                                                                                )
+                                                                            ).classes(
+                                                                                "text-sm text-gray-500 line-through bg-gray-50 p-1 rounded break-all"
                                                                             )
-                                                            else:
-                                                                # 兼容旧版本产生的单项目历史数据
-                                                                ui.label(
-                                                                    item.get("old_data", {}).get("content", "无")
-                                                                ).classes(
-                                                                    "text-sm text-gray-500 line-through bg-gray-50 p-1 rounded break-all"
-                                                                )
 
-                                                            ui.icon("arrow_forward", color="gray").classes(
-                                                                "mt-2 shrink-0"
-                                                            )
-                                                            new_d = item.get("new_data", {})
-                                                            if item.get("old_data", {}).get("type") == "test":
-                                                                with ui.column().classes(
-                                                                    "bg-green-50 p-2 rounded gap-0"
-                                                                ):
-                                                                    ui.label(new_d.get("content", "")).classes(
-                                                                        "text-sm font-bold text-green-700 break-all mb-1"
-                                                                    )
-                                                                    ui.label(
-                                                                        f"性质: {new_d.get('test_select_data', {}).get('test_nature_select', '')}"
-                                                                    ).classes("text-xs text-green-700")
-                                                                    ui.label(
-                                                                        f"状态: {new_d.get('test_select_data', {}).get('state_select', '')}"
-                                                                    ).classes("text-xs text-green-700")
-                                                                    ui.label(
-                                                                        f"节点: {new_d.get('test_select_data', {}).get('node_select', '')}"
-                                                                    ).classes("text-xs text-green-700")
-                                                                    ui.label(
-                                                                        f"工具: {new_d.get('test_select_data', {}).get('instrument_select', '')}"
-                                                                    ).classes("text-xs text-green-700")
-                                                            else:
-                                                                ui.label(new_d.get("content", "")).classes(
-                                                                    "text-sm font-bold text-green-700 bg-green-50 p-1 rounded break-all"
-                                                                )
-                                                    else:
-                                                        with ui.grid(columns=2).classes("w-full gap-2"):
-                                                            ui.label(item.get("old_content", "")).classes(
-                                                                "text-sm text-gray-500 bg-gray-50 p-2 rounded w-full border border-dashed line-through break-all"
-                                                            )
-                                                            ui.label(item.get("new_content", "")).classes(
-                                                                "text-sm text-gray-800 bg-blue-50 p-2 rounded w-full border border-solid border-blue-200 break-all"
-                                                            )
+                                                                        ui.icon("arrow_forward", color="gray").classes(
+                                                                            "mt-2 shrink-0"
+                                                                        )
+                                                                        new_d = item.get("new_data", {})
+                                                                        if (
+                                                                            item.get("old_data", {}).get("type")
+                                                                            == "test"
+                                                                        ):
+                                                                            with ui.column().classes(
+                                                                                "bg-green-50 p-2 rounded gap-0"
+                                                                            ):
+                                                                                ui.label(
+                                                                                    new_d.get("content", "")
+                                                                                ).classes(
+                                                                                    "text-sm font-bold text-green-700 break-all mb-1"
+                                                                                )
+                                                                                ui.label(
+                                                                                    f"性质: {new_d.get('test_select_data', {}).get('test_nature_select', '')}"
+                                                                                ).classes("text-xs text-green-700")
+                                                                                ui.label(
+                                                                                    f"状态: {new_d.get('test_select_data', {}).get('state_select', '')}"
+                                                                                ).classes("text-xs text-green-700")
+                                                                                ui.label(
+                                                                                    f"节点: {new_d.get('test_select_data', {}).get('node_select', '')}"
+                                                                                ).classes("text-xs text-green-700")
+                                                                                ui.label(
+                                                                                    f"工具: {new_d.get('test_select_data', {}).get('instrument_select', '')}"
+                                                                                ).classes("text-xs text-green-700")
+                                                                        else:
+                                                                            ui.label(new_d.get("content", "")).classes(
+                                                                                "text-sm font-bold text-green-700 bg-green-50 p-1 rounded break-all"
+                                                                            )
+                                                                else:
+                                                                    with ui.grid(columns=2).classes("w-full gap-2"):
+                                                                        ui.label(item.get("old_content", "")).classes(
+                                                                            "text-sm text-gray-500 bg-gray-50 p-2 rounded w-full border border-dashed line-through break-all"
+                                                                        )
+                                                                        ui.label(item.get("new_content", "")).classes(
+                                                                            "text-sm text-gray-800 bg-blue-50 p-2 rounded w-full border border-solid border-blue-200 break-all"
+                                                                        )
 
                                 async def remove_item(item_to_remove):
                                     local_data["change_items"].remove(item_to_remove)
@@ -1613,7 +1692,9 @@ async def ecn_management_page():
                                 render_items()
 
                 # --- [TAB 4] ECN 执行与试产 ---
-                with ui.tab_panel(tab_exec).classes("gap-4 p-0 max-w-[1500px] mx-auto"):
+                with ui.tab_panel(tab_exec).classes(
+                    "gap-4 p-0 max-w-[1500px] mx-auto  overflow-y-scroll overflow-x-hidden"
+                ):
                     if wf["current_state"] in [ECNState.DRAFT, ECNState.ECR_REVIEWING, ECNState.REJECTED]:
                         ui.label("当前尚未进入执行环节。").classes(
                             "text-gray-500 m-8 text-center bg-white p-2 border rounded"
@@ -2109,8 +2190,8 @@ async def ecn_management_page():
                 ui.menu_item("返回主界面", on_click=lambda: ui.navigate.to("/main"))
                 ui.separator().props("size=1px")
                 ui.menu_item("注销登录", on_click=lambda: logout())
-
-    with ui.column().classes("w-full p-4 h-[calc(100vh-4rem)] bg-gray-100"):
+    # 将滚动限制在 header 下方的内容区内，避免浏览器主滚动条覆盖到顶部导航栏
+    with ui.element("div").classes("fixed top-12 bottom-0 left-0 right-0 overflow-hidden bg-gray-50"):
         with ui.row().classes("w-full justify-between items-center bg-white p-4 shadow-sm rounded-md"):
             with ui.row().classes("gap-4"):
                 ui.input("搜索单号/项目/申请人").props("dense outlined").bind_value(
@@ -2133,107 +2214,110 @@ async def ecn_management_page():
                 ).props("dense outlined").bind_value(page_state, "filter_state").classes("w-40")
                 ui.button("查询", icon="search", on_click=lambda: refresh_list()).props("color=primary outline")
             ui.button("新建 ECR 申请", icon="add_box", on_click=lambda: open_ecn_detail_dialog()).props("color=red-7")
+        with ui.element("div").classes("w-full h-full overflow-y-auto overflow-x-hidden p-4 md:p-6"):
+            # with ui.column().classes("w-full p-4 h-[calc(100vh-4rem)] bg-gray-100"):
+            list_container = ui.column().classes("w-full mt-4 gap-3 flex-grow overflow-y-auto")
 
-        list_container = ui.column().classes("w-full mt-4 gap-3 flex-grow overflow-y-auto")
+            def refresh_list():
+                list_container.clear()
+                ALL_ECNS = db_storage.get_item("ecn_management_data", {})
+                kw = page_state["search_keyword"].lower()
+                f_state = page_state["filter_state"]
 
-        def refresh_list():
-            list_container.clear()
-            ALL_ECNS = db_storage.get_item("ecn_management_data", {})
-            kw = page_state["search_keyword"].lower()
-            f_state = page_state["filter_state"]
+                sorted_ecns = sorted(ALL_ECNS.values(), key=lambda x: x["basic_info"]["apply_date"], reverse=True)
 
-            sorted_ecns = sorted(ALL_ECNS.values(), key=lambda x: x["basic_info"]["apply_date"], reverse=True)
+                with list_container:
+                    if not sorted_ecns:
+                        return ui.label("暂无工程变更记录").classes("text-gray-500 m-auto mt-10")
 
-            with list_container:
-                if not sorted_ecns:
-                    return ui.label("暂无工程变更记录").classes("text-gray-500 m-auto mt-10")
+                    for ecn in sorted_ecns:
+                        if (
+                            kw
+                            and kw not in ecn["ecn_id"].lower()
+                            and kw not in str(ecn.get("target_projects", "")).lower()
+                            and kw not in ecn["basic_info"]["applicant"].lower()
+                        ):
+                            continue
+                        if f_state != "全部" and ecn["workflow"]["current_state"] != f_state:
+                            continue
 
-                for ecn in sorted_ecns:
-                    if (
-                        kw
-                        and kw not in ecn["ecn_id"].lower()
-                        and kw not in str(ecn.get("target_projects", "")).lower()
-                        and kw not in ecn["basic_info"]["applicant"].lower()
-                    ):
-                        continue
-                    if f_state != "全部" and ecn["workflow"]["current_state"] != f_state:
-                        continue
+                        with ui.card().classes(
+                            "w-full flex flex-row justify-between items-center p-4 bg-blue-50 hover:bg-amber-50 transition-colors cursor-pointer border-l-4 border-blue-500 shadow-sm relative"
+                        ) as card:
+                            card.on("click", lambda _, e_id=ecn["ecn_id"]: open_ecn_detail_dialog(e_id))
 
-                    with ui.card().classes(
-                        "w-full flex flex-row justify-between items-center p-4 hover:bg-blue-50 transition-colors cursor-pointer border-l-4 border-blue-500 shadow-sm relative"
-                    ) as card:
-                        card.on("click", lambda _, e_id=ecn["ecn_id"]: open_ecn_detail_dialog(e_id))
-
-                        if current_user.lower() == "admin":
-                            ui.button(icon="delete", color="red").props("flat round dense").classes(
-                                "absolute top-1 right-1 z-10"
-                            ).on("click.stop", lambda e, e_id=ecn["ecn_id"]: confirm_delete(e_id)).tooltip(
-                                "永久删除此数据 (管理员专用)"
-                            )
-
-                        with ui.column().classes("gap-1"):
-                            with ui.row().classes("items-center gap-3"):
-                                ui.label(ecn["ecn_id"]).classes("font-mono font-bold text-gray-800 text-lg")
-                                ui.badge(
-                                    ecn["workflow"]["current_state"],
-                                    color="red"
-                                    if ecn["workflow"]["current_state"] == ECNState.REJECTED
-                                    else "orange"
-                                    if "中" in ecn["workflow"]["current_state"]
-                                    else "green"
-                                    if "完成" in ecn["workflow"]["current_state"]
-                                    else "grey",
-                                ).props("outline")
-
-                                current_state = ecn["workflow"]["current_state"]
-                                pending_roles = ecn["workflow"].get("pending_roles", [])
-
-                                if pending_roles and current_state not in [
-                                    ECNState.DRAFT,
-                                    ECNState.CLOSED,
-                                    ECNState.CANCEL,
-                                    ECNState.REJECTED,
-                                ]:
-                                    ui.label(f"等待审批: {', '.join(pending_roles)}").classes(
-                                        "text-xs font-bold text-orange-600 bg-orange-100 px-2 py-0.5 rounded"
-                                    )
-                                elif current_state == ECNState.ECN_SCHEMING:
-                                    unconfirmed = [
-                                        p
-                                        for p, status in ecn["workflow"].get("scheme_participants", {}).items()
-                                        if status != "confirmed"
-                                    ]
-                                    if unconfirmed:
-                                        ui.label(f"等待方案确认: {', '.join(unconfirmed)}").classes(
-                                            "text-xs font-bold text-purple-600 bg-purple-100 px-2 py-0.5 rounded"
-                                        )
-                                    elif ecn["workflow"].get("scheme_participants"):
-                                        ui.label("方案已齐，待发起评审").classes(
-                                            "text-xs font-bold text-green-600 bg-green-100 px-2 py-0.5 rounded"
-                                        )
-
-                            ui.label(
-                                ecn["basic_info"].get("title", f"涉及项目: {', '.join(ecn.get('target_projects', []))}")
-                            ).classes("text-sm text-gray-800 font-bold")
-
-                        with ui.column().classes("items-end gap-1"):
-                            ui.label(f"申请人: {ecn['basic_info']['applicant']}").classes("text-sm text-gray-600")
-                            ui.label(ecn["basic_info"]["apply_date"]).classes("text-xs text-gray-400 font-mono")
-
-                            is_pending = (current_role in ecn["workflow"]["pending_roles"]) or (
-                                ecn["workflow"]["current_state"] == ECNState.REJECTED
-                                and ecn["basic_info"]["applicant"] == current_user
-                            )
-
-                            is_scheming = (
-                                ecn["workflow"]["current_state"] == ECNState.ECN_SCHEMING
-                                and any(r in current_role for r in ECN_SCHEME_WRITER_ROLES)
-                                and ecn["workflow"].get("scheme_participants", {}).get(current_user) != "confirmed"
-                            )
-                            if is_pending or is_scheming:
-                                # ui.chip: NiceGUI框架中用于渲染小标签/徽章的类
-                                ui.chip("待处理", icon="notifications_active", color="red").props(
-                                    "dense outline size=sm"
+                            if current_user.lower() == "admin":
+                                ui.button(icon="delete", color="red").props("flat round dense").classes(
+                                    "absolute top-1 right-1 z-10"
+                                ).on("click.stop", lambda e, e_id=ecn["ecn_id"]: confirm_delete(e_id)).tooltip(
+                                    "永久删除此数据 (管理员专用)"
                                 )
 
-        refresh_list()
+                            with ui.column().classes("gap-1"):
+                                with ui.row().classes("items-center gap-3"):
+                                    ui.label(ecn["ecn_id"]).classes("font-mono font-bold text-gray-800 text-lg")
+                                    ui.badge(
+                                        ecn["workflow"]["current_state"],
+                                        color="red"
+                                        if ecn["workflow"]["current_state"] == ECNState.REJECTED
+                                        else "orange"
+                                        if "中" in ecn["workflow"]["current_state"]
+                                        else "green"
+                                        if "完成" in ecn["workflow"]["current_state"]
+                                        else "grey",
+                                    ).props("outline")
+
+                                    current_state = ecn["workflow"]["current_state"]
+                                    pending_roles = ecn["workflow"].get("pending_roles", [])
+
+                                    if pending_roles and current_state not in [
+                                        ECNState.DRAFT,
+                                        ECNState.CLOSED,
+                                        ECNState.CANCEL,
+                                        ECNState.REJECTED,
+                                    ]:
+                                        ui.label(f"等待审批: {', '.join(pending_roles)}").classes(
+                                            "text-xs font-bold text-orange-600 bg-orange-100 px-2 py-0.5 rounded"
+                                        )
+                                    elif current_state == ECNState.ECN_SCHEMING:
+                                        unconfirmed = [
+                                            p
+                                            for p, status in ecn["workflow"].get("scheme_participants", {}).items()
+                                            if status != "confirmed"
+                                        ]
+                                        if unconfirmed:
+                                            ui.label(f"等待方案确认: {', '.join(unconfirmed)}").classes(
+                                                "text-xs font-bold text-purple-600 bg-purple-100 px-2 py-0.5 rounded"
+                                            )
+                                        elif ecn["workflow"].get("scheme_participants"):
+                                            ui.label("方案已齐，待发起评审").classes(
+                                                "text-xs font-bold text-green-600 bg-green-100 px-2 py-0.5 rounded"
+                                            )
+
+                                ui.label(
+                                    ecn["basic_info"].get(
+                                        "title", f"涉及项目: {', '.join(ecn.get('target_projects', []))}"
+                                    )
+                                ).classes("text-sm text-gray-800 font-bold")
+
+                            with ui.column().classes("items-end gap-1"):
+                                ui.label(f"申请人: {ecn['basic_info']['applicant']}").classes("text-sm text-gray-600")
+                                ui.label(ecn["basic_info"]["apply_date"]).classes("text-xs text-gray-400 font-mono")
+
+                                is_pending = (current_role in ecn["workflow"]["pending_roles"]) or (
+                                    ecn["workflow"]["current_state"] == ECNState.REJECTED
+                                    and ecn["basic_info"]["applicant"] == current_user
+                                )
+
+                                is_scheming = (
+                                    ecn["workflow"]["current_state"] == ECNState.ECN_SCHEMING
+                                    and any(r in current_role for r in ECN_SCHEME_WRITER_ROLES)
+                                    and ecn["workflow"].get("scheme_participants", {}).get(current_user) != "confirmed"
+                                )
+                                if is_pending or is_scheming:
+                                    # ui.chip: NiceGUI框架中用于渲染小标签/徽章的类
+                                    ui.chip("待处理", icon="notifications_active", color="red").props(
+                                        "dense outline size=sm"
+                                    )
+
+            refresh_list()
