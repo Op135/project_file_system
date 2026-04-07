@@ -437,33 +437,65 @@ async def ecn_management_page():
                                     anchor_container = ui.element("div").classes("w-full")
                                     with anchor_container:
                                         if p_state["action"] == "add" and not is_first_col:
-                                            first_col_chips = get_chips_for_project(p, sel_state["first_col_label"])
+                                            # --- 优化点 2：融合暂存方案，创建虚拟锚点 ---
+                                            def get_chips_for_project_with_pending(proj, label_str):
+                                                c_opts = get_chips_for_project(proj, label_str)
+                                                # 回溯查找当前正在编辑但未落地的单据数据
+                                                for c_item in ecn_data.get("change_items", []):
+                                                    if (
+                                                        c_item.get("type") == "overview_update"
+                                                        and c_item.get("label") == label_str
+                                                    ):
+                                                        sub_states = c_item.get("project_states", {})
+                                                        if (
+                                                            proj in sub_states
+                                                            and sub_states[proj].get("action") == "add"
+                                                        ):
+                                                            virtual_id = f"PENDING_NEW_{c_item['item_id']}"
+                                                            c_opts[virtual_id] = (
+                                                                f"[本单暂存新增] {c_item.get('new_data', {}).get('content', '暂无内容')[:15]}"
+                                                            )
+                                                return c_opts
+
+                                            first_col_chips = get_chips_for_project_with_pending(
+                                                p, sel_state["first_col_label"]
+                                            )
 
                                             def on_anchor_select(e, current_p=p):
-                                                # value 是 chip_id，我们需要将其转换为 row_id 存起来
-                                                selected_chip = db_storage.get_deep_item(
-                                                    [f"{current_p}_over_data", sel_state["first_col_label"], e.value],
-                                                    {},
-                                                )
-                                                sel_state["project_states"][current_p]["anchor_row_id"] = (
-                                                    selected_chip.get("row_id")
-                                                )
+                                                if e.value and e.value.startswith("PENDING_NEW_"):
+                                                    sel_state["project_states"][current_p]["anchor_row_id"] = e.value
+                                                else:
+                                                    selected_chip = db_storage.get_deep_item(
+                                                        [
+                                                            f"{current_p}_over_data",
+                                                            sel_state["first_col_label"],
+                                                            e.value,
+                                                        ],
+                                                        {},
+                                                    )
+                                                    sel_state["project_states"][current_p]["anchor_row_id"] = (
+                                                        selected_chip.get("row_id")
+                                                    )
 
-                                            # 寻找当前存的 anchor_row_id 对应的 chip_id 以回显
+                                            # 回显逻辑
                                             current_anchor_chip_id = None
                                             for f_cid, _ in first_col_chips.items():
-                                                c_data = db_storage.get_deep_item(
-                                                    [f"{p}_over_data", sel_state["first_col_label"], f_cid], {}
-                                                )
-                                                if c_data.get("row_id") == p_state["anchor_row_id"]:
-                                                    current_anchor_chip_id = f_cid
-                                                    break
+                                                if f_cid.startswith("PENDING_NEW_"):
+                                                    if p_state["anchor_row_id"] == f_cid:
+                                                        current_anchor_chip_id = f_cid
+                                                        break
+                                                else:
+                                                    c_data = db_storage.get_deep_item(
+                                                        [f"{p}_over_data", sel_state["first_col_label"], f_cid], {}
+                                                    )
+                                                    if c_data.get("row_id") == p_state["anchor_row_id"]:
+                                                        current_anchor_chip_id = f_cid
+                                                        break
 
                                             if not first_col_chips:
-                                                ui.label("⚠️ 缺少第一列基准数据，无法添加").classes(
+                                                ui.label("⚠️ 第一列暂无数据，请先为第一列添加变更方案").classes(
                                                     "text-xs text-red-500 font-bold"
                                                 )
-                                                # 核心修改：如果发现缺失，直接触发致命错误，阻断提交
                                                 sel_state["has_enabled_bool"] = False
                                             else:
                                                 ui.select(
@@ -672,8 +704,12 @@ async def ecn_management_page():
             async def save_item():
                 if not sel_state["projects"]:
                     return ui.notify("请至少选择一个目标项目", type="warning")
+
+                # --- 优化点 3：通过前置拦截代替按钮禁用，让校验逻辑顺畅 ---
+                if not sel_state["has_enabled_bool"]:
+                    return ui.notify("缺少第一列的基准数据，请先为基准列添加方案！", type="warning")
                 if not sel_state["is_valid"]:
-                    return ui.notify("未完成文件校验/上传，或数据不合法", type="warning")
+                    return ui.notify("未完成文件/路径校验，或数据不合法，请先点击校验有效性。", type="warning")
                 if not sel_state["new_data"].get("content", "").strip():
                     return ui.notify("请完善新内容", type="warning")
 
@@ -710,9 +746,8 @@ async def ecn_management_page():
 
             with ui.row().classes("w-full justify-end mt-4 shrink-0"):
                 ui.button("取消", on_click=dialog.close).props("flat color=grey")
-                # 给按钮绑定禁用状态 (bind_disable_from)
-                submit_btn = ui.button("确认修改" if is_edit else "确认添加", on_click=save_item).props("color=primary")
-                submit_btn.bind_enabled_from(sel_state, "has_enabled_bool")
+                # 移除 bind_enabled_from，全权交给 save_item 内部拦截，解决假死错觉
+                ui.button("确认修改" if is_edit else "确认添加", on_click=save_item).props("color=primary")
 
         dialog.open()
 
@@ -1747,52 +1782,60 @@ async def ecn_management_page():
 
                 # --- [TAB 4] 审批流转记录 ---
                 with ui.tab_panel(tab_workflow).classes("gap-4 p-4 max-w-[1000px] mx-auto bg-white rounded border"):
-                    if is_new:
-                        ui.label("暂无审批记录，请先发起申请。").classes("text-gray-500 mt-4 text-center w-full")
-                    else:
-                        with ui.column().classes("w-full"):
-                            if wf["pending_roles"]:
-                                pending_list = [r for r in wf["pending_roles"] if not wf["step_approvals"].get(r)]
-                                approved_list = [r for r in wf["pending_roles"] if wf["step_approvals"].get(r)]
-                                with ui.card().classes(
-                                    "w-full bg-blue-50/50 shadow-sm mb-4 border border-blue-100 p-3"
-                                ):
-                                    if pending_list:
-                                        ui.label(f"▶ 当前节点等待审批: {', '.join(pending_list)}").classes(
-                                            "text-orange-600 font-bold text-sm"
-                                        )
-                                    if approved_list:
-                                        ui.label(f"▶ 当前节点已同意: {', '.join(approved_list)}").classes(
-                                            "text-green-600 text-sm mt-1"
-                                        )
+                    workflow_container = ui.column().classes("w-full")
 
-                            # ui.timeline: NiceGUI框架用于展示时间线或流转步骤的类
-                            with ui.timeline(color="secondary"):
-                                for log in local_data["approval_log"]:
-                                    icon_map = {
-                                        "同意": "check_circle",
-                                        "驳回": "cancel",
-                                        "执行变更": "play_circle",
-                                        "发起申请": "send",
-                                        "发起方案评审": "fact_check",
-                                    }
-                                    color_map = {
-                                        "同意": "green",
-                                        "驳回": "red",
-                                        "执行变更": "blue",
-                                        "发起申请": "orange",
-                                        "发起方案评审": "purple",
-                                    }
-                                    ui.timeline_entry(
-                                        f"{log['user']} ({log['role']}) - {log['action']}",
-                                        subtitle=log["time"],
-                                        icon=icon_map.get(log["action"], "info"),
-                                        color=color_map.get(log["action"], "grey"),
-                                    ).classes("text-sm")
-                                    if log.get("note"):
-                                        ui.label(f"批注: {log['note']}").classes(
-                                            "text-xs text-gray-500 ml-8 -mt-2 mb-2"
-                                        )
+                    def render_workflow_tab():
+                        workflow_container.clear()
+                        with workflow_container:
+                            if is_new:
+                                ui.label("暂无审批记录，请先发起申请。").classes(
+                                    "text-gray-500 mt-4 text-center w-full"
+                                )
+                            else:
+                                if wf["pending_roles"]:
+                                    pending_list = [r for r in wf["pending_roles"] if not wf["step_approvals"].get(r)]
+                                    approved_list = [r for r in wf["pending_roles"] if wf["step_approvals"].get(r)]
+                                    with ui.card().classes(
+                                        "w-full bg-blue-50/50 shadow-sm mb-4 border border-blue-100 p-3"
+                                    ):
+                                        if pending_list:
+                                            ui.label(f"▶ 当前节点等待审批: {', '.join(pending_list)}").classes(
+                                                "text-orange-600 font-bold text-sm"
+                                            )
+                                        if approved_list:
+                                            ui.label(f"▶ 当前节点已同意: {', '.join(approved_list)}").classes(
+                                                "text-green-600 text-sm mt-1"
+                                            )
+
+                                # ui.timeline: NiceGUI框架用于展示时间线或流转步骤的类
+                                with ui.timeline(color="secondary"):
+                                    for log in local_data.get("approval_log", []):
+                                        icon_map = {
+                                            "同意": "check_circle",
+                                            "驳回": "cancel",
+                                            "执行变更": "play_circle",
+                                            "发起申请": "send",
+                                            "发起方案评审": "fact_check",
+                                        }
+                                        color_map = {
+                                            "同意": "green",
+                                            "驳回": "red",
+                                            "执行变更": "blue",
+                                            "发起申请": "orange",
+                                            "发起方案评审": "purple",
+                                        }
+                                        ui.timeline_entry(
+                                            f"{log['user']} ({log['role']}) - {log['action']}",
+                                            subtitle=log["time"],
+                                            icon=icon_map.get(log["action"], "info"),
+                                            color=color_map.get(log["action"], "grey"),
+                                        ).classes("text-sm")
+                                        if log.get("note"):
+                                            ui.label(f"批注: {log['note']}").classes(
+                                                "text-xs text-gray-500 ml-8 -mt-2 mb-2"
+                                            )
+
+                    render_workflow_tab()
 
             # ------------------------------------------
             # 底部操作栏及各类事件触发器
@@ -1970,7 +2013,18 @@ async def ecn_management_page():
 
                 elif action_type == "final_execute":
                     try:
-                        for item in local_data["change_items"]:
+                        # --- 优化点 2 收尾：对执行列表进行拓扑排序，保证基准列先执行 ---
+                        def execution_sort_key(item):
+                            if item.get("type") == "overview_update":
+                                # 强制让 first_col_label 相同的条目排在最前面执行 (权值为 0)
+                                return 0 if item.get("label") == item.get("first_col_label") else 1
+                            return 2
+
+                        sorted_items = sorted(local_data["change_items"], key=execution_sort_key)
+                        pending_id_to_row_id = {}  # 虚拟暂存 ID 到真实 row_id 的映射表
+
+                        # 遍历经过排序的 sorted_items 而不是 local_data["change_items"]
+                        for item in sorted_items:
                             if item["type"] == "overview_update":
                                 processing_type = item.get("config_processing_type", "text")
                                 icon_map = {
@@ -1982,7 +2036,6 @@ async def ecn_management_page():
                                 }
                                 new_icon = icon_map.get(processing_type, None)
 
-                                # 兼容防错：如果由于历史缓存没有 project_states，动态构造一个全 update 的状态
                                 project_states = item.get("project_states", {})
                                 if not project_states:
                                     target_projects = item.get("projects") or [item.get("project")]
@@ -2079,7 +2132,6 @@ async def ecn_management_page():
                                             updated = True
 
                                     elif action == "add":
-                                        # 纯新增节点
                                         new_chip, _ = create_new_chip_template(
                                             project,
                                             item.get("author", current_user),
@@ -2087,9 +2139,23 @@ async def ecn_management_page():
                                             new_icon,
                                             item.get("new_data", {}),
                                         )
-                                        # 核心绑定逻辑：如果是第一列则新生成 UUID，否则沿用传入的锚点 row_id
+
                                         is_first_col = item["label"] == item.get("first_col_label", "")
-                                        new_chip["row_id"] = str(uuid.uuid4()) if is_first_col else anchor_row_id
+                                        if is_first_col:
+                                            # 如果是基准列，生成真实 UUID，并存入映射表供后续列使用
+                                            new_row_id = str(uuid.uuid4())
+                                            new_chip["row_id"] = new_row_id
+                                            pending_id_to_row_id[item["item_id"]] = new_row_id
+                                        else:
+                                            # 如果是后续列，解析虚拟锚点
+                                            if anchor_row_id and str(anchor_row_id).startswith("PENDING_NEW_"):
+                                                temp_item_id = anchor_row_id.replace("PENDING_NEW_", "")
+                                                # 从映射表中获取刚刚生成的真实 row_id
+                                                new_chip["row_id"] = pending_id_to_row_id.get(
+                                                    temp_item_id, str(uuid.uuid4())
+                                                )
+                                            else:
+                                                new_chip["row_id"] = anchor_row_id
 
                                         await db_storage.set_deep_item(
                                             [f"{project}_over_data", item["label"], new_chip["id"]], new_chip
@@ -2114,9 +2180,27 @@ async def ecn_management_page():
 
             # --- 协同同步定时器 ---
             async def sync_schemes():
-                if wf["current_state"] == ECNState.ECN_SCHEMING and ecn_id:
+                if ecn_id:
+                    # copy.deepcopy: Python标准库函数，用于递归复制对象，防止内存引用导致的数据污染
                     fresh = db_storage.get_deep_item(["ecn_management_data", ecn_id])
-                    if fresh:
+                    if not fresh:
+                        return
+
+                    # 1. 同步工作流状态
+                    fresh_wf = fresh.get("workflow", {})
+                    if (
+                        fresh_wf.get("current_state") != wf["current_state"]
+                        or fresh_wf.get("pending_roles") != wf["pending_roles"]
+                    ):
+                        wf["current_state"] = fresh_wf.get("current_state")
+                        wf["pending_roles"] = fresh_wf.get("pending_roles")
+                        wf["step_approvals"] = fresh_wf.get("step_approvals", {})
+                        local_data["approval_log"] = copy.deepcopy(fresh.get("approval_log", []))
+                        render_workflow_tab()  # 触发刷新流转页面
+                        ui.notify("后台流转状态已更新，已为您同步。", type="info")
+
+                    # 2. 同步方案内容 (仅在方案编写阶段需要动态重绘卡片)
+                    if wf["current_state"] == ECNState.ECN_SCHEMING:
                         if (
                             str(fresh.get("change_items", [])) != str(local_data["change_items"])
                             or fresh["workflow"].get("scheme_participants", {}) != parts
@@ -2131,14 +2215,11 @@ async def ecn_management_page():
 
                         fresh_rev = fresh.get("review_info", {})
                         if fresh_rev:
-                            for k, v in fresh_rev.get("impacts", {}).items():
-                                review["impacts"][k] = v
-                            for k, v in fresh_rev.get("involved_docs", {}).items():
-                                review["involved_docs"][k] = v
+                            review["impacts"].update(fresh_rev.get("impacts", {}))
+                            review["involved_docs"].update(fresh_rev.get("involved_docs", {}))
                             for mat, acts in fresh_rev.get("involved_materials", {}).items():
                                 if mat in review["involved_materials"] and isinstance(acts, dict):
-                                    for act, val in acts.items():
-                                        review["involved_materials"][mat][act] = val
+                                    review["involved_materials"][mat].update(acts)
                             review["sop_impact"] = fresh_rev.get("sop_impact", "无影响")
                             review["fixture_impact"] = fresh_rev.get("fixture_impact", "无影响")
                             review["tool_impact"] = fresh_rev.get("tool_impact", "无影响")
@@ -2190,6 +2271,32 @@ async def ecn_management_page():
                 ui.menu_item("返回主界面", on_click=lambda: ui.navigate.to("/main"))
                 ui.separator().props("size=1px")
                 ui.menu_item("注销登录", on_click=lambda: logout())
+    # ==========================================
+    # 优化点 1：主页面列表的静默轮询与刷新机制
+    # ==========================================
+    last_ecn_state_hash = {"hash": 0}
+
+    def check_and_refresh_list():
+        # db_storage: 你的自定义本地存储模块
+        all_ecns = db_storage.get_item("ecn_management_data", {})
+        # 生成一个轻量级的状态指纹：对比单据数量、每个单据的当前状态以及包含的方案条目数量
+        current_hash = hash(
+            str(
+                [
+                    (k, v.get("workflow", {}).get("current_state"), len(v.get("change_items", [])))
+                    for k, v in all_ecns.items()
+                ]
+            )
+        )
+
+        if last_ecn_state_hash["hash"] is not None and current_hash != last_ecn_state_hash["hash"]:
+            last_ecn_state_hash["hash"] = current_hash
+            refresh_list()
+        elif last_ecn_state_hash["hash"] == 0:
+            last_ecn_state_hash["hash"] = current_hash
+
+    # ui.timer: NiceGUI第三方Web框架中用于周期性执行异步或同步函数的类
+    ui.timer(5.0, check_and_refresh_list)
     # 将滚动限制在 header 下方的内容区内，避免浏览器主滚动条覆盖到顶部导航栏
     with ui.element("div").classes("fixed top-12 bottom-0 left-0 right-0 overflow-hidden bg-gray-50"):
         with ui.row().classes("w-full justify-between items-center bg-white p-4 shadow-sm rounded-md"):
