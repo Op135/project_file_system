@@ -303,6 +303,116 @@ def information_page():
                                 "flat round dense"
                             ).tooltip("申请修改")
 
+    def create_revoke_dialog():
+        """构建研发经理专属的撤销审批对话框"""
+        dialog.clear()
+        # 运行时状态初始化，避免使用全局变量造成的静态类型冲突或闭包引用问题
+        revoke_state = {
+            "project_name": "",
+            "action_type": "",  # "none", "delete", "revert"
+            "target_ver": "",
+            "prev_ver": "",
+        }
+
+        # ui.card(): NiceGUI 卡片容器组件，提供背景和阴影包裹。
+        with dialog, ui.card().classes("w-full p-4"):
+            # ui.label(): NiceGUI 文本标签组件。
+            ui.label("撤销需求审批 (研发经理专属)").classes("text-lg font-bold text-red-600 mb-4")
+
+            # ui.input(): NiceGUI 文本输入框组件，用于接收用户输入内容。
+            model_input = ui.input(label="请输入要撤销审批的项目型号", placeholder="严格区分大小写...").classes(
+                "w-full mb-2"
+            )
+
+            feedback_label = ui.label("").classes("w-full mt-2 text-sm font-medium whitespace-pre-wrap")
+
+            # ui.row(): NiceGUI 行容器组件，用于水平排列内部元素。
+            action_row = ui.row().classes("w-full justify-end mt-4")
+
+            def check_status():
+                """检查项目状态并给出将要执行的预判提示"""
+                p_name = model_input.value.strip()
+                if not p_name:
+                    feedback_label.set_text("请输入有效的型号名称。")
+                    feedback_label.classes(replace="text-gray-500")
+                    confirm_btn.set_visibility(False)
+                    return
+
+                # app.storage.general: NiceGUI 全局通用存储字典，常用于持久化后端运行时的跨用户共享数据。
+                wait_review_data = app.storage.general.get("wait_review", {}).get(p_name, {})
+                max_ver = app.storage.general.get("project_req_max_ver", {}).get(p_name)
+
+                if not max_ver or max_ver not in wait_review_data:
+                    feedback_label.set_text(f"【{p_name}】当前无待处理或已审记录，无法回退。")
+                    feedback_label.classes(replace="text-gray-500")
+                    confirm_btn.set_visibility(False)
+                    return
+
+                current_state = wait_review_data[max_ver].get("state")
+                if current_state != "已审":
+                    feedback_label.set_text(f"【{p_name}】当前V{max_ver}版本状态为“{current_state}”，无需撤销。")
+                    feedback_label.classes(replace="text-gray-500")
+                    confirm_btn.set_visibility(False)
+                    return
+
+                # 记录有效状态准备执行
+                revoke_state["project_name"] = p_name
+                revoke_state["target_ver"] = max_ver
+
+                if max_ver == "1.0":
+                    revoke_state["action_type"] = "delete"
+                    feedback_label.set_text(
+                        f"⚠️ 打算执行：\n直接删除型号【{p_name}】1.0 版本的审批记录，相当于清空该项目的需求记录。"
+                    )
+                    feedback_label.classes(replace="text-red-600")
+                else:
+                    revoke_state["action_type"] = "revert"
+                    prev_ver = f"{int(float(max_ver)) - 1}.0"
+                    revoke_state["prev_ver"] = prev_ver
+                    feedback_label.set_text(
+                        f"⚠️ 打算执行：\n将型号【{p_name}】V{max_ver} 版本的状态强行恢复为‘待审’，系统最高版本号回退至 V{prev_ver}。"
+                    )
+                    feedback_label.classes(replace="text-orange-600")
+
+                # set_visibility(): NiceGUI 元素的显隐控制函数。
+                confirm_btn.set_visibility(True)
+
+            def execute_revoke():
+                """确认执行撤销操作"""
+                p_name = revoke_state["project_name"]
+                t_ver = revoke_state["target_ver"]
+
+                if revoke_state["action_type"] == "delete":
+                    app.storage.general["wait_review"][p_name].pop(t_ver, None)
+                    if not app.storage.general["wait_review"][p_name]:
+                        app.storage.general["wait_review"].pop(p_name, None)
+                    app.storage.general["project_req_max_ver"].pop(p_name, None)
+                elif revoke_state["action_type"] == "revert":
+                    app.storage.general["wait_review"][p_name][t_ver]["state"] = "待审"
+                    # 清理该版本的审批通过时间
+                    app.storage.general["wait_review"][p_name][t_ver].pop("pass_time", None)
+                    app.storage.general["project_req_max_ver"][p_name] = revoke_state["prev_ver"]
+
+                # ui.notify(): NiceGUI 页面消息通知组件，用于屏幕上方/边缘弹出轻量反馈。
+                ui.notify(f"【{p_name}】审批已成功撤销，页面即将刷新", type="positive")
+                dialog.close()
+                model_input.value = ""
+                feedback_label.set_text("")
+                confirm_btn.set_visibility(False)
+
+                # ui.timer(): NiceGUI 延时执行函数； ui.navigate.reload(): 刷新当前页面。
+                ui.timer(1.0, lambda: ui.navigate.reload())
+
+            # ui.button(): NiceGUI 按钮组件。
+            ui.button("检索/预判", on_click=check_status).props("outline color=primary").classes("w-full mt-2")
+
+            with action_row:
+                ui.button("取消", on_click=dialog.close).props("flat text-color=grey")
+                confirm_btn = ui.button("确认撤销", color="red", on_click=execute_revoke)
+                confirm_btn.set_visibility(False)
+
+        dialog.open()
+
     # -------------------------------------------------------------------------
     # 页面整体布局
     # -------------------------------------------------------------------------
@@ -318,6 +428,12 @@ def information_page():
             with ui.menu().props("auto-close"):
                 ui.menu_item(f"你好, {app.storage.user.get('current_user', '匿名')}").style("white-space: nowrap;")
                 ui.separator().props("size=1px")
+                # 权限管控：仅研发经理可看见撤销入口
+                if current_role == "研发经理":
+                    ui.menu_item("撤销需求审批", on_click=lambda: create_revoke_dialog()).classes(
+                        "text-red-600 font-bold"
+                    )
+                    ui.separator().props("size=1px")
                 ui.menu_item("返回主界面", on_click=lambda: ui.navigate.to("/main"))
                 ui.separator().props("size=1px")
                 ui.menu_item("注销登录", on_click=lambda: logout())
