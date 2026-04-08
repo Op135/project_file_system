@@ -362,7 +362,7 @@ def information_page():
                 if max_ver == "1.0":
                     revoke_state["action_type"] = "delete"
                     feedback_label.set_text(
-                        f"⚠️ 打算执行：\n直接删除型号【{p_name}】1.0 版本的审批记录，相当于清空该项目的需求记录。"
+                        f"⚠️ 打算执行：\n1.直接删除型号【{p_name}】1.0 版本的审批记录，相当于清空该项目的需求记录。\n2.删除概述整理文件，迫使下次访问概述页面时重新生成，确保版本回退后概述内容与需求状态一致。"
                     )
                     feedback_label.classes(replace="text-red-600")
                 else:
@@ -370,7 +370,7 @@ def information_page():
                     prev_ver = f"{int(float(max_ver)) - 1}.0"
                     revoke_state["prev_ver"] = prev_ver
                     feedback_label.set_text(
-                        f"⚠️ 打算执行：\n将型号【{p_name}】V{max_ver} 版本的状态强行恢复为‘待审’，系统最高版本号回退至 V{prev_ver}。"
+                        f"⚠️ 打算执行：\n1.将型号【{p_name}】V{max_ver} 版本的状态强行恢复为‘待审’，系统最高版本号回退至 V{prev_ver}。\n2.删除概述整理文件，迫使下次访问概述页面时重新生成，确保版本回退后概述内容与需求状态一致。"
                     )
                     feedback_label.classes(replace="text-orange-600")
 
@@ -392,6 +392,9 @@ def information_page():
                     # 清理该版本的审批通过时间
                     app.storage.general["wait_review"][p_name][t_ver].pop("pass_time", None)
                     app.storage.general["project_req_max_ver"][p_name] = revoke_state["prev_ver"]
+                # 删除概述整理文件，迫使下次访问概述页面时重新生成，确保版本回退后概述内容与需求状态一致
+                overview_file_path = Path(os.path.join(OVER_DIR, f"{p_name}_概述整理.json"))
+                overview_file_path.unlink(missing_ok=True)
 
                 # ui.notify(): NiceGUI 页面消息通知组件，用于屏幕上方/边缘弹出轻量反馈。
                 ui.notify(f"【{p_name}】审批已成功撤销，页面即将刷新", type="positive")

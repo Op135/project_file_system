@@ -1890,6 +1890,8 @@ def set_project_custom_labels(project_name):
 # 根据传入的需求配置文件清单，核对检查是否有新需求配置未更新到概述文件里，并做相应整理，更新概述整理文件
 async def requirement_version_tidy(project_name, review: bool) -> str:
     """
+    将需求配置文件与概述整理文件进行比对和更新，确保概述文件里的需求内容是最新的，并且做版本更新记录。
+    概述文件最新版本内容（版本等于最新需求版本）每次都会被更新。
     project_name： 项目名。
     review：是否为了审核需求，True为了审核，False普通浏览概述
     """
@@ -1954,11 +1956,12 @@ async def requirement_version_tidy(project_name, review: bool) -> str:
                 logger.error("读取文件时发生其他错误", exc_info=True)
                 return ""
             overviow_version = float(overviow_data["version"])
-            # 可追加情况
+            # 可追加情况，需求最高版本大于或等于概述文件版本，均可更新概述文件
             if v_max >= overviow_version:
                 # 遍历需求配置文件版本号
                 for pro_ver in project_version_li:
-                    # 版本小于概述整理文件版本的跳过
+                    # 版本小于概述整理文件版本的跳过，确保不去更新已经审核过的旧版本需求内容
+                    # 不跳过等于概述版本的，确保即便没有新版本需求了，但概述文件也能从初版状态改为非初版状态，防止初版概述chip激活状态修改记录被抹除
                     if pro_ver < overviow_version:
                         continue
                     # 以项目配置文件 版本 为键，该版本配置文件的 增删改内容及状态信息 为值，保存到概述字典里
