@@ -136,11 +136,12 @@ def handle_disconnect(client):
         del online_users[client.id]
 
 
-async def validate_search_path(content: str, config: dict, projects: list) -> tuple:
+async def validate_search_path(content: str, config: dict, projects: list, pending_overrides: dict = {}) -> tuple:
     """
     校验 search 类型的路径引用是否合法
     返回: (is_valid: bool, url_path: str, file_type: str, local_filepath: str, message: str)
     """
+
     upload_path = config.get("upload_path", "")
     search_scope_regular = config.get("search_scope_regular", "")
     search_folder_according_li = config.get("search_folder_according", [])
@@ -152,9 +153,14 @@ async def validate_search_path(content: str, config: dict, projects: list) -> tu
 
     if search_folder_according_li and primary_project:
         for according in search_folder_according_li:
-            for DATA in db_storage.get_deep_item([f"{primary_project}_over_data", according], {}).values():
-                if DATA.get("enabled"):
-                    according_folder_name_li.append(DATA["content"])
+            # 核心优化：优先从前端传入的本单暂存数据中获取新依赖项
+            if according in pending_overrides:
+                according_folder_name_li.append(pending_overrides[according])
+            else:
+                for DATA in db_storage.get_deep_item([f"{primary_project}_over_data", according], {}).values():
+                    if DATA.get("enabled"):
+                        according_folder_name_li.append(DATA["content"])
+
         if not according_folder_name_li:
             return False, "", "", "项目缺少依赖的目录项配置，无法构建路径"
 
@@ -196,11 +202,12 @@ async def validate_search_path(content: str, config: dict, projects: list) -> tu
     return True, url_path, file_type, local_filepath, "校验通过，文件存在！"
 
 
-async def validate_svn_url(content: str, config: dict, projects: list) -> tuple:
+async def validate_svn_url(content: str, config: dict, projects: list, pending_overrides: dict = {}) -> tuple:
     """
     校验 svn 类型的网络引用是否合法
     返回: (is_valid: bool, url_path: str, file_type: str, message: str)
     """
+
     from nicegui import app
 
     primary_project = projects[0] if projects else ""
@@ -220,9 +227,14 @@ async def validate_svn_url(content: str, config: dict, projects: list) -> tuple:
 
     if search_folder_according_li and primary_project:
         for according in search_folder_according_li:
-            for DATA in db_storage.get_deep_item([f"{primary_project}_over_data", according], {}).values():
-                if DATA.get("enabled"):
-                    according_folder_name.append(DATA["content"])
+            # 核心优化：优先从前端传入的本单暂存数据中获取新依赖项
+            if according in pending_overrides:
+                according_folder_name.append(pending_overrides[according])
+            else:
+                for DATA in db_storage.get_deep_item([f"{primary_project}_over_data", according], {}).values():
+                    if DATA.get("enabled"):
+                        according_folder_name.append(DATA["content"])
+
         if not according_folder_name:
             return False, "", "", "项目缺少依赖的目录项配置，无法构建SVN路径"
 

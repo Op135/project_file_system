@@ -2,6 +2,7 @@
 import copy  # copy: Python标准库，用于创建对象的副本
 import logging
 import os
+import time
 import uuid  # uuid: Python标准库，用于生成全局唯一的标识符
 from datetime import datetime
 
@@ -60,10 +61,10 @@ def get_ecn_template() -> dict:
                 mat: {act: False for act in ECN_SCHEMA_CONFIG["material_actions"]}
                 for mat in ECN_SCHEMA_CONFIG["material_categories"]
             },
-            "sop_impact": "无影响",
-            "fixture_impact": "无影响",
-            "tool_impact": "无影响",
-            "tool_impact_desc": "",
+            # "sop_impact": "无影响",
+            # "fixture_impact": "无影响",
+            # "tool_impact": "无影响",
+            # "tool_impact_desc": "",
         },
         "execution_info": {
             "traceability_level": "无影响",
@@ -166,6 +167,22 @@ def generate_initial_ecn_data(applicant: str, role: str, all_ecns: dict) -> dict
     new_data["timestamp"][now_str] = f"由 {applicant} 创建草稿"
 
     return new_data
+
+
+# ==========================================
+# ECN 专属数据写入代理 (O(1) 轮询架构核心)
+# ==========================================
+async def save_ecn_deep_item(path: list, data):
+    """拦截深层数据保存，并更新全局版本戳"""
+    await db_storage.set_deep_item(path, data)
+    # 写入一个仅供 ECN 轮询使用的时间戳
+    await db_storage.set_item("ecn_global_version_stamp", time.time())
+
+
+async def save_ecn_root_item(key: str, data):
+    """拦截根节点数据保存 (例如整个 all_ecns)，并更新全局版本戳"""
+    await db_storage.set_item(key, data)
+    await db_storage.set_item("ecn_global_version_stamp", time.time())
 
 
 # ==========================================
@@ -437,7 +454,7 @@ async def ecn_management_page():
                                     anchor_container = ui.element("div").classes("w-full")
                                     with anchor_container:
                                         if p_state["action"] == "add" and not is_first_col:
-                                            # --- 优化点 2：融合暂存方案，创建虚拟锚点 ---
+                                            # --- 优化点 2：融合暂存方案，创建虚拟锚点与替换变更的显示偷换 ---
                                             def get_chips_for_project_with_pending(proj, label_str):
                                                 c_opts = get_chips_for_project(proj, label_str)
                                                 # 回溯查找当前正在编辑但未落地的单据数据
@@ -447,14 +464,28 @@ async def ecn_management_page():
                                                         and c_item.get("label") == label_str
                                                     ):
                                                         sub_states = c_item.get("project_states", {})
-                                                        if (
-                                                            proj in sub_states
-                                                            and sub_states[proj].get("action") == "add"
-                                                        ):
-                                                            virtual_id = f"PENDING_NEW_{c_item['item_id']}"
-                                                            c_opts[virtual_id] = (
-                                                                f"[本单暂存新增] {c_item.get('new_data', {}).get('content', '暂无内容')[:15]}"
+                                                        if proj in sub_states:
+                                                            action = sub_states[proj].get("action")
+
+                                                            # 动态截断机制：扩大阈值至 50 字符，保留长标识符，防范极端长文本
+                                                            raw_content = c_item.get("new_data", {}).get(
+                                                                "content", "暂无内容"
                                                             )
+                                                            display_content = str(raw_content)
+                                                            if len(display_content) > 50:
+                                                                display_content = display_content[:50] + "..."
+
+                                                            if action == "add":
+                                                                # 新增操作：生成虚拟 ID
+                                                                virtual_id = f"PENDING_NEW_{c_item['item_id']}"
+                                                                c_opts[virtual_id] = f"[本单暂存新增] {display_content}"
+                                                            elif action == "update":
+                                                                # 替换操作：偷梁换柱，底层 ID 不变，强制覆盖 UI 显示层为新内容
+                                                                old_chip_id = sub_states[proj].get("chip_id")
+                                                                if old_chip_id and old_chip_id in c_opts:
+                                                                    c_opts[old_chip_id] = (
+                                                                        f"[本单暂存变更] {display_content}"
+                                                                    )
                                                 return c_opts
 
                                             first_col_chips = get_chips_for_project_with_pending(
@@ -634,13 +665,31 @@ async def ecn_management_page():
                                                     return ui.notify("请先填写文件名", type="warning")
                                                 from ..utils import validate_search_path, validate_svn_url
 
+                                                # --- 核心优化：动态提取本单已有的暂存变更，作为校验依赖 ---
+                                                pending_overrides = {}
+                                                primary_proj = sel_state["projects"][0] if sel_state["projects"] else ""
+                                                if primary_proj:
+                                                    for c_item in ecn_data.get("change_items", []):
+                                                        if c_item.get("type") == "overview_update":
+                                                            lbl = c_item.get("label")
+                                                            proj_states = c_item.get("project_states", {})
+                                                            if primary_proj in proj_states:
+                                                                action = proj_states[primary_proj].get("action")
+                                                                # 如果基准列或任何前置列被新增/修改了，记录它的新内容
+                                                                if action in ["add", "update"]:
+                                                                    new_val = c_item.get("new_data", {}).get(
+                                                                        "content", ""
+                                                                    )
+                                                                    if new_val:
+                                                                        pending_overrides[lbl] = new_val
+
                                                 if ptype == "search":
                                                     is_valid, url, ftype, _, msg = await validate_search_path(
-                                                        val, config, sel_state["projects"]
+                                                        val, config, sel_state["projects"], pending_overrides
                                                     )
                                                 else:
                                                     is_valid, url, ftype, msg = await validate_svn_url(
-                                                        val, config, sel_state["projects"]
+                                                        val, config, sel_state["projects"], pending_overrides
                                                     )
 
                                                 if is_valid:
@@ -879,9 +928,15 @@ async def ecn_management_page():
         is_draft_or_reject = is_new or wf["current_state"] in [ECNState.DRAFT, ECNState.REJECTED]
         is_scheming_phase = wf["current_state"] == ECNState.ECN_SCHEMING
 
+        # === 建立一个跨 Tab 刷新的引用桥梁 ===
+        dashboard_updater = {"refresh": lambda: None}  # 初始值为一个空函数，后续会被覆盖为真正的刷新函数
+
         async def auto_save_review(e=None):
             if ecn_id and is_scheming_phase:
-                await db_storage.set_deep_item(["ecn_management_data", ecn_id, "review_info"], review)
+                await save_ecn_deep_item(["ecn_management_data", ecn_id, "review_info"], review)
+                # 核心修复：当影响项的勾选发生改变并保存后，立即调用看板的刷新函数
+                if dashboard_updater["refresh"]:
+                    dashboard_updater["refresh"]()
 
         # ------------------- 渲染 UI -------------------
         root_dialog.clear()
@@ -1274,7 +1329,7 @@ async def ecn_management_page():
                                     )
 
                             with ui.column().classes("w-full p-2 pdf-border-b gap-2 hover:bg-gray-50"):
-                                ui.label("相关影响 (方案编写工程师勾选):").classes("font-bold text-gray-700")
+                                ui.label("相关影响 (范围告知):").classes("font-bold text-gray-700")
                                 with ui.grid().classes(
                                     "w-full grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-2 gap-y-1 ml-4 items-center"
                                 ):
@@ -1285,7 +1340,7 @@ async def ecn_management_page():
                                         ).on_value_change(auto_save_review)
 
                             with ui.column().classes("w-full p-2 pdf-border-b gap-2 hover:bg-gray-50"):
-                                ui.label("变更涉及文档/图纸:").classes("font-bold text-gray-700")
+                                ui.label("变更涉及资料 (必出方案):").classes("font-bold text-gray-700")
                                 with ui.grid().classes(
                                     "w-full grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-2 gap-y-1 ml-4 p-1 max-w-[900px]"
                                 ):
@@ -1296,8 +1351,8 @@ async def ecn_management_page():
                                         ).on_value_change(auto_save_review)
 
                                 # bind_visibility_from: 实现“其它”项仅在勾选后显示
-                                ui.input("其它文档:").bind_value(review, "other_docs_desc").bind_visibility_from(
-                                    review["involved_docs"], "其它文档"
+                                ui.input("其它:").bind_value(review, "other_docs_desc").bind_visibility_from(
+                                    review["involved_docs"], "其它"
                                 ).props(
                                     f"outlined dense {'readonly bg-gray-100' if not is_scheming_phase else 'bg-white'}"
                                 ).classes("w-full ml-4 mt-2 max-w-[500px] transition-all duration-300").on(
@@ -1331,26 +1386,26 @@ async def ecn_management_page():
                                                         f"{'disable' if not is_scheming_phase else ''} dense"
                                                     ).on_value_change(auto_save_review)
 
-                            with ui.grid(columns=1).classes(
-                                "w-full grid-cols-1 md:grid-cols-3 pdf-border-b bg-gray-50"
-                            ):
-                                with ui.column().classes("p-2 pdf-border-r gap-1 hover:bg-white"):
-                                    ui.label("SOP:").classes("font-bold text-gray-700")
-                                    ui.radio(["无影响", "更新SOP"]).bind_value(review, "sop_impact").props(
-                                        f"{'disable' if not is_scheming_phase else ''} dense inline"
-                                    ).on_value_change(auto_save_review)
-                                with ui.column().classes("p-2 pdf-border-r gap-1 hover:bg-white"):
-                                    ui.label("治具:").classes("font-bold text-gray-700")
-                                    ui.radio(["无影响", "新做治具", "修改治具"]).bind_value(
-                                        review, "fixture_impact"
-                                    ).props(
-                                        f"{'disable' if not is_scheming_phase else ''} dense inline"
-                                    ).on_value_change(auto_save_review)
-                                with ui.column().classes("p-2 gap-1 hover:bg-white"):
-                                    ui.label("工具:").classes("font-bold text-gray-700")
-                                    ui.radio(["无影响", "新购工具", "其它"]).bind_value(review, "tool_impact").props(
-                                        f"{'disable' if not is_scheming_phase else ''} dense inline"
-                                    ).on_value_change(auto_save_review)
+                            # with ui.grid(columns=1).classes(
+                            #     "w-full grid-cols-1 md:grid-cols-3 pdf-border-b bg-gray-50"
+                            # ):
+                            #     with ui.column().classes("p-2 pdf-border-r gap-1 hover:bg-white"):
+                            #         ui.label("SOP:").classes("font-bold text-gray-700")
+                            #         ui.radio(["无影响", "更新SOP"]).bind_value(review, "sop_impact").props(
+                            #             f"{'disable' if not is_scheming_phase else ''} dense inline"
+                            #         ).on_value_change(auto_save_review)
+                            #     with ui.column().classes("p-2 pdf-border-r gap-1 hover:bg-white"):
+                            #         ui.label("治具:").classes("font-bold text-gray-700")
+                            #         ui.radio(["无影响", "新做治具", "修改治具"]).bind_value(
+                            #             review, "fixture_impact"
+                            #         ).props(
+                            #             f"{'disable' if not is_scheming_phase else ''} dense inline"
+                            #         ).on_value_change(auto_save_review)
+                            #     with ui.column().classes("p-2 gap-1 hover:bg-white"):
+                            #         ui.label("工具:").classes("font-bold text-gray-700")
+                            #         ui.radio(["无影响", "新购工具", "其它"]).bind_value(review, "tool_impact").props(
+                            #             f"{'disable' if not is_scheming_phase else ''} dense inline"
+                            #         ).on_value_change(auto_save_review)
 
                 # --- [TAB 3] ECN 方案表单 ---
                 with ui.tab_panel(tab_scheme).classes("gap-0 p-0 max-w-[1500px] mx-auto overflow-y-scroll"):
@@ -1369,6 +1424,82 @@ async def ecn_management_page():
                             )
 
                             with ui.column().classes("w-full p-2 gap-3 bg-blue-50/30"):
+                                with ui.column().classes("w-full p-2 gap-3 bg-blue-50/30"):
+                                    # ==========================================
+                                    # 新增：方案覆盖率与影响项监控看板
+                                    # ==========================================
+                                    coverage_container = ui.column().classes("w-full p-0 m-0")
+
+                                    def render_coverage_dashboard():
+                                        coverage_container.clear()
+                                        with coverage_container:
+                                            # 计算要求项
+                                            req_docs = set([k for k, v in review.get("involved_docs", {}).items() if v])
+                                            req_mats = set(
+                                                [
+                                                    f"{mat}-{act}"
+                                                    for mat, actions in review.get("involved_materials", {}).items()
+                                                    if isinstance(actions, dict)
+                                                    for act, val in actions.items()
+                                                    if val
+                                                ]
+                                            )
+
+                                            # 计算已提供的方案项
+                                            prov_docs = set()
+                                            prov_mats = set()
+                                            for item in local_data.get("change_items", []):
+                                                prov_docs.update(item.get("linked_docs", []))
+                                                prov_mats.update(item.get("linked_materials", []))
+
+                                            missing_docs = req_docs - prov_docs
+                                            missing_mats = req_mats - prov_mats
+
+                                            # 渲染看板卡片 (单列纯净版)
+                                            with ui.card().classes(
+                                                "w-full bg-orange-50/70 border border-orange-200 shadow-sm p-3 gap-2"
+                                            ):
+                                                with ui.row().classes(
+                                                    "items-center gap-2 border-b border-orange-200 pb-2 w-full"
+                                                ):
+                                                    ui.icon("rule", color="orange-8").classes("text-lg")
+                                                    ui.label("方案完整性自检与提醒").classes(
+                                                        "font-bold text-orange-900 text-sm tracking-wide"
+                                                    )
+
+                                                # 取消了 grid，直接使用单列纵向布局
+                                                with ui.column().classes("w-full gap-1 mt-1"):
+                                                    ui.label("强制交付物覆盖率自检:").classes(
+                                                        "text-[10px] font-bold text-gray-500 mb-1"
+                                                    )
+
+                                                    if missing_docs:
+                                                        ui.label(f"✖ 缺少资料方案: {', '.join(missing_docs)}").classes(
+                                                            "text-xs text-red-600 font-bold"
+                                                        )
+                                                    elif req_docs:
+                                                        ui.label("✔ 资料方案已全覆盖").classes(
+                                                            "text-xs text-green-600 font-bold"
+                                                        )
+
+                                                    if missing_mats:
+                                                        ui.label(f"✖ 缺少物料方案: {', '.join(missing_mats)}").classes(
+                                                            "text-xs text-red-600 font-bold"
+                                                        )
+                                                    elif req_mats:
+                                                        ui.label("✔ 物料变更方案已全覆盖").classes(
+                                                            "text-xs text-green-600 font-bold"
+                                                        )
+
+                                                    if not req_docs and not req_mats:
+                                                        ui.label("前方未勾选资料或物料变更").classes(
+                                                            "text-xs text-gray-400"
+                                                        )
+
+                                    # === 核心修复：将渲染函数挂载到上方定义的字典中 ===
+                                    dashboard_updater["refresh"] = render_coverage_dashboard
+                                    render_coverage_dashboard()
+                                # ==========================================
                                 with ui.row().classes("w-full justify-between items-center"):
                                     ui.label("产品设计与工艺变更方案明细").classes("font-bold text-gray-800 text-lg")
                                     if is_scheming_phase and any(
@@ -1441,7 +1572,7 @@ async def ecn_management_page():
 
                                     async def toggle_part_status(new_status):
                                         parts[current_user] = new_status
-                                        await db_storage.set_deep_item(
+                                        await save_ecn_deep_item(
                                             [
                                                 "ecn_management_data",
                                                 local_data["ecn_id"],
@@ -1452,10 +1583,14 @@ async def ecn_management_page():
                                         )
                                         render_parts()
                                         render_my_actions()
+                                        render_items()  # 状态切换后，必须通知下方的方案列表重新渲染，以更新编辑/删除按钮的显示状态
 
                                 item_container = ui.column().classes("w-full gap-3")
 
                                 async def handle_save_item(item_data, is_edit=False):
+                                    """
+                                    保存方案
+                                    """
                                     if is_edit:
                                         for idx, e_item in enumerate(local_data["change_items"]):
                                             if e_item["item_id"] == item_data["item_id"]:
@@ -1464,7 +1599,7 @@ async def ecn_management_page():
                                     else:
                                         local_data["change_items"].append(item_data)
                                     parts[current_user] = "editing"
-                                    await db_storage.set_deep_item(
+                                    await save_ecn_deep_item(
                                         [
                                             "ecn_management_data",
                                             local_data["ecn_id"],
@@ -1473,13 +1608,14 @@ async def ecn_management_page():
                                         ],
                                         parts,
                                     )
-                                    await db_storage.set_deep_item(
+                                    await save_ecn_deep_item(
                                         ["ecn_management_data", local_data["ecn_id"], "change_items"],
                                         local_data["change_items"],
                                     )
                                     render_parts()
                                     render_my_actions()
                                     render_items()
+                                    render_coverage_dashboard()  # 同时更新覆盖率看板状态
 
                                 def get_item_projects(item):
                                     projects = item.get("projects")
@@ -1700,6 +1836,9 @@ async def ecn_management_page():
                                                                         )
 
                                 async def remove_item(item_to_remove):
+                                    """
+                                    删除方案
+                                    """
                                     local_data["change_items"].remove(item_to_remove)
                                     author = item_to_remove.get("author")
                                     if author and not any(
@@ -1707,7 +1846,7 @@ async def ecn_management_page():
                                         for existing_item in local_data["change_items"]
                                     ):
                                         parts.pop(author, None)
-                                        await db_storage.set_deep_item(
+                                        await save_ecn_deep_item(
                                             [
                                                 "ecn_management_data",
                                                 local_data["ecn_id"],
@@ -1716,13 +1855,14 @@ async def ecn_management_page():
                                             ],
                                             parts,
                                         )
-                                    await db_storage.set_deep_item(
+                                    await save_ecn_deep_item(
                                         ["ecn_management_data", local_data["ecn_id"], "change_items"],
                                         local_data["change_items"],
                                     )
                                     render_parts()
                                     render_my_actions()
                                     render_items()
+                                    render_coverage_dashboard()  # 同时更新覆盖率看板状态
 
                                 render_items()
 
@@ -2125,8 +2265,8 @@ async def ecn_management_page():
                                             }
 
                                             # 写入失活旧节点与新生节点
-                                            await db_storage.set_deep_item(path, deactivated_chip)
-                                            await db_storage.set_deep_item(
+                                            await save_ecn_deep_item(path, deactivated_chip)
+                                            await save_ecn_deep_item(
                                                 [f"{project}_over_data", item["label"], new_chip["id"]], new_chip
                                             )
                                             updated = True
@@ -2157,7 +2297,7 @@ async def ecn_management_page():
                                             else:
                                                 new_chip["row_id"] = anchor_row_id
 
-                                        await db_storage.set_deep_item(
+                                        await save_ecn_deep_item(
                                             [f"{project}_over_data", item["label"], new_chip["id"]], new_chip
                                         )
                                         updated = True
@@ -2173,13 +2313,16 @@ async def ecn_management_page():
                         logger.error(f"执行ECN分裂变更失败: {e}", exc_info=True)
                         return ui.notify(f"执行失败: {e}", type="negative")
 
-                await db_storage.set_deep_item(["ecn_management_data", local_data["ecn_id"]], local_data)
+                await save_ecn_deep_item(["ecn_management_data", local_data["ecn_id"]], local_data)
                 ui.notify("操作成功！", type="positive")
                 root_dialog.close()
                 refresh_list()
 
             # --- 协同同步定时器 ---
             async def sync_schemes():
+                """
+                协同同步方案编写阶段的核心函数，定期从数据库拉取最新数据并对比当前本地数据，智能更新界面以反映其他用户的修改
+                """
                 if ecn_id:
                     # copy.deepcopy: Python标准库函数，用于递归复制对象，防止内存引用导致的数据污染
                     fresh = db_storage.get_deep_item(["ecn_management_data", ecn_id])
@@ -2212,6 +2355,7 @@ async def ecn_management_page():
                             render_parts()
                             render_my_actions()
                             render_items()
+                            render_coverage_dashboard()  # 同时更新覆盖率看板状态
 
                         fresh_rev = fresh.get("review_info", {})
                         if fresh_rev:
@@ -2247,7 +2391,7 @@ async def ecn_management_page():
                     all_ecns = db_storage.get_item("ecn_management_data", {})
                     if ecn_id in all_ecns:
                         del all_ecns[ecn_id]
-                        await db_storage.set_item("ecn_management_data", all_ecns)
+                        await save_ecn_root_item("ecn_management_data", all_ecns)
                         ui.notify(f"单号 {ecn_id} 已被彻底删除", type="positive")
                         refresh_list()
                     dialog.close()
@@ -2271,29 +2415,23 @@ async def ecn_management_page():
                 ui.menu_item("返回主界面", on_click=lambda: ui.navigate.to("/main"))
                 ui.separator().props("size=1px")
                 ui.menu_item("注销登录", on_click=lambda: logout())
+
     # ==========================================
-    # 优化点 1：主页面列表的静默轮询与刷新机制
+    # 优化点 1：主页面列表的静默轮询与刷新机制 (终极 O(1) 性能版)
     # ==========================================
-    last_ecn_state_hash = {"hash": 0}
+    # 这里的 hash 变量名我们改叫 version_stamp，更符合语意
+    last_ecn_state_tracker = {"version_stamp": 0.0}
 
     def check_and_refresh_list():
-        # db_storage: 你的自定义本地存储模块
-        all_ecns = db_storage.get_item("ecn_management_data", {})
-        # 生成一个轻量级的状态指纹：对比单据数量、每个单据的当前状态以及包含的方案条目数量
-        current_hash = hash(
-            str(
-                [
-                    (k, v.get("workflow", {}).get("current_state"), len(v.get("change_items", [])))
-                    for k, v in all_ecns.items()
-                ]
-            )
-        )
-
-        if last_ecn_state_hash["hash"] is not None and current_hash != last_ecn_state_hash["hash"]:
-            last_ecn_state_hash["hash"] = current_hash
+        # 极限性能：不遍历、不拼接、不哈希。直接拿全局时间戳对比！
+        current_stamp = db_storage.get_item("ecn_global_version_stamp", 0.0)
+        # 判断时间戳是否发生改变
+        if last_ecn_state_tracker["version_stamp"] != 0.0 and current_stamp != last_ecn_state_tracker["version_stamp"]:
+            last_ecn_state_tracker["version_stamp"] = current_stamp
             refresh_list()
-        elif last_ecn_state_hash["hash"] == 0:
-            last_ecn_state_hash["hash"] = current_hash
+        elif last_ecn_state_tracker["version_stamp"] == 0.0:
+            # 首次加载时记录初始时间戳
+            last_ecn_state_tracker["version_stamp"] = current_stamp
 
     # ui.timer: NiceGUI第三方Web框架中用于周期性执行异步或同步函数的类
     ui.timer(5.0, check_and_refresh_list)
@@ -2387,14 +2525,51 @@ async def ecn_management_page():
                                             "text-xs font-bold text-orange-600 bg-orange-100 px-2 py-0.5 rounded"
                                         )
                                     elif current_state == ECNState.ECN_SCHEMING:
+                                        # 1. 检查人员确认状态
                                         unconfirmed = [
                                             p
                                             for p, status in ecn["workflow"].get("scheme_participants", {}).items()
                                             if status != "confirmed"
                                         ]
+
+                                        # 2. 检查强制交付物覆盖率
+                                        review_info = ecn.get("review_info", {})
+                                        req_docs = set(
+                                            [k for k, v in review_info.get("involved_docs", {}).items() if v]
+                                        )
+                                        req_mats = set(
+                                            [
+                                                f"{mat}-{act}"
+                                                for mat, actions in review_info.get("involved_materials", {}).items()
+                                                if isinstance(actions, dict)
+                                                for act, val in actions.items()
+                                                if val
+                                            ]
+                                        )
+
+                                        prov_docs, prov_mats = set(), set()
+                                        for item in ecn.get("change_items", []):
+                                            prov_docs.update(item.get("linked_docs", []))
+                                            prov_mats.update(item.get("linked_materials", []))
+
+                                        missing_docs = req_docs - prov_docs
+                                        missing_mats = req_mats - prov_mats
+                                        has_missing_deliverables = bool(missing_docs or missing_mats)
+
+                                        # 3. 综合判断并渲染状态标签
                                         if unconfirmed:
-                                            ui.label(f"等待方案确认: {', '.join(unconfirmed)}").classes(
+                                            ui.label(f"等待完成方案编写: {', '.join(unconfirmed)}").classes(
                                                 "text-xs font-bold text-purple-600 bg-purple-100 px-2 py-0.5 rounded"
+                                            )
+                                        elif has_missing_deliverables:
+                                            # 核心防呆：人员都点完了确认，但系统查出仍有漏交的强制项
+                                            miss_text = []
+                                            if missing_docs:
+                                                miss_text.append("资料")
+                                            if missing_mats:
+                                                miss_text.append("物料")
+                                            ui.label(f"尚缺{'、'.join(miss_text)}方案，待补充").classes(
+                                                "text-xs font-bold text-red-600 bg-red-100 px-2 py-0.5 rounded"
                                             )
                                         elif ecn["workflow"].get("scheme_participants"):
                                             ui.label("方案已齐，待发起评审").classes(
