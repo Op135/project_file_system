@@ -3808,7 +3808,7 @@
                     "试产": "Product",
                     "量产": "Product"
                 },
-                "search_scope_regular": "((?:RF|IT)[A-Za-z]{2})[-_]?([0-9]{4}[A-Za-z]?)",
+                "search_scope_regular": "((?:RF|IT)[A-Za-z]{2})[-_]?([0-9A-Z]{4}[A-Z]?)",
                 "search_folder_according": [],
                 "search_hierarchy": [
                     "src"
@@ -3870,7 +3870,7 @@
                     "试产": "Product",
                     "量产": "Product"
                 },
-                "search_scope_regular": "((?:RF|IT)[A-Za-z]{2})[-_]?([0-9]{4}[A-Za-z]?)",
+                "search_scope_regular": "((?:RF|IT)[A-Za-z]{2})[-_]?([0-9A-Z]{4}[A-Z]?)",
                 "search_folder_according": [],
                 "search_hierarchy": [
                     "docs"
@@ -3915,7 +3915,7 @@
                     "试产": "Product",
                     "量产": "Product"
                 },
-                "search_scope_regular": "((?:RF|IT)[A-Za-z]{2})[-_]?([0-9]{4}[A-Za-z]?)",
+                "search_scope_regular": "((?:RF|IT)[A-Za-z]{2})[-_]?([0-9A-Z]{4}[A-Z]?)",
                 "search_folder_according": [],
                 "search_hierarchy": [
                     "docs"
@@ -3962,7 +3962,7 @@
                     "试产": "Product",
                     "量产": "Product"
                 },
-                "search_scope_regular": "((?:RF|IT)[A-Za-z]{2})[-_]?([0-9]{4}[A-Za-z]?)",
+                "search_scope_regular": "((?:RF|IT)[A-Za-z]{2})[-_]?([0-9A-Z]{4}[A-Z]?)",
                 "search_folder_according": [],
                 "search_hierarchy": [
                     "docs"
@@ -4066,7 +4066,7 @@
                     "试产": "Product",
                     "量产": "Product"
                 },
-                "search_scope_regular": "((?:RF|IT)[A-Za-z]{2})[-_]?([0-9]{4}[A-Za-z]?)",
+                "search_scope_regular": "((?:RF|IT)[A-Za-z]{2})[-_]?([0-9A-Z]{4}[A-Z]?)",
                 "search_folder_according": [],
                 "search_hierarchy": [
                     "src"

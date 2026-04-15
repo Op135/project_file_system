@@ -273,15 +273,23 @@ async def validate_svn_url(content: str, config: dict, projects: list, pending_o
 
     # HTTP 探测
     headers = {"User-Agent": "Mozilla/5.0"}
+
+    # ssl.create_default_context(): Python 标准库 ssl 的函数，用于创建一个具有默认安全设置的 SSL 上下文对象。
     ssl_context = ssl.create_default_context()
     ssl_context.check_hostname = False
     ssl_context.verify_mode = ssl.CERT_NONE
+
+    # BasicAuth: httpx 库提供的类，用于构造 HTTP 基本认证 (Basic Authentication) 的凭证对象，底层会自动将账号密码进行 Base64 编码并注入 Headers。
     auth = BasicAuth(SVN_USERNAME, SVN_PASSWORD) if SVN_USERNAME and SVN_PASSWORD else None
 
     file_type = None
     is_valid = False
+
     try:
-        async with httpx.AsyncClient(follow_redirects=False, verify=ssl_context, auth=auth) as client:
+        # httpx.AsyncClient: httpx 库提供的核心类，用于创建一个异步的 HTTP 客户端实例，负责管理连接池、HTTP/2 支持及全局配置。
+        # 【修复核心】trust_env=False: 强制客户端忽略操作系统的环境代理变量（如 HTTP_PROXY, HTTPS_PROXY），避免请求内网地址时被代理拦截。
+        async with httpx.AsyncClient(follow_redirects=False, verify=ssl_context, auth=auth, trust_env=False) as client:
+            # client.stream(): AsyncClient 实例的方法，用于发起异步的流式 HTTP 请求。它只读取响应头而不立即下载响应体，非常适合仅需探测文件类型或处理大文件的场景，可极大节省内存。
             async with client.stream("GET", target_url, timeout=15, headers=headers) as response:
                 if response.status_code < 400:
                     ct = response.headers.get("Content-Type")
@@ -292,12 +300,13 @@ async def validate_svn_url(content: str, config: dict, projects: list, pending_o
                         file_type = "application/pdf"
                     is_valid = True
     except Exception as e:
-        return False, "", "", f"SVN 连接异常: {str(e)}"
+        # 建议将 str(e) 替换为 repr(e)，以保留更完整的异常类名，方便后续排查其他未知问题
+        return False, "", "", f"SVN 连接异常: {repr(e)}"
 
     if is_valid:
         return True, target_url, file_type, "SVN 文件校验通过！"
     else:
-        return False, "", "", f"SVN 文件不存在: {target_url}"
+        return False, "", "", f"SVN 文件探测失败: 状态异常或不存在于 {target_url}"
 
 
 def update_overview_charge_pending_dic(scope, des_user="", project_name="", des_label=""):
