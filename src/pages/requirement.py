@@ -4125,19 +4125,17 @@ async def requirement_page(type="", json_path="", project_name=""):
                                         "absolute -top-1 right-35"
                                     ).tooltip("查看该角色下所有版本的添加历史")
 
-                                    ui.switch("全展开").classes("absolute -top-2 right-2 text-sm").on_value_change(
-                                        lambda e, exps=current_role_expansions: [exp.set_value(e.value) for exp in exps]
-                                    )
-                                    # async def toggle_all_expansions_async(e: ValueChangeEventArguments, exps: list):
-                                    #     for i, exp in enumerate(exps):
-                                    #         exp.set_value(e.value)
-                                    #         # 🌟 每处理 3 个展开项，让出一次控制权给事件循环，防止 UI 假死
-                                    #         if i % 3 == 0:
-                                    #             await asyncio.sleep(0)
+                                    # 方案2：异步分块全展开机制
+                                    async def toggle_all_expansions_async(e, exps: list):
+                                        for i, exp in enumerate(exps):
+                                            exp.set_value(e.value)
+                                            # 每处理 2 个面板，就强制让出控制权给浏览器渲染一帧，绝不卡死
+                                            if i % 2 == 0:
+                                                await asyncio.sleep(0.01)
 
-                                    # ui.switch("全展开").classes("absolute -top-2 right-2 text-sm").on_value_change(
-                                    #     lambda e, exps=current_role_expansions: toggle_all_expansions_async(e, exps)
-                                    # )
+                                    ui.switch("全展开").classes("absolute -top-2 right-2 text-sm").on_value_change(
+                                        lambda e, exps=current_role_expansions: toggle_all_expansions_async(e, exps)
+                                    )
                                 exp_icon_dic = {
                                     "光学": "flare",
                                     "结构": "view_in_ar",
@@ -4146,14 +4144,21 @@ async def requirement_page(type="", json_path="", project_name=""):
                                     "UI": "screenshot_monitor",
                                     "工艺": "handyman",
                                 }
+                                # 💡 在遍历 group_name 之前，定义一个集合来记录已经加载过的表格
+                                initialized_tables = set()
                                 for group_name, chip_data_li in over_data.items():
                                     # === 创建 Expansion ===
-                                    exp = ui.expansion(
-                                        group_name,
-                                        icon=exp_icon_dic.get(role, "list"),
-                                        value=False,
-                                        caption="",  # 可应用统计文字
-                                    ).classes("gap-1 w-full bg-gray-100/30 rounded")
+                                    exp = (
+                                        ui.expansion(
+                                            group_name,
+                                            icon=exp_icon_dic.get(role, "list"),
+                                            value=False,
+                                            caption="",  # 可应用统计文字
+                                        )
+                                        .classes("gap-1 w-full bg-gray-100/30 rounded")
+                                        .style("content-visibility: auto; contain-intrinsic-size: auto 300px;")
+                                    )
+                                    # 注：contain-intrinsic-size 给一个预估的最小高度，防止滚动条在滚动时剧烈抖动
 
                                     current_role_expansions.append(exp)
                                     exp.set_visibility(False)
@@ -4173,16 +4178,34 @@ async def requirement_page(type="", json_path="", project_name=""):
                                             break
                                     if render_type == "OverviewTableGroup":
                                         if has_permission:
-                                            with exp:
-                                                exp.set_visibility(True)
-                                                # 💡 核心改动：不再遍历实例化 InteractiveButton，而是将整个配置组交给 OverviewTableGroup
-                                                OverviewTableGroup(
-                                                    project=project_name,
-                                                    role=role,
-                                                    group_name=group_name,
-                                                    configs=chip_data_li,
-                                                    temp_bool=temp_bool,
-                                                )
+                                            exp.set_visibility(True)
+
+                                            # 方案1：懒加载闭包函数（类型安全版）
+                                            def init_lazy_table(
+                                                e,
+                                                proj=project_name,
+                                                r=role,
+                                                g_name=group_name,
+                                                cfgs=chip_data_li,
+                                                exp_ref=exp,
+                                            ):
+                                                # 使用 角色+组名 作为唯一键，防止不同角色下有同名分组
+                                                unique_key = f"{r}_{g_name}"
+
+                                                # 如果面板展开，且该表格尚未初始化过
+                                                if e.value and unique_key not in initialized_tables:
+                                                    initialized_tables.add(unique_key)  # 记录为已初始化
+                                                    with exp_ref:
+                                                        OverviewTableGroup(
+                                                            project=proj,
+                                                            role=r,
+                                                            group_name=g_name,
+                                                            configs=cfgs,
+                                                            temp_bool=temp_bool,
+                                                        )
+
+                                            # 绑定到展开状态变化事件上
+                                            exp.on_value_change(init_lazy_table)
                                     else:
                                         with exp:
                                             for data in chip_data_li:
