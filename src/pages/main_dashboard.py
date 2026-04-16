@@ -45,6 +45,23 @@ def main_page():
             .animate-shake {
                 animation: hard-shake 1.0s ease-in-out infinite; /* n秒循环一次 */
             }
+            /* --- 新增：防穿透与背景底纹 --- */
+            /* 1. 禁用全局 html/body 的滚动，将滚动权下放给局部容器 */
+            html, body {
+                overflow: hidden !important; 
+                margin: 0;
+                padding: 0;
+                height: 100vh;
+                /* 2. 浅色光晕 (Mesh Gradient / Soft Glow) */
+                background-color: #f8fafc; /* 底色：极浅的高级灰蓝 */
+                background-image: 
+                    /* 左上角：极淡的科技蓝光晕 */
+                    radial-gradient(circle at 10% 10%, rgba(224, 242, 254, 0.7) 0%, transparent 45%),
+                    /* 右下角：极淡的紫蓝色光晕 */
+                    radial-gradient(circle at 90% 90%, rgba(237, 233, 254, 0.6) 0%, transparent 45%);
+                background-repeat: no-repeat;
+                background-attachment: fixed;
+            }
         </style>
     """)
     online_data = {"online_count": "", "online_users": [], "tooltip_text": ""}
@@ -187,9 +204,12 @@ def main_page():
     # 使用 ui.grid 创建一个响应式的网格布局
     # a-classes: 应用于所有子元素的通用样式
     # b-classes: 应用于特定子元素的样式 (这里没用，但可以写 b-col-6 c-col-4 等)
-    with ui.column().classes("w-full h-[calc(100vh-5rem)] items-center justify-center"):
-        num = min(4, len(menu_items))
-        with ui.grid(columns=num).classes("w-[calc(70vw)] gap-4"):
+    # 增加 h-[calc(100vh-3rem)] 严格限制高度，并增加 overflow-y-auto 开启局部滚动
+    with ui.column().classes("w-full h-[calc(100vh-3rem)] overflow-y-auto items-center justify-center"):
+        # 使用 Tailwind 响应式网格布局，替代原先的 calc(70vw) 和动态算列数
+        # max-w-6xl 限制最大宽度，在超大屏幕下不会显得过于稀疏
+        # grid-cols-1 到 xl:grid-cols-4 实现浏览器大中小窗口的自适应
+        with ui.grid().classes("w-full max-w-6xl grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 px-6"):
             # 所有待修改项目数量
             revise_num_sum = 0
             # 所有登录用户提交的待修改项目数量
@@ -279,27 +299,31 @@ def main_page():
                 #    text-orange-500: 警示色
                 #    text-blue-500: 正常色
                 icon_color_class = "text-red-500 animate-pulse" if pending_count > 0 else "text-blue-500"
-
-                # 3. 渲染卡片
+                # 为图标底座准备一个极淡的背景色
+                icon_bg_class = "bg-red-50" if pending_count > 0 else "bg-blue-50"
+                # 3. 渲染卡片 (【修改重点】增加大圆角、软阴影、悬浮抬升和过渡动画)
                 with ui.card().classes(
-                    "flex flex-col items-center justify-center cursor-pointer "
-                    "hover:shadow-xl hover:-translate-y-1 transition-all duration-300 ease-in-out"
+                    "relative flex flex-col items-center justify-center p-6 -space-y-2 cursor-pointer bg-white/90 backdrop-blur-sm "
+                    "rounded-xl border border-gray-100/60 "
+                    "shadow-[0_6px_20px_-4px_rgba(0,0,0,0.06)] "
+                    "hover:shadow-[0_12px_30px_-6px_rgba(0,0,0,0.15)] "
+                    "hover:-translate-y-1.5 transition-all duration-300 ease-out"
                 ) as card:
                     card.on("click", lambda _, t=target: ui.navigate.to(t))
 
-                    # 应用动态颜色到图标
-                    ui.icon(icon).classes(f"text-5xl {icon_color_class} mb-4")
+                    # 【修改】图标被包裹在一个带有圆角的色块底座中，视觉重心更稳
+                    with ui.element("div").classes(f"p-4 rounded-xl mb-3 {icon_bg_class}"):
+                        ui.icon(icon).classes(f"text-5xl {icon_color_class}")
 
-                    ui.label(title).classes("text-xl font-semibold")
-                    ui.label(subtitle).classes("text-center text-gray-500 text-sm mt-1")
+                    # 【修改】标题文字加粗，颜色加深，使其更锐利
+                    ui.label(title).classes("text-xl font-bold text-gray-800")
+                    ui.label(subtitle).classes("text-center text-gray-500 text-sm mt-2")
 
-                    # 4. 渲染增强后的 Badge
+                    # 4. 渲染增强后的 Badge (红点)
                     if pending_count > 0:
-                        # color="red": 红色背景
-                        # animate-pulse: 呼吸灯效果，模拟“活着”的紧迫感
-                        # ring-2 ring-white: 2像素白色描边，将红点与图标视觉分离，增加体积感
-                        ui.badge(str(pending_count), color="red").props("floating rounded transparent").classes(
-                            "animate-shake ring-2 ring-white"
+                        # 【修改】微调了位置，并去除了 transparent，让红点更饱满
+                        ui.badge(str(pending_count), color="red").props("floating rounded").classes(
+                            "animate-shake ring-2 ring-white shadow-md text-xs font-bold px-2 top-0 right-0 transform translate-x-1/3 -translate-y-1/3"
                         )
 
     # --- 定时刷新在线用户数据 ---
