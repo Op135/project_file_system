@@ -45,6 +45,14 @@ logger = logging.getLogger(__name__)
 online_users = {}
 
 
+async def async_path_exists(path_str: str) -> bool:
+    """非阻塞的文件存在性检查"""
+    if not path_str:
+        return False
+    # 将同步的 os.path.exists 放入线程池执行，防止阻塞 UI
+    return await asyncio.to_thread(os.path.exists, path_str)
+
+
 def generate_initial_ecn_data(applicant: str, target_projects: list) -> dict:
     """
     生成标准化的 ECN 初始数据模型，彻底避免运行时字段缺失。
@@ -138,11 +146,17 @@ def handle_disconnect(client):
 
 async def validate_search_path(content: str, config: dict, projects: list, pending_overrides: dict = {}) -> tuple:
     """
-    校验 search 类型的路径引用是否合法
+    校验 search 类型的路径引用是否合法 (已通过 asyncio.to_thread 彻底解决 UI 阻塞问题)
     返回: (is_valid: bool, url_path: str, file_type: str, local_filepath: str, message: str)
     """
 
     upload_path = config.get("upload_path", "")
+
+    # 【改造点 1】：将原本同步的 Path.exists() 推入线程池执行
+    upload_path_exists = await asyncio.to_thread(Path(upload_path).exists)
+    if not upload_path_exists:
+        return False, "", "", "", f"上传根目录不存在: {upload_path}"
+
     search_scope_regular = config.get("search_scope_regular", "")
     search_folder_according_li = config.get("search_folder_according", [])
     search_hierarchy = config.get("search_hierarchy", [])
@@ -162,12 +176,13 @@ async def validate_search_path(content: str, config: dict, projects: list, pendi
                         according_folder_name_li.append(DATA["content"])
 
         if not according_folder_name_li:
-            return False, "", "", "项目缺少依赖的目录项配置，无法构建路径"
+            return False, "", "", "", "项目缺少依赖的目录项配置，无法构建路径"
 
         for folder_name in according_folder_name_li:
             if search_scope_regular:
                 match = re.search(search_scope_regular, folder_name)
                 if match:
+                    # 假设这里原本已经是真正的异步，继续保持 await
                     target_path_list.extend(
                         await find_dirs_by_name_os_walk(f"{upload_path}\\{match.group(1)}", folder_name)
                     )
@@ -186,20 +201,32 @@ async def validate_search_path(content: str, config: dict, projects: list, pendi
 
     files_li = []
     for target_path in target_path_list:
-        if target_path and Path(target_path).is_dir():
-            files_li.extend(find_files_pathlib(str(target_path), content))
+        if not target_path:
+            continue
+
+        # 【改造点 2】：将检查是否为目录的 I/O 操作推入线程池
+        is_dir = await asyncio.to_thread(Path(target_path).is_dir)
+        if is_dir:
+            # 【改造点 3】：最关键的耗时操作！将同步的目录遍历搜索推入线程池
+            found_files = await asyncio.to_thread(find_files_pathlib, str(target_path), content)
+            files_li.extend(found_files)
 
     if not files_li:
         return False, "", "", "", f"未找到文件: {content}。请检查依赖配置或文件名规范。"
-    if len(files_li) > 1:
+    elif len(files_li) > 1:
         return False, "", "", "", f"存在多个同名文件: {content}。请确保唯一性。"
+    else:
+        # 【改造点 4】：将具体文件的存在性检查推入线程池
+        file_exists = await asyncio.to_thread(files_li[0].exists)
+        if not file_exists:
+            return False, "", "", "", f"文件路径不存在: {str(files_li[0])}。"
 
-    file_type = get_file_type_by_extension(str(files_li[0]))[0]
-    url_path = f"{FILES_URL_DIR}/{content}"
-    local_filepath = str(files_li[0])  # 新增：提取本地绝对路径
+        # 所有耗时检查通过，执行常规赋值
+        file_type = get_file_type_by_extension(str(files_li[0]))[0]
+        url_path = f"{FILES_URL_DIR}/{content}"
+        local_filepath = str(files_li[0])  # 提取本地绝对路径
 
-    # 返回值变为 5 个
-    return True, url_path, file_type, local_filepath, "校验通过，文件存在！"
+        return True, url_path, file_type, local_filepath, "校验通过，文件存在！"
 
 
 async def validate_svn_url(content: str, config: dict, projects: list, pending_overrides: dict = {}) -> tuple:

@@ -220,6 +220,8 @@ def main_page():
             pending_num_user = 0
             # 所有登录用户负责的概述维护项目数量
             over_charge_num = 0
+            # 所有登录用户负责的概述变更任务数量
+            change_task_count = 0
             # --- 新增：统计工程变更 (ECN) 的待办数量 ---
             ecn_pending_num_user = 0
             # {项目工程师名:[负责项目,负责项目]}
@@ -274,6 +276,18 @@ def main_page():
 
             if current_user in app.storage.general["overview_charge_pending"]:
                 over_charge_num = len(app.storage.general["overview_charge_pending"][current_user].keys())
+            change_reqs = app.storage.general.get("overview_change_requests", {})
+
+            if current_role == "研发经理":
+                # 经理统计所有待审批(pending)
+                change_task_count = sum(1 for r in change_reqs.values() if r["status"] == "pending")
+            else:
+                # 普通用户统计自己被驳回或撤回需要处理的任务
+                change_task_count = sum(
+                    1
+                    for r in change_reqs.values()
+                    if r["submitter"] == current_user and r["status"] in ["rejected", "withdrawn"]
+                )
 
             for icon, title, subtitle, target in menu_items:
                 # 1. 预先计算该模块的待办数量 (Logic Pre-calculation)
@@ -283,13 +297,13 @@ def main_page():
                     # 根据当前用户角色判断统计口径
                     if current_role in ["研发经理"]:
                         # 经理看到的是所有待审项目数量 + 自己负责的概述
-                        pending_count = pending_num_sum + over_charge_num
+                        pending_count = pending_num_sum + over_charge_num + change_task_count
                     elif current_role in ["销售", "销售总监"]:
                         # 销售看到的是自己提交的待修改项目数量
                         pending_count = revise_num_user
                     else:
                         # 其他人看到的是自己负责审核的待审项目数量（项目工程师才有） + 自己负责的概述
-                        pending_count = pending_num_user + over_charge_num
+                        pending_count = pending_num_user + over_charge_num + change_task_count
                 elif target == "/ecn_management":
                     # 将算出的 ECN 待办数量赋给这个卡片
                     pending_count = ecn_pending_num_user

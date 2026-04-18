@@ -40,13 +40,10 @@ from .config import (
     UPLOADS_DIR,
 )
 from .utils import (
-    find_dirs_by_name_os_walk,
-    find_files_pathlib,
-    get_file_type_by_extension,
+    async_path_exists,
     get_time,
     move_element,
     overview_role_update,
-    overview_state_show_judge,
     ui_hide,
     ui_show,
     update_overview_charge_pending_dic,
@@ -743,6 +740,9 @@ class InteractiveButton:
         self.node_options = node_options
         self.instrument_options = instrument_options
         self.temp_bool = temp_bool
+        self.new_filename_input = None
+        self.new_content_input = None
+        self.last_temp_upload_path = None
 
         self.offset = (0, 0)
         self.is_dragging = False
@@ -900,10 +900,193 @@ class InteractiveButton:
                 # else:
                 await self._create_chip_from_data(CHIP_INFO, req_max_ver)
 
+    def _render_test_fields_for_change(self, test_data):
+        """专门为变更申请弹窗复用的测试项渲染逻辑"""
+
+        def build_options(options_list, key_prefix, label_str):
+            if options_list:
+                with ui.column().classes("w-full p-0 m-0 gap-1"):
+                    sel = (
+                        ui.select(options_list, label=label_str, value=test_data.get(f"{key_prefix}_select"))
+                        .props("outlined dense")
+                        .classes("w-full")
+                    )
+                    sel.bind_value(test_data, f"{key_prefix}_select")
+
+                    oth = (
+                        ui.textarea(label=f"{label_str}特殊要求", value=test_data.get(f"{key_prefix}_other_text", ""))
+                        .props("outlined dense rows=1")
+                        .classes("w-full")
+                    )
+                    oth.bind_value(test_data, f"{key_prefix}_other_text")
+                    oth.set_visibility(test_data.get(f"{key_prefix}_select") == "其它")
+
+                    sel.on_value_change(
+                        lambda e: (
+                            oth.set_visibility(e.value == "其它") or (oth.set_value("") if e.value != "其它" else None)
+                        )
+                    )
+
+        build_options(self.test_nature_options, "test_nature", "测试性质")
+        build_options(self.state_options, "state", "条件/状态")
+        build_options(self.node_options, "node", "节点/位置")
+        build_options(self.instrument_options, "instrument", "工具/仪器/治具")
+
+    async def handle_change_upload(self, e: events.UploadEventArguments):
+        """处理申请时的临时文件上传"""
+        temp_dir = Path(UPLOADS_DIR) / "change_temp"
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        file_path = temp_dir / f"{uuid.uuid4().hex}_{e.file.name}"
+        with open(file_path, "wb") as f:
+            f.write(await e.file.read())
+        self.last_temp_upload_path = str(file_path)
+        if self.new_filename_input is not None:
+            self.new_filename_input.value = e.file.name
+            ui.notify(f"临时文件已上传：{e.file.name}", type="info")
+
+    def show_change_request_dialog(self, chip_info):
+        """弹出概述修改/删除申请对话框"""
+        self.chip_dialog.clear()
+        chip_type = chip_info.get("type", "text")
+        current_user = app.storage.user.get("current_user", "匿名用户")
+
+        # 拦截：检查是否已有该项的活跃申请
+        active_reqs = app.storage.general.get("overview_change_requests", {})
+        existing_rid = next((rid for rid, r in active_reqs.items() if r["chip_id"] == chip_info["id"]), None)
+        existing_req = active_reqs.get(existing_rid)
+
+        if existing_req and existing_req["status"] == "pending":
+            ui.notify("该项已有申请正在审批中，请勿重复操作", type="warning")
+            return
+
+        action_mode = {"val": existing_req["action"] if existing_req else "modify"}
+        # 深拷贝测试数据，防止污染原数据
+        req_test_data = copy.deepcopy(
+            existing_req["new_test_data"]
+            if existing_req and chip_type == "test"
+            else chip_info.get("test_select_data", {})
+        )
+
+        with self.chip_dialog, ui.card().classes("w-[500px]"):
+            ui.label(f"{'编辑' if existing_req else '提交'}变更申请 - {self.title}").classes(
+                "text-lg font-bold text-blue-900"
+            )
+
+            if existing_req and existing_req["status"] in ["rejected", "withdrawn"]:
+                with ui.row().classes("w-full bg-red-50 p-2 rounded items-center"):
+                    ui.icon("warning", color="red").classes("text-sm")
+                    ui.label(
+                        f"状态：{existing_req['status']} | 理由：{existing_req.get('reject_reason', '无')}"
+                    ).classes("text-xs text-red-700")
+
+            ui.radio({"modify": "修改内容", "delete": "删除该项"}, value=action_mode["val"]).bind_value(
+                action_mode, "val"
+            ).props("inline")
+
+            dynamic_area = ui.column().classes("w-full gap-2 mt-2")
+            reason_box = (
+                ui.textarea(label="变更理由 (必填)", value=existing_req["reason"] if existing_req else "")
+                .props("outlined")
+                .classes("w-full mt-2")
+            )
+
+            # 清理上次的临时路径残留
+            self.last_temp_upload_path = existing_req.get("temp_file_path") if existing_req else None
+
+            def render_dynamic_fields():
+                dynamic_area.clear()
+                with dynamic_area:
+                    ui.label(f"当前内容: {chip_info.get('content')}").classes(
+                        "text-sm text-gray-600 bg-gray-100 p-2 rounded w-full border"
+                    )
+                    if action_mode["val"] == "modify":
+                        if chip_type == "test":
+                            ui.label("测试参数配置:").classes("text-xs font-bold text-gray-500 mt-2")
+                            with ui.card().classes("w-full bg-gray-50 shadow-none border"):
+                                self._render_test_fields_for_change(req_test_data)
+                        elif chip_type in ["file", "image", "video"]:
+                            ui.label("上传新文件:").classes("text-sm font-bold mt-2")
+                            ui.upload(on_upload=self.handle_change_upload, auto_upload=True).classes("w-full")
+                            self.new_filename_input = (
+                                ui.input(label="确认文件名", value=existing_req["new_content"] if existing_req else "")
+                                .props("outlined")
+                                .classes("w-full")
+                            )
+                        else:
+                            self.new_content_input = (
+                                ui.input(label="新内容", value=existing_req["new_content"] if existing_req else "")
+                                .props("outlined")
+                                .classes("w-full mt-2")
+                            )
+
+            # 利用定时器确保 UI 渲染
+            ui.timer(0.1, render_dynamic_fields, once=True)
+
+            async def submit_req():
+                if not reason_box.value.strip():
+                    ui.notify("请填写申请理由！", type="warning")
+                    return
+
+                final_new_content = ""
+                if action_mode["val"] == "modify":
+                    if chip_type == "test":
+                        final_new_content = "测试项变更"
+                    elif chip_type in ["file", "image", "video"]:
+                        # 👇 明确判断它不是 None，且它的 value 有内容 👇
+                        if self.new_filename_input is None or not self.new_filename_input.value:
+                            ui.notify("请上传文件或确认文件名", type="warning")
+                            return
+                        final_new_content = self.new_filename_input.value.strip()
+                    else:
+                        # 👇 明确判断它不是 None，且它的 value 有内容 👇
+                        if self.new_content_input is None or not self.new_content_input.value:
+                            ui.notify("请填写新内容", type="warning")
+                            return
+                        final_new_content = self.new_content_input.value.strip()
+
+                # 提取 config 数据，InteractiveButton 自身包含了所需的属性
+                config_snapshot = {
+                    "label": self.label,
+                    "title": self.title,
+                    "upload_path": getattr(self, "upload_path", ""),
+                    "search_scope_regular": getattr(self, "search_scope_regular", ""),
+                    "search_folder_according_li": getattr(self, "search_folder_according_li", []),
+                    "search_hierarchy": getattr(self, "search_hierarchy", []),
+                    "state_path": getattr(self, "state_path", {}),
+                }
+
+                rid = existing_rid or str(uuid.uuid4())
+                app.storage.general.setdefault("overview_change_requests", {})[rid] = {
+                    "id": rid,
+                    "project_name": self.project,
+                    "label": self.label,
+                    "chip_id": chip_info["id"],
+                    "chip_type": chip_type,
+                    "action": action_mode["val"],
+                    "old_content": chip_info["content"],
+                    "new_content": final_new_content,
+                    "new_test_data": req_test_data if chip_type == "test" else None,
+                    "temp_file_path": getattr(self, "last_temp_upload_path", None),
+                    "reason": reason_box.value.strip(),
+                    "submitter": current_user,
+                    "status": "pending",
+                    "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "config": config_snapshot,
+                }
+                ui.notify("申请已提交至研发经理处", type="positive")
+                self.chip_dialog.close()
+
+            with ui.row().classes("w-full justify-end mt-4 gap-2"):
+                ui.button("取消", on_click=self.chip_dialog.close).props("flat color=grey")
+                ui.button("提交申请", color="primary", on_click=submit_req)
+
+        self.chip_dialog.open()
+
     async def _create_chip_from_data(self, chip_info: dict, req_max_ver: str) -> None:
         """从字典数据中渲染独立的 ui.chip 组件或图片缩略图"""
         chip_text = chip_info.get("content", "")
         filepath = ""
+        file_exists = False
         delete_icon = "close" if app.storage.user["current_user"] == "admin" else "settings"
 
         if app.storage.user["current_user"] == "admin":
@@ -915,12 +1098,14 @@ class InteractiveButton:
         if chip_info.get("type") in ["text", "file", "test", "search", "svn", "video"]:
             file_info = (False, None)
 
-            if chip_info["type"] == "file":
+            if chip_info["type"] in ["file", "video"]:
                 filepath = f"{self.upload_path}/{chip_text}"
-                try:
-                    app.add_static_file(local_file=filepath, url_path=chip_info.get("url_path"))
-                except Exception as e:
-                    logger.error(f"添加静态文件失败，路径：{filepath}，错误：{e}")
+                file_exists = await async_path_exists(filepath)
+                if file_exists:
+                    try:
+                        app.add_static_file(local_file=filepath, url_path=chip_info.get("url_path"))
+                    except Exception as e:
+                        logger.error(f"添加静态文件失败，路径：{filepath}，错误：{e}")
             elif chip_info["type"] == "search":
                 # files_li = []
                 # target_path_li_str = ""
@@ -973,8 +1158,9 @@ class InteractiveButton:
                 }
                 # 接收 5 个参数
                 is_valid, _, _, local_filepath, msg = await validate_search_path(chip_text, config_mock, [self.project])
-                if is_valid and local_filepath:
-                    filepath = local_filepath
+                filepath = local_filepath  # 如果验证通过，local_filepath 就是正确的文件路径
+                file_exists = await async_path_exists(filepath)
+                if is_valid and file_exists:
                     try:
                         app.add_static_file(local_file=filepath, url_path=chip_info.get("url_path"))
                     except Exception as e:
@@ -1016,9 +1202,9 @@ class InteractiveButton:
 
             # 点击事件绑定
             if chip_info.get("type") in ["file", "search"]:
-                if chip_info.get("file_type") == "application/pdf" and filepath and Path(filepath).exists():
+                if chip_info.get("file_type") == "application/pdf" and filepath and file_exists:
                     chip.on_click(lambda url=chip_info.get("url_path"): self.open_pdf_in_browser(url))
-                elif filepath and Path(filepath).exists():
+                elif filepath and file_exists:
                     chip.on_click(lambda fp=filepath, fn=chip_text: self.check_and_download(fp, fn))
                 else:
                     if chip_info["type"] == "file":
@@ -1060,7 +1246,7 @@ class InteractiveButton:
                         )
                     )
             elif chip_info.get("type") == "video":
-                if filepath and Path(filepath).exists():
+                if filepath and file_exists:
                     chip.on_click(lambda url=chip_info.get("url_path"): self.play_overview_video(url))
                 else:
                     chip.set_icon("videocam_off")
@@ -1125,6 +1311,14 @@ class InteractiveButton:
                     .style("font-size: 8px; display: none;")
                     .on("click", js_handler="(e) => {e.stopPropagation()}")
                 )
+                # 创建申请变更按钮
+                request_change_button = (
+                    ui.button(on_click=lambda d=chip_info: self.show_change_request_dialog(d))
+                    .classes("absolute -top-1 right-10 m-0 p-0 q-py-0 bg-white text-orange-500 shadow-md")
+                    .props('round padding="0px 0px" icon="edit_document"')
+                    .style("font-size: 8px; display: none;")
+                    .on("click", js_handler="(e) => {e.stopPropagation()}")
+                )
             # 🌟 核心性能优化：如果是失活状态，将其可见性与全局开关绑定
             current_state = chip_info.get("select_activ_dic", {}).get(req_max_ver)
             is_deactivated = (current_state is False) or (str(current_state).lower() == "false")
@@ -1143,7 +1337,7 @@ class InteractiveButton:
             def check_shift_and_show(e, btn):
                 btn.style("display: block;" if e.args.get("shiftKey") else "display: none;")
 
-            control_btns = [delete_button, move_up_button, move_down_button, history_button]
+            control_btns = [delete_button, move_up_button, move_down_button, history_button, request_change_button]
             chip.on("mouseenter", lambda e: check_ctrl_and_show(e, control_btns), ["ctrlKey"])
             chip.on("mousemove", lambda e: check_ctrl_and_show(e, control_btns), ["ctrlKey"])
             chip.on("mouseleave", lambda: [b.style("display: none;") for b in control_btns])
@@ -1156,16 +1350,28 @@ class InteractiveButton:
             image_name = chip_info.get("content")
             image_path = f"{self.upload_path}/{image_name}"
             url_path = f"{FILES_URL_DIR}/{image_name}"
-            try:
-                app.add_static_file(local_file=image_path, url_path=url_path)
-            except Exception as e:
-                logger.error(f"添加静态文件失败，路径：{image_path}，错误：{e}")
+            file_exists = await async_path_exists(image_path)
+            # 定义前端实际请求的 URL
+            display_url = url_path
+            if file_exists:
+                try:
+                    app.add_static_file(local_file=image_path, url_path=url_path)
+                except Exception as e:
+                    logger.error(f"添加静态文件失败，路径：{image_path}，错误：{e}")
+            else:
+                # 【核心修复】如果文件不存在，不要给前端真实的 url_path，防止报 404！
+                # 可以使用一个 1x1 的透明 base64 作为占位，或者指向一个全局静态的 "文件丢失.png"
+                display_url = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
+                # 或者: display_url = f"{IMG_DIR}/image_missing.png"
             thumbnail = (
-                ui.interactive_image(url_path)
+                ui.interactive_image(display_url)
                 .props(f"data-chip-id={chip_info.get('id')} enabled-state={chip_info.get('enabled')}")
                 .classes("h-10 cursor-pointer relative-position")
             )
-            thumbnail.on("click", lambda u=url_path: self.show_fullscreen(u))
+            if file_exists:
+                thumbnail.on("click", lambda u=url_path: self.show_fullscreen(u))
+            else:
+                thumbnail.on("click", lambda: ui.notify("原图片文件已丢失！", type="warning"))
 
             with thumbnail:
                 image_icon = chip_info.get("icon")
@@ -1208,6 +1414,13 @@ class InteractiveButton:
                     .style("font-size: 8px; display: none;")
                     .on("click", js_handler="(e) => {e.stopPropagation()}")
                 )
+                request_change_button = (
+                    ui.button(on_click=lambda d=chip_info: self.show_change_request_dialog(d))
+                    .classes("absolute bottom-3 right-3 m-0 p-0 q-py-0 bg-white text-orange-500 shadow-md")
+                    .props('round padding="0px 0px" icon="edit_document"')
+                    .style("font-size: 8px; display: none;")
+                    .on("click", js_handler="(e) => {e.stopPropagation()}")
+                )
 
             def check_ctrl_and_show(e, btns):
                 if e.args.get("ctrlKey"):
@@ -1220,7 +1433,7 @@ class InteractiveButton:
             def check_shift_and_show(e, btn):
                 btn.style("display: block;" if e.args.get("shiftKey") else "display: none;")
 
-            control_btns = [delete_button, move_up_button, move_down_button, history_button]
+            control_btns = [delete_button, move_up_button, move_down_button, history_button, request_change_button]
             thumbnail.on("mouseover", lambda e: check_ctrl_and_show(e, control_btns), ["ctrlKey"])
             thumbnail.on("mousemove", lambda e: check_ctrl_and_show(e, control_btns), ["ctrlKey"])
             thumbnail.on("mouseout", lambda: [b.style("display: none;") for b in control_btns])
@@ -3289,6 +3502,10 @@ class OverviewTableGroup:
         self.row_containers = {}  # 格式: {row_id: ui.row()}
         self.row_hashes = {}  # 格式: {row_id: int(hash)}
 
+        self.new_filename_input = None
+        self.new_content_input = None
+        self.last_temp_upload_path = None
+
         user_role = app.storage.user.get("current_role", "")
         for config in self.configs:
             # 只有当用户具备读取或编辑权限时，该列才会被加入最终渲染和监控的列表中
@@ -3651,18 +3868,21 @@ class OverviewTableGroup:
         """渲染单个单元格内的 Chip (移植自原 _create_chip_from_data)"""
         chip_text = chip_info.get("content", "")
         filepath = ""
+        file_exists = False
         upload_path = config.get("upload_path", "")
         delete_icon = "close" if app.storage.user["current_user"] == "admin" else "settings"
         delete_bg = "bg-red text-white" if app.storage.user["current_user"] == "admin" else "bg-white text-light-blue"
 
         if chip_info.get("type") in ["text", "file", "test", "search", "svn", "video"]:
             file_info = (False, None)
-            if chip_info["type"] == "file":
+            if chip_info["type"] in ["file", "video"]:
                 filepath = f"{upload_path}/{chip_text}"
-                try:
-                    app.add_static_file(local_file=filepath, url_path=chip_info.get("url_path"))
-                except Exception as e:
-                    logger.error(f"添加静态文件失败，路径：{filepath}，错误：{e}")
+                file_exists = await async_path_exists(filepath)
+                if file_exists:
+                    try:
+                        app.add_static_file(local_file=filepath, url_path=chip_info.get("url_path"))
+                    except Exception as e:
+                        logger.error(f"添加静态文件失败，路径：{filepath}，错误：{e}")
             elif chip_info["type"] == "search":
                 # target_path_list = await self._search_file_path(chip_text, config)
                 # files_li = []
@@ -3677,8 +3897,9 @@ class OverviewTableGroup:
                 #         logger.error(f"添加静态文件失败，路径：{filepath}，错误：{e}")
                 # 直接使用传入的 config
                 is_valid, _, _, local_filepath, msg = await validate_search_path(chip_text, config, [self.project])
-                if is_valid and local_filepath:
-                    filepath = local_filepath
+                filepath = local_filepath
+                file_exists = await async_path_exists(filepath)
+                if is_valid and file_exists:
                     try:
                         app.add_static_file(local_file=filepath, url_path=chip_info.get("url_path"))
                     except Exception as e:
@@ -3706,9 +3927,9 @@ class OverviewTableGroup:
                 # 点击事件绑定
                 # --- 修复 3.1: 补充文件路径失效、丢失时的动态图标修改与警告 ---
                 if chip_info.get("type") in ["file", "search"]:
-                    if chip_info.get("file_type") == "application/pdf" and filepath and Path(filepath).exists():
+                    if chip_info.get("file_type") == "application/pdf" and filepath and file_exists:
                         chip.on_click(lambda url=chip_info.get("url_path"): self.open_pdf_in_browser(url))
-                    elif filepath and Path(filepath).exists():
+                    elif filepath and file_exists:
                         chip.on_click(lambda fp=filepath, fn=chip_text: self.check_and_download(fp, fn))
                     else:
                         if chip_info["type"] == "file":
@@ -3752,7 +3973,7 @@ class OverviewTableGroup:
                         )
 
                 elif chip_info.get("type") == "video":
-                    if filepath and Path(filepath).exists():
+                    if filepath and file_exists:
                         chip.on_click(lambda url=chip_info.get("url_path"): self.play_overview_video(url))
                     else:
                         chip.set_icon("videocam_off")
@@ -3822,6 +4043,15 @@ class OverviewTableGroup:
                     .style("font-size: 8px; display: none;")
                     .on("click", js_handler="(e) => {e.stopPropagation()}")
                 )
+                request_change_button = (
+                    ui.button(on_click=lambda d=chip_info, cfg=config: self.show_change_request_dialog(d, cfg))
+                    .classes(
+                        "absolute -top-1 right-10 m-0 p-0 q-py-0 z-20 bg-white text-orange-500 shadow-md border border-gray-200"
+                    )
+                    .props('round padding="0px 0px" icon="edit_document"')
+                    .style("font-size: 8px; display: none;")
+                    .on("click", js_handler="(e) => {e.stopPropagation()}")
+                )
             # 🌟 核心性能优化：如果是失活状态，将其可见性与全局开关绑定
             current_state = chip_info.get("select_activ_dic", {}).get(req_max_ver)
             is_deactivated = (current_state is False) or (str(current_state).lower() == "false")
@@ -3838,7 +4068,7 @@ class OverviewTableGroup:
             def check_shift_and_show(e, btn):
                 btn.style("display: flex;" if e.args.get("shiftKey") else "display: none;")
 
-            control_btns = [delete_button, move_up_button, move_down_button, history_button]
+            control_btns = [delete_button, move_up_button, move_down_button, history_button, request_change_button]
             wrapper.on("mouseenter", lambda e: check_ctrl_and_show(e, control_btns), ["ctrlKey"])
             wrapper.on("mousemove", lambda e: check_ctrl_and_show(e, control_btns), ["ctrlKey"])
             wrapper.on("mouseleave", lambda: [b.style("display: none;") for b in control_btns])
@@ -3851,17 +4081,29 @@ class OverviewTableGroup:
             image_name = chip_info.get("content")
             image_path = f"{upload_path}/{image_name}"
             url_path = f"{FILES_URL_DIR}/{image_name}"
-            try:
-                app.add_static_file(local_file=image_path, url_path=url_path)
-            except Exception as e:
-                logger.error(f"添加静态文件失败，路径：{image_path}，错误：{e}")
+            file_exists = await async_path_exists(image_path)
+            # 定义前端实际请求的 URL
+            display_url = url_path
+            if file_exists:
+                try:
+                    app.add_static_file(local_file=image_path, url_path=url_path)
+                except Exception as e:
+                    logger.error(f"添加静态文件失败，路径：{image_path}，错误：{e}")
+            else:
+                # 【核心修复】如果文件不存在，不要给前端真实的 url_path，防止报 404！
+                # 可以使用一个 1x1 的透明 base64 作为占位，或者指向一个全局静态的 "文件丢失.png"
+                display_url = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
+                # 或者: display_url = f"{IMG_DIR}/image_missing.png"
             with ui.element("div").classes("relative w-full") as wrapper:
                 thumbnail = (
-                    ui.interactive_image(url_path)
+                    ui.interactive_image(display_url)
                     .props(f"data-chip-id={chip_info.get('id')} enabled-state={chip_info.get('enabled')}")
                     .classes("h-10 cursor-pointer w-full object-cover rounded shadow-sm border border-gray-200")
                 )
-                thumbnail.on("click", lambda u=url_path: self.show_fullscreen(u))
+                if file_exists:
+                    thumbnail.on("click", lambda u=url_path: self.show_fullscreen(u))
+                else:
+                    thumbnail.on("click", lambda: ui.notify("原图片文件已丢失！", type="warning"))
 
                 with thumbnail:
                     ui.icon(chip_info.get("icon", "")).props("flat fab").classes(
@@ -3900,6 +4142,15 @@ class OverviewTableGroup:
                     .style("font-size: 8px; display: none;")
                     .on("click", js_handler="(e) => {e.stopPropagation()}")  # 阻止事件冒泡
                 )
+                request_change_button = (
+                    ui.button(on_click=lambda d=chip_info, cfg=config: self.show_change_request_dialog(d, cfg))
+                    .classes(
+                        "absolute -top-1 right-10 m-0 p-0 q-py-0 z-20 bg-white text-orange-500 shadow-md border border-gray-200"
+                    )
+                    .props('round padding="0px 0px" icon="edit_document"')
+                    .style("font-size: 8px; display: none;")
+                    .on("click", js_handler="(e) => {e.stopPropagation()}")
+                )
             # 🌟 核心性能优化：如果是失活状态，将其可见性与全局开关绑定
             current_state = chip_info.get("select_activ_dic", {}).get(req_max_ver)
             is_deactivated = (current_state is False) or (str(current_state).lower() == "false")
@@ -3916,7 +4167,7 @@ class OverviewTableGroup:
             def check_shift_and_show(e, btn):
                 btn.style("display: flex;" if e.args.get("shiftKey") else "display: none;")
 
-            control_btns = [delete_button, move_up_button, move_down_button, history_button]
+            control_btns = [delete_button, move_up_button, move_down_button, history_button, request_change_button]
             wrapper.on("mouseenter", lambda e: check_ctrl_and_show(e, control_btns), ["ctrlKey"])
             wrapper.on("mousemove", lambda e: check_ctrl_and_show(e, control_btns), ["ctrlKey"])
             wrapper.on("mouseleave", lambda: [b.style("display: none;") for b in control_btns])
@@ -6321,6 +6572,171 @@ class OverviewTableGroup:
             finally:
                 if btn:
                     btn.enable()  # 3. 最终防线：无论成功、失败验证不通过还是报错，都恢复按钮状态
+
+    def _render_test_fields_for_change(self, test_data, config):
+        """为变更申请弹窗复用的测试项渲染逻辑 (基于 config 字典)"""
+
+        def build_options(options_list, key_prefix, label_str):
+            if options_list:
+                with ui.column().classes("w-full p-0 m-0 gap-1"):
+                    sel = (
+                        ui.select(options_list, label=label_str, value=test_data.get(f"{key_prefix}_select"))
+                        .props("outlined dense")
+                        .classes("w-full")
+                    )
+                    sel.bind_value(test_data, f"{key_prefix}_select")
+
+                    oth = (
+                        ui.textarea(label=f"{label_str}特殊要求", value=test_data.get(f"{key_prefix}_other_text", ""))
+                        .props("outlined dense rows=1")
+                        .classes("w-full")
+                    )
+                    oth.bind_value(test_data, f"{key_prefix}_other_text")
+                    oth.set_visibility(test_data.get(f"{key_prefix}_select") == "其它")
+
+                    sel.on_value_change(
+                        lambda e: (
+                            oth.set_visibility(e.value == "其它") or (oth.set_value("") if e.value != "其它" else None)
+                        )
+                    )
+
+        build_options(config.get("test_nature_options", []), "test_nature", "测试性质")
+        build_options(config.get("state_options", []), "state", "条件/状态")
+        build_options(config.get("node_options", []), "node", "节点/位置")
+        build_options(config.get("instrument_options", []), "instrument", "工具/仪器/治具")
+
+    async def handle_change_upload(self, e: events.UploadEventArguments):
+        temp_dir = Path(UPLOADS_DIR) / "change_temp"
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        file_path = temp_dir / f"{uuid.uuid4().hex}_{e.file.name}"
+        with open(file_path, "wb") as f:
+            f.write(await e.file.read())
+        self.last_temp_upload_path = str(file_path)
+        if self.new_filename_input is not None:
+            self.new_filename_input.value = e.file.name
+            ui.notify(f"临时文件已上传：{e.file.name}", type="info")
+
+    def show_change_request_dialog(self, chip_info, config):
+        """弹出概述修改/删除申请对话框"""
+        self.chip_dialog.clear()
+        chip_type = chip_info.get("type", "text")
+        current_user = app.storage.user.get("current_user", "匿名用户")
+
+        active_reqs = app.storage.general.get("overview_change_requests", {})
+        existing_rid = next((rid for rid, r in active_reqs.items() if r["chip_id"] == chip_info["id"]), None)
+        existing_req = active_reqs.get(existing_rid)
+
+        if existing_req and existing_req["status"] == "pending":
+            ui.notify("该项已有申请正在审批中，请勿重复操作", type="warning")
+            return
+
+        action_mode = {"val": existing_req["action"] if existing_req else "modify"}
+        req_test_data = copy.deepcopy(
+            existing_req["new_test_data"]
+            if existing_req and chip_type == "test"
+            else chip_info.get("test_select_data", {})
+        )
+
+        with self.chip_dialog, ui.card().classes("w-[500px]"):
+            ui.label(f"{'编辑' if existing_req else '提交'}变更申请 - {config['title']}").classes(
+                "text-lg font-bold text-blue-900"
+            )
+
+            if existing_req and existing_req["status"] in ["rejected", "withdrawn"]:
+                with ui.row().classes("w-full bg-red-50 p-2 rounded items-center"):
+                    ui.icon("warning", color="red").classes("text-sm")
+                    ui.label(
+                        f"状态：{existing_req['status']} | 理由：{existing_req.get('reject_reason', '无')}"
+                    ).classes("text-xs text-red-700")
+
+            ui.radio({"modify": "修改内容", "delete": "删除该项"}, value=action_mode["val"]).bind_value(
+                action_mode, "val"
+            ).props("inline")
+
+            dynamic_area = ui.column().classes("w-full gap-2 mt-2")
+            reason_box = (
+                ui.textarea(label="变更理由 (必填)", value=existing_req["reason"] if existing_req else "")
+                .props("outlined")
+                .classes("w-full mt-2")
+            )
+            self.last_temp_upload_path = existing_req.get("temp_file_path") if existing_req else None
+
+            def render_dynamic_fields():
+                dynamic_area.clear()
+                with dynamic_area:
+                    ui.label(f"当前内容: {chip_info.get('content')}").classes(
+                        "text-sm text-gray-600 bg-gray-100 p-2 rounded w-full border"
+                    )
+                    if action_mode["val"] == "modify":
+                        if chip_type == "test":
+                            ui.label("测试参数配置:").classes("text-xs font-bold text-gray-500 mt-2")
+                            with ui.card().classes("w-full bg-gray-50 shadow-none border"):
+                                self._render_test_fields_for_change(req_test_data, config)
+                        elif chip_type in ["file", "image", "video"]:
+                            ui.label("上传新文件:").classes("text-sm font-bold mt-2")
+                            ui.upload(on_upload=self.handle_change_upload, auto_upload=True).classes("w-full")
+                            self.new_filename_input = (
+                                ui.input(label="确认文件名", value=existing_req["new_content"] if existing_req else "")
+                                .props("outlined")
+                                .classes("w-full")
+                            )
+                        else:
+                            self.new_content_input = (
+                                ui.input(label="新内容", value=existing_req["new_content"] if existing_req else "")
+                                .props("outlined")
+                                .classes("w-full mt-2")
+                            )
+
+            ui.timer(0.1, render_dynamic_fields, once=True)
+
+            async def submit_req():
+                if not reason_box.value.strip():
+                    ui.notify("请填写申请理由！", type="warning")
+                    return
+
+                final_new_content = ""
+                if action_mode["val"] == "modify":
+                    if chip_type == "test":
+                        final_new_content = "测试项变更"
+                    elif chip_type in ["file", "image", "video"]:
+                        # 👇 明确判断它不是 None，且它的 value 有内容 👇
+                        if self.new_filename_input is None or not self.new_filename_input.value:
+                            ui.notify("请上传文件或确认文件名", type="warning")
+                            return
+                        final_new_content = self.new_filename_input.value.strip()
+                    else:
+                        # 👇 明确判断它不是 None，且它的 value 有内容 👇
+                        if self.new_content_input is None or not self.new_content_input.value:
+                            ui.notify("请填写新内容", type="warning")
+                            return
+                        final_new_content = self.new_content_input.value.strip()
+
+                rid = existing_rid or str(uuid.uuid4())
+                app.storage.general.setdefault("overview_change_requests", {})[rid] = {
+                    "id": rid,
+                    "project_name": self.project,
+                    "label": config["label"],
+                    "chip_id": chip_info["id"],
+                    "chip_type": chip_type,
+                    "action": action_mode["val"],
+                    "old_content": chip_info["content"],
+                    "new_content": final_new_content,
+                    "new_test_data": req_test_data if chip_type == "test" else None,
+                    "temp_file_path": getattr(self, "last_temp_upload_path", None),
+                    "reason": reason_box.value.strip(),
+                    "submitter": current_user,
+                    "status": "pending",
+                    "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "config": config,  # TableGroup 直接把整列配置压进去即可
+                }
+                ui.notify("申请已提交至研发经理处", type="positive")
+                self.chip_dialog.close()
+
+            with ui.row().classes("w-full justify-end mt-4 gap-2"):
+                ui.button("取消", on_click=self.chip_dialog.close).props("flat color=grey")
+                ui.button("提交申请", color="primary", on_click=submit_req)
+
+        self.chip_dialog.open()
 
     # def _splicing_svn_file_url(self, chip_text, config) -> list:
     #     return_url_li = []

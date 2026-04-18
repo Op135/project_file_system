@@ -8,6 +8,7 @@ from pathlib import Path
 
 from nicegui import app, ui
 
+from .. import db_storage
 from ..config import BASE_DIR, IMG_DIR, OVER_DIR, PRESET_AVATARS, REQ_DIR, REQ_REMOVE_DIR
 from ..utils import (
     delete_file,
@@ -20,6 +21,8 @@ from ..utils import (
     requirement_version_tidy,
     set_overview_active_state,
     set_project_custom_labels,
+    validate_search_path,
+    validate_svn_url,
 )
 
 # 获取 logger
@@ -416,6 +419,122 @@ def information_page():
 
         dialog.open()
 
+    # 1. 撤回逻辑 (不归档，转为 withdrawn 状态留给用户修改)
+    async def handle_withdraw(req_id):
+        app.storage.general["overview_change_requests"][req_id]["status"] = "withdrawn"
+        ui.notify("申请已撤回")
+        ui.navigate.reload()
+
+    # 2. 审批通过 (执行物理动作 + 数据更新 + 归档)
+    async def handle_approve(req_id, req_data):
+        # --- 业务校验逻辑 ---
+        config = req_data["config"]
+        project = req_data["project_name"]
+        new_val = req_data["new_content"]
+
+        is_valid = True
+        msg = ""
+        if req_data["chip_type"] == "search":
+            is_valid, _, _, _, msg = await validate_search_path(new_val, config, [project])
+        elif req_data["chip_type"] == "svn":
+            is_valid, _, _, msg = await validate_svn_url(new_val, config, [project])
+
+        if not is_valid:
+            ui.notify(f"业务校验未通过：{msg}", type="negative")
+            return
+
+        # --- 执行修改 ---
+        try:
+            # 移动物理文件
+            if req_data.get("temp_file_path"):
+                import shutil
+
+                shutil.move(req_data["temp_file_path"], Path(config["upload_path"]) / new_val)
+
+            # 更新数据库
+            base_path = [f"{project}_over_data", req_data["label"], req_data["chip_id"]]
+            if req_data["action"] == "modify":
+                await db_storage.set_deep_item(base_path + ["content"], new_val)
+                if req_data["chip_type"] == "test":
+                    await db_storage.set_deep_item(base_path + ["test_select_data"], req_data["new_test_data"])
+            elif req_data["action"] == "delete":
+                await db_storage.del_deep_item(base_path)
+
+            # 核心：触发即时刷新
+            from ..components import OverviewVersionManager
+
+            OverviewVersionManager.bump(project, req_data["label"])
+
+            # 归档
+            await handle_archive(req_id, "approved")
+            ui.notify("审批通过并已同步刷新")
+            ui.navigate.reload()
+        except Exception as e:
+            ui.notify(f"错误: {e}", type="negative")
+
+    # 3. 归档逻辑 (清理 app.storage.general，写入数据库持久化)
+    async def handle_archive(req_id, final_status):
+        archive_data = app.storage.general["overview_change_requests"].pop(req_id)
+        archive_data["status"] = final_status
+        archive_data["finish_time"] = datetime.now().isoformat()
+
+        # 写入专门的数据库归档节点，防止 general 膨胀
+        await db_storage.atomic_deep_update(
+            ["overview_change_archives"], lambda old: {**(old or {}), req_id: archive_data}
+        )
+
+    def open_reject_modal(req_id):
+        """弹出驳回理由填写对话框"""
+        dialog.clear()
+        with dialog, ui.card().classes("w-[400px]"):
+            ui.label("驳回变更申请").classes("text-lg font-bold text-red-600 mb-2")
+
+            # 驳回理由输入框
+            reason_input = (
+                ui.textarea("驳回理由 (必填)", placeholder="请写明为什么驳回该修改...")
+                .classes("w-full")
+                .props("outlined autofocus")
+            )
+
+            async def confirm_reject():
+                reason = reason_input.value
+                if not reason or not reason.strip():
+                    ui.notify("请填写驳回理由！", type="warning", position="top")
+                    return
+
+                try:
+                    # 1. 更新申请状态与驳回理由
+                    app.storage.general["overview_change_requests"][req_id]["status"] = "rejected"
+                    app.storage.general["overview_change_requests"][req_id]["reject_reason"] = reason.strip()
+
+                    ui.notify("已驳回该申请", type="positive")
+                    dialog.close()
+                    ui.navigate.reload()  # 刷新页面以更新列表
+                except Exception as e:
+                    ui.notify(f"操作失败: {e}", type="negative")
+
+            with ui.row().classes("w-full justify-end mt-4 gap-2"):
+                ui.button("取消", on_click=dialog.close).props("flat text-color=grey")
+                ui.button("确认驳回", color="red", on_click=confirm_reject)
+
+        dialog.open()
+
+    def trigger_edit(req_data):
+        """引导申请人跳转回项目概述页面进行修改"""
+        project_name = req_data.get("project_name")
+
+        # 弹出提示，告知用户接下来的操作
+        ui.notify(
+            f"正在跳转至【{project_name}】项目概述页面...\n请在对应项上再次点击【申请变更】按钮即可继续修改。",
+            type="info",
+            position="center",
+            timeout=3000,
+            multi_line=True,
+        )
+
+        # 延迟 1.5 秒后，利用现有的 utils 函数跳转到该项目的概述页面
+        ui.timer(1.5, lambda: get_overviow_page(project_name, False), once=True)
+
     # -------------------------------------------------------------------------
     # 页面整体布局
     # -------------------------------------------------------------------------
@@ -621,3 +740,57 @@ def information_page():
 
                             if not has_drafts:
                                 ui.label("暂无草稿记录").classes("text-sm text-gray-400 p-2")
+                    # 概述修改申请审批
+                    if current_role in module_show_data.get("overview_change_requests", []):
+                        with ui.card().classes("w-full rounded-xl shadow-sm border border-gray-100 bg-white mt-4"):
+                            ui_card_header("概述变更审批", "fact_check", "orange-600")
+
+                            all_requests = app.storage.general.get("overview_change_requests", {})
+                            with ui.column().classes("w-full gap-2"):
+                                for rid, req in all_requests.items():
+                                    is_manager = current_role == "研发经理"
+                                    is_mine = req["submitter"] == current_user
+
+                                    if (is_manager and req["status"] == "pending") or is_mine:
+                                        with ui.row().classes(
+                                            "w-full items-center justify-between p-3 bg-gray-50 rounded border"
+                                        ):
+                                            with ui.column().classes("gap-1"):
+                                                ui.label(f"{req['project_name']} | {req['action']}").classes(
+                                                    "font-bold"
+                                                )
+                                                ui.label(f"{req['old_content']} → {req['new_content']}").classes(
+                                                    "text-sm text-gray-600"
+                                                )
+                                                status_badge(req["status"])  # 需在 information.py 定义该组件
+
+                                            with ui.row().classes("gap-2"):
+                                                if is_manager and req["status"] == "pending":
+                                                    ui.button(
+                                                        "通过",
+                                                        color="green",
+                                                        on_click=lambda r=rid, d=req: handle_approve(r, d),
+                                                    ).props("dense size=sm")
+                                                    ui.button(
+                                                        "驳回", color="red", on_click=lambda r=rid: open_reject_modal(r)
+                                                    ).props("dense size=sm")
+
+                                                if is_mine:
+                                                    if req["status"] in ["rejected", "withdrawn"]:
+                                                        # 触发 components.py 中的对话框重新编辑
+                                                        ui.button(
+                                                            "修改再提",
+                                                            color="blue",
+                                                            on_click=lambda d=req: trigger_edit(d),
+                                                        ).props("dense size=sm")
+                                                        ui.button(
+                                                            "放弃申请",
+                                                            color="grey",
+                                                            on_click=lambda r=rid: handle_archive(r, "cancelled"),
+                                                        ).props("dense size=sm")
+                                                    if req["status"] == "pending":
+                                                        ui.button(
+                                                            "撤回",
+                                                            color="orange",
+                                                            on_click=lambda r=rid: handle_withdraw(r),
+                                                        ).props("dense size=sm")
