@@ -154,6 +154,11 @@ def main_page():
             k in str(current_role) for k in ["销售", "研发", "boss", "admin"]
         ):
             continue
+        # 统计信息只对角色字符串里含有如下关键字的用户展示
+        elif items[3] == "/statistics" and not any(
+            k in str(current_role) for k in ["总监", "经理", "主管", "boss", "admin"]
+        ):
+            continue
         # elif items[3] == "/ecn_management" and not any(k in str(current_role) for k in ["研发经理", "admin"]):
         #     continue
         menu_items.append(items)
