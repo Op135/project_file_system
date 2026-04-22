@@ -6,6 +6,7 @@ import os
 from datetime import datetime, timedelta
 from pathlib import Path
 
+import pandas as pd
 from nicegui import app, ui
 
 from ..config import BASE_DIR, IMG_DIR, OVER_DIR, PRESET_AVATARS, REQ_DIR, REQ_REMOVE_DIR
@@ -16,6 +17,66 @@ from ..utils import (
 
 # 获取 logger
 logger = logging.getLogger(__name__)
+
+# --- 新增：持久化记录逻辑 ---
+# --- 持久化记录配置 ---
+STATS_FILE = os.path.join(f"{BASE_DIR}/data", "daily_project_stats.xlsx")
+
+
+def record_daily_stats(project_summary, pending_data):
+    """
+    持久化记录函数 (由 APScheduler 每日定时调用)
+    处理逻辑：计算当天快照数据，并追加到 Excel 中
+    """
+    today = datetime.now().strftime("%Y-%m-%d")
+    rows = []
+
+    for user, p_dict in pending_data.items():
+        stats_map = {}
+        for proj, issues in p_dict.items():
+            state = project_summary.get(proj, {}).get("state", "未知")
+            if state not in stats_map:
+                stats_map[state] = {"缺必填": 0, "有待定": 0, "缺需填": 0}
+
+            issue_types = set(issues.values())
+            if "缺必填" in issue_types:
+                stats_map[state]["缺必填"] += 1
+            if "有待定" in issue_types:
+                stats_map[state]["有待定"] += 1
+            if "缺需填" in issue_types:
+                stats_map[state]["缺需填"] += 1
+
+        for state, counts in stats_map.items():
+            rows.append(
+                {
+                    "日期": today,
+                    "用户": user,
+                    "项目状态": state,
+                    "缺必填数": counts["缺必填"],
+                    "有待定数": counts["有待定"],
+                    "缺需填数": counts["缺需填"],
+                }
+            )
+
+    if not rows:
+        return
+
+    new_df = pd.DataFrame(rows)
+
+    if os.path.exists(STATS_FILE):
+        try:
+            old_df = pd.read_excel(STATS_FILE)
+            # 幂等性处理：如果当天已记录（如手动触发修复），则先剔除当天旧数据
+            old_df = old_df[old_df["日期"] != today]
+            final_df = pd.concat([old_df, new_df], ignore_index=True)
+        except Exception as e:
+            logger.error(f"读取历史统计文件失败: {e}")
+            final_df = new_df
+    else:
+        final_df = new_df
+
+    final_df.to_excel(STATS_FILE, index=False)
+    logger.info(f"已成功将今日待办数据追加至 {STATS_FILE}")
 
 
 # --- UI 辅助组件 ---
@@ -110,221 +171,273 @@ def statistics_page():
                     # C. 概述统计图表 (Statistics)
                     if current_role in module_show_data.get("overview_charge_pending_statistics", []):
                         # ----------------- 图表 1：团队待办概览 (已修改横纵轴及排序) -----------------
+                        # 增加 relative 类以支持绝对定位下拉框
                         with ui.card().classes(
-                            "w-full rounded-xl shadow-sm border border-gray-100 overflow-hidden bg-white mb-2"
+                            "w-full rounded-xl shadow-sm border border-gray-100 overflow-hidden bg-white mb-2 relative"
                         ):
                             ui_card_header("团队待办概览", "bar_chart", "indigo-500")
 
-                            if pending_data:
+                            # 增加状态筛选器，默认选中主要阶段
+                            PROJECT_STATE_LIST = ["作废", "待定", "研发", "转产", "试产", "量产"]
+                            default_states = ["研发", "转产", "试产", "量产"]
 
-                                def classify_pending_project(p_state_dic):
-                                    statuses = set(p_state_dic.values())
-                                    if "缺必填" in statuses:
-                                        return "存在缺必填"
-                                    if "有待定" in statuses:
-                                        return "无缺必填有待定"
-                                    if "缺需填" in statuses:
-                                        return "仅缺需填"
-                                    return None
-
-                                stack_meta = {
-                                    "存在缺必填": {"color": "#ef4444"},
-                                    "无缺必填有待定": {"color": "#f59e0b"},
-                                    "仅缺需填": {"color": "#3b82f6"},
-                                }
-                                stack_order = list(stack_meta.keys())
-
-                                user_stack_details = {}
-                                for user, pending_project_dic in pending_data.items():
-                                    stack_details = {key: [] for key in stack_order}
-                                    for project_name, p_state_dic in pending_project_dic.items():
-                                        category = classify_pending_project(p_state_dic)
-                                        if category:
-                                            stack_details[category].append(project_name)
-                                    user_stack_details[user] = stack_details
-
-                                # 数据准备：按待办项目总数降序，同分时按紧急程度排序
-                                sorted_users = sorted(
-                                    pending_data.keys(),
-                                    key=lambda user: (
-                                        -sum(len(user_stack_details[user][key]) for key in stack_order),
-                                        -len(user_stack_details[user]["存在缺必填"]),
-                                        -len(user_stack_details[user]["无缺必填有待定"]),
-                                        -len(user_stack_details[user]["仅缺需填"]),
-                                        user,
-                                    ),
+                            # z-10 确保不会被 Echarts 图表层遮挡
+                            status_select = (
+                                ui.select(
+                                    options=PROJECT_STATE_LIST,
+                                    value=default_states,
+                                    multiple=True,
+                                    label="项目状态筛选",
                                 )
-                                user_list = sorted_users
-                                user_top_stack = {
-                                    user: next(
-                                        (
-                                            stack_name
-                                            for stack_name in reversed(stack_order)
-                                            if user_stack_details[user][stack_name]
+                                .props("borderless")
+                                .classes("max-w-1/3 min-w-1/4 px-4 mb-2 absolute top-0 right-0 z-10")
+                            )
+
+                            @ui.refreshable
+                            def render_pending_overview(target_states):
+                                # 动态过滤数据
+                                filtered_pending_data = {}
+                                for user, pending_project_dic in pending_data.items():
+                                    filtered_projects = {}
+                                    for project_name, p_state_dic in pending_project_dic.items():
+                                        # 获取当前项目状态，如果查不到默认为"未知"
+                                        state = project_summary.get(project_name, {}).get("state", "未知")
+                                        if state in target_states:
+                                            filtered_projects[project_name] = p_state_dic
+                                    if filtered_projects:
+                                        filtered_pending_data[user] = filtered_projects
+
+                                if filtered_pending_data:
+
+                                    def classify_pending_project(p_state_dic):
+                                        statuses = set(p_state_dic.values())
+                                        if "缺必填" in statuses:
+                                            return "存在缺必填"
+                                        if "有待定" in statuses:
+                                            return "无缺必填有待定"
+                                        if "缺需填" in statuses:
+                                            return "仅缺需填"
+                                        return None
+
+                                    stack_meta = {
+                                        "存在缺必填": {"color": "#ef4444"},
+                                        "无缺必填有待定": {"color": "#f59e0b"},
+                                        "仅缺需填": {"color": "#3b82f6"},
+                                    }
+                                    stack_order = list(stack_meta.keys())
+
+                                    user_stack_details = {}
+                                    for user, pending_project_dic in filtered_pending_data.items():
+                                        stack_details = {key: [] for key in stack_order}
+                                        for project_name, p_state_dic in pending_project_dic.items():
+                                            category = classify_pending_project(p_state_dic)
+                                            if category:
+                                                stack_details[category].append(project_name)
+                                        user_stack_details[user] = stack_details
+
+                                    # 数据准备：按待办项目总数降序，同分时按紧急程度排序
+                                    sorted_users = sorted(
+                                        filtered_pending_data.keys(),
+                                        key=lambda user: (
+                                            -sum(len(user_stack_details[user][key]) for key in stack_order),
+                                            -len(user_stack_details[user]["存在缺必填"]),
+                                            -len(user_stack_details[user]["无缺必填有待定"]),
+                                            -len(user_stack_details[user]["仅缺需填"]),
+                                            user,
                                         ),
-                                        None,
                                     )
-                                    for user in user_list
-                                }
+                                    user_list = sorted_users
+                                    user_top_stack = {
+                                        user: next(
+                                            (
+                                                stack_name
+                                                for stack_name in reversed(stack_order)
+                                                if user_stack_details[user][stack_name]
+                                            ),
+                                            None,
+                                        )
+                                        for user in user_list
+                                    }
 
-                                series = []
-                                for stack_name in stack_order:
-                                    series.append(
-                                        {
-                                            "name": stack_name,
-                                            "type": "bar",
-                                            "stack": "pending",
-                                            "barWidth": "50%",
-                                            "data": [
-                                                {
-                                                    "value": len(user_stack_details[user][stack_name]),
-                                                    "projects": user_stack_details[user][stack_name],
-                                                    "user": user,
-                                                    "itemStyle": {
-                                                        "borderRadius": [4, 4, 0, 0]
-                                                        if user_top_stack[user] == stack_name
-                                                        else [0, 0, 0, 0]
-                                                    },
-                                                }
-                                                for user in user_list
-                                            ],
-                                            "itemStyle": {
-                                                "color": stack_meta[stack_name]["color"],
-                                            },
-                                            "emphasis": {"focus": "self"},
-                                            "blur": {"itemStyle": {"opacity": 0.2}},
-                                            "label": {"show": False},
-                                        }
-                                    )
-
-                                # 动态调整 Echarts 配置以适应 X 轴名称显示
-                                echart_config = {
-                                    "tooltip": {
-                                        "trigger": "item",
-                                        "confine": True,
-                                        "axisPointer": {"type": "shadow"},
-                                        ":formatter": """
-                                            function(params) {
-                                                const projects = (params.data && params.data.projects) || [];
-                                                const count = typeof params.value === 'number' ? params.value : 0;
-                                                let html = `<b>${params.name}</b><br/>${params.seriesName}: <b>${count}</b>`;
-                                                if (projects.length) {
-                                                    html += '<br/>' + projects.map(p => `• ${p}`).join('<br/>');
-                                                } else {
-                                                    html += '<br/>暂无项目';
-                                                }
-                                                return html;
+                                    series = []
+                                    for stack_name in stack_order:
+                                        series.append(
+                                            {
+                                                "name": stack_name,
+                                                "type": "bar",
+                                                "stack": "pending",
+                                                "barWidth": "50%",
+                                                "data": [
+                                                    {
+                                                        "value": len(user_stack_details[user][stack_name]),
+                                                        "projects": user_stack_details[user][stack_name],
+                                                        "user": user,
+                                                        "itemStyle": {
+                                                            "borderRadius": [4, 4, 0, 0]
+                                                            if user_top_stack[user] == stack_name
+                                                            else [0, 0, 0, 0]
+                                                        },
+                                                    }
+                                                    for user in user_list
+                                                ],
+                                                "itemStyle": {
+                                                    "color": stack_meta[stack_name]["color"],
+                                                },
+                                                "emphasis": {"focus": "self"},
+                                                "blur": {"itemStyle": {"opacity": 0.2}},
+                                                "label": {"show": False},
                                             }
-                                            """,
-                                        ":position": """
-                                            function(point, params, dom, rect, size) {
-                                                const boxWidth = size.contentSize[0];
-                                                const boxHeight = size.contentSize[1];
-                                                const viewWidth = size.viewSize[0];
-                                                const viewHeight = size.viewSize[1];
+                                        )
 
-                                                let left = point[0] + 12;
-                                                if (left + boxWidth > viewWidth - 8) {
-                                                    left = point[0] - boxWidth - 12;
+                                    # 动态调整 Echarts 配置以适应 X 轴名称显示
+                                    echart_config = {
+                                        "tooltip": {
+                                            "trigger": "item",
+                                            "confine": True,
+                                            "axisPointer": {"type": "shadow"},
+                                            ":formatter": """
+                                                function(params) {
+                                                    const projects = (params.data && params.data.projects) || [];
+                                                    const count = typeof params.value === 'number' ? params.value : 0;
+                                                    let html = `<b>${params.name}</b><br/>${params.seriesName}: <b>${count}</b>`;
+                                                    if (projects.length) {
+                                                        html += '<br/>' + projects.map(p => `• ${p}`).join('<br/>');
+                                                    } else {
+                                                        html += '<br/>暂无项目';
+                                                    }
+                                                    return html;
                                                 }
-                                                if (left < 8) {
-                                                    left = 8;
+                                                """,
+                                            ":position": """
+                                                function(point, params, dom, rect, size) {
+                                                    const boxWidth = size.contentSize[0];
+                                                    const boxHeight = size.contentSize[1];
+                                                    const viewWidth = size.viewSize[0];
+                                                    const viewHeight = size.viewSize[1];
+
+                                                    let left = point[0] + 12;
+                                                    if (left + boxWidth > viewWidth - 8) {
+                                                        left = point[0] - boxWidth - 12;
+                                                    }
+                                                    if (left < 8) {
+                                                        left = 8;
+                                                    }
+
+                                                    let top = point[1] - boxHeight - 12;
+                                                    if (top < 8) {
+                                                        top = point[1] + 12;
+                                                    }
+                                                    if (top + boxHeight > viewHeight - 8) {
+                                                        top = Math.max(8, viewHeight - boxHeight - 8);
+                                                    }
+
+                                                    return [left, top];
                                                 }
+                                                """,
+                                        },
+                                        "grid": {
+                                            "top": 30,
+                                            "bottom": 30,
+                                            "left": 20,
+                                            "right": 20,
+                                            "containLabel": True,
+                                        },
+                                        "xAxis": {
+                                            "type": "category",
+                                            "data": user_list,
+                                            "axisTick": {"show": False},
+                                            "axisLabel": {"interval": 0, "rotate": 30},  # 倾斜文字防止人名重叠
+                                        },
+                                        "yAxis": {
+                                            "type": "value",
+                                            "splitLine": {"show": True, "lineStyle": {"type": "dashed"}},
+                                            "minInterval": 1,
+                                        },
+                                        "legend": {"top": 0},
+                                        "series": series,
+                                    }
+                                    # ui.echart: 创建并渲染一个 Apache ECharts 数据可视化实例
+                                    ui.echart(echart_config).classes("w-full h-68")
+                                    # ui.separator()
 
-                                                let top = point[1] - boxHeight - 12;
-                                                if (top < 8) {
-                                                    top = point[1] + 12;
-                                                }
-                                                if (top + boxHeight > viewHeight - 8) {
-                                                    top = Math.max(8, viewHeight - boxHeight - 8);
-                                                }
-
-                                                return [left, top];
-                                            }
-                                            """,
-                                    },
-                                    "grid": {"top": 30, "bottom": 30, "left": 20, "right": 20, "containLabel": True},
-                                    "xAxis": {
-                                        "type": "category",
-                                        "data": user_list,
-                                        "axisTick": {"show": False},
-                                        "axisLabel": {"interval": 0, "rotate": 30},  # 倾斜文字防止人名重叠
-                                    },
-                                    "yAxis": {
-                                        "type": "value",
-                                        "splitLine": {"show": True, "lineStyle": {"type": "dashed"}},
-                                        "minInterval": 1,
-                                    },
-                                    "legend": {"top": 0},
-                                    "series": series,
-                                }
-                                # ui.echart: 创建并渲染一个 Apache ECharts 数据可视化实例
-                                ui.echart(echart_config).classes("w-full h-68")
-                                # ui.separator()
-
-                                # ui.expansion: 创建一个可折叠的扩展面板组件
-                                with ui.expansion("查看详细清单").classes("w-full text-sm text-gray-600 bg-gray-50"):
-                                    with ui.column().classes("p-3 gap-2 w-full"):
-                                        for user, pending_project_dic in pending_data.items():
-                                            if pending_project_dic:
-                                                with ui.row().classes("w-full justify-left text-xs"):
-                                                    ui.label(user).classes("font-bold text-gray-700")
-                                                    ui.label(f"{len(pending_project_dic.keys())}").classes(
-                                                        "bg-indigo-100 text-indigo-700 px-1.5 rounded-full"
-                                                    )
-                                                over_flat = app.storage.general.get("over_config_data_flat", {})
-                                                for p, p_state_dic in pending_project_dic.items():
-                                                    # HTML Tooltip 构建
-                                                    false_items = [k for k, v in p_state_dic.items() if v == "缺必填"]
-                                                    need_items = [k for k, v in p_state_dic.items() if v == "缺需填"]
-                                                    none_items = [k for k, v in p_state_dic.items() if v == "有待定"]
-
-                                                    tooltip_html = ""
-                                                    if false_items:
-                                                        tooltip_html += "<b>【必填无内容】</b><br>" + "<br>".join(
-                                                            [
-                                                                f"• {over_flat.get(item, {}).get('title', '未知概述项')}"
-                                                                for item in false_items
-                                                            ]
+                                    # ui.expansion: 创建一个可折叠的扩展面板组件
+                                    with ui.expansion("查看详细清单").classes(
+                                        "w-full text-sm text-gray-600 bg-gray-50"
+                                    ):
+                                        with ui.column().classes("p-3 gap-2 w-full"):
+                                            for user, pending_project_dic in filtered_pending_data.items():
+                                                if pending_project_dic:
+                                                    with ui.row().classes("w-full justify-left text-xs"):
+                                                        ui.label(user).classes("font-bold text-gray-700")
+                                                        ui.label(f"{len(pending_project_dic.keys())}").classes(
+                                                            "bg-indigo-100 text-indigo-700 px-1.5 rounded-full"
                                                         )
-                                                    if need_items:
-                                                        if tooltip_html:
-                                                            tooltip_html += "<br><br>"
-                                                        tooltip_html += "<b>【需填无内容】</b><br>" + "<br>".join(
-                                                            [
-                                                                f"• {over_flat.get(item, {}).get('title', '未知概述项')}"
-                                                                for item in need_items
-                                                            ]
-                                                        )
-                                                    if none_items:
-                                                        if tooltip_html:
-                                                            tooltip_html += "<br><br>"
-                                                        tooltip_html += "<b>【待确认】</b><br>" + "<br>".join(
-                                                            [
-                                                                f"• {over_flat.get(item, {}).get('title', '未知概述项')}"
-                                                                for item in none_items
-                                                            ]
-                                                        )
+                                                    over_flat = app.storage.general.get("over_config_data_flat", {})
+                                                    for p, p_state_dic in pending_project_dic.items():
+                                                        # HTML Tooltip 构建
+                                                        false_items = [
+                                                            k for k, v in p_state_dic.items() if v == "缺必填"
+                                                        ]
+                                                        need_items = [
+                                                            k for k, v in p_state_dic.items() if v == "缺需填"
+                                                        ]
+                                                        none_items = [
+                                                            k for k, v in p_state_dic.items() if v == "有待定"
+                                                        ]
 
-                                                    if not tooltip_html:
-                                                        tooltip_html = "状态正常"
+                                                        tooltip_html = ""
+                                                        if false_items:
+                                                            tooltip_html += "<b>【必填无内容】</b><br>" + "<br>".join(
+                                                                [
+                                                                    f"• {over_flat.get(item, {}).get('title', '未知概述项')}"
+                                                                    for item in false_items
+                                                                ]
+                                                            )
+                                                        if need_items:
+                                                            if tooltip_html:
+                                                                tooltip_html += "<br><br>"
+                                                            tooltip_html += "<b>【需填无内容】</b><br>" + "<br>".join(
+                                                                [
+                                                                    f"• {over_flat.get(item, {}).get('title', '未知概述项')}"
+                                                                    for item in need_items
+                                                                ]
+                                                            )
+                                                        if none_items:
+                                                            if tooltip_html:
+                                                                tooltip_html += "<br><br>"
+                                                            tooltip_html += "<b>【待确认】</b><br>" + "<br>".join(
+                                                                [
+                                                                    f"• {over_flat.get(item, {}).get('title', '未知概述项')}"
+                                                                    for item in none_items
+                                                                ]
+                                                            )
 
-                                                    if false_items or none_items:
-                                                        project_label = ui.label(
-                                                            f"• {p} —— {project_summary.get(p, {}).get('state', '未知')} —— {len(p_state_dic)}"
-                                                        ).classes("pl-2 text-red-500 truncate text-xs cursor-help")
-                                                    else:
-                                                        project_label = ui.label(
-                                                            f"• {p} —— {project_summary.get(p, {}).get('state', '未知')} —— {len(p_state_dic)}"
-                                                        ).classes("pl-2 text-amber-500 truncate text-xs cursor-help")
+                                                        if not tooltip_html:
+                                                            tooltip_html = "状态正常"
 
-                                                    with project_label:
-                                                        with ui.tooltip().classes(
-                                                            "text-xs bg-gray-600/90 text-white p-2"
-                                                        ):
-                                                            ui.html(tooltip_html, sanitize=False)
-                            else:
-                                ui.label("暂无积压数据").classes("p-4 text-gray-400 text-sm")
+                                                        if false_items or none_items:
+                                                            project_label = ui.label(
+                                                                f"• {p} —— {project_summary.get(p, {}).get('state', '未知')} —— {len(p_state_dic)}"
+                                                            ).classes("pl-2 text-red-500 truncate text-xs cursor-help")
+                                                        else:
+                                                            project_label = ui.label(
+                                                                f"• {p} —— {project_summary.get(p, {}).get('state', '未知')} —— {len(p_state_dic)}"
+                                                            ).classes(
+                                                                "pl-2 text-amber-500 truncate text-xs cursor-help"
+                                                            )
+
+                                                        with project_label:
+                                                            with ui.tooltip().classes(
+                                                                "text-xs bg-gray-600/90 text-white p-2"
+                                                            ):
+                                                                ui.html(tooltip_html, sanitize=False)
+                                else:
+                                    ui.label("当前筛选状态下暂无积压数据").classes("p-4 text-gray-400 text-sm mt-4")
+
+                            # 初始渲染
+                            render_pending_overview(status_select.value)
+                            # 监听筛选框的值变化，并触发刷新
+                            status_select.on_value_change(lambda e: render_pending_overview.refresh(e.value))
 
                         # ----------------- 图表 2：近7日待办项趋势 (新增) -----------------
                         with ui.card().classes(
@@ -679,3 +792,129 @@ def statistics_page():
                                     ],
                                 }
                                 ui.echart(echart_overview_config).classes("w-full h-80")
+                    # E. 待办项历史趋势分析 (Pending Items Historical Trend Analysis)
+                    if current_role in module_show_data.get("overview_charge_pending_statistics", []):
+                        # ----------------- 图表 0：30日多维趋势分析 -----------------
+                        with ui.card().classes(
+                            "w-full rounded-xl shadow-sm border border-gray-100 overflow-hidden bg-white relative"
+                        ):
+                            ui_card_header("近30日待办状态趋势分析", "history", "amber-600")
+
+                            if os.path.exists(STATS_FILE):
+                                try:
+                                    df = pd.read_excel(STATS_FILE)
+                                    df["日期"] = pd.to_datetime(df["日期"])
+                                    cutoff_date = datetime.now() - timedelta(days=30)
+                                    df = df[df["日期"] >= cutoff_date].sort_values("日期")
+                                    df["日期_str"] = df["日期"].dt.strftime("%m-%d")
+                                except Exception as e:
+                                    logger.error(f"数据加载失败: {e}")
+                                    df = pd.DataFrame()
+                            else:
+                                df = pd.DataFrame()
+
+                            if df.empty:
+                                ui.label("暂无历史统计数据，数据将在每日工作日 18:00 自动累积生成。").classes(
+                                    "p-8 text-gray-400 text-center w-full"
+                                )
+                            else:
+                                # 计算转产阶段总积压最多的前三人作为默认项
+                                recent_date = df["日期"].max()
+                                latest_data = df[df["日期"] == recent_date]
+                                top_users_df = latest_data[latest_data["项目状态"] == "转产"].copy()
+                                top_users_df["total_issues"] = (
+                                    top_users_df["缺必填数"] + top_users_df["有待定数"] + top_users_df["缺需填数"]
+                                )
+                                default_top_users = (
+                                    top_users_df.groupby("用户")["total_issues"].sum().nlargest(3).index.tolist()
+                                )
+
+                                if not default_top_users:
+                                    default_top_users = df["用户"].unique()[:3].tolist()
+
+                                with ui.row().classes("w-full px-4 gap-4 items-center justify-between"):
+                                    sel_users = ui.select(
+                                        options=df["用户"].unique().tolist(),
+                                        value=default_top_users,
+                                        multiple=True,
+                                        label="人员选择",
+                                    ).classes("w-1/3 min-w-[150px]")
+
+                                    sel_states = ui.select(
+                                        options=df["项目状态"].unique().tolist(),
+                                        value=["转产"],
+                                        multiple=True,
+                                        label="阶段过滤",
+                                    ).classes("w-1/4 min-w-[120px]")
+
+                                    sel_metric = ui.select(
+                                        options={
+                                            "缺必填数": "缺必填数",
+                                            "有待定数": "有待定数",
+                                            "缺需填数": "缺需填数",
+                                        },
+                                        value="缺必填数",
+                                        label="考察指标",
+                                    ).classes("w-1/4 min-w-[120px]")
+
+                                @ui.refreshable
+                                def render_history_chart(users, states, metric):
+                                    if not users or not states:
+                                        ui.label("请至少选择一名人员和一个阶段。").classes("p-4 text-gray-400")
+                                        return
+
+                                    mask = df["用户"].isin(users) & df["项目状态"].isin(states)
+                                    filtered_df = (
+                                        df[mask].groupby(["日期_str", "用户"])[metric].sum().unstack().fillna(0)
+                                    )
+
+                                    dates = filtered_df.index.tolist()
+                                    series = []
+                                    for user in filtered_df.columns:
+                                        series.append(
+                                            {
+                                                "name": user,
+                                                "type": "line",
+                                                "smooth": False,
+                                                "symbolSize": 6,
+                                                "data": filtered_df[user].tolist(),
+                                            }
+                                        )
+
+                                    echart_config = {
+                                        "tooltip": {"trigger": "axis"},
+                                        "legend": {"bottom": 0, "type": "scroll"},
+                                        "grid": {
+                                            "top": 40,
+                                            "bottom": 60,
+                                            "left": 40,
+                                            "right": 20,
+                                            "containLabel": True,
+                                        },
+                                        "xAxis": {
+                                            "type": "category",
+                                            "data": dates,
+                                            "boundaryGap": False,
+                                        },
+                                        "yAxis": {"type": "value", "minInterval": 1},
+                                        "series": series,
+                                    }
+                                    ui.echart(echart_config).classes("w-full h-80")
+
+                                render_history_chart(sel_users.value, sel_states.value, sel_metric.value)
+
+                                sel_users.on_value_change(
+                                    lambda: render_history_chart.refresh(
+                                        sel_users.value, sel_states.value, sel_metric.value
+                                    )
+                                )
+                                sel_states.on_value_change(
+                                    lambda: render_history_chart.refresh(
+                                        sel_users.value, sel_states.value, sel_metric.value
+                                    )
+                                )
+                                sel_metric.on_value_change(
+                                    lambda: render_history_chart.refresh(
+                                        sel_users.value, sel_states.value, sel_metric.value
+                                    )
+                                )

@@ -111,37 +111,60 @@ def init_backup_service():
 
 
 def init_pending_history_task():
-    """初始化每日待办数据快照任务 (修复版全局任务)"""
-    import asyncio  # 引入Python标准异步I/O框架
+    """初始化每日待办数据快照任务 (APScheduler + 工作日精准触发)"""
     import copy
     from datetime import datetime
 
-    async def record_daily_pending_history():
-        # 构建死循环维持后台常驻运行
-        while True:
-            try:
-                now = datetime.now()
-                today_str = now.strftime("%Y-%m-%d")
-                # 获取存储结构
-                history = app.storage.general.setdefault("overview_pending_history", {})
-                current_pending = app.storage.general.get("overview_charge_pending", {})
+    from apscheduler.schedulers.background import BackgroundScheduler
+    from chinese_calendar import is_workday
 
-                # 记录当天的最新快照（如果服务器一天内多次重启，会不断刷新当天的最终结果）
-                history[today_str] = copy.deepcopy(current_pending)
+    # 局部导入避免循环引用。假设 statistics.py 位于 pages 文件夹下
+    try:
+        from .pages.statistics import record_daily_stats
+    except ImportError as e:
+        logger.error(f"无法导入 record_daily_stats，请检查模块路径: {e}")
+        record_daily_stats = None
 
-                # 为了防止数据无限膨胀，仅保留近 14 天的记录
-                sorted_dates = sorted(history.keys())
-                if len(sorted_dates) > 14:
-                    for d in sorted_dates[:-14]:
-                        history.pop(d, None)
-            except Exception as e:
-                logger.error(f"每日待办项快照记录出错: {e}")
+    def daily_1800_job():
+        """每天 18:00 准时执行的任务实体"""
+        now = datetime.now()
 
-            # asyncio.sleep(): 异步休眠函数，挂起当前任务并让出事件循环控制权，3600秒(1小时)后恢复
-            await asyncio.sleep(3600)
+        # 1. 节假日拦截器
+        if not is_workday(now):
+            logger.info(f"今日 ({now.strftime('%Y-%m-%d')}) 为法定休息日/周末，跳过待办统计。")
+            return
 
-    # asyncio.create_task(): 将协程封装为一个Task对象并提交给事件循环调度并发执行，适用于独立生命周期的后台服务
-    asyncio.create_task(record_daily_pending_history())
+        logger.info("工作日 18:00 触发：开始执行待办状态快照记录...")
+
+        try:
+            today_str = now.strftime("%Y-%m-%d")
+            # 获取存储结构
+            history = app.storage.general.setdefault("overview_pending_history", {})
+            current_pending = app.storage.general.get("overview_charge_pending", {})
+
+            # 2. 更新内存快照 (服务于前端 7日待办趋势图)
+            history[today_str] = copy.deepcopy(current_pending)
+
+            # 清理超过 14 天的内存快照，防止 JSON 文件体积无限膨胀
+            sorted_dates = sorted(history.keys())
+            if len(sorted_dates) > 14:
+                for d in sorted_dates[:-14]:
+                    history.pop(d, None)
+
+            # 3. 触发 Excel 长期持久化 (服务于前端 30日多维图表)
+            if record_daily_stats:
+                project_summary = app.storage.general.get("project_summary", {})
+                record_daily_stats(project_summary, current_pending)
+
+        except Exception as e:
+            logger.error(f"每日待办项快照记录出错: {e}")
+
+    # 配置后台调度器
+    scheduler = BackgroundScheduler()
+    # 设定每天 18:00 触发
+    scheduler.add_job(daily_1800_job, "cron", hour=18, minute=0)
+    scheduler.start()
+    logger.info("数据统计定时器已挂载 (触发规则: 工作日 18:00)")
 
 
 # ==========================================
