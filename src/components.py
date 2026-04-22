@@ -889,8 +889,8 @@ class InteractiveButton:
                 self.btn_label.classes("text-red", remove="text-green text-orange")
 
             for CHIP_INFO in LABEL_CHIP_DIC:
-                if not app.storage.client.get("record_switch") and CHIP_INFO.get("enabled") is False:
-                    continue
+                # if not app.storage.client.get("record_switch") and CHIP_INFO.get("enabled") is False:
+                #     continue
 
                 # if self.processing_type == "search":
                 #     if not search_bool:
