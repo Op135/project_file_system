@@ -141,7 +141,6 @@ def init_pending_history_task():
             # 获取存储结构
             history = app.storage.general.setdefault("overview_pending_history", {})
             current_pending = app.storage.general.get("overview_charge_pending", {})
-
             # 2. 更新内存快照 (服务于前端 7日待办趋势图)
             history[today_str] = copy.deepcopy(current_pending)
 
@@ -240,6 +239,8 @@ app.storage.general.setdefault("config_service_custom_labels", {})
 app.storage.general.setdefault("overview_last_update", {})
 # 储存服务器层级 用于记录概述数据的历史快照，键为日期字符串，值为当日概述数据的快照
 app.storage.general.setdefault("overview_pending_history", {})
+# 已完成概述填写的项目列表
+app.storage.general.setdefault("overview_completed", [])
 
 
 @ui.page("/view/svn_pdf")

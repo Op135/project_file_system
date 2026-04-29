@@ -1,11 +1,11 @@
 # -*- encoding: utf-8 -*-
 import asyncio
 import copy
-import datetime
 import json
 import logging
 import os
 import re
+from datetime import date, datetime, timedelta
 
 from nicegui import app, ui
 
@@ -371,7 +371,7 @@ def project_table_page():
             form_data = {
                 "project_name": "RFXX-XXXX-X/RM3000",  # 预填前缀
                 "state": "研发",
-                "creation_date": datetime.date.today().strftime("%Y-%m-%d"),
+                "creation_date": date.today().strftime("%Y-%m-%d"),
                 "model_notes": "",
                 "introduction": "",
                 "customer": "",
@@ -546,6 +546,9 @@ def project_table_page():
                             if new_user:
                                 # 特意标记为最近指定，这个特殊标记，给全局刷新概述负责人时，可以跳过，不然指定后又被刷新掉
                                 app.storage.general["overview_role"][pn][role]["latest_user"] = f"最近指定：{new_user}"
+                                app.storage.general["overview_role"][pn][role]["latest_designation_time"] = (
+                                    datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                )
                             else:
                                 app.storage.general["overview_role"][pn][role]["latest_user"] = ""
 
@@ -709,7 +712,7 @@ def project_table_page():
                         row_data[pro_key] = charge_person
 
                     # 其它需要动态更新且配置非空 或 如：定制要点、需求输入等不用配置也固定动态更新的列
-                    elif pro_key in ["custom_labels", "requirement"] or over_key_li != []:
+                    elif pro_key in ["custom_labels", "requirement", "overview"] or over_key_li != []:
                         # === 性能优化：使用 List 作为文本收集器，替代低效的 += 字符串频繁拼接 ===
                         text_parts = []
                         # 遍历对照配置列表（可能一个项目简介配置了多个对应的概述数据项）
@@ -775,6 +778,11 @@ def project_table_page():
                                     show_str = f"V{max_ver}{state_str}\n点击升级"
                             else:
                                 show_str = "点击录入"
+                        elif pro_key == "overview":
+                            if project_name in app.storage.general["overview_completed"]:
+                                show_str = "整理完备\n查阅更新"
+                            else:
+                                show_str = "等待完善\n查阅整理"
                         # 待确定的内容，统一更换仅显示一个?号
                         # if "?" in show_str:
                         #     show_str = "?"
@@ -1029,8 +1037,16 @@ def project_table_page():
             "width": 100,
             "cellClass": "center-auto-break",
             "autoHeight": True,
+            "filter": "agTextColumnFilter",
         },
-        {"field": "overview", "headerName": "概述整理", "width": 80},
+        {
+            "field": "overview",
+            "headerName": "概述整理",
+            "width": 100,
+            "cellClass": "center-auto-break",
+            "autoHeight": True,
+            "filter": "agTextColumnFilter",
+        },
         {"field": "test_summary", "headerName": "测试项", "width": 80},
         {"field": "customer", "headerName": "客户缩写", "width": 100, "filter": "agTextColumnFilter"},
         {"field": "sale_charge", "headerName": "销售", "width": 80, "filter": "agTextColumnFilter"},

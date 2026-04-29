@@ -160,8 +160,11 @@ def statistics_page():
                 # 数据结构：{项目名：版本号}，用于后续统计分析
                 req_ver_data = app.storage.general.get("project_req_max_ver", {})
                 # 数据结构：{人名：{项目名：{概述项label:状态}}}，用于待办统计分析,状态主要有：缺需填、缺必填、有待定
-                pending_data = app.storage.general.get("overview_charge_pending", {})
-                for user, pending_project_dic in list(pending_data.items()):
+                pending_data = copy.deepcopy(app.storage.general.get("overview_charge_pending", {}))
+                for user, pending_project_dic in list(
+                    pending_data.items()
+                ):  # 之所以要 list() 包裹，是为了在循环中修改字典结构时不报错
+                    # if not pending_project_dic or user == "待定负责人":
                     if not pending_project_dic:
                         pending_data.pop(user, None)
                 # =========================================================
@@ -443,16 +446,18 @@ def statistics_page():
                         with ui.card().classes(
                             "w-full rounded-xl shadow-sm border border-gray-100 overflow-hidden bg-white relative"
                         ):
-                            ui_card_header("近一周待办项趋势", "trending_up", "teal-500")
+                            ui_card_header("近一周待办项趋势（概述项数量）", "trending_up", "teal-500")
                             # history 数据结构示例：{"2024-06-01": {"人名": {"项目名": label:状态,...},...}, "2024-06-02": {...},...}
                             history = app.storage.general.get("overview_pending_history", {})
                             # 每次查阅都会刷新当前日期的待办快照，确保数据的时效性和准确性
                             now = datetime.now()
                             today_str = now.strftime("%Y-%m-%d")
                             # 获取存储结构
-                            current_pending = app.storage.general.get("overview_charge_pending", {})
+                            current_pending = copy.deepcopy(app.storage.general.get("overview_charge_pending", {}))
+                            # if "待定负责人" in current_pending:
+                            #     current_pending.pop("待定负责人", None)
                             # 记录当天的最新快照（如果服务器一天内多次重启，会不断刷新当天的最终结果）
-                            history[today_str] = copy.deepcopy(current_pending)
+                            history[today_str] = current_pending
 
                             # 1. 强制生成固定的连续 7 天日期列表
                             if history:
@@ -674,8 +679,19 @@ def statistics_page():
                             for proj in req_ver_data.keys():
                                 if proj not in project_issues:
                                     overview_completed += 1
+                                    if proj not in app.storage.general["overview_completed"]:
+                                        app.storage.general["overview_completed"].append(
+                                            proj
+                                        )  # 同步更新已完成概述填写的项目列表
                                 else:
                                     statuses = project_issues[proj]
+                                    if (
+                                        any([status in statuses for status in ["缺必填", "缺需填", "有待定"]])
+                                        and proj in app.storage.general["overview_completed"]
+                                    ):
+                                        app.storage.general["overview_completed"].remove(
+                                            proj
+                                        )  # 同步更新已完成概述填写的项目列表，确保只要存在缺必填就不算完成
                                     # 按照严重程度优先级进行降维判定
                                     if "缺必填" in statuses:
                                         has_must += 1
@@ -685,6 +701,10 @@ def statistics_page():
                                         only_pending += 1
                                     else:
                                         overview_completed += 1
+                                        if proj not in app.storage.general["overview_completed"]:
+                                            app.storage.general["overview_completed"].append(
+                                                proj
+                                            )  # 同步更新已完成概述填写的项目列表
 
                             # 准备柱状图系列数据，并预设具有警示意义的颜色
                             overview_chart_data = [
@@ -798,7 +818,7 @@ def statistics_page():
                         with ui.card().classes(
                             "w-full rounded-xl shadow-sm border border-gray-100 overflow-hidden bg-white relative"
                         ):
-                            ui_card_header("近30日待办状态趋势分析", "history", "amber-600")
+                            ui_card_header("近30日待办状态趋势分析（项目数）", "history", "amber-600")
 
                             if os.path.exists(STATS_FILE):
                                 try:

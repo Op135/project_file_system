@@ -361,7 +361,9 @@ def update_overview_charge_pending_dic(scope, des_user="", project_name="", des_
                 latest_user_raw = charge_user_dic.get("latest_user", "")
                 latest_user = latest_user_raw.split("：")[1] if "：" in latest_user_raw else latest_user_raw
 
-                if not latest_user or latest_user == "——":
+                if not latest_user:
+                    latest_user = "待定负责人"
+                elif latest_user == "——":
                     continue
 
                 user_proj_dict = new_pending_storage.setdefault(latest_user, {}).setdefault(project, {})
@@ -379,6 +381,9 @@ def update_overview_charge_pending_dic(scope, des_user="", project_name="", des_
                         user_proj_dict.setdefault(label, "缺必填")
                     elif nature == "需填":
                         user_proj_dict.setdefault(label, "缺需填")
+
+                    if latest_user == "待定负责人":
+                        continue
 
                     LABEL_CHIP_DIC = db_storage.get_deep_item([f"{project}_over_data", label], {}).values()
 
@@ -1079,7 +1084,7 @@ def project_summary_update():
                         "sub_project": project_name,
                         "project": project_name_process_string(project_name),
                         # "requirement": "点击录入",
-                        "overview": "查阅整理",
+                        # "overview": "查阅整理",
                         "test_summary": "查阅打印",
                     }
                 )
@@ -1313,6 +1318,7 @@ def overview_role_update(project_name, input_role="all_update"):
                 for over_config in over_config_li:
                     if over_config["label"] in OVERVIEW_DATA and OVERVIEW_DATA[over_config["label"]] != {}:
                         for over_data in OVERVIEW_DATA[over_config["label"]].values():
+                            # 统计每个用户出现的频次和最新的时间戳，用于后续判断最多和最近负责人
                             if over_data["creator"] in frequency_user_dic:
                                 frequency_user_dic[over_data["creator"]] += 1
                                 time_obj_new = datetime.strptime(next(reversed(over_data["timestamp"])), format_string)
@@ -1337,7 +1343,14 @@ def overview_role_update(project_name, input_role="all_update"):
 
                 latest_time = max(list(time_user_dic.values()))
                 for user in time_user_dic.keys():
-                    if time_user_dic[user] == latest_time and "最近指定" not in over_role_dic[role]["latest_user"]:
+                    if time_user_dic[user] == latest_time:
+                        latest_des_time = over_role_dic[role].get("latest_designation_time", "")
+                        if (
+                            "最近指定" in over_role_dic[role]["latest_user"]
+                            and latest_des_time
+                            and time_user_dic[user] < datetime.strptime(latest_des_time, format_string)
+                        ):
+                            continue
                         # 💡 核心修复：在赋值新负责人前，执行交接逻辑
                         _execute_role_handover(role, user)
                         over_role_dic[role]["latest_user"] = f"最近：{user}"
@@ -1378,9 +1391,14 @@ def overview_role_update(project_name, input_role="all_update"):
             latest_time = max(list(time_user_dic.values()))
             for user in time_user_dic.keys():
                 # 💡 核心修复：补上了之前遗漏的 "最近指定" 防覆盖校验
-                if time_user_dic[user] == latest_time and "最近指定" not in over_role_dic[input_role].get(
-                    "latest_user", ""
-                ):
+                if time_user_dic[user] == latest_time:
+                    latest_des_time = over_role_dic[input_role].get("latest_designation_time", "")
+                    if (
+                        "最近指定" in over_role_dic[input_role]["latest_user"]
+                        and latest_des_time
+                        and time_user_dic[user] < datetime.strptime(latest_des_time, format_string)
+                    ):
+                        continue
                     # 💡 核心修复：在赋值新负责人前，执行交接逻辑
                     _execute_role_handover(input_role, user)
                     over_role_dic[input_role]["latest_user"] = f"最近：{user}"
