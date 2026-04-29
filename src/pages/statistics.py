@@ -107,6 +107,18 @@ def statistics_page():
         ui.navigate.to("/login")
         return
 
+    # 彻底锁死根节点尺寸，强制无滚动。
+    # 让 Quasar 计算出的滚动条宽度永远为 0，彻底根除弹窗时的防抖动补偿位移。
+    ui.add_css("""
+        html, body, .q-layout, .q-page-container {
+            overflow: hidden !important;
+            width: 100vw !important;
+            height: 100vh !important;
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+    """)
+
     dialog = ui.dialog().props("persistent").classes("")
     current_user = app.storage.user.get("current_user", "匿名用户")
     current_role = app.storage.user.get("current_role")
@@ -615,37 +627,87 @@ def statistics_page():
                             "w-full rounded-xl shadow-sm border border-gray-100 overflow-hidden bg-white mb-4"
                         ):
                             ui_card_header("项目需求录入与概述填写统计", "insights", "purple-500")
+
+                            # ==========================================
+                            # 新增：点击图表柱子弹窗显示项目明细的回调函数
+                            # ==========================================
+                            def show_project_details(e):
+                                category_name = e.args.get("name")
+
+                                # 终极防御：如果没有名字直接退出
+                                if not category_name:
+                                    return
+
+                                # 直接从你的内存字典反查项目列表，抛弃前端的不稳定数据回传
+                                projects = ordered_status_dict.get(category_name) or overview_categories.get(
+                                    category_name, []
+                                )
+                                count = len(projects)
+
+                                # 创建并打开弹窗，限制最大宽度
+                                dialog.clear()
+                                with dialog, ui.card().classes("w-full max-w-4xl bg-white"):
+                                    # 弹窗头部：明确的中文标题与关闭按钮
+                                    with ui.row().classes("w-full justify-between items-center mb-4 border-b pb-2"):
+                                        ui.label(f"项目明细：{category_name} (共 {count} 项)").classes(
+                                            "text-xl font-bold text-gray-800"
+                                        )
+                                        # ui.button: NiceGUI 的按钮组件
+                                        ui.button(icon="close", on_click=dialog.close).props(
+                                            "flat round dense text-color=gray"
+                                        )
+
+                                    # 限制最大高度为视口高度的 60%，超出自动出现垂直滚动条
+                                    with ui.scroll_area().classes("w-full max-h-[60vh] p-2"):
+                                        if not projects:
+                                            ui.label("当前分类暂无项目").classes(
+                                                "text-gray-500 text-center w-full mt-4"
+                                            )
+                                        else:
+                                            # 响应式网格布局：移动端1列，平板2列，小桌面3列，大屏幕4列，完美适配两三百个项目名
+                                            with ui.element("div").classes(
+                                                "grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3"
+                                            ):
+                                                for p_name in projects:
+                                                    ui.label(p_name).classes(
+                                                        "bg-gray-50 px-3 py-2 rounded border border-gray-200 text-sm "
+                                                        "text-gray-700 truncate hover:bg-blue-50 hover:text-blue-600 "
+                                                        "transition-colors cursor-default"
+                                                    )
+
+                                dialog.open()
+
                             # 2. 数据处理与清洗
-                            # 2.1 统计公司总项目及状态分布
+                            # 2.1 统计公司总项目及状态分布 (由计数改为收集项目列表)
                             total_projects = len(project_summary)
-                            status_counts = {}
-                            for p_info in project_summary.values():
+                            status_counts_dict = {}  # 结构变为：{"研发": ["项目A", "项目B"]}
+                            for p_name, p_info in project_summary.items():
                                 p_status = p_info.get("state", "未知状态")
-                                status_counts[p_status] = status_counts.get(p_status, 0) + 1
+                                if p_status not in status_counts_dict:
+                                    status_counts_dict[p_status] = []
+                                status_counts_dict[p_status].append(p_name)
 
                             # 为不同状态预设颜色映射
                             status_color_map = {
-                                "作废": "#555555",  # 灰色
-                                "待定": "#f59e0b",  # 橙色
-                                "研发": "#3b82f6",  # 蓝色
-                                "转产": "#ef4444",  # 红色
-                                "试产": "#06b6d4",  # 青色
-                                "量产": "#10b981",  # 绿色
+                                "作废": "#555555",
+                                "待定": "#f59e0b",
+                                "研发": "#3b82f6",
+                                "转产": "#ef4444",
+                                "试产": "#06b6d4",
+                                "量产": "#10b981",
                             }
                             fallback_colors = ["#8b5cf6", "#ec4899", "#f97316", "#14b8a6"]
 
-                            # 将预设颜色的状态排在前面，未预设颜色的状态排在后面，保持原有顺序不变
-                            temp_dic = {}
+                            # 将预设颜色的状态排在前面，未预设颜色的状态排在后面
+                            ordered_status_dict = {}
                             for k in status_color_map.keys():
-                                if k in status_counts:
-                                    temp_dic[k] = status_counts.pop(k, {})
-                            temp_dic.update(status_counts)  # 将剩余未预设颜色的状态追加到末尾
-                            status_counts = temp_dic
+                                if k in status_counts_dict:
+                                    ordered_status_dict[k] = status_counts_dict.pop(k)
+                            ordered_status_dict.update(status_counts_dict)
 
                             status_chart_data = []
                             fallback_idx = 0
-                            for k, v in status_counts.items():
-                                # 如果字典中没有预设该状态的颜色，则从备用颜色池中按取余循环分配
+                            for k, proj_list in ordered_status_dict.items():
                                 color = status_color_map.get(k)
                                 if not color:
                                     color = fallback_colors[fallback_idx % len(fallback_colors)]
@@ -653,9 +715,10 @@ def statistics_page():
 
                                 status_chart_data.append(
                                     {
-                                        "value": v,
+                                        "value": len(proj_list),
                                         "name": k,
-                                        "itemStyle": {"color": color},  # 直接在数据项中指定颜色
+                                        "projects": proj_list,  # 将项目列表挂载到 ECharts 的数据项中
+                                        "itemStyle": {"color": color},
                                     }
                                 )
 
@@ -666,65 +729,68 @@ def statistics_page():
                                     continue
                                 for proj, issues in p_dict.items():
                                     if proj not in project_issues:
-                                        project_issues[proj] = set()  # 使用集合去重
+                                        project_issues[proj] = set()
                                     project_issues[proj].update(issues.values())
 
-                            # 2.3 统计已录入需求的项目概述完成度
-                            overview_completed = 0
-                            only_pending = 0
-                            only_need = 0
-                            has_must = 0
+                            # 2.3 统计已录入需求的项目概述完成度 (由计数改为收集项目列表)
+                            overview_categories = {"存在缺必填": [], "仅有待定": [], "仅缺需填": [], "概述已完成": []}
 
-                            # req_ver_data: {项目名: 版本号}，以此为基准进行判定
                             for proj in req_ver_data.keys():
                                 if proj not in project_issues:
-                                    overview_completed += 1
+                                    overview_categories["概述已完成"].append(proj)
                                     if proj not in app.storage.general["overview_completed"]:
-                                        app.storage.general["overview_completed"].append(
-                                            proj
-                                        )  # 同步更新已完成概述填写的项目列表
+                                        app.storage.general["overview_completed"].append(proj)
                                 else:
                                     statuses = project_issues[proj]
                                     if (
                                         any([status in statuses for status in ["缺必填", "缺需填", "有待定"]])
                                         and proj in app.storage.general["overview_completed"]
                                     ):
-                                        app.storage.general["overview_completed"].remove(
-                                            proj
-                                        )  # 同步更新已完成概述填写的项目列表，确保只要存在缺必填就不算完成
-                                    # 按照严重程度优先级进行降维判定
-                                    if "缺必填" in statuses:
-                                        has_must += 1
-                                    elif "缺需填" in statuses:
-                                        only_need += 1
-                                    elif "有待定" in statuses:
-                                        only_pending += 1
-                                    else:
-                                        overview_completed += 1
-                                        if proj not in app.storage.general["overview_completed"]:
-                                            app.storage.general["overview_completed"].append(
-                                                proj
-                                            )  # 同步更新已完成概述填写的项目列表
+                                        app.storage.general["overview_completed"].remove(proj)
 
-                            # 准备柱状图系列数据，并预设具有警示意义的颜色
+                                    # 按照严重程度优先级进行降维判定并收集项目名称
+                                    if "缺必填" in statuses:
+                                        overview_categories["存在缺必填"].append(proj)
+                                    elif "缺需填" in statuses:
+                                        overview_categories["仅缺需填"].append(proj)
+                                    elif "有待定" in statuses:
+                                        overview_categories["仅有待定"].append(proj)
+                                    else:
+                                        overview_categories["概述已完成"].append(proj)
+                                        if proj not in app.storage.general["overview_completed"]:
+                                            app.storage.general["overview_completed"].append(proj)
+
+                            # 准备柱状图系列数据
                             overview_chart_data = [
-                                {"value": has_must, "name": "存在缺必填", "itemStyle": {"color": "#ef4444"}},
-                                {"value": only_pending, "name": "仅有待定", "itemStyle": {"color": "#f59e0b"}},
-                                {"value": only_need, "name": "仅缺需填", "itemStyle": {"color": "#3b82f6"}},
                                 {
-                                    "value": overview_completed,
+                                    "value": len(overview_categories["存在缺必填"]),
+                                    "name": "存在缺必填",
+                                    "projects": overview_categories["存在缺必填"],
+                                    "itemStyle": {"color": "#ef4444"},
+                                },
+                                {
+                                    "value": len(overview_categories["仅有待定"]),
+                                    "name": "仅有待定",
+                                    "projects": overview_categories["仅有待定"],
+                                    "itemStyle": {"color": "#f59e0b"},
+                                },
+                                {
+                                    "value": len(overview_categories["仅缺需填"]),
+                                    "name": "仅缺需填",
+                                    "projects": overview_categories["仅缺需填"],
+                                    "itemStyle": {"color": "#3b82f6"},
+                                },
+                                {
+                                    "value": len(overview_categories["概述已完成"]),
                                     "name": "概述已完成",
+                                    "projects": overview_categories["概述已完成"],
                                     "itemStyle": {"color": "#10b981"},
-                                },  # 绿
+                                },
                             ]
 
-                            # 使用普通的 div 元素，并完全交由 Tailwind CSS 的响应式类名来控制列数
-                            # grid: 声明网格布局
-                            # grid-cols-1: 默认（小屏幕）为 1 列
-                            # md:grid-cols-2: 中大屏幕（>=768px）时切换为 2 列
                             with ui.element("div").classes("grid grid-cols-1 md:grid-cols-2 w-full gap-4 mt-4"):
                                 # ==========================================
-                                # 图表 A：公司现有项目状态占比 (柱状图)
+                                # 图表 A：公司现有项目状态占比
                                 # ==========================================
                                 status_x_axis_data = (
                                     [item["name"] for item in status_chart_data] if status_chart_data else ["暂无数据"]
@@ -734,12 +800,10 @@ def statistics_page():
                                     "title": {
                                         "text": "项目总体状态分布",
                                         "subtext": f"项目总计: {total_projects} 个",
-                                        # itemGap: ECharts 属性，控制主标题 (text) 与副标题 (subtext) 之间的垂直间距（单位：像素）
                                         "itemGap": 15,
                                         "left": "center",
                                     },
-                                    # tooltip: ECharts 提示框组件，trigger='axis' 表示坐标轴触发，适用于柱状图
-                                    "tooltip": {"trigger": "axis", "axisPointer": {"type": "shadow"}},
+                                    "trigger": "item",
                                     "grid": {
                                         "top": 100,
                                         "left": "3%",
@@ -758,8 +822,6 @@ def statistics_page():
                                             "name": "项目数量",
                                             "type": "bar",
                                             "barWidth": "50%",
-                                            # colorBy: 'data' 是 ECharts 新版本支持的属性，允许柱状图的每个柱子独立取色，
-                                            # 结合我们上方数据里传入的 itemStyle.color，实现各分类不同颜色的显示。
                                             "colorBy": "data",
                                             "data": status_chart_data
                                             if status_chart_data
@@ -769,11 +831,11 @@ def statistics_page():
                                         }
                                     ],
                                 }
-                                # ui.echart: NiceGUI 封装的 Apache ECharts 渲染实例
-                                ui.echart(echart_status_config).classes("w-full h-80")
+                                # 渲染图表并绑定点击事件
+                                status_chart = ui.echart(echart_status_config).classes("w-full h-80 cursor-pointer")
 
                                 # ==========================================
-                                # 图表 B：已录入需求的项目概述质量分析 (柱状图)
+                                # 图表 B：已录入需求的项目概述质量分析
                                 # ==========================================
                                 overview_x_axis_data = [item["name"] for item in overview_chart_data]
 
@@ -781,11 +843,10 @@ def statistics_page():
                                     "title": {
                                         "text": "已录需求项目概述完成度",
                                         "subtext": f"已录需求项目: {len(req_ver_data)} 个",
-                                        # itemGap: ECharts 属性，控制主标题 (text) 与副标题 (subtext) 之间的垂直间距（单位：像素）
                                         "itemGap": 15,
                                         "left": "center",
                                     },
-                                    "tooltip": {"trigger": "axis", "axisPointer": {"type": "shadow"}},
+                                    "trigger": "item",
                                     "grid": {
                                         "top": 100,
                                         "left": "3%",
@@ -811,7 +872,30 @@ def statistics_page():
                                         }
                                     ],
                                 }
-                                ui.echart(echart_overview_config).classes("w-full h-80")
+                                # 渲染图表并绑定点击事件
+                                overview_chart = ui.echart(echart_overview_config).classes("w-full h-80 cursor-pointer")
+
+                                status_chart.on("echart_item_click", show_project_details)
+                                overview_chart.on("echart_item_click", show_project_details)
+                                ui.run_javascript(f"""
+                                    setTimeout(() => {{
+                                        [{status_chart.id}, {overview_chart.id}].forEach(id => {{
+                                            const el = getElement(id);
+                                            if (el && el.chart) {{
+                                                // 直接监听 ECharts 实例内部真实的 click
+                                                el.chart.on('click', function(params) {{
+                                                    // 确保只有点击到数据系列（柱子）才触发
+                                                    if (params.componentType === 'series') {{
+                                                        el.$emit('echart_item_click', {{
+                                                            name: params.name,
+                                                            value: params.value
+                                                        }});
+                                                    }}
+                                                }});
+                                            }}
+                                        }});
+                                    }}, 200); // 极小延迟，确保图表已被浏览器完全渲染
+                                """)
                     # E. 待办项历史趋势分析 (Pending Items Historical Trend Analysis)
                     if current_role in module_show_data.get("overview_charge_pending_statistics", []):
                         # ----------------- 图表 0：30日多维趋势分析 -----------------
