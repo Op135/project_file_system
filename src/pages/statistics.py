@@ -624,7 +624,7 @@ def statistics_page():
                     # D. 其他统计信息 (Other Statistics)
                     if current_role in module_show_data.get("overview_charge_pending_statistics", []):
                         with ui.card().classes(
-                            "w-full rounded-xl shadow-sm border border-gray-100 overflow-hidden bg-white mb-4"
+                            "w-full rounded-xl shadow-sm border border-gray-100 overflow-hidden bg-white mb-2"
                         ):
                             ui_card_header("项目需求录入与概述填写统计", "insights", "purple-500")
 
@@ -999,8 +999,13 @@ def statistics_page():
                                             "type": "category",
                                             "data": dates,
                                             "boundaryGap": False,
+                                            "splitLine": {"show": True, "lineStyle": {"type": "dashed"}},
                                         },
-                                        "yAxis": {"type": "value", "minInterval": 1},
+                                        "yAxis": {
+                                            "type": "value",
+                                            "minInterval": 1,
+                                            "splitLine": {"lineStyle": {"type": "dashed"}},
+                                        },
                                         "series": series,
                                     }
                                     ui.echart(echart_config).classes("w-full h-80")
