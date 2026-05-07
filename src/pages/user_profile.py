@@ -15,7 +15,7 @@ from ..config import (  # 用于获取 IMG_DIR
     IMG_DIR,
     PRESET_AVATARS,
 )
-from ..utils import get_cache_busted_path, logout
+from ..utils import get_cache_busted_path, logout, setup_global_activity_tracking
 
 # 步骤 1: 从我们重构的 login.py 中导入可重用的函数
 from .login import create_password_dialog
@@ -31,6 +31,9 @@ def user_profile_page():
     if not (current_user := app.storage.user.get("current_user")):
         ui.navigate.to("/login")
         return
+
+    # --- 调用全局活跃跟踪组件 ---
+    setup_global_activity_tracking()
 
     def pick_file(uploader):
         # 在上传新文件前，先清空upload列表，否则后续删除文件后，不能在重新插入

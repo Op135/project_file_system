@@ -21,7 +21,7 @@ from ..config import (
     UPLOADS_DIR,
     ECNState,
 )
-from ..utils import get_cache_busted_path, logout
+from ..utils import get_cache_busted_path, logout, setup_global_activity_tracking
 
 logger = logging.getLogger(__name__)
 
@@ -191,6 +191,9 @@ async def save_ecn_root_item(key: str, data):
 # @ui.page: NiceGUI框架的路由装饰器，用于定义页面路径
 @ui.page("/ecn_management")
 async def ecn_management_page():
+    # --- 调用全局活跃跟踪组件 ---
+    setup_global_activity_tracking()
+
     ui.add_head_html("""
         <style>
             .q-dialog__inner--minimized>div { max-width: 4000px; }

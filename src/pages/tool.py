@@ -18,6 +18,7 @@ from ..config import BASE_DIR, IMG_DIR, OVER_DIR, PRESET_AVATARS, REQ_DIR, REQ_R
 from ..utils import (
     get_cache_busted_path,
     logout,
+    setup_global_activity_tracking,
 )
 
 # 获取一个以此模块命名的 logger
@@ -39,6 +40,9 @@ def tool_page():
         ui.navigate.to("/login")  # 如果未登录，跳转到登录页
         return
     # dialog = ui.dialog().props("persistent").classes("")
+
+    # --- 调用全局活跃跟踪组件 ---
+    setup_global_activity_tracking()
 
     # 获取用户信息
     current_user = app.storage.user.get("current_user")

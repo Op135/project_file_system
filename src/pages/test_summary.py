@@ -11,6 +11,7 @@ from ..config import (
 )
 from ..utils import (
     generate_watermark_css,
+    setup_global_activity_tracking,
 )
 
 # 获取一个以此模块命名的 logger
@@ -25,6 +26,10 @@ def test_summary_report(project_name: str):
     if not app.storage.user.get("current_user"):
         ui.navigate.to("/login")
         return
+
+    # --- 调用全局活跃跟踪组件 ---
+    setup_global_activity_tracking()
+
     # 运行时初始化水印：透明度调至 0.2，印章缩小至 0.8倍，画布变小使得印章平铺更密集
     watermark_bg = generate_watermark_css(opacity=0.1, scale=1.2, spacing_width=500, spacing_height=300)
     # 独立注入动态样式块（双写 {{ }} 防止 f-string 报错）

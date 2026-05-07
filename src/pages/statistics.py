@@ -13,6 +13,7 @@ from ..config import BASE_DIR, IMG_DIR, OVER_DIR, PRESET_AVATARS, REQ_DIR, REQ_R
 from ..utils import (
     get_cache_busted_path,
     logout,
+    setup_global_activity_tracking,
 )
 
 # 获取 logger
@@ -106,6 +107,9 @@ def statistics_page():
     if not app.storage.user.get("current_user"):
         ui.navigate.to("/login")
         return
+
+    # --- 调用全局活跃跟踪组件 ---
+    setup_global_activity_tracking()
 
     # 彻底锁死根节点尺寸，强制无滚动。
     # 让 Quasar 计算出的滚动条宽度永远为 0，彻底根除弹窗时的防抖动补偿位移。

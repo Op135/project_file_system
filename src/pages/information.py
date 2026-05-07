@@ -21,6 +21,7 @@ from ..utils import (
     requirement_version_tidy,
     set_overview_active_state,
     set_project_custom_labels,
+    setup_global_activity_tracking,
     validate_search_path,
     validate_svn_url,
 )
@@ -56,6 +57,9 @@ def information_page():
     if not app.storage.user.get("current_user"):
         ui.navigate.to("/login")
         return
+
+    # --- 调用全局活跃跟踪组件 ---
+    setup_global_activity_tracking()
 
     dialog = ui.dialog().props("persistent").classes("")
     current_user = app.storage.user.get("current_user", "匿名用户")

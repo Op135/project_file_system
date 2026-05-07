@@ -9,7 +9,7 @@ from nicegui import app, ui
 
 # --- 严格按照项目结构导入 ---
 from ..config import BASE_DIR, IMG_DIR, PRESET_AVATARS
-from ..utils import get_cache_busted_path, logout
+from ..utils import get_cache_busted_path, logout, setup_global_activity_tracking
 
 logger = logging.getLogger(__name__)
 
@@ -451,6 +451,9 @@ def print_list_page():
     if not app.storage.user.get("current_user"):
         ui.navigate.to("/login")
         return
+
+    # --- 调用全局活跃跟踪组件 ---
+    setup_global_activity_tracking()
 
     ui.add_head_html("""
         <style>

@@ -19,6 +19,7 @@ from ..utils import (
     overview_role_update,
     project_summary_update,
     project_table_update_config_update,
+    setup_global_activity_tracking,
     update_overview_charge_pending_dic,
 )
 
@@ -29,6 +30,9 @@ logger = logging.getLogger(__name__)
 
 @ui.page("/project_table")
 def project_table_page():
+    # --- 调用全局活跃跟踪组件 ---
+    setup_global_activity_tracking()
+
     # 向页面的 <head> 部分添加自定义的 HTML 代码。这通常用于添加自定义的 CSS 样式、JavaScript 代码或元数据（如 <meta> 标签）
     ui.add_head_html("""
         <style>

@@ -45,6 +45,40 @@ logger = logging.getLogger(__name__)
 online_users = {}
 
 
+def setup_global_activity_tracking():
+    """注入全局前端活跃监听与心跳上报"""
+    # 注入前端监听脚本
+    ui.add_head_html("""
+        <script>
+            // 使用标志位，防止在某些复用布局中重复绑定事件
+            if (!window.activityTrackerInitialized) {
+                window.lastActivityTime = Date.now();
+                const updateActivity = () => { window.lastActivityTime = Date.now(); };
+                
+                ['mousedown', 'keydown', 'scroll', 'touchstart'].forEach(evt =>
+                    document.addEventListener(evt, updateActivity, {passive: true})
+                );
+                window.activityTrackerInitialized = true;
+            }
+        </script>
+    """)
+
+    # 注入心跳上报定时器
+    async def report_heartbeat() -> None:
+        try:
+            last_activity_ms = await ui.run_javascript("return window.lastActivityTime;", timeout=2.0)
+            if last_activity_ms is not None:
+                client_id = ui.context.client.id
+                if client_id in online_users:
+                    online_users[client_id]["last_activity_ts"] = last_activity_ms / 1000.0
+        except Exception:
+            # 用户正在切换页面或刷新时，执行JS会超时，直接忽略即可
+            pass
+
+    # 每 10 秒向后端同步一次
+    ui.timer(10.0, report_heartbeat)
+
+
 async def async_path_exists(path_str: str) -> bool:
     """非阻塞的文件存在性检查"""
     if not path_str:

@@ -13,6 +13,7 @@ from ..utils import (
     get_project_engineer_project_list_dic,
     logout,
     online_users,
+    setup_global_activity_tracking,
 )
 
 # 获取一个以此模块命名的 logger
@@ -22,17 +23,9 @@ logger = logging.getLogger(__name__)
 
 @ui.page("/main")
 def main_page():
+    # --- 调用全局活跃跟踪组件 ---
+    setup_global_activity_tracking()
     ui.add_head_html("""
-        <script>
-            // 记录页面加载时的初始时间戳
-            window.lastActivityTime = Date.now();
-            const updateActivity = () => { window.lastActivityTime = Date.now(); };
-            
-            // 监听真实的物理交互事件（鼠标、键盘、滚动、触屏）
-            ['mousedown', 'keydown', 'scroll', 'touchstart'].forEach(evt =>
-                document.addEventListener(evt, updateActivity, {passive: true})
-            );
-        </script>
         <style>
             @keyframes hard-shake {
                 0% { transform: translateX(0); }
@@ -68,24 +61,7 @@ def main_page():
     """)
     online_data = {"online_count": "", "online_users": [], "tooltip_text": ""}
 
-    # --- 新增：心跳上报机制 ---
-    async def report_heartbeat() -> None:
-        """定时向后端同步当前客户端的绝对活跃时间戳"""
-        try:
-            # 【修改】直接拉取绝对时间戳，避免相对时间造成的漂移计算错误
-            last_activity_ms = await ui.run_javascript("return window.lastActivityTime;", timeout=2.0)
-            if last_activity_ms is not None:
-                # 【修改】利用 ui.context.client.id 确保只更新当前标签页的数据，避免多开互相污染
-                client_id = ui.context.client.id
-                if client_id in online_users:
-                    # 将毫秒时间戳转为秒存入字典
-                    online_users[client_id]["last_activity_ts"] = last_activity_ms / 1000.0
-        except Exception as e:
-            logger.debug(f"用户心跳状态上报超时: {e}")
-
-    ui.timer(10.0, report_heartbeat)
-
-    # --- 修改：刷新在线人数的逻辑，基于绝对时间戳过滤 ---
+    # --- 刷新在线人数的逻辑，基于绝对时间戳过滤 ---
     def refresh_online_num():
         unique_users_map: Dict[str, Any] = {}
         # 定义真实活跃阈值：1分钟（60 秒）

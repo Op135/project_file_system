@@ -13,6 +13,7 @@ from ..utils import (
     online_users,
     project_summary_update,
     project_table_update_config_update,
+    setup_global_activity_tracking,
     updata_overview_config,
     update_config_service,
     update_users_data,
@@ -29,6 +30,10 @@ def manage_page():
     if app.storage.user.get("current_user") != "admin":
         ui.navigate.to("/main")  # 如果不是管理员，跳转到主界面
         return
+
+    # --- 调用全局活跃跟踪组件 ---
+    setup_global_activity_tracking()
+
     current_user = app.storage.user.get("current_user")
     # 从全局存储中获取用户当前的头像设置
     # (在 main.py 中定义 "user_preferences")
