@@ -365,7 +365,7 @@ def information_page():
                 if max_ver == "1.0":
                     revoke_state["action_type"] = "delete"
                     feedback_label.set_text(
-                        f"⚠️ 打算执行：\n1.直接删除型号【{p_name}】1.0 版本的审批记录，相当于清空该项目的需求记录。\n2.删除概述整理文件，迫使下次访问概述页面时重新生成，确保版本回退后概述内容与需求状态一致。"
+                        f"⚠️ 打算执行：\n1.复原型号【{p_name}】1.0 版本的审批状态为“待审”，该项目最高需求版本记录删除。\n2.删除概述整理文件，迫使下次访问概述页面时重新生成，确保版本回退后概述内容与需求状态一致。"
                     )
                     feedback_label.classes(replace="text-red-600")
                 else:
@@ -386,9 +386,8 @@ def information_page():
                 t_ver = revoke_state["target_ver"]
 
                 if revoke_state["action_type"] == "delete":
-                    app.storage.general["wait_review"][p_name].pop(t_ver, None)
-                    if not app.storage.general["wait_review"][p_name]:
-                        app.storage.general["wait_review"].pop(p_name, None)
+                    app.storage.general["wait_review"][p_name][t_ver]["state"] = "待审"
+                    app.storage.general["wait_review"][p_name][t_ver].pop("pass_time", None)
                     app.storage.general["project_req_max_ver"].pop(p_name, None)
                 elif revoke_state["action_type"] == "revert":
                     app.storage.general["wait_review"][p_name][t_ver]["state"] = "待审"
@@ -396,7 +395,8 @@ def information_page():
                     app.storage.general["wait_review"][p_name][t_ver].pop("pass_time", None)
                     app.storage.general["project_req_max_ver"][p_name] = revoke_state["prev_ver"]
                 # 删除概述整理文件，迫使下次访问概述页面时重新生成，确保版本回退后概述内容与需求状态一致
-                overview_file_path = Path(os.path.join(OVER_DIR, f"{p_name}_概述整理.json"))
+                # 优化后的写法：直接使用 Path 对象与 / 运算符进行路径拼接
+                overview_file_path = Path(OVER_DIR) / f"{p_name}_概述整理.json"
                 overview_file_path.unlink(missing_ok=True)
 
                 # ui.notify(): NiceGUI 页面消息通知组件，用于屏幕上方/边缘弹出轻量反馈。
