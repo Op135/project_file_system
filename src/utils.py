@@ -133,6 +133,7 @@ def handle_connect(client):
             "username": username,
             "login_time": datetime.now().strftime("%H:%M:%S"),
             "ip": client.ip or "Unknown",
+            "last_activity_ts": time.time(),  # 一连上就给一个初始的静态绝对时间戳
         }
     except Exception as e:
         print(f"Connection track error: {e}")

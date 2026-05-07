@@ -1,5 +1,7 @@
 # -*- encoding: utf-8 -*-
 import logging
+import time
+from datetime import datetime, timedelta
 from typing import Any, Dict  # 引入类型提示，便于静态类型检查
 
 from nicegui import app, ui
@@ -27,7 +29,7 @@ def main_page():
             const updateActivity = () => { window.lastActivityTime = Date.now(); };
             
             // 监听真实的物理交互事件（鼠标、键盘、滚动、触屏）
-            ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart'].forEach(evt =>
+            ['mousedown', 'keydown', 'scroll', 'touchstart'].forEach(evt =>
                 document.addEventListener(evt, updateActivity, {passive: true})
             );
         </script>
@@ -68,44 +70,42 @@ def main_page():
 
     # --- 新增：心跳上报机制 ---
     async def report_heartbeat() -> None:
-        """定时向后端同步当前客户端的空闲时间"""
+        """定时向后端同步当前客户端的绝对活跃时间戳"""
         try:
-            # ui.run_javascript: NiceGUI (基于 Vue/Quasar) 提供的在客户端浏览器异步执行 JavaScript 代码并获取返回结果的函数。
-            # 这里用于获取自上次用户交互后经过的毫秒数。
-            idle_time_ms = await ui.run_javascript("return Date.now() - window.lastActivityTime;", timeout=2.0)
-
-            if idle_time_ms is not None:
-                # 遍历全局 online_users 字典，将当前用户的 idle_time 写入
-                # 注意：如果同一用户开了多个标签页，此操作会更新该用户在系统中的最新活跃状态
-                for client_id, user_data in online_users.items():
-                    if user_data.get("username") == current_user:
-                        user_data["idle_time_ms"] = idle_time_ms
+            # 【修改】直接拉取绝对时间戳，避免相对时间造成的漂移计算错误
+            last_activity_ms = await ui.run_javascript("return window.lastActivityTime;", timeout=2.0)
+            if last_activity_ms is not None:
+                # 【修改】利用 ui.context.client.id 确保只更新当前标签页的数据，避免多开互相污染
+                client_id = ui.context.client.id
+                if client_id in online_users:
+                    # 将毫秒时间戳转为秒存入字典
+                    online_users[client_id]["last_activity_ts"] = last_activity_ms / 1000.0
         except Exception as e:
-            # 捕获因网络波动或页面正在跳转导致的 JS 执行超时
-            logger.debug(f"用户 {current_user} 心跳状态上报超时: {e}")
+            logger.debug(f"用户心跳状态上报超时: {e}")
 
-    # ui.timer: NiceGUI 提供的定时器类，用于在 Asyncio 事件循环中非阻塞地周期性执行指定的函数。
-    # 这里设置为每 10 秒从客户端拉取一次活跃状态。
     ui.timer(10.0, report_heartbeat)
 
-    # --- 修改：刷新在线人数的逻辑，加入活跃阈值过滤 ---
+    # --- 修改：刷新在线人数的逻辑，基于绝对时间戳过滤 ---
     def refresh_online_num():
         unique_users_map: Dict[str, Any] = {}
-        # 定义真实活跃阈值：5分钟（300000 毫秒）。超过此时间无键鼠动作视为挂机
-        ACTIVE_THRESHOLD_MS = 5 * 60 * 1000
+        # 定义真实活跃阈值：1分钟（60 秒）
+        ACTIVE_THRESHOLD_SEC = 1 * 60
+        current_time = time.time()
 
         for user_data in online_users.values():
             username = user_data.get("username", "未知用户")
-            # 获取记录的空闲时间，如果尚未记录过，默认为 0（视为刚进入页面）
-            idle_time = user_data.get("idle_time_ms", 0)
+            # 获取记录的绝对时间戳，如果还没上报过，默认视为0
+            last_activity_ts = user_data.get("last_activity_ts", 0)
 
-            # 仅统计真实在操作的用户（过滤掉单纯挂机标签页）
-            if idle_time < ACTIVE_THRESHOLD_MS:
+            # 距离最后一次真实物理操作经过的秒数
+            idle_time_sec = current_time - last_activity_ts
+
+            if idle_time_sec < ACTIVE_THRESHOLD_SEC:
                 if username not in unique_users_map:
                     unique_users_map[username] = user_data
                 else:
-                    # 如果多标签页存在不同状态，保留最活跃（空闲时间最短）的状态
-                    if idle_time < unique_users_map[username].get("idle_time_ms", float("inf")):
+                    # 【修改】多标签页情况下，始终保留操作时间最晚（最活跃）的数据
+                    if last_activity_ts > unique_users_map[username].get("last_activity_ts", 0):
                         unique_users_map[username] = user_data
 
         online_data["online_count"] = str(len(unique_users_map))
@@ -113,8 +113,15 @@ def main_page():
         tooltip_text = "当前活跃用户:<br>"
         for user in unique_users_map.values():
             u_name = user.get("username", "未知用户")
-            u_time = user.get("login_time", "未知时间")
-            tooltip_text += f"{u_name} - {u_time}<br>"
+            u_ts = user.get("last_activity_ts", 0)
+
+            # 格式化时间
+            if u_ts > 0:
+                u_time_str = datetime.fromtimestamp(u_ts).strftime("%H:%M:%S")
+            else:
+                u_time_str = "未知时间"
+
+            tooltip_text += f"{u_name} - 最后操作: {u_time_str}<br>"
 
         if not unique_users_map:
             tooltip_text = "当前无活跃用户"
