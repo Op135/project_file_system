@@ -67,6 +67,7 @@ class MaterialMatcherTool:
         self.non_elec_df: Optional[pd.DataFrame] = None
         self.elec_df: Optional[pd.DataFrame] = None
         self.erp_data: Optional[pd.DataFrame] = None
+        self.erp_bom_df: Optional[pd.DataFrame] = None
 
         self.erp_search_pool: List[Dict[str, Any]] = []
         self.unified_bom_pool: List[Dict[str, Any]] = []
@@ -75,6 +76,7 @@ class MaterialMatcherTool:
         self.status_non_elec: str = "等待上传..."
         self.status_elec: str = "等待上传..."
         self.status_erp: str = "等待上传..."
+        self.status_erp_bom: str = "等待上传..."
         self.show_upload: bool = True
         self.is_calculating: bool = False
         self.show_result: bool = False
@@ -158,7 +160,7 @@ class MaterialMatcherTool:
                         "w-32"
                     ).props("dense outlined")
 
-                with ui.row().classes("w-full grid grid-cols-1 md:grid-cols-3 gap-4"):
+                with ui.row().classes("w-full grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4"):
                     with ui.column().classes("border rounded-lg p-3 bg-gray-50 hover:bg-gray-100 transition-colors"):
                         ui.label("1. 非电子物料清单").classes("font-bold text-xs")
                         # nicegui (第三方UI框架): upload组件用于创建文件拖拽与选择上传区域。props用于透传底层Quasar框架的HTML原生属性，限制上传文件格式。
@@ -175,6 +177,15 @@ class MaterialMatcherTool:
                             "w-full"
                         ).props('accept=".csv, .xls, .xlsx" max-files="1" flat')
                         ui.label().bind_text_from(self, "status_elec").classes("text-xs text-blue-600 font-bold mt-1")
+
+                    with ui.column().classes("border rounded-lg p-3 bg-gray-50 hover:bg-gray-100 transition-colors"):
+                        ui.label("4. ERP标准BOM").classes("font-bold text-xs")
+                        ui.upload(on_upload=lambda e: self._handle_upload(e, "erp_bom"), auto_upload=True).classes(
+                            "w-full"
+                        ).props('accept=".csv, .xls, .xlsx" max-files="1" flat')
+                        ui.label().bind_text_from(self, "status_erp_bom").classes(
+                            "text-xs text-blue-600 font-bold mt-1"
+                        )
 
                     with ui.column().classes("border rounded-lg p-3 bg-gray-50 hover:bg-gray-100 transition-colors"):
                         ui.label("3. 企业库存数据表").classes("font-bold text-xs")
@@ -368,7 +379,9 @@ class MaterialMatcherTool:
             return pd.read_excel(buffer)
 
     def _check_ready(self):
-        self.can_start = (self.non_elec_df is not None or self.elec_df is not None) and self.erp_data is not None
+        self.can_start = (
+            self.non_elec_df is not None or self.elec_df is not None or self.erp_bom_df is not None
+        ) and self.erp_data is not None
 
     def _check_export_status(self):
         self.can_export = bool(self.match_results) and all(
@@ -511,6 +524,8 @@ class MaterialMatcherTool:
                 self.elec_df, self.status_elec = df, f"成功提取真实物料 {len(df)} 行"
             elif target == "erp":
                 self.erp_data, self.status_erp = df, f"成功载入库存档案 {len(df)} 行"
+            elif target == "erp_bom":
+                self.erp_bom_df, self.status_erp_bom = df, f"成功提取ERP BOM {len(df)} 行"
             self._check_ready()
         except Exception as ex:
             ui.notify(f"文件读取失败，请检查格式: {str(ex)}", type="negative")
@@ -650,6 +665,67 @@ class MaterialMatcherTool:
                 )
         return demands
 
+    def _extract_erp_bom_demands(self, df: pd.DataFrame) -> List[Dict]:
+        """专门用于提取带有组成量、底数的ERP标准BOM"""
+        demands = []
+
+        # 👇 核心修复：为所有重复的列名动态增加后缀（如“单位”和“单位_1”），保留所有数据并消除 UserWarning
+        new_cols = []
+        seen = {}
+        for c in df.columns:
+            col_str = str(c).strip()
+            if col_str in seen:
+                seen[col_str] += 1
+                new_cols.append(f"{col_str}_{seen[col_str]}")
+            else:
+                seen[col_str] = 0
+                new_cols.append(col_str)
+
+        # 创建副本以防污染源数据，赋予去重后的列名
+        df_clean = df.copy()
+        df_clean.columns = new_cols
+
+        code_col = self._find_col(df_clean.columns, ["子件品号"])
+        name_col = self._find_col(df_clean.columns, ["子件品名"])
+        spec_col = self._find_col(df_clean.columns, ["子件规格"])
+        comp_qty_col = self._find_col(df_clean.columns, ["组成量"])
+        base_qty_col = self._find_col(df_clean.columns, ["底数"])
+
+        if not code_col:
+            return demands
+
+        for row in df_clean.to_dict(orient="records"):
+            code = self._get_val(row, code_col)
+            # 过滤空料号
+            if not code or str(code).lower() in ["0", "0.0", "nan", "none"]:
+                continue
+
+            name = self._get_val(row, name_col)
+            spec = self._get_val(row, spec_col)
+
+            # 安全提取数值
+            comp_qty = self._safe_float(row.get(comp_qty_col) if comp_qty_col else 0.0)
+            base_qty = self._safe_float(row.get(base_qty_col) if base_qty_col else 1.0)
+
+            # 严谨处理单位一致性：底数为0的防呆处理，并用 组成量/底数 作为单套真实需求
+            if base_qty == 0:
+                base_qty = 1.0
+            actual_qty = comp_qty / base_qty
+
+            if actual_qty > 0:
+                demands.append(
+                    {
+                        "code": code,
+                        "name": name,
+                        "spec": spec,
+                        "footprint": "",
+                        "description_col": f"{name} {spec}".strip(),
+                        "qty": actual_qty,
+                        "source": "ERP标准BOM",
+                    }
+                )
+        return demands
+
     def _calculate_similarity(
         self,
         b_n: str,
@@ -766,7 +842,43 @@ class MaterialMatcherTool:
     ) -> Dict[str, Any]:
 
         bom_desc_raw = " ".join(filter(None, [str(bom_name), str(bom_spec), str(bom_footprint)])).strip()
+        bom_code_str = str(bom_code).strip()
 
+        # 👇 6. 新增：ERP标准BOM的高速精准匹配通道
+        if source == "ERP标准BOM":
+            best_match = None
+            status = 0
+            for erp_item in self.erp_search_pool:
+                if str(erp_item["code"]).strip() == bom_code_str:
+                    # 发现完全一致的品号，强制打满分
+                    best_match = {**erp_item, "score": 100.0, "is_history": False, "used_syn": False, "used_alt": False}
+                    status = 2
+                    break
+
+            # 直接返回构造结果，豁免后续算力消耗
+            return {
+                "source": source,
+                "bom_code": bom_code_str,
+                "bom_name": bom_name,
+                "bom_spec": bom_spec,
+                "bom_footprint": bom_footprint,
+                "bom_description": bom_description,
+                "bom_desc": bom_desc_raw,
+                "bom_qty": bom_qty,
+                "kw_name": [bom_code_str],
+                "kw_spec": [],
+                "kw_footprint": [],
+                "expanded_source_tokens": set([bom_code_str]),
+                "debug_weights": {"w_n": 0.0, "w_s": 0.0, "w_f": 0.0},
+                "is_always_ignored": False,
+                "is_direct": False,
+                "is_memorized": False,
+                "is_synonym_boosted": False,
+                "is_alt_boosted": False,
+                "status": status,
+                "best_match": best_match,
+                "candidates": [best_match] if best_match else [],
+            }
         bom_name_orig, bom_spec_orig, bom_footprint_orig = (
             self._clean_str_calc(self._clean_str_display(bom_name)),
             self._clean_str_calc(self._clean_str_display(bom_spec)),
@@ -1025,7 +1137,7 @@ class MaterialMatcherTool:
         }
 
     async def _process_and_match(self):
-        if self.erp_data is None or (self.non_elec_df is None and self.elec_df is None):
+        if self.erp_data is None or (self.non_elec_df is None and self.elec_df is None and self.erp_bom_df is None):
             ui.notify("请至少上传一份物料清单数据与库存数据！", type="warning")
             return
 
@@ -1036,11 +1148,12 @@ class MaterialMatcherTool:
         self._build_erp_pool(self.erp_data)
         pool1 = self._extract_demands(self.non_elec_df, "非电子物料清单") if self.non_elec_df is not None else []
         pool2 = self._extract_demands(self.elec_df, "电子物料清单") if self.elec_df is not None else []
-
+        # 载入 ERP BOM 池
+        pool3 = self._extract_erp_bom_demands(self.erp_bom_df) if self.erp_bom_df is not None else []
         merged_dict = {}
         sets_multiplier = int(self.assessment_sets) if self.assessment_sets else 1
 
-        for item in pool1 + pool2:
+        for item in pool1 + pool2 + pool3:
             key = f"{item['source']}_{item['code']}_{item['name']}_{item['spec']}_{item['footprint']}_{item.get('description_col', '')}".upper().strip()
 
             total_qty_for_item = item["qty"] * sets_multiplier
