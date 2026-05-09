@@ -170,12 +170,34 @@ def generate_initial_ecn_data(applicant: str, role: str, all_ecns: dict) -> dict
 
 
 # ==========================================
-# ECN 专属数据写入代理 (O(1) 轮询架构核心)
+# ECN 专属数据写入代理 (O(1) 轮询架构核心 & 原子化)
 # ==========================================
+async def atomic_ecn_deep_update(path: list, update_function, *args, **kwargs):
+    """
+    原子化深层更新代理：
+    拦截底层 db_storage.atomic_deep_update，并在更新成功后刷新全局时间戳，
+    驱动所有在线用户的前端进行 O(1) 轮询刷新。
+    """
+    success = await db_storage.atomic_deep_update(path, update_function, *args, **kwargs)
+    if success:
+        await db_storage.set_item("ecn_global_version_stamp", time.time())
+    return success
+
+
+async def del_ecn_deep_item(path: list):
+    """
+    原子化深层删除代理：
+    拦截底层 db_storage.del_deep_item，并在删除成功后刷新全局时间戳。
+    """
+    success = await db_storage.del_deep_item(path)
+    if success:
+        await db_storage.set_item("ecn_global_version_stamp", time.time())
+    return success
+
+
 async def save_ecn_deep_item(path: list, data):
-    """拦截深层数据保存，并更新全局版本戳"""
+    """保留兼容旧逻辑：仅用于少数非并发核心场景"""
     await db_storage.set_deep_item(path, data)
-    # 写入一个仅供 ECN 轮询使用的时间戳
     await db_storage.set_item("ecn_global_version_stamp", time.time())
 
 
@@ -936,8 +958,23 @@ async def ecn_management_page():
 
         async def auto_save_review(e=None):
             if ecn_id and is_scheming_phase:
-                await save_ecn_deep_item(["ecn_management_data", ecn_id, "review_info"], review)
-                # 核心修复：当影响项的勾选发生改变并保存后，立即调用看板的刷新函数
+
+                def merge_review_data(current_review, local_review):
+                    if not current_review:
+                        return local_review
+
+                    current_review.setdefault("impacts", {}).update(local_review.get("impacts", {}))
+                    current_review.setdefault("involved_docs", {}).update(local_review.get("involved_docs", {}))
+
+                    for mat, acts in local_review.get("involved_materials", {}).items():
+                        if isinstance(acts, dict):
+                            current_review.setdefault("involved_materials", {}).setdefault(mat, {}).update(acts)
+
+                    current_review["other_docs_desc"] = local_review.get("other_docs_desc", "")
+                    return current_review
+
+                await atomic_ecn_deep_update(["ecn_management_data", ecn_id, "review_info"], merge_review_data, review)
+
                 if dashboard_updater["refresh"]:
                     dashboard_updater["refresh"]()
 
@@ -1574,16 +1611,30 @@ async def ecn_management_page():
                                     render_my_actions()
 
                                     async def toggle_part_status(new_status):
+                                        # 1. 本地 UI 状态更新 (用于立即渲染)
                                         parts[current_user] = new_status
-                                        await save_ecn_deep_item(
+
+                                        # 2. 定义原子更新回调
+                                        def update_my_status(current_parts, user, status):
+                                            if current_parts is None:
+                                                current_parts = {}
+                                            current_parts[user] = status
+                                            return current_parts
+
+                                        # 3. 执行包裹了时间戳更新的原子操作
+                                        await atomic_ecn_deep_update(
                                             [
                                                 "ecn_management_data",
                                                 local_data["ecn_id"],
                                                 "workflow",
                                                 "scheme_participants",
                                             ],
-                                            parts,
+                                            update_my_status,
+                                            current_user,
+                                            new_status,
                                         )
+
+                                        # 4. 触发重新渲染
                                         render_parts()
                                         render_my_actions()
                                         render_items()  # 状态切换后，必须通知下方的方案列表重新渲染，以更新编辑/删除按钮的显示状态
@@ -1591,34 +1642,56 @@ async def ecn_management_page():
                                 item_container = ui.column().classes("w-full gap-3")
 
                                 async def handle_save_item(item_data, is_edit=False):
-                                    """
-                                    保存方案
-                                    """
-                                    if is_edit:
-                                        for idx, e_item in enumerate(local_data["change_items"]):
-                                            if e_item["item_id"] == item_data["item_id"]:
-                                                local_data["change_items"][idx] = item_data
-                                                break
+                                    """保存方案 (原子化重构)"""
+
+                                    def update_ecn_scheme(current_ecn, new_item, edit_mode, user):
+                                        if not current_ecn:
+                                            return current_ecn
+
+                                        # a. 更新 change_items
+                                        items = current_ecn.setdefault("change_items", [])
+                                        if edit_mode:
+                                            for idx, e_item in enumerate(items):
+                                                if e_item["item_id"] == new_item["item_id"]:
+                                                    items[idx] = new_item
+                                                    break
+                                        else:
+                                            items.append(new_item)
+
+                                        # b. 同步重置当前用户的确认状态为 editing
+                                        parts_dict = current_ecn.setdefault("workflow", {}).setdefault(
+                                            "scheme_participants", {}
+                                        )
+                                        parts_dict[user] = "editing"
+
+                                        return current_ecn
+
+                                    success = await atomic_ecn_deep_update(
+                                        ["ecn_management_data", local_data["ecn_id"]],
+                                        update_ecn_scheme,
+                                        item_data,
+                                        is_edit,
+                                        current_user,
+                                    )
+
+                                    if success:
+                                        # 同步本地数据以更新 UI
+                                        if is_edit:
+                                            for idx, e_item in enumerate(local_data["change_items"]):
+                                                if e_item["item_id"] == item_data["item_id"]:
+                                                    local_data["change_items"][idx] = item_data
+                                                    break
+                                        else:
+                                            local_data["change_items"].append(item_data)
+
+                                        parts[current_user] = "editing"
+
+                                        render_parts()
+                                        render_my_actions()
+                                        render_items()
+                                        render_coverage_dashboard()
                                     else:
-                                        local_data["change_items"].append(item_data)
-                                    parts[current_user] = "editing"
-                                    await save_ecn_deep_item(
-                                        [
-                                            "ecn_management_data",
-                                            local_data["ecn_id"],
-                                            "workflow",
-                                            "scheme_participants",
-                                        ],
-                                        parts,
-                                    )
-                                    await save_ecn_deep_item(
-                                        ["ecn_management_data", local_data["ecn_id"], "change_items"],
-                                        local_data["change_items"],
-                                    )
-                                    render_parts()
-                                    render_my_actions()
-                                    render_items()
-                                    render_coverage_dashboard()  # 同时更新覆盖率看板状态
+                                        ui.notify("方案保存失败，请重试。", type="negative")
 
                                 def get_item_projects(item):
                                     projects = item.get("projects")
@@ -1839,33 +1912,56 @@ async def ecn_management_page():
                                                                         )
 
                                 async def remove_item(item_to_remove):
-                                    """
-                                    删除方案
-                                    """
-                                    local_data["change_items"].remove(item_to_remove)
-                                    author = item_to_remove.get("author")
-                                    if author and not any(
-                                        existing_item.get("author") == author
-                                        for existing_item in local_data["change_items"]
-                                    ):
-                                        parts.pop(author, None)
-                                        await save_ecn_deep_item(
-                                            [
-                                                "ecn_management_data",
-                                                local_data["ecn_id"],
-                                                "workflow",
-                                                "scheme_participants",
-                                            ],
-                                            parts,
-                                        )
-                                    await save_ecn_deep_item(
-                                        ["ecn_management_data", local_data["ecn_id"], "change_items"],
-                                        local_data["change_items"],
+                                    """删除方案 (原子化重构)"""
+                                    target_item_id = item_to_remove["item_id"]
+
+                                    def delete_ecn_scheme(current_ecn, item_id):
+                                        if not current_ecn:
+                                            return current_ecn
+
+                                        items = current_ecn.setdefault("change_items", [])
+                                        target_author = None
+
+                                        for item in items:
+                                            if item["item_id"] == item_id:
+                                                target_author = item.get("author")
+                                                break
+
+                                        current_ecn["change_items"] = [
+                                            item for item in items if item["item_id"] != item_id
+                                        ]
+
+                                        if target_author:
+                                            has_other = any(
+                                                item.get("author") == target_author
+                                                for item in current_ecn["change_items"]
+                                            )
+                                            if not has_other:
+                                                current_ecn.setdefault("workflow", {}).setdefault(
+                                                    "scheme_participants", {}
+                                                ).pop(target_author, None)
+
+                                        return current_ecn
+
+                                    success = await atomic_ecn_deep_update(
+                                        ["ecn_management_data", local_data["ecn_id"]], delete_ecn_scheme, target_item_id
                                     )
-                                    render_parts()
-                                    render_my_actions()
-                                    render_items()
-                                    render_coverage_dashboard()  # 同时更新覆盖率看板状态
+
+                                    if success:
+                                        local_data["change_items"].remove(item_to_remove)
+                                        author = item_to_remove.get("author")
+                                        if author and not any(
+                                            existing_item.get("author") == author
+                                            for existing_item in local_data["change_items"]
+                                        ):
+                                            parts.pop(author, None)
+
+                                        render_parts()
+                                        render_my_actions()
+                                        render_items()
+                                        render_coverage_dashboard()
+                                    else:
+                                        ui.notify("删除方案失败，请重试。", type="negative")
 
                                 render_items()
 
@@ -2316,10 +2412,109 @@ async def ecn_management_page():
                         logger.error(f"执行ECN分裂变更失败: {e}", exc_info=True)
                         return ui.notify(f"执行失败: {e}", type="negative")
 
-                await save_ecn_deep_item(["ecn_management_data", local_data["ecn_id"]], local_data)
-                ui.notify("操作成功！", type="positive")
-                root_dialog.close()
-                refresh_list()
+                # ==========================================
+                # 状态机原子化落盘核心
+                # ==========================================
+                def state_machine_transition(current_ecn, act_type, user, role, comment, time_str, local_basic):
+                    if not current_ecn:
+                        return current_ecn
+
+                    c_wf = current_ecn.setdefault("workflow", {})
+                    c_log = current_ecn.setdefault("approval_log", [])
+                    c_basic = current_ecn.setdefault("basic_info", {})
+
+                    c_basic.update(local_basic)
+
+                    if act_type == "submit_ecr":
+                        c_wf["current_state"] = ECNState.ECR_REVIEWING
+                        c_wf["current_phase"] = "ECR_PHASE"
+                        c_wf["route_type"] = "SALES_INITIATED" if "销售" in role else "RD_INITIATED"
+                        c_wf["current_step_index"] = 0
+                        c_wf["pending_roles"] = ECN_WORKFLOW_ROUTES["ECR_PHASE"][c_wf["route_type"]][0]
+                        c_wf["step_approvals"] = {}
+                        c_log.append({"user": user, "role": role, "action": "发起申请", "time": time_str})
+
+                    elif act_type == "withdraw":
+                        c_wf["current_state"], c_wf["pending_roles"], c_wf["step_approvals"] = ECNState.DRAFT, [], {}
+                        c_log.append({"user": user, "role": role, "action": "撤回修改", "time": time_str})
+
+                    elif act_type == "cancel":
+                        c_wf["current_state"], c_wf["pending_roles"], c_wf["step_approvals"] = ECNState.CANCEL, [], {}
+                        c_log.append({"user": user, "role": role, "action": "作废变更", "time": time_str})
+
+                    elif act_type == "initiate_scheme_review":
+                        c_wf["current_state"] = ECNState.ECN_REVIEWING
+                        c_wf["current_phase"] = "ECN_SCHEME_REVIEW_PHASE"
+                        c_wf["current_step_index"] = 0
+                        c_wf["pending_roles"] = ECN_WORKFLOW_ROUTES["ECN_SCHEME_REVIEW_PHASE"][0]
+                        c_log.append({"user": user, "role": role, "action": "发起方案评审", "time": time_str})
+
+                    elif act_type in ["approve", "reject"]:
+                        act_name = "同意" if act_type == "approve" else "驳回"
+                        c_log.append(
+                            {"user": user, "role": role, "action": act_name, "note": comment, "time": time_str}
+                        )
+
+                        if act_type == "reject":
+                            if c_wf.get("current_phase") == "ECR_PHASE":
+                                c_wf["current_state"], c_wf["pending_roles"] = ECNState.REJECTED, []
+                            else:
+                                c_wf["current_phase"] = "ECN_SCHEME_PHASE"
+                                c_wf["current_state"] = ECNState.ECN_SCHEMING
+                                c_wf["pending_roles"] = []
+                                for u in c_wf.setdefault("scheme_participants", {}):
+                                    c_wf["scheme_participants"][u] = "editing"
+                        else:
+                            c_wf.setdefault("step_approvals", {})[role] = True
+                            if all(c_wf["step_approvals"].get(r, False) for r in c_wf["pending_roles"]):
+                                c_wf["current_step_index"] += 1
+                                c_wf["step_approvals"] = {}
+
+                                route = (
+                                    ECN_WORKFLOW_ROUTES[c_wf["current_phase"]][c_wf["route_type"]]
+                                    if c_wf["current_phase"] == "ECR_PHASE"
+                                    else ECN_WORKFLOW_ROUTES[c_wf["current_phase"]]
+                                )
+
+                                if c_wf["current_step_index"] >= len(route):
+                                    if c_wf["current_phase"] == "ECR_PHASE":
+                                        c_wf["current_phase"] = "ECN_SCHEME_PHASE"
+                                        c_wf["current_state"] = ECNState.ECN_SCHEMING
+                                        c_wf["pending_roles"] = []
+                                    else:
+                                        c_wf["current_phase"] = "ECN_EXECUTION_PHASE"
+                                        c_wf["current_state"] = ECNState.ECN_EXECUTING
+                                        c_wf["current_step_index"] = 0
+                                        c_wf["pending_roles"] = ECN_WORKFLOW_ROUTES["ECN_EXECUTION_PHASE"][0]
+                                else:
+                                    c_wf["pending_roles"] = route[c_wf["current_step_index"]]
+                                    if "研发经理_EXECUTE" in c_wf["pending_roles"]:
+                                        c_wf["current_state"] = ECNState.PENDING_FINAL_EXECUTE
+
+                    elif act_type == "final_execute":
+                        c_wf["current_state"], c_wf["pending_roles"] = ECNState.CLOSED, []
+                        c_log.append({"user": user, "role": role, "action": "执行变更", "time": time_str})
+
+                    return current_ecn
+
+                # 执行代理包裹了时间戳的原子更新
+                success = await atomic_ecn_deep_update(
+                    ["ecn_management_data", local_data["ecn_id"]],
+                    state_machine_transition,
+                    action_type,
+                    current_user,
+                    current_role,
+                    note,
+                    now_str,
+                    basic,
+                )
+
+                if success:
+                    ui.notify("操作成功！", type="positive")
+                    root_dialog.close()
+                    refresh_list()
+                else:
+                    ui.notify("状态流转异常，请刷新重试。", type="negative")
 
             # --- 协同同步定时器 ---
             async def sync_schemes():
@@ -2391,12 +2586,14 @@ async def ecn_management_page():
                 ui.button("取消", on_click=dialog.close).props("outline color=grey")
 
                 async def do_delete():
-                    all_ecns = db_storage.get_item("ecn_management_data", {})
-                    if ecn_id in all_ecns:
-                        del all_ecns[ecn_id]
-                        await save_ecn_root_item("ecn_management_data", all_ecns)
+                    # 采用代理的原子化深层删除，避免并发读写并触发全局刷新
+                    success = await del_ecn_deep_item(["ecn_management_data", ecn_id])
+
+                    if success:
                         ui.notify(f"单号 {ecn_id} 已被彻底删除", type="positive")
                         refresh_list()
+                    else:
+                        ui.notify(f"删除失败，单据 {ecn_id} 可能已不存在或发生异常", type="negative")
                     dialog.close()
 
                 ui.button("确认删除", color="red", on_click=do_delete)
