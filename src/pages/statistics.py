@@ -379,77 +379,186 @@ def statistics_page():
                                     ui.echart(echart_config).classes("w-full h-68")
                                     # ui.separator()
 
-                                    # ui.expansion: 创建一个可折叠的扩展面板组件
-                                    with ui.expansion("查看详细清单").classes(
-                                        "w-full text-sm text-gray-600 bg-gray-50"
+                                    # ui.expansion: 创建一个可折叠的扩展面板组件 (NiceGUI)
+                                    with ui.expansion("查看详细清单 (双向排查)").classes(
+                                        "w-full text-sm text-gray-600 bg-gray-50 mt-2 rounded border border-gray-200"
                                     ):
-                                        with ui.column().classes("p-3 gap-2 w-full"):
-                                            for user, pending_project_dic in filtered_pending_data.items():
-                                                if pending_project_dic:
-                                                    with ui.row().classes("w-full justify-left text-xs"):
-                                                        ui.label(user).classes("font-bold text-gray-700")
-                                                        ui.label(f"{len(pending_project_dic.keys())}").classes(
-                                                            "bg-indigo-100 text-indigo-700 px-1.5 rounded-full"
-                                                        )
-                                                    over_flat = app.storage.general.get("over_config_data_flat", {})
-                                                    for p, p_state_dic in pending_project_dic.items():
-                                                        # HTML Tooltip 构建
-                                                        false_items = [
-                                                            k for k, v in p_state_dic.items() if v == "缺必填"
-                                                        ]
-                                                        need_items = [
-                                                            k for k, v in p_state_dic.items() if v == "缺需填"
-                                                        ]
-                                                        none_items = [
-                                                            k for k, v in p_state_dic.items() if v == "有待定"
-                                                        ]
+                                        # 提前获取配置字典，用于将键名转换为中文标题
+                                        over_flat = app.storage.general.get("over_config_data_flat", {})
 
-                                                        tooltip_html = ""
-                                                        if false_items:
-                                                            tooltip_html += "<b>【必填无内容】</b><br>" + "<br>".join(
-                                                                [
-                                                                    f"• {over_flat.get(item, {}).get('title', '未知概述项')}"
-                                                                    for item in false_items
-                                                                ]
-                                                            )
-                                                        if need_items:
-                                                            if tooltip_html:
-                                                                tooltip_html += "<br><br>"
-                                                            tooltip_html += "<b>【需填无内容】</b><br>" + "<br>".join(
-                                                                [
-                                                                    f"• {over_flat.get(item, {}).get('title', '未知概述项')}"
-                                                                    for item in need_items
-                                                                ]
-                                                            )
-                                                        if none_items:
-                                                            if tooltip_html:
-                                                                tooltip_html += "<br><br>"
-                                                            tooltip_html += "<b>【待确认】</b><br>" + "<br>".join(
-                                                                [
-                                                                    f"• {over_flat.get(item, {}).get('title', '未知概述项')}"
-                                                                    for item in none_items
-                                                                ]
-                                                            )
+                                        # ---------------------------------------------------------
+                                        # 运行时数据转换：构建【项目 -> 人员 -> 状态】的反向映射字典
+                                        # ---------------------------------------------------------
+                                        project_to_users = {}
+                                        for u, p_dict in filtered_pending_data.items():
+                                            for p, state_dict in p_dict.items():
+                                                if p not in project_to_users:
+                                                    project_to_users[p] = {}
+                                                project_to_users[p][u] = state_dict
 
-                                                        if not tooltip_html:
-                                                            tooltip_html = "状态正常"
+                                        user_list = list(filtered_pending_data.keys())
+                                        project_list = list(project_to_users.keys())
 
-                                                        if false_items or none_items:
-                                                            project_label = ui.label(
-                                                                f"• {p} —— {project_summary.get(p, {}).get('state', '未知')} —— {len(p_state_dic)}"
-                                                            ).classes("pl-2 text-red-500 truncate text-xs cursor-help")
-                                                        else:
-                                                            project_label = ui.label(
-                                                                f"• {p} —— {project_summary.get(p, {}).get('state', '未知')} —— {len(p_state_dic)}"
-                                                            ).classes(
-                                                                "pl-2 text-amber-500 truncate text-xs cursor-help"
-                                                            )
+                                        # ---------------------------------------------------------
+                                        # 标签页切换逻辑 (Tabs)
+                                        # ---------------------------------------------------------
+                                        with ui.column().classes("w-full gap-0 p-2"):
+                                            # ui.tabs: 创建标签页导航容器 (NiceGUI)
+                                            with ui.tabs().classes("w-full bg-white border-b") as tabs:
+                                                # ui.tab: 定义具体的标签项，并关联 ID
+                                                user_tab = ui.tab("person", label="按人员排查", icon="person")
+                                                project_tab = ui.tab("project", label="按项目跟进", icon="folder")
 
-                                                        with project_label:
-                                                            with ui.tooltip().classes(
-                                                                "text-xs bg-gray-600/90 text-white p-2"
+                                            # ui.tab_panels: 创建与标签页关联的内容面板容器 (NiceGUI)
+                                            with ui.tab_panels(tabs, value=user_tab).classes(
+                                                "w-full bg-transparent shadow-none"
+                                            ):
+                                                # ==========================================
+                                                # 面板一：按人员排查
+                                                # ==========================================
+                                                # ui.tab_panel: 定义具体某个标签对应的展示区域
+                                                with ui.tab_panel(user_tab).classes("p-4"):
+                                                    # ui.select: 下拉选择框组件 (NiceGUI)
+                                                    user_select = ui.select(
+                                                        options=user_list,
+                                                        value=user_list[0] if user_list else None,
+                                                        label="请选择具体人员",
+                                                    ).classes("w-full bg-white mb-4")
+
+                                                    # ui.refreshable: 局部刷新装饰器，确保切换下拉项时只重绘列表区域 (NiceGUI)
+                                                    @ui.refreshable
+                                                    def render_user_tab_content(selected_user):
+                                                        # ui.card: 列表容器卡片
+                                                        with ui.card().classes(
+                                                            "w-full shadow-none border border-gray-200 p-0 bg-white max-h-96 overflow-y-auto"
+                                                        ):
+                                                            if (
+                                                                not selected_user
+                                                                or selected_user not in filtered_pending_data
                                                             ):
-                                                                ui.html(tooltip_html, sanitize=False)
+                                                                ui.label("暂无该人员的待办数据").classes(
+                                                                    "p-8 text-gray-400 text-sm text-center w-full"
+                                                                )
+                                                                return
+
+                                                            user_projects = filtered_pending_data[selected_user]
+                                                            with ui.column().classes("w-full gap-0"):
+                                                                for p, p_state_dic in user_projects.items():
+                                                                    # ui.row: 信息展示行
+                                                                    with ui.row().classes(
+                                                                        "w-full justify-between items-center p-3 border-b border-gray-100 hover:bg-indigo-50 transition-colors"
+                                                                    ):
+                                                                        with ui.column().classes("gap-1"):
+                                                                            ui.label(p).classes(
+                                                                                "font-bold text-gray-700 text-sm"
+                                                                            )
+                                                                            proj_state = project_summary.get(p, {}).get(
+                                                                                "state", "未知状态"
+                                                                            )
+                                                                            ui.label(f"阶段: {proj_state}").classes(
+                                                                                "text-xs text-gray-500"
+                                                                            )
+
+                                                                        with ui.row().classes(
+                                                                            "gap-1 items-center justify-end flex-wrap max-w-[65%]"
+                                                                        ):
+                                                                            for (
+                                                                                item_key,
+                                                                                item_status,
+                                                                            ) in p_state_dic.items():
+                                                                                display_title = over_flat.get(
+                                                                                    item_key, {}
+                                                                                ).get("title", "未知概述项")
+                                                                                # ui.badge: 状态标签徽标 (NiceGUI)
+                                                                                if item_status == "缺必填":
+                                                                                    ui.badge(
+                                                                                        f"{display_title} (必填)",
+                                                                                        color="red-500",
+                                                                                    ).classes("px-2 py-1")
+                                                                                elif item_status == "缺需填":
+                                                                                    ui.badge(
+                                                                                        f"{display_title} (需填)",
+                                                                                        color="blue-500",
+                                                                                    ).classes("px-2 py-1")
+                                                                                elif item_status == "有待定":
+                                                                                    ui.badge(
+                                                                                        f"{display_title} (待定)",
+                                                                                        color="amber-500",
+                                                                                    ).classes(
+                                                                                        "px-2 py-1 text-amber-900"
+                                                                                    )
+
+                                                    render_user_tab_content(user_select.value)
+                                                    user_select.on_value_change(
+                                                        lambda e: render_user_tab_content.refresh(e.value)
+                                                    )
+
+                                                # ==========================================
+                                                # 面板二：按项目跟进
+                                                # ==========================================
+                                                with ui.tab_panel(project_tab).classes("p-4"):
+                                                    project_select = ui.select(
+                                                        options=project_list,
+                                                        value=project_list[0] if project_list else None,
+                                                        label="请选择具体项目",
+                                                    ).classes("w-full bg-white mb-4")
+
+                                                    @ui.refreshable
+                                                    def render_project_tab_content(selected_project):
+                                                        with ui.card().classes(
+                                                            "w-full shadow-none border border-gray-200 p-0 bg-white max-h-96 overflow-y-auto"
+                                                        ):
+                                                            if (
+                                                                not selected_project
+                                                                or selected_project not in project_to_users
+                                                            ):
+                                                                ui.label("暂无该项目的待办数据").classes(
+                                                                    "p-8 text-gray-400 text-sm text-center w-full"
+                                                                )
+                                                                return
+
+                                                            proj_users = project_to_users[selected_project]
+                                                            with ui.column().classes("w-full gap-0"):
+                                                                for u, p_state_dic in proj_users.items():
+                                                                    with ui.row().classes(
+                                                                        "w-full justify-between items-start p-3 border-b border-gray-100 hover:bg-teal-50 transition-colors"
+                                                                    ):
+                                                                        ui.label(u).classes(
+                                                                            "font-bold text-gray-700 text-sm whitespace-nowrap mt-1"
+                                                                        )
+
+                                                                        with ui.row().classes(
+                                                                            "gap-1 justify-end flex-wrap max-w-[75%]"
+                                                                        ):
+                                                                            for (
+                                                                                item_key,
+                                                                                item_status,
+                                                                            ) in p_state_dic.items():
+                                                                                display_title = over_flat.get(
+                                                                                    item_key, {}
+                                                                                ).get("title", "未知概述项")
+                                                                                if item_status == "缺必填":
+                                                                                    ui.badge(
+                                                                                        f"{display_title} (必填)",
+                                                                                        color="red-500",
+                                                                                    ).classes("px-2 py-1")
+                                                                                elif item_status == "缺需填":
+                                                                                    ui.badge(
+                                                                                        f"{display_title} (需填)",
+                                                                                        color="blue-500",
+                                                                                    ).classes("px-2 py-1")
+                                                                                elif item_status == "有待定":
+                                                                                    ui.badge(
+                                                                                        f"{display_title} (待定)",
+                                                                                        color="amber-500",
+                                                                                    ).classes(
+                                                                                        "px-2 py-1 text-amber-900"
+                                                                                    )
+
+                                                    render_project_tab_content(project_select.value)
+                                                    project_select.on_value_change(
+                                                        lambda e: render_project_tab_content.refresh(e.value)
+                                                    )
                                 else:
                                     ui.label("当前筛选状态下暂无积压数据").classes("p-4 text-gray-400 text-sm mt-4")
 

@@ -262,8 +262,16 @@ def main_page():
                         if project_name in project_engineer_dic.get(current_user, []):
                             pending_num_user += 1
 
-            if current_user in app.storage.general["overview_charge_pending"]:
-                over_charge_num = len(app.storage.general["overview_charge_pending"][current_user].keys())
+            # --- 仅针对项目概述待办进行状态过滤 ---
+            project_summary = app.storage.general.get("project_summary", {})
+            if current_user in app.storage.general.get("overview_charge_pending", {}):
+                # 仅统计状态非“作废”且非“待定”的项目，确保与 information.py 逻辑一致
+                over_charge_num = sum(
+                    1
+                    for p_name in app.storage.general["overview_charge_pending"][current_user].keys()
+                    if project_summary.get(p_name, {}).get("state", "未知") not in ["作废", "待定"]
+                )
+
             change_reqs = app.storage.general.get("overview_change_requests", {})
 
             if current_role == "研发经理":

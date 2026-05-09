@@ -584,14 +584,67 @@ def information_page():
                                 ui_card_header("待处理：项目概述", "edit_document", "red-600")
                                 with ui.column().classes("w-full gap-2 px-1"):
                                     over_flat = app.storage.general.get("over_config_data_flat", {})
+                                    project_summary = app.storage.general.get("project_summary", {})
+                                    over_flat = app.storage.general.get("over_config_data_flat", {})
+
                                     for project_name, state_dic in list(my_pending.items()):
+                                        # 1. 获取当前项目状态，如果属于作废或待定，则直接隐藏该待办条目
+                                        proj_state = project_summary.get(project_name, {}).get("state", "未知")
+                                        if proj_state in ["作废", "待定"]:
+                                            continue
+
                                         # 无内容的必填概述分项数量
                                         false_num = list(state_dic.values()).count("缺必填")
                                         # 无内容的需填概述分项数量
                                         need_num = list(state_dic.values()).count("缺需填")
                                         # 待确认的概述分项数量
                                         none_num = list(state_dic.values()).count("有待定")
-                                        # --- 新增：提取并构建 HTML 格式的 Tooltip 内容 ---
+
+                                        # 2. 动态判定重要程度优先级
+                                        if proj_state in ["研发", "转产"]:
+                                            # 优先级: 待确认 > 缺必填 > 缺需填
+                                            priority_keys = ["none", "false", "need"]
+                                        else:
+                                            # 试产、量产及其他状态的优先级: 缺必填 > 待确认 > 缺需填
+                                            priority_keys = ["false", "none", "need"]
+
+                                        counts = {"false": false_num, "none": none_num, "need": need_num}
+                                        labels_map = {
+                                            "false": "项必填概述无内容",
+                                            "none": "项概述待确认",
+                                            "need": "项需填概述无内容",
+                                        }
+
+                                        # 寻找当前实际存在数据的最高优先级
+                                        highest_active = None
+                                        for rank_idx, key in enumerate(priority_keys):
+                                            if counts[key] > 0:
+                                                highest_active = (key, rank_idx)
+                                                break
+
+                                        if not highest_active:
+                                            continue  # 没有任何积压，跳过渲染
+
+                                        active_key, active_rank = highest_active
+
+                                        # 3. 根据最高优先级的位次，决定当前行的视觉色彩与动画表现
+                                        if active_rank == 0:
+                                            # 最高重要程度：红色行，数字闪烁
+                                            row_bg = "bg-red-50 border-red-200 hover:bg-red-100"
+                                            base_color = "red"
+                                            is_flash = True
+                                        elif active_rank == 1:
+                                            # 中等重要程度：黄色行，数字闪烁
+                                            row_bg = "bg-amber-50 border-amber-200 hover:bg-amber-100"
+                                            base_color = "amber"
+                                            is_flash = True
+                                        else:
+                                            # 最低重要程度：蓝色行，仅加粗不闪烁
+                                            row_bg = "bg-blue-50 border-blue-200 hover:bg-blue-100"
+                                            base_color = "blue"
+                                            is_flash = False
+
+                                        # --- 提取并构建 HTML 格式的 Tooltip 内容 ---
                                         false_items = [k for k, v in state_dic.items() if v == "缺必填"]
                                         need_items = [k for k, v in state_dic.items() if v == "缺需填"]
                                         none_items = [k for k, v in state_dic.items() if v == "有待定"]
@@ -624,30 +677,47 @@ def information_page():
                                             )
                                         # ------------------------------------
 
-                                        # 每一行项目
-                                        if false_num > 0 or none_num > 0:
-                                            row_container = ui.row().classes(
-                                                "w-full items-center justify-between p-3 bg-red-50 rounded-lg border border-red-100 hover:bg-red-100 transition-colors"
-                                            )
-                                        else:
-                                            row_container = ui.row().classes(
-                                                "w-full items-center justify-between p-3 bg-amber-50 rounded-lg border border-amber-100 hover:bg-amber-100 transition-colors"
-                                            )
-                                        with row_container:
-                                            title_label = ui.label(
-                                                f"{project_name}（{str(false_num)}项必填概述无内容，{str(need_num)}项需填概述无内容，{str(none_num)}项概述待确认）"
-                                            ).classes("font-medium text-gray-800 cursor-help")
+                                        # 4. 渲染最终容器
+                                        row_container = ui.row().classes(
+                                            f"w-full items-center justify-between p-3 rounded-lg border transition-colors {row_bg}"
+                                        )
 
-                                            # 使用上下文管理器结合 ui.html 渲染支持换行的原生 HTML
-                                            with title_label:
+                                        with row_container:
+                                            # 构造富文本标题（保持原有的中文阅读排版顺序：必填 -> 需填 -> 待确认）
+                                            parts_html = []
+                                            display_order = ["false", "need", "none"]
+
+                                            for k in display_order:
+                                                num = counts[k]
+                                                text = labels_map[k]
+                                                # 如果当前项正是触发最高优先级的项，实施视觉凸显
+                                                if k == active_key:
+                                                    if is_flash:
+                                                        # 使用 Tailwind 的 animate-pulse 实现闪烁效果
+                                                        num_html = f'<span class="font-black text-lg animate-pulse text-{base_color}-600">{num}</span>'
+                                                    else:
+                                                        # 仅加粗高亮
+                                                        num_html = f'<span class="font-black text-lg text-{base_color}-600">{num}</span>'
+                                                else:
+                                                    num_html = str(num)
+                                                parts_html.append(f"{num_html}{text}")
+
+                                            title_html = f'<span class="font-medium text-gray-800">{project_name}（{"，".join(parts_html)}）</span>'
+
+                                            # ui.element: 创建基础 DOM 元素作为包裹层，避开 v-html 的内部覆盖效应
+                                            title_wrapper = ui.element("div").classes("cursor-help flex items-center")
+
+                                            with title_wrapper:
+                                                ui.html(title_html, sanitize=False)
                                                 with ui.tooltip().classes("text-xs bg-gray-600/90 text-white p-2"):
                                                     ui.html(tooltip_html, sanitize=False)
 
+                                            # 侧边按钮的颜色与该行代表的优先级颜色基调保持一致
                                             ui.button(
                                                 "去处理",
                                                 icon="arrow_forward",
                                                 on_click=lambda pn=project_name: get_overviow_page(pn, False),
-                                            ).props("flat dense color=red size=sm")
+                                            ).props(f"flat dense color={base_color} size=sm")
 
                     # B. 需求评审队列 (Review Queue)
                     if (
