@@ -914,7 +914,7 @@ async def ecn_management_page():
         wf = local_data["workflow"]
         basic = local_data["basic_info"]
         review = local_data["review_info"]
-        parts = wf.setdefault("scheme_participants", {})
+        participants = wf.setdefault("scheme_participants", {})
 
         is_draft_or_reject = is_new or wf["current_state"] in [ECNState.DRAFT, ECNState.REJECTED]
         # 是否处于编写方案阶段
@@ -983,6 +983,7 @@ async def ecn_management_page():
                 tab_exec = ui.tab("4. ECN-执行", icon="assignment_turned_in")
                 tab_workflow = ui.tab("审批记录", icon="timeline")
 
+            # 当前用户是否为ECN申请人，且处于草稿或驳回待编辑状态
             is_ecr_editable = is_new or (
                 basic.get("applicant") == current_user
                 and wf.get("current_state") in [ECNState.DRAFT, ECNState.REJECTED]
@@ -1047,6 +1048,7 @@ async def ecn_management_page():
                         with ui.row().classes("w-full p-2 pdf-border-b items-start gap-2 hover:bg-gray-50"):
                             ui.label("变更对象:").classes("font-bold text-gray-700 w-20 shrink-0 pt-1")
                             with ui.column().classes("flex-1 gap-2"):
+                                # ECR可编辑时，才显示项目选择选框
                                 if is_ecr_editable:
                                     proj_sel_state = {"l1": None, "l2": None, "l3": None}
                                     with ui.row().classes("w-full items-center gap-2"):
@@ -1094,6 +1096,7 @@ async def ecn_management_page():
                                             .props("dense outlined bg-white")
                                         )
 
+                                        # 添加目标项目为ECN变更对象，更新目标项目chip行，并记录到字典里
                                         def add_proj():
                                             target = proj_sel_state.get("l3")
                                             if target and target not in local_data["target_projects"]:
@@ -1110,6 +1113,7 @@ async def ecn_management_page():
 
                                 proj_chip_container = ui.row().classes("w-full gap-2 mt-1")
 
+                                # 显示ECN申请时选定的目标项目chip
                                 def render_proj_chips():
                                     proj_chip_container.clear()
                                     with proj_chip_container:
@@ -1117,6 +1121,7 @@ async def ecn_management_page():
                                             ui.label("尚未添加变更对象 (项目)").classes(
                                                 "text-xs text-red-400 italic mt-1"
                                             )
+                                        # 如果有目标项目，生成它们的chip，并在可编辑状态下添加删除功能，删除后会重新调用自己，进行刷新
                                         for p in local_data["target_projects"]:
                                             with ui.chip(color="primary", text_color="white").classes(
                                                 "gap-1 items-center"
@@ -1133,11 +1138,13 @@ async def ecn_management_page():
                                                         ],
                                                     )
 
+                                # 初始化显示ECN目标项目chip
                                 render_proj_chips()
 
                         with ui.row().classes("w-full p-2 pdf-border-b items-start gap-2 hover:bg-gray-50"):
                             ui.label("变更要求:").classes("font-bold text-gray-700 w-20 shrink-0 pt-1")
                             with ui.column().classes("flex-1 gap-2"):
+                                # 只有ECR处于可编辑状态下，才显示要求输入框
                                 if is_ecr_editable:
                                     with ui.row().classes("w-full gap-2 mb-2 items-center"):
                                         req_input = (
@@ -1148,6 +1155,7 @@ async def ecn_management_page():
                                             .classes("flex-grow")
                                         )
 
+                                        # 添加变更要求用户填写内容chip，记录到字典里，刷新chip标签显示
                                         def add_req():
                                             val = req_input.value
                                             if val and val.strip():
@@ -1157,8 +1165,8 @@ async def ecn_management_page():
                                                         "content": val.strip(),
                                                     }
                                                 )
-                                                req_input.set_value("")
-                                                render_reqs()
+                                                req_input.set_value("")  # 清空输入框
+                                                render_reqs()  # 刷新显示变更要求的chip列表
                                             else:
                                                 ui.notify("变更要求不能为空", type="warning")
 
@@ -1186,13 +1194,15 @@ async def ecn_management_page():
                                                         "click",
                                                         lambda e, r=req: [
                                                             local_data["basic_info"]["requirements"].remove(r),
+                                                            # 删除要求后，重新根据顺序更新索引编号
+                                                            # 如果以后ECR评审后可回退重新编辑，则这里有问题，需要固定不更新
                                                             [
                                                                 req.update(idx=i + 1)
                                                                 for i, req in enumerate(
                                                                     local_data["basic_info"]["requirements"]
                                                                 )
                                                             ],
-                                                            render_reqs(),
+                                                            render_reqs(),  # 调用自己刷新显示
                                                         ],
                                                     )
 
@@ -1237,12 +1247,20 @@ async def ecn_management_page():
                                             if not local_data["target_projects"]:
                                                 ui.label("无").classes("text-xs text-gray-400")
 
+                                    # 方案编写阶段，才显示扩大影响的选项，且只有方案编写者角色才有权限修改，任何变更都会自动保存评审信息
                                     def render_expanded_proj(
                                         target_list, label_text, proj_dict_source, color="primary"
                                     ):
+                                        """
+                                        target_list: 扩大影响选择的项目
+                                        label_text：标签文本
+                                        proj_dict_source：用于生成选项的项目数据源
+                                        color： chip颜色
+                                        """
                                         with ui.row().classes("items-start gap-2"):
                                             ui.label(label_text).classes("text-xs font-bold text-gray-500 w-36 pt-2")
                                             with ui.column().classes("gap-1"):
+                                                # 处于方案编写阶段，才生成选择项目的扩大选框给用户用
                                                 if is_scheming_phase:
                                                     ps = {"l1": None, "l2": None, "l3": None}
                                                     with ui.row().classes("items-center gap-2"):
@@ -1291,11 +1309,13 @@ async def ecn_management_page():
                                                         def add_exp_proj():
                                                             if (
                                                                 ps["l3"]
-                                                                and ps["l3"] not in target_list
+                                                                and ps["l3"]
+                                                                not in target_list  # select如果传入的时字典，则字典value是显示文本，key才是选项返回值
                                                                 and ps["l3"] not in local_data["target_projects"]
                                                             ):
                                                                 target_list.append(ps["l3"])
                                                                 render_chips()
+                                                                # 方案编写阶段，任何扩大影响的变更都需要自动保存评审信息，确保数据一致性和实时更新看板监控
                                                                 if is_scheming_phase:
                                                                     ui.timer(0.1, auto_save_review, once=True)
                                                             else:
@@ -1420,7 +1440,7 @@ async def ecn_management_page():
                             with ui.column().classes("w-full p-2 gap-3 bg-blue-50/30"):
                                 with ui.column().classes("w-full p-2 gap-3 bg-blue-50/30"):
                                     # ==========================================
-                                    # 新增：方案覆盖率与影响项监控看板
+                                    # 方案覆盖率与影响项监控看板
                                     # ==========================================
                                     coverage_container = ui.column().classes("w-full p-0 m-0")
 
@@ -1434,7 +1454,7 @@ async def ecn_management_page():
                                                     f"{mat}-{act}"
                                                     for mat, actions in review.get("involved_materials", {}).items()
                                                     if isinstance(actions, dict)
-                                                    for act, val in actions.items()
+                                                    for act, val in actions.items()  # 这里有问题，只认最后一个动作
                                                     if val
                                                 ]
                                             )
@@ -1463,7 +1483,7 @@ async def ecn_management_page():
 
                                                 # 取消了 grid，直接使用单列纵向布局
                                                 with ui.column().classes("w-full gap-1 mt-1"):
-                                                    ui.label("强制交付物覆盖率自检:").classes(
+                                                    ui.label("ECN影响勾选项方案覆盖率自检:").classes(
                                                         "text-[10px] font-bold text-gray-500 mb-1"
                                                     )
 
@@ -1486,16 +1506,17 @@ async def ecn_management_page():
                                                         )
 
                                                     if not req_docs and not req_mats:
-                                                        ui.label("前方未勾选资料或物料变更").classes(
+                                                        ui.label("前方未勾选变更影响的资料或物料").classes(
                                                             "text-xs text-gray-400"
                                                         )
 
-                                    # === 核心修复：将渲染函数挂载到上方定义的字典中 ===
+                                    # 将渲染函数挂载到上方定义的字典中，以便借助自动刷新机制在数据变更时调用，同步更新覆盖率看板
                                     dashboard_updater["refresh"] = render_coverage_dashboard
                                     render_coverage_dashboard()
-                                # --- 替换按钮渲染部分 ---
+                                # 替换按钮渲染部分
                                 with ui.row().classes("w-full justify-between items-center"):
-                                    ui.label("产品设计与工艺变更方案明细").classes("font-bold text-gray-800 text-lg")
+                                    ui.label("产品工程变更方案明细").classes("font-bold text-gray-800 text-lg")
+                                    # 在方案可编辑阶段，且用户具有方案编写权限的前提下，才显示添加方案的按钮
                                     if is_scheme_writer:
                                         with ui.row().classes("gap-2"):
                                             # ui.menu: nicegui 第三方包用于创建附着于按钮上的下拉交互菜单
@@ -1536,15 +1557,16 @@ async def ecn_management_page():
                                     "w-full p-2 bg-white rounded border border-gray-200 items-center justify-between"
                                 ):
                                     with ui.row().classes("gap-2 items-center"):
-                                        ui.label("提供人员确认状态").classes("text-sm font-bold text-gray-600")
+                                        ui.label("方案编写人员确认状态").classes("text-sm font-bold text-gray-600")
+                                        # 显示方案编写处于什么状态
                                         parts_container = ui.row().classes("gap-1")
 
                                         def render_parts():
                                             parts_container.clear()
                                             with parts_container:
-                                                if not parts:
-                                                    ui.label("暂无").classes("text-xs text-gray-400 mt-1")
-                                                for p, status in parts.items():
+                                                if not participants:
+                                                    ui.label("暂无人员参与").classes("text-xs text-gray-400 mt-1")
+                                                for p, status in participants.items():
                                                     ui.chip(
                                                         f"{p}: {'已确认' if status == 'confirmed' else '编写中'}",
                                                         color="green" if status == "confirmed" else "orange",
@@ -1553,13 +1575,14 @@ async def ecn_management_page():
 
                                         render_parts()
 
+                                    # 方案编写不同状态提供不同按钮交互，且只有方案编写者才有权限操作
                                     my_action_container = ui.row()
 
                                     def render_my_actions():
                                         my_action_container.clear()
                                         with my_action_container:
                                             if is_scheme_writer:
-                                                cur_status = parts.get(current_user)
+                                                cur_status = participants.get(current_user)
                                                 if cur_status == "editing" or not cur_status:
                                                     ui.button(
                                                         "确认完成我的方案",
@@ -1575,9 +1598,10 @@ async def ecn_management_page():
 
                                     render_my_actions()
 
+                                    # 切换参与者状态的显示与数据库对应状态数据
                                     async def toggle_part_status(new_status):
                                         # 1. 本地 UI 状态更新 (用于立即渲染)
-                                        parts[current_user] = new_status
+                                        participants[current_user] = new_status
 
                                         # 2. 定义原子更新回调
                                         def update_my_status(current_parts, user, status):
@@ -1600,26 +1624,38 @@ async def ecn_management_page():
                                         )
 
                                         # 4. 触发重新渲染
-                                        render_parts()
-                                        render_my_actions()
+                                        render_parts()  # 更新参与者状态显示标签
+                                        render_my_actions()  # 更新状态对应的可行动按钮
                                         render_items()  # 状态切换后，必须通知下方的方案列表重新渲染，以更新编辑/删除按钮的显示状态
 
+                                # 方案内容显示列
                                 item_container = ui.column().classes("w-full gap-3")
 
                                 async def handle_save_item(item_data, is_edit=False):
                                     """保存方案 (原子化重构)"""
 
+                                    # ==== 添加方案时的核心逻辑 ====
                                     def update_ecn_scheme(current_ecn, new_item, edit_mode, user):
+                                        """
+                                            将新添加或更新的方案条目数据合并到当前 ECN 数据中，并同步更新当前用户的参与状态为 editing
+                                        key:
+                                            current_ecn: 当前数据库中的 ECN 数据
+                                            new_item: 本次需要添加或更新的方案条目数据
+                                            edit_mode: 是否为编辑模式(更新)
+                                            user: 当前用户
+                                        """
                                         if not current_ecn:
                                             return current_ecn
 
-                                        # a. 更新 change_items
+                                        # a. 更新 change_items 里记录的方案
                                         items = current_ecn.setdefault("change_items", [])
+                                        # 是否属于更新
                                         if edit_mode:
                                             for idx, e_item in enumerate(items):
                                                 if e_item["item_id"] == new_item["item_id"]:
                                                     items[idx] = new_item
                                                     break
+                                        # 添加方案
                                         else:
                                             items.append(new_item)
 
@@ -1638,7 +1674,6 @@ async def ecn_management_page():
                                         is_edit,
                                         current_user,
                                     )
-
                                     if success:
                                         # 同步本地数据以更新 UI
                                         if is_edit:
@@ -1649,12 +1684,12 @@ async def ecn_management_page():
                                         else:
                                             local_data["change_items"].append(item_data)
 
-                                        parts[current_user] = "editing"
+                                        participants[current_user] = "editing"
 
                                         render_parts()
                                         render_my_actions()
                                         render_items()
-                                        render_coverage_dashboard()
+                                        render_coverage_dashboard()  # 更新覆盖率看板
                                     else:
                                         ui.notify("方案保存失败，请重试。", type="negative")
 
@@ -1674,7 +1709,7 @@ async def ecn_management_page():
                                             )
                                             return
 
-                                        # --- 核心修改：以业务分类进行预处理分组，并绑定全局序号 ---
+                                        # --- 以业务分类为依据，把方案分组预处理，并绑定全局序号 ---
                                         grouped_items = {"document": [], "material": [], "unknown": []}
                                         for global_idx, item in enumerate(local_data["change_items"]):
                                             cat = item.get("scheme_category", "unknown")
@@ -1719,7 +1754,7 @@ async def ecn_management_page():
                                                 )
                                             ):
                                                 with ui.column().classes("w-full p-3 gap-3"):
-                                                    # 在折叠面板内部渲染具体的卡片
+                                                    # 在折叠面板内部渲染当前分类组的具体卡片
                                                     for idx, item in items_in_group:
                                                         with ui.card().classes(
                                                             "w-full p-0 shadow-sm border border-gray-200 relative"
@@ -1762,7 +1797,7 @@ async def ecn_management_page():
                                                                 if (
                                                                     is_scheming_phase
                                                                     and item["author"] == current_user
-                                                                    and parts.get(current_user) != "confirmed"
+                                                                    and participants.get(current_user) != "confirmed"
                                                                 ):
                                                                     with ui.row().classes(
                                                                         "absolute top-1 right-1 gap-1"
@@ -1926,7 +1961,7 @@ async def ecn_management_page():
                                             existing_item.get("author") == author
                                             for existing_item in local_data["change_items"]
                                         ):
-                                            parts.pop(author, None)
+                                            participants.pop(author, None)
 
                                         render_parts()
                                         render_my_actions()
@@ -2079,7 +2114,7 @@ async def ecn_management_page():
                             on_click=lambda: execute_db_action("final_execute"),
                         ).props("color=red")
                     elif is_scheming_phase and any(r in current_role for r in ECN_SCHEME_INITIATOR_ROLES):
-                        all_confirmed = len(parts) > 0 and all(s == "confirmed" for s in parts.values())
+                        all_confirmed = len(participants) > 0 and all(s == "confirmed" for s in participants.values())
                         btn = ui.button(
                             "发起 ECN 方案评审", on_click=lambda: execute_db_action("initiate_scheme_review")
                         ).props(f"color=purple {'disabled' if not all_confirmed else ''}")
@@ -2524,12 +2559,12 @@ async def ecn_management_page():
                     if wf["current_state"] == ECNState.ECN_SCHEMING:
                         if (
                             str(fresh.get("change_items", [])) != str(local_data["change_items"])
-                            or fresh["workflow"].get("scheme_participants", {}) != parts
+                            or fresh["workflow"].get("scheme_participants", {}) != participants
                         ):
                             local_data["change_items"].clear()
                             local_data["change_items"].extend(copy.deepcopy(fresh.get("change_items", [])))
-                            parts.clear()
-                            parts.update(copy.deepcopy(fresh["workflow"].get("scheme_participants", {})))
+                            participants.clear()
+                            participants.update(copy.deepcopy(fresh["workflow"].get("scheme_participants", {})))
                             render_parts()
                             render_my_actions()
                             render_items()
