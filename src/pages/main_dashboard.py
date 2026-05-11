@@ -218,6 +218,11 @@ def main_page():
             # 注意：实际使用时如果觉得每次在主页拉取全量 ECN 较慢，可以像 overview 那样做个概要缓存，这里按直接读取演示
             all_ecns = db_storage.get_item("ecn_management_data", {})
             for ecn_id, ecn_data in all_ecns.items():
+                # 确保 ecn_data 是一个字典，如果不是（比如是 None），则跳过此条数据
+                if not isinstance(ecn_data, dict):
+                    # 你可以选择在日志里记录一下这个脏数据单号
+                    # logger.warning(f"发现异常 ECN 数据: {ecn_id} 为空，已跳过渲染")
+                    continue
                 workflow = ecn_data.get("workflow", {})
                 basic_info = ecn_data.get("basic_info", {})
                 current_state = workflow.get("current_state")
@@ -314,7 +319,7 @@ def main_page():
                 # 3. 渲染卡片 (【修改重点】增加大圆角、软阴影、悬浮抬升和过渡动画)
                 with ui.card().classes(
                     "relative flex flex-col items-center justify-center p-6 -space-y-2 cursor-pointer bg-white/90 backdrop-blur-sm "
-                    "rounded-xl border border-gray-100/60 "
+                    "rounded-xl "
                     "shadow-[0_6px_20px_-4px_rgba(0,0,0,0.06)] "
                     "hover:shadow-[0_12px_30px_-6px_rgba(0,0,0,0.15)] "
                     "hover:-translate-y-1.5 transition-all duration-300 ease-out"
