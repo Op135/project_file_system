@@ -2143,7 +2143,7 @@ async def requirement_version_tidy(project_name, review: bool) -> str:
                 return ""
     else:
         ui.notify(
-            "无该项目需求配置文件，无法整理。",
+            "无该项目需求文件，暂时开放概述整理。",
             type="warning",
             position="bottom",
             timeout=3000,
@@ -2166,6 +2166,8 @@ async def get_overviow_page(project_name, review: bool):
             ui.navigate.to(f"/main/requirement?type=temp_overview&json_path={overview_file_path}")
         else:
             ui.navigate.to(f"/main/requirement?type=overview&json_path={overview_file_path}")
+    else:
+        ui.navigate.to(f"/main/requirement?type=overview&project_name={project_name}")
 
 
 def get_project_engineer_project_list_dic():

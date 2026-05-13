@@ -864,7 +864,7 @@ class InteractiveButton:
 
     async def _refresh_chip_container(self) -> None:
         """物理重绘整个芯片容器"""
-        req_max_ver = app.storage.general["project_req_max_ver"].get(self.project, "1.0")
+        req_max_ver = app.storage.general["project_req_max_ver"].get(self.project, "0.0")
         self.chip_container.clear()
 
         with self.chip_container:
@@ -1098,7 +1098,7 @@ class InteractiveButton:
         if chip_info.get("type") in ["text", "file", "test", "search", "svn", "video"]:
             file_info = (False, None)
 
-            if chip_info["type"] in ["file", "video"]:
+            if chip_info["type"] in ["file", "video"] and chip_info.get("enabled"):
                 filepath = f"{self.upload_path}/{chip_text}"
                 file_exists = await async_path_exists(filepath)
                 if file_exists:
@@ -1106,7 +1106,7 @@ class InteractiveButton:
                         app.add_static_file(local_file=filepath, url_path=chip_info.get("url_path"))
                     except Exception as e:
                         logger.error(f"添加静态文件失败，路径：{filepath}，错误：{e}")
-            elif chip_info["type"] == "search":
+            elif chip_info["type"] == "search" and chip_info.get("enabled"):
                 # files_li = []
                 # target_path_li_str = ""
                 # for target_path in target_path_list:
@@ -1168,7 +1168,7 @@ class InteractiveButton:
                 else:
                     # 如果渲染时发现文件丢失，后台记录日志，不要在 UI 弹窗干扰用户
                     logger.warning(f"渲染时检查失败: {msg}")
-            elif chip_info["type"] == "svn":
+            elif chip_info["type"] == "svn" and chip_info.get("enabled"):
                 # target_url = chip_info.get("url_path", "")
                 # file_info = await self.get_url_file_info_async(target_url)
                 # if not file_info[0]:
@@ -1699,7 +1699,7 @@ class InteractiveButton:
 
             ui_spinner.set_visibility(True)
             chip_id = str(uuid.uuid4())
-            req_max_ver = app.storage.general["project_req_max_ver"][self.project]
+            req_max_ver = app.storage.general["project_req_max_ver"].get(self.project, "0.0")
             select_activ_dic = self._get_select_activ_dic(req_max_ver)
             creator = app.storage.user.get("current_user", "匿名用户")
 
@@ -1862,7 +1862,7 @@ class InteractiveButton:
                     ui_spinner.set_visibility(False)
                     return
                 chip_id = str(uuid.uuid4())
-                req_max_ver = app.storage.general["project_req_max_ver"][self.project]
+                req_max_ver = app.storage.general["project_req_max_ver"].get(self.project, "0.0")
                 select_activ_dic = self._get_select_activ_dic(req_max_ver)
                 creator = app.storage.user.get("current_user", "匿名用户")
                 chip_data = {
@@ -2013,7 +2013,7 @@ class InteractiveButton:
                     return
 
                 chip_id = str(uuid.uuid4())
-                req_max_ver = app.storage.general["project_req_max_ver"][self.project]
+                req_max_ver = app.storage.general["project_req_max_ver"].get(self.project, "0.0")
                 select_activ_dic = self._get_select_activ_dic(req_max_ver)
                 creator = app.storage.user.get("current_user", "匿名用户")
                 # file_type = file_info[1]
@@ -2169,7 +2169,7 @@ class InteractiveButton:
 
                 ui_spinner.set_visibility(True)
                 chip_id = str(uuid.uuid4())
-                req_max_ver = app.storage.general["project_req_max_ver"][self.project]
+                req_max_ver = app.storage.general["project_req_max_ver"].get(self.project, "0.0")
                 select_activ_dic = self._get_select_activ_dic(req_max_ver)
                 creator = app.storage.user.get("current_user", "匿名用户")
 
@@ -2339,7 +2339,7 @@ class InteractiveButton:
                 file_icon = "play_circle"
 
             chip_id = str(uuid.uuid4())
-            req_max_ver = app.storage.general["project_req_max_ver"][self.project]
+            req_max_ver = app.storage.general["project_req_max_ver"].get(self.project, "0.0")
             select_activ_dic = self._get_select_activ_dic(req_max_ver)
             creator = app.storage.user.get("current_user", "匿名用户")
             chip_data = {
@@ -2399,7 +2399,7 @@ class InteractiveButton:
             file_icon = "play_circle"
 
         chip_id = str(uuid.uuid4())
-        req_max_ver = app.storage.general["project_req_max_ver"][self.project]
+        req_max_ver = app.storage.general["project_req_max_ver"].get(self.project, "0.0")
         select_activ_dic = self._get_select_activ_dic(req_max_ver)
         creator = app.storage.user.get("current_user", "匿名用户")
         chip_data = {
@@ -2438,10 +2438,13 @@ class InteractiveButton:
     # ==========================================================
 
     def _get_select_activ_dic(self, req_max_ver):
-        select_dic = {}
-        for select_label in [f"{i}.0" for i in range(1, int(float(req_max_ver)) + 1)]:
-            select_dic[select_label] = select_label == req_max_ver
-        return select_dic
+        # select_dic = {}
+        # 开放无需求也能整理概述以后，range从1开始改为从0开始
+        # li = [f"{i}.0" for i in range(0, int(float(req_max_ver)) + 1)]
+        # for select_label in li:
+        #     select_dic[select_label] = select_label == req_max_ver
+        # return select_dic
+        return {f"{i}.0": (f"{i}.0" == req_max_ver) for i in range(0, int(float(req_max_ver)) + 1)}
 
     def _update_local_pending(self):
         latest_user_str = (
@@ -3875,7 +3878,7 @@ class OverviewTableGroup:
 
         if chip_info.get("type") in ["text", "file", "test", "search", "svn", "video"]:
             file_info = (False, None)
-            if chip_info["type"] in ["file", "video"]:
+            if chip_info["type"] in ["file", "video"] and chip_info.get("enabled"):
                 filepath = f"{upload_path}/{chip_text}"
                 file_exists = await async_path_exists(filepath)
                 if file_exists:
@@ -3883,7 +3886,7 @@ class OverviewTableGroup:
                         app.add_static_file(local_file=filepath, url_path=chip_info.get("url_path"))
                     except Exception as e:
                         logger.error(f"添加静态文件失败，路径：{filepath}，错误：{e}")
-            elif chip_info["type"] == "search":
+            elif chip_info["type"] == "search" and chip_info.get("enabled"):
                 # target_path_list = await self._search_file_path(chip_text, config)
                 # files_li = []
                 # for target_path in target_path_list:
@@ -3904,7 +3907,7 @@ class OverviewTableGroup:
                         app.add_static_file(local_file=filepath, url_path=chip_info.get("url_path"))
                     except Exception as e:
                         logger.error(f"添加静态文件失败，路径：{filepath}，错误：{e}")
-            elif chip_info["type"] == "svn":
+            elif chip_info["type"] == "svn" and chip_info.get("enabled"):
                 # target_url = chip_info.get("url_path", "")
                 # file_info = await self.get_url_file_info_async(target_url)
                 is_valid, _, file_type, msg = await validate_svn_url(chip_text, config, [self.project])
@@ -4284,7 +4287,7 @@ class OverviewTableGroup:
         return False
 
     def _handle_add_click(self, config: dict, target_row_id: str = ""):
-        req_max_ver = app.storage.general["project_req_max_ver"].get(self.project, "1.0")
+        req_max_ver = app.storage.general["project_req_max_ver"].get(self.project, "0.0")
         """处理单元格内的添加点击（绑定到特定行）"""
         self.current_config = config
         # 如果传入了 target_row_id，保存到组件状态中，供后续的 _add_xxx_chip_data 使用
@@ -4421,7 +4424,7 @@ class OverviewTableGroup:
                 return
 
             ui_spinner.set_visibility(True)
-            req_max_ver = app.storage.general["project_req_max_ver"].get(self.project, "1.0")
+            req_max_ver = app.storage.general["project_req_max_ver"].get(self.project, "0.0")
             select_activ_dic = self._get_select_activ_dic(req_max_ver)
             creator = app.storage.user.get("current_user", "匿名")
 
@@ -4637,7 +4640,7 @@ class OverviewTableGroup:
                     return
 
                 ui_spinner.set_visibility(True)
-                req_max_ver = app.storage.general["project_req_max_ver"].get(self.project, "1.0")
+                req_max_ver = app.storage.general["project_req_max_ver"].get(self.project, "0.0")
                 select_activ_dic = self._get_select_activ_dic(req_max_ver)
                 creator = app.storage.user.get("current_user", "匿名用户")
                 row_id = getattr(self, "current_target_row_id", None) or str(uuid.uuid4())
@@ -4899,7 +4902,7 @@ class OverviewTableGroup:
 
     async def _create_file_chip_data(self, original_filename, file_type, url_path, config, row_id):
         """内部辅助函数：统一处理文件类型 Chip 数据的生成与共享存储写入"""
-        req_max_ver = app.storage.general["project_req_max_ver"].get(self.project, "1.0")
+        req_max_ver = app.storage.general["project_req_max_ver"].get(self.project, "0.0")
         creator = app.storage.user.get("current_user", "匿名用户")
         icon_map = {"file": "attachment", "video": "play_circle", "image": "image"}
         select_activ_dic = self._get_select_activ_dic(req_max_ver)
@@ -5089,7 +5092,7 @@ class OverviewTableGroup:
                     ui_spinner.set_visibility(False)
                     return
                 # else:
-                req_max_ver = app.storage.general["project_req_max_ver"].get(self.project, "1.0")
+                req_max_ver = app.storage.general["project_req_max_ver"].get(self.project, "0.0")
                 creator = app.storage.user.get("current_user", "匿名用户")
                 row_id = getattr(self, "current_target_row_id", None) or str(uuid.uuid4())
                 chip_data = {
@@ -5147,7 +5150,8 @@ class OverviewTableGroup:
     # ---------------- 辅助方法重构 -----------------
     def _get_select_activ_dic(self, req_max_ver):
         """返回：{"1.0": False, "2.0": False, "req_max_ver": True}"""
-        return {f"{i}.0": (f"{i}.0" == req_max_ver) for i in range(1, int(float(req_max_ver)) + 1)}
+        # 开放无需求也能整理概述以后，range从1开始改为从0开始
+        return {f"{i}.0": (f"{i}.0" == req_max_ver) for i in range(0, int(float(req_max_ver)) + 1)}
 
     def _set_other_ui(self, other_ui, select_value):
         other_ui.set_visibility(select_value == "其它")
@@ -5225,7 +5229,7 @@ class OverviewTableGroup:
             )
         else:
             if current_idx > 0:
-                req_max_ver = app.storage.general["project_req_max_ver"].get(self.project, "1.0")
+                req_max_ver = app.storage.general["project_req_max_ver"].get(self.project, "0.0")
                 FIRST_COL_CHIPS = db_storage.get_deep_item([f"{self.project}_over_data", first_col_label], {})
                 target_row_id = self.ordered_row_ids[current_idx - 1]
                 # 💡 其他列：跨行跳跃（换行 ID 操作）
@@ -5271,7 +5275,7 @@ class OverviewTableGroup:
             )
         else:
             if current_idx < len(self.ordered_row_ids) - 1:
-                req_max_ver = app.storage.general["project_req_max_ver"].get(self.project, "1.0")
+                req_max_ver = app.storage.general["project_req_max_ver"].get(self.project, "0.0")
                 FIRST_COL_CHIPS = db_storage.get_deep_item([f"{self.project}_over_data", first_col_label], {})
                 target_row_id = self.ordered_row_ids[current_idx + 1]
                 # 💡 其他列：跨行跳跃（换行 ID 操作）
@@ -5370,7 +5374,7 @@ class OverviewTableGroup:
         if not subsequent_configs:
             return
 
-        req_max_ver = app.storage.general["project_req_max_ver"].get(self.project, "1.0")
+        req_max_ver = app.storage.general["project_req_max_ver"].get(self.project, "0.0")
         creator = app.storage.user.get("current_user", "匿名用户")
         time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -5544,7 +5548,7 @@ class OverviewTableGroup:
             ui.notify("统一注释不能为空!", type="warning", position="bottom", timeout=2000)
             return
 
-        req_max_ver = app.storage.general["project_req_max_ver"].get(self.project, "1.0")
+        req_max_ver = app.storage.general["project_req_max_ver"].get(self.project, "0.0")
         creator = app.storage.user.get("current_user", "匿名用户")
         time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         select_activ_dic = self._get_select_activ_dic(req_max_ver)
@@ -6512,7 +6516,7 @@ class OverviewTableGroup:
                     ui_spinner.set_visibility(False)
                     return
                 chip_id = str(uuid.uuid4())
-                req_max_ver = app.storage.general["project_req_max_ver"].get(self.project, "1.0")
+                req_max_ver = app.storage.general["project_req_max_ver"].get(self.project, "0.0")
                 select_activ_dic = self._get_select_activ_dic(req_max_ver)
                 creator = app.storage.user.get("current_user", "匿名用户")
 
