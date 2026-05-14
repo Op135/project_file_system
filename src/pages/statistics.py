@@ -836,7 +836,7 @@ def statistics_page():
                                 )
 
                             # 2.2 聚合 pending_data 中的待办状态到项目维度
-                            project_issues = {}
+                            project_issues = {}  # 数据结构为：{"项目A": set("缺必填", "有待定"), "项目B": set("缺需填"), ...}
                             for user, p_dict in pending_data.items():
                                 if not isinstance(p_dict, dict):
                                     continue
@@ -846,28 +846,46 @@ def statistics_page():
                                     project_issues[proj].update(issues.values())
 
                             # 2.3 统计已录入需求的项目概述完成度 (由计数改为收集项目列表)
-                            overview_categories = {"存在缺必填": [], "仅有待定": [], "仅缺需填": [], "概述已完成": []}
+                            overview_categories = {
+                                "存在缺必填": [],
+                                "无缺必填有待定": [],
+                                "仅缺需填": [],
+                                "概述已完成": [],
+                            }
 
+                            # 遍历所有有需求版本记录的项目
                             for proj in req_ver_data.keys():
+                                # 项目不在问题字典里，意味着项目已经完成概述填写
                                 if proj not in project_issues:
                                     overview_categories["概述已完成"].append(proj)
                                     if proj not in app.storage.general["overview_completed"]:
                                         app.storage.general["overview_completed"].append(proj)
+                                # 项目在问题字典里，根据问题类型进行分类统计
                                 else:
+                                    # 获取该项目的问题类型集合
                                     statuses = project_issues[proj]
+                                    # 只要有任意一个问题存在，且该项目之前被标记为已完成，则需要删除这条记录
                                     if (
                                         any([status in statuses for status in ["缺必填", "缺需填", "有待定"]])
                                         and proj in app.storage.general["overview_completed"]
                                     ):
                                         app.storage.general["overview_completed"].remove(proj)
+                                    # 只要有任意一个问题存在，且该项目之前被标记为仅缺需填，则需要删除这条记录
+                                    if (
+                                        any([status in statuses for status in ["缺必填", "有待定"]])
+                                        and proj in app.storage.general["overview_only_need"]
+                                    ):
+                                        app.storage.general["overview_only_need"].remove(proj)
 
                                     # 按照严重程度优先级进行降维判定并收集项目名称
                                     if "缺必填" in statuses:
                                         overview_categories["存在缺必填"].append(proj)
+                                    elif "有待定" in statuses:
+                                        overview_categories["无缺必填有待定"].append(proj)
                                     elif "缺需填" in statuses:
                                         overview_categories["仅缺需填"].append(proj)
-                                    elif "有待定" in statuses:
-                                        overview_categories["仅有待定"].append(proj)
+                                        if proj not in app.storage.general["overview_only_need"]:
+                                            app.storage.general["overview_only_need"].append(proj)
                                     else:
                                         overview_categories["概述已完成"].append(proj)
                                         if proj not in app.storage.general["overview_completed"]:
@@ -882,9 +900,9 @@ def statistics_page():
                                     "itemStyle": {"color": "#ef4444"},
                                 },
                                 {
-                                    "value": len(overview_categories["仅有待定"]),
-                                    "name": "仅有待定",
-                                    "projects": overview_categories["仅有待定"],
+                                    "value": len(overview_categories["无缺必填有待定"]),
+                                    "name": "无缺必填有待定",
+                                    "projects": overview_categories["无缺必填有待定"],
                                     "itemStyle": {"color": "#f59e0b"},
                                 },
                                 {

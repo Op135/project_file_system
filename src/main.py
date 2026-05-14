@@ -241,6 +241,8 @@ app.storage.general.setdefault("overview_last_update", {})
 app.storage.general.setdefault("overview_pending_history", {})
 # 已完成概述填写的项目列表
 app.storage.general.setdefault("overview_completed", [])
+# 仅缺需填的项目列表
+app.storage.general.setdefault("overview_only_need", [])
 
 
 @ui.page("/view/svn_pdf")

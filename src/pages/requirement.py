@@ -23,7 +23,7 @@ from nicegui.events import (
 )
 
 from .. import db_storage  # 导入我们创建的模块
-from ..components import ButtonUploader, FileThumbnail, InteractiveButton, OverviewTableGroup
+from ..components import ButtonUploader, FileThumbnail, InteractiveButton, OverviewTableGroup, OverviewVersionManager
 from ..config import (
     BASE_DIR,
     IMG_DIR,
@@ -159,6 +159,8 @@ async def requirement_page(type="", json_path="", project_name=""):
     # (在 main.py 中定义 "user_preferences")
     user_prefs = app.storage.general.get("user_preferences", {}).get(current_user, {})
     current_avatar_path = user_prefs.get("avatar", PRESET_AVATARS[0])  # 默认为第一个
+    # 用户研发经理切换项目状态为转产时，记录项目哪些类别的概述被改成待定状态
+    changed_labels = set()
     # 在 *显示* 前，应用缓存清除
     current_display_path = get_cache_busted_path(current_avatar_path)
     # 存储用户层级需求相关数据的变量初始化
@@ -281,7 +283,9 @@ async def requirement_page(type="", json_path="", project_name=""):
 
     # 遍历传入的整个概述资料，找到svn类型chip，如果其最高版本激活状态不是False，则将其设置成False
     def set_overview_data_not_true(over_data, project_name):
+        changed_labels.clear()
         for label, label_dic in over_data.items():
+            label_updtae_bool = False
             for id, chip_dic in label_dic.items():
                 req_max_ver = app.storage.general["project_req_max_ver"][project_name]
                 select_activ_state = chip_dic.get("select_activ_dic", {}).get(req_max_ver)
@@ -291,6 +295,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                 if chip_dic.get("type") == "svn" and chip_dic.get("warehouse") != "Product":
                     # 最高激活状态不是False
                     if select_activ_state or select_activ_state is None:
+                        label_updtae_bool = True
                         # 项目状态切换为转产时，svn类失活掉
                         # over_data[label][id]["select_activ_dic"][req_max_ver] = False
                         # over_data[label][id]["icon"] = "block"
@@ -314,10 +319,13 @@ async def requirement_page(type="", json_path="", project_name=""):
                 elif chip_dic.get("type") != "svn":
                     # 最高激活状态是True
                     if select_activ_state:
+                        label_updtae_bool = True
                         over_data[label][id]["select_activ_dic"][req_max_ver] = None
                         over_data[label][id]["icon"] = "question_mark"
                         over_data[label][id]["enabled"] = None
                         over_data[label][id]["bg_color"] = "bg-amber-5"
+            if label_updtae_bool:
+                changed_labels.add(label)
 
         return over_data
 
@@ -361,7 +369,13 @@ async def requirement_page(type="", json_path="", project_name=""):
         # 先编辑json文件
         edit_project_summary(project_name, state, app.storage.client.get("recovery_bool", False))
         # 将该项目所有svn类的chip失活
-        await db_storage.atomic_deep_update([f"{project_name}_over_data"], set_overview_data_not_true, project_name)
+        success = await db_storage.atomic_deep_update(
+            [f"{project_name}_over_data"], set_overview_data_not_true, project_name
+        )
+        if success:
+            for label in changed_labels:
+                OverviewVersionManager.bump(project_name, label)
+            overview_role_update(project_name, "all_update")
         # 必须在数据修改完成后，再激活概述特殊刷新标记
         # app.storage.general["conversion_refresh"][project_name] = True
         # 0.8秒比概述定时0.5秒刷新稍长情况下，关闭特殊刷新开关

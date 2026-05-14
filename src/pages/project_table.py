@@ -784,9 +784,11 @@ def project_table_page():
                                 show_str = "点击录入"
                         elif pro_key == "overview":
                             if project_name in app.storage.general["overview_completed"]:
-                                show_str = "整理完备\n查阅更新"
+                                show_str = "已完成\n点击更新"
+                            elif project_name in app.storage.general["overview_only_need"]:
+                                show_str = "基本完成\n点击更新"
                             else:
-                                show_str = "等待完善\n查阅整理"
+                                show_str = "待处理\n点击录入"
                         # 待确定的内容，统一更换仅显示一个?号
                         # if "?" in show_str:
                         #     show_str = "?"
