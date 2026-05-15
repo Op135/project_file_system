@@ -4026,6 +4026,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                                 or app.storage.user.get("current_role", "") == "工程"
                                 or app.storage.user.get("current_role", "") == "admin"
                             ):
+                                app.storage.client.setdefault("record_switch", False)
                                 # 开关：移除 absolute，增加 keep-color 保持颜色鲜艳
                                 ui.switch("查阅失活概述").props("dense").classes("text-sm text-gray-600").bind_value(
                                     app.storage.client, "record_switch"

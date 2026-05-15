@@ -56,6 +56,16 @@ from .utils import (
 logger = logging.getLogger(__name__)
 
 
+def _is_deactivated_chip(chip_info: dict, req_max_ver: str) -> bool:
+    """Return whether a chip should be treated as inactive in the current view."""
+    current_state = chip_info.get("select_activ_dic", {}).get(req_max_ver)
+    if (current_state is False) or (str(current_state).lower() == "false"):
+        return True
+
+    enabled_state = chip_info.get("enabled")
+    return (enabled_state is False) or (str(enabled_state).lower() == "false")
+
+
 class OverviewVersionManager:
     """
     全局数据版本管理器 (脏标记法中心)
@@ -1320,9 +1330,7 @@ class InteractiveButton:
                     .on("click", js_handler="(e) => {e.stopPropagation()}")
                 )
             # 🌟 核心性能优化：如果是失活状态，将其可见性与全局开关绑定
-            current_state = chip_info.get("select_activ_dic", {}).get(req_max_ver)
-            is_deactivated = (current_state is False) or (str(current_state).lower() == "false")
-            if is_deactivated:
+            if _is_deactivated_chip(chip_info, req_max_ver):
                 # 当 record_switch 为 True 时显示，False 时隐藏。不再需要重新渲染整个表格！
                 chip.bind_visibility_from(app.storage.client, "record_switch")
 
@@ -3769,8 +3777,7 @@ class OverviewTableGroup:
             is_row_totally_deactivated = True
             for chips_in_col in row_data["chips"].values():
                 for chip in chips_in_col:
-                    current_state = chip.get("select_activ_dic", {}).get(req_max_ver)
-                    if not ((current_state is False) or (str(current_state).lower() == "false")):
+                    if not _is_deactivated_chip(chip, req_max_ver):
                         is_row_totally_deactivated = False
                         break
                 if not is_row_totally_deactivated:
@@ -4056,9 +4063,7 @@ class OverviewTableGroup:
                     .on("click", js_handler="(e) => {e.stopPropagation()}")
                 )
             # 🌟 核心性能优化：如果是失活状态，将其可见性与全局开关绑定
-            current_state = chip_info.get("select_activ_dic", {}).get(req_max_ver)
-            is_deactivated = (current_state is False) or (str(current_state).lower() == "false")
-            if is_deactivated:
+            if _is_deactivated_chip(chip_info, req_max_ver):
                 # 当 record_switch 为 True 时显示，False 时隐藏。不再需要重新渲染整个表格！
                 wrapper.bind_visibility_from(app.storage.client, "record_switch")
 
@@ -4155,9 +4160,7 @@ class OverviewTableGroup:
                     .on("click", js_handler="(e) => {e.stopPropagation()}")
                 )
             # 🌟 核心性能优化：如果是失活状态，将其可见性与全局开关绑定
-            current_state = chip_info.get("select_activ_dic", {}).get(req_max_ver)
-            is_deactivated = (current_state is False) or (str(current_state).lower() == "false")
-            if is_deactivated:
+            if _is_deactivated_chip(chip_info, req_max_ver):
                 # 当 record_switch 为 True 时显示，False 时隐藏。不再需要重新渲染整个表格！
                 wrapper.bind_visibility_from(app.storage.client, "record_switch")
 
