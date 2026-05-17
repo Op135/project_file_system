@@ -318,6 +318,7 @@ async def ecn_management_page():
             req_max_ver = app.storage.general.get("project_req_max_ver", {}).get(p, "1.0")
             chips = {}
             raw_data = db_storage.get_deep_item([f"{p}_over_data", ll], {})
+            # 遍历chip数据
             for c_id, c in raw_data.items():
                 if c.get("select_activ_dic", {}).get(req_max_ver) is True:
                     chips[c_id] = c.get("content", "")
@@ -931,7 +932,7 @@ async def ecn_management_page():
                 def merge_review_data(current_review, local_review):
                     if not current_review:
                         return local_review
-
+                    # 仅更新 review_info 中的部分字段，避免覆盖掉 workflow 或 basic 中的其他数据
                     current_review["expanded_projects_mass"] = copy.deepcopy(
                         local_review.get("expanded_projects_mass", [])
                     )
@@ -1686,9 +1687,9 @@ async def ecn_management_page():
 
                                         participants[current_user] = "editing"
 
-                                        render_parts()
-                                        render_my_actions()
-                                        render_items()
+                                        render_parts()  # 更新参与者状态显示标签
+                                        render_my_actions()  # 更新状态对应的可行动按钮
+                                        render_items()  # 更新方案列表显示
                                         render_coverage_dashboard()  # 更新覆盖率看板
                                     else:
                                         ui.notify("方案保存失败，请重试。", type="negative")
@@ -1697,6 +1698,7 @@ async def ecn_management_page():
                                     projects = item.get("projects")
                                     if projects:
                                         return [p for p in projects if p]
+                                    # 兼容老数据：如果没有 projects 字段，则尝试从 label 字段解析项目名称（假设格式为 "【项目1 - 角色 - 标题】"）
                                     return [item.get("project")] if item.get("project") else []
 
                                 # --- 替换列表渲染分组部分 ---
@@ -1712,7 +1714,9 @@ async def ecn_management_page():
                                         # --- 以业务分类为依据，把方案分组预处理，并绑定全局序号 ---
                                         grouped_items = {"document": [], "material": [], "unknown": []}
                                         for global_idx, item in enumerate(local_data["change_items"]):
+                                            # 根据方案条目的 scheme_category 字段进行分组，默认为 "unknown" 类别
                                             cat = item.get("scheme_category", "unknown")
+                                            # 将全局序号和方案条目数据一起存入对应的分组列表中，方便后续渲染时使用全局序号进行显示和操作
                                             grouped_items[cat].append((global_idx, item))
 
                                         # 定义新的业务分组 UI 映射配置
@@ -1739,7 +1743,7 @@ async def ecn_management_page():
                                             items_in_group = grouped_items[g_type]
                                             if not items_in_group:
                                                 continue
-
+                                            # 获取当前分组的 UI 配置
                                             cfg = group_configs[g_type]
 
                                             with (
@@ -1927,13 +1931,14 @@ async def ecn_management_page():
                                             return current_ecn
 
                                         items = current_ecn.setdefault("change_items", [])
+                                        # 获取目标删除条目的作者信息
                                         target_author = None
 
                                         for item in items:
                                             if item["item_id"] == item_id:
                                                 target_author = item.get("author")
                                                 break
-
+                                        # 删除目标条目并更新 change_items 列表
                                         current_ecn["change_items"] = [
                                             item for item in items if item["item_id"] != item_id
                                         ]
@@ -1943,6 +1948,7 @@ async def ecn_management_page():
                                                 item.get("author") == target_author
                                                 for item in current_ecn["change_items"]
                                             )
+                                            # 如果没有其他条目是同一作者，则从 scheme_participants 中移除该作者的参与状态
                                             if not has_other:
                                                 current_ecn.setdefault("workflow", {}).setdefault(
                                                     "scheme_participants", {}
@@ -1955,18 +1961,20 @@ async def ecn_management_page():
                                     )
 
                                     if success:
+                                        # 同步本地数据以更新 UI
                                         local_data["change_items"].remove(item_to_remove)
                                         author = item_to_remove.get("author")
+                                        # 删除方案后检查该作者是否还有其他方案条目，如果没有则从参与者列表中移除该作者的状态
                                         if author and not any(
                                             existing_item.get("author") == author
                                             for existing_item in local_data["change_items"]
                                         ):
                                             participants.pop(author, None)
 
-                                        render_parts()
-                                        render_my_actions()
-                                        render_items()
-                                        render_coverage_dashboard()
+                                        render_parts()  # 更新参与者状态显示标签
+                                        render_my_actions()  # 更新状态对应的可行动按钮
+                                        render_items()  # 更新方案列表显示
+                                        render_coverage_dashboard()  # 更新覆盖率看板
                                     else:
                                         ui.notify("删除方案失败，请重试。", type="negative")
 

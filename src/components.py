@@ -1325,7 +1325,7 @@ class InteractiveButton:
                 request_change_button = (
                     ui.button(on_click=lambda d=chip_info: self.show_change_request_dialog(d))
                     .classes("absolute -top-1 right-10 m-0 p-0 q-py-0 bg-white text-orange-500 shadow-md")
-                    .props('round padding="0px 0px" icon="edit_document"')
+                    .props('round padding="0px 0px" icon="rate_review"')
                     .style("font-size: 8px; display: none;")
                     .on("click", js_handler="(e) => {e.stopPropagation()}")
                 )
@@ -1425,7 +1425,7 @@ class InteractiveButton:
                 request_change_button = (
                     ui.button(on_click=lambda d=chip_info: self.show_change_request_dialog(d))
                     .classes("absolute bottom-3 right-3 m-0 p-0 q-py-0 bg-white text-orange-500 shadow-md")
-                    .props('round padding="0px 0px" icon="edit_document"')
+                    .props('round padding="0px 0px" icon="rate_review"')
                     .style("font-size: 8px; display: none;")
                     .on("click", js_handler="(e) => {e.stopPropagation()}")
                 )
@@ -4058,7 +4058,7 @@ class OverviewTableGroup:
                     .classes(
                         "absolute -top-1 right-10 m-0 p-0 q-py-0 z-20 bg-white text-orange-500 shadow-md border border-gray-200"
                     )
-                    .props('round padding="0px 0px" icon="edit_document"')
+                    .props('round padding="0px 0px" icon="rate_review"')
                     .style("font-size: 8px; display: none;")
                     .on("click", js_handler="(e) => {e.stopPropagation()}")
                 )
@@ -4155,7 +4155,7 @@ class OverviewTableGroup:
                     .classes(
                         "absolute -top-1 right-10 m-0 p-0 q-py-0 z-20 bg-white text-orange-500 shadow-md border border-gray-200"
                     )
-                    .props('round padding="0px 0px" icon="edit_document"')
+                    .props('round padding="0px 0px" icon="rate_review"')
                     .style("font-size: 8px; display: none;")
                     .on("click", js_handler="(e) => {e.stopPropagation()}")
                 )
