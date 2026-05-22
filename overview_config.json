@@ -13,7 +13,8 @@
                 "dialog_placeholder": "光源名称：规格型号",
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -77,7 +78,8 @@
                 "dialog_placeholder": "_A，注意填写实际驱动电流，而非最大电流",
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -132,7 +134,8 @@
                 "dialog_placeholder": "_±_V@_A",
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -187,7 +190,8 @@
                 "dialog_placeholder": "_A",
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -282,7 +286,8 @@
                 "dialog_placeholder": "温敏规格型号",
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -377,7 +382,8 @@
                 "dialog_placeholder": "NTC≥_℃减半，NTC≥_℃灭灯",
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -429,7 +435,8 @@
                 "dialog_placeholder": "透镜/二向色/滤光片/反射镜等种类名：器件名",
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -471,7 +478,8 @@
                 "dialog_placeholder": "透镜/二向色/滤光片等种类名：器件名",
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -521,7 +529,8 @@
                 "dialog_placeholder": "器件名：逻辑说明",
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -569,7 +578,8 @@
                 "dialog_placeholder": "规格型号：用途说明",
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -623,7 +633,8 @@
                 "dialog_placeholder": "_mm@距模组输出口透镜顶点",
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -710,7 +721,8 @@
                 "dialog_placeholder": "_W（直流情况）/_VA（交流情况）",
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -749,7 +761,8 @@
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（量产阶段）\\★产品技术规格书\\中文版",
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -828,7 +841,8 @@
                 ],
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -906,7 +920,8 @@
                 "instrument_options": [],
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -968,7 +983,8 @@
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\2.输出——研发流程输出文档\\★可发客户的资料\\产品简化尺寸图\\模组",
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -1001,7 +1017,8 @@
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\2.输出——研发流程输出文档\\★可发客户的资料\\产品简化尺寸图\\模组",
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -1089,7 +1106,8 @@
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\2.输出——研发流程输出文档\\★可发客户的资料\\产品简化尺寸图\\PCBA",
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -1122,7 +1140,8 @@
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\2.输出——研发流程输出文档\\★可发客户的资料\\产品简化尺寸图\\PCBA",
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -1161,7 +1180,8 @@
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\2.输出——研发流程输出文档\\产品示意图\\产品出光口位置示意图",
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -1197,7 +1217,8 @@
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\2.输出——研发流程输出文档\\产品示意图\\产品出线位置示意图",
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -1233,7 +1254,8 @@
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\2.输出——研发流程输出文档\\产品示意图\\产品风道示意图",
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -1269,7 +1291,8 @@
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\2.输出——研发流程输出文档\\产品示意图\\重点装配细节示意图",
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -1361,7 +1384,8 @@
                 "dialog_placeholder": "主要零件名：阳极氧化/导电氧化，100目喷砂",
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -1406,7 +1430,8 @@
                 "dialog_placeholder": "公司常规金色/黑色/具体色号",
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -1614,7 +1639,8 @@
                 "dialog_placeholder": "纸箱/珍珠棉包装盒名称，_pcs/套",
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -1656,7 +1682,8 @@
                 "dialog_placeholder": "规格型号，_pcs/套，电压_V",
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -1714,7 +1741,8 @@
                 "dialog_placeholder": "机加工散热器/铝型材/铜管/铝型材嵌铜板散热器",
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -1768,7 +1796,8 @@
                 "dialog_placeholder": "规格型号，_pcs/套，驱动电流_A，电压_V",
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -1820,7 +1849,8 @@
                 "dialog_placeholder": "普通/悬臂检测/接近开关检测/具体型号",
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -1865,7 +1895,8 @@
                 "dialog_placeholder": "规格型号，_pcs/套",
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -1910,7 +1941,8 @@
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（研发阶段）\\2.输出——研发流程输出文档\\其它图纸",
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -1981,7 +2013,8 @@
                 "upload_path": "\\\\192.168.1.102\\Server\\研发部（量产阶段）\\★装箱清单",
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -2041,7 +2074,8 @@
                 ],
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -2086,7 +2120,8 @@
                 "dialog_placeholder": "DC/AC_V±_%",
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -2134,7 +2169,8 @@
                 "dialog_placeholder": "_W（直流情况）/_VA（交流情况）",
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -2172,7 +2208,8 @@
                 "dialog_placeholder": "电位器/按键/PWM/RS232/触摸屏/等等，只写该产品实际用的",
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -2219,7 +2256,8 @@
                 "dialog_placeholder": "模拟输出/PWM输出",
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -2260,7 +2298,8 @@
                 "dialog_placeholder": "如：RFFM-1121_DP24A_V02",
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -2316,7 +2355,8 @@
                 ],
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -2366,7 +2406,8 @@
                 ],
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -2402,7 +2443,8 @@
                 "search_hierarchy": [],
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -2438,7 +2480,8 @@
                 "search_hierarchy": [],
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -2474,7 +2517,8 @@
                 ],
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -2515,7 +2559,8 @@
                 ],
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -2562,7 +2607,8 @@
                 "dialog_placeholder": "如：RFFM-1121_CP24A_V02",
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -2619,7 +2665,8 @@
                 ],
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -2664,7 +2711,8 @@
                 ],
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -2700,7 +2748,8 @@
                 "search_hierarchy": [],
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -2736,7 +2785,8 @@
                 "search_hierarchy": [],
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -2770,7 +2820,8 @@
                 ],
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -2812,7 +2863,8 @@
                 ],
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -2858,7 +2910,8 @@
                 "dialog_placeholder": "如：RFFM-1121_LP24A_V02",
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -2909,7 +2962,8 @@
                 ],
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -2949,7 +3003,8 @@
                 ],
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -2985,7 +3040,8 @@
                 "search_hierarchy": [],
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -3021,7 +3077,8 @@
                 "search_hierarchy": [],
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -3055,7 +3112,8 @@
                 ],
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -3098,7 +3156,8 @@
                 ],
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -3139,7 +3198,8 @@
                 "dialog_placeholder": "如：RFFM-1121_OP24A_V02",
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -3182,7 +3242,8 @@
                 ],
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -3219,7 +3280,8 @@
                 ],
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -3255,7 +3317,8 @@
                 "search_hierarchy": [],
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -3291,7 +3354,8 @@
                 "search_hierarchy": [],
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -3325,7 +3389,8 @@
                 ],
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -3362,7 +3427,8 @@
                 ],
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -3402,7 +3468,8 @@
                 "dialog_placeholder": "规格型号，_pcs/套",
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -3457,7 +3524,8 @@
                 "dialog_placeholder": "规格型号，_pcs/套",
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -3513,7 +3581,8 @@
                 "dialog_placeholder": "线材名称（料号），_pcs/套",
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -3573,7 +3642,8 @@
                 "search_hierarchy": [],
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -3654,7 +3724,8 @@
                 "search_hierarchy": [],
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -3764,7 +3835,8 @@
                 ],
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -3815,7 +3887,8 @@
                 ],
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -3877,7 +3950,8 @@
                 ],
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -3922,7 +3996,8 @@
                 ],
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -3969,7 +4044,8 @@
                 ],
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -4022,7 +4098,8 @@
                 "instrument_options": [],
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -4073,7 +4150,8 @@
                 ],
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -4130,7 +4208,8 @@
                 "instrument_options": [],
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
@@ -4173,7 +4252,8 @@
                 "dialog_placeholder": "序号.要求",
                 "allowed_state": [
                     "研发",
-                    "转产"
+                    "转产",
+                    "试产"
                 ],
                 "permission": {
                     "read_role": [
