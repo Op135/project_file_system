@@ -9,7 +9,7 @@ from pathlib import Path
 import pandas as pd
 from nicegui import app, ui
 
-from ..config import BASE_DIR, IMG_DIR, OVER_DIR, PRESET_AVATARS, REQ_DIR, REQ_REMOVE_DIR
+from ..config import BASE_DIR, IMG_DIR, OVER_DIR, PRESET_AVATARS, PROJECT_STATE_LIST, REQ_DIR, REQ_REMOVE_DIR
 from ..utils import (
     get_cache_busted_path,
     logout,
@@ -197,7 +197,6 @@ def statistics_page():
                             ui_card_header("团队待办概览", "bar_chart", "indigo-500")
 
                             # 增加状态筛选器，默认选中主要阶段
-                            PROJECT_STATE_LIST = ["作废", "待定", "研发", "转产", "试产", "量产"]
                             default_states = ["研发", "转产", "试产", "量产"]
 
                             # z-10 确保不会被 Echarts 图表层遮挡
@@ -625,6 +624,8 @@ def statistics_page():
                             if not all_users_list:
                                 ui.label("近一周暂无待办记录。").classes("p-4 text-gray-400 text-sm")
                             else:
+                                if "待定负责人" in all_users_list:
+                                    all_users_list.remove("待定负责人")
                                 # 默认选择前3名人员，防止图表拥挤
                                 default_selected = all_users_list[:3] if len(all_users_list) > 3 else all_users_list
 
