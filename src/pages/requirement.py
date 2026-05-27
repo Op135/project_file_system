@@ -10,7 +10,6 @@ import logging
 import os
 import re
 from datetime import datetime
-from itertools import islice
 from pathlib import Path
 
 from nicegui import app, events, ui
@@ -1366,6 +1365,84 @@ async def requirement_page(type="", json_path="", project_name=""):
 
         return logic_out_bool
 
+    def get_input_num_from_dependency(data_section, item_data):
+        """
+        获取输入类题目实际需要生成的输入框数量。
+        若没有配置数量依据，默认只生成 1 个；若依据值异常，也回退到 1 个，避免页面渲染中断。
+        """
+        input_num_accor = item_data.get("input_num_accor", "")
+        if input_num_accor == "":
+            return 1
+
+        try:
+            # 数量依据题约定把数量填在 user_must_out["1"] 中。
+            dep_value = data_section[input_num_accor]["user_must_out"].get("1", "1")
+            return max(int(float(dep_value)), 0)
+        except (KeyError, TypeError, ValueError):
+            return 1
+
+    def get_input_target_keys(data_section, k):
+        """
+        计算输入类题目当前应使用的绑定 key。
+        key 优先来自“输入项名称依据”的填写值；没有名称依据或名称为空时，退回到 "1"、"2" 这类序号 key。
+        """
+        item_data = data_section[k]
+        input_num = get_input_num_from_dependency(data_section, item_data)
+        input_name_accor = item_data.get("input_name_accor", "")
+        name_values = []
+
+        if input_name_accor:
+            # 依赖题的填写值会成为当前题输入框的显示标签和存储 key。
+            dep_node = data_section.get(input_name_accor, {})
+            name_values = list(dict(dep_node.get("user_must_out", {})).values())
+
+        target_keys = []
+        for i in range(input_num):
+            if i < len(name_values) and str(name_values[i]).strip() != "":
+                target_keys.append(str(name_values[i]))
+            else:
+                target_keys.append(str(i + 1))
+
+        # 渲染输入框时仍按序号遍历，但真正绑定到 user_must_out 的 key 使用 target_keys。
+        input_name_dic = {str(i + 1): target_keys[i] for i in range(input_num)}
+        return input_num, input_name_dic, target_keys
+
+    def sync_input_output_keys(data_section, k):
+        """
+        输入类题目的后置绑定 key 来自“数量依据”和“名称依据”。
+        名称依据变化时，旧答案不能按旧 key 清掉，要先按位置迁移到新 key。
+        """
+        input_num, input_name_dic, target_keys = get_input_target_keys(data_section, k)
+        item_data = data_section[k]
+        stored_data_ref = item_data.setdefault("user_must_out", {})
+        stored_tolerance_ref = item_data.setdefault("option_tolerance_out", {})
+        if not isinstance(stored_data_ref, dict):
+            stored_data_ref = {}
+        if not isinstance(stored_tolerance_ref, dict):
+            stored_tolerance_ref = {}
+
+        # key 已经与当前依赖结果一致时，不做任何迁移，保留原字典对象给绑定继续使用。
+        if list(stored_data_ref.keys()) == target_keys and list(stored_tolerance_ref.keys()) in [[], target_keys]:
+            return input_num, input_name_dic, target_keys
+
+        # 只按位置继承旧值：第 1 个旧答案给第 1 个新 key，第 2 个旧答案给第 2 个新 key。
+        # 这样用户只改前置名称时，后置答案不会因为旧 key 不存在而丢失。
+        old_values = list(stored_data_ref.values())
+        old_tolerance_values = list(stored_tolerance_ref.values())
+        new_data_map = {}
+        new_tolerance_map = {}
+
+        for i, new_key in enumerate(target_keys):
+            if i < len(old_values):
+                new_data_map[new_key] = old_values[i]
+            if i < len(old_tolerance_values):
+                new_tolerance_map[new_key] = old_tolerance_values[i]
+
+        # 原子替换为当前有效 key；超出当前数量的旧值会自然被丢弃。
+        item_data["user_must_out"] = new_data_map
+        item_data["option_tolerance_out"] = new_tolerance_map
+        return input_num, input_name_dic, target_keys
+
     # 问题列表展示函数
     def set_question_list(index):
         # 清空已填需求项数目记录
@@ -1723,71 +1800,9 @@ async def requirement_page(type="", json_path="", project_name=""):
                     # 获取公差要求
                     input_tolerance_bool = app.storage.client["config_data"]["data"][k]["input_tolerance"]
 
-                    # 根据依据，获取用户在输入框填入的数量，输入项有名称则名称为健，没有则用数字字符
-                    input_num_accor = app.storage.client["config_data"]["data"][k]["input_num_accor"]
-                    input_num = (
-                        1
-                        if input_num_accor == ""
-                        else int(
-                            float(app.storage.client["config_data"]["data"][input_num_accor]["user_must_out"]["1"])
-                        )
+                    input_num, input_name_dic, current_target_keys = sync_input_output_keys(
+                        app.storage.client["config_data"]["data"], k
                     )
-
-                    # 根据依据，获取用户在输入框填入的输入项名称
-                    input_name_accor = app.storage.client["config_data"]["data"][k]["input_name_accor"]
-                    if input_name_accor == "":
-                        # 新需求{} 或 升级需求{"1":"XXXX", "2":"XXXX"}
-                        input_name_storage_dic = dict(app.storage.client["config_data"]["data"][k]["user_must_out"])
-                    else:
-                        # {"1":"XXXX", "2":"XXXX"}
-                        input_name_storage_dic = dict(
-                            app.storage.client["config_data"]["data"][input_name_accor]["user_must_out"]
-                        )
-
-                    # 如果用户修改输入项数量，且小于以前的，要清除掉以前多出来的已经生成过的多余键值对
-                    if input_num < len(input_name_storage_dic.keys()):
-                        app.storage.client["config_data"]["data"][k]["user_must_out"] = dict(
-                            islice(input_name_storage_dic.items(), input_num)  # islice高效获取字典前N个键值对
-                        )
-                    input_name_dic = {} if input_name_accor == "" else input_name_storage_dic
-
-                    # 该项的项名称不需要依据，给项的健默认按照数字字符进行设置
-                    if input_name_dic == {}:
-                        for i in range(input_num):
-                            input_name_dic[str(i + 1)] = str(i + 1)
-
-                    # ===================== 【核心优化：基于索引的数据迁移，解决前置问题命名变了导致后置问题内容找不到清空】 =====================
-                    # 1. 获取当前页面应显示的有效键列表（新名称列表），并截取有效数量
-                    # 注意：input_name_dic.values() 返回的是名称，这里用作后续存储的Key
-                    current_target_keys = list(input_name_dic.values())[:input_num]
-
-                    # 2. 获取当前存储中的数据（可能包含旧名称）
-                    stored_data_ref = app.storage.client["config_data"]["data"][k]["user_must_out"]
-                    stored_tolerance_ref = app.storage.client["config_data"]["data"][k].get("option_tolerance_out", {})
-
-                    # 3. 检查是否需要迁移：如果当前存储的键与目标键不一致（名称变了 或 数量变了）
-                    if list(stored_data_ref.keys()) != current_target_keys:
-                        new_data_map = {}
-                        new_tolerance_map = {}
-
-                        # 获取旧数据的纯值列表（按顺序）
-                        old_values = list(stored_data_ref.values())
-                        old_tolerance_values = list(stored_tolerance_ref.values())
-
-                        # 4. 按位置重新映射：将旧值赋给新名称
-                        for i, new_key in enumerate(current_target_keys):
-                            # 处理主要内容
-                            if i < len(old_values):
-                                new_data_map[new_key] = old_values[i]  # 继承旧值
-
-                            # 处理公差内容
-                            if i < len(old_tolerance_values):
-                                new_tolerance_map[new_key] = old_tolerance_values[i]  # 继承旧公差
-
-                        # 5. 更新存储（原子替换）
-                        app.storage.client["config_data"]["data"][k]["user_must_out"] = new_data_map
-                        app.storage.client["config_data"]["data"][k]["option_tolerance_out"] = new_tolerance_map
-                    # ===================== 【核心优化结束】 =====================
 
                     # ===【新增代码开始】：检测并显示“隐形/孤儿”数据 ===
                     # 1. 获取当前页面要求的有效键列表
@@ -2115,60 +2130,11 @@ async def requirement_page(type="", json_path="", project_name=""):
         # 先复制整个数据
         data_json = data
 
-        # === 新增代码开始：提交/导出/暂存前自动清理孤儿数据 ===
-        # 遍历所有节点，专门清洗输入类题目中因依赖变更产生的失效数据
+        # === 提交/导出/暂存前同步输入类题目的动态 key ===
+        # 名称依据变更时先按索引迁移旧答案，再自然丢弃超出当前数量的旧项
         for k, v in data_json["data"].items():
             if v["answer_type"] in ["正整数", "单行文本", "多行文本"]:
-                # 1. 计算当前有效的输入数量 (input_num)
-                input_num_accor = v.get("input_num_accor", "")
-                input_num = 1
-                if input_num_accor:
-                    # 查找数量依赖项
-                    dep_node = data_json["data"].get(input_num_accor)
-                    if dep_node and dep_node.get("user_must_out"):
-                        try:
-                            # 获取依赖项填写的数字，默认为键"1"的值
-                            val = dep_node["user_must_out"].get("1", "1")
-                            input_num = int(float(val))
-                        except (ValueError, TypeError):
-                            input_num = 1
-
-                # 2. 计算当前有效的键名列表 (valid_keys)
-                input_name_accor = v.get("input_name_accor", "")
-                valid_keys = []
-
-                if input_name_accor == "":
-                    # 如果没有名称依赖，键名就是 "1", "2", "3"...
-                    valid_keys = [str(i + 1) for i in range(input_num)]
-                else:
-                    # 如果有名称依赖，去取依赖项填写的“值”作为本题的“键”
-                    dep_node = data_json["data"].get(input_name_accor)
-                    if dep_node and dep_node.get("user_must_out"):
-                        # 取前 input_num 个值作为有效键
-                        # 注意：这里假设依赖项的值顺序是固定的 (Python 3.7+ 字典有序)
-                        dep_values = list(dep_node["user_must_out"].values())
-                        # 截取有效数量
-                        valid_keys = dep_values[:input_num]
-                    else:
-                        # 依赖项缺失的兜底
-                        valid_keys = [str(i + 1) for i in range(input_num)]
-
-                # 3. 执行清理：只保留在 valid_keys 里的数据
-                # 清理主要内容 user_must_out
-                if v.get("user_must_out"):
-                    original_keys = list(v["user_must_out"].keys())
-                    for old_key in original_keys:
-                        if old_key not in valid_keys:
-                            # 确实是孤儿数据，删除
-                            del v["user_must_out"][old_key]
-
-                # 清理公差内容 option_tolerance_out
-                if v.get("option_tolerance_out"):
-                    original_tol_keys = list(v["option_tolerance_out"].keys())
-                    for old_key in original_tol_keys:
-                        if old_key not in valid_keys:
-                            del v["option_tolerance_out"][old_key]
-        # === 新增代码结束 ===
+                sync_input_output_keys(data_json["data"], k)
 
         project_name = app.storage.client["project_name"].strip()
         version = app.storage.client["version"]
