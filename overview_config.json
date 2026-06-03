@@ -2111,7 +2111,7 @@
             {
                 "label": "drive_voltage",
                 "nature": "必填",
-                "title": "产品驱动输入电压",
+                "title": "产品输入电压",
                 "processing_type": "text",
                 "content_regular": [
                     "^无$",
@@ -2160,7 +2160,7 @@
             {
                 "label": "drive_power",
                 "nature": "必填",
-                "title": "产品驱动输入功率",
+                "title": "产品输入功率",
                 "processing_type": "text",
                 "content_regular": [
                     "^无$",

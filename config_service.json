@@ -777,7 +777,7 @@
             ]
         },
         "23": {
-            "condition": "21==True",
+            "condition": "14==True",
             "node_id": "23",
             "guide_content": "是否由我司负责导光束/光纤转接座的设计生产",
             "answer_type": "单选",
@@ -821,7 +821,7 @@
             "input_name_accor": "",
             "input_tolerance": "",
             "ref_config": "False",
-            "option_hint": "根据客户反馈的导光束规格尺寸，结合我司产品灯头的特点，判断是否指定搭配某款现有转接座。",
+            "option_hint": "根据客户反馈的导光束规格尺寸，结合我司产品灯头的特点，判断是否指定、搭配设计、选配转接座。",
             "placeholder": "",
             "tolerance_placeholder": "",
             "option_group_id": "3",
@@ -832,24 +832,32 @@
             "options": [
                 {
                     "option_id": "opt_1",
-                    "option_content": "绑定",
-                    "option_out": "True",
-                    "option_bold": "",
+                    "option_content": "指定现有型号",
+                    "option_out": "指定",
+                    "option_bold": "指定现有",
+                    "option_show": "",
+                    "option_label": ""
+                },
+                {
+                    "option_id": "opt_3",
+                    "option_content": "搭配设计",
+                    "option_out": "设计",
+                    "option_bold": "搭配设计",
                     "option_show": "",
                     "option_label": ""
                 },
                 {
                     "option_id": "opt_2",
                     "option_content": "选配",
-                    "option_out": "False",
+                    "option_out": "选配",
                     "option_bold": "下单时选配",
-                    "option_show": "{V}转接座型号",
+                    "option_show": "{V}转接座",
                     "option_label": ""
                 }
             ]
         },
         "25": {
-            "condition": "24==True",
+            "condition": "24==指定",
             "node_id": "25",
             "guide_content": "填写指定转接座型号",
             "answer_type": "多行文本",
@@ -949,7 +957,7 @@
             ]
         },
         "28": {
-            "condition": "5==模组 and 23==True and 24==False",
+            "condition": "5==模组 and 23==True and 24!=指定",
             "node_id": "28",
             "guide_content": "是否指定导光束/光纤转接座材料及表面工艺",
             "answer_type": "单选",
@@ -1013,7 +1021,7 @@
             ]
         },
         "30": {
-            "condition": "5==模组 and 23==True and 24==False",
+            "condition": "5==模组 and 23==True and 24!=指定",
             "node_id": "30",
             "guide_content": "是否指定导光束/光纤转接座尺寸形状",
             "answer_type": "单选",
@@ -1077,7 +1085,7 @@
             ]
         },
         "32": {
-            "condition": "5==模组 and 23==True and 24==False",
+            "condition": "5==模组 and 23==True and 24!=指定",
             "node_id": "32",
             "guide_content": "是否指定导光束/光纤转接座外观颜色",
             "answer_type": "单选",
@@ -1221,7 +1229,7 @@
             ]
         },
         "36": {
-            "condition": "5==整机 and 14==True or 5==模组 and 23==True and 24==False",
+            "condition": "5==整机 and 14==True or 5==模组 and 23==True and 24!=指定",
             "node_id": "36",
             "guide_content": "导光束/光纤转接座是否要求插拔检测功能",
             "answer_type": "单选",
@@ -7557,7 +7565,7 @@
             ]
         }
     },
-    "config_timestamp": "2026-05-27T09:47:24.891782",
-    "excel_version_hash": "6e10cb57",
+    "config_timestamp": "2026-06-03T15:28:20.214985",
+    "excel_version_hash": "f60a3c09",
     "entry_status": false
 }
