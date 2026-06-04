@@ -129,6 +129,7 @@ def main_page():
         ("account_tree", "需求项结构", "查阅需求项结构", "/question_tree_tabs"),
         ("equalizer", "统计信息", "查阅系统统计信息", "/statistics"),
         ("published_with_changes", "工程变更", "ECR与ECN流程管理", "/ecn_management"),
+        ("error", "异常单跟进", "查阅和记录异常单处理进度", "/error_management"),
     ]
     menu_items = []
     for items in menu_items_metadata:

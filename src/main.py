@@ -16,7 +16,7 @@ from . import (
     pages,  # 这将执行 src/pages/__init__.py
 )
 from .components import StorageBackupManager
-from .config import BASE_DIR, IMG_DIR, PDF_PREVIEW_CACHE, ST
+from .config import BASE_DIR, IMG_DIR, PDF_PREVIEW_CACHE, ST, WECOM_CONTACT_CACHE_TTL_SECONDS
 from .config_service import ConfigService
 from .user_service import UserService
 from .utils import (  # 导入上面定义的函数
@@ -24,6 +24,7 @@ from .utils import (  # 导入上面定义的函数
     handle_disconnect,
     updata_overview_config,
 )
+from .wecom_service import refresh_wecom_contacts_if_stale, retry_failed_wecom_messages
 
 # 注册这两个钩子，实现监控用户连线与下线
 app.on_connect(handle_connect)
@@ -166,6 +167,49 @@ def init_pending_history_task():
     logger.info("数据统计定时器已挂载 (触发规则: 工作日 18:00)")
 
 
+def init_wecom_retry_task():
+    """初始化企业微信失败消息全局重试任务。"""
+
+    async def retry_wecom_messages():
+        success_count, fail_count = await retry_failed_wecom_messages()
+        if success_count or fail_count:
+            logger.info("企业微信失败消息重试完成：成功 %s 条，仍失败 %s 条", success_count, fail_count)
+
+    app.timer(300, retry_wecom_messages, once=True)
+    app.timer(3600, retry_wecom_messages)
+    logger.info("企业微信失败消息重试任务已挂载。")
+
+
+def init_wecom_contacts_task():
+    """初始化企业微信通讯录缓存刷新任务。"""
+
+    async def refresh_wecom_contacts():
+        success, message = await refresh_wecom_contacts_if_stale()
+        if success:
+            logger.info(message)
+        else:
+            logger.warning(message)
+
+    app.timer(20, refresh_wecom_contacts, once=True)
+    app.timer(max(WECOM_CONTACT_CACHE_TTL_SECONDS, 3600), refresh_wecom_contacts)
+    logger.info("企业微信通讯录缓存刷新任务已挂载。")
+
+
+def init_error_reminder_task():
+    """初始化生产异常纠正预防措施后台提醒检查任务。"""
+
+    async def check_error_reminders():
+        from .pages.error_management import check_and_send_error_reminders
+
+        sent_count, fail_count = await check_and_send_error_reminders(show_result=False)
+        if sent_count or fail_count:
+            logger.info("生产异常提醒检查完成：新发成功 %s 条，失败进入重试 %s 条", sent_count, fail_count)
+
+    app.timer(60, check_error_reminders, once=True)
+    app.timer(3600, check_error_reminders)
+    logger.info("生产异常后台提醒检查任务已挂载。")
+
+
 # ==========================================
 # 🌟 核心重构：统一的异步启动序列
 # ==========================================
@@ -189,6 +233,15 @@ async def master_startup():
 
     # 第四顺位：启动每日历史记录统一定时任务
     init_pending_history_task()
+
+    # 第五顺位：启动企业微信通讯录缓存刷新任务
+    init_wecom_contacts_task()
+
+    # 第六顺位：启动企业微信失败消息统一重试任务
+    init_wecom_retry_task()
+
+    # 第七顺位：启动生产异常后台提醒检查任务
+    init_error_reminder_task()
 
     logger.info("系统启动序列全部执行完毕。")
 
