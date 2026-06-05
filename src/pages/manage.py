@@ -18,6 +18,7 @@ from ..utils import (
     update_config_service,
     update_users_data,
 )
+from ..wecom_service import load_wecom_contacts_cache, sync_wecom_contacts
 
 # 获取一个以此模块命名的 logger
 # 比如：如果你的文件是 src/components.py，这个 logger 的名字就会是 "src.components"
@@ -444,6 +445,166 @@ def manage_page():
 
         dialog.open()
 
+    def open_wecom_contacts_dialog():
+        cache_state = {"data": load_wecom_contacts_cache()}
+        filter_state = {"keyword": "", "department": "全部", "status": "全部"}
+
+        columns = [
+            {"name": "name", "label": "姓名", "field": "name", "align": "left", "sortable": True},
+            {"name": "userid", "label": "企业微信账号", "field": "userid", "align": "left", "sortable": True},
+            {"name": "departments", "label": "部门", "field": "departments", "align": "left", "sortable": True},
+            {"name": "position", "label": "职务", "field": "position", "align": "left", "sortable": True},
+            {"name": "status_text", "label": "状态", "field": "status_text", "align": "center", "sortable": True},
+            {"name": "department_ids", "label": "部门ID", "field": "department_ids", "align": "left"},
+        ]
+
+        with ui.dialog().props("maximized") as dialog, ui.card().classes(
+            "w-full h-full p-4 flex flex-col no-wrap bg-gray-50"
+        ):
+            with ui.row().classes("w-full items-center justify-between shrink-0"):
+                with ui.row().classes("items-center gap-2"):
+                    ui.icon("contacts", size="sm").classes("text-blue-700")
+                    ui.label("企业微信通讯录").classes("text-xl font-bold text-gray-800")
+                with ui.row().classes("items-center gap-2"):
+                    sync_button = ui.button("同步通讯录", icon="refresh").props("outline color=primary")
+                    ui.button(icon="close", on_click=dialog.close).props("flat round dense")
+
+            ui.separator().classes("shrink-0")
+
+            summary_label = ui.label().classes("text-sm text-gray-700 shrink-0")
+            scope_label = ui.label().classes("text-xs text-gray-500 shrink-0")
+
+            with ui.row().classes("w-full gap-3 items-center shrink-0"):
+                keyword_input = ui.input("搜索姓名、账号、部门或职务").props("outlined dense clearable").classes(
+                    "w-80"
+                )
+                department_filter = ui.select(["全部"], label="部门", value="全部").props(
+                    "outlined dense options-dense"
+                ).classes("w-52")
+                status_filter = ui.select(["全部", "在职", "停用"], label="状态", value="全部").props(
+                    "outlined dense options-dense"
+                ).classes("w-36")
+                result_label = ui.label().classes("text-sm text-gray-500")
+
+            contacts_table = ui.table(
+                columns=columns,
+                rows=[],
+                row_key="userid",
+                pagination={"rowsPerPage": 20, "sortBy": "departments"},
+            ).props("dense flat bordered separator=cell").classes("w-full flex-grow min-h-0 bg-white")
+
+            def render_contacts():
+                cache_data = cache_state["data"]
+                contacts = cache_data.get("contacts", [])
+                department_map = {
+                    str(item.get("id", "")): item.get("name", "")
+                    for item in cache_data.get("departments", [])
+                }
+                department_options = sorted(
+                    {
+                        department
+                        for contact in contacts
+                        for department in contact.get("departments", [])
+                        if department
+                    }
+                )
+                department_filter.options = ["全部", *department_options]
+                if filter_state["department"] not in department_filter.options:
+                    filter_state["department"] = "全部"
+                    department_filter.value = "全部"
+                department_filter.update()
+
+                keyword = filter_state["keyword"].strip().lower()
+                selected_department = filter_state["department"]
+                selected_status = filter_state["status"]
+                rows = []
+                for contact in contacts:
+                    departments = contact.get("departments", [])
+                    status_text = "在职" if contact.get("is_active", True) else "停用"
+                    searchable = " ".join(
+                        [
+                            contact.get("name", ""),
+                            contact.get("userid", ""),
+                            contact.get("position", ""),
+                            *departments,
+                        ]
+                    ).lower()
+                    if keyword and keyword not in searchable:
+                        continue
+                    if selected_department != "全部" and selected_department not in departments:
+                        continue
+                    if selected_status != "全部" and selected_status != status_text:
+                        continue
+                    rows.append(
+                        {
+                            "name": contact.get("name", ""),
+                            "userid": contact.get("userid", ""),
+                            "departments": "、".join(departments) or "-",
+                            "position": contact.get("position", "") or "-",
+                            "status_text": status_text,
+                            "department_ids": "、".join(contact.get("department_ids", [])) or "-",
+                        }
+                    )
+
+                visible_department_names = [
+                    department_map.get(str(department_id), str(department_id))
+                    for department_id in cache_data.get("visible_department_ids", [])
+                ]
+                scope_name = (
+                    "自建应用可见范围"
+                    if cache_data.get("sync_scope") == "agent_visible_scope"
+                    else "配置的根部门范围"
+                )
+                summary_label.set_text(
+                    f"缓存员工 {cache_data.get('contact_count', len(contacts))} 人 ｜ "
+                    f"可见部门 {len(visible_department_names)} 个 ｜ "
+                    f"最近同步：{cache_data.get('updated_at', '尚未同步')}"
+                )
+                scope_label.set_text(
+                    f"同步范围：{scope_name} ｜ "
+                    f"部门：{'、'.join(visible_department_names) or '暂无'} ｜ "
+                    f"直接授权成员：{len(cache_data.get('visible_userids', []))} 人"
+                )
+                result_label.set_text(f"当前显示 {len(rows)} 人")
+                contacts_table.rows = rows
+                contacts_table.update()
+
+            async def handle_sync_contacts(event):
+                event.sender.disable()
+                notification = ui.notification("正在同步企业微信通讯录...", timeout=None, spinner=True)
+                try:
+                    success, message = await sync_wecom_contacts()
+                    cache_state["data"] = load_wecom_contacts_cache()
+                    render_contacts()
+                    notification.dismiss()
+                    ui.notify(message, type="positive" if success else "negative", multi_line=True)
+                except Exception as exc:
+                    notification.dismiss()
+                    logger.exception("管理员手动同步企业微信通讯录失败")
+                    ui.notify(f"通讯录同步失败：{exc}", type="negative", multi_line=True)
+                finally:
+                    event.sender.enable()
+
+            def handle_keyword_change(event):
+                filter_state["keyword"] = event.value or ""
+                render_contacts()
+
+            def handle_department_change(event):
+                filter_state["department"] = event.value or "全部"
+                render_contacts()
+
+            def handle_status_change(event):
+                filter_state["status"] = event.value or "全部"
+                render_contacts()
+
+            sync_button.on_click(handle_sync_contacts)
+            keyword_input.on_value_change(handle_keyword_change)
+            department_filter.on_value_change(handle_department_change)
+            status_filter.on_value_change(handle_status_change)
+            render_contacts()
+
+        dialog.open()
+
     with ui.header(elevated=True).classes("flex justify-between items-center bg-blue-500 h-12 px-4"):
         ui.image(f"{IMG_DIR}/Rayfine.png").classes("absolute w-20")
         ui.label("系统管理员界面").classes("text-white text-lg absolute left-1/2 transform -translate-x-1/2")
@@ -535,6 +696,9 @@ def manage_page():
                 ui.button("用户数据管理 (增删改)", on_click=open_user_management_dialog).props(
                     "icon=manage_accounts"
                 ).classes("bg-blue-600 text-white")
+                ui.button("企业微信通讯录", on_click=open_wecom_contacts_dialog).props("icon=contacts").classes(
+                    "bg-teal-700 text-white"
+                )
                 ui.button("更新用户数据(JSON->内存)", on_click=lambda: update_users_data()).props("").classes("")
         # 日志监控区域
         with ui.card().classes("w-full -space-y-2 overflow-hidden"):

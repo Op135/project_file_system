@@ -177,18 +177,59 @@ async def sync_wecom_contacts() -> tuple[bool, str]:
             if department_data.get("errcode") != 0:
                 return False, f"企业微信部门列表获取失败：{department_data.get('errmsg', department_data)}"
 
-            user_response = await client.get(
-                "/cgi-bin/user/list",
-                params={
-                    "access_token": token_or_message,
-                    "department_id": WECOM_CONTACT_ROOT_DEPARTMENT_ID,
-                    "fetch_child": 1,
-                },
+            agent_response = await client.get(
+                "/cgi-bin/agent/get",
+                params={"access_token": token_or_message, "agentid": WECOM_AGENT_ID},
             )
-            user_response.raise_for_status()
-            user_data = user_response.json()
-            if user_data.get("errcode") != 0:
-                return False, f"企业微信成员列表获取失败：{user_data.get('errmsg', user_data)}"
+            agent_response.raise_for_status()
+            agent_data = agent_response.json()
+
+            if agent_data.get("errcode") == 0:
+                visible_department_ids = (agent_data.get("allow_partys") or {}).get("partyid", []) or []
+                visible_userids = [
+                    item.get("userid", "")
+                    for item in (agent_data.get("allow_userinfos") or {}).get("user", []) or []
+                    if item.get("userid")
+                ]
+                sync_scope = "agent_visible_scope"
+            else:
+                visible_department_ids = [WECOM_CONTACT_ROOT_DEPARTMENT_ID]
+                visible_userids = []
+                sync_scope = "configured_root_department"
+
+            raw_user_map = {}
+            user_list_errors = []
+            for department_id in visible_department_ids:
+                user_response = await client.get(
+                    "/cgi-bin/user/list",
+                    params={
+                        "access_token": token_or_message,
+                        "department_id": department_id,
+                        "fetch_child": 1,
+                    },
+                )
+                user_response.raise_for_status()
+                user_data = user_response.json()
+                if user_data.get("errcode") != 0:
+                    user_list_errors.append(f"部门 {department_id}: {user_data.get('errmsg', user_data)}")
+                    continue
+                for raw_user in user_data.get("userlist", []):
+                    if raw_user.get("userid"):
+                        raw_user_map[raw_user["userid"]] = raw_user
+
+            for userid in visible_userids:
+                if userid in raw_user_map:
+                    continue
+                user_response = await client.get(
+                    "/cgi-bin/user/get",
+                    params={"access_token": token_or_message, "userid": userid},
+                )
+                user_response.raise_for_status()
+                raw_user = user_response.json()
+                if raw_user.get("errcode") == 0 and raw_user.get("userid"):
+                    raw_user_map[userid] = raw_user
+                else:
+                    user_list_errors.append(f"成员 {userid}: {raw_user.get('errmsg', raw_user)}")
     except httpx.HTTPError as exc:
         logger.exception("企业微信通讯录同步请求失败")
         return False, f"企业微信通讯录同步请求失败：{exc}"
@@ -200,20 +241,27 @@ async def sync_wecom_contacts() -> tuple[bool, str]:
     department_map = {item["id"]: item["name"] for item in departments if item.get("id")}
     contacts = [
         _normalize_wecom_contact(item, department_map)
-        for item in user_data.get("userlist", [])
+        for item in raw_user_map.values()
         if item.get("userid")
     ]
+    if not contacts and user_list_errors:
+        return False, f"企业微信成员列表获取失败：{'；'.join(user_list_errors)}"
+
     contacts = sorted(contacts, key=lambda item: ((item.get("departments") or [""])[0], item.get("name", "")))
     cache_data = {
         "updated_at": _now_str(),
         "root_department_id": WECOM_CONTACT_ROOT_DEPARTMENT_ID,
+        "sync_scope": sync_scope,
+        "visible_department_ids": [str(item) for item in visible_department_ids],
+        "visible_userids": visible_userids,
         "department_count": len(departments),
         "contact_count": len(contacts),
         "departments": departments,
         "contacts": contacts,
     }
     await _write_wecom_contacts_cache(cache_data)
-    return True, f"企业微信通讯录已同步：{len(contacts)} 人，{len(departments)} 个部门"
+    error_suffix = f"，部分读取失败 {len(user_list_errors)} 项" if user_list_errors else ""
+    return True, f"企业微信通讯录已同步：{len(contacts)} 人，{len(departments)} 个可见部门{error_suffix}"
 
 
 async def refresh_wecom_contacts_if_stale(force: bool = False) -> tuple[bool, str]:
@@ -475,9 +523,14 @@ async def send_wecom_text_message(
     module: str = "common",
     business_key: str = "",
     message_type: str = "text",
+    link_url: str = "",
+    link_label: str = "查看详情",
     retry_tracking: bool = True,
     alert_on_max_failure: bool = True,
 ) -> tuple[bool, str]:
+    if link_url and link_url not in content:
+        content = f"{content.rstrip()}\n{link_label}：{link_url}"
+
     recipients = split_wecom_users(touser)
     results = []
     overall_success = True

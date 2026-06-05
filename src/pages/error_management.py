@@ -6,6 +6,7 @@ import os
 import time
 import uuid  # uuid: Python标准库，用于生成全局唯一的标识符
 from datetime import datetime, timedelta
+from urllib.parse import quote
 
 from nicegui import app, ui  # nicegui: 第三方轻量级Python Web框架，用于纯Python编写前端UI
 
@@ -16,6 +17,7 @@ from ..config import (
     ERROR_EXTENSION_NOTIFY_TOUSER,
     IMG_DIR,
     PRESET_AVATARS,
+    SYSTEM_PUBLIC_BASE_URL,
     UPLOAD_URL_DIR,
     UPLOADS_DIR,
     WECOM_DEFAULT_TOUSER,
@@ -45,6 +47,7 @@ async def _send_wecom_text_message(content: str, touser: str = WECOM_DEFAULT_TOU
         module="error_management",
         business_key="manual_test",
         message_type="manual_test",
+        link_url=get_error_management_url(),
     )
 
 
@@ -63,6 +66,7 @@ def schedule_background_task(coro, task_name: str) -> None:
 async def send_error_extension_wecom_message(
     content: str,
     *,
+    error_id: str,
     business_key: str,
     message_type: str,
 ) -> tuple[bool, str]:
@@ -76,6 +80,7 @@ async def send_error_extension_wecom_message(
         module="error_management",
         business_key=business_key,
         message_type=message_type,
+        link_url=get_error_management_url(error_id),
     )
 
 
@@ -179,9 +184,15 @@ def split_people(value: str) -> list[str]:
     return [item.strip() for item in normalized.split("|") if item.strip()]
 
 
-def format_people_for_wecom(value: str) -> str:
+async def format_people_for_wecom(value: str) -> str:
     people = split_people(value)
-    return "|".join(people) if people else WECOM_DEFAULT_TOUSER
+    if not people:
+        return WECOM_DEFAULT_TOUSER
+    direct_value = "|".join(people)
+    return await resolve_wecom_recipients(
+        [{"names": people}],
+        fallback_touser=direct_value,
+    )
 
 
 def parse_date(value: str):
@@ -212,6 +223,26 @@ def get_pending_extension_request(action: dict) -> dict | None:
         if request.get("status") == "待审批":
             return request
     return None
+
+
+def get_extension_counts(action: dict) -> tuple[int, int]:
+    requests = action.get("extension_requests", [])
+    approved_count = sum(1 for request in requests if request.get("status") == "已通过")
+    return approved_count, len(requests)
+
+
+def get_owner_extension_summary(error_data: dict) -> list[tuple[str, int]]:
+    owner_counts = {}
+    for action in error_data.get("preventive_actions", []):
+        approved_count, _ = get_extension_counts(action)
+        for owner in split_people(action.get("owner", "")):
+            owner_counts[owner] = owner_counts.get(owner, 0) + approved_count
+    return sorted(owner_counts.items(), key=lambda item: (-item[1], item[0]))
+
+
+def get_error_management_url(error_id: str = "") -> str:
+    page_url = f"{SYSTEM_PUBLIC_BASE_URL}/error_management"
+    return f"{page_url}?error_id={error_id}" if error_id else page_url
 
 
 def get_next_due_text(error_data: dict) -> str:
@@ -324,14 +355,16 @@ async def check_and_send_error_reminders(show_result: bool = False) -> tuple[int
                     f"措施：{action.get('content', '')}\n"
                     f"负责人：{owner}\n"
                     f"预计完成日期：{action.get('due_date', '')}\n"
+                    f"已通过延期：{get_extension_counts(action)[0]} 次\n"
                     f"提醒策略：{rule['label']}"
                 )
                 success, message = await send_wecom_text_message(
                     content,
-                    format_people_for_wecom(owner),
+                    await format_people_for_wecom(owner),
                     module="error_management",
                     business_key=f"{error_data.get('error_id')}:{action.get('id')}:{rule['key']}",
                     message_type="preventive_reminder",
+                    link_url=get_error_management_url(error_data.get("error_id", "")),
                 )
                 if success:
                     sent_count += 1
@@ -381,7 +414,7 @@ def save_uploaded_evidence_file(error_id: str, action_id: str, original_filename
 # ==========================================
 # @ui.page: NiceGUI框架的路由装饰器，用于定义页面路径
 @ui.page("/error_management")
-async def error_management_page():
+async def error_management_page(error_id: str = ""):
     # --- 调用全局活跃跟踪组件 ---
     setup_global_activity_tracking()
 
@@ -402,7 +435,8 @@ async def error_management_page():
         </style>
     """)
     if not app.storage.user.get("current_user"):
-        ui.navigate.to("/login")
+        redirect_target = f"/error_management?error_id={error_id}" if error_id else "/error_management"
+        ui.navigate.to(f"/login?redirect_to={quote(redirect_target, safe='')}")
         return
 
     current_user = app.storage.user.get("current_user", "未知用户")
@@ -652,12 +686,16 @@ async def error_management_page():
                 if not success:
                     return ui.notify("延期申请提交失败，请刷新后重试", type="negative", position="bottom")
 
+                approved_extension_count, previous_request_count = get_extension_counts(action)
+                current_request_count = previous_request_count + 1
                 content = (
                     "生产异常纠正预防措施延期申请\n"
                     f"异常单：{local_data['error_id']}\n"
                     f"产品：{local_data.get('basic_info', {}).get('product_name', '')}\n"
                     f"措施：{action.get('content', '')}\n"
                     f"申请人：{current_user}\n"
+                    f"本次为第 {current_request_count} 次延期申请\n"
+                    f"此前已通过延期：{approved_extension_count} 次\n"
                     f"原预计日期：{old_due_date or '-'}\n"
                     f"申请延期至：{extension_request['new_due_date']}\n"
                     f"延期原因：{extension_request['reason']}\n"
@@ -665,6 +703,7 @@ async def error_management_page():
                 )
                 await send_error_extension_wecom_message(
                     content,
+                    error_id=local_data["error_id"],
                     business_key=f"{local_data['error_id']}:{action.get('id')}:{extension_request['id']}",
                     message_type="extension_request",
                 )
@@ -718,12 +757,17 @@ async def error_management_page():
             if not success:
                 return ui.notify("延期审批失败，请刷新后重试", type="negative", position="bottom")
 
+            approved_extension_count, request_count = get_extension_counts(action)
+            if approved:
+                approved_extension_count += 1
             content = (
                 "生产异常延期申请审批结果\n"
                 f"异常单：{local_data['error_id']}\n"
                 f"产品：{local_data.get('basic_info', {}).get('product_name', '')}\n"
                 f"措施：{action.get('content', '')}\n"
                 f"审批结果：{'通过' if approved else '驳回'}\n"
+                f"累计延期申请：{request_count} 次\n"
+                f"当前已通过延期：{approved_extension_count} 次\n"
                 f"原预计日期：{request.get('old_due_date', '-')}\n"
                 f"申请延期至：{request.get('new_due_date', '-')}\n"
                 f"审批人：{current_user}"
@@ -731,6 +775,7 @@ async def error_management_page():
             schedule_background_task(
                 send_error_extension_wecom_message(
                     content,
+                    error_id=local_data["error_id"],
                     business_key=f"{local_data['error_id']}:{action.get('id')}:{request.get('id')}:approval",
                     message_type="extension_approval",
                 ),
@@ -752,6 +797,7 @@ async def error_management_page():
                     item.setdefault("evidence_files", [])
                     item.setdefault("close_note", "")
                     item.setdefault("extension_requests", [])
+                    approved_extension_count, extension_request_count = get_extension_counts(item)
                     can_close = (
                         not is_new
                         and item.get("status") != "已关闭"
@@ -767,6 +813,7 @@ async def error_management_page():
                                     item.get("status", "待执行"),
                                     color="green" if item.get("status") == "已关闭" else "orange",
                                 )
+                                ui.badge(f"已延期 {approved_extension_count} 次", color="blue").props("outline")
                             if can_edit_all:
                                 ui.button(
                                     icon="delete",
@@ -884,6 +931,9 @@ async def error_management_page():
                                     ui.notify("关闭失败，请刷新后重试", type="negative", position="bottom")
 
                             with ui.row().classes("items-center justify-end gap-3 mt-2"):
+                                ui.label(
+                                    f"累计申请 {extension_request_count} 次，已延期 {approved_extension_count} 次"
+                                ).classes("text-xs text-gray-500")
                                 if can_apply_extension:
                                     async def apply_extension(event=None, a=item):
                                         await open_extension_request_dialog(a)
@@ -1148,6 +1198,10 @@ async def error_management_page():
                                 and is_current_responsible(item.get("owner", ""), current_user, current_role)
                                 for item in error_data.get("preventive_actions", [])
                             )
+                            owner_extension_summary = get_owner_extension_summary(error_data)
+                            owner_extension_text = "、".join(
+                                f"{owner} {count}次" for owner, count in owner_extension_summary
+                            )
 
                             with ui.element("div").classes(
                                 "w-full bg-white border border-gray-200 border-l-4 rounded-md p-4 shadow-sm "
@@ -1198,6 +1252,10 @@ async def error_management_page():
                                         )
                                         if owner_text:
                                             ui.label(f"负责人：{owner_text}").classes("text-xs text-orange-700")
+                                        if owner_extension_text:
+                                            ui.label(f"负责人延期：{owner_extension_text}").classes(
+                                                "text-xs text-blue-700 max-w-80 text-right"
+                                            )
 
                         if rendered_count == 0:
                             ui.label("没有符合筛选条件的异常单").classes("text-gray-500 m-auto mt-10")
@@ -1212,3 +1270,6 @@ async def error_management_page():
 
                 refresh_list()
                 ui.timer(5.0, check_and_refresh_list)
+
+    if error_id:
+        await open_error_detail_dialog(error_id)

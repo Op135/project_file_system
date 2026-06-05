@@ -41,15 +41,18 @@ WECOM_CONTACT_CACHE_TTL_SECONDS = int(os.environ.get("WECOM_CONTACT_CACHE_TTL_SE
 # 企业微信发送日志保留天数和失败重试次数
 WECOM_LOG_RETENTION_DAYS = int(os.environ.get("WECOM_LOG_RETENTION_DAYS", "90"))
 WECOM_MAX_RETRY_COUNT = int(os.environ.get("WECOM_MAX_RETRY_COUNT", "3"))
+# 员工通过企业微信通知访问系统时使用的地址。生产环境应配置为局域网地址或正式域名。
+SYSTEM_PUBLIC_BASE_URL = os.environ.get("SYSTEM_PUBLIC_BASE_URL", "http://192.168.1.102:8080").rstrip("/")
 
 # 生产异常延期审批配置
 ERROR_EXTENSION_APPROVER_ROLES = ["研发经理", "admin"]
-ERROR_EXTENSION_NOTIFY_TOUSER = "coco"
+ERROR_EXTENSION_NOTIFY_TOUSER = "YueYeXiaoSheng"
 ERROR_EXTENSION_NOTIFY_TARGETS = _load_json_env(
     "ERROR_EXTENSION_NOTIFY_TARGETS",
     [
         {"department_contains": "研发", "position_contains": "经理"},
         {"position_contains": "研发经理"},
+        # {"position": "QE工程师"},
     ],
 )
 

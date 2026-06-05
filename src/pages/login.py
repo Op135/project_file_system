@@ -65,7 +65,7 @@ def create_password_dialog(target_username: str):
 
 
 @ui.page("/login")
-def login_page():
+def login_page(redirect_to: str = ""):
     # 用于记录键盘按键状态
     app.storage.client.setdefault("key_state", {})
 
@@ -98,8 +98,8 @@ def login_page():
                         "current_role": user_info.get("role", "anonymous"),
                     }
                 )
-                # 跳转到主界面
-                ui.navigate.to("/main")
+                target_path = redirect_to if redirect_to.startswith("/") and not redirect_to.startswith("//") else "/main"
+                ui.navigate.to(target_path)
             else:
                 ui.notify(
                     "密码错误",
