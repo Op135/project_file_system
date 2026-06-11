@@ -3,6 +3,10 @@
     2. 一部分设置（涉及到多人合作须统一的）在有工作区设置时，文件夹设置作废，灰色显示
 */
 {
+    // 直接打开项目文件夹时，也固定使用项目实际运行的 Python 环境
+    "python.defaultInterpreterPath": "D:\\miniforge3\\envs\\python_nicegui\\python.exe",
+    "python.analysis.typeCheckingMode": "standard",
+    "python.analysis.diagnosticMode": "workspace",
     // 排除搜索
     "search.exclude": {
         "**/node_modules": true,
@@ -101,7 +105,7 @@
     },
     "python-envs.pythonProjects": [
         {
-            "path": "",
+            "path": ".",
             "envManager": "ms-python.python:conda",
             "packageManager": "ms-python.python:conda"
         }

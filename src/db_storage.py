@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 BASE_DIR = Path(__file__).parent.parent  # 项目根目录
 DB_PATH = f"{BASE_DIR}/db/nicegui_storage.db"  # 数据库文件名
 TABLE_NAME = "general_storage"  # 模拟 general storage
+ATOMIC_NO_UPDATE = object()  # update_function 返回此值时，原子事务不写入任何数据
 # 内存缓存 (The "Instant Retrieval" part)
 # 这就是实现“即时获取”的关键。数据从内存中读取。
 _data_cache: Dict[str, Any] = {}
@@ -40,6 +41,8 @@ async def init_db() -> None:
     _db = await aiosqlite.connect(DB_PATH)
     # 启用 WAL 模式 (Write-Ahead Logging) 提高并发性能
     await _db.execute("PRAGMA journal_mode=WAL;")
+    # 多进程同时争用写事务时等待最多 30 秒，避免短暂竞争直接导致原子更新失败
+    await _db.execute("PRAGMA busy_timeout=30000;")
 
     # 创建一个简单的 key-value 表
     # 我们将 key 存为 TEXT，将 value 序列化为 JSON 字符串后存为 TEXT
@@ -383,13 +386,13 @@ async def atomic_deep_update(path: List[str], update_function: Callable, *args, 
     """
     在任意深层级别上执行一次原子的 "读取-修改-写入" 操作。
 
-    它会在写入锁的保护下：
-    1. 读取 'path[0]' (顶层键) 的当前数据。
+    它会在进程内写入锁和 SQLite 写事务的共同保护下：
+    1. 从数据库读取 'path[0]' (顶层键) 的最新数据。
     2. 创建整个顶层对象的深拷贝。
     3. 遍历到 'path' 指定的深层位置。
     4. 将该位置的当前值(的深拷贝)传递给 'update_function'。
-    5. 将 'update_function' 返回的新值写回该深层位置。
-    6. 将修改后的 *整个顶层对象* 写回数据库。
+    5. 将 'update_function' 返回的新值写回该深层位置；返回 ATOMIC_NO_UPDATE 时跳过写入。
+    6. 在同一个 SQLite 事务内将修改后的 *整个顶层对象* 写回数据库。
 
     注意: 如果路径上的字典不存在，会自动创建它们。
 
@@ -410,21 +413,39 @@ async def atomic_deep_update(path: List[str], update_function: Callable, *args, 
     top_key = path[0]
     deep_path = path[1:]
 
-    # 2. 获取写入锁，保证整个 RMW 操作的原子性
+    # 2. 获取进程内写入锁；SQLite 的 BEGIN IMMEDIATE 继续保证跨进程 RMW 原子性
     async with _write_lock:
         try:
-            # --- 处理边缘情况：路径只有一层 (同 atomic_update) ---
+            # 必须从数据库读取最新值，不能依赖可能属于其它进程旧快照的内存缓存。
+            await _db.execute("BEGIN IMMEDIATE")
+            async with _db.execute(f"SELECT value FROM {TABLE_NAME} WHERE key = ?", (top_key,)) as cursor:
+                row = await cursor.fetchone()
+            current_top_value = json.loads(row[0]) if row else None
+
+            # --- 处理边缘情况：路径只有一层 ---
             if not deep_path:
-                data_to_process = get_item(top_key, None)
-                # data_to_process = copy.deepcopy(current_data)
+                data_to_process = copy.deepcopy(current_top_value)
                 new_data = update_function(data_to_process, *args, **kwargs)
-                await _internal_set(top_key, new_data)  # 使用您重构的内部函数
+                if new_data is ATOMIC_NO_UPDATE:
+                    await _db.rollback()
+                    if current_top_value is None:
+                        _data_cache.pop(top_key, None)
+                    else:
+                        _data_cache[top_key] = copy.deepcopy(current_top_value)
+                    return True
+                value_json = json.dumps(new_data)
+                await _db.execute(
+                    f"INSERT OR REPLACE INTO {TABLE_NAME} (key, value) VALUES (?, ?)",
+                    (top_key, value_json),
+                )
+                await _db.commit()
+                _data_cache[top_key] = json.loads(value_json)
                 return True
 
             # --- 处理深层路径 ---
 
-            # 3. READ (读取顶层对象)
-            top_level_data_copy = get_item(top_key, {})
+            # 3. READ (使用事务内读取到的数据库最新值)
+            top_level_data_copy = copy.deepcopy(current_top_value) if current_top_value is not None else {}
             if not isinstance(top_level_data_copy, dict):
                 # 如果顶层键存在但不是字典，我们用新字典覆盖它
                 top_level_data_copy = {}
@@ -445,6 +466,13 @@ async def atomic_deep_update(path: List[str], update_function: Callable, *args, 
                     # b. 传递深拷贝给 update_function
                     value_to_process = copy.deepcopy(current_deep_value)
                     new_deep_value = update_function(value_to_process, *args, **kwargs)
+                    if new_deep_value is ATOMIC_NO_UPDATE:
+                        await _db.rollback()
+                        if current_top_value is None:
+                            _data_cache.pop(top_key, None)
+                        else:
+                            _data_cache[top_key] = copy.deepcopy(current_top_value)
+                        return True
 
                     # c. 将返回的新值设置回去
                     current_level_data[key] = new_deep_value
@@ -459,11 +487,19 @@ async def atomic_deep_update(path: List[str], update_function: Callable, *args, 
 
                     current_level_data = next_level  # 向下遍历
 
-            # 6. WRITE (将修改后的 *整个* 顶层对象写回)
-            await _internal_set(top_key, top_level_data_copy)
+            # 6. WRITE (在同一个 SQLite 事务内将修改后的整个顶层对象写回)
+            value_json = json.dumps(top_level_data_copy)
+            await _db.execute(
+                f"INSERT OR REPLACE INTO {TABLE_NAME} (key, value) VALUES (?, ?)",
+                (top_key, value_json),
+            )
+            await _db.commit()
+            _data_cache[top_key] = json.loads(value_json)
             return True
 
         except Exception:
+            if _db.in_transaction:
+                await _db.rollback()
             logger.error(f"错误: 深度原子更新失败 '{path}'", exc_info=True)
             return False
 

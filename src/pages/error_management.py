@@ -3,9 +3,12 @@ import asyncio
 import copy  # copy: Python标准库，用于创建对象的副本
 import logging
 import os
+import re
 import time
 import uuid  # uuid: Python标准库，用于生成全局唯一的标识符
+from dataclasses import dataclass
 from datetime import datetime, timedelta
+from typing import Any, Optional
 from urllib.parse import quote
 
 from nicegui import app, ui  # nicegui: 第三方轻量级Python Web框架，用于纯Python编写前端UI
@@ -38,6 +41,14 @@ ERROR_REMINDER_RULES = [
     {"key": "due_today", "label": "约定完成日期当天", "days_until_due": 0},
     {"key": "overdue", "label": "约定完成日期逾期", "max_days_until_due": -1},
 ]
+
+
+@dataclass
+class ErrorUpdateResult:
+    db_success: bool
+    changed: bool
+    code: str
+    record: Optional[dict] = None
 
 
 async def _send_wecom_text_message(content: str, touser: str = WECOM_DEFAULT_TOUSER) -> tuple[bool, str]:
@@ -87,6 +98,7 @@ async def send_error_extension_wecom_message(
 def get_error_template() -> dict:
     return {
         "error_id": "",
+        "_revision": 0,
         "status": "异常录入",
         "basic_info": {
             "product_name": "",
@@ -128,23 +140,9 @@ def merge_with_error_template(db_data: dict) -> dict:
     return merged
 
 
-def generate_error_id(all_errors: dict) -> str:
-    today_str = datetime.now().strftime("%y%m%d")
-    prefix = f"ERR{today_str}"
-    max_count = 0
-    for error_id in all_errors.keys():
-        if error_id.startswith(prefix):
-            try:
-                max_count = max(max_count, int(error_id[-2:]))
-            except ValueError:
-                pass
-    return f"{prefix}{str(max_count + 1).zfill(2)}"
-
-
-def generate_initial_error_data(current_user: str, current_role: str, all_errors: dict) -> dict:
+def generate_initial_error_data(current_user: str, current_role: str) -> dict:
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     data = get_error_template()
-    data["error_id"] = generate_error_id(all_errors)
     data["created_by"] = current_user
     data["created_role"] = current_role
     data["created_at"] = now_str
@@ -218,7 +216,14 @@ def ensure_item_id(item: dict, prefix: str) -> dict:
     return item
 
 
-def get_pending_extension_request(action: dict) -> dict | None:
+def get_item_id(item: Any) -> str:
+    if not isinstance(item, dict):
+        return ""
+    item_id = item["id"] if "id" in item else ""
+    return str(item_id) if item_id is not None else ""
+
+
+def get_pending_extension_request(action: dict) -> Optional[dict]:
     for request in reversed(action.get("extension_requests", [])):
         if request.get("status") == "待审批":
             return request
@@ -242,7 +247,7 @@ def get_owner_extension_summary(error_data: dict) -> list[tuple[str, int]]:
 
 def get_error_management_url(error_id: str = "") -> str:
     page_url = f"{SYSTEM_PUBLIC_BASE_URL}/error_management"
-    return f"{page_url}?error_id={error_id}" if error_id else page_url
+    return f"{page_url}?error_id={quote(error_id, safe='')}" if error_id else page_url
 
 
 def get_next_due_text(error_data: dict) -> str:
@@ -256,32 +261,107 @@ def get_next_due_text(error_data: dict) -> str:
     return max(due_dates).strftime("%Y-%m-%d")
 
 
-async def save_error_record(error_data: dict, user: str, role: str) -> None:
+def get_record_revision(error_data: Optional[dict]) -> int:
+    try:
+        return max(0, int((error_data or {}).get("_revision", 0)))
+    except (TypeError, ValueError):
+        return 0
+
+
+def find_preventive_action(error_data: dict, action_id: str) -> Optional[dict]:
+    actions = error_data.get("preventive_actions", [])
+    if not isinstance(actions, list):
+        return None
+    return next((action for action in actions if isinstance(action, dict) and get_item_id(action) == action_id), None)
+
+
+def find_extension_request(action: dict, request_id: str) -> Optional[dict]:
+    requests = action.get("extension_requests", [])
+    if not isinstance(requests, list):
+        return None
+    return next((request for request in requests if isinstance(request, dict) and get_item_id(request) == request_id), None)
+
+
+def reminder_rule_matches(due_date, today, rule: dict) -> bool:
+    days_until_due = (due_date - today).days
+    if "days_until_due" in rule:
+        return days_until_due == rule["days_until_due"]
+    if "max_days_until_due" in rule:
+        return days_until_due <= rule["max_days_until_due"]
+    return False
+
+
+async def save_error_record(error_data: dict, user: str, role: str, *, is_new: bool) -> ErrorUpdateResult:
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     record = merge_with_error_template(error_data)
-    record["status"] = calculate_error_status(record)
     record["updated_by"] = user
     record["updated_at"] = now_str
-    if record["status"] == "已关闭" and not record.get("closed_at"):
-        record["closed_at"] = now_str
-    elif record["status"] != "已关闭":
-        record["closed_at"] = ""
     record.setdefault("operation_log", []).append({"user": user, "role": role, "action": "保存异常单", "time": now_str})
-    await db_storage.set_deep_item([ERROR_DATA_KEY, record["error_id"]], record)
-    await db_storage.set_item(ERROR_VERSION_KEY, time.time())
+
+    def save_record(_current):
+        return "updated", copy.deepcopy(record)
+
+    return await atomic_error_update(
+        record["error_id"],
+        save_record,
+        expected_revision=None if is_new else get_record_revision(error_data),
+        create=is_new,
+    )
 
 
-async def atomic_error_update(error_id: str, update_function) -> bool:
+async def atomic_error_update(
+    error_id: str,
+    update_function,
+    *,
+    expected_revision: Optional[int] = None,
+    create: bool = False,
+) -> ErrorUpdateResult:
+    outcome = {"changed": False, "code": "db_error", "record": None}
+
     def apply_update(current):
-        record = merge_with_error_template(current or {})
-        updated = update_function(record)
+        current_exists = isinstance(current, dict) and bool(current.get("error_id"))
+        if create:
+            if current is not None:
+                outcome["code"] = "already_exists"
+                return db_storage.ATOMIC_NO_UPDATE
+            record = get_error_template()
+        else:
+            if not current_exists:
+                outcome["code"] = "not_found"
+                return db_storage.ATOMIC_NO_UPDATE
+            record = merge_with_error_template(current)
+
+        if expected_revision is not None and get_record_revision(record) != expected_revision:
+            outcome["code"] = "revision_conflict"
+            outcome["record"] = copy.deepcopy(record)
+            return db_storage.ATOMIC_NO_UPDATE
+
+        code, updated = update_function(record)
+        outcome["code"] = code
+        if code != "updated":
+            outcome["record"] = copy.deepcopy(record)
+            return db_storage.ATOMIC_NO_UPDATE
+
+        updated = merge_with_error_template(updated)
+        updated["_revision"] = get_record_revision(record) + 1
         updated["status"] = calculate_error_status(updated)
+        if updated["status"] == "已关闭" and not updated.get("closed_at"):
+            updated["closed_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        elif updated["status"] != "已关闭":
+            updated["closed_at"] = ""
+        outcome["changed"] = True
+        outcome["record"] = copy.deepcopy(updated)
         return updated
 
     success = await db_storage.atomic_deep_update([ERROR_DATA_KEY, error_id], apply_update)
-    if success:
+    if success and outcome["changed"]:
         await db_storage.set_item(ERROR_VERSION_KEY, time.time())
-    return success
+    return ErrorUpdateResult(
+        db_success=success,
+        changed=bool(success and outcome["changed"]),
+        code=outcome["code"] if success else "db_error",
+        record=outcome["record"],
+    )
 
 
 async def check_and_send_error_reminders(show_result: bool = False) -> tuple[int, int]:
@@ -301,28 +381,34 @@ async def check_and_send_error_reminders(show_result: bool = False) -> tuple[int
             if action.get("status") == "已关闭":
                 continue
 
+            action_id = get_item_id(action)
             due_date = parse_date(action.get("due_date", ""))
             owner = action.get("owner", "")
-            if not due_date or not owner:
+            if not action_id or not due_date or not owner:
                 continue
 
-            days_until_due = (due_date - today).days
             for rule in ERROR_REMINDER_RULES:
-                should_send = False
-                if "days_until_due" in rule:
-                    should_send = days_until_due == rule["days_until_due"]
-                elif "max_days_until_due" in rule:
-                    should_send = days_until_due <= rule["max_days_until_due"]
-                if not should_send:
+                if not reminder_rule_matches(due_date, today, rule):
                     continue
 
-                marker = f"{action.get('id')}:{rule['key']}:{today_key}"
+                marker = f"{action_id}:{rule['key']}:{today_key}"
                 if marker in error_data.get("reminder_log", {}):
                     continue
 
                 claim_id = uuid.uuid4().hex
 
-                def claim_reminder(current, marker=marker, rule=rule, claim_id=claim_id):
+                def claim_reminder(current, marker=marker, rule=rule, claim_id=claim_id, action_id=action_id):
+                    stored_action = find_preventive_action(current, action_id)
+                    if not stored_action or stored_action.get("status") == "已关闭":
+                        return "not_eligible", current
+                    fresh_due_date = parse_date(stored_action.get("due_date", ""))
+                    if (
+                        not fresh_due_date
+                        or not stored_action.get("owner", "")
+                        or not reminder_rule_matches(fresh_due_date, today, rule)
+                    ):
+                        return "not_eligible", current
+
                     reminder_log = current.setdefault("reminder_log", {})
                     existing_marker = reminder_log.get(marker)
                     can_claim = marker not in reminder_log
@@ -332,54 +418,68 @@ async def check_and_send_error_reminders(show_result: bool = False) -> tuple[int
                             can_claim = datetime.now() - sending_time > timedelta(minutes=10)
                         except ValueError:
                             can_claim = True
-                    if can_claim:
-                        reminder_log[marker] = {
-                            "rule": rule["label"],
-                            "state": "sending",
-                            "claim_id": claim_id,
-                            "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                        }
-                    return current
+                    if not can_claim:
+                        return "already_claimed", current
+                    reminder_log[marker] = {
+                        "rule": rule["label"],
+                        "state": "sending",
+                        "claim_id": claim_id,
+                        "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    }
+                    return "updated", current
 
-                await atomic_error_update(error_data["error_id"], claim_reminder)
-                fresh_marker = db_storage.get_deep_item(
-                    [ERROR_DATA_KEY, error_data["error_id"], "reminder_log", marker], {}
-                )
-                if fresh_marker.get("claim_id") != claim_id:
+                claim_result = await atomic_error_update(error_data["error_id"], claim_reminder)
+                if not claim_result.changed or not claim_result.record:
                     continue
 
+                fresh_error = claim_result.record
+                fresh_action = find_preventive_action(fresh_error, action_id)
+                if not fresh_action:
+                    continue
+                owner = fresh_action.get("owner", "")
                 content = (
                     "生产异常纠正预防措施提醒\n"
-                    f"异常单：{error_data.get('error_id')}\n"
-                    f"产品：{error_data.get('basic_info', {}).get('product_name', '')}\n"
-                    f"措施：{action.get('content', '')}\n"
+                    f"异常单：{fresh_error.get('error_id')}\n"
+                    f"产品：{fresh_error.get('basic_info', {}).get('product_name', '')}\n"
+                    f"措施：{fresh_action.get('content', '')}\n"
                     f"负责人：{owner}\n"
-                    f"预计完成日期：{action.get('due_date', '')}\n"
-                    f"已通过延期：{get_extension_counts(action)[0]} 次\n"
+                    f"预计完成日期：{fresh_action.get('due_date', '')}\n"
+                    f"已通过延期：{get_extension_counts(fresh_action)[0]} 次\n"
                     f"提醒策略：{rule['label']}"
                 )
                 success, message = await send_wecom_text_message(
                     content,
                     await format_people_for_wecom(owner),
                     module="error_management",
-                    business_key=f"{error_data.get('error_id')}:{action.get('id')}:{rule['key']}",
+                    business_key=f"{fresh_error.get('error_id')}:{get_item_id(fresh_action)}:{rule['key']}",
                     message_type="preventive_reminder",
-                    link_url=get_error_management_url(error_data.get("error_id", "")),
+                    link_url=get_error_management_url(fresh_error.get("error_id", "")),
                 )
                 if success:
                     sent_count += 1
                 else:
                     fail_count += 1
 
-                def add_reminder_log(current, marker=marker, rule=rule, success=success, message=message):
+                def add_reminder_log(
+                    current,
+                    marker=marker,
+                    rule=rule,
+                    success=success,
+                    message=message,
+                    claim_id=claim_id,
+                ):
+                    existing_marker = current.setdefault("reminder_log", {}).get(marker, {})
+                    if existing_marker.get("claim_id") != claim_id:
+                        return "claim_lost", current
                     current.setdefault("reminder_log", {})[marker] = {
                         "rule": rule["label"],
                         "state": "sent" if success else "failed_retrying",
                         "success": success,
                         "message": message,
+                        "claim_id": claim_id,
                         "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     }
-                    return current
+                    return "updated", current
 
                 await atomic_error_update(error_data["error_id"], add_reminder_log)
 
@@ -484,6 +584,13 @@ async def error_management_page(error_id: str = ""):
         await open_error_detail_dialog()
 
     def validate_error_record(error_data: dict) -> bool:
+        error_data["error_id"] = str(error_data.get("error_id", "")).strip()
+        if not error_data["error_id"]:
+            ui.notify("请填写异常单号", type="warning", position="bottom")
+            return False
+        if not re.fullmatch(r"[A-Za-z0-9_\-\u4e00-\u9fff]+", error_data["error_id"]):
+            ui.notify("异常单号仅支持中文、英文、数字、短横线和下划线", type="warning", position="bottom")
+            return False
         basic = error_data.get("basic_info", {})
         if not basic.get("product_name", "").strip():
             ui.notify("请填写产品名称", type="warning", position="bottom")
@@ -500,7 +607,7 @@ async def error_management_page(error_id: str = ""):
 
         all_errors = db_storage.get_item(ERROR_DATA_KEY, {})
         if is_new:
-            local_data = generate_initial_error_data(current_user, current_role, all_errors)
+            local_data = generate_initial_error_data(current_user, current_role)
         else:
             local_data = merge_with_error_template(all_errors.get(error_id, {}))
             if not local_data.get("error_id"):
@@ -591,7 +698,18 @@ async def error_management_page(error_id: str = ""):
                 return ui.notify("当前角色无保存权限", type="warning", position="bottom")
             if not validate_error_record(local_data):
                 return
-            await save_error_record(local_data, current_user, current_role)
+            result = await save_error_record(local_data, current_user, current_role, is_new=is_new)
+            if result.code == "already_exists":
+                return ui.notify("异常单号已存在，请使用其它单号", type="warning", position="bottom")
+            if result.code == "revision_conflict":
+                return ui.notify(
+                    "保存已取消：异常单已被其他用户或后台任务更新，请关闭窗口后重新打开再修改",
+                    type="warning",
+                    position="bottom",
+                    multi_line=True,
+                )
+            if not result.changed:
+                return ui.notify("异常单保存失败，请刷新后重试", type="negative", position="bottom")
             ui.notify("异常单已保存", type="positive", position="bottom")
             root_dialog.close()
             refresh_list()
@@ -633,6 +751,7 @@ async def error_management_page(error_id: str = ""):
                     ui.button(f"添加{title}", icon="add", on_click=add_item).props("outline dense color=primary")
 
         async def open_extension_request_dialog(action: dict):
+            action_id = get_item_id(action)
             pending_request = get_pending_extension_request(action)
             if pending_request:
                 return ui.notify("该措施已有延期申请待审批", type="warning", position="bottom")
@@ -657,7 +776,7 @@ async def error_management_page(error_id: str = ""):
                 extension_request = {
                     "id": f"ext_{uuid.uuid4().hex[:8]}",
                     "status": "待审批",
-                    "old_due_date": old_due_date,
+                    "old_due_date": "",
                     "new_due_date": request_state["new_due_date"],
                     "reason": request_state["reason"].strip(),
                     "requester": current_user,
@@ -666,10 +785,23 @@ async def error_management_page(error_id: str = ""):
                 }
 
                 def add_extension_request(current):
-                    for stored_action in current.get("preventive_actions", []):
-                        if stored_action.get("id") == action.get("id"):
-                            stored_action.setdefault("extension_requests", []).append(copy.deepcopy(extension_request))
-                            break
+                    stored_action = find_preventive_action(current, action_id)
+                    if not stored_action:
+                        return "action_not_found", current
+                    if stored_action.get("status") == "已关闭":
+                        return "action_closed", current
+                    if not can_edit_all and not is_current_responsible(
+                        stored_action.get("owner", ""), current_user, current_role
+                    ):
+                        return "permission_changed", current
+                    if get_pending_extension_request(stored_action):
+                        return "pending_exists", current
+                    stored_due_date = parse_date(stored_action.get("due_date", ""))
+                    if stored_due_date and new_date <= stored_due_date:
+                        return "due_date_changed", current
+
+                    extension_request["old_due_date"] = stored_action.get("due_date", "")
+                    stored_action.setdefault("extension_requests", []).append(copy.deepcopy(extension_request))
                     current["updated_by"] = current_user
                     current["updated_at"] = now_str
                     current.setdefault("operation_log", []).append(
@@ -680,31 +812,42 @@ async def error_management_page(error_id: str = ""):
                             "time": now_str,
                         }
                     )
-                    return current
+                    return "updated", current
 
-                success = await atomic_error_update(local_data["error_id"], add_extension_request)
-                if not success:
+                result = await atomic_error_update(local_data["error_id"], add_extension_request)
+                if result.code == "pending_exists":
+                    return ui.notify("该措施已有延期申请待审批，请刷新查看", type="warning", position="bottom")
+                if result.code == "due_date_changed":
+                    return ui.notify("预计完成日期已被更新，请刷新后重新申请", type="warning", position="bottom")
+                if result.code == "permission_changed":
+                    return ui.notify("该措施负责人已变更，当前用户不能再申请延期", type="warning", position="bottom")
+                if result.code in {"action_not_found", "action_closed", "not_found"}:
+                    return ui.notify("该措施已不存在或已关闭，请刷新查看", type="warning", position="bottom")
+                if not result.changed or not result.record:
                     return ui.notify("延期申请提交失败，请刷新后重试", type="negative", position="bottom")
 
-                approved_extension_count, previous_request_count = get_extension_counts(action)
-                current_request_count = previous_request_count + 1
+                fresh_action = find_preventive_action(result.record, action_id)
+                fresh_request = find_extension_request(fresh_action or {}, extension_request["id"])
+                if not fresh_action or not fresh_request:
+                    return ui.notify("延期申请已保存，但读取最新数据失败，请刷新查看", type="warning", position="bottom")
+                approved_extension_count, current_request_count = get_extension_counts(fresh_action)
                 content = (
                     "生产异常纠正预防措施延期申请\n"
-                    f"异常单：{local_data['error_id']}\n"
-                    f"产品：{local_data.get('basic_info', {}).get('product_name', '')}\n"
-                    f"措施：{action.get('content', '')}\n"
+                    f"异常单：{result.record['error_id']}\n"
+                    f"产品：{result.record.get('basic_info', {}).get('product_name', '')}\n"
+                    f"措施：{fresh_action.get('content', '')}\n"
                     f"申请人：{current_user}\n"
                     f"本次为第 {current_request_count} 次延期申请\n"
                     f"此前已通过延期：{approved_extension_count} 次\n"
-                    f"原预计日期：{old_due_date or '-'}\n"
-                    f"申请延期至：{extension_request['new_due_date']}\n"
-                    f"延期原因：{extension_request['reason']}\n"
+                    f"原预计日期：{fresh_request.get('old_due_date') or '-'}\n"
+                    f"申请延期至：{fresh_request['new_due_date']}\n"
+                    f"延期原因：{fresh_request['reason']}\n"
                     f"审批角色：{', '.join(ERROR_EXTENSION_APPROVER_ROLES)}"
                 )
                 await send_error_extension_wecom_message(
                     content,
-                    error_id=local_data["error_id"],
-                    business_key=f"{local_data['error_id']}:{action.get('id')}:{extension_request['id']}",
+                    error_id=result.record["error_id"],
+                    business_key=f"{result.record['error_id']}:{get_item_id(fresh_action)}:{get_item_id(fresh_request)}",
                     message_type="extension_request",
                 )
                 ui.notify("延期申请已提交", type="positive", position="bottom")
@@ -727,56 +870,77 @@ async def error_management_page(error_id: str = ""):
             if not is_error_extension_approver(current_role):
                 return ui.notify("当前角色无延期审批权限", type="warning", position="bottom")
 
+            action_id = get_item_id(action)
+            request_id = get_item_id(request)
             now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             action_text = "通过延期申请" if approved else "驳回延期申请"
 
             def update_extension_request(current):
-                for stored_action in current.get("preventive_actions", []):
-                    if stored_action.get("id") != action.get("id"):
-                        continue
-                    for stored_request in stored_action.get("extension_requests", []):
-                        if stored_request.get("id") == request.get("id") and stored_request.get("status") == "待审批":
-                            stored_request["status"] = "已通过" if approved else "已驳回"
-                            stored_request["approver"] = current_user
-                            stored_request["approver_role"] = current_role
-                            stored_request["approved_at"] = now_str
-                            if approved:
-                                stored_action["due_date"] = stored_request.get(
-                                    "new_due_date", stored_action.get("due_date", "")
-                                )
-                            break
-                    break
+                stored_action = find_preventive_action(current, action_id)
+                if not stored_action:
+                    return "action_not_found", current
+                if stored_action.get("status") == "已关闭":
+                    return "action_closed", current
+                stored_request = find_extension_request(stored_action, request_id)
+                if not stored_request:
+                    return "request_not_found", current
+                if stored_request.get("status") != "待审批":
+                    return "already_processed", current
+
+                if approved:
+                    current_due_date = parse_date(stored_action.get("due_date", ""))
+                    requested_old_due_date = parse_date(stored_request.get("old_due_date", ""))
+                    if current_due_date != requested_old_due_date:
+                        return "due_date_changed", current
+
+                stored_request["status"] = "已通过" if approved else "已驳回"
+                stored_request["approver"] = current_user
+                stored_request["approver_role"] = current_role
+                stored_request["approved_at"] = now_str
+                if approved:
+                    stored_action["due_date"] = stored_request.get("new_due_date", stored_action.get("due_date", ""))
                 current["updated_by"] = current_user
                 current["updated_at"] = now_str
                 current.setdefault("operation_log", []).append(
                     {"user": current_user, "role": current_role, "action": action_text, "time": now_str}
                 )
-                return current
+                return "updated", current
 
-            success = await atomic_error_update(local_data["error_id"], update_extension_request)
-            if not success:
+            result = await atomic_error_update(local_data["error_id"], update_extension_request)
+            if result.code == "already_processed":
+                return ui.notify("该延期申请已被其他审批人处理，请刷新查看", type="warning", position="bottom")
+            if result.code == "due_date_changed":
+                return ui.notify("预计完成日期已发生变化，不能直接通过原延期申请", type="warning", position="bottom")
+            if result.code in {"action_not_found", "action_closed", "request_not_found", "not_found"}:
+                return ui.notify("该措施或延期申请已发生变化，请刷新查看", type="warning", position="bottom")
+            if not result.changed or not result.record:
                 return ui.notify("延期审批失败，请刷新后重试", type="negative", position="bottom")
 
-            approved_extension_count, request_count = get_extension_counts(action)
-            if approved:
-                approved_extension_count += 1
+            fresh_action = find_preventive_action(result.record, action_id)
+            fresh_request = find_extension_request(fresh_action or {}, request_id)
+            if not fresh_action or not fresh_request:
+                return ui.notify("延期审批已保存，但读取最新数据失败，请刷新查看", type="warning", position="bottom")
+            approved_extension_count, request_count = get_extension_counts(fresh_action)
             content = (
                 "生产异常延期申请审批结果\n"
-                f"异常单：{local_data['error_id']}\n"
-                f"产品：{local_data.get('basic_info', {}).get('product_name', '')}\n"
-                f"措施：{action.get('content', '')}\n"
+                f"异常单：{result.record['error_id']}\n"
+                f"产品：{result.record.get('basic_info', {}).get('product_name', '')}\n"
+                f"措施：{fresh_action.get('content', '')}\n"
                 f"审批结果：{'通过' if approved else '驳回'}\n"
                 f"累计延期申请：{request_count} 次\n"
                 f"当前已通过延期：{approved_extension_count} 次\n"
-                f"原预计日期：{request.get('old_due_date', '-')}\n"
-                f"申请延期至：{request.get('new_due_date', '-')}\n"
+                f"原预计日期：{fresh_request.get('old_due_date', '-')}\n"
+                f"申请延期至：{fresh_request.get('new_due_date', '-')}\n"
                 f"审批人：{current_user}"
             )
             schedule_background_task(
                 send_error_extension_wecom_message(
                     content,
-                    error_id=local_data["error_id"],
-                    business_key=f"{local_data['error_id']}:{action.get('id')}:{request.get('id')}:approval",
+                    error_id=result.record["error_id"],
+                    business_key=(
+                        f"{result.record['error_id']}:{get_item_id(fresh_action)}:"
+                        f"{get_item_id(fresh_request)}:approval"
+                    ),
                     message_type="extension_approval",
                 ),
                 "延期审批企业微信通知",
@@ -895,38 +1059,53 @@ async def error_management_page(error_id: str = ""):
                             )
 
                             async def close_preventive_action(event=None, action=item):
-                                if not action.get("close_note", "").strip():
+                                action_id = get_item_id(action)
+                                close_note = action.get("close_note", "").strip()
+                                if not close_note:
                                     return ui.notify("请填写关闭说明", type="warning", position="bottom")
                                 now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                                action["status"] = "已关闭"
-                                action["closed_by"] = current_user
-                                action["closed_role"] = current_role
-                                action["closed_at"] = now_str
 
                                 def update_action(current):
-                                    for stored_action in current.get("preventive_actions", []):
-                                        if stored_action.get("id") == action.get("id"):
-                                            stored_action.update(copy.deepcopy(action))
-                                            break
+                                    stored_action = find_preventive_action(current, action_id)
+                                    if not stored_action:
+                                        return "action_not_found", current
+                                    if stored_action.get("status") == "已关闭":
+                                        return "already_closed", current
+                                    if not can_edit_all and not is_current_responsible(
+                                        stored_action.get("owner", ""), current_user, current_role
+                                    ):
+                                        return "permission_changed", current
+                                    if get_pending_extension_request(stored_action):
+                                        return "pending_extension", current
+
+                                    stored_action["status"] = "已关闭"
+                                    stored_action["close_note"] = close_note
+                                    stored_action["closed_by"] = current_user
+                                    stored_action["closed_role"] = current_role
+                                    stored_action["closed_at"] = now_str
                                     current.setdefault("operation_log", []).append(
                                         {
                                             "user": current_user,
                                             "role": current_role,
-                                            "action": f"关闭纠正预防措施：{action.get('content', '')[:30]}",
+                                            "action": f"关闭纠正预防措施：{stored_action.get('content', '')[:30]}",
                                             "time": now_str,
                                         }
                                     )
                                     current["updated_by"] = current_user
                                     current["updated_at"] = now_str
-                                    if calculate_error_status(current) == "已关闭":
-                                        current["closed_at"] = now_str
-                                    return current
+                                    return "updated", current
 
-                                success = await atomic_error_update(local_data["error_id"], update_action)
-                                if success:
+                                result = await atomic_error_update(local_data["error_id"], update_action)
+                                if result.changed:
                                     ui.notify("纠正预防措施已关闭", type="positive", position="bottom")
                                     refresh_list()
                                     await open_error_detail_dialog(local_data["error_id"])
+                                elif result.code == "pending_extension":
+                                    ui.notify("该措施存在待审批延期申请，请先完成审批", type="warning", position="bottom")
+                                elif result.code == "permission_changed":
+                                    ui.notify("该措施负责人已变更，当前用户不能再关闭措施", type="warning", position="bottom")
+                                elif result.code in {"already_closed", "action_not_found", "not_found"}:
+                                    ui.notify("该措施已被其他用户处理，请刷新查看", type="warning", position="bottom")
                                 else:
                                     ui.notify("关闭失败，请刷新后重试", type="negative", position="bottom")
 
@@ -982,7 +1161,7 @@ async def error_management_page(error_id: str = ""):
                         calculate_error_status(local_data),
                         color="green" if calculate_error_status(local_data) == "已关闭" else "orange",
                     )
-                    ui.label(local_data["error_id"]).classes("font-mono font-bold text-lg text-gray-800")
+                    ui.label(local_data["error_id"] or "新异常单").classes("font-mono font-bold text-lg text-gray-800")
                     ui.label(local_data["basic_info"].get("product_name") or "未命名异常单").classes(
                         "text-base font-bold text-gray-700"
                     )
@@ -993,12 +1172,14 @@ async def error_management_page(error_id: str = ""):
                     with section("基础信息"):
                         basic = local_data["basic_info"]
                         with ui.row().classes("w-full gap-4 flex-wrap items-start"):
+                            bind_input("异常单号", local_data, "error_id", "w-full md:w-[32%]", readonly=not is_new)
                             bind_input("产品名称", basic, "product_name", "w-full md:w-[32%]")
                             bind_input("料号", basic, "material_no", "w-full md:w-[32%]")
-                            bind_input("订单号", basic, "order_no", "w-full md:w-[32%]")
                         with ui.row().classes("w-full gap-4 flex-wrap items-start"):
+                            bind_input("订单号", basic, "order_no", "w-full md:w-[32%]")
                             bind_input("投产数量", basic, "production_qty", "w-full md:w-[32%]")
                             bind_date("发文日期", basic, "publish_date", "w-full md:w-[32%]")
+                        with ui.row().classes("w-full gap-4 flex-wrap items-start"):
                             bind_select("产品状态", basic, "product_state", ERROR_PRODUCT_STATES, "w-full md:w-[32%]")
                         with ui.row().classes("w-full gap-3 text-xs text-gray-500"):
                             ui.label(f"创建：{local_data.get('created_by', '')} / {local_data.get('created_at', '')}")
@@ -1051,14 +1232,17 @@ async def error_management_page(error_id: str = ""):
                         preventive_container = ui.column().classes("w-full gap-3")
                         render_preventive_items(preventive_container)
 
-                    with section("操作留痕"):
-                        logs = local_data.get("operation_log", [])
-                        if not logs:
-                            ui.label("暂无操作记录").classes("text-sm text-gray-400")
-                        for log in reversed(logs[-20:]):
-                            ui.label(
-                                f"{log.get('time', '')}  {log.get('user', '')}({log.get('role', '')})  {log.get('action', '')}"
-                            ).classes("text-sm text-gray-600")
+                    with ui.expansion("操作留痕", icon="history", value=False).classes(
+                        "w-full bg-white border border-gray-200 rounded-md"
+                    ):
+                        with ui.column().classes("w-full gap-2 p-4 pt-0"):
+                            logs = local_data.get("operation_log", [])
+                            if not logs:
+                                ui.label("暂无操作记录").classes("text-sm text-gray-400")
+                            for log in reversed(logs[-20:]):
+                                ui.label(
+                                    f"{log.get('time', '')}  {log.get('user', '')}({log.get('role', '')})  {log.get('action', '')}"
+                                ).classes("text-sm text-gray-600")
 
             with ui.row().classes("w-full bg-white border-t border-gray-200 p-3 justify-end gap-3"):
                 ui.button("关闭窗口", on_click=root_dialog.close).props("outline color=grey")
