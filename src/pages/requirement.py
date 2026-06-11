@@ -4285,6 +4285,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                                                             temp_bool=temp_bool,
                                                             upload_path=data["upload_path"],
                                                             search_scope_regular=data["search_scope_regular"],
+                                                            search_folder_according=data["search_folder_according"],
                                                             content_regular=data["content_regular"],
                                                             search_folder_according_li=data["search_folder_according"],
                                                             search_hierarchy=data["search_hierarchy"],

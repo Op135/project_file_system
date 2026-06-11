@@ -714,6 +714,7 @@ class InteractiveButton:
         upload_path: str = SUBMIT_FILES_DIR,
         state_path: dict = {},
         search_scope_regular: str = "",
+        search_folder_according: list = [],
         content_regular: list = [],
         search_folder_according_li: list = [],
         search_hierarchy: list = [],
@@ -739,6 +740,7 @@ class InteractiveButton:
         self.upload_path = upload_path
         self.state_path = state_path
         self.search_scope_regular = search_scope_regular
+        self.search_folder_according = search_folder_according
         self.content_regular = content_regular
         self.search_folder_according_li = search_folder_according_li
         self.search_hierarchy = search_hierarchy
@@ -1163,6 +1165,7 @@ class InteractiveButton:
                 config_mock = {
                     "upload_path": self.upload_path,
                     "search_scope_regular": self.search_scope_regular,
+                    "search_folder_according": self.search_folder_according,
                     "search_folder_according_li": self.search_folder_according_li,
                     "search_hierarchy": self.search_hierarchy,
                 }
@@ -1859,6 +1862,7 @@ class InteractiveButton:
                 config_mock = {
                     "upload_path": self.upload_path,
                     "search_scope_regular": self.search_scope_regular,
+                    "search_folder_according": self.search_folder_according,
                     "search_folder_according_li": self.search_folder_according_li,
                     "search_hierarchy": self.search_hierarchy,
                 }
@@ -2895,6 +2899,7 @@ class InteractiveButton:
             config_mock = {
                 "upload_path": self.upload_path,
                 "search_scope_regular": self.search_scope_regular,
+                "search_folder_according": self.search_folder_according,
                 "search_folder_according_li": self.search_folder_according_li,
                 "search_hierarchy": self.search_hierarchy,
             }
