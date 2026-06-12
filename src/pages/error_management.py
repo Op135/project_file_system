@@ -41,6 +41,7 @@ from ..error_management_config import (
     ERROR_EXTENSION_NOTIFY_REQUESTER_ON_APPROVAL,
     ERROR_EXTENSION_NOTIFY_TARGETS,
     ERROR_FILTER_ALL_STATE,
+    ERROR_FILTER_PENDING_EXTENSION_STATE,
     ERROR_FILTER_STATES,
     ERROR_PRODUCT_STATES,
     ERROR_PUBLIC_BASE_URL,
@@ -205,6 +206,11 @@ def is_error_extension_approver(role: str) -> bool:
     return any(role_key in str(role) for role_key in ERROR_EXTENSION_APPROVER_ROLES)
 
 
+def is_error_rd_manager(role: str) -> bool:
+    """判断是否为研发经理角色，用于专属待办和人工提醒检查入口。"""
+    return "研发经理" in str(role)
+
+
 def is_error_admin(role: str) -> bool:
     """删除整张异常单属于高风险操作，仅允许角色值严格等于 admin。"""
     return str(role).strip().lower() == "admin"
@@ -300,6 +306,56 @@ def get_owner_extension_summary(error_data: dict) -> list[tuple[str, int]]:
         for owner in split_people(action.get("owner", "")):
             owner_counts[owner] = owner_counts.get(owner, 0) + approved_count
     return sorted(owner_counts.items(), key=lambda item: (-item[1], item[0]))
+
+
+def get_error_dashboard_pending_count(all_errors: Any, current_user: str, current_role: str) -> int:
+    """计算总页面“异常单跟进”卡片对当前用户显示的待办角标数量。
+
+    - 研发经理：统计所有纠正预防措施中的待审批延期申请条数。
+    - 其它角色：统计至少有一条未关闭措施由当前用户或当前角色负责的异常单数量；同一异常单
+      即使有多条措施由该用户负责，也只计为一个待处理异常。
+    """
+    if not isinstance(all_errors, dict):
+        return 0
+
+    if is_error_rd_manager(current_role):
+        return sum(
+            1
+            for error_data in all_errors.values()
+            if isinstance(error_data, dict)
+            for action in error_data.get("preventive_actions", [])
+            if isinstance(action, dict) and action.get("status") != "已关闭"
+            for request in action.get("extension_requests", [])
+            if isinstance(request, dict) and request.get("status") == "待审批"
+        )
+
+    return sum(
+        1
+        for error_data in all_errors.values()
+        if isinstance(error_data, dict)
+        and any(
+            isinstance(action, dict)
+            and action.get("status") != "已关闭"
+            and is_current_responsible(action.get("owner", ""), current_user, current_role)
+            for action in error_data.get("preventive_actions", [])
+        )
+    )
+
+
+def error_matches_filter(error_data: dict, filter_state: str) -> bool:
+    """判断异常单是否符合总览页筛选条件。
+
+    “延期申请中”是跨主状态的特殊筛选：异常单处于任何流程状态，只要存在待审批延期申请就命中。
+    其它筛选项仍与自动推导的异常单主状态进行匹配。
+    """
+    if filter_state == ERROR_FILTER_ALL_STATE:
+        return True
+    if filter_state == ERROR_FILTER_PENDING_EXTENSION_STATE:
+        return any(
+            isinstance(action, dict) and get_pending_extension_request(action)
+            for action in error_data.get("preventive_actions", [])
+        )
+    return calculate_error_status(error_data) == filter_state
 
 
 def get_error_management_url(error_id: str = "") -> str:
@@ -1489,11 +1545,12 @@ async def error_management_page(error_id: str = ""):
                     ).classes("w-44")
                     ui.button("查询", icon="search", on_click=lambda: refresh_list()).props("outline color=primary")
                 with ui.row().classes("gap-2 items-center"):
-                    ui.button(
-                        "检查提醒",
-                        icon="notifications_active",
-                        on_click=handle_manual_reminder_check,
-                    ).props("outline color=orange")
+                    if is_error_rd_manager(current_role):
+                        ui.button(
+                            "检查提醒",
+                            icon="notifications_active",
+                            on_click=handle_manual_reminder_check,
+                        ).props("outline color=orange")
                     if can_edit_all:
                         ui.button(
                             "录入异常单",
@@ -1549,7 +1606,7 @@ async def error_management_page(error_id: str = ""):
                             ).lower()
                             if keyword and keyword not in searchable:
                                 continue
-                            if filter_state != ERROR_FILTER_ALL_STATE and status != filter_state:
+                            if not error_matches_filter(error_data, filter_state):
                                 continue
 
                             rendered_count += 1

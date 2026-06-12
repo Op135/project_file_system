@@ -15,6 +15,7 @@ from ..utils import (
     online_users,
     setup_global_activity_tracking,
 )
+from .error_management import ERROR_DATA_KEY, get_error_dashboard_pending_count
 
 # 获取一个以此模块命名的 logger
 # 比如：如果你的文件是 src/components.py，这个 logger 的名字就会是 "src.components"
@@ -213,6 +214,12 @@ def main_page():
             change_task_count = 0
             # --- 新增：统计工程变更 (ECN) 的待办数量 ---
             ecn_pending_num_user = 0
+            # 异常模块待办：普通角色按待处理异常单计数，研发经理按待审批延期申请计数。
+            error_pending_num_user = get_error_dashboard_pending_count(
+                db_storage.get_item(ERROR_DATA_KEY, {}),
+                current_user,
+                current_role,
+            )
             # {项目工程师名:[负责项目,负责项目]}
             project_engineer_dic = get_project_engineer_project_list_dic()
             # 假设你的 ECN 数据统一存在 db_storage 的 ecn_management_data 键下
@@ -309,6 +316,8 @@ def main_page():
                 elif target == "/ecn_management":
                     # 将算出的 ECN 待办数量赋给这个卡片
                     pending_count = ecn_pending_num_user
+                elif target == "/error_management":
+                    pending_count = error_pending_num_user
 
                 # 2. 定义动态样式 (Dynamic Styling)
                 #    如果有待办，图标变黄；否则保持原本的蓝色

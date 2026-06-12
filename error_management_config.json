@@ -4,7 +4,7 @@
         "public_base_url": "企业微信消息中的页面跳转地址，不要以 / 结尾；必须是员工浏览器能够访问的地址。",
         "editor_roles": "可以录入新异常单、修改全部字段的角色关键字列表。",
         "product_states": "基础信息中“产品状态”下拉框的可选项。",
-        "filter_states": "总览页状态筛选项；“全部”即使遗漏，加载器也会自动补到第一项。",
+        "filter_states": "总览页状态筛选项；“全部”即使遗漏，加载器也会自动补到第一项。“延期申请中”用于筛选存在待审批延期申请的异常单。",
         "wecom.default_notify_targets": "异常模块默认通知对象规则；目前按企业微信通讯录职位精确匹配研发经理。",
         "wecom.extension.approver_roles": "可以通过或驳回延期申请的角色关键字列表。",
         "wecom.extension.notify_targets": "延期通知接收人规则列表；可使用 names、userids、department_contains、position 或 position_contains 等成员筛选条件。",
@@ -31,6 +31,7 @@
         "原因分析中",
         "应急处理中",
         "纠正预防执行中",
+        "延期申请中",
         "已关闭"
     ],
     "wecom": {
