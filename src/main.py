@@ -18,6 +18,11 @@ from . import (
 from .components import StorageBackupManager
 from .config import BASE_DIR, IMG_DIR, PDF_PREVIEW_CACHE, ST, WECOM_CONTACT_CACHE_TTL_SECONDS
 from .config_service import ConfigService
+from .error_management_config import (
+    ERROR_BACKGROUND_REMINDER_ENABLED,
+    ERROR_BACKGROUND_REMINDER_INITIAL_DELAY_SECONDS,
+    ERROR_BACKGROUND_REMINDER_INTERVAL_SECONDS,
+)
 from .user_service import UserService
 from .utils import (  # 导入上面定义的函数
     handle_connect,
@@ -196,18 +201,31 @@ def init_wecom_contacts_task():
 
 
 def init_error_reminder_task():
-    """初始化生产异常纠正预防措施后台提醒检查任务。"""
+    """初始化生产异常纠正预防措施后台提醒检查任务。
+
+    该任务挂载在服务进程上，不依赖用户打开异常管理页面。首次执行延迟、循环间隔和总开关均来自
+    根目录 ``error_management_config.json``。每次检查内部仍会使用数据库认领机制防止重复提醒，
+    所以手工检查与后台检查同时发生也不会重复发送同一条通知。
+    """
+    if not ERROR_BACKGROUND_REMINDER_ENABLED:
+        logger.info("生产异常后台提醒检查任务已通过配置禁用。")
+        return
 
     async def check_error_reminders():
+        # 延迟导入页面模块，避免应用启动阶段因页面与 main 互相导入形成循环依赖。
         from .pages.error_management import check_and_send_error_reminders
 
         sent_count, fail_count = await check_and_send_error_reminders(show_result=False)
         if sent_count or fail_count:
             logger.info("生产异常提醒检查完成：新发成功 %s 条，失败进入重试 %s 条", sent_count, fail_count)
 
-    app.timer(60, check_error_reminders, once=True)
-    app.timer(3600, check_error_reminders)
-    logger.info("生产异常后台提醒检查任务已挂载。")
+    app.timer(ERROR_BACKGROUND_REMINDER_INITIAL_DELAY_SECONDS, check_error_reminders, once=True)
+    app.timer(ERROR_BACKGROUND_REMINDER_INTERVAL_SECONDS, check_error_reminders)
+    logger.info(
+        "生产异常后台提醒检查任务已挂载（首次 %s 秒，循环 %s 秒）。",
+        ERROR_BACKGROUND_REMINDER_INITIAL_DELAY_SECONDS,
+        ERROR_BACKGROUND_REMINDER_INTERVAL_SECONDS,
+    )
 
 
 # ==========================================

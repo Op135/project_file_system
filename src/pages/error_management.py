@@ -1,68 +1,81 @@
 # -*- encoding: utf-8 -*-
+"""生产异常单的录入、跟进、延期审批、关闭和企业微信提醒页面。
+
+数据存储结构概览：
+- ``error_management_data`` 是数据库中的顶层字典，键为用户填写的异常单号，值为一张完整异常单。
+- 一张异常单包含基础信息，以及说明、分析、应急对策、纠正预防措施等列表。
+- 纠正预防措施拥有独立 id，延期申请又拥有自己的 id，便于并发更新时准确定位。
+- ``_revision`` 是整张异常单的版本号，用于阻止较早打开的表单覆盖其他用户或后台任务的新修改。
+
+权限分为两层：配置中的编辑角色可以维护整张异常单；普通用户仅能对自己负责的纠正预防措施
+申请延期或提交关闭说明。延期、审批、关闭等局部业务动作会在原子更新回调里重新检查权限和
+最新状态，不能只依赖页面按钮是否可见。
+"""
+
 import asyncio
-import copy  # copy: Python标准库，用于创建对象的副本
+import copy
 import logging
 import os
 import re
 import time
-import uuid  # uuid: Python标准库，用于生成全局唯一的标识符
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Optional
 from urllib.parse import quote
 
-from nicegui import app, ui  # nicegui: 第三方轻量级Python Web框架，用于纯Python编写前端UI
+from nicegui import app, ui
 
 from .. import db_storage
 from ..config import (
-    ERROR_EXTENSION_APPROVER_ROLES,
-    ERROR_EXTENSION_NOTIFY_TARGETS,
-    ERROR_EXTENSION_NOTIFY_TOUSER,
     IMG_DIR,
     PRESET_AVATARS,
-    SYSTEM_PUBLIC_BASE_URL,
     UPLOAD_URL_DIR,
     UPLOADS_DIR,
-    WECOM_DEFAULT_TOUSER,
+)
+from ..error_management_config import (
+    ERROR_DEFAULT_NOTIFY_TARGETS,
+    ERROR_EDITOR_ROLES,
+    ERROR_EXTENSION_APPROVAL_NOTIFY_TARGETS,
+    ERROR_EXTENSION_APPROVER_ROLES,
+    ERROR_EXTENSION_NOTIFY_REQUESTER_ON_APPROVAL,
+    ERROR_EXTENSION_NOTIFY_TARGETS,
+    ERROR_FILTER_ALL_STATE,
+    ERROR_FILTER_STATES,
+    ERROR_PRODUCT_STATES,
+    ERROR_PUBLIC_BASE_URL,
+    ERROR_REMINDER_RULES,
 )
 from ..utils import get_cache_busted_path, logout, setup_global_activity_tracking
 from ..wecom_service import resolve_wecom_recipients, retry_failed_wecom_messages, send_wecom_text_message
 
 logger = logging.getLogger(__name__)
 
+# 数据键保存全部异常单；版本时间戳只用于通知已打开页面刷新列表，不承担并发控制。
 ERROR_DATA_KEY = "error_management_data"
 ERROR_VERSION_KEY = "error_management_version_stamp"
-ERROR_EDITOR_ROLES = ["研发经理", "admin", "研发助理"]
-ERROR_PRODUCT_STATES = ["试产", "量产"]
-ERROR_FILTER_STATES = ["全部", "异常录入", "原因分析中", "应急处理中", "纠正预防执行中", "已关闭"]
-ERROR_REMINDER_RULES = [
-    {"key": "due_7_days", "label": "约定完成日期前7天", "days_until_due": 7},
-    {"key": "due_3_days", "label": "约定完成日期前3天", "days_until_due": 3},
-    {"key": "due_today", "label": "约定完成日期当天", "days_until_due": 0},
-    {"key": "overdue", "label": "约定完成日期逾期", "max_days_until_due": -1},
-]
 
 
 @dataclass
 class ErrorUpdateResult:
+    """统一描述一次异常单原子更新的结果，供页面把不同冲突转换成明确提示。"""
+
     db_success: bool
     changed: bool
     code: str
     record: Optional[dict] = None
 
 
-async def _send_wecom_text_message(content: str, touser: str = WECOM_DEFAULT_TOUSER) -> tuple[bool, str]:
-    return await send_wecom_text_message(
-        content,
-        touser,
-        module="error_management",
-        business_key="manual_test",
-        message_type="manual_test",
-        link_url=get_error_management_url(),
-    )
+async def resolve_error_notify_recipients(targets) -> str:
+    """按企业微信通讯录规则解析异常模块收件人，不再回落到固定个人账号。"""
+    touser = await resolve_wecom_recipients(targets, fallback_touser="")
+    if not touser:
+        logger.error("生产异常通知规则未匹配到任何企业微信成员：%s", targets)
+    return touser
 
 
 def schedule_background_task(coro, task_name: str) -> None:
+    """让不应阻塞页面交互的通知在后台发送，并确保异步异常会进入系统日志。"""
     task = asyncio.create_task(coro)
 
     def log_task_exception(done_task):
@@ -80,11 +93,16 @@ async def send_error_extension_wecom_message(
     error_id: str,
     business_key: str,
     message_type: str,
+    additional_people: str = "",
+    additional_targets=None,
 ) -> tuple[bool, str]:
-    touser = await resolve_wecom_recipients(
-        ERROR_EXTENSION_NOTIFY_TARGETS,
-        fallback_touser=ERROR_EXTENSION_NOTIFY_TOUSER,
-    )
+    """通知配置指定角色，并可额外合并申请人等动态人员。"""
+    role_recipients = await resolve_error_notify_recipients(ERROR_EXTENSION_NOTIFY_TARGETS)
+    additional_role_recipients = await resolve_error_notify_recipients(additional_targets) if additional_targets else ""
+    people_recipients = await format_people_for_wecom(additional_people) if additional_people else ""
+    touser = merge_wecom_recipients(role_recipients, additional_role_recipients, people_recipients)
+    if not touser:
+        return False, "生产异常延期通知规则未匹配到企业微信成员"
     return await send_wecom_text_message(
         content,
         touser,
@@ -96,6 +114,11 @@ async def send_error_extension_wecom_message(
 
 
 def get_error_template() -> dict:
+    """返回一张完整的空异常单。
+
+    新建记录和读取历史记录都会经过此模板。这样后续新增字段时，旧数据也能在页面中获得安全默认值，
+    不需要立即批量修改数据库中的所有历史异常单。
+    """
     return {
         "error_id": "",
         "_revision": 0,
@@ -106,7 +129,7 @@ def get_error_template() -> dict:
             "order_no": "",
             "production_qty": "",
             "publish_date": datetime.now().strftime("%Y-%m-%d"),
-            "product_state": "试产",
+            "product_state": ERROR_PRODUCT_STATES[0],
         },
         "descriptions": [],
         "analyses": [],
@@ -124,6 +147,7 @@ def get_error_template() -> dict:
 
 
 def merge_with_error_template(db_data: dict) -> dict:
+    """用模板补齐旧记录，同时深拷贝数据，避免页面编辑直接污染数据库内存缓存。"""
     merged = copy.deepcopy(get_error_template())
     if not isinstance(db_data, dict):
         return merged
@@ -141,6 +165,7 @@ def merge_with_error_template(db_data: dict) -> dict:
 
 
 def generate_initial_error_data(current_user: str, current_role: str) -> dict:
+    """创建新异常单草稿，并写入第一条操作留痕。异常单号仍由用户在表单中填写。"""
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     data = get_error_template()
     data["created_by"] = current_user
@@ -153,6 +178,11 @@ def generate_initial_error_data(current_user: str, current_role: str) -> dict:
 
 
 def calculate_error_status(error_data: dict) -> str:
+    """根据业务节点自动推导整单状态，状态不由用户直接选择。
+
+    推导顺序从最靠后的流程节点开始；存在纠正预防措施时，即使前面也有应急对策，
+    整单状态仍应显示为“纠正预防执行中”。
+    """
     preventive_actions = error_data.get("preventive_actions", [])
     if preventive_actions and all(item.get("status") == "已关闭" for item in preventive_actions):
         return "已关闭"
@@ -166,14 +196,22 @@ def calculate_error_status(error_data: dict) -> str:
 
 
 def is_error_editor(role: str) -> bool:
+    """判断当前角色是否包含任一配置的整单编辑角色关键字。"""
     return any(role_key in str(role) for role_key in ERROR_EDITOR_ROLES)
 
 
 def is_error_extension_approver(role: str) -> bool:
+    """判断当前角色是否可以审批延期申请。"""
     return any(role_key in str(role) for role_key in ERROR_EXTENSION_APPROVER_ROLES)
 
 
+def is_error_admin(role: str) -> bool:
+    """删除整张异常单属于高风险操作，仅允许角色值严格等于 admin。"""
+    return str(role).strip().lower() == "admin"
+
+
 def split_people(value: str) -> list[str]:
+    """把页面中常见的中文、英文分隔符统一解析为人员名称列表。"""
     if not value:
         return []
     normalized = value
@@ -182,10 +220,23 @@ def split_people(value: str) -> list[str]:
     return [item.strip() for item in normalized.split("|") if item.strip()]
 
 
+def merge_wecom_recipients(*recipient_values: str) -> str:
+    """合并多个企业微信收件人字符串，保持原顺序并去重。"""
+    recipients = []
+    seen = set()
+    for value in recipient_values:
+        for recipient in split_people(value):
+            if recipient not in seen:
+                recipients.append(recipient)
+                seen.add(recipient)
+    return "|".join(recipients)
+
+
 async def format_people_for_wecom(value: str) -> str:
+    """把负责人姓名解析成企业微信账号；解析不到时保留直接输入值作为发送兜底。"""
     people = split_people(value)
     if not people:
-        return WECOM_DEFAULT_TOUSER
+        return await resolve_error_notify_recipients(ERROR_DEFAULT_NOTIFY_TARGETS)
     direct_value = "|".join(people)
     return await resolve_wecom_recipients(
         [{"names": people}],
@@ -194,6 +245,7 @@ async def format_people_for_wecom(value: str) -> str:
 
 
 def parse_date(value: str):
+    """兼容历史数据中可能出现的三种日期格式，无法识别时返回 None。"""
     if not value:
         return None
     for fmt in ["%Y-%m-%d", "%Y/%m/%d", "%Y-%m-%d %H:%M:%S"]:
@@ -205,6 +257,7 @@ def parse_date(value: str):
 
 
 def is_current_responsible(owner_text: str, current_user: str, current_role: str) -> bool:
+    """负责人字段可填写姓名或角色，因此同时使用当前用户名和当前角色进行匹配。"""
     for owner in split_people(owner_text):
         if owner in [current_user, current_role] or owner in str(current_role) or owner in str(current_user):
             return True
@@ -212,6 +265,7 @@ def is_current_responsible(owner_text: str, current_user: str, current_role: str
 
 
 def ensure_item_id(item: dict, prefix: str) -> dict:
+    """为历史列表项补充稳定 id；局部原子更新必须依靠 id，而不能依赖可能变化的列表序号。"""
     item.setdefault("id", f"{prefix}_{uuid.uuid4().hex[:8]}")
     return item
 
@@ -224,6 +278,7 @@ def get_item_id(item: Any) -> str:
 
 
 def get_pending_extension_request(action: dict) -> Optional[dict]:
+    """返回最近一条待审批申请；业务规则保证同一措施最多有一条待审批申请。"""
     for request in reversed(action.get("extension_requests", [])):
         if request.get("status") == "待审批":
             return request
@@ -231,12 +286,14 @@ def get_pending_extension_request(action: dict) -> Optional[dict]:
 
 
 def get_extension_counts(action: dict) -> tuple[int, int]:
+    """返回（已通过次数, 总申请次数），驳回申请只计入总申请次数。"""
     requests = action.get("extension_requests", [])
     approved_count = sum(1 for request in requests if request.get("status") == "已通过")
     return approved_count, len(requests)
 
 
 def get_owner_extension_summary(error_data: dict) -> list[tuple[str, int]]:
+    """汇总每位负责人已获批的延期次数，用于总览卡片展示。"""
     owner_counts = {}
     for action in error_data.get("preventive_actions", []):
         approved_count, _ = get_extension_counts(action)
@@ -246,11 +303,13 @@ def get_owner_extension_summary(error_data: dict) -> list[tuple[str, int]]:
 
 
 def get_error_management_url(error_id: str = "") -> str:
-    page_url = f"{SYSTEM_PUBLIC_BASE_URL}/error_management"
+    """生成企业微信消息中的直达链接；带 error_id 时登录后会自动打开对应详情。"""
+    page_url = f"{ERROR_PUBLIC_BASE_URL}/error_management"
     return f"{page_url}?error_id={quote(error_id, safe='')}" if error_id else page_url
 
 
 def get_next_due_text(error_data: dict) -> str:
+    """总览卡片显示所有纠正预防措施中最晚的预计完成日期。"""
     due_dates = []
     for item in error_data.get("preventive_actions", []):
         due_date = parse_date(item.get("due_date", ""))
@@ -262,6 +321,7 @@ def get_next_due_text(error_data: dict) -> str:
 
 
 def get_record_revision(error_data: Optional[dict]) -> int:
+    """安全读取乐观锁版本号，损坏或缺失的历史值视为第 0 版。"""
     try:
         return max(0, int((error_data or {}).get("_revision", 0)))
     except (TypeError, ValueError):
@@ -269,6 +329,7 @@ def get_record_revision(error_data: Optional[dict]) -> int:
 
 
 def find_preventive_action(error_data: dict, action_id: str) -> Optional[dict]:
+    """在数据库最新记录中按稳定 id 查找纠正预防措施。"""
     actions = error_data.get("preventive_actions", [])
     if not isinstance(actions, list):
         return None
@@ -276,13 +337,17 @@ def find_preventive_action(error_data: dict, action_id: str) -> Optional[dict]:
 
 
 def find_extension_request(action: dict, request_id: str) -> Optional[dict]:
+    """在指定措施中按稳定 id 查找延期申请。"""
     requests = action.get("extension_requests", [])
     if not isinstance(requests, list):
         return None
-    return next((request for request in requests if isinstance(request, dict) and get_item_id(request) == request_id), None)
+    return next(
+        (request for request in requests if isinstance(request, dict) and get_item_id(request) == request_id), None
+    )
 
 
 def reminder_rule_matches(due_date, today, rule: dict) -> bool:
+    """判断某个预计完成日期是否命中一条 JSON 配置的提醒策略。"""
     days_until_due = (due_date - today).days
     if "days_until_due" in rule:
         return days_until_due == rule["days_until_due"]
@@ -292,6 +357,11 @@ def reminder_rule_matches(due_date, today, rule: dict) -> bool:
 
 
 async def save_error_record(error_data: dict, user: str, role: str, *, is_new: bool) -> ErrorUpdateResult:
+    """保存整张表单。
+
+    编辑已有记录时把页面打开时的 ``_revision`` 作为期望版本传入；如果期间有其他用户或后台提醒
+    更新过记录，保存会返回 ``revision_conflict``，避免旧页面覆盖新内容。
+    """
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     record = merge_with_error_template(error_data)
     record["updated_by"] = user
@@ -316,9 +386,18 @@ async def atomic_error_update(
     expected_revision: Optional[int] = None,
     create: bool = False,
 ) -> ErrorUpdateResult:
+    """生产异常模块唯一的数据库写入入口。
+
+    ``db_storage.atomic_deep_update`` 会在 SQLite 写事务中读取最新异常单，再执行 ``update_function``。
+    回调必须返回 ``("updated", 新记录)`` 才会写入；其它业务状态码会配合 ``ATOMIC_NO_UPDATE``
+    放弃写入。此模式保证延期审批、措施关闭、提醒认领等并发动作不会互相覆盖。
+
+    ``expected_revision`` 用于整单表单保存的乐观锁；``create`` 用于保证相同异常单号只能创建一次。
+    """
     outcome = {"changed": False, "code": "db_error", "record": None}
 
     def apply_update(current):
+        # 下列存在性、版本和业务条件判断全部位于事务内，判断依据始终是数据库最新值。
         current_exists = isinstance(current, dict) and bool(current.get("error_id"))
         if create:
             if current is not None:
@@ -343,6 +422,7 @@ async def atomic_error_update(
             return db_storage.ATOMIC_NO_UPDATE
 
         updated = merge_with_error_template(updated)
+        # 每次成功修改都递增版本，并统一重算整单状态，避免各个操作入口各自维护状态造成偏差。
         updated["_revision"] = get_record_revision(record) + 1
         updated["status"] = calculate_error_status(updated)
         if updated["status"] == "已关闭" and not updated.get("closed_at"):
@@ -355,6 +435,40 @@ async def atomic_error_update(
 
     success = await db_storage.atomic_deep_update([ERROR_DATA_KEY, error_id], apply_update)
     if success and outcome["changed"]:
+        # 列表页每 5 秒观察此时间戳；变化时只重绘列表，不用于判断数据是否可写。
+        await db_storage.set_item(ERROR_VERSION_KEY, time.time())
+    return ErrorUpdateResult(
+        db_success=success,
+        changed=bool(success and outcome["changed"]),
+        code=outcome["code"] if success else "db_error",
+        record=outcome["record"],
+    )
+
+
+async def delete_error_record(error_id: str, role: str) -> ErrorUpdateResult:
+    """由 admin 原子删除单张异常单。
+
+    删除时更新整个 ``error_management_data`` 顶层字典，而不是调用依赖当前实例缓存的深层删除。
+    ``atomic_deep_update`` 会在事务内读取最新字典，因此其它实例同时新增或修改的异常单会被保留。
+    """
+    if not is_error_admin(role):
+        return ErrorUpdateResult(db_success=False, changed=False, code="forbidden")
+
+    outcome = {"changed": False, "code": "db_error", "record": None}
+
+    def remove_record(all_errors):
+        if not isinstance(all_errors, dict) or error_id not in all_errors:
+            outcome["code"] = "not_found"
+            return db_storage.ATOMIC_NO_UPDATE
+
+        outcome["record"] = copy.deepcopy(all_errors[error_id])
+        del all_errors[error_id]
+        outcome["changed"] = True
+        outcome["code"] = "deleted"
+        return all_errors
+
+    success = await db_storage.atomic_deep_update([ERROR_DATA_KEY], remove_record)
+    if success and outcome["changed"]:
         await db_storage.set_item(ERROR_VERSION_KEY, time.time())
     return ErrorUpdateResult(
         db_success=success,
@@ -365,6 +479,15 @@ async def atomic_error_update(
 
 
 async def check_and_send_error_reminders(show_result: bool = False) -> tuple[int, int]:
+    """检查所有未关闭措施并发送到期提醒。
+
+    去重标记格式为 ``措施id:规则key:日期``。发送前先通过原子更新把标记写成 ``sending`` 并附带
+    唯一 claim_id，只有成功认领的任务才可以发送；因此多人打开页面或多个服务实例同时检查时，
+    同一条提醒也只会由一个任务发送。卡在 sending 超过 10 分钟的标记允许重新认领。
+
+    企业微信发送失败会先进入统一发送日志，后续由 wecom_service 重试；这里再把本次结果写回
+    异常单 reminder_log，方便审计。
+    """
     retry_success_count, retry_fail_count = await retry_failed_wecom_messages()
     all_errors = db_storage.get_item(ERROR_DATA_KEY, {})
     today = datetime.now().date()
@@ -395,6 +518,7 @@ async def check_and_send_error_reminders(show_result: bool = False) -> tuple[int
                 if marker in error_data.get("reminder_log", {}):
                     continue
 
+                # claim_id 用于确认发送结果仍属于当前认领者，防止超时重认领后旧任务覆盖新任务状态。
                 claim_id = uuid.uuid4().hex
 
                 def claim_reminder(current, marker=marker, rule=rule, claim_id=claim_id, action_id=action_id):
@@ -432,6 +556,7 @@ async def check_and_send_error_reminders(show_result: bool = False) -> tuple[int
                 if not claim_result.changed or not claim_result.record:
                     continue
 
+                # 认领成功后使用事务返回的最新记录发送，避免使用循环开始时已经过时的负责人或日期。
                 fresh_error = claim_result.record
                 fresh_action = find_preventive_action(fresh_error, action_id)
                 if not fresh_action:
@@ -493,6 +618,7 @@ async def check_and_send_error_reminders(show_result: bool = False) -> tuple[int
 
 
 def save_uploaded_evidence_file(error_id: str, action_id: str, original_filename: str, content: bytes) -> dict:
+    """保存措施证据附件并返回可写入异常单的数据；关闭说明本身不要求必须上传文件。"""
     safe_name = os.path.basename(original_filename).replace("\\", "_").replace("/", "_")
     stored_name = f"{datetime.now().strftime('%Y%m%d%H%M%S')}_{uuid.uuid4().hex[:8]}_{safe_name}"
     relative_dir = f"error_management/{error_id}/{action_id}"
@@ -515,6 +641,7 @@ def save_uploaded_evidence_file(error_id: str, action_id: str, original_filename
 # @ui.page: NiceGUI框架的路由装饰器，用于定义页面路径
 @ui.page("/error_management")
 async def error_management_page(error_id: str = ""):
+    """构建异常管理页面；error_id 来自企业微信直达链接，可在登录后自动打开对应异常单。"""
     # --- 调用全局活跃跟踪组件 ---
     setup_global_activity_tracking()
 
@@ -545,28 +672,16 @@ async def error_management_page(error_id: str = ""):
         app.storage.general.get("user_preferences", {}).get(current_user, {}).get("avatar", PRESET_AVATARS[0])
     )
 
-    page_state = {"search_keyword": "", "filter_state": "全部"}
+    page_state = {"search_keyword": "", "filter_state": ERROR_FILTER_ALL_STATE}
 
     # ui.dialog: NiceGUI框架提供的模态对话框组件
     dialog = ui.dialog().props("persistent")
     root_dialog = ui.dialog().props("maximized persistent")
 
     can_edit_all = is_error_editor(current_role)
+    can_delete_record = is_error_admin(current_role)
+    # 此变量只防止同一页面被连续点击触发多个手工检查；跨页面、跨用户的提醒去重由数据库认领机制负责。
     reminder_guard = {"running": False}
-
-    async def send_test_wecom_notification(e):
-        e.sender.disable()
-        try:
-            content = (
-                "生产异常管理模块测试通知\n"
-                f"发送人：{current_user}\n"
-                f"时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-            )
-            ui.notify("正在发送企业微信测试通知...", type="info", position="bottom", timeout=1500)
-            success, message = await _send_wecom_text_message(content)
-            ui.notify(message, type="positive" if success else "negative", position="bottom", multi_line=True)
-        finally:
-            e.sender.enable()
 
     async def run_reminder_check(show_result: bool = False):
         if reminder_guard["running"]:
@@ -584,6 +699,7 @@ async def error_management_page(error_id: str = ""):
         await open_error_detail_dialog()
 
     def validate_error_record(error_data: dict) -> bool:
+        """执行整单保存前的最低业务校验；更细的并发和权限校验仍由数据库更新入口负责。"""
         error_data["error_id"] = str(error_data.get("error_id", "")).strip()
         if not error_data["error_id"]:
             ui.notify("请填写异常单号", type="warning", position="bottom")
@@ -601,6 +717,11 @@ async def error_management_page(error_id: str = ""):
         return True
 
     async def open_error_detail_dialog(error_id=None):
+        """读取异常单快照并创建详情窗口。
+
+        窗口中的 local_data 是独立深拷贝：整单编辑可在本地暂存到“保存异常单”时统一提交；
+        延期、审批、关闭等动作则立即使用原子更新写库，成功后重新打开详情展示最新数据。
+        """
         is_new = error_id is None
         if is_new and not can_edit_all:
             return ui.notify("当前角色无异常单录入权限", type="warning", position="bottom")
@@ -620,6 +741,7 @@ async def error_management_page(error_id: str = ""):
         for item in local_data["emergency_actions"]:
             ensure_item_id(item, "emergency")
         for item in local_data["preventive_actions"]:
+            # 兼容字段是在打开历史记录时补齐的，避免早期数据缺少延期或关闭字段导致页面报错。
             ensure_item_id(item, "preventive")
             item.setdefault("status", "待执行")
             item.setdefault("evidence_files", [])
@@ -639,6 +761,7 @@ async def error_management_page(error_id: str = ""):
             return field
 
         def bind_date(label, target, key, classes="w-full", readonly=None):
+            """创建只能通过日历选择的日期输入框，并把选择结果同步到当前表单快照。"""
             field_readonly = read_only if readonly is None else readonly
             field = (
                 ui.input(label, value=target.get(key, "")).props("outlined dense readonly").classes(f"{classes} mb-3")
@@ -694,6 +817,7 @@ async def error_management_page(error_id: str = ""):
                 return ui.column().classes("w-full gap-3")
 
         async def save_current_record():
+            """提交整张编辑表单，并把重复单号或版本冲突转换为用户可理解的提示。"""
             if not can_edit_all:
                 return ui.notify("当前角色无保存权限", type="warning", position="bottom")
             if not validate_error_record(local_data):
@@ -714,7 +838,43 @@ async def error_management_page(error_id: str = ""):
             root_dialog.close()
             refresh_list()
 
+        def open_delete_confirmation():
+            """打开高风险操作确认框；真正删除时仍会再次校验 admin 角色。"""
+            if is_new or not can_delete_record:
+                return ui.notify("当前角色无删除异常单权限", type="warning", position="bottom")
+
+            target_error_id = local_data["error_id"]
+
+            async def confirm_delete():
+                result = await delete_error_record(target_error_id, current_role)
+                if result.code == "forbidden":
+                    return ui.notify("当前角色无删除异常单权限", type="warning", position="bottom")
+                if result.code == "not_found":
+                    ui.notify("该异常单已被删除", type="warning", position="bottom")
+                    dialog.close()
+                    root_dialog.close()
+                    refresh_list()
+                    return
+                if not result.changed:
+                    return ui.notify("异常单删除失败，请刷新后重试", type="negative", position="bottom")
+
+                ui.notify(f"异常单 {target_error_id} 已删除", type="positive", position="bottom")
+                dialog.close()
+                root_dialog.close()
+                refresh_list()
+
+            dialog.clear()
+            with dialog, ui.card().classes("w-1/3 max-w-md p-5"):
+                ui.label("确认删除异常单").classes("text-lg font-bold text-red-700")
+                ui.label(f"异常单号：{target_error_id}").classes("font-mono font-bold text-gray-800")
+                ui.label("删除后将无法从页面恢复，请确认该异常单确实需要删除。").classes("text-sm text-gray-600")
+                with ui.row().classes("w-full justify-end gap-3 mt-3"):
+                    ui.button("取消", on_click=dialog.close).props("outline color=grey")
+                    ui.button("确认删除", icon="delete_forever", on_click=confirm_delete).props("color=negative")
+            dialog.open()
+
         def render_standard_items(container, list_key, title, fields, prefix, empty_text):
+            """渲染说明、分析和应急对策三类结构相近的可重复表单项。"""
             items = local_data[list_key]
             container.clear()
             with container:
@@ -751,6 +911,7 @@ async def error_management_page(error_id: str = ""):
                     ui.button(f"添加{title}", icon="add", on_click=add_item).props("outline dense color=primary")
 
         async def open_extension_request_dialog(action: dict):
+            """由措施负责人发起延期申请；真正提交时会再次读取数据库并核验负责人和日期。"""
             action_id = get_item_id(action)
             pending_request = get_pending_extension_request(action)
             if pending_request:
@@ -785,6 +946,7 @@ async def error_management_page(error_id: str = ""):
                 }
 
                 def add_extension_request(current):
+                    # 此回调在数据库事务内执行。即使页面打开后负责人、状态或日期发生变化，也不会误提交。
                     stored_action = find_preventive_action(current, action_id)
                     if not stored_action:
                         return "action_not_found", current
@@ -829,7 +991,9 @@ async def error_management_page(error_id: str = ""):
                 fresh_action = find_preventive_action(result.record, action_id)
                 fresh_request = find_extension_request(fresh_action or {}, extension_request["id"])
                 if not fresh_action or not fresh_request:
-                    return ui.notify("延期申请已保存，但读取最新数据失败，请刷新查看", type="warning", position="bottom")
+                    return ui.notify(
+                        "延期申请已保存，但读取最新数据失败，请刷新查看", type="warning", position="bottom"
+                    )
                 approved_extension_count, current_request_count = get_extension_counts(fresh_action)
                 content = (
                     "生产异常纠正预防措施延期申请\n"
@@ -867,6 +1031,7 @@ async def error_management_page(error_id: str = ""):
             dialog.open()
 
         async def approve_extension_request(action: dict, request: dict, approved: bool):
+            """审批一条延期申请；通过时才修改措施预计完成日期，驳回只记录审批结果。"""
             if not is_error_extension_approver(current_role):
                 return ui.notify("当前角色无延期审批权限", type="warning", position="bottom")
 
@@ -888,6 +1053,7 @@ async def error_management_page(error_id: str = ""):
                     return "already_processed", current
 
                 if approved:
+                    # 申请提交后若日期已被其它操作修改，原申请的基准已失效，不能继续直接通过。
                     current_due_date = parse_date(stored_action.get("due_date", ""))
                     requested_old_due_date = parse_date(stored_request.get("old_due_date", ""))
                     if current_due_date != requested_old_due_date:
@@ -934,14 +1100,19 @@ async def error_management_page(error_id: str = ""):
                 f"审批人：{current_user}"
             )
             schedule_background_task(
+                # 审批数据已经成功落库，通知异步发送，避免企业微信接口延迟阻塞页面刷新。
                 send_error_extension_wecom_message(
                     content,
                     error_id=result.record["error_id"],
                     business_key=(
-                        f"{result.record['error_id']}:{get_item_id(fresh_action)}:"
-                        f"{get_item_id(fresh_request)}:approval"
+                        f"{result.record['error_id']}:{get_item_id(fresh_action)}:{get_item_id(fresh_request)}:approval"
                     ),
                     message_type="extension_approval",
+                    additional_people=(
+                        fresh_request.get("requester", "") if ERROR_EXTENSION_NOTIFY_REQUESTER_ON_APPROVAL else ""
+                    ),
+                    # 品质经理和 QE 工程师只在延期通过时追加通知，驳回时不通知。
+                    additional_targets=ERROR_EXTENSION_APPROVAL_NOTIFY_TARGETS if approved else None,
                 ),
                 "延期审批企业微信通知",
             )
@@ -950,6 +1121,11 @@ async def error_management_page(error_id: str = ""):
             await open_error_detail_dialog(local_data["error_id"])
 
         def render_preventive_items(container):
+            """渲染纠正预防措施及其延期、审批、关闭操作。
+
+            页面只负责根据当前快照决定按钮是否显示；每个按钮对应的写入回调仍会在事务内重新校验，
+            因而不能通过保留旧页面或并发点击绕过权限和状态限制。
+            """
             items = local_data["preventive_actions"]
             container.clear()
             with container:
@@ -1003,6 +1179,7 @@ async def error_management_page(error_id: str = ""):
                                     f"原因：{pending_extension.get('reason', '-')}"
                                 ).classes("text-sm text-orange-700")
                                 if is_error_extension_approver(current_role):
+
                                     async def reject_extension(event=None, a=item, r=pending_extension):
                                         await approve_extension_request(a, r, False)
 
@@ -1059,6 +1236,7 @@ async def error_management_page(error_id: str = ""):
                             )
 
                             async def close_preventive_action(event=None, action=item):
+                                """使用文字关闭说明完成措施关闭，并立即原子写入数据库。"""
                                 action_id = get_item_id(action)
                                 close_note = action.get("close_note", "").strip()
                                 if not close_note:
@@ -1066,6 +1244,7 @@ async def error_management_page(error_id: str = ""):
                                 now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
                                 def update_action(current):
+                                    # 待审批延期存在时不允许关闭，避免审批通过后又改变已关闭措施的日期。
                                     stored_action = find_preventive_action(current, action_id)
                                     if not stored_action:
                                         return "action_not_found", current
@@ -1101,9 +1280,13 @@ async def error_management_page(error_id: str = ""):
                                     refresh_list()
                                     await open_error_detail_dialog(local_data["error_id"])
                                 elif result.code == "pending_extension":
-                                    ui.notify("该措施存在待审批延期申请，请先完成审批", type="warning", position="bottom")
+                                    ui.notify(
+                                        "该措施存在待审批延期申请，请先完成审批", type="warning", position="bottom"
+                                    )
                                 elif result.code == "permission_changed":
-                                    ui.notify("该措施负责人已变更，当前用户不能再关闭措施", type="warning", position="bottom")
+                                    ui.notify(
+                                        "该措施负责人已变更，当前用户不能再关闭措施", type="warning", position="bottom"
+                                    )
                                 elif result.code in {"already_closed", "action_not_found", "not_found"}:
                                     ui.notify("该措施已被其他用户处理，请刷新查看", type="warning", position="bottom")
                                 else:
@@ -1114,6 +1297,7 @@ async def error_management_page(error_id: str = ""):
                                     f"累计申请 {extension_request_count} 次，已延期 {approved_extension_count} 次"
                                 ).classes("text-xs text-gray-500")
                                 if can_apply_extension:
+
                                     async def apply_extension(event=None, a=item):
                                         await open_extension_request_dialog(a)
 
@@ -1245,6 +1429,10 @@ async def error_management_page(error_id: str = ""):
                                 ).classes("text-sm text-gray-600")
 
             with ui.row().classes("w-full bg-white border-t border-gray-200 p-3 justify-end gap-3"):
+                if can_delete_record and not is_new:
+                    ui.button("删除异常单", icon="delete_forever", on_click=open_delete_confirmation).props(
+                        "outline color=negative"
+                    )
                 ui.button("关闭窗口", on_click=root_dialog.close).props("outline color=grey")
                 if can_edit_all:
                     ui.button("保存异常单", icon="save", on_click=save_current_record).props("color=primary")
@@ -1306,11 +1494,6 @@ async def error_management_page(error_id: str = ""):
                         icon="notifications_active",
                         on_click=handle_manual_reminder_check,
                     ).props("outline color=orange")
-                    ui.button(
-                        "企微测试",
-                        icon="send",
-                        on_click=send_test_wecom_notification,
-                    ).props("outline color=primary")
                     if can_edit_all:
                         ui.button(
                             "录入异常单",
@@ -1322,6 +1505,7 @@ async def error_management_page(error_id: str = ""):
                 list_container = ui.column().classes("w-full gap-3")
 
                 def refresh_list():
+                    """从数据库缓存重新读取、筛选并绘制总览卡片；不复用详情窗口中的 local_data。"""
                     list_container.clear()
                     all_errors = db_storage.get_item(ERROR_DATA_KEY, {})
                     keyword = page_state["search_keyword"].lower().strip()
@@ -1365,7 +1549,7 @@ async def error_management_page(error_id: str = ""):
                             ).lower()
                             if keyword and keyword not in searchable:
                                 continue
-                            if filter_state != "全部" and status != filter_state:
+                            if filter_state != ERROR_FILTER_ALL_STATE and status != filter_state:
                                 continue
 
                             rendered_count += 1
@@ -1445,6 +1629,7 @@ async def error_management_page(error_id: str = ""):
                             ui.label("没有符合筛选条件的异常单").classes("text-gray-500 m-auto mt-10")
 
                 def check_and_refresh_list():
+                    """检测后台或其他用户写入的版本时间戳，必要时自动刷新当前浏览器的总览列表。"""
                     current_stamp = db_storage.get_item(ERROR_VERSION_KEY, 0.0)
                     if page_state.get("version_stamp", 0.0) != 0.0 and current_stamp != page_state["version_stamp"]:
                         page_state["version_stamp"] = current_stamp

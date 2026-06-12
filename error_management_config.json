@@ -1,0 +1,94 @@
+{
+    "_说明": "生产异常管理模块业务配置。修改后需要重启系统才能生效。所有角色名称均按 current_role 做包含匹配。",
+    "_字段说明": {
+        "public_base_url": "企业微信消息中的页面跳转地址，不要以 / 结尾；必须是员工浏览器能够访问的地址。",
+        "editor_roles": "可以录入新异常单、修改全部字段的角色关键字列表。",
+        "product_states": "基础信息中“产品状态”下拉框的可选项。",
+        "filter_states": "总览页状态筛选项；“全部”即使遗漏，加载器也会自动补到第一项。",
+        "wecom.default_notify_targets": "异常模块默认通知对象规则；目前按企业微信通讯录职位精确匹配研发经理。",
+        "wecom.extension.approver_roles": "可以通过或驳回延期申请的角色关键字列表。",
+        "wecom.extension.notify_targets": "延期通知接收人规则列表；可使用 names、userids、department_contains、position 或 position_contains 等成员筛选条件。",
+        "wecom.extension.approval_notify_targets": "仅在延期审批通过后追加通知的成员规则；驳回和申请提交不会通知这些角色。",
+        "wecom.extension.notify_requester_on_approval": "审批通过或驳回后，是否同时通知本次延期申请人。",
+        "reminders.background_enabled": "是否在系统启动后自动运行到期提醒检查。",
+        "reminders.initial_delay_seconds": "系统启动多少秒后执行第一次提醒检查，必须为正整数。",
+        "reminders.check_interval_seconds": "后台提醒检查间隔秒数，必须为正整数。",
+        "reminders.rules": "提醒策略列表。days_until_due 表示恰好提前几天，max_days_until_due 表示小于等于几天；每条规则只能配置其中一种。enabled=false 可临时停用。"
+    },
+    "public_base_url": "http://192.168.1.102:8080",
+    "editor_roles": [
+        "研发经理",
+        "admin",
+        "研发助理"
+    ],
+    "product_states": [
+        "试产",
+        "量产"
+    ],
+    "filter_states": [
+        "全部",
+        "异常录入",
+        "原因分析中",
+        "应急处理中",
+        "纠正预防执行中",
+        "已关闭"
+    ],
+    "wecom": {
+        "default_notify_targets": [
+            {
+                "position": "研发经理"
+            }
+        ],
+        "extension": {
+            "approver_roles": [
+                "研发经理",
+                "admin"
+            ],
+            "notify_targets": [
+                {
+                    "position": "研发经理"
+                }
+            ],
+            "approval_notify_targets": [
+                {
+                    "position": "研发经理"
+                },
+                {
+                    "position": "研发助理"
+                }
+            ],
+            "notify_requester_on_approval": true
+        }
+    },
+    "reminders": {
+        "background_enabled": true,
+        "initial_delay_seconds": 60,
+        "check_interval_seconds": 3600,
+        "rules": [
+            {
+                "key": "due_7_days",
+                "label": "约定完成日期前7天",
+                "days_until_due": 7,
+                "enabled": true
+            },
+            {
+                "key": "due_3_days",
+                "label": "约定完成日期前3天",
+                "days_until_due": 3,
+                "enabled": true
+            },
+            {
+                "key": "due_today",
+                "label": "约定完成日期当天",
+                "days_until_due": 0,
+                "enabled": true
+            },
+            {
+                "key": "overdue",
+                "label": "约定完成日期逾期",
+                "max_days_until_due": -1,
+                "enabled": true
+            }
+        ]
+    }
+}

@@ -1,0 +1,116 @@
+"""生产异常 JSON 配置加载器的回归测试。
+
+这组测试不关心页面样式，只保证根目录配置具有运行所需的关键字段，并验证错误配置不会阻止
+系统启动。新增可维护字段或新的校验规则时，应在这里补充相应断言。
+"""
+
+import json
+import importlib
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import AsyncMock, patch
+
+ROOT_DIR = Path(__file__).resolve().parents[1]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
+error_management_config = importlib.import_module("src.error_management_config")
+error_management = importlib.import_module("src.pages.error_management")
+
+
+class ErrorManagementConfigTests(unittest.TestCase):
+    def test_project_config_has_required_business_values(self):
+        """项目实际使用的根目录 JSON 应能生成一份可运行的配置。"""
+        config = error_management_config.ERROR_MANAGEMENT_CONFIG
+
+        self.assertTrue(config["public_base_url"].startswith("http"))
+        self.assertTrue(config["editor_roles"])
+        self.assertTrue(config["product_states"])
+        self.assertEqual(config["filter_states"][0], "全部")
+        self.assertEqual(config["wecom"]["default_notify_targets"], [{"position": "研发经理"}])
+        self.assertTrue(config["wecom"]["extension"]["approver_roles"])
+        self.assertEqual(
+            config["wecom"]["extension"]["approval_notify_targets"],
+            [{"position": "品质经理"}, {"position": "QE工程师"}],
+        )
+        self.assertTrue(config["wecom"]["extension"]["notify_requester_on_approval"])
+        self.assertTrue(config["reminders"]["rules"])
+        self.assertNotIn("YueYeXiaoSheng", error_management_config.ERROR_MANAGEMENT_CONFIG_PATH.read_text(encoding="utf-8"))
+
+    def test_invalid_fields_fall_back_and_disabled_rules_are_removed(self):
+        """坏字段应逐项回退；合法字段继续生效；禁用提醒规则不进入运行时列表。"""
+        test_config = {
+            "public_base_url": "",
+            "editor_roles": "invalid",
+            "filter_states": ["已关闭"],
+            "reminders": {
+                "initial_delay_seconds": -1,
+                "check_interval_seconds": 120,
+                "rules": [
+                    {
+                        "key": "disabled",
+                        "label": "禁用规则",
+                        "days_until_due": 1,
+                        "enabled": False,
+                    },
+                    {
+                        "key": "valid",
+                        "label": "有效规则",
+                        "days_until_due": 2,
+                        "enabled": True,
+                    },
+                ],
+            },
+        }
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # 临时替换配置文件路径，不读取或修改项目真实配置。
+            config_path = Path(temp_dir) / "error_management_config.json"
+            config_path.write_text(json.dumps(test_config, ensure_ascii=False), encoding="utf-8")
+            with patch.object(error_management_config, "ERROR_MANAGEMENT_CONFIG_PATH", config_path):
+                loaded = error_management_config.load_error_management_config()
+
+        self.assertEqual(loaded["public_base_url"], "http://192.168.1.102:8080")
+        self.assertEqual(loaded["editor_roles"], ["研发经理", "admin", "研发助理"])
+        self.assertEqual(loaded["filter_states"], ["全部", "已关闭"])
+        self.assertEqual(loaded["wecom"]["default_notify_targets"], [{"position": "研发经理"}])
+        self.assertEqual(
+            loaded["wecom"]["extension"]["approval_notify_targets"],
+            [{"position": "品质经理"}, {"position": "QE工程师"}],
+        )
+        self.assertEqual(loaded["reminders"]["initial_delay_seconds"], 60)
+        self.assertEqual(loaded["reminders"]["check_interval_seconds"], 120)
+        self.assertEqual(loaded["reminders"]["rules"], [{"key": "valid", "label": "有效规则", "days_until_due": 2}])
+
+
+class ErrorManagementNotificationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_extension_approval_notification_combines_role_and_requester(self):
+        """审批结果通知应同时包含配置角色和申请人，并由发送层统一发送。"""
+        resolve_mock = AsyncMock(side_effect=["rd-manager-userid", "quality-manager-userid|qe-userid", "requester-userid"])
+        send_mock = AsyncMock(return_value=(True, "发送成功"))
+
+        with (
+            patch.object(error_management, "resolve_wecom_recipients", resolve_mock),
+            patch.object(error_management, "send_wecom_text_message", send_mock),
+        ):
+            success, _ = await error_management.send_error_extension_wecom_message(
+                "审批结果",
+                error_id="ERR-001",
+                business_key="ERR-001:approval",
+                message_type="extension_approval",
+                additional_people="申请人",
+                additional_targets=[{"position": "品质经理"}, {"position": "QE工程师"}],
+            )
+
+        self.assertTrue(success)
+        self.assertEqual(
+            send_mock.await_args.args[1],
+            "rd-manager-userid|quality-manager-userid|qe-userid|requester-userid",
+        )
+        self.assertEqual(resolve_mock.await_count, 3)
+
+
+if __name__ == "__main__":
+    unittest.main()

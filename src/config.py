@@ -1,27 +1,12 @@
 # -*- encoding: utf-8 -*-
-import json
-import logging
 import os
 from pathlib import Path
 
-from nicegui import app, events, ui
+from nicegui import app
 
-# 获取一个以此模块命名的 logger
-# 比如：如果你的文件是 src/components.py，这个 logger 的名字就会是 "src.components"
-logger = logging.getLogger(__name__)
-
-
-def _load_json_env(name: str, default):
-    raw_value = os.environ.get(name)
-    if not raw_value:
-        return default
-    try:
-        parsed_value = json.loads(raw_value)
-    except json.JSONDecodeError:
-        logger.warning("环境变量 %s 不是合法 JSON，已使用默认配置", name)
-        return default
-    return parsed_value if isinstance(parsed_value, type(default)) else default
-
+# 生产异常模块拥有独立的根目录 JSON 配置和校验加载器。
+# 此处仅保留旧常量别名，兼容项目中可能仍从 src.config 导入这些名称的其它模块。
+from . import error_management_config as _error_management_config
 
 # 从环境变量中读取密钥。如果找不到，则使用一个仅供本地开发的默认值。
 # 在生产环境中，必须设置环境变量，否则会使用不安全的默认值。
@@ -41,21 +26,10 @@ WECOM_CONTACT_CACHE_TTL_SECONDS = int(os.environ.get("WECOM_CONTACT_CACHE_TTL_SE
 # 企业微信发送日志保留天数和失败重试次数
 WECOM_LOG_RETENTION_DAYS = int(os.environ.get("WECOM_LOG_RETENTION_DAYS", "90"))
 WECOM_MAX_RETRY_COUNT = int(os.environ.get("WECOM_MAX_RETRY_COUNT", "3"))
-# 员工通过企业微信通知访问系统时使用的地址。生产环境应配置为局域网地址或正式域名。
-SYSTEM_PUBLIC_BASE_URL = os.environ.get("SYSTEM_PUBLIC_BASE_URL", "http://192.168.1.102:8080").rstrip("/")
-
-# 生产异常延期审批配置
-ERROR_EXTENSION_APPROVER_ROLES = ["研发经理", "admin"]
-ERROR_EXTENSION_NOTIFY_TOUSER = "YueYeXiaoSheng"
-ERROR_EXTENSION_NOTIFY_TARGETS = _load_json_env(
-    "ERROR_EXTENSION_NOTIFY_TARGETS",
-    [
-        {"department_contains": "研发", "position_contains": "经理"},
-        {"position_contains": "研发经理"},
-        # {"position": "QE工程师"},
-    ],
-)
-
+# 新代码应直接从 src.error_management_config 导入；以下别名可在确认无旧调用后逐步移除。
+SYSTEM_PUBLIC_BASE_URL = _error_management_config.ERROR_PUBLIC_BASE_URL
+ERROR_EXTENSION_APPROVER_ROLES = _error_management_config.ERROR_EXTENSION_APPROVER_ROLES
+ERROR_EXTENSION_NOTIFY_TARGETS = _error_management_config.ERROR_EXTENSION_NOTIFY_TARGETS
 SVN_USERNAME = "temp_t1"
 
 SVN_PASSWORD = "123456"

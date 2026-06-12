@@ -1,3 +1,9 @@
+"""生产异常模块的并发写入回归测试。
+
+这里刻意模拟两个数据库模块实例和多个同时执行的业务动作，用来防止未来维护时重新引入
+“后保存的旧快照覆盖先保存的新数据”问题。该文件应长期保留，并在修改原子更新逻辑后运行。
+"""
+
 import asyncio
 import copy
 import importlib.util
@@ -17,6 +23,7 @@ if str(ROOT_DIR) not in sys.path:
 
 
 def load_isolated_db_storage(module_name: str, db_path: Path) -> Any:
+    """加载一份拥有独立内存缓存和连接的 db_storage，用于模拟另一个服务进程。"""
     spec = importlib.util.spec_from_file_location(module_name, DB_STORAGE_PATH)
     if spec is None or spec.loader is None:
         raise RuntimeError(f"无法加载数据库模块：{DB_STORAGE_PATH}")
@@ -28,6 +35,7 @@ def load_isolated_db_storage(module_name: str, db_path: Path) -> Any:
 
 class ErrorManagementConcurrencyTests(unittest.IsolatedAsyncioTestCase):
     async def test_atomic_deep_update_preserves_cross_instance_writes(self):
+        """两个实例同时累加同一字段时，80 次更新应全部保留，旁边字段也不能丢失。"""
         with tempfile.TemporaryDirectory() as temp_dir:
             db_path = Path(temp_dir) / "cross_instance.db"
             left = load_isolated_db_storage("test_db_storage_left", db_path)
@@ -38,6 +46,7 @@ class ErrorManagementConcurrencyTests(unittest.IsolatedAsyncioTestCase):
                 await left.set_item("shared", {"count": 0, "kept": "yes"})
 
                 results = await asyncio.gather(
+                    # 左右实例共享同一个 SQLite 文件，但各自拥有缓存，接近多进程部署时的竞争场景。
                     *[
                         (left if index % 2 else right).atomic_deep_update(
                             ["shared", "count"],
@@ -65,6 +74,7 @@ class ErrorManagementConcurrencyTests(unittest.IsolatedAsyncioTestCase):
                 await right.close_db()
 
     async def test_stale_record_save_and_duplicate_create_are_rejected(self):
+        """验证旧表单不能覆盖后台更新，并发创建相同异常单号时只能有一方成功。"""
         with tempfile.TemporaryDirectory() as temp_dir:
             isolated_db = load_isolated_db_storage(
                 "test_error_management_db_storage",
@@ -108,6 +118,7 @@ class ErrorManagementConcurrencyTests(unittest.IsolatedAsyncioTestCase):
                     assert created_record is not None
                     stale_copy = copy.deepcopy(created_record)
 
+                    # 模拟负责人修改日期与后台提醒同时更新同一异常单的不同字段。
                     def change_due_date(record):
                         record["preventive_actions"][0]["due_date"] = "2026-07-01"
                         return "updated", record
@@ -123,6 +134,7 @@ class ErrorManagementConcurrencyTests(unittest.IsolatedAsyncioTestCase):
                     self.assertTrue(all(result.changed for result in updates))
 
                     stale_copy["basic_info"]["product_name"] = "must-not-overwrite"
+                    # stale_copy 的 _revision 落后于数据库，整单保存必须被乐观锁拒绝。
                     rejected = await error_management.save_error_record(
                         stale_copy,
                         "editor-a",
@@ -139,6 +151,7 @@ class ErrorManagementConcurrencyTests(unittest.IsolatedAsyncioTestCase):
                     duplicate_a = copy.deepcopy(draft)
                     duplicate_b = copy.deepcopy(draft)
                     duplicate_a["error_id"] = duplicate_b["error_id"] = "ERR-DUPLICATE"
+                    # create=True 在事务内检查存在性，避免两个请求都通过页面侧的“未找到”检查。
                     duplicate_results = await asyncio.gather(
                         error_management.save_error_record(duplicate_a, "editor-a", "admin", is_new=True),
                         error_management.save_error_record(duplicate_b, "editor-b", "admin", is_new=True),
@@ -151,6 +164,51 @@ class ErrorManagementConcurrencyTests(unittest.IsolatedAsyncioTestCase):
                     error_management.db_storage = original_db_storage
             finally:
                 await isolated_db.close_db()
+
+    async def test_admin_delete_preserves_concurrent_record_and_rejects_other_roles(self):
+        """admin 删除单张异常单时应保留其它实例的并发新增，非 admin 不能删除。"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "error_management_delete.db"
+            admin_instance = load_isolated_db_storage("test_error_delete_admin", db_path)
+            other_instance = load_isolated_db_storage("test_error_delete_other", db_path)
+            await admin_instance.init_db()
+            await other_instance.init_db()
+            try:
+                from src.pages import error_management
+
+                await admin_instance.set_item(
+                    error_management.ERROR_DATA_KEY,
+                    {
+                        "DELETE-ME": {"error_id": "DELETE-ME"},
+                        "KEEP-ME": {"error_id": "KEEP-ME"},
+                    },
+                )
+                original_db_storage = error_management.db_storage
+                error_management.db_storage = admin_instance
+                try:
+                    forbidden = await error_management.delete_error_record("DELETE-ME", "研发经理")
+                    self.assertEqual(forbidden.code, "forbidden")
+
+                    deleted, added = await asyncio.gather(
+                        error_management.delete_error_record("DELETE-ME", "admin"),
+                        other_instance.atomic_deep_update(
+                            [error_management.ERROR_DATA_KEY, "ADDED-CONCURRENTLY"],
+                            lambda _: {"error_id": "ADDED-CONCURRENTLY"},
+                        ),
+                    )
+                    self.assertTrue(deleted.changed)
+                    self.assertEqual(deleted.code, "deleted")
+                    self.assertTrue(added)
+
+                    stored = other_instance.get_item(error_management.ERROR_DATA_KEY, {})
+                    self.assertNotIn("DELETE-ME", stored)
+                    self.assertIn("KEEP-ME", stored)
+                    self.assertIn("ADDED-CONCURRENTLY", stored)
+                finally:
+                    error_management.db_storage = original_db_storage
+            finally:
+                await admin_instance.close_db()
+                await other_instance.close_db()
 
 
 if __name__ == "__main__":
