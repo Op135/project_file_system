@@ -384,123 +384,193 @@ async def del_deep_item(path: List[str]) -> bool:
 
 async def atomic_deep_update(path: List[str], update_function: Callable, *args, **kwargs) -> bool:
     """
-    在任意深层级别上执行一次原子的 "读取-修改-写入" 操作。
+    在任意深层位置执行一次不可被其它写操作插入的“读取 -> 修改 -> 写回”操作。
 
-    它会在进程内写入锁和 SQLite 写事务的共同保护下：
-    1. 从数据库读取 'path[0]' (顶层键) 的最新数据。
-    2. 创建整个顶层对象的深拷贝。
-    3. 遍历到 'path' 指定的深层位置。
-    4. 将该位置的当前值(的深拷贝)传递给 'update_function'。
-    5. 将 'update_function' 返回的新值写回该深层位置；返回 ATOMIC_NO_UPDATE 时跳过写入。
-    6. 在同一个 SQLite 事务内将修改后的 *整个顶层对象* 写回数据库。
+    通俗地说，它会先“锁门”，读取数据库中最新的数据，在副本上完成修改并写回，最后再“开门”。
+    在整个过程中，其它协程或其它服务进程不能插入一次写操作，因此不会发生并发覆盖。
 
-    注意: 如果路径上的字典不存在，会自动创建它们。
+    示例：
+        path = ["error_management_data", "ERR-001", "status"]
+        表示修改 error_management_data 字典中，ERR-001 异常单下面的 status 字段。
 
-    :param path: 键的路径列表, 例如 ['overview_data', 'project_A', 'chip_1']
-    :param update_function: 一个可调用对象 (如函数或lambda)，
-                            它接收目标路径的当前值，并返回新值。
-    :return: True (成功) or False (失败)
+    :param path: 从顶层键开始的访问路径，至少需要包含一个键。
+    :param update_function: 接收目标位置当前值并返回新值的函数；返回 ATOMIC_NO_UPDATE 表示主动放弃写入。
+    :param args: 原样传给 update_function 的额外位置参数。
+    :param kwargs: 原样传给 update_function 的额外关键字参数。
+    :return: True 表示事务正常完成，包括主动放弃写入；False 表示数据库操作发生异常。
     """
+    # path 决定要修改数据库中的哪个位置；空列表无法定位任何数据，所以直接拒绝。
     if not path:
+        # 使用 ValueError 明确告诉调用方：问题来自传入参数，而不是数据库故障。
         raise ValueError("路径列表 'path' 不能为空")
 
-    # 1. 等待初始化并检查数据库
+    # 数据库初始化完成后，_init_done 才会被设置；这里等待可以避免在连接尚未建立时执行更新。
     await _init_done.wait()
+
+    # _db 保存当前模块使用的 SQLite 异步连接；正常初始化后它不应为 None。
     if _db is None:
+        # 记录错误原因，方便从终端或日志判断是启动顺序问题。
         logger.info("错误: 数据库未初始化.")
+        # 没有数据库连接，无法执行更新，以 False 告知调用方失败。
         return False
 
+    # path 的第一个元素对应数据库表中的 key，例如 "error_management_data"。
     top_key = path[0]
+
+    # 剩余元素是顶层对象内部的访问路径；如果为空，说明调用方想直接修改整个顶层值。
     deep_path = path[1:]
 
-    # 2. 获取进程内写入锁；SQLite 的 BEGIN IMMEDIATE 继续保证跨进程 RMW 原子性
+    # _write_lock 防止同一个 Python 进程里的多个协程同时进入写入流程。
     async with _write_lock:
+        # try 会捕获事务期间的所有异常，保证失败时能够回滚并返回 False。
         try:
-            # 必须从数据库读取最新值，不能依赖可能属于其它进程旧快照的内存缓存。
+            # BEGIN IMMEDIATE 会立即申请 SQLite 写锁。
+            # 它负责阻止其它服务进程在本事务结束前写入，从而提供跨进程并发保护。
             await _db.execute("BEGIN IMMEDIATE")
+
+            # 从数据库表读取 top_key 对应的最新 JSON 字符串。
+            # 这里故意不读取 _data_cache，因为其它进程写入后，本进程缓存可能还是旧数据。
             async with _db.execute(f"SELECT value FROM {TABLE_NAME} WHERE key = ?", (top_key,)) as cursor:
+                # 顶层键是唯一键，所以最多只会取到一行；不存在时 row 为 None。
                 row = await cursor.fetchone()
+
+            # 数据存在时，把 JSON 字符串还原为 Python 对象；不存在时使用 None 表示“尚未创建”。
             current_top_value = json.loads(row[0]) if row else None
 
-            # --- 处理边缘情况：路径只有一层 ---
+            # deep_path 为空表示 path 只有一层，例如 ["error_management_data"]，
+            # 此时 update_function 修改的是整个顶层值，而不是其中某个子字段。
             if not deep_path:
+                # 把当前值深拷贝后交给业务函数，防止业务函数直接修改原对象造成意外副作用。
                 data_to_process = copy.deepcopy(current_top_value)
+
+                # 执行业务方提供的修改函数，并把附加参数一起传进去。
+                # new_data 就是业务函数希望保存的新顶层值。
                 new_data = update_function(data_to_process, *args, **kwargs)
+
+                # ATOMIC_NO_UPDATE 是特殊哨兵值，表示业务检查已正常完成，但决定不修改数据库。
                 if new_data is ATOMIC_NO_UPDATE:
+                    # 因为不需要写入，所以回滚刚才开启的事务并释放 SQLite 写锁。
                     await _db.rollback()
+
+                    # 数据库中原本不存在这个键时，缓存中也应删除它，避免缓存保留不存在的旧数据。
                     if current_top_value is None:
+                        # pop 的默认值 None 可保证缓存中没有该键时也不会报错。
                         _data_cache.pop(top_key, None)
                     else:
+                        # 数据库中原本有值时，用事务读取到的最新值刷新本进程缓存。
                         _data_cache[top_key] = copy.deepcopy(current_top_value)
+
+                    # 主动放弃写入是一次正常业务结果，不属于数据库失败，所以返回 True。
                     return True
+
+                # SQLite 表中保存的是 JSON 文本，因此先把业务函数返回的新对象序列化为字符串。
                 value_json = json.dumps(new_data)
+
+                # INSERT OR REPLACE 表示：top_key 不存在就新增，已经存在就替换为新 JSON。
                 await _db.execute(
                     f"INSERT OR REPLACE INTO {TABLE_NAME} (key, value) VALUES (?, ?)",
                     (top_key, value_json),
                 )
+
+                # 提交事务，使刚才的写入正式生效并释放 SQLite 写锁。
                 await _db.commit()
+
+                # 数据库提交成功后，再同步更新本进程内存缓存。
+                # 使用 json.loads 创建独立对象，避免调用方继续持有并修改缓存中的对象。
                 _data_cache[top_key] = json.loads(value_json)
+
+                # 整个顶层值已经成功写入数据库和缓存。
                 return True
 
-            # --- 处理深层路径 ---
-
-            # 3. READ (使用事务内读取到的数据库最新值)
+            # 下面处理多层路径，例如 ["error_management_data", "ERR-001", "status"]。
+            # 顶层数据存在时对它做深拷贝；不存在时从空字典开始创建路径。
             top_level_data_copy = copy.deepcopy(current_top_value) if current_top_value is not None else {}
+
+            # 深层路径只能在字典中逐层查找；如果原顶层值不是字典，就用空字典重新开始。
             if not isinstance(top_level_data_copy, dict):
-                # 如果顶层键存在但不是字典，我们用新字典覆盖它
+                # 这会允许后续路径继续创建，但也意味着原来的非字典顶层值会在成功提交后被替换。
                 top_level_data_copy = {}
 
-            # 4. COPY (创建顶层对象的深拷贝)
-            # top_level_data_copy = copy.deepcopy(original_data)
-
-            # 5. MODIFY (遍历到深层并执行 update_function)
+            # current_level_data 是路径遍历指针，初始指向整个顶层字典副本。
             current_level_data = top_level_data_copy
 
+            # enumerate 同时提供当前位置序号 i 和当前路径键 key，便于判断是否已到最后一层。
             for i, key in enumerate(deep_path):
+                # 最后一层就是调用方真正想读取和修改的位置。
                 if i == len(deep_path) - 1:
-                    # 到达路径末尾，`current_level_data` 是目标字典
-
-                    # a. 获取当前深层值
+                    # 从当前字典读取目标键的旧值；目标键不存在时得到 None。
                     current_deep_value = current_level_data.get(key, None)
 
-                    # b. 传递深拷贝给 update_function
+                    # 再做一次深拷贝后交给业务函数，确保业务函数只能操作独立副本。
                     value_to_process = copy.deepcopy(current_deep_value)
+
+                    # 执行业务更新函数；返回值将作为目标键的新值。
                     new_deep_value = update_function(value_to_process, *args, **kwargs)
+
+                    # 业务函数可以通过返回 ATOMIC_NO_UPDATE 主动取消本次写入。
                     if new_deep_value is ATOMIC_NO_UPDATE:
+                        # 取消事务并释放 SQLite 写锁，数据库内容保持不变。
                         await _db.rollback()
+
+                        # 如果数据库中原本没有顶层键，就清除本进程缓存中可能存在的旧键。
                         if current_top_value is None:
+                            # 使用带默认值的 pop，保证键不存在时不会抛出 KeyError。
                             _data_cache.pop(top_key, None)
                         else:
+                            # 如果顶层键存在，用事务读取的最新数据库值修正当前进程缓存。
                             _data_cache[top_key] = copy.deepcopy(current_top_value)
+
+                        # 主动取消仍然表示函数正常执行完成，因此返回 True。
                         return True
 
-                    # c. 将返回的新值设置回去
+                    # 把业务函数返回的新值放回顶层对象副本中的目标位置。
                     current_level_data[key] = new_deep_value
 
                 else:
-                    # 还未到末尾，确保下一层是字典 (类似 set_deep_item)
+                    # 尚未到目标位置；setdefault 会读取下一层字典，不存在时自动创建空字典。
                     next_level = current_level_data.setdefault(key, {})
+
+                    # 如果路径中间某层不是字典，就无法继续向下访问。
                     if not isinstance(next_level, dict):
-                        # 路径被非字典值阻塞，强制覆盖
+                        # 用空字典替换阻塞路径的旧值，让后续路径能够继续创建。
                         next_level = {}
+
+                        # 把新建的空字典放回当前层，否则修改不会进入最终写回对象。
                         current_level_data[key] = next_level
 
-                    current_level_data = next_level  # 向下遍历
+                    # 将遍历指针移动到下一层，下一次循环会继续从这里查找。
+                    current_level_data = next_level
 
-            # 6. WRITE (在同一个 SQLite 事务内将修改后的整个顶层对象写回)
+            # 深层目标修改完成后，把包含该修改的整个顶层字典序列化为 JSON。
             value_json = json.dumps(top_level_data_copy)
+
+            # 将完整顶层对象写回数据库。
+            # 虽然只改了一个深层字段，但表结构是一行保存一个完整顶层 JSON，所以必须整行替换。
             await _db.execute(
                 f"INSERT OR REPLACE INTO {TABLE_NAME} (key, value) VALUES (?, ?)",
                 (top_key, value_json),
             )
+
+            # 提交事务，使修改正式生效，并允许其它进程开始下一次写操作。
             await _db.commit()
+
+            # 数据库提交成功后，用相同内容刷新当前进程的内存缓存。
             _data_cache[top_key] = json.loads(value_json)
+
+            # 数据库与缓存均已更新成功。
             return True
 
+        # 捕获路径处理、业务更新函数、JSON 转换或 SQLite 操作中发生的任何异常。
         except Exception:
+            # 只有连接仍处于事务中时才需要回滚，避免在无事务状态下重复回滚。
             if _db.in_transaction:
+                # 回滚会撤销本次尚未提交的数据库修改，并释放 SQLite 写锁。
                 await _db.rollback()
+
+            # 记录完整异常堆栈和更新路径，方便定位是哪一次深层更新失败。
             logger.error(f"错误: 深度原子更新失败 '{path}'", exc_info=True)
+
+            # 向调用方明确表示本次更新因异常失败。
             return False
 
 
