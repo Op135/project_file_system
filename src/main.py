@@ -314,6 +314,9 @@ app.storage.general.setdefault("overview_pending_history", {})
 app.storage.general.setdefault("overview_completed", [])
 # 仅缺需填的项目列表
 app.storage.general.setdefault("overview_only_need", [])
+# 用于记录概述数据的版本核对状态，结构示例：{"project_name": {"version": True/False}}
+# True 表示已核对，False 表示未核对或需要重新核对（例如因为转产导致版本变更）
+app.storage.general.setdefault("overview_active_state_checked_versions", {})
 
 
 @ui.page("/view/svn_pdf")

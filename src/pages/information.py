@@ -87,10 +87,28 @@ def information_page():
 
     async def set_review_pass(container_row, p_name, v):
         """审核通过逻辑"""
+        overview_success, changed_labels = await set_overview_active_state(p_name, v)
+        if not overview_success:
+            logger.error(f"审核通过前更新概述激活状态失败: project={p_name}, version={v}")
+            ui.notify(
+                "概述状态更新失败，已中止审批通过。",
+                type="negative",
+                position="center",
+                timeout=0,
+                close_button="✖",
+            )
+            return
+
         app.storage.general["wait_review"][p_name][v]["state"] = "已审"
         app.storage.general["wait_review"][p_name][v]["pass_time"] = datetime.now().isoformat()
         app.storage.general["project_req_max_ver"][p_name] = v
-        await set_overview_active_state(p_name, v)
+
+        if changed_labels:
+            from ..components import OverviewVersionManager
+
+            for label in changed_labels:
+                OverviewVersionManager.bump(p_name, label)
+
         delete_file(f"{OVER_DIR}/{p_name}_概述整理_temp.json")
         await requirement_version_tidy(p_name, False)
         set_project_custom_labels(p_name)

@@ -46,6 +46,7 @@ from ..utils import (
     logout,
     merge_data_with_template,
     overview_role_update,
+    set_overview_active_state,
     validate_format_regex,
 )
 
@@ -3430,6 +3431,30 @@ async def requirement_page(type="", json_path="", project_name=""):
 
         # 将检查与初始化的动作合并为一个原子操作
         await db_storage.atomic_deep_update([f"{project_name}_over_data"], init_if_missing)
+
+        # 只在正式概述页做一次性自愈：同一项目同一最高已审版本不重复扫描概述数据。
+        if not temp_bool:
+            req_max_ver = app.storage.general.get("project_req_max_ver", {}).get(project_name)
+            checked_versions = app.storage.general.setdefault("overview_active_state_checked_versions", {})
+            if req_max_ver and checked_versions.get(project_name) != req_max_ver:
+                overview_success, changed_labels = await set_overview_active_state(project_name, req_max_ver)
+                if overview_success:
+                    checked_versions[project_name] = req_max_ver
+                    for label in changed_labels:
+                        OverviewVersionManager.bump(project_name, label)
+                    if changed_labels:
+                        logger.info(
+                            "已自动补齐概述激活版本记录: project=%s, version=%s, labels=%s",
+                            project_name,
+                            req_max_ver,
+                            sorted(changed_labels),
+                        )
+                else:
+                    logger.error(
+                        "打开概述页时补齐概述激活版本记录失败: project=%s, version=%s",
+                        project_name,
+                        req_max_ver,
+                    )
 
         # --- 新增辅助函数：展示 Role 维度的历史记录 (Feature 1) ---
         def show_role_history_dialog(project_name, role):
