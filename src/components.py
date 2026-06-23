@@ -3769,7 +3769,7 @@ class OverviewTableGroup:
                         "white-space: pre-wrap;"
                     )
 
-    async def _diff_and_update_rows(self, rows_list, col_configs, req_max_ver):
+    async def _diff_and_update_rows(self, rows_list, col_configs, req_max_ver, client_storage):
         """核心：通过 Diff 算法，仅重绘发生变化的行，并自动排序"""
         current_row_ids = []
 
@@ -3799,7 +3799,7 @@ class OverviewTableGroup:
 
                 # 执行具体单元格的渲染
                 await self._render_single_row_content(
-                    row_container, row_data, col_configs, req_max_ver, is_row_totally_deactivated
+                    row_container, row_data, col_configs, req_max_ver, is_row_totally_deactivated, client_storage
                 )
                 self.row_hashes[row_id] = new_hash
 
@@ -3816,7 +3816,7 @@ class OverviewTableGroup:
                     self.row_containers[row_id] = row_container
 
                 await self._render_single_row_content(
-                    row_container, row_data, col_configs, req_max_ver, is_row_totally_deactivated
+                    row_container, row_data, col_configs, req_max_ver, is_row_totally_deactivated, client_storage
                 )
                 self.row_hashes[row_id] = new_hash
 
@@ -3835,7 +3835,7 @@ class OverviewTableGroup:
                 del self.row_hashes[old_row_id]
 
     async def _render_single_row_content(
-        self, row_container, row_data, col_configs, req_max_ver, is_row_totally_deactivated
+        self, row_container, row_data, col_configs, req_max_ver, is_row_totally_deactivated, client_storage
     ):
         """负责填充单独一行内部的所有 Column 和 Chip"""
         first_col_label = col_configs[0]["label"]
@@ -3844,7 +3844,8 @@ class OverviewTableGroup:
 
         # 绑定整行隐藏逻辑
         if is_row_totally_deactivated:
-            row_container.bind_visibility_from(app.storage.client, "record_switch")
+            row_container.set_visibility(bool(client_storage.get("record_switch")))
+            row_container.bind_visibility_from(client_storage, "record_switch")
         else:
             # 🌟 核心修复：由于我们在上一步每次 Hash 变更都确保传递进来的是一个全新的 row_container
             # 所以这里绝对不可能带有旧的 visible binding，直接设置为可见即可。
@@ -3864,7 +3865,7 @@ class OverviewTableGroup:
                     if has_chip:
                         for chip_data in row_chips[label]:
                             # 直接复用你现有的单个芯片渲染函数
-                            await self._render_single_chip(chip_data, config, req_max_ver)
+                            await self._render_single_chip(chip_data, config, req_max_ver, client_storage)
 
                     # 2. 渲染添加按钮：
                     if self._edit_permission_judge(config, notify=False):
@@ -3879,7 +3880,7 @@ class OverviewTableGroup:
                                 "absolute -bottom-1 -right-1 text-blue-500 opacity-0 group-hover:opacity-100 transition-all m-0 p-0 z-10"
                             ).tooltip(f"添加 {config['title']}")
 
-    async def _render_single_chip(self, chip_info: dict, config: dict, req_max_ver: str):
+    async def _render_single_chip(self, chip_info: dict, config: dict, req_max_ver: str, client_storage):
         """渲染单个单元格内的 Chip (移植自原 _create_chip_from_data)"""
         chip_text = chip_info.get("content", "")
         filepath = ""
@@ -4070,7 +4071,8 @@ class OverviewTableGroup:
             # 🌟 核心性能优化：如果是失活状态，将其可见性与全局开关绑定
             if _is_deactivated_chip(chip_info, req_max_ver):
                 # 当 record_switch 为 True 时显示，False 时隐藏。不再需要重新渲染整个表格！
-                wrapper.bind_visibility_from(app.storage.client, "record_switch")
+                wrapper.set_visibility(bool(client_storage.get("record_switch")))
+                wrapper.bind_visibility_from(client_storage, "record_switch")
 
             # 交互事件
             # 💡 优化 7：使用 display: flex 保持按钮圆圈内的图标居中
@@ -4167,7 +4169,8 @@ class OverviewTableGroup:
             # 🌟 核心性能优化：如果是失活状态，将其可见性与全局开关绑定
             if _is_deactivated_chip(chip_info, req_max_ver):
                 # 当 record_switch 为 True 时显示，False 时隐藏。不再需要重新渲染整个表格！
-                wrapper.bind_visibility_from(app.storage.client, "record_switch")
+                wrapper.set_visibility(bool(client_storage.get("record_switch")))
+                wrapper.bind_visibility_from(client_storage, "record_switch")
 
             # 交互事件
             # 💡 优化 7：使用 display: flex 保持按钮圆圈内的图标居中
@@ -4244,13 +4247,14 @@ class OverviewTableGroup:
 
                 # 1. 准备数据
                 col_configs = list(self.permitted_configs.values())
-                show_all = app.storage.client.get("record_switch")
+                client_storage = app.storage.client
+                show_all = client_storage.get("record_switch")
                 req_max_ver = app.storage.general.get("project_req_max_ver", {}).get(self.project, "1.0")
                 rows_list = await self._group_and_migrate_data(col_configs, show_all)
 
                 # 2. 执行局部渲染
                 await self._render_header(col_configs)
-                await self._diff_and_update_rows(rows_list, col_configs, req_max_ver)
+                await self._diff_and_update_rows(rows_list, col_configs, req_max_ver, client_storage)
 
             finally:
                 self._is_refreshing = False
@@ -5239,9 +5243,10 @@ class OverviewTableGroup:
             if current_idx > 0:
                 req_max_ver = app.storage.general["project_req_max_ver"].get(self.project, "0.0")
                 FIRST_COL_CHIPS = db_storage.get_deep_item([f"{self.project}_over_data", first_col_label], {})
-                target_row_id = self.ordered_row_ids[current_idx - 1]
                 # 💡 其他列：跨行跳跃（换行 ID 操作）
                 while current_idx > 0:  # 如果不是第一行，则允许上移
+                    current_idx -= 1
+                    target_row_id = self.ordered_row_ids[current_idx]
                     if any(
                         [
                             chip_dic.get("select_activ_dic", {}).get(req_max_ver, False)
@@ -5254,9 +5259,6 @@ class OverviewTableGroup:
                             [f"{self.project}_over_data", current_label, chip_data["id"], "row_id"], target_row_id
                         )
                         break
-                    else:
-                        current_idx -= 1
-                        target_row_id = self.ordered_row_ids[current_idx - 1]
         # 数据写入完毕后，推高全局版本号
         OverviewVersionManager.bump(self.project, config["label"])
         # 这一行是关键：主动调用更新函数，而不是等 1.0s 的 timer
