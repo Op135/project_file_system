@@ -16,6 +16,7 @@ from ..utils import (
     setup_global_activity_tracking,
 )
 from .error_management import ERROR_DATA_KEY, get_error_dashboard_pending_count
+from .sample_issue_collection import SAMPLE_ISSUE_DATA_KEY, get_sample_dashboard_pending_count
 
 # 获取一个以此模块命名的 logger
 # 比如：如果你的文件是 src/components.py，这个 logger 的名字就会是 "src.components"
@@ -131,6 +132,7 @@ def main_page():
         ("equalizer", "统计信息", "查阅系统统计信息", "/statistics"),
         ("published_with_changes", "工程变更", "ECR与ECN流程管理", "/ecn_management"),
         ("error", "异常单跟进", "查阅和记录异常单处理进度", "/error_management"),
+        ("science", "样品问题收集", "记录样品问题与对策进度", "/sample_issue_collection"),
     ]
     menu_items = []
     for items in menu_items_metadata:
@@ -142,6 +144,14 @@ def main_page():
         # 统计信息只对角色字符串里含有如下关键字的用户展示
         elif items[3] == "/statistics" and not any(
             k in str(current_role) for k in ["总监", "经理", "主管", "boss", "admin"]
+        ):
+            continue
+        elif items[3] == "/error_management" and not any(
+            k in str(current_role) for k in ["质量", "销售", "工程", "研发", "boss", "admin"]
+        ):
+            continue
+        elif items[3] == "/sample_issue_collection" and not any(
+            k in str(current_role) for k in ["质量", "销售", "工程", "研发", "boss", "admin"]
         ):
             continue
         # elif items[3] == "/ecn_management" and not any(k in str(current_role) for k in ["研发经理", "admin"]):
@@ -217,6 +227,11 @@ def main_page():
             # 异常模块待办：普通角色按待处理异常单计数，研发经理按待审批延期申请计数。
             error_pending_num_user = get_error_dashboard_pending_count(
                 db_storage.get_item(ERROR_DATA_KEY, {}),
+                current_user,
+                current_role,
+            )
+            sample_issue_pending_num_user = get_sample_dashboard_pending_count(
+                db_storage.get_item(SAMPLE_ISSUE_DATA_KEY, {}),
                 current_user,
                 current_role,
             )
@@ -318,6 +333,8 @@ def main_page():
                     pending_count = ecn_pending_num_user
                 elif target == "/error_management":
                     pending_count = error_pending_num_user
+                elif target == "/sample_issue_collection":
+                    pending_count = sample_issue_pending_num_user
 
                 # 2. 定义动态样式 (Dynamic Styling)
                 #    如果有待办，图标变黄；否则保持原本的蓝色

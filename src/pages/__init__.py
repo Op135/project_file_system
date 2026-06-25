@@ -12,6 +12,7 @@ from . import (
     project_table,
     question_tree_tabs,
     requirement,
+    sample_issue_collection,
     statistics,
     test_summary,
     tool,

@@ -12,7 +12,6 @@
 最新状态，不能只依赖页面按钮是否可见。
 """
 
-import asyncio
 import copy
 import logging
 import os
@@ -47,6 +46,13 @@ from ..error_management_config import (
     ERROR_PUBLIC_BASE_URL,
     ERROR_REMINDER_RULES,
 )
+from ..issue_workflow_utils import (
+    is_current_responsible,
+    merge_wecom_recipients,
+    parse_date,
+    schedule_background_task,
+    split_people,
+)
 from ..utils import get_cache_busted_path, logout, setup_global_activity_tracking
 from ..wecom_service import resolve_wecom_recipients, retry_failed_wecom_messages, send_wecom_text_message
 
@@ -73,19 +79,6 @@ async def resolve_error_notify_recipients(targets) -> str:
     if not touser:
         logger.error("生产异常通知规则未匹配到任何企业微信成员：%s", targets)
     return touser
-
-
-def schedule_background_task(coro, task_name: str) -> None:
-    """让不应阻塞页面交互的通知在后台发送，并确保异步异常会进入系统日志。"""
-    task = asyncio.create_task(coro)
-
-    def log_task_exception(done_task):
-        try:
-            done_task.result()
-        except Exception:
-            logger.exception("%s后台任务执行失败", task_name)
-
-    task.add_done_callback(log_task_exception)
 
 
 async def send_error_extension_wecom_message(
@@ -216,28 +209,6 @@ def is_error_admin(role: str) -> bool:
     return str(role).strip().lower() == "admin"
 
 
-def split_people(value: str) -> list[str]:
-    """把页面中常见的中文、英文分隔符统一解析为人员名称列表。"""
-    if not value:
-        return []
-    normalized = value
-    for sep in ["，", ",", "、", ";", "；", "\n"]:
-        normalized = normalized.replace(sep, "|")
-    return [item.strip() for item in normalized.split("|") if item.strip()]
-
-
-def merge_wecom_recipients(*recipient_values: str) -> str:
-    """合并多个企业微信收件人字符串，保持原顺序并去重。"""
-    recipients = []
-    seen = set()
-    for value in recipient_values:
-        for recipient in split_people(value):
-            if recipient not in seen:
-                recipients.append(recipient)
-                seen.add(recipient)
-    return "|".join(recipients)
-
-
 async def format_people_for_wecom(value: str) -> str:
     """把负责人姓名解析成企业微信账号；解析不到时保留直接输入值作为发送兜底。"""
     people = split_people(value)
@@ -248,26 +219,6 @@ async def format_people_for_wecom(value: str) -> str:
         [{"names": people}],
         fallback_touser=direct_value,
     )
-
-
-def parse_date(value: str):
-    """兼容历史数据中可能出现的三种日期格式，无法识别时返回 None。"""
-    if not value:
-        return None
-    for fmt in ["%Y-%m-%d", "%Y/%m/%d", "%Y-%m-%d %H:%M:%S"]:
-        try:
-            return datetime.strptime(value.strip(), fmt).date()
-        except ValueError:
-            continue
-    return None
-
-
-def is_current_responsible(owner_text: str, current_user: str, current_role: str) -> bool:
-    """负责人字段可填写姓名或角色，因此同时使用当前用户名和当前角色进行匹配。"""
-    for owner in split_people(owner_text):
-        if owner in [current_user, current_role] or owner in str(current_role) or owner in str(current_user):
-            return True
-    return False
 
 
 def ensure_item_id(item: dict, prefix: str) -> dict:

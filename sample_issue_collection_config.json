@@ -1,0 +1,50 @@
+{
+    "_说明": "样品问题收集模块业务配置。修改后需要重启系统才能生效。所有角色名称均按 current_role 做包含匹配。",
+    "_字段说明": {
+        "public_base_url": "企业微信消息中的页面跳转地址，不要以 / 结尾；必须是员工浏览器能够访问的地址。",
+        "editor_roles": "可以维护样品问题录入区块、协助维护对策区块的角色关键字列表。",
+        "filter_states": "总览页状态筛选项；“全部”即使遗漏，加载器也会自动补到第一项。“延期申请中”用于筛选存在待审批延期申请的样品问题。",
+        "wecom.default_notify_targets": "样品问题模块默认通知对象规则。",
+        "wecom.extension.approver_roles": "可以通过或驳回样品问题延期申请的角色关键字列表。",
+        "wecom.extension.notify_targets": "延期申请通知接收人规则列表；可使用 names、userids、department_contains、position 或 position_contains 等成员筛选条件。",
+        "wecom.extension.approval_notify_targets": "仅在延期审批通过后追加通知的成员规则；驳回和申请提交不会通知这些角色。",
+        "wecom.extension.notify_requester_on_approval": "审批通过或驳回后，是否同时通知本次延期申请人。"
+    },
+    "public_base_url": "http://192.168.1.102:8080",
+    "editor_roles": [
+        "研发经理",
+        "admin",
+        "PIE工程师"
+    ],
+    "filter_states": [
+        "全部",
+        "问题录入",
+        "对策填写中",
+        "措施执行中",
+        "延期申请中"
+    ],
+    "wecom": {
+        "default_notify_targets": [
+            {
+                "position": "研发经理"
+            }
+        ],
+        "extension": {
+            "approver_roles": [
+                "研发经理",
+                "admin"
+            ],
+            "notify_targets": [
+                {
+                    "position": "研发经理"
+                }
+            ],
+            "approval_notify_targets": [
+                {
+                    "position": "PIE工程师"
+                }
+            ],
+            "notify_requester_on_approval": true
+        }
+    }
+}
