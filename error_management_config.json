@@ -47,15 +47,15 @@
             ],
             "notify_targets": [
                 {
-                    "position": "研发经理"
+                    "position": "研发助理"
                 }
             ],
             "approval_notify_targets": [
                 {
-                    "position": "研发经理"
+                    "position": "品质经理"
                 },
                 {
-                    "position": "研发助理"
+                    "position": "QE工程师"
                 }
             ],
             "notify_requester_on_approval": true

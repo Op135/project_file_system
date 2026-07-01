@@ -756,13 +756,14 @@ def update_users_data():
 
 # 全局键盘事件跟踪处理函数
 def handle_key(e: KeyEventArguments):
+    key_state = app.storage.client.setdefault("key_state", {})
     if e.modifiers.ctrl and e.action.keydown:
-        app.storage.client["key_state"]["ctrl"] = 9
+        key_state["ctrl"] = 9
     else:
-        app.storage.client["key_state"]["ctrl"] = 0
+        key_state["ctrl"] = 0
 
     if e.key.enter and e.action.keydown:
-        app.storage.client["key_state"]["enter"] = 1
+        key_state["enter"] = 1
         # app.storage.client["key_state"]["enter"] = 0
 
 
@@ -1924,7 +1925,8 @@ def logout():
 
 # 元素的显示函数
 def ui_show(ui):
-    if "ctrl" in app.storage.client["key_state"].keys() and app.storage.client["key_state"]["ctrl"] == 9:
+    key_state = app.storage.client.setdefault("key_state", {})
+    if "ctrl" in key_state.keys() and key_state["ctrl"] == 9:
         ui.style("display: block;")
 
 

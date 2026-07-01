@@ -2624,7 +2624,7 @@ async def ecn_management_page():
     # ==========================================
     # 主页面 UI (头部与列表总览)
     # ==========================================
-    with ui.header(elevated=True).classes("flex justify-between items-center bg-blue-600 h-14 px-4"):
+    with ui.header(elevated=True).classes("flex justify-between items-center bg-blue-500 h-12 px-4"):
         ui.image(f"{IMG_DIR}/Rayfine.png").classes("absolute w-20")
         ui.label("工程变更管理系统 (ECN)").classes(
             "text-white text-xl font-bold absolute left-1/2 transform -translate-x-1/2"

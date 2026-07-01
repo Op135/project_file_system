@@ -324,53 +324,6 @@
                 ]
             },
             {
-                "label": "light_type_temperature",
-                "nature": "选填",
-                "title": "光源性能阈温",
-                "processing_type": "text",
-                "content_regular": [
-                    "^无$",
-                    "NTC\\S*℃"
-                ],
-                "dialog_placeholder": "NTC≤_℃",
-                "allowed_state": [
-                    "研发",
-                    "转产",
-                    "试产",
-                    "量产"
-                ],
-                "permission": {
-                    "read_role": [
-                        "boss",
-                        "销售总监",
-                        "销售",
-                        "客服主管",
-                        "客服",
-                        "研发电子主管",
-                        "研发硬件",
-                        "研发软件",
-                        "研发结构",
-                        "研发样品",
-                        "工程",
-                        "质量"
-                    ],
-                    "edit_role": [
-                        "admin",
-                        "研发经理",
-                        "研发光学"
-                    ]
-                },
-                "impact_list": [
-                    "software_executable_file",
-                    "drive_electronic_bom",
-                    "tec_type",
-                    "cooling_type",
-                    "fan_model",
-                    "product_material_selection",
-                    "product_complete_diagram"
-                ]
-            },
-            {
                 "label": "light_max_temperature",
                 "nature": "必填",
                 "title": "光源保护温度",
@@ -419,6 +372,99 @@
                     "fan_model",
                     "mechanical_assembly_details",
                     "product_material_selection"
+                ]
+            },
+            {
+                "label": "light_type_temperature",
+                "nature": "选填",
+                "title": "光源性能阈温",
+                "processing_type": "text",
+                "content_regular": [
+                    "^无$",
+                    "NTC\\S*℃"
+                ],
+                "dialog_placeholder": "NTC≤_℃",
+                "allowed_state": [
+                    "研发",
+                    "转产",
+                    "试产",
+                    "量产"
+                ],
+                "permission": {
+                    "read_role": [
+                        "boss",
+                        "销售总监",
+                        "销售",
+                        "客服主管",
+                        "客服",
+                        "研发电子主管",
+                        "研发硬件",
+                        "研发软件",
+                        "研发结构",
+                        "研发样品",
+                        "工程",
+                        "质量"
+                    ],
+                    "edit_role": [
+                        "admin",
+                        "研发经理",
+                        "研发光学"
+                    ]
+                },
+                "impact_list": [
+                    "software_executable_file",
+                    "drive_electronic_bom",
+                    "tec_type",
+                    "cooling_type",
+                    "fan_model",
+                    "product_material_selection",
+                    "product_complete_diagram"
+                ]
+            },
+            {
+                "label": "light_pcb_note",
+                "nature": "选填",
+                "title": "光源基板要求",
+                "processing_type": "text",
+                "content_regular": [
+                    "^无$",
+                    "\\S*pcs"
+                ],
+                "dialog_placeholder": "7pcs，全串",
+                "allowed_state": [
+                    "研发",
+                    "转产",
+                    "试产",
+                    "量产"
+                ],
+                "permission": {
+                    "read_role": [
+                        "boss",
+                        "销售总监",
+                        "销售",
+                        "客服主管",
+                        "客服",
+                        "研发电子主管",
+                        "研发硬件",
+                        "研发软件",
+                        "研发结构",
+                        "研发样品",
+                        "工程",
+                        "质量"
+                    ],
+                    "edit_role": [
+                        "admin",
+                        "研发经理",
+                        "研发光学"
+                    ]
+                },
+                "impact_list": [
+                    "drive_electronic_bom",
+                    "tec_type",
+                    "cooling_type",
+                    "fan_model",
+                    "product_complete_diagram",
+                    "light_pcb"
                 ]
             }
         ],

@@ -19,6 +19,7 @@ from copy import deepcopy
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Callable, DefaultDict, Final, Optional, Tuple
+from urllib.parse import unquote
 
 import httpx
 import wcwidth
@@ -35,6 +36,7 @@ from .config import (
     OVER_UPLOADS_FILE_TYPE,
     PDF_PREVIEW_CACHE,
     SUBMIT_FILES_DIR,
+    UPLOAD_URL_DIR,
     SVN_PASSWORD,
     SVN_USERNAME,
     UPLOADS_DIR,
@@ -54,6 +56,19 @@ from .utils import (
 # 获取一个以此模块命名的 logger
 # 比如：如果你的文件是 src/components.py，这个 logger 的名字就会是 "src.components"
 logger = logging.getLogger(__name__)
+
+
+def get_upload_local_path(file_url: str) -> str:
+    """把 /uploads 下的 URL 转换为 uploads 目录内的本地路径。"""
+    normalized_url = str(file_url or "").split("?", 1)[0].replace("\\", "/")
+    prefix = f"{UPLOAD_URL_DIR.rstrip('/')}/"
+    if normalized_url.startswith(prefix):
+        relative_path = unquote(normalized_url[len(prefix) :]).lstrip("/\\")
+        normalized_relative_path = os.path.normpath(relative_path)
+        if normalized_relative_path.startswith("..") or os.path.isabs(normalized_relative_path):
+            return os.path.join(UPLOADS_DIR, os.path.basename(normalized_url))
+        return os.path.join(UPLOADS_DIR, normalized_relative_path)
+    return os.path.join(UPLOADS_DIR, os.path.basename(normalized_url))
 
 
 def _is_deactivated_chip(chip_info: dict, req_max_ver: str) -> bool:
@@ -324,7 +339,7 @@ class FileThumbnail:
         on_question_display_click=lambda *args, **kwargs: None,
     ):
         self.file_url = file_url
-        self.local_file_path = f"{UPLOADS_DIR}/{self.file_url.split('/')[-1]}"
+        self.local_file_path = get_upload_local_path(self.file_url)
         self.file_type = file_type
         self.file_neme_suffix = file_name_suffix
         self.file_neme_hash = self.file_url.split("/")[-1]

@@ -15,10 +15,28 @@ logger = logging.getLogger(__name__)
 
 SAMPLE_ISSUE_CONFIG_PATH = Path(__file__).parent.parent / "sample_issue_collection_config.json"
 
+SAMPLE_STATUS_ISSUE_RECORDED = "问题录入完毕"
+SAMPLE_STATUS_TEMPORARY_ACTION_DONE = "临时对策填写完毕"
+SAMPLE_STATUS_CORRECTIVE_ACTION_DONE = "纠正预防措施填写完毕"
+
+_LEGACY_FILTER_STATE_RENAMES = {
+    "问题录入": SAMPLE_STATUS_ISSUE_RECORDED,
+    "对策填写中": SAMPLE_STATUS_TEMPORARY_ACTION_DONE,
+    "措施执行中": SAMPLE_STATUS_CORRECTIVE_ACTION_DONE,
+}
+
 _DEFAULT_CONFIG = {
     "public_base_url": "http://192.168.1.102:8080",
     "editor_roles": ["研发经理", "admin", "研发助理"],
-    "filter_states": ["全部", "问题录入", "对策填写中", "措施执行中", "延期申请中"],
+    "filter_states": [
+        "全部",
+        SAMPLE_STATUS_ISSUE_RECORDED,
+        SAMPLE_STATUS_TEMPORARY_ACTION_DONE,
+        SAMPLE_STATUS_CORRECTIVE_ACTION_DONE,
+        "关闭申请中",
+        "延期申请中",
+        "已关闭",
+    ],
     "wecom": {
         "default_notify_targets": [{"position": "研发经理"}],
         "extension": {
@@ -67,11 +85,16 @@ def _string_list(config: dict, key: str, default: list[str]) -> list[str]:
 
 
 def _filter_states(config: dict, default: list[str]) -> list[str]:
-    """确保总览页的特殊筛选项“全部”和“延期申请中”始终存在。"""
-    states = _string_list(config, "filter_states", default)
+    """确保总览页的特殊筛选项始终存在。"""
+    states = [
+        _LEGACY_FILTER_STATE_RENAMES.get(state, state)
+        for state in _string_list(config, "filter_states", default)
+    ]
+    states = list(dict.fromkeys(states))
     normalized = ["全部", *(state for state in states if state != "全部")]
-    if "延期申请中" not in normalized:
-        normalized.append("延期申请中")
+    for required_state in ["延期申请中", "关闭申请中", "已关闭"]:
+        if required_state not in normalized:
+            normalized.append(required_state)
     return normalized
 
 
@@ -144,6 +167,8 @@ SAMPLE_EDITOR_ROLES = SAMPLE_ISSUE_CONFIG["editor_roles"]
 SAMPLE_FILTER_STATES = SAMPLE_ISSUE_CONFIG["filter_states"]
 SAMPLE_FILTER_ALL_STATE = "全部"
 SAMPLE_FILTER_PENDING_EXTENSION_STATE = "延期申请中"
+SAMPLE_FILTER_PENDING_CLOSE_STATE = "关闭申请中"
+SAMPLE_FILTER_CLOSED_STATE = "已关闭"
 SAMPLE_DEFAULT_NOTIFY_TARGETS = SAMPLE_ISSUE_CONFIG["wecom"]["default_notify_targets"]
 SAMPLE_EXTENSION_APPROVER_ROLES = SAMPLE_ISSUE_CONFIG["wecom"]["extension"]["approver_roles"]
 SAMPLE_EXTENSION_NOTIFY_TARGETS = SAMPLE_ISSUE_CONFIG["wecom"]["extension"]["notify_targets"]

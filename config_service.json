@@ -835,7 +835,7 @@
                     "option_content": "指定现有型号",
                     "option_out": "指定",
                     "option_bold": "指定现有",
-                    "option_show": "",
+                    "option_show": "{V}转接座",
                     "option_label": ""
                 },
                 {
@@ -843,7 +843,7 @@
                     "option_content": "搭配设计",
                     "option_out": "设计",
                     "option_bold": "搭配设计",
-                    "option_show": "",
+                    "option_show": "{V}转接座",
                     "option_label": ""
                 },
                 {
@@ -7565,7 +7565,7 @@
             ]
         }
     },
-    "config_timestamp": "2026-06-23T15:42:49.462568",
-    "excel_version_hash": "f60a3c09",
+    "config_timestamp": "2026-07-01T18:06:30.028715",
+    "excel_version_hash": "38f2b5b8",
     "entry_status": false
 }
