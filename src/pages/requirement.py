@@ -3986,7 +3986,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                                     "text-sm m-0"
                                 ).bind_text_from(app.storage.general["project_summary"][project_name], "state")
                             if current_role == "研发经理":
-                                project_engineer = app.storage.general["project_engineer"].get(project_name, "")
+                                project_engineer = app.storage.general["project_engineer"].get(project_name, "未指定")
                                 engineer_button = ui.button(project_engineer)
                                 engineer_button.on_click(
                                     lambda pn=project_name, bt=engineer_button: set_project_engineer_dialog(pn, bt)
