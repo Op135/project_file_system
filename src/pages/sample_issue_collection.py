@@ -12,7 +12,7 @@ import re
 import time
 import uuid
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Optional
 from urllib.parse import quote
 
@@ -41,12 +41,13 @@ from ..sample_issue_config import (
     SAMPLE_FILTER_PENDING_EXTENSION_STATE,
     SAMPLE_FILTER_STATES,
     SAMPLE_PUBLIC_BASE_URL,
+    SAMPLE_REMINDER_RULES,
     SAMPLE_STATUS_CORRECTIVE_ACTION_DONE,
     SAMPLE_STATUS_ISSUE_RECORDED,
     SAMPLE_STATUS_TEMPORARY_ACTION_DONE,
 )
-from ..utils import get_cache_busted_path, handle_key, logout, setup_global_activity_tracking
-from ..wecom_service import resolve_wecom_recipients, send_wecom_text_message
+from ..utils import apply_chinese_date_locale, get_cache_busted_path, handle_key, logout, setup_global_activity_tracking
+from ..wecom_service import resolve_wecom_recipients, retry_failed_wecom_messages, send_wecom_text_message
 
 logger = logging.getLogger(__name__)
 
@@ -201,6 +202,7 @@ def get_sample_issue_template() -> dict:
         "updated_by": "",
         "updated_at": "",
         "operation_log": [],
+        "reminder_log": {},
     }
 
 
@@ -211,7 +213,7 @@ def merge_with_sample_issue_template(db_data: dict) -> dict:
         return merged
 
     for key, value in db_data.items():
-        if key in ["basic_info", "countermeasure"] and isinstance(value, dict):
+        if key in ["basic_info", "countermeasure", "reminder_log"] and isinstance(value, dict):
             merged[key].update(copy.deepcopy(value))
         elif key == "operation_log":
             merged[key] = copy.deepcopy(value) if isinstance(value, list) else []
@@ -227,6 +229,8 @@ def merge_with_sample_issue_template(db_data: dict) -> dict:
         countermeasure["extension_requests"] = []
     if not isinstance(countermeasure.get("close_requests"), list):
         countermeasure["close_requests"] = []
+    if not isinstance(merged.get("reminder_log"), dict):
+        merged["reminder_log"] = {}
     return merged
 
 
@@ -404,6 +408,16 @@ def get_sample_due_text(issue_data: dict) -> str:
     return due_date or "暂无"
 
 
+def reminder_rule_matches(due_date, today, rule: dict) -> bool:
+    """判断预计完成日期是否命中提醒规则。"""
+    days_until_due = (due_date - today).days
+    if "days_until_due" in rule:
+        return days_until_due == rule["days_until_due"]
+    if "max_days_until_due" in rule:
+        return days_until_due <= rule["max_days_until_due"]
+    return False
+
+
 def get_sample_dashboard_pending_count(all_issues: Any, current_user: str, current_role: str) -> int:
     """计算主页“样品问题收集”卡片对当前用户显示的待办角标数量。"""
     if not isinstance(all_issues, dict):
@@ -454,6 +468,140 @@ async def format_people_for_wecom(value: str) -> str:
         [{"names": people}],
         fallback_touser=direct_value,
     )
+
+
+async def check_and_send_sample_issue_reminders(show_result: bool = False) -> tuple[int, int]:
+    """检查未关闭样品问题并发送纠正预防措施预计完成日期提醒。"""
+    retry_success_count, retry_fail_count = await retry_failed_wecom_messages()
+    all_issues = db_storage.get_item(SAMPLE_ISSUE_DATA_KEY, {})
+    today = datetime.now().date()
+    today_key = today.strftime("%Y-%m-%d")
+    sent_count = 0
+    fail_count = 0
+
+    for raw_issue in all_issues.values():
+        issue_data = merge_with_sample_issue_template(raw_issue)
+        if is_sample_issue_closed(issue_data):
+            continue
+
+        countermeasure = issue_data.get("countermeasure", {})
+        if get_pending_close_request(countermeasure):
+            continue
+
+        due_date = parse_date(countermeasure.get("due_date", ""))
+        owner = countermeasure.get("owner", "")
+        if not issue_data.get("issue_id") or not due_date or not owner:
+            continue
+
+        for rule in SAMPLE_REMINDER_RULES:
+            if not reminder_rule_matches(due_date, today, rule):
+                continue
+
+            marker = f"{issue_data['issue_id']}:{rule['key']}:{today_key}"
+            if marker in issue_data.get("reminder_log", {}):
+                continue
+
+            claim_id = uuid.uuid4().hex
+
+            def claim_reminder(current, marker=marker, rule=rule, claim_id=claim_id):
+                stored = merge_with_sample_issue_template(current)
+                stored_countermeasure = stored.get("countermeasure", {})
+                if is_sample_issue_closed(stored) or get_pending_close_request(stored_countermeasure):
+                    return "not_eligible", current
+
+                fresh_due_date = parse_date(stored_countermeasure.get("due_date", ""))
+                if (
+                    not fresh_due_date
+                    or not stored_countermeasure.get("owner", "")
+                    or not reminder_rule_matches(fresh_due_date, today, rule)
+                ):
+                    return "not_eligible", current
+
+                reminder_log = stored.setdefault("reminder_log", {})
+                existing_marker = reminder_log.get(marker)
+                can_claim = marker not in reminder_log
+                if existing_marker and existing_marker.get("state") == "sending":
+                    try:
+                        sending_time = datetime.strptime(existing_marker.get("time", ""), "%Y-%m-%d %H:%M:%S")
+                        can_claim = datetime.now() - sending_time > timedelta(minutes=10)
+                    except ValueError:
+                        can_claim = True
+                if not can_claim:
+                    return "already_claimed", current
+
+                reminder_log[marker] = {
+                    "rule": rule["label"],
+                    "state": "sending",
+                    "claim_id": claim_id,
+                    "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                }
+                return "updated", stored
+
+            claim_result = await atomic_sample_issue_update(issue_data["issue_id"], claim_reminder)
+            if not claim_result.changed or not claim_result.record:
+                continue
+
+            fresh_issue = claim_result.record
+            fresh_countermeasure = fresh_issue.get("countermeasure", {})
+            owner = fresh_countermeasure.get("owner", "")
+            approved_extension_count, request_count = get_extension_counts(fresh_countermeasure)
+            basic = fresh_issue.get("basic_info", {})
+            content = (
+                "样品问题纠正预防措施提醒\n"
+                f"样品问题：{fresh_issue.get('issue_id')}\n"
+                f"产品型号：{basic.get('product_model', '')}\n"
+                f"样品单号：{basic.get('sample_order_no', '')}\n"
+                f"问题点：{basic.get('issue_description', '')}\n"
+                f"对策责任人：{owner}\n"
+                f"预计完成日期：{fresh_countermeasure.get('due_date', '')}\n"
+                f"累计延期申请：{request_count} 次\n"
+                f"已通过延期：{approved_extension_count} 次\n"
+                f"提醒策略：{rule['label']}"
+            )
+            success, message = await send_wecom_text_message(
+                content,
+                await format_people_for_wecom(owner),
+                module="sample_issue_collection",
+                business_key=f"{fresh_issue.get('issue_id')}:{rule['key']}",
+                message_type="sample_issue_reminder",
+                link_url=get_sample_issue_collection_url(fresh_issue.get("issue_id", "")),
+            )
+            if success:
+                sent_count += 1
+            else:
+                fail_count += 1
+
+            def add_reminder_log(
+                current,
+                marker=marker,
+                rule=rule,
+                success=success,
+                message=message,
+                claim_id=claim_id,
+            ):
+                stored = merge_with_sample_issue_template(current)
+                existing_marker = stored.setdefault("reminder_log", {}).get(marker, {})
+                if existing_marker.get("claim_id") != claim_id:
+                    return "claim_lost", current
+                stored.setdefault("reminder_log", {})[marker] = {
+                    "rule": rule["label"],
+                    "state": "sent" if success else "failed_retrying",
+                    "success": success,
+                    "message": message,
+                    "claim_id": claim_id,
+                    "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                }
+                return "updated", stored
+
+            await atomic_sample_issue_update(fresh_issue["issue_id"], add_reminder_log)
+
+    if show_result:
+        ui.notify(
+            f"提醒检查完成：新发成功 {sent_count} 条，失败进入重试 {fail_count} 条；历史重试成功 {retry_success_count} 条，仍失败 {retry_fail_count} 条",
+            type="info",
+            position="bottom",
+        )
+    return sent_count, fail_count
 
 
 async def send_sample_extension_wecom_message(
@@ -658,6 +806,14 @@ async def submit_sample_close_request(
     return await atomic_sample_issue_update(issue_id, add_close_request)
 
 
+async def save_and_submit_sample_close_request(issue_data: dict, user: str, role: str) -> SampleIssueUpdateResult:
+    """先保存当前表单快照，再提交样品问题关闭申请。"""
+    save_result = await save_sample_issue_record(issue_data, user, role, is_new=False)
+    if not save_result.changed or not save_result.record:
+        return save_result
+    return await submit_sample_close_request(save_result.record["issue_id"], user, role)
+
+
 async def approve_sample_close_request(
     issue_id: str,
     request_id: str,
@@ -759,9 +915,22 @@ async def sample_issue_collection_page(issue_id: str = ""):
     dialog = ui.dialog().props("persistent")
     root_dialog = ui.dialog().props("maximized persistent")
     can_delete_record = is_sample_admin(current_role)
+    reminder_guard = {"running": False}
 
     async def handle_new_sample_issue():
         await open_sample_issue_detail_dialog()
+
+    async def run_reminder_check(show_result: bool = False):
+        if reminder_guard["running"]:
+            return
+        reminder_guard["running"] = True
+        try:
+            await check_and_send_sample_issue_reminders(show_result)
+        finally:
+            reminder_guard["running"] = False
+
+    async def handle_manual_reminder_check():
+        await run_reminder_check(True)
 
     def validate_sample_issue_record(sample_data: dict, *, is_new_record: bool = False) -> bool:
         """执行保存前的基础校验。"""
@@ -853,7 +1022,7 @@ async def sample_issue_collection_page(issue_id: str = ""):
                 menu.close()
 
             with ui.menu().props("no-parent-event") as menu:
-                ui.date(value=target.get(key, ""), mask="YYYY-MM-DD", on_change=set_date)
+                apply_chinese_date_locale(ui.date(value=target.get(key, ""), mask="YYYY-MM-DD", on_change=set_date))
 
             field.on("click", lambda _, m=menu: m.open())
             with field.add_slot("append"):
@@ -1003,7 +1172,7 @@ async def sample_issue_collection_page(issue_id: str = ""):
                 if can_operate_countermeasure:
                     ButtonUploader(
                         on_upload=handle_countermeasure_file_upload,
-                        label="添加图片或文件",
+                        label="上传附件",
                         input_any_suffix=SAMPLE_ATTACHMENT_ACCEPT,
                         classes_str=f"h-{SAMPLE_ATTACHMENT_PARENTS_H}",
                         props_str="outline color=primary dense",
@@ -1309,14 +1478,28 @@ async def sample_issue_collection_page(issue_id: str = ""):
                 return ui.notify(
                     "请先保存完整的原因分析、临时对策、纠正预防措施和预计完成日期", type="warning", position="bottom"
                 )
+            sync_countermeasure_files_from_thumbnail_state()
+            if not validate_sample_issue_record(local_data, is_new_record=False):
+                return
 
-            result = await submit_sample_close_request(
-                local_data["issue_id"],
+            result = await save_and_submit_sample_close_request(
+                local_data,
                 current_user,
                 current_role,
             )
+            if result.code == "forbidden":
+                return ui.notify("当前用户无保存权限，无法申请关闭", type="warning", position="bottom")
+            if result.code == "revision_conflict":
+                return ui.notify(
+                    "自动保存已取消：该样品问题已被其他用户更新，请关闭窗口后重新打开再申请关闭",
+                    type="warning",
+                    position="bottom",
+                    multi_line=True,
+                )
             if result.code == "incomplete_countermeasure":
-                return ui.notify("数据库中的对策信息还不完整，请先保存后再申请关闭", type="warning", position="bottom")
+                return ui.notify(
+                    "请填写完整的原因分析、临时对策、纠正预防措施和预计完成日期", type="warning", position="bottom"
+                )
             if result.code == "pending_extension":
                 return ui.notify("该样品问题存在待审批延期申请，请先完成审批", type="warning", position="bottom")
             if result.code == "pending_close":
@@ -1326,7 +1509,7 @@ async def sample_issue_collection_page(issue_id: str = ""):
             if result.code in {"already_closed", "not_found"}:
                 return ui.notify("该样品问题已关闭或不存在，请刷新查看", type="warning", position="bottom")
             if not result.changed or not result.record:
-                return ui.notify("关闭申请提交失败，请刷新后重试", type="negative", position="bottom")
+                return ui.notify("自动保存或关闭申请提交失败，请刷新后重试", type="negative", position="bottom")
 
             fresh_countermeasure = result.record.get("countermeasure", {})
             fresh_request = get_pending_close_request(fresh_countermeasure)
@@ -1644,7 +1827,7 @@ async def sample_issue_collection_page(issue_id: str = ""):
                     )
                 ui.button("关闭窗口", on_click=root_dialog.close).props("outline color=grey")
                 if can_save_record:
-                    ui.button("保存样品问题", icon="save", on_click=save_current_record).props("color=primary")
+                    ui.button("保存记录", icon="save", on_click=save_current_record).props("color=primary")
 
         root_dialog.open()
 
@@ -1689,7 +1872,14 @@ async def sample_issue_collection_page(issue_id: str = ""):
                         page_state, "filter_state"
                     ).classes("w-44")
                     ui.button("查询", icon="search", on_click=lambda: refresh_list()).props("outline color=primary")
-                ui.button("录入样品问题", icon="add_box", on_click=handle_new_sample_issue).props("color=red-7")
+                with ui.row().classes("gap-2 items-center"):
+                    if is_sample_extension_approver(current_role):
+                        ui.button(
+                            "检查提醒",
+                            icon="notifications_active",
+                            on_click=handle_manual_reminder_check,
+                        ).props("outline color=orange")
+                    ui.button("录入样品问题", icon="add_box", on_click=handle_new_sample_issue).props("color=red-7")
 
             with ui.element("div").classes("w-full flex-grow overflow-y-auto overflow-x-hidden p-1"):
                 list_container = ui.column().classes("w-full gap-3")
@@ -1750,7 +1940,7 @@ async def sample_issue_collection_page(issue_id: str = ""):
                             )
 
                             with ui.element("div").classes(
-                                "w-full bg-white border border-gray-200 border-l-4 rounded-md p-4 shadow-sm "
+                                "w-full bg-white border border-gray-200 border-l-4 rounded-md p-3 shadow-sm "
                                 "hover:bg-amber-50 cursor-pointer transition-colors"
                             ) as card:
 
@@ -1759,11 +1949,14 @@ async def sample_issue_collection_page(issue_id: str = ""):
 
                                 card.style(f"border-left-color: {status_border_color(status)}")
                                 card.on("click", open_card_detail)
-                                with ui.row().classes("w-full justify-between items-start gap-4"):
+                                with ui.element("div").classes(
+                                    "grid w-full grid-cols-1 lg:grid-cols-[minmax(250px,auto)_minmax(0,1fr)_minmax(220px,auto)] "
+                                    "items-center justify-items-center gap-x-6 gap-y-2"
+                                ):
                                     with ui.column().classes("gap-1 min-w-0"):
-                                        with ui.row().classes("items-center gap-2"):
+                                        with ui.row().classes("items-center gap-2 flex-wrap"):
                                             ui.label(issue_data["issue_id"]).classes(
-                                                "font-mono font-bold text-lg text-gray-800"
+                                                "font-mono font-bold text-base text-gray-800"
                                             )
                                             ui.badge(status, color=status_color(status)).props("outline")
                                             if pending_extension:
@@ -1774,28 +1967,38 @@ async def sample_issue_collection_page(issue_id: str = ""):
                                                 ui.chip("待我处理", icon="notifications_active", color="red").props(
                                                     "dense outline size=sm"
                                                 )
-                                        ui.label(basic.get("product_model", "未填写产品型号")).classes(
-                                            "font-bold text-gray-800"
-                                        )
-                                        ui.label(
-                                            f"样品单号：{basic.get('sample_order_no', '') or '-'} ｜ "
-                                            f"记录日期：{basic.get('record_date', '') or '-'} ｜ "
-                                            f"问题样机：{basic.get('issue_qty', '') or '-'}/{basic.get('assembled_qty', '') or '-'}"
-                                        ).classes("text-sm text-gray-600")
-                                        if basic.get("issue_description"):
-                                            ui.label(basic.get("issue_description", "")[:120]).classes(
-                                                "text-sm text-gray-500 line-clamp-2"
+                                    with ui.column().classes("gap-1 min-w-0"):
+                                        with ui.row().classes("w-full items-center gap-x-4 gap-y-1 flex-wrap"):
+                                            ui.label(f"产品型号：{basic.get('product_model', '未填写')}").classes(
+                                                "font-bold text-gray-800 text-sm"
                                             )
-                                    with ui.column().classes("items-end gap-1 shrink-0"):
-                                        ui.label(f"记录人：{basic.get('recorder_name', '') or '-'}").classes(
-                                            "text-xs text-gray-500"
-                                        )
-                                        ui.label(f"对策责任人：{countermeasure.get('owner', '') or '-'}").classes(
-                                            "text-xs text-orange-700"
-                                        )
-                                        ui.label(f"预计完成：{get_sample_due_text(issue_data)}").classes(
-                                            "text-xs text-gray-500"
-                                        )
+                                            ui.label(f"样品单号：{basic.get('sample_order_no', '') or '-'}").classes(
+                                                "text-sm text-gray-600 whitespace-nowrap"
+                                            )
+                                            ui.label(
+                                                f"问题样机：{basic.get('issue_qty', '') or '-'}/{basic.get('assembled_qty', '') or '-'}"
+                                            ).classes("text-sm text-gray-600 whitespace-nowrap")
+                                        if basic.get("issue_description"):
+                                            ui.label(basic.get("issue_description", "")[:160]).classes(
+                                                "text-sm text-gray-500 line-clamp-1"
+                                            )
+                                        else:
+                                            ui.label("暂无问题描述").classes("text-sm text-gray-400 line-clamp-1")
+                                    with ui.row().classes("gap-5 min-w-0 lg:items-end text-sm"):
+                                        with ui.column().classes("gap-1"):
+                                            ui.label(f"记录人：{basic.get('recorder_name', '') or '-'}").classes(
+                                                "text-gray-500 whitespace-nowrap"
+                                            )
+                                            ui.label(f"记录日期：{basic.get('record_date', '') or '-'}").classes(
+                                                "text-gray-500 whitespace-nowrap"
+                                            )
+                                        with ui.column().classes("gap-1"):
+                                            ui.label(f"对策责任人：{countermeasure.get('owner', '') or '-'}").classes(
+                                                "text-orange-700 whitespace-nowrap"
+                                            )
+                                            ui.label(f"预计完成：{get_sample_due_text(issue_data)}").classes(
+                                                "text-gray-500 whitespace-nowrap"
+                                            )
 
                         if rendered_count == 0:
                             ui.label("没有符合筛选条件的样品问题").classes("text-gray-500 m-auto mt-10")

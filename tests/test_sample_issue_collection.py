@@ -10,7 +10,7 @@ import unittest
 from datetime import datetime
 from pathlib import Path
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -117,6 +117,20 @@ class SampleIssueCollectionDataTests(unittest.TestCase):
             "SPI20260701004",
         )
 
+    def test_chinese_date_locale_helper(self):
+        """日期控件应能复用中文月份和星期配置。"""
+        from src.utils import apply_chinese_date_locale
+
+        class FakeDateElement:
+            def __init__(self):
+                self.props = {}
+
+        fake_date = FakeDateElement()
+
+        self.assertIs(apply_chinese_date_locale(fake_date), fake_date)
+        self.assertEqual(fake_date.props["locale"]["months"][0], "一月")
+        self.assertEqual(fake_date.props["locale"]["daysShort"], ["日", "一", "二", "三", "四", "五", "六"])
+
     def test_dashboard_pending_count(self):
         """对策责任人看未填完/待延期问题，审批角色看待审批延期申请。"""
         from src.pages import sample_issue_collection as sample_issue
@@ -191,6 +205,8 @@ class SampleIssueCollectionConfigTests(unittest.TestCase):
         self.assertTrue(config["wecom"]["extension"]["approver_roles"])
         self.assertTrue(config["wecom"]["extension"]["approval_notify_targets"])
         self.assertTrue(config["wecom"]["extension"]["notify_requester_on_approval"])
+        self.assertTrue(config["reminders"]["background_enabled"])
+        self.assertTrue(config["reminders"]["rules"])
         self.assertTrue(sample_issue_config.SAMPLE_ISSUE_CONFIG_PATH.exists())
 
     def test_invalid_fields_fall_back_independently(self):
@@ -207,6 +223,16 @@ class SampleIssueCollectionConfigTests(unittest.TestCase):
                     "approver_roles": ["样品经理"],
                     "notify_requester_on_approval": "false",
                 },
+            },
+            "reminders": {
+                "background_enabled": "true",
+                "initial_delay_seconds": 0,
+                "check_interval_seconds": "3600",
+                "rules": [
+                    {"key": "invalid"},
+                    {"key": "custom_due_today", "label": "当天提醒", "days_until_due": 0, "enabled": True},
+                    {"key": "disabled", "label": "禁用规则", "days_until_due": 1, "enabled": False},
+                ],
             },
         }
 
@@ -225,6 +251,13 @@ class SampleIssueCollectionConfigTests(unittest.TestCase):
         self.assertEqual(loaded["wecom"]["default_notify_targets"], [{"position": "研发经理"}])
         self.assertEqual(loaded["wecom"]["extension"]["approver_roles"], ["样品经理"])
         self.assertTrue(loaded["wecom"]["extension"]["notify_requester_on_approval"])
+        self.assertTrue(loaded["reminders"]["background_enabled"])
+        self.assertEqual(loaded["reminders"]["initial_delay_seconds"], 60)
+        self.assertEqual(loaded["reminders"]["check_interval_seconds"], 3600)
+        self.assertEqual(
+            loaded["reminders"]["rules"],
+            [{"key": "custom_due_today", "label": "当天提醒", "days_until_due": 0}],
+        )
 
 
 class SampleIssueCollectionConcurrencyTests(unittest.IsolatedAsyncioTestCase):
@@ -416,6 +449,141 @@ class SampleIssueCollectionConcurrencyTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(sample_issue.calculate_sample_issue_status(approved.record), "已关闭")
                     self.assertEqual(approved.record["countermeasure"]["close_note"], "")
                     self.assertEqual(approved.record["countermeasure"]["closed_by"], "经理")
+                finally:
+                    sample_issue.db_storage = original_db_storage
+            finally:
+                await isolated_db.close_db()
+
+    async def test_close_request_auto_saves_countermeasure_changes(self):
+        """申请关闭时应先保存当前对策表单，再发起关闭申请。"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            isolated_db = load_isolated_db_storage(
+                "test_sample_issue_close_auto_save_db_storage",
+                Path(temp_dir) / "sample_issue_close_auto_save.db",
+            )
+            try:
+                await isolated_db.init_db()
+                from src.pages import sample_issue_collection as sample_issue
+
+                original_db_storage = sample_issue.db_storage
+                sample_issue.db_storage = isolated_db
+                try:
+                    draft = sample_issue.generate_initial_sample_issue_data("张三", "测试工程师")
+                    draft["basic_info"].update(
+                        {
+                            "product_model": "MODEL-AUTO",
+                            "issue_description": "样机电流偏高",
+                            "sample_order_no": "SAMPLE-AUTO",
+                            "record_date": "2026-07-02",
+                            "assembled_qty": "5",
+                            "issue_qty": "1",
+                            "recorder_name": "张三",
+                        }
+                    )
+                    draft["countermeasure"]["owner"] = "李四"
+                    created = await sample_issue.save_sample_issue_record(
+                        draft,
+                        "张三",
+                        "测试工程师",
+                        is_new=True,
+                    )
+                    self.assertTrue(created.changed)
+                    assert created.record is not None
+
+                    local_copy = copy.deepcopy(created.record)
+                    local_copy["countermeasure"].update(
+                        {
+                            "reason_analysis": "器件参数偏差",
+                            "temporary_action": "临时筛选",
+                            "corrective_preventive_action": "调整来料检验标准",
+                            "due_date": "2026-07-08",
+                        }
+                    )
+
+                    requested = await sample_issue.save_and_submit_sample_close_request(
+                        local_copy,
+                        "李四",
+                        "测试工程师",
+                    )
+
+                    self.assertTrue(requested.changed)
+                    assert requested.record is not None
+                    self.assertEqual(sample_issue.calculate_sample_issue_status(requested.record), "关闭申请中")
+                    self.assertEqual(requested.record["countermeasure"]["reason_analysis"], "器件参数偏差")
+                    self.assertEqual(requested.record["countermeasure"]["due_date"], "2026-07-08")
+                    self.assertIsNotNone(sample_issue.get_pending_close_request(requested.record["countermeasure"]))
+                finally:
+                    sample_issue.db_storage = original_db_storage
+            finally:
+                await isolated_db.close_db()
+
+    async def test_sample_issue_reminder_sends_once_and_writes_log(self):
+        """样品问题预计完成日期命中规则时应提醒责任人，并按日期去重。"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            isolated_db = load_isolated_db_storage(
+                "test_sample_issue_reminder_db_storage",
+                Path(temp_dir) / "sample_issue_reminder.db",
+            )
+            try:
+                await isolated_db.init_db()
+                from src.pages import sample_issue_collection as sample_issue
+
+                original_db_storage = sample_issue.db_storage
+                sample_issue.db_storage = isolated_db
+                try:
+                    draft = sample_issue.generate_initial_sample_issue_data("张三", "测试工程师")
+                    draft["basic_info"].update(
+                        {
+                            "product_model": "MODEL-R",
+                            "issue_description": "样机温升偏高",
+                            "sample_order_no": "SAMPLE-R",
+                            "record_date": datetime.now().strftime("%Y-%m-%d"),
+                            "assembled_qty": "8",
+                            "issue_qty": "2",
+                            "recorder_name": "张三",
+                        }
+                    )
+                    draft["countermeasure"].update(
+                        {
+                            "owner": "李四",
+                            "reason_analysis": "散热间隙不足",
+                            "temporary_action": "增加温升复测",
+                            "corrective_preventive_action": "调整散热结构",
+                            "due_date": datetime.now().strftime("%Y-%m-%d"),
+                        }
+                    )
+                    created = await sample_issue.save_sample_issue_record(
+                        draft,
+                        "张三",
+                        "测试工程师",
+                        is_new=True,
+                    )
+                    self.assertTrue(created.changed)
+                    assert created.record is not None
+                    issue_id = created.record["issue_id"]
+
+                    send_mock = AsyncMock(return_value=(True, "ok"))
+                    with (
+                        patch.object(
+                            sample_issue,
+                            "SAMPLE_REMINDER_RULES",
+                            [{"key": "due_today", "label": "预计完成日期当天", "days_until_due": 0}],
+                        ),
+                        patch.object(sample_issue, "retry_failed_wecom_messages", AsyncMock(return_value=(0, 0))),
+                        patch.object(sample_issue, "format_people_for_wecom", AsyncMock(return_value="lisi")),
+                        patch.object(sample_issue, "send_wecom_text_message", send_mock),
+                    ):
+                        sent_count, fail_count = await sample_issue.check_and_send_sample_issue_reminders()
+                        repeated_sent_count, repeated_fail_count = await sample_issue.check_and_send_sample_issue_reminders()
+
+                    self.assertEqual((sent_count, fail_count), (1, 0))
+                    self.assertEqual((repeated_sent_count, repeated_fail_count), (0, 0))
+                    self.assertEqual(send_mock.await_count, 1)
+                    stored = isolated_db.get_deep_item([sample_issue.SAMPLE_ISSUE_DATA_KEY, issue_id])
+                    self.assertEqual(len(stored["reminder_log"]), 1)
+                    reminder_entry = next(iter(stored["reminder_log"].values()))
+                    self.assertEqual(reminder_entry["state"], "sent")
+                    self.assertTrue(reminder_entry["success"])
                 finally:
                     sample_issue.db_storage = original_db_storage
             finally:

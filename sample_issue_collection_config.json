@@ -8,7 +8,11 @@
         "wecom.extension.approver_roles": "可以通过或驳回样品问题延期申请的角色关键字列表。",
         "wecom.extension.notify_targets": "延期申请通知接收人规则列表；可使用 names、userids、department_contains、position 或 position_contains 等成员筛选条件。",
         "wecom.extension.approval_notify_targets": "仅在延期审批通过后追加通知的成员规则；驳回和申请提交不会通知这些角色。",
-        "wecom.extension.notify_requester_on_approval": "审批通过或驳回后，是否同时通知本次延期申请人。"
+        "wecom.extension.notify_requester_on_approval": "审批通过或驳回后，是否同时通知本次延期申请人。",
+        "reminders.background_enabled": "是否在系统启动后自动运行样品问题预计完成日期提醒检查。",
+        "reminders.initial_delay_seconds": "系统启动多少秒后执行第一次提醒检查，必须为正整数。",
+        "reminders.check_interval_seconds": "后台提醒检查间隔秒数，必须为正整数。",
+        "reminders.rules": "提醒策略列表。days_until_due 表示恰好提前几天，max_days_until_due 表示小于等于几天；每条规则只能配置其中一种。enabled=false 可临时停用。"
     },
     "public_base_url": "http://192.168.1.102:8080",
     "editor_roles": [
@@ -46,5 +50,36 @@
             ],
             "notify_requester_on_approval": true
         }
+    },
+    "reminders": {
+        "background_enabled": true,
+        "initial_delay_seconds": 60,
+        "check_interval_seconds": 3600,
+        "rules": [
+            {
+                "key": "due_7_days",
+                "label": "预计完成日期前7天",
+                "days_until_due": 7,
+                "enabled": true
+            },
+            {
+                "key": "due_3_days",
+                "label": "预计完成日期前3天",
+                "days_until_due": 3,
+                "enabled": true
+            },
+            {
+                "key": "due_today",
+                "label": "预计完成日期当天",
+                "days_until_due": 0,
+                "enabled": true
+            },
+            {
+                "key": "overdue",
+                "label": "预计完成日期逾期",
+                "max_days_until_due": -1,
+                "enabled": true
+            }
+        ]
     }
 }

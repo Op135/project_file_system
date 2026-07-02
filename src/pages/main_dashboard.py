@@ -132,7 +132,7 @@ def main_page():
         ("equalizer", "统计信息", "查阅系统统计信息", "/statistics"),
         ("published_with_changes", "工程变更", "ECR与ECN流程管理", "/ecn_management"),
         ("error", "异常单跟进", "查阅和记录异常单处理进度", "/error_management"),
-        ("science", "样品问题收集", "记录样品问题与对策进度", "/sample_issue_collection"),
+        ("science", "样品问题跟进", "记录样品问题与对策进度", "/sample_issue_collection"),
     ]
     menu_items = []
     for items in menu_items_metadata:

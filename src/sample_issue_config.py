@@ -46,6 +46,17 @@ _DEFAULT_CONFIG = {
             "notify_requester_on_approval": True,
         },
     },
+    "reminders": {
+        "background_enabled": True,
+        "initial_delay_seconds": 60,
+        "check_interval_seconds": 3600,
+        "rules": [
+            {"key": "due_7_days", "label": "预计完成日期前7天", "days_until_due": 7, "enabled": True},
+            {"key": "due_3_days", "label": "预计完成日期前3天", "days_until_due": 3, "enabled": True},
+            {"key": "due_today", "label": "预计完成日期当天", "days_until_due": 0, "enabled": True},
+            {"key": "overdue", "label": "预计完成日期逾期", "max_days_until_due": -1, "enabled": True},
+        ],
+    },
 }
 
 
@@ -107,6 +118,15 @@ def _bool_value(config: dict, key: str, default: bool) -> bool:
     return default
 
 
+def _positive_int(config: dict, key: str, default: int) -> int:
+    """读取后台任务时间参数。"""
+    value = config.get(key)
+    if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+        return value
+    logger.warning("样品问题配置 %s 无效，已使用默认值", key)
+    return default
+
+
 def _notify_targets(config: dict, key: str, default: list) -> list:
     """读取企业微信接收人规则；每项可以是直接账号字符串或成员筛选条件字典。"""
     value = config.get(key)
@@ -116,14 +136,57 @@ def _notify_targets(config: dict, key: str, default: list) -> list:
     return copy.deepcopy(default)
 
 
+def _reminder_rules(config: dict, default: list[dict]) -> list[dict]:
+    """校验并标准化提醒策略。"""
+    value = config.get("rules")
+    if not isinstance(value, list):
+        logger.warning("样品问题提醒规则必须是列表，已使用默认值")
+        return copy.deepcopy(default)
+
+    normalized_rules = []
+    seen_keys = set()
+    for index, rule in enumerate(value):
+        if not isinstance(rule, dict):
+            logger.warning("样品问题提醒规则第 %s 项不是对象，已忽略", index + 1)
+            continue
+        if rule.get("enabled", True) is False:
+            continue
+
+        key = rule.get("key")
+        label = rule.get("label")
+        has_exact = isinstance(rule.get("days_until_due"), int) and not isinstance(rule.get("days_until_due"), bool)
+        has_max = isinstance(rule.get("max_days_until_due"), int) and not isinstance(
+            rule.get("max_days_until_due"), bool
+        )
+        if (
+            not isinstance(key, str)
+            or not key.strip()
+            or key in seen_keys
+            or not isinstance(label, str)
+            or not label.strip()
+            or has_exact == has_max
+        ):
+            logger.warning("样品问题提醒规则第 %s 项格式无效，已忽略", index + 1)
+            continue
+
+        normalized_rule = {"key": key.strip(), "label": label.strip()}
+        match_key = "days_until_due" if has_exact else "max_days_until_due"
+        normalized_rule[match_key] = rule[match_key]
+        normalized_rules.append(normalized_rule)
+        seen_keys.add(key)
+    return normalized_rules
+
+
 def load_sample_issue_config() -> dict[str, Any]:
     """组合出样品问题页面实际使用的完整配置。"""
     raw_config = _read_config_file()
     default_wecom = _DEFAULT_CONFIG["wecom"]
     default_extension = default_wecom["extension"]
+    default_reminders = _DEFAULT_CONFIG["reminders"]
 
     raw_wecom = raw_config.get("wecom", {}) if isinstance(raw_config.get("wecom"), dict) else {}
     raw_extension = raw_wecom.get("extension", {}) if isinstance(raw_wecom.get("extension"), dict) else {}
+    raw_reminders = raw_config.get("reminders", {}) if isinstance(raw_config.get("reminders"), dict) else {}
 
     return {
         "public_base_url": _string_value(raw_config, "public_base_url", _DEFAULT_CONFIG["public_base_url"]).rstrip("/"),
@@ -158,6 +221,24 @@ def load_sample_issue_config() -> dict[str, Any]:
                 ),
             },
         },
+        "reminders": {
+            "background_enabled": _bool_value(
+                raw_reminders,
+                "background_enabled",
+                default_reminders["background_enabled"],
+            ),
+            "initial_delay_seconds": _positive_int(
+                raw_reminders,
+                "initial_delay_seconds",
+                default_reminders["initial_delay_seconds"],
+            ),
+            "check_interval_seconds": _positive_int(
+                raw_reminders,
+                "check_interval_seconds",
+                default_reminders["check_interval_seconds"],
+            ),
+            "rules": _reminder_rules(raw_reminders, default_reminders["rules"]),
+        },
     }
 
 
@@ -176,3 +257,7 @@ SAMPLE_EXTENSION_APPROVAL_NOTIFY_TARGETS = SAMPLE_ISSUE_CONFIG["wecom"]["extensi
 SAMPLE_EXTENSION_NOTIFY_REQUESTER_ON_APPROVAL = SAMPLE_ISSUE_CONFIG["wecom"]["extension"][
     "notify_requester_on_approval"
 ]
+SAMPLE_BACKGROUND_REMINDER_ENABLED = SAMPLE_ISSUE_CONFIG["reminders"]["background_enabled"]
+SAMPLE_BACKGROUND_REMINDER_INITIAL_DELAY_SECONDS = SAMPLE_ISSUE_CONFIG["reminders"]["initial_delay_seconds"]
+SAMPLE_BACKGROUND_REMINDER_INTERVAL_SECONDS = SAMPLE_ISSUE_CONFIG["reminders"]["check_interval_seconds"]
+SAMPLE_REMINDER_RULES = SAMPLE_ISSUE_CONFIG["reminders"]["rules"]

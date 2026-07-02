@@ -44,6 +44,35 @@ logger = logging.getLogger(__name__)
 # 内存中的全局字典：{ client.id : { 'username': str, 'login_time': str, 'ip': str } }
 online_users = {}
 
+CHINESE_DATE_LOCALE = {
+    "days": ["星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"],
+    "daysShort": ["日", "一", "二", "三", "四", "五", "六"],
+    "months": [
+        "一月",
+        "二月",
+        "三月",
+        "四月",
+        "五月",
+        "六月",
+        "七月",
+        "八月",
+        "九月",
+        "十月",
+        "十一月",
+        "十二月",
+    ],
+    "monthsShort": ["1月", "2月", "3月", "4月", "5月", "6月", "7月", "8月", "9月", "10月", "11月", "12月"],
+    "firstDayOfWeek": 1,
+    "format24h": True,
+    "pluralDay": "天",
+}
+
+
+def apply_chinese_date_locale(date_element):
+    """给 Quasar QDate 设置中文月份和星期显示。"""
+    date_element.props["locale"] = copy.deepcopy(CHINESE_DATE_LOCALE)
+    return date_element
+
 
 def setup_global_activity_tracking():
     """注入全局前端活跃监听与心跳上报"""

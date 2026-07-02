@@ -56,6 +56,9 @@
                 },
                 {
                     "position": "QE工程师"
+                },
+                {
+                    "position": "NPI工程师"
                 }
             ],
             "notify_requester_on_approval": true

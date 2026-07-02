@@ -53,7 +53,7 @@ from ..issue_workflow_utils import (
     schedule_background_task,
     split_people,
 )
-from ..utils import get_cache_busted_path, logout, setup_global_activity_tracking
+from ..utils import apply_chinese_date_locale, get_cache_busted_path, logout, setup_global_activity_tracking
 from ..wecom_service import resolve_wecom_recipients, retry_failed_wecom_messages, send_wecom_text_message
 
 logger = logging.getLogger(__name__)
@@ -784,7 +784,7 @@ async def error_management_page(error_id: str = ""):
                 menu.close()
 
             with ui.menu().props("no-parent-event") as menu:
-                ui.date(value=target.get(key, ""), mask="YYYY-MM-DD", on_change=set_date)
+                apply_chinese_date_locale(ui.date(value=target.get(key, ""), mask="YYYY-MM-DD", on_change=set_date))
 
             field.on("click", lambda _, m=menu: m.open())
             with field.add_slot("append"):

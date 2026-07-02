@@ -23,6 +23,11 @@ from .error_management_config import (
     ERROR_BACKGROUND_REMINDER_INITIAL_DELAY_SECONDS,
     ERROR_BACKGROUND_REMINDER_INTERVAL_SECONDS,
 )
+from .sample_issue_config import (
+    SAMPLE_BACKGROUND_REMINDER_ENABLED,
+    SAMPLE_BACKGROUND_REMINDER_INITIAL_DELAY_SECONDS,
+    SAMPLE_BACKGROUND_REMINDER_INTERVAL_SECONDS,
+)
 from .user_service import UserService
 from .utils import (  # 导入上面定义的函数
     handle_connect,
@@ -228,6 +233,28 @@ def init_error_reminder_task():
     )
 
 
+def init_sample_issue_reminder_task():
+    """初始化样品问题纠正预防措施后台提醒检查任务。"""
+    if not SAMPLE_BACKGROUND_REMINDER_ENABLED:
+        logger.info("样品问题后台提醒检查任务已通过配置禁用。")
+        return
+
+    async def check_sample_issue_reminders():
+        from .pages.sample_issue_collection import check_and_send_sample_issue_reminders
+
+        sent_count, fail_count = await check_and_send_sample_issue_reminders(show_result=False)
+        if sent_count or fail_count:
+            logger.info("样品问题提醒检查完成：新发成功 %s 条，失败进入重试 %s 条", sent_count, fail_count)
+
+    app.timer(SAMPLE_BACKGROUND_REMINDER_INITIAL_DELAY_SECONDS, check_sample_issue_reminders, once=True)
+    app.timer(SAMPLE_BACKGROUND_REMINDER_INTERVAL_SECONDS, check_sample_issue_reminders)
+    logger.info(
+        "样品问题后台提醒检查任务已挂载（首次 %s 秒，循环 %s 秒）。",
+        SAMPLE_BACKGROUND_REMINDER_INITIAL_DELAY_SECONDS,
+        SAMPLE_BACKGROUND_REMINDER_INTERVAL_SECONDS,
+    )
+
+
 # ==========================================
 # 🌟 核心重构：统一的异步启动序列
 # ==========================================
@@ -260,6 +287,9 @@ async def master_startup():
 
     # 第七顺位：启动生产异常后台提醒检查任务
     init_error_reminder_task()
+
+    # 第八顺位：启动样品问题后台提醒检查任务
+    init_sample_issue_reminder_task()
 
     logger.info("系统启动序列全部执行完毕。")
 
