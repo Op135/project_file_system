@@ -103,8 +103,11 @@ class ErrorManagementNotificationTests(unittest.IsolatedAsyncioTestCase):
             )
 
         self.assertTrue(success)
+        await_args = send_mock.await_args
+        if await_args is None:
+            self.fail("send_wecom_text_message was not awaited")
         self.assertEqual(
-            send_mock.await_args.args[1],
+            await_args.args[1],
             "rd-manager-userid|quality-manager-userid|qe-userid|requester-userid",
         )
         self.assertEqual(resolve_mock.await_count, 3)
