@@ -56,6 +56,16 @@ _DEFAULT_CONFIG = {
             {"key": "due_today", "label": "预计完成日期当天", "days_until_due": 0, "enabled": True},
             {"key": "overdue", "label": "预计完成日期逾期", "max_days_until_due": -1, "enabled": True},
         ],
+        "incomplete_rules": [
+            {"key": "incomplete_1_day", "label": "问题录入后1天未完善对策", "days_since_record": 1, "enabled": True},
+            {"key": "incomplete_3_days", "label": "问题录入后3天未完善对策", "days_since_record": 3, "enabled": True},
+            {
+                "key": "incomplete_over_3_days",
+                "label": "问题录入超过3天仍未完善对策",
+                "min_days_since_record": 4,
+                "enabled": True,
+            },
+        ],
     },
 }
 
@@ -177,6 +187,53 @@ def _reminder_rules(config: dict, default: list[dict]) -> list[dict]:
     return normalized_rules
 
 
+def _incomplete_reminder_rules(config: dict, default: list[dict]) -> list[dict]:
+    """校验并标准化对策未完善提醒策略。"""
+    value = config.get("incomplete_rules")
+    if not isinstance(value, list):
+        logger.warning("样品问题未完善对策提醒规则必须是列表，已使用默认值")
+        return copy.deepcopy(default)
+
+    normalized_rules = []
+    seen_keys = set()
+    for index, rule in enumerate(value):
+        if not isinstance(rule, dict):
+            logger.warning("样品问题未完善对策提醒规则第 %s 项不是对象，已忽略", index + 1)
+            continue
+        if rule.get("enabled", True) is False:
+            continue
+
+        key = rule.get("key")
+        label = rule.get("label")
+        has_exact = isinstance(rule.get("days_since_record"), int) and not isinstance(
+            rule.get("days_since_record"), bool
+        )
+        has_min = isinstance(rule.get("min_days_since_record"), int) and not isinstance(
+            rule.get("min_days_since_record"), bool
+        )
+        if (
+            not isinstance(key, str)
+            or not key.strip()
+            or key in seen_keys
+            or not isinstance(label, str)
+            or not label.strip()
+            or has_exact == has_min
+        ):
+            logger.warning("样品问题未完善对策提醒规则第 %s 项格式无效，已忽略", index + 1)
+            continue
+
+        match_key = "days_since_record" if has_exact else "min_days_since_record"
+        match_value = rule[match_key]
+        if match_value < 0:
+            logger.warning("样品问题未完善对策提醒规则第 %s 项天数无效，已忽略", index + 1)
+            continue
+
+        normalized_rule = {"key": key.strip(), "label": label.strip(), match_key: match_value}
+        normalized_rules.append(normalized_rule)
+        seen_keys.add(key)
+    return normalized_rules
+
+
 def load_sample_issue_config() -> dict[str, Any]:
     """组合出样品问题页面实际使用的完整配置。"""
     raw_config = _read_config_file()
@@ -238,6 +295,10 @@ def load_sample_issue_config() -> dict[str, Any]:
                 default_reminders["check_interval_seconds"],
             ),
             "rules": _reminder_rules(raw_reminders, default_reminders["rules"]),
+            "incomplete_rules": _incomplete_reminder_rules(
+                raw_reminders,
+                default_reminders["incomplete_rules"],
+            ),
         },
     }
 
@@ -261,3 +322,4 @@ SAMPLE_BACKGROUND_REMINDER_ENABLED = SAMPLE_ISSUE_CONFIG["reminders"]["backgroun
 SAMPLE_BACKGROUND_REMINDER_INITIAL_DELAY_SECONDS = SAMPLE_ISSUE_CONFIG["reminders"]["initial_delay_seconds"]
 SAMPLE_BACKGROUND_REMINDER_INTERVAL_SECONDS = SAMPLE_ISSUE_CONFIG["reminders"]["check_interval_seconds"]
 SAMPLE_REMINDER_RULES = SAMPLE_ISSUE_CONFIG["reminders"]["rules"]
+SAMPLE_INCOMPLETE_REMINDER_RULES = SAMPLE_ISSUE_CONFIG["reminders"]["incomplete_rules"]

@@ -7,7 +7,7 @@ import json
 import sys
 import tempfile
 import unittest
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, patch
@@ -207,6 +207,7 @@ class SampleIssueCollectionConfigTests(unittest.TestCase):
         self.assertTrue(config["wecom"]["extension"]["notify_requester_on_approval"])
         self.assertTrue(config["reminders"]["background_enabled"])
         self.assertTrue(config["reminders"]["rules"])
+        self.assertTrue(config["reminders"]["incomplete_rules"])
         self.assertTrue(sample_issue_config.SAMPLE_ISSUE_CONFIG_PATH.exists())
 
     def test_invalid_fields_fall_back_independently(self):
@@ -233,6 +234,27 @@ class SampleIssueCollectionConfigTests(unittest.TestCase):
                     {"key": "custom_due_today", "label": "当天提醒", "days_until_due": 0, "enabled": True},
                     {"key": "disabled", "label": "禁用规则", "days_until_due": 1, "enabled": False},
                 ],
+                "incomplete_rules": [
+                    {"key": "bad"},
+                    {
+                        "key": "custom_incomplete",
+                        "label": "录入后2天未完善",
+                        "days_since_record": 2,
+                        "enabled": True,
+                    },
+                    {
+                        "key": "custom_daily",
+                        "label": "超过4天每日提醒",
+                        "min_days_since_record": 4,
+                        "enabled": True,
+                    },
+                    {
+                        "key": "disabled_incomplete",
+                        "label": "停用",
+                        "days_since_record": 1,
+                        "enabled": False,
+                    },
+                ],
             },
         }
 
@@ -257,6 +279,13 @@ class SampleIssueCollectionConfigTests(unittest.TestCase):
         self.assertEqual(
             loaded["reminders"]["rules"],
             [{"key": "custom_due_today", "label": "当天提醒", "days_until_due": 0}],
+        )
+        self.assertEqual(
+            loaded["reminders"]["incomplete_rules"],
+            [
+                {"key": "custom_incomplete", "label": "录入后2天未完善", "days_since_record": 2},
+                {"key": "custom_daily", "label": "超过4天每日提醒", "min_days_since_record": 4},
+            ],
         )
 
 
@@ -584,6 +613,85 @@ class SampleIssueCollectionConcurrencyTests(unittest.IsolatedAsyncioTestCase):
                     reminder_entry = next(iter(stored["reminder_log"].values()))
                     self.assertEqual(reminder_entry["state"], "sent")
                     self.assertTrue(reminder_entry["success"])
+                finally:
+                    sample_issue.db_storage = original_db_storage
+            finally:
+                await isolated_db.close_db()
+
+    async def test_incomplete_countermeasure_reminder_is_configurable_and_deduplicated(self):
+        """未完善对策时应按记录日期提醒责任人，并按规则和日期去重。"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            isolated_db = load_isolated_db_storage(
+                "test_sample_issue_incomplete_reminder_db_storage",
+                Path(temp_dir) / "sample_issue_incomplete_reminder.db",
+            )
+            try:
+                await isolated_db.init_db()
+                from src.pages import sample_issue_collection as sample_issue
+
+                original_db_storage = sample_issue.db_storage
+                sample_issue.db_storage = isolated_db
+                try:
+                    draft = sample_issue.generate_initial_sample_issue_data("张三", "测试工程师")
+                    draft["basic_info"].update(
+                        {
+                            "product_model": "MODEL-I",
+                            "issue_description": "样机按键失灵",
+                            "sample_order_no": "SAMPLE-I",
+                            "record_date": (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d"),
+                            "assembled_qty": "5",
+                            "issue_qty": "1",
+                            "recorder_name": "张三",
+                        }
+                    )
+                    draft["countermeasure"].update(
+                        {
+                            "owner": "李四",
+                            "reason_analysis": "按键间隙偏小",
+                            "temporary_action": "",
+                            "corrective_preventive_action": "",
+                            "due_date": "",
+                        }
+                    )
+                    created = await sample_issue.save_sample_issue_record(
+                        draft,
+                        "张三",
+                        "测试工程师",
+                        is_new=True,
+                    )
+                    self.assertTrue(created.changed)
+                    assert created.record is not None
+                    issue_id = created.record["issue_id"]
+
+                    send_mock = AsyncMock(return_value=(True, "ok"))
+                    with (
+                        patch.object(
+                            sample_issue,
+                            "SAMPLE_REMINDER_RULES",
+                            [{"key": "due_today", "label": "预计完成日期当天", "days_until_due": 0}],
+                        ),
+                        patch.object(
+                            sample_issue,
+                            "SAMPLE_INCOMPLETE_REMINDER_RULES",
+                            [{"key": "after_1_day", "label": "问题录入后1天未完善对策", "days_since_record": 1}],
+                        ),
+                        patch.object(sample_issue, "retry_failed_wecom_messages", AsyncMock(return_value=(0, 0))),
+                        patch.object(sample_issue, "format_people_for_wecom", AsyncMock(return_value="lisi")),
+                        patch.object(sample_issue, "send_wecom_text_message", send_mock),
+                    ):
+                        sent_count, fail_count = await sample_issue.check_and_send_sample_issue_reminders()
+                        repeated_sent_count, repeated_fail_count = await sample_issue.check_and_send_sample_issue_reminders()
+
+                    self.assertEqual((sent_count, fail_count), (1, 0))
+                    self.assertEqual((repeated_sent_count, repeated_fail_count), (0, 0))
+                    self.assertEqual(send_mock.await_count, 1)
+                    _, _, kwargs = send_mock.mock_calls[0]
+                    self.assertEqual(kwargs["message_type"], "sample_issue_incomplete_reminder")
+                    self.assertIn("待完善字段：样品临时对策、纠正预防措施、纠正预防措施预计完成日期", send_mock.call_args.args[0])
+                    stored = isolated_db.get_deep_item([sample_issue.SAMPLE_ISSUE_DATA_KEY, issue_id])
+                    self.assertEqual(len(stored["reminder_log"]), 1)
+                    reminder_key = next(iter(stored["reminder_log"]))
+                    self.assertIn(":incomplete:after_1_day:", reminder_key)
                 finally:
                     sample_issue.db_storage = original_db_storage
             finally:

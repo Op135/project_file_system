@@ -41,6 +41,7 @@ from ..sample_issue_config import (
     SAMPLE_FILTER_PENDING_EXTENSION_STATE,
     SAMPLE_FILTER_STATES,
     SAMPLE_PUBLIC_BASE_URL,
+    SAMPLE_INCOMPLETE_REMINDER_RULES,
     SAMPLE_REMINDER_RULES,
     SAMPLE_STATUS_CORRECTIVE_ACTION_DONE,
     SAMPLE_STATUS_ISSUE_RECORDED,
@@ -418,6 +419,40 @@ def reminder_rule_matches(due_date, today, rule: dict) -> bool:
     return False
 
 
+def incomplete_reminder_rule_matches(record_date, today, rule: dict) -> bool:
+    """判断记录日期是否命中对策未完善提醒规则。"""
+    days_since_record = (today - record_date).days
+    if days_since_record < 0:
+        return False
+    if "days_since_record" in rule:
+        return days_since_record == rule["days_since_record"]
+    if "min_days_since_record" in rule:
+        return days_since_record >= rule["min_days_since_record"]
+    return False
+
+
+def get_sample_issue_record_date(issue_data: dict):
+    """返回样品问题未完善对策提醒使用的记录日期。"""
+    basic = issue_data.get("basic_info", {})
+    return (
+        parse_date(basic.get("record_date", ""))
+        or parse_date(issue_data.get("created_at", ""))
+        or parse_date(issue_data.get("updated_at", ""))
+    )
+
+
+def get_missing_countermeasure_labels(issue_data: dict) -> list[str]:
+    """返回对策责任人区块尚未填写完整的字段名称。"""
+    countermeasure = issue_data.get("countermeasure", {})
+    required_fields = [
+        ("原因分析", countermeasure.get("reason_analysis", "")),
+        ("样品临时对策", countermeasure.get("temporary_action", "")),
+        ("纠正预防措施", countermeasure.get("corrective_preventive_action", "")),
+        ("纠正预防措施预计完成日期", countermeasure.get("due_date", "")),
+    ]
+    return [label for label, value in required_fields if not str(value).strip()]
+
+
 def get_sample_dashboard_pending_count(all_issues: Any, current_user: str, current_role: str) -> int:
     """计算主页“样品问题收集”卡片对当前用户显示的待办角标数量。"""
     if not isinstance(all_issues, dict):
@@ -487,6 +522,8 @@ async def check_and_send_sample_issue_reminders(show_result: bool = False) -> tu
         countermeasure = issue_data.get("countermeasure", {})
         if get_pending_close_request(countermeasure):
             continue
+        if not is_countermeasure_complete(issue_data):
+            continue
 
         due_date = parse_date(countermeasure.get("due_date", ""))
         owner = countermeasure.get("owner", "")
@@ -507,6 +544,8 @@ async def check_and_send_sample_issue_reminders(show_result: bool = False) -> tu
                 stored = merge_with_sample_issue_template(current)
                 stored_countermeasure = stored.get("countermeasure", {})
                 if is_sample_issue_closed(stored) or get_pending_close_request(stored_countermeasure):
+                    return "not_eligible", current
+                if not is_countermeasure_complete(stored):
                     return "not_eligible", current
 
                 fresh_due_date = parse_date(stored_countermeasure.get("due_date", ""))
@@ -594,6 +633,123 @@ async def check_and_send_sample_issue_reminders(show_result: bool = False) -> tu
                 return "updated", stored
 
             await atomic_sample_issue_update(fresh_issue["issue_id"], add_reminder_log)
+
+    for raw_issue in all_issues.values():
+        issue_data = merge_with_sample_issue_template(raw_issue)
+        if is_sample_issue_closed(issue_data):
+            continue
+
+        countermeasure = issue_data.get("countermeasure", {})
+        if get_pending_close_request(countermeasure):
+            continue
+
+        record_date = get_sample_issue_record_date(issue_data)
+        missing_labels = get_missing_countermeasure_labels(issue_data)
+        if not issue_data.get("issue_id") or not record_date or not missing_labels:
+            continue
+
+        for rule in SAMPLE_INCOMPLETE_REMINDER_RULES:
+            if not incomplete_reminder_rule_matches(record_date, today, rule):
+                continue
+
+            marker = f"{issue_data['issue_id']}:incomplete:{rule['key']}:{today_key}"
+            if marker in issue_data.get("reminder_log", {}):
+                continue
+
+            claim_id = uuid.uuid4().hex
+
+            def claim_incomplete_reminder(current, marker=marker, rule=rule, claim_id=claim_id):
+                stored = merge_with_sample_issue_template(current)
+                stored_countermeasure = stored.get("countermeasure", {})
+                if is_sample_issue_closed(stored) or get_pending_close_request(stored_countermeasure):
+                    return "not_eligible", current
+
+                fresh_record_date = get_sample_issue_record_date(stored)
+                fresh_missing_labels = get_missing_countermeasure_labels(stored)
+                if (
+                    not fresh_record_date
+                    or not fresh_missing_labels
+                    or not incomplete_reminder_rule_matches(fresh_record_date, today, rule)
+                ):
+                    return "not_eligible", current
+
+                reminder_log = stored.setdefault("reminder_log", {})
+                existing_marker = reminder_log.get(marker)
+                can_claim = marker not in reminder_log
+                if existing_marker and existing_marker.get("state") == "sending":
+                    try:
+                        sending_time = datetime.strptime(existing_marker.get("time", ""), "%Y-%m-%d %H:%M:%S")
+                        can_claim = datetime.now() - sending_time > timedelta(minutes=10)
+                    except ValueError:
+                        can_claim = True
+                if not can_claim:
+                    return "already_claimed", current
+
+                reminder_log[marker] = {
+                    "rule": rule["label"],
+                    "state": "sending",
+                    "claim_id": claim_id,
+                    "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                }
+                return "updated", stored
+
+            claim_result = await atomic_sample_issue_update(issue_data["issue_id"], claim_incomplete_reminder)
+            if not claim_result.changed or not claim_result.record:
+                continue
+
+            fresh_issue = claim_result.record
+            fresh_countermeasure = fresh_issue.get("countermeasure", {})
+            fresh_missing_labels = get_missing_countermeasure_labels(fresh_issue)
+            basic = fresh_issue.get("basic_info", {})
+            owner = fresh_countermeasure.get("owner", "")
+            recipient_people = owner or basic.get("recorder_name", "") or fresh_issue.get("created_by", "")
+            content = (
+                "样品问题对策填写提醒\n"
+                f"样品问题：{fresh_issue.get('issue_id')}\n"
+                f"产品型号：{basic.get('product_model', '')}\n"
+                f"样品单号：{basic.get('sample_order_no', '')}\n"
+                f"问题点：{basic.get('issue_description', '')}\n"
+                f"记录日期：{basic.get('record_date', '')}\n"
+                f"对策责任人：{owner or '-'}\n"
+                f"待完善字段：{'、'.join(fresh_missing_labels)}\n"
+                f"提醒策略：{rule['label']}"
+            )
+            success, message = await send_wecom_text_message(
+                content,
+                await format_people_for_wecom(recipient_people),
+                module="sample_issue_collection",
+                business_key=f"{fresh_issue.get('issue_id')}:incomplete:{rule['key']}",
+                message_type="sample_issue_incomplete_reminder",
+                link_url=get_sample_issue_collection_url(fresh_issue.get("issue_id", "")),
+            )
+            if success:
+                sent_count += 1
+            else:
+                fail_count += 1
+
+            def add_incomplete_reminder_log(
+                current,
+                marker=marker,
+                rule=rule,
+                success=success,
+                message=message,
+                claim_id=claim_id,
+            ):
+                stored = merge_with_sample_issue_template(current)
+                existing_marker = stored.setdefault("reminder_log", {}).get(marker, {})
+                if existing_marker.get("claim_id") != claim_id:
+                    return "claim_lost", current
+                stored.setdefault("reminder_log", {})[marker] = {
+                    "rule": rule["label"],
+                    "state": "sent" if success else "failed_retrying",
+                    "success": success,
+                    "message": message,
+                    "claim_id": claim_id,
+                    "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                }
+                return "updated", stored
+
+            await atomic_sample_issue_update(fresh_issue["issue_id"], add_incomplete_reminder_log)
 
     if show_result:
         ui.notify(

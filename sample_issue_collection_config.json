@@ -12,7 +12,8 @@
         "reminders.background_enabled": "是否在系统启动后自动运行样品问题预计完成日期提醒检查。",
         "reminders.initial_delay_seconds": "系统启动多少秒后执行第一次提醒检查，必须为正整数。",
         "reminders.check_interval_seconds": "后台提醒检查间隔秒数，必须为正整数。",
-        "reminders.rules": "提醒策略列表。days_until_due 表示恰好提前几天，max_days_until_due 表示小于等于几天；每条规则只能配置其中一种。enabled=false 可临时停用。"
+        "reminders.rules": "预计完成日期提醒策略列表。days_until_due 表示恰好提前几天，max_days_until_due 表示小于等于几天；每条规则只能配置其中一种。enabled=false 可临时停用。",
+        "reminders.incomplete_rules": "对策未完善提醒策略列表。days_since_record 表示问题记录后第几天提醒，min_days_since_record 表示记录后达到几天起每天提醒；每条规则只能配置其中一种。enabled=false 可临时停用。"
     },
     "public_base_url": "http://192.168.1.102:8080",
     "editor_roles": [
@@ -78,6 +79,26 @@
                 "key": "overdue",
                 "label": "预计完成日期逾期",
                 "max_days_until_due": -1,
+                "enabled": true
+            }
+        ],
+        "incomplete_rules": [
+            {
+                "key": "incomplete_1_day",
+                "label": "问题录入后1天未完善对策",
+                "days_since_record": 1,
+                "enabled": true
+            },
+            {
+                "key": "incomplete_3_days",
+                "label": "问题录入后3天未完善对策",
+                "days_since_record": 3,
+                "enabled": true
+            },
+            {
+                "key": "incomplete_over_3_days",
+                "label": "问题录入超过3天仍未完善对策",
+                "min_days_since_record": 4,
                 "enabled": true
             }
         ]
