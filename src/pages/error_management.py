@@ -54,7 +54,12 @@ from ..issue_workflow_utils import (
     split_people,
 )
 from ..utils import apply_chinese_date_locale, get_cache_busted_path, logout, setup_global_activity_tracking
-from ..wecom_service import resolve_wecom_recipients, retry_failed_wecom_messages, send_wecom_text_message
+from ..wecom_service import (
+    find_unknown_wecom_names,
+    resolve_wecom_recipients,
+    retry_failed_wecom_messages,
+    send_wecom_text_message,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -756,6 +761,7 @@ async def error_management_page(error_id: str = ""):
             item.setdefault("extension_requests", [])
 
         read_only = not can_edit_all
+        owner_allowed_values = [*ERROR_EDITOR_ROLES, *ERROR_EXTENSION_APPROVER_ROLES, current_role]
 
         def bind_input(label, target, key, classes="w-full", readonly=None):
             field_readonly = read_only if readonly is None else readonly
@@ -765,6 +771,27 @@ async def error_management_page(error_id: str = ""):
             field = ui.input(label, value=target.get(key, "")).props(props).classes(f"{classes} mb-3")
             if not field_readonly:
                 field.on_value_change(lambda e, t=target, k=key: t.__setitem__(k, e.value))
+            return field
+
+        async def warn_unknown_wecom_names(label: str, value: str, allowed_values=None) -> None:
+            unknown_names = await find_unknown_wecom_names(value, allowed_values=allowed_values)
+            if unknown_names:
+                ui.notify(
+                    f"{label} 未在企业微信通讯录中找到：{'、'.join(unknown_names)}，请检查是否有错别字",
+                    type="warning",
+                    position="bottom",
+                    multi_line=True,
+                )
+
+        def bind_people_input(label, target, key, classes="w-full", readonly=None, allowed_values=None):
+            field_readonly = read_only if readonly is None else readonly
+            field = bind_input(label, target, key, classes, readonly=readonly)
+            if not field_readonly:
+
+                async def handle_blur(event=None, l=label, t=target, k=key, a=allowed_values):
+                    await warn_unknown_wecom_names(l, t.get(k, ""), allowed_values=a)
+
+                field.on("blur", handle_blur)
             return field
 
         def bind_date(label, target, key, classes="w-full", readonly=None):
@@ -906,6 +933,8 @@ async def error_management_page(error_id: str = ""):
                                 bind_textarea(label, item, key)
                             elif field_type == "date":
                                 bind_date(label, item, key)
+                            elif field_type == "people":
+                                bind_people_input(label, item, key)
                             else:
                                 bind_input(label, item, key)
                 if can_edit_all:
@@ -1169,7 +1198,13 @@ async def error_management_page(error_id: str = ""):
 
                         bind_textarea("纠正预防措施", item, "content")
                         with ui.row().classes("w-full gap-4 flex-wrap items-start"):
-                            bind_input("负责人", item, "owner", "w-full md:w-1/3")
+                            bind_people_input(
+                                "负责人",
+                                item,
+                                "owner",
+                                "w-full md:w-1/3",
+                                allowed_values=owner_allowed_values,
+                            )
                             bind_date("预计完成日期", item, "due_date", "w-full md:w-1/3")
                             bind_input("状态", item, "status", "w-full md:w-1/3", readonly=True)
 
@@ -1384,7 +1419,7 @@ async def error_management_page(error_id: str = ""):
                             desc_container,
                             "descriptions",
                             "异常说明",
-                            [("content", "异常情况说明", "textarea"), ("speaker", "说明人", "input")],
+                            [("content", "异常情况说明", "textarea"), ("speaker", "说明人", "people")],
                             "desc",
                             "暂无异常情况说明",
                         )
@@ -1397,7 +1432,7 @@ async def error_management_page(error_id: str = ""):
                             "原因分析",
                             [
                                 ("content", "初步原因分析", "textarea"),
-                                ("analyst", "分析人", "input"),
+                                ("analyst", "分析人", "people"),
                                 ("analysis_date", "分析日期", "date"),
                             ],
                             "analysis",
@@ -1412,7 +1447,7 @@ async def error_management_page(error_id: str = ""):
                             "应急对策",
                             [
                                 ("content", "应急对策", "textarea"),
-                                ("output_person", "对策输出人", "input"),
+                                ("output_person", "对策输出人", "people"),
                                 ("output_date", "输出日期", "date"),
                             ],
                             "emergency",

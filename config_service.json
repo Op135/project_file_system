@@ -4349,7 +4349,7 @@
             ]
         },
         "128": {
-            "condition": "7any['结构']",
+            "condition": "7any['结构'] and 126==True",
             "node_id": "126",
             "guide_content": "是否指定产品风扇类型、规格、数量、线长、连接器",
             "answer_type": "单选",
@@ -7565,7 +7565,7 @@
             ]
         }
     },
-    "config_timestamp": "2026-07-02T17:43:08.846727",
-    "excel_version_hash": "38f2b5b8",
+    "config_timestamp": "2026-07-06T13:06:14.134774",
+    "excel_version_hash": "9c44a0a9",
     "entry_status": false
 }

@@ -81,8 +81,11 @@ class SampleIssueCollectionDataTests(unittest.TestCase):
         """旧样品问题数据缺少附件字段时应安全补齐。"""
         from src.pages import sample_issue_collection as sample_issue
 
-        merged = sample_issue.merge_with_sample_issue_template({"issue_id": "SPI-OLD", "countermeasure": {}})
+        merged = sample_issue.merge_with_sample_issue_template(
+            {"issue_id": "SPI-OLD", "basic_info": {"record_date": "2026-07-01"}, "countermeasure": {}}
+        )
 
+        self.assertEqual(merged["basic_info"]["assembly_date"], "2026-07-01")
         self.assertEqual(merged["countermeasure"]["evidence_files"], [])
         self.assertEqual(merged["countermeasure"]["extension_requests"], [])
         self.assertEqual(merged["countermeasure"]["close_requests"], [])
@@ -186,6 +189,43 @@ class SampleIssueCollectionDataTests(unittest.TestCase):
         self.assertEqual(sample_issue.get_sample_dashboard_pending_count(all_issues, "李四", "测试工程师"), 2)
         self.assertEqual(sample_issue.get_sample_dashboard_pending_count(all_issues, "王五", "QE工程师"), 1)
         self.assertEqual(sample_issue.get_sample_dashboard_pending_count(all_issues, "经理", "研发经理"), 2)
+
+    def test_find_unknown_wecom_names_uses_contacts_cache(self):
+        """人员输入校验应识别企业微信通讯录姓名，并跳过允许填写的角色名。"""
+        from src import wecom_service
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cache_path = Path(temp_dir) / "wecom_contacts.json"
+            cache_path.write_text(
+                json.dumps(
+                    {
+                        "contacts": [
+                            {"userid": "zhangsan", "name": "张三", "is_active": True},
+                            {"userid": "disabled", "name": "停用人员", "is_active": False},
+                        ]
+                    },
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+            with patch.object(wecom_service, "WECOM_CONTACTS_CACHE_PATH", cache_path):
+                unknown = asyncio.run(
+                    wecom_service.find_unknown_wecom_names(
+                        "张三、李四, 李四；停用人员；研发经理",
+                        allowed_values=["研发经理"],
+                        refresh_if_stale=False,
+                    )
+                )
+                unknown_with_inactive = asyncio.run(
+                    wecom_service.find_unknown_wecom_names(
+                        "张三、李四；停用人员",
+                        refresh_if_stale=False,
+                        include_inactive=True,
+                    )
+                )
+
+        self.assertEqual(unknown, ["李四", "停用人员"])
+        self.assertEqual(unknown_with_inactive, ["李四"])
 
 
 class SampleIssueCollectionConfigTests(unittest.TestCase):
@@ -380,6 +420,68 @@ class SampleIssueCollectionConcurrencyTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(issue_ids, [f"{today_prefix}001", f"{today_prefix}002"])
                     stored = isolated_db.get_item(sample_issue.SAMPLE_ISSUE_DATA_KEY, {})
                     self.assertEqual(sorted(stored.keys()), issue_ids)
+                finally:
+                    sample_issue.db_storage = original_db_storage
+            finally:
+                await isolated_db.close_db()
+
+    async def test_record_date_is_auto_preserved_and_assembly_date_is_editable(self):
+        """记录日期由系统维护不可改，组装日期可由录入区块维护。"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            isolated_db = load_isolated_db_storage(
+                "test_sample_issue_assembly_date_db_storage",
+                Path(temp_dir) / "sample_issue_assembly_date.db",
+            )
+            try:
+                await isolated_db.init_db()
+                from src.pages import sample_issue_collection as sample_issue
+
+                original_db_storage = sample_issue.db_storage
+                sample_issue.db_storage = isolated_db
+                try:
+                    draft = sample_issue.generate_initial_sample_issue_data("张三", "测试工程师")
+                    draft["basic_info"].update(
+                        {
+                            "product_model": "MODEL-DATE",
+                            "issue_description": "样机外观异常",
+                            "sample_order_no": "SAMPLE-DATE",
+                            "record_date": "2020-01-01",
+                            "assembly_date": "2026-07-01",
+                            "assembled_qty": "4",
+                            "issue_qty": "1",
+                            "recorder_name": "张三",
+                        }
+                    )
+                    draft["countermeasure"]["owner"] = "李四"
+                    created = await sample_issue.save_sample_issue_record(
+                        draft,
+                        "张三",
+                        "测试工程师",
+                        is_new=True,
+                    )
+                    self.assertTrue(created.changed)
+                    assert created.record is not None
+                    issue_id = created.record["issue_id"]
+                    self.assertEqual(created.record["basic_info"]["record_date"], datetime.now().strftime("%Y-%m-%d"))
+                    self.assertEqual(created.record["basic_info"]["assembly_date"], "2026-07-01")
+
+                    edited = copy.deepcopy(created.record)
+                    edited["basic_info"]["record_date"] = "2020-02-02"
+                    edited["basic_info"]["assembly_date"] = "2026-07-02"
+                    saved = await sample_issue.save_sample_issue_record(
+                        edited,
+                        "张三",
+                        "测试工程师",
+                        is_new=False,
+                    )
+
+                    self.assertTrue(saved.changed)
+                    assert saved.record is not None
+                    self.assertEqual(saved.record["basic_info"]["record_date"], datetime.now().strftime("%Y-%m-%d"))
+                    self.assertEqual(saved.record["basic_info"]["assembly_date"], "2026-07-02")
+                    stored = isolated_db.get_deep_item([sample_issue.SAMPLE_ISSUE_DATA_KEY, issue_id])
+                    self.assertEqual(stored["basic_info"]["record_date"], datetime.now().strftime("%Y-%m-%d"))
+                    self.assertEqual(stored["basic_info"]["assembly_date"], "2026-07-02")
                 finally:
                     sample_issue.db_storage = original_db_storage
             finally:
@@ -673,7 +775,7 @@ class SampleIssueCollectionConcurrencyTests(unittest.IsolatedAsyncioTestCase):
                         patch.object(
                             sample_issue,
                             "SAMPLE_INCOMPLETE_REMINDER_RULES",
-                            [{"key": "after_1_day", "label": "问题录入后1天未完善对策", "days_since_record": 1}],
+                            [{"key": "record_day", "label": "问题录入当天未完善对策", "days_since_record": 0}],
                         ),
                         patch.object(sample_issue, "retry_failed_wecom_messages", AsyncMock(return_value=(0, 0))),
                         patch.object(sample_issue, "format_people_for_wecom", AsyncMock(return_value="lisi")),
@@ -691,7 +793,7 @@ class SampleIssueCollectionConcurrencyTests(unittest.IsolatedAsyncioTestCase):
                     stored = isolated_db.get_deep_item([sample_issue.SAMPLE_ISSUE_DATA_KEY, issue_id])
                     self.assertEqual(len(stored["reminder_log"]), 1)
                     reminder_key = next(iter(stored["reminder_log"]))
-                    self.assertIn(":incomplete:after_1_day:", reminder_key)
+                    self.assertIn(":incomplete:record_day:", reminder_key)
                 finally:
                     sample_issue.db_storage = original_db_storage
             finally:

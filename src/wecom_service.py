@@ -280,6 +280,48 @@ async def refresh_wecom_contacts_if_stale(force: bool = False) -> tuple[bool, st
     return False, message
 
 
+async def find_unknown_wecom_names(
+    value,
+    *,
+    allowed_values=None,
+    refresh_if_stale: bool = True,
+    include_inactive: bool = False,
+) -> list[str]:
+    """返回在企业微信通讯录缓存中找不到的人员姓名。
+
+    ``allowed_values`` 用于跳过页面允许填写的角色名等非人员值，避免把合法角色误报成错别字。
+    """
+    allowed_set = set(_split_text_values(allowed_values))
+    names = []
+    seen = set()
+    for name in _split_text_values(value):
+        if name in allowed_set or name in seen:
+            continue
+        names.append(name)
+        seen.add(name)
+    if not names:
+        return []
+
+    if refresh_if_stale:
+        success, message = await refresh_wecom_contacts_if_stale()
+        if not success:
+            logger.warning("企业微信通讯录无法刷新，跳过姓名校验：%s", message)
+
+    cache_data = load_wecom_contacts_cache()
+    contacts = cache_data.get("contacts", [])
+    if not contacts:
+        logger.warning("企业微信通讯录缓存为空，跳过姓名校验")
+        return []
+
+    known_names = set()
+    for contact in contacts:
+        if not include_inactive and not contact.get("is_active", True):
+            continue
+        known_names.update(_split_text_values(contact.get("name", "")))
+
+    return [name for name in names if name not in known_names]
+
+
 def _contact_matches_exact(contact_values, expected_values) -> bool:
     expected = set(_split_text_values(expected_values))
     if not expected:

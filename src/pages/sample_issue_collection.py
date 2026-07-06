@@ -48,7 +48,12 @@ from ..sample_issue_config import (
     SAMPLE_STATUS_TEMPORARY_ACTION_DONE,
 )
 from ..utils import apply_chinese_date_locale, get_cache_busted_path, handle_key, logout, setup_global_activity_tracking
-from ..wecom_service import resolve_wecom_recipients, retry_failed_wecom_messages, send_wecom_text_message
+from ..wecom_service import (
+    find_unknown_wecom_names,
+    resolve_wecom_recipients,
+    retry_failed_wecom_messages,
+    send_wecom_text_message,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -170,6 +175,7 @@ class SampleIssueUpdateResult:
 
 def get_sample_issue_template() -> dict:
     """返回一张完整的空样品问题记录。"""
+    today_str = datetime.now().strftime("%Y-%m-%d")
     return {
         "issue_id": "",
         "_revision": 0,
@@ -178,7 +184,8 @@ def get_sample_issue_template() -> dict:
             "product_model": "",
             "issue_description": "",
             "sample_order_no": "",
-            "record_date": datetime.now().strftime("%Y-%m-%d"),
+            "record_date": today_str,
+            "assembly_date": today_str,
             "assembled_qty": "",
             "issue_qty": "",
             "recorder_name": "",
@@ -232,6 +239,16 @@ def merge_with_sample_issue_template(db_data: dict) -> dict:
         countermeasure["close_requests"] = []
     if not isinstance(merged.get("reminder_log"), dict):
         merged["reminder_log"] = {}
+    basic = merged["basic_info"]
+    original_basic = db_data.get("basic_info", {}) if isinstance(db_data, dict) else {}
+    if (
+        isinstance(original_basic, dict)
+        and "assembly_date" not in original_basic
+        and str(original_basic.get("record_date", "")).strip()
+    ):
+        basic["assembly_date"] = original_basic.get("record_date", "")
+    elif not str(basic.get("assembly_date", "")).strip():
+        basic["assembly_date"] = basic.get("record_date", "")
     return merged
 
 
@@ -863,6 +880,9 @@ async def save_sample_issue_record(issue_data: dict, user: str, role: str, *, is
             new_record = copy.deepcopy(incoming)
             new_record["issue_id"] = issue_id
             new_record["_revision"] = 1
+            new_record["basic_info"]["record_date"] = now_str[:10]
+            if not str(new_record["basic_info"].get("assembly_date", "")).strip():
+                new_record["basic_info"]["assembly_date"] = new_record["basic_info"]["record_date"]
             new_record["status"] = calculate_sample_issue_status(new_record)
             new_record.setdefault("operation_log", []).append(
                 {"user": user, "role": role, "action": "保存样品问题", "time": now_str}
@@ -892,7 +912,11 @@ async def save_sample_issue_record(issue_data: dict, user: str, role: str, *, is
 
         updated = copy.deepcopy(stored)
         if can_edit_base:
-            updated["basic_info"] = copy.deepcopy(incoming["basic_info"])
+            updated_basic = copy.deepcopy(incoming["basic_info"])
+            updated_basic["record_date"] = (
+                stored.get("basic_info", {}).get("record_date") or updated_basic.get("record_date") or now_str[:10]
+            )
+            updated["basic_info"] = updated_basic
             updated["countermeasure"]["owner"] = incoming["countermeasure"].get("owner", "")
 
         if can_edit_countermeasure:
@@ -1108,6 +1132,7 @@ async def sample_issue_collection_page(issue_id: str = ""):
             ("问题点描述", basic.get("issue_description", "")),
             ("样品单号", basic.get("sample_order_no", "")),
             ("记录日期", basic.get("record_date", "")),
+            ("组装日期", basic.get("assembly_date", "")),
             ("组装样机数量", basic.get("assembled_qty", "")),
             ("出现问题样机数量", basic.get("issue_qty", "")),
             ("记录人姓名", basic.get("recorder_name", "")),
@@ -1154,6 +1179,7 @@ async def sample_issue_collection_page(issue_id: str = ""):
             )
         )
         can_save_record = can_edit_base or can_edit_countermeasure
+        owner_allowed_values = [*SAMPLE_EDITOR_ROLES, *SAMPLE_EXTENSION_APPROVER_ROLES, current_role]
 
         def bind_input(label, target, key, classes="w-full", readonly=False):
             props = "outlined dense"
@@ -1162,6 +1188,26 @@ async def sample_issue_collection_page(issue_id: str = ""):
             field = ui.input(label, value=target.get(key, "")).props(props).classes(f"{classes} mb-3")
             if not readonly:
                 field.on_value_change(lambda e, t=target, k=key: t.__setitem__(k, e.value))
+            return field
+
+        async def warn_unknown_wecom_names(label: str, value: str, allowed_values=None) -> None:
+            unknown_names = await find_unknown_wecom_names(value, allowed_values=allowed_values)
+            if unknown_names:
+                ui.notify(
+                    f"{label} 未在企业微信通讯录中找到：{'、'.join(unknown_names)}，请检查是否有错别字",
+                    type="warning",
+                    position="bottom",
+                    multi_line=True,
+                )
+
+        def bind_people_input(label, target, key, classes="w-full", readonly=False, allowed_values=None):
+            field = bind_input(label, target, key, classes, readonly=readonly)
+            if not readonly:
+
+                async def handle_blur(event=None, l=label, t=target, k=key, a=allowed_values):
+                    await warn_unknown_wecom_names(l, t.get(k, ""), allowed_values=a)
+
+                field.on("blur", handle_blur)
             return field
 
         def bind_date(label, target, key, classes="w-full", readonly=False):
@@ -1898,36 +1944,44 @@ async def sample_issue_collection_page(issue_id: str = ""):
                             bind_input(
                                 "样品单号", basic, "sample_order_no", "w-full md:w-[32%]", readonly=not can_edit_base
                             )
-                            bind_date("记录日期", basic, "record_date", "w-full md:w-[32%]", readonly=not can_edit_base)
+                            bind_input("记录日期", basic, "record_date", "w-full md:w-[32%]", readonly=True)
                         bind_textarea("问题点描述", basic, "issue_description", readonly=not can_edit_base)
                         with ui.row().classes("w-full gap-4 flex-wrap items-start"):
+                            bind_date(
+                                "组装日期",
+                                basic,
+                                "assembly_date",
+                                "w-full md:w-[19%]",
+                                readonly=not can_edit_base,
+                            )
                             bind_input(
                                 "组装样机数量",
                                 basic,
                                 "assembled_qty",
-                                "w-full md:w-[24%]",
+                                "w-full md:w-[19%]",
                                 readonly=not can_edit_base,
                             )
                             bind_input(
                                 "出现问题样机数量",
                                 basic,
                                 "issue_qty",
-                                "w-full md:w-[24%]",
+                                "w-full md:w-[19%]",
                                 readonly=not can_edit_base,
                             )
-                            bind_input(
+                            bind_people_input(
                                 "记录人姓名",
                                 basic,
                                 "recorder_name",
-                                "w-full md:w-[24%]",
+                                "w-full md:w-[19%]",
                                 readonly=not can_edit_base,
                             )
-                            bind_input(
+                            bind_people_input(
                                 "对策责任人姓名",
                                 countermeasure,
                                 "owner",
-                                "w-full md:w-[24%]",
+                                "w-full md:w-[19%]",
                                 readonly=not can_edit_base,
+                                allowed_values=owner_allowed_values,
                             )
                         with ui.row().classes("w-full gap-3 text-xs text-gray-500"):
                             ui.label(f"创建：{local_data.get('created_by', '')} / {local_data.get('created_at', '')}")
@@ -2074,6 +2128,7 @@ async def sample_issue_collection_page(issue_id: str = ""):
                                     basic.get("product_model", ""),
                                     basic.get("issue_description", ""),
                                     basic.get("sample_order_no", ""),
+                                    basic.get("assembly_date", ""),
                                     basic.get("recorder_name", ""),
                                     countermeasure.get("owner", ""),
                                 ]
@@ -2129,6 +2184,9 @@ async def sample_issue_collection_page(issue_id: str = ""):
                                                 "font-bold text-gray-800 text-sm"
                                             )
                                             ui.label(f"样品单号：{basic.get('sample_order_no', '') or '-'}").classes(
+                                                "text-sm text-gray-600 whitespace-nowrap"
+                                            )
+                                            ui.label(f"组装日期：{basic.get('assembly_date', '') or '-'}").classes(
                                                 "text-sm text-gray-600 whitespace-nowrap"
                                             )
                                             ui.label(
