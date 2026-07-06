@@ -565,8 +565,18 @@ class SampleIssueCollectionConcurrencyTests(unittest.IsolatedAsyncioTestCase):
                         True,
                         "赵六",
                         "测试工程师",
+                        "设计问题",
                     )
                     self.assertEqual(no_permission.code, "forbidden")
+
+                    missing_nature = await sample_issue.approve_sample_close_request(
+                        issue_id,
+                        close_request["id"],
+                        True,
+                        "经理",
+                        "研发经理",
+                    )
+                    self.assertEqual(missing_nature.code, "missing_closure_nature")
 
                     approved = await sample_issue.approve_sample_close_request(
                         issue_id,
@@ -574,12 +584,18 @@ class SampleIssueCollectionConcurrencyTests(unittest.IsolatedAsyncioTestCase):
                         True,
                         "经理",
                         "研发经理",
+                        "设计问题",
                     )
                     self.assertTrue(approved.changed)
                     assert approved.record is not None
                     self.assertEqual(sample_issue.calculate_sample_issue_status(approved.record), "已关闭")
                     self.assertEqual(approved.record["countermeasure"]["close_note"], "")
                     self.assertEqual(approved.record["countermeasure"]["closed_by"], "经理")
+                    self.assertEqual(approved.record["countermeasure"]["closure_nature"], "设计问题")
+                    self.assertEqual(
+                        sample_issue.get_sample_closure_nature_options({issue_id: approved.record}),
+                        ["设计问题"],
+                    )
                 finally:
                     sample_issue.db_storage = original_db_storage
             finally:

@@ -165,6 +165,107 @@ class ErrorManagementConcurrencyTests(unittest.IsolatedAsyncioTestCase):
             finally:
                 await isolated_db.close_db()
 
+    async def test_preventive_close_request_requires_closure_nature_on_approval(self):
+        """责任人申请关闭后，审批通过必须写入措施性质。"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            isolated_db = load_isolated_db_storage(
+                "test_error_close_request_db_storage",
+                Path(temp_dir) / "error_close_request.db",
+            )
+            try:
+                await isolated_db.init_db()
+                from src.pages import error_management
+
+                original_db_storage = error_management.db_storage
+                error_management.db_storage = isolated_db
+                try:
+                    draft = error_management.generate_initial_error_data("editor-a", "admin")
+                    draft["error_id"] = "ERR-CLOSE"
+                    draft["basic_info"]["product_name"] = "close-product"
+                    draft["descriptions"] = [{"id": "desc-1", "content": "issue", "speaker": "editor-a"}]
+                    draft["preventive_actions"] = [
+                        {
+                            "id": "action-1",
+                            "content": "update fixture",
+                            "owner": "owner-a",
+                            "due_date": "2026-07-20",
+                            "status": "待执行",
+                            "extension_requests": [],
+                        }
+                    ]
+
+                    created = await error_management.save_error_record(draft, "editor-a", "admin", is_new=True)
+                    self.assertTrue(created.changed)
+
+                    missing_note = await error_management.submit_error_preventive_close_request(
+                        "ERR-CLOSE",
+                        "action-1",
+                        "owner-a",
+                        "测试工程师",
+                        "",
+                    )
+                    self.assertEqual(missing_note.code, "missing_close_note")
+
+                    requested = await error_management.submit_error_preventive_close_request(
+                        "ERR-CLOSE",
+                        "action-1",
+                        "owner-a",
+                        "测试工程师",
+                        "验证完成",
+                    )
+                    self.assertTrue(requested.changed)
+                    assert requested.record is not None
+                    action = error_management.find_preventive_action(requested.record, "action-1")
+                    assert action is not None
+                    close_request = error_management.get_pending_close_request(action)
+                    self.assertIsNotNone(close_request)
+                    self.assertEqual(action["status"], "待执行")
+                    self.assertEqual(
+                        error_management.get_error_dashboard_pending_count(
+                            {"ERR-CLOSE": requested.record},
+                            "manager",
+                            "研发经理",
+                        ),
+                        1,
+                    )
+
+                    assert close_request is not None
+                    missing_nature = await error_management.approve_error_preventive_close_request(
+                        "ERR-CLOSE",
+                        "action-1",
+                        close_request["id"],
+                        True,
+                        "manager",
+                        "研发经理",
+                    )
+                    self.assertEqual(missing_nature.code, "missing_closure_nature")
+
+                    approved = await error_management.approve_error_preventive_close_request(
+                        "ERR-CLOSE",
+                        "action-1",
+                        close_request["id"],
+                        True,
+                        "manager",
+                        "研发经理",
+                        "设计问题",
+                    )
+                    self.assertTrue(approved.changed)
+                    assert approved.record is not None
+                    action = error_management.find_preventive_action(approved.record, "action-1")
+                    assert action is not None
+                    self.assertEqual(action["status"], "已关闭")
+                    self.assertEqual(action["close_note"], "验证完成")
+                    self.assertEqual(action["closed_by"], "manager")
+                    self.assertEqual(action["closure_nature"], "设计问题")
+                    self.assertEqual(
+                        error_management.get_error_closure_nature_options({"ERR-CLOSE": approved.record}),
+                        ["设计问题"],
+                    )
+                finally:
+                    error_management.db_storage = original_db_storage
+            finally:
+                await isolated_db.close_db()
+
     async def test_admin_delete_preserves_concurrent_record_and_rejects_other_roles(self):
         """admin 删除单张异常单时应保留其它实例的并发新增，非 admin 不能删除。"""
         with tempfile.TemporaryDirectory() as temp_dir:

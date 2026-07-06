@@ -47,6 +47,18 @@ def merge_wecom_recipients(*recipient_values: str) -> str:
     return "|".join(recipients)
 
 
+def unique_nonempty_texts(values) -> list[str]:
+    """清洗文本列表，去空并保留第一次出现的顺序。"""
+    result = []
+    seen = set()
+    for value in values or []:
+        text = str(value or "").strip()
+        if text and text not in seen:
+            result.append(text)
+            seen.add(text)
+    return result
+
+
 def parse_date(value: str):
     """兼容常见日期格式，无法识别时返回 None。"""
     if not value:

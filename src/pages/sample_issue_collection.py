@@ -27,6 +27,7 @@ from ..issue_workflow_utils import (
     parse_date,
     schedule_background_task,
     split_people,
+    unique_nonempty_texts,
 )
 from ..sample_issue_config import (
     SAMPLE_DEFAULT_NOTIFY_TARGETS,
@@ -200,6 +201,7 @@ def get_sample_issue_template() -> dict:
             "extension_requests": [],
             "close_requests": [],
             "close_note": "",
+            "closure_nature": "",
             "closed_by": "",
             "closed_role": "",
             "closed_at": "",
@@ -237,6 +239,7 @@ def merge_with_sample_issue_template(db_data: dict) -> dict:
         countermeasure["extension_requests"] = []
     if not isinstance(countermeasure.get("close_requests"), list):
         countermeasure["close_requests"] = []
+    countermeasure.setdefault("closure_nature", "")
     if not isinstance(merged.get("reminder_log"), dict):
         merged["reminder_log"] = {}
     basic = merged["basic_info"]
@@ -368,6 +371,21 @@ def get_close_counts(countermeasure: dict) -> tuple[int, int]:
         return 0, 0
     approved_count = sum(1 for request in requests if isinstance(request, dict) and request.get("status") == "已通过")
     return approved_count, len(requests)
+
+
+def get_sample_closure_nature_options(all_issues: Any) -> list[str]:
+    """从历史样品问题关闭审批中提取已使用过的措施性质。"""
+    if not isinstance(all_issues, dict):
+        return []
+    values = []
+    for raw_issue in all_issues.values():
+        issue_data = merge_with_sample_issue_template(raw_issue) if isinstance(raw_issue, dict) else {}
+        countermeasure = issue_data.get("countermeasure", {})
+        values.append(countermeasure.get("closure_nature", ""))
+        for request in countermeasure.get("close_requests", []):
+            if isinstance(request, dict) and request.get("status") == "已通过":
+                values.append(request.get("closure_nature", ""))
+    return unique_nonempty_texts(values)
 
 
 def is_sample_issue_closed(issue_data: dict) -> bool:
@@ -1000,6 +1018,7 @@ async def approve_sample_close_request(
     approved: bool,
     user: str,
     role: str,
+    closure_nature: str = "",
 ) -> SampleIssueUpdateResult:
     """审批样品问题关闭申请；通过后整单进入已关闭状态。"""
     if not is_sample_extension_approver(role):
@@ -1007,6 +1026,9 @@ async def approve_sample_close_request(
 
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     action_text = "通过关闭申请" if approved else "驳回关闭申请"
+    nature = closure_nature.strip()
+    if approved and not nature:
+        return SampleIssueUpdateResult(db_success=False, changed=False, code="missing_closure_nature")
 
     def update_close_request(current):
         countermeasure = current.get("countermeasure", {})
@@ -1023,7 +1045,9 @@ async def approve_sample_close_request(
         stored_request["approver_role"] = role
         stored_request["approved_at"] = now_str
         if approved:
+            stored_request["closure_nature"] = nature
             countermeasure["close_note"] = stored_request.get("note", "")
+            countermeasure["closure_nature"] = nature
             countermeasure["closed_by"] = user
             countermeasure["closed_role"] = role
             countermeasure["closed_at"] = now_str
@@ -1244,6 +1268,44 @@ async def sample_issue_collection_page(issue_id: str = ""):
             with ui.element("div").classes("w-full bg-white border border-gray-200 rounded-md p-4"):
                 ui.label(title).classes("text-base font-bold text-gray-800 mb-3")
                 return ui.column().classes("w-full gap-3")
+
+        def open_closure_nature_dialog(title: str, description: str, on_submit):
+            """审批通过关闭申请前，由审批人补充便于统计的措施性质。"""
+            nature_options = get_sample_closure_nature_options(db_storage.get_item(SAMPLE_ISSUE_DATA_KEY, {}))
+            state = {"nature": ""}
+
+            async def submit_nature():
+                nature = state["nature"].strip()
+                if not nature:
+                    return ui.notify("请填写或选择措施性质", type="warning", position="bottom")
+                dialog.close()
+                await on_submit(nature)
+
+            dialog.clear()
+            with dialog, ui.card().classes("w-1/3 max-w-lg p-5"):
+                ui.label(title).classes("text-lg font-bold text-gray-800")
+                if description:
+                    ui.label(description).classes("text-sm text-gray-600")
+                nature_input = None
+                if nature_options:
+
+                    def select_nature(e):
+                        state["nature"] = str(e.value or "").strip()
+                        if nature_input is not None:
+                            nature_input.value = state["nature"]
+                            nature_input.update()
+
+                    ui.select(nature_options, label="历史性质", on_change=select_nature).props(
+                        "outlined dense clearable options-dense"
+                    ).classes("w-full")
+                nature_input = ui.input("措施性质", value=state["nature"]).props("outlined dense clearable").classes(
+                    "w-full"
+                )
+                nature_input.on_value_change(lambda e: state.__setitem__("nature", str(e.value or "")))
+                with ui.row().classes("w-full justify-end gap-3 mt-3"):
+                    ui.button("取消", on_click=dialog.close).props("outline color=grey")
+                    ui.button("确认通过", icon="check", on_click=submit_nature).props("color=green")
+            dialog.open()
 
         def initialize_attachment_state():
             """为 FileThumbnail 准备它依赖的客户端附件状态。"""
@@ -1737,7 +1799,7 @@ async def sample_issue_collection_page(issue_id: str = ""):
             refresh_list()
             await open_sample_issue_detail_dialog(local_data["issue_id"])
 
-        async def approve_close_request_from_dialog(request: dict, approved: bool):
+        async def approve_close_request_from_dialog(request: dict, approved: bool, closure_nature: str = ""):
             """审批样品问题关闭申请。"""
             if not is_sample_extension_approver(current_role):
                 return ui.notify("当前角色无关闭审批权限", type="warning", position="bottom")
@@ -1749,9 +1811,12 @@ async def sample_issue_collection_page(issue_id: str = ""):
                 approved,
                 current_user,
                 current_role,
+                closure_nature,
             )
             if result.code == "forbidden":
                 return ui.notify("当前角色无关闭审批权限", type="warning", position="bottom")
+            if result.code == "missing_closure_nature":
+                return ui.notify("请填写或选择措施性质", type="warning", position="bottom")
             if result.code == "already_processed":
                 return ui.notify("该关闭申请已被其他审批人处理，请刷新查看", type="warning", position="bottom")
             if result.code in {"request_not_found", "already_closed", "not_found"}:
@@ -1770,6 +1835,7 @@ async def sample_issue_collection_page(issue_id: str = ""):
                 f"产品型号：{basic.get('product_model', '')}\n"
                 f"样品单号：{basic.get('sample_order_no', '')}\n"
                 f"审批结果：{'通过' if approved else '驳回'}\n"
+                f"措施性质：{fresh_countermeasure.get('closure_nature', '-') or '-'}\n"
                 f"申请人：{fresh_request.get('requester', '-')}\n"
                 f"审批人：{current_user}"
             )
@@ -1874,6 +1940,7 @@ async def sample_issue_collection_page(issue_id: str = ""):
                     with ui.row().classes("w-full gap-4 flex-wrap items-start"):
                         bind_input("关闭审批人", countermeasure, "closed_by", "w-full md:w-1/3", readonly=True)
                         bind_input("关闭时间", countermeasure, "closed_at", "w-full md:w-1/3", readonly=True)
+                        bind_input("措施性质", countermeasure, "closure_nature", "w-full md:w-1/3", readonly=True)
                     if str(countermeasure.get("close_note", "")).strip():
                         bind_textarea("关闭说明", countermeasure, "close_note", readonly=True)
                     return
@@ -1889,7 +1956,16 @@ async def sample_issue_collection_page(issue_id: str = ""):
                             await approve_close_request_from_dialog(r, False)
 
                         async def approve_close(event=None, r=pending_close):
-                            await approve_close_request_from_dialog(r, True)
+                            basic = local_data.get("basic_info", {})
+
+                            async def submit_with_nature(nature: str, request=r):
+                                await approve_close_request_from_dialog(request, True, nature)
+
+                            open_closure_nature_dialog(
+                                "通过关闭申请",
+                                f"{local_data.get('issue_id', '')} ｜ {basic.get('product_model', '')}",
+                                submit_with_nature,
+                            )
 
                         with ui.row().classes("justify-end gap-2 mt-2"):
                             ui.button("驳回关闭", icon="close", on_click=reject_close).props(

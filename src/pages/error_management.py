@@ -52,6 +52,7 @@ from ..issue_workflow_utils import (
     parse_date,
     schedule_background_task,
     split_people,
+    unique_nonempty_texts,
 )
 from ..utils import apply_chinese_date_locale, get_cache_busted_path, logout, setup_global_activity_tracking
 from ..wecom_service import (
@@ -160,6 +161,18 @@ def merge_with_error_template(db_data: dict) -> dict:
             merged[key] = copy.deepcopy(value)
         else:
             merged[key] = copy.deepcopy(value)
+    for action in merged.get("preventive_actions", []):
+        if not isinstance(action, dict):
+            continue
+        action.setdefault("evidence_files", [])
+        action.setdefault("close_note", "")
+        action.setdefault("close_requests", [])
+        action.setdefault("closure_nature", "")
+        action.setdefault("extension_requests", [])
+        if not isinstance(action.get("close_requests"), list):
+            action["close_requests"] = []
+        if not isinstance(action.get("extension_requests"), list):
+            action["extension_requests"] = []
     return merged
 
 
@@ -254,6 +267,57 @@ def get_extension_counts(action: dict) -> tuple[int, int]:
     return approved_count, len(requests)
 
 
+def get_pending_close_request(action: dict) -> Optional[dict]:
+    """返回指定纠正预防措施当前待审批关闭申请。"""
+    requests = action.get("close_requests", [])
+    if isinstance(requests, list):
+        for request in reversed(requests):
+            if isinstance(request, dict) and request.get("status") == "待审批":
+                return request
+    return None
+
+
+def find_close_request(action: dict, request_id: str) -> Optional[dict]:
+    """在指定纠正预防措施中按 id 查找关闭申请。"""
+    requests = action.get("close_requests", [])
+    if not isinstance(requests, list):
+        return None
+    return next(
+        (
+            request
+            for request in requests
+            if isinstance(request, dict) and str(request.get("id", "")) == str(request_id)
+        ),
+        None,
+    )
+
+
+def get_close_counts(action: dict) -> tuple[int, int]:
+    """返回（已通过关闭次数, 总关闭申请次数）。"""
+    requests = action.get("close_requests", [])
+    if not isinstance(requests, list):
+        return 0, 0
+    approved_count = sum(1 for request in requests if isinstance(request, dict) and request.get("status") == "已通过")
+    return approved_count, len(requests)
+
+
+def get_error_closure_nature_options(all_errors: Any) -> list[str]:
+    """从历史异常措施关闭审批中提取已使用过的措施性质。"""
+    if not isinstance(all_errors, dict):
+        return []
+    values = []
+    for raw_error in all_errors.values():
+        error_data = merge_with_error_template(raw_error) if isinstance(raw_error, dict) else {}
+        for action in error_data.get("preventive_actions", []):
+            if not isinstance(action, dict):
+                continue
+            values.append(action.get("closure_nature", ""))
+            for request in action.get("close_requests", []):
+                if isinstance(request, dict) and request.get("status") == "已通过":
+                    values.append(request.get("closure_nature", ""))
+    return unique_nonempty_texts(values)
+
+
 def get_owner_extension_summary(error_data: dict) -> list[tuple[str, int]]:
     """汇总每位负责人已获批的延期次数，用于总览卡片展示。"""
     owner_counts = {}
@@ -267,21 +331,24 @@ def get_owner_extension_summary(error_data: dict) -> list[tuple[str, int]]:
 def get_error_dashboard_pending_count(all_errors: Any, current_user: str, current_role: str) -> int:
     """计算总页面“异常单跟进”卡片对当前用户显示的待办角标数量。
 
-    - 研发经理：统计所有纠正预防措施中的待审批延期申请条数。
+    - 审批角色：统计所有纠正预防措施中的待审批延期和关闭申请条数。
     - 其它角色：统计至少有一条未关闭措施由当前用户或当前角色负责的异常单数量；同一异常单
       即使有多条措施由该用户负责，也只计为一个待处理异常。
     """
     if not isinstance(all_errors, dict):
         return 0
 
-    if is_error_rd_manager(current_role):
+    if is_error_extension_approver(current_role):
         return sum(
             1
             for error_data in all_errors.values()
             if isinstance(error_data, dict)
             for action in error_data.get("preventive_actions", [])
             if isinstance(action, dict) and action.get("status") != "已关闭"
-            for request in action.get("extension_requests", [])
+            for request in [
+                *(action.get("extension_requests", []) if isinstance(action.get("extension_requests"), list) else []),
+                *(action.get("close_requests", []) if isinstance(action.get("close_requests"), list) else []),
+            ]
             if isinstance(request, dict) and request.get("status") == "待审批"
         )
 
@@ -455,6 +522,107 @@ async def atomic_error_update(
         code=outcome["code"] if success else "db_error",
         record=outcome["record"],
     )
+
+
+async def submit_error_preventive_close_request(
+    error_id: str,
+    action_id: str,
+    user: str,
+    role: str,
+    close_note: str,
+) -> ErrorUpdateResult:
+    """由纠正预防措施负责人提交关闭申请，等待审批角色确认。"""
+    note = close_note.strip()
+    if not note:
+        return ErrorUpdateResult(db_success=False, changed=False, code="missing_close_note")
+
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    close_request = {
+        "id": f"close_{uuid.uuid4().hex[:8]}",
+        "status": "待审批",
+        "note": note,
+        "requester": user,
+        "requester_role": role,
+        "requested_at": now_str,
+    }
+
+    def add_close_request(current):
+        stored_action = find_preventive_action(current, action_id)
+        if not stored_action:
+            return "action_not_found", current
+        if stored_action.get("status") == "已关闭":
+            return "already_closed", current
+        if not is_current_responsible(stored_action.get("owner", ""), user, role) and not is_error_editor(role):
+            return "permission_changed", current
+        if get_pending_extension_request(stored_action):
+            return "pending_extension", current
+        if get_pending_close_request(stored_action):
+            return "pending_close", current
+
+        stored_action["close_note"] = note
+        stored_action.setdefault("close_requests", []).append(copy.deepcopy(close_request))
+        current["updated_by"] = user
+        current["updated_at"] = now_str
+        current.setdefault("operation_log", []).append(
+            {"user": user, "role": role, "action": "申请关闭纠正预防措施", "time": now_str}
+        )
+        return "updated", current
+
+    return await atomic_error_update(error_id, add_close_request)
+
+
+async def approve_error_preventive_close_request(
+    error_id: str,
+    action_id: str,
+    request_id: str,
+    approved: bool,
+    user: str,
+    role: str,
+    closure_nature: str = "",
+) -> ErrorUpdateResult:
+    """审批纠正预防措施关闭申请；通过时写入措施性质并关闭该措施。"""
+    if not is_error_extension_approver(role):
+        return ErrorUpdateResult(db_success=False, changed=False, code="forbidden")
+
+    nature = closure_nature.strip()
+    if approved and not nature:
+        return ErrorUpdateResult(db_success=False, changed=False, code="missing_closure_nature")
+
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    action_text = "通过纠正预防措施关闭申请" if approved else "驳回纠正预防措施关闭申请"
+
+    def update_close_request(current):
+        stored_action = find_preventive_action(current, action_id)
+        if not stored_action:
+            return "action_not_found", current
+        stored_request = find_close_request(stored_action, request_id)
+        if not stored_request:
+            return "request_not_found", current
+        if stored_request.get("status") != "待审批":
+            return "already_processed", current
+        if approved and stored_action.get("status") == "已关闭":
+            return "already_closed", current
+
+        stored_request["status"] = "已通过" if approved else "已驳回"
+        stored_request["approver"] = user
+        stored_request["approver_role"] = role
+        stored_request["approved_at"] = now_str
+        if approved:
+            stored_request["closure_nature"] = nature
+            stored_action["status"] = "已关闭"
+            stored_action["close_note"] = stored_request.get("note", "")
+            stored_action["closure_nature"] = nature
+            stored_action["closed_by"] = user
+            stored_action["closed_role"] = role
+            stored_action["closed_at"] = now_str
+        current["updated_by"] = user
+        current["updated_at"] = now_str
+        current.setdefault("operation_log", []).append(
+            {"user": user, "role": role, "action": action_text, "time": now_str}
+        )
+        return "updated", current
+
+    return await atomic_error_update(error_id, update_close_request)
 
 
 async def delete_error_record(error_id: str, role: str) -> ErrorUpdateResult:
@@ -758,6 +926,8 @@ async def error_management_page(error_id: str = ""):
             item.setdefault("status", "待执行")
             item.setdefault("evidence_files", [])
             item.setdefault("close_note", "")
+            item.setdefault("close_requests", [])
+            item.setdefault("closure_nature", "")
             item.setdefault("extension_requests", [])
 
         read_only = not can_edit_all
@@ -849,6 +1019,44 @@ async def error_management_page(error_id: str = ""):
             with ui.element("div").classes("w-full bg-white border border-gray-200 rounded-md p-4"):
                 ui.label(title).classes("text-base font-bold text-gray-800 mb-3")
                 return ui.column().classes("w-full gap-3")
+
+        def open_closure_nature_dialog(title: str, description: str, on_submit):
+            """审批通过关闭申请前，由审批人补充便于统计的措施性质。"""
+            nature_options = get_error_closure_nature_options(db_storage.get_item(ERROR_DATA_KEY, {}))
+            state = {"nature": ""}
+
+            async def submit_nature():
+                nature = state["nature"].strip()
+                if not nature:
+                    return ui.notify("请填写或选择措施性质", type="warning", position="bottom")
+                dialog.close()
+                await on_submit(nature)
+
+            dialog.clear()
+            with dialog, ui.card().classes("w-1/3 max-w-lg p-5"):
+                ui.label(title).classes("text-lg font-bold text-gray-800")
+                if description:
+                    ui.label(description).classes("text-sm text-gray-600")
+                nature_input = None
+                if nature_options:
+
+                    def select_nature(e):
+                        state["nature"] = str(e.value or "").strip()
+                        if nature_input is not None:
+                            nature_input.value = state["nature"]
+                            nature_input.update()
+
+                    ui.select(nature_options, label="历史性质", on_change=select_nature).props(
+                        "outlined dense clearable options-dense"
+                    ).classes("w-full")
+                nature_input = ui.input("措施性质", value=state["nature"]).props("outlined dense clearable").classes(
+                    "w-full"
+                )
+                nature_input.on_value_change(lambda e: state.__setitem__("nature", str(e.value or "")))
+                with ui.row().classes("w-full justify-end gap-3 mt-3"):
+                    ui.button("取消", on_click=dialog.close).props("outline color=grey")
+                    ui.button("确认通过", icon="check", on_click=submit_nature).props("color=green")
+            dialog.open()
 
         async def save_current_record():
             """提交整张编辑表单，并把重复单号或版本冲突转换为用户可理解的提示。"""
@@ -1156,6 +1364,117 @@ async def error_management_page(error_id: str = ""):
             refresh_list()
             await open_error_detail_dialog(local_data["error_id"])
 
+        async def submit_close_request_from_dialog(action: dict):
+            """由措施负责人发起关闭申请，等待审批角色通过或驳回。"""
+            action_id = get_item_id(action)
+            close_note = action.get("close_note", "").strip()
+            result = await submit_error_preventive_close_request(
+                local_data["error_id"],
+                action_id,
+                current_user,
+                current_role,
+                close_note,
+            )
+            if result.code == "missing_close_note":
+                return ui.notify("请填写关闭说明", type="warning", position="bottom")
+            if result.code == "pending_extension":
+                return ui.notify("该措施存在待审批延期申请，请先完成审批", type="warning", position="bottom")
+            if result.code == "pending_close":
+                return ui.notify("该措施已有关闭申请待审批，请刷新查看", type="warning", position="bottom")
+            if result.code == "permission_changed":
+                return ui.notify("该措施负责人已变更，当前用户不能再申请关闭", type="warning", position="bottom")
+            if result.code in {"already_closed", "action_not_found", "not_found"}:
+                return ui.notify("该措施已被其他用户处理，请刷新查看", type="warning", position="bottom")
+            if not result.changed or not result.record:
+                return ui.notify("关闭申请提交失败，请刷新后重试", type="negative", position="bottom")
+
+            fresh_action = find_preventive_action(result.record, action_id)
+            fresh_request = get_pending_close_request(fresh_action or {})
+            if fresh_action and fresh_request:
+                content = (
+                    "生产异常纠正预防措施关闭申请\n"
+                    f"异常单：{result.record['error_id']}\n"
+                    f"产品：{result.record.get('basic_info', {}).get('product_name', '')}\n"
+                    f"措施：{fresh_action.get('content', '')}\n"
+                    f"申请人：{current_user}\n"
+                    f"关闭说明：{fresh_request.get('note', '-')}\n"
+                    f"审批角色：{', '.join(ERROR_EXTENSION_APPROVER_ROLES)}"
+                )
+                schedule_background_task(
+                    send_error_extension_wecom_message(
+                        content,
+                        error_id=result.record["error_id"],
+                        business_key=f"{result.record['error_id']}:{action_id}:{fresh_request['id']}:close_request",
+                        message_type="close_request",
+                    ),
+                    "纠正预防措施关闭申请企业微信通知",
+                )
+
+            ui.notify("关闭申请已提交", type="positive", position="bottom")
+            refresh_list()
+            await open_error_detail_dialog(local_data["error_id"])
+
+        async def approve_close_request_from_dialog(
+            action: dict,
+            request: dict,
+            approved: bool,
+            closure_nature: str = "",
+        ):
+            """审批纠正预防措施关闭申请。"""
+            action_id = get_item_id(action)
+            request_id = str(request.get("id", ""))
+            result = await approve_error_preventive_close_request(
+                local_data["error_id"],
+                action_id,
+                request_id,
+                approved,
+                current_user,
+                current_role,
+                closure_nature,
+            )
+            if result.code == "forbidden":
+                return ui.notify("当前角色无关闭审批权限", type="warning", position="bottom")
+            if result.code == "missing_closure_nature":
+                return ui.notify("请填写或选择措施性质", type="warning", position="bottom")
+            if result.code == "already_processed":
+                return ui.notify("该关闭申请已被其他审批人处理，请刷新查看", type="warning", position="bottom")
+            if result.code in {"action_not_found", "request_not_found", "already_closed", "not_found"}:
+                return ui.notify("该关闭申请已发生变化，请刷新查看", type="warning", position="bottom")
+            if not result.changed or not result.record:
+                return ui.notify("关闭审批失败，请刷新后重试", type="negative", position="bottom")
+
+            fresh_action = find_preventive_action(result.record, action_id)
+            fresh_request = find_close_request(fresh_action or {}, request_id)
+            if not fresh_action or not fresh_request:
+                return ui.notify("关闭审批已保存，但读取最新数据失败，请刷新查看", type="warning", position="bottom")
+
+            content = (
+                "生产异常纠正预防措施关闭审批结果\n"
+                f"异常单：{result.record['error_id']}\n"
+                f"产品：{result.record.get('basic_info', {}).get('product_name', '')}\n"
+                f"措施：{fresh_action.get('content', '')}\n"
+                f"审批结果：{'通过' if approved else '驳回'}\n"
+                f"措施性质：{fresh_action.get('closure_nature', '-') or '-'}\n"
+                f"申请人：{fresh_request.get('requester', '-')}\n"
+                f"审批人：{current_user}"
+            )
+            schedule_background_task(
+                send_error_extension_wecom_message(
+                    content,
+                    error_id=result.record["error_id"],
+                    business_key=f"{result.record['error_id']}:{action_id}:{request_id}:close_approval",
+                    message_type="close_approval",
+                    additional_people=(
+                        fresh_request.get("requester", "") if ERROR_EXTENSION_NOTIFY_REQUESTER_ON_APPROVAL else ""
+                    ),
+                    additional_targets=ERROR_EXTENSION_APPROVAL_NOTIFY_TARGETS if approved else None,
+                ),
+                "纠正预防措施关闭审批企业微信通知",
+            )
+            ui.notify("关闭审批已处理", type="positive", position="bottom")
+            refresh_list()
+            await open_error_detail_dialog(local_data["error_id"])
+
         def render_preventive_items(container):
             """渲染纠正预防措施及其延期、审批、关闭操作。
 
@@ -1172,15 +1491,20 @@ async def error_management_page(error_id: str = ""):
                     item.setdefault("status", "待执行")
                     item.setdefault("evidence_files", [])
                     item.setdefault("close_note", "")
+                    item.setdefault("close_requests", [])
+                    item.setdefault("closure_nature", "")
                     item.setdefault("extension_requests", [])
                     approved_extension_count, extension_request_count = get_extension_counts(item)
+                    approved_close_count, close_request_count = get_close_counts(item)
                     can_close = (
                         not is_new
                         and item.get("status") != "已关闭"
                         and (can_edit_all or is_current_responsible(item.get("owner", ""), current_user, current_role))
                     )
                     pending_extension = get_pending_extension_request(item)
-                    can_apply_extension = can_close and not pending_extension
+                    pending_close = get_pending_close_request(item)
+                    can_apply_extension = can_close and not pending_extension and not pending_close
+                    can_apply_close = can_close and not pending_extension and not pending_close
                     with ui.element("div").classes("w-full border border-gray-200 rounded-md bg-gray-50 p-4"):
                         with ui.row().classes("w-full justify-between items-center mb-3"):
                             with ui.row().classes("items-center gap-2"):
@@ -1190,6 +1514,10 @@ async def error_management_page(error_id: str = ""):
                                     color="green" if item.get("status") == "已关闭" else "orange",
                                 )
                                 ui.badge(f"已延期 {approved_extension_count} 次", color="blue").props("outline")
+                                if pending_close:
+                                    ui.badge("关闭待审批", color="purple").props("outline")
+                                elif approved_close_count:
+                                    ui.badge(f"已通过关闭 {approved_close_count} 次", color="green").props("outline")
                             if can_edit_all:
                                 ui.button(
                                     icon="delete",
@@ -1254,6 +1582,41 @@ async def error_management_page(error_id: str = ""):
                                     f"{recent_extension.get('old_due_date', '-')} → {recent_extension.get('new_due_date', '-')}"
                                 ).classes("text-xs text-gray-500 mb-2")
 
+                        if pending_close:
+                            with ui.element("div").classes(
+                                "w-full border border-purple-200 bg-purple-50 rounded-md p-3 mb-3"
+                            ):
+                                ui.label(
+                                    f"关闭申请待审批：{pending_close.get('requested_at', '-')}"
+                                ).classes("text-sm font-bold text-purple-800")
+                                ui.label(
+                                    f"申请人：{pending_close.get('requester', '-')} ｜ "
+                                    f"说明：{pending_close.get('note', '-')}"
+                                ).classes("text-sm text-purple-700")
+                                if is_error_extension_approver(current_role):
+
+                                    async def reject_close(event=None, a=item, r=pending_close):
+                                        await approve_close_request_from_dialog(a, r, False)
+
+                                    async def approve_close(event=None, a=item, r=pending_close):
+
+                                        async def submit_with_nature(nature: str, action=a, request=r):
+                                            await approve_close_request_from_dialog(action, request, True, nature)
+
+                                        open_closure_nature_dialog(
+                                            "通过关闭申请",
+                                            f"{local_data.get('error_id', '')} ｜ {a.get('content', '')[:40]}",
+                                            submit_with_nature,
+                                        )
+
+                                    with ui.row().classes("justify-end gap-2 mt-2"):
+                                        ui.button("驳回关闭", icon="close", on_click=reject_close).props(
+                                            "outline color=negative dense"
+                                        )
+                                        ui.button("通过关闭", icon="check", on_click=approve_close).props(
+                                            "color=green dense"
+                                        )
+
                         if item.get("evidence_files"):
                             with ui.column().classes("w-full gap-1 mt-1"):
                                 ui.label("证据留痕").classes("text-xs font-bold text-gray-500")
@@ -1269,8 +1632,9 @@ async def error_management_page(error_id: str = ""):
                             with ui.row().classes("w-full gap-4 flex-wrap items-start mt-2"):
                                 bind_input("关闭人", item, "closed_by", "w-full md:w-1/3", readonly=True)
                                 bind_input("关闭时间", item, "closed_at", "w-full md:w-1/3", readonly=True)
+                                bind_input("措施性质", item, "closure_nature", "w-full md:w-1/3", readonly=True)
                             bind_textarea("关闭说明", item, "close_note", readonly=True)
-                        elif can_close:
+                        elif can_close and not pending_close:
                             ui.separator().classes("my-2")
                             bind_textarea("关闭说明", item, "close_note", readonly=False)
                             ui.label("可填写 ECN 编号、会议结论、沟通记录或其它执行结果。").classes(
@@ -1278,61 +1642,7 @@ async def error_management_page(error_id: str = ""):
                             )
 
                             async def close_preventive_action(event=None, action=item):
-                                """使用文字关闭说明完成措施关闭，并立即原子写入数据库。"""
-                                action_id = get_item_id(action)
-                                close_note = action.get("close_note", "").strip()
-                                if not close_note:
-                                    return ui.notify("请填写关闭说明", type="warning", position="bottom")
-                                now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-                                def update_action(current):
-                                    # 待审批延期存在时不允许关闭，避免审批通过后又改变已关闭措施的日期。
-                                    stored_action = find_preventive_action(current, action_id)
-                                    if not stored_action:
-                                        return "action_not_found", current
-                                    if stored_action.get("status") == "已关闭":
-                                        return "already_closed", current
-                                    if not can_edit_all and not is_current_responsible(
-                                        stored_action.get("owner", ""), current_user, current_role
-                                    ):
-                                        return "permission_changed", current
-                                    if get_pending_extension_request(stored_action):
-                                        return "pending_extension", current
-
-                                    stored_action["status"] = "已关闭"
-                                    stored_action["close_note"] = close_note
-                                    stored_action["closed_by"] = current_user
-                                    stored_action["closed_role"] = current_role
-                                    stored_action["closed_at"] = now_str
-                                    current.setdefault("operation_log", []).append(
-                                        {
-                                            "user": current_user,
-                                            "role": current_role,
-                                            "action": f"关闭纠正预防措施：{stored_action.get('content', '')[:30]}",
-                                            "time": now_str,
-                                        }
-                                    )
-                                    current["updated_by"] = current_user
-                                    current["updated_at"] = now_str
-                                    return "updated", current
-
-                                result = await atomic_error_update(local_data["error_id"], update_action)
-                                if result.changed:
-                                    ui.notify("纠正预防措施已关闭", type="positive", position="bottom")
-                                    refresh_list()
-                                    await open_error_detail_dialog(local_data["error_id"])
-                                elif result.code == "pending_extension":
-                                    ui.notify(
-                                        "该措施存在待审批延期申请，请先完成审批", type="warning", position="bottom"
-                                    )
-                                elif result.code == "permission_changed":
-                                    ui.notify(
-                                        "该措施负责人已变更，当前用户不能再关闭措施", type="warning", position="bottom"
-                                    )
-                                elif result.code in {"already_closed", "action_not_found", "not_found"}:
-                                    ui.notify("该措施已被其他用户处理，请刷新查看", type="warning", position="bottom")
-                                else:
-                                    ui.notify("关闭失败，请刷新后重试", type="negative", position="bottom")
+                                await submit_close_request_from_dialog(action)
 
                             with ui.row().classes("items-center justify-end gap-3 mt-2"):
                                 ui.label(
@@ -1352,9 +1662,12 @@ async def error_management_page(error_id: str = ""):
                                     ui.button("延期审批中", icon="hourglass_empty").props(
                                         "outline color=orange disable"
                                     )
-                                ui.button("关闭该措施", icon="check_circle", on_click=close_preventive_action).props(
-                                    "color=green"
-                                )
+                                if can_apply_close:
+                                    ui.button(
+                                        "申请关闭该措施",
+                                        icon="check_circle",
+                                        on_click=close_preventive_action,
+                                    ).props("color=green")
 
                 if can_edit_all:
 
@@ -1368,6 +1681,8 @@ async def error_management_page(error_id: str = ""):
                                     "status": "待执行",
                                     "evidence_files": [],
                                     "close_note": "",
+                                    "close_requests": [],
+                                    "closure_nature": "",
                                     "extension_requests": [],
                                 },
                                 "preventive",
