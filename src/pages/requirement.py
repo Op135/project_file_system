@@ -47,6 +47,7 @@ from ..utils import (
     merge_data_with_template,
     overview_role_update,
     set_overview_active_state,
+    setup_global_activity_tracking,
     validate_format_regex,
 )
 
@@ -153,6 +154,7 @@ async def requirement_page(type="", json_path="", project_name=""):
     if not app.storage.user.get("current_user"):
         ui.navigate.to("/login")  # 如果未登录，跳转到登录页
         return
+    setup_global_activity_tracking()
     current_user = app.storage.user.get("current_user")
     current_role = app.storage.user.get("current_role")
     # 从全局存储中获取用户当前的头像设置
@@ -1794,10 +1796,8 @@ async def requirement_page(type="", json_path="", project_name=""):
                     dropdown.bind_value(app.storage.client["config_data"]["data"][k]["user_must_out"], "value")
 
                 elif options_type in ["正整数", "单行文本", "多行文本"]:
-                    placeholder = input_num_accor = app.storage.client["config_data"]["data"][k]["placeholder"]
-                    tolerance_placeholder = input_num_accor = app.storage.client["config_data"]["data"][k][
-                        "tolerance_placeholder"
-                    ]
+                    placeholder = app.storage.client["config_data"]["data"][k]["placeholder"]
+                    tolerance_placeholder = app.storage.client["config_data"]["data"][k]["tolerance_placeholder"]
                     # 获取公差要求
                     input_tolerance_bool = app.storage.client["config_data"]["data"][k]["input_tolerance"]
 

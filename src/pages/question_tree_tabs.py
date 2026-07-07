@@ -627,6 +627,8 @@ def question_tree_page():
         ui.navigate.to("/login")
         return
 
+    setup_global_activity_tracking()
+
     current_user = app.storage.user.get("current_user")
     user_prefs = app.storage.general.get("user_preferences", {}).get(current_user, {})
     current_avatar_path = user_prefs.get("avatar", PRESET_AVATARS[0])

@@ -66,29 +66,37 @@ def main_page():
     # --- 刷新在线人数的逻辑，基于绝对时间戳过滤 ---
     def refresh_online_num():
         unique_users_map: Dict[str, Any] = {}
-        # 定义真实活跃阈值：1分钟（60 秒）
-        ACTIVE_THRESHOLD_SEC = 1 * 60
+        # 定义在线心跳阈值：1分钟（60 秒）
+        ONLINE_THRESHOLD_SEC = 1 * 60
         current_time = time.time()
 
         for user_data in online_users.values():
             username = user_data.get("username", "未知用户")
-            # 获取记录的绝对时间戳，如果还没上报过，默认视为0
+            # last_seen_ts 是页面心跳，表示页面仍在连接；last_activity_ts 是最后一次物理操作。
+            last_seen_ts = user_data.get("last_seen_ts", user_data.get("last_activity_ts", 0))
             last_activity_ts = user_data.get("last_activity_ts", 0)
 
-            # 距离最后一次真实物理操作经过的秒数
-            idle_time_sec = current_time - last_activity_ts
+            idle_time_sec = current_time - last_seen_ts
 
-            if idle_time_sec < ACTIVE_THRESHOLD_SEC:
+            if idle_time_sec < ONLINE_THRESHOLD_SEC:
                 if username not in unique_users_map:
-                    unique_users_map[username] = user_data
+                    unique_users_map[username] = dict(user_data)
+                    unique_users_map[username]["last_seen_ts"] = last_seen_ts
+                    unique_users_map[username]["last_activity_ts"] = last_activity_ts
                 else:
-                    # 【修改】多标签页情况下，始终保留操作时间最晚（最活跃）的数据
-                    if last_activity_ts > unique_users_map[username].get("last_activity_ts", 0):
-                        unique_users_map[username] = user_data
+                    # 多标签页情况下，在线心跳和最后操作分别取最新时间，避免显示在多个标签页之间跳动。
+                    unique_users_map[username]["last_seen_ts"] = max(
+                        unique_users_map[username].get("last_seen_ts", 0),
+                        last_seen_ts,
+                    )
+                    unique_users_map[username]["last_activity_ts"] = max(
+                        unique_users_map[username].get("last_activity_ts", 0),
+                        last_activity_ts,
+                    )
 
         online_data["online_count"] = str(len(unique_users_map))
 
-        tooltip_text = "当前活跃用户:<br>"
+        tooltip_text = "当前在线用户:<br>"
         for user in unique_users_map.values():
             u_name = user.get("username", "未知用户")
             u_ts = user.get("last_activity_ts", 0)
@@ -102,7 +110,7 @@ def main_page():
             tooltip_text += f"{u_name} - 最后操作: {u_time_str}<br>"
 
         if not unique_users_map:
-            tooltip_text = "当前无活跃用户"
+            tooltip_text = "当前无在线用户"
 
         online_data["tooltip_text"] = tooltip_text
 
@@ -184,7 +192,7 @@ def main_page():
             ui.icon("groups", size="xs").classes("opacity-90")
             # 3. 数字显示
             # 使用 bind_text 绑定数据，实现实时更新
-            label = ui.label().bind_text_from(online_data, "online_count", backward=lambda x: f"活跃在线: {x}")
+            label = ui.label().bind_text_from(online_data, "online_count", backward=lambda x: f"当前在线: {x}")
             label.classes("text-sm font-medium tracking-wide")
             with label:
                 with ui.tooltip(""):
@@ -367,8 +375,3 @@ def main_page():
                         ui.badge(str(pending_count), color="red").props("floating rounded").classes(
                             "animate-shake ring-2 ring-white shadow-md text-xs font-bold px-2 top-0 right-0 transform translate-x-1/3 -translate-y-1/3"
                         )
-
-    # --- 定时刷新在线用户数据 ---
-    # 每 3 秒检查一次全局字典，更新UI
-    # 这样如果有用户下线或上线，管理员在3秒内就能看到变化
-    ui.timer(3.0, refresh_online_num)

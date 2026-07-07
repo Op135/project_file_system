@@ -76,33 +76,56 @@ def apply_chinese_date_locale(date_element):
 
 def setup_global_activity_tracking():
     """注入全局前端活跃监听与心跳上报"""
+    client = None
+    client_id = None
+    username = "访客"
+    try:
+        client = ui.context.client
+        client_id = client.id
+        username = app.storage.user.get("current_user", "访客")
+        existing_data = online_users.get(client.id, {})
+        now = time.time()
+        online_users[client.id] = {
+            "username": username,
+            "login_time": existing_data.get("login_time", datetime.now().strftime("%H:%M:%S")),
+            "ip": client.ip or existing_data.get("ip", "Unknown"),
+            "last_seen_ts": now,
+            "last_activity_ts": now,
+        }
+    except Exception:
+        pass
+
     # 注入前端监听脚本
     ui.add_head_html("""
         <script>
-            // 使用标志位，防止在某些复用布局中重复绑定事件
-            if (!window.activityTrackerInitialized) {
-                window.lastActivityTime = Date.now();
+            window.lastActivityTime = Date.now();
+            // 使用版本标志，允许后续扩展监听事件时自动升级绑定逻辑。
+            if (window.activityTrackerVersion !== 2) {
                 const updateActivity = () => { window.lastActivityTime = Date.now(); };
                 
-                ['mousedown', 'keydown', 'scroll', 'touchstart'].forEach(evt =>
-                    document.addEventListener(evt, updateActivity, {passive: true})
+                ['mousedown', 'pointerdown', 'keydown', 'wheel', 'scroll', 'touchstart', 'input', 'change', 'focus'].forEach(evt =>
+                    document.addEventListener(evt, updateActivity, {passive: true, capture: true})
                 );
                 window.activityTrackerInitialized = true;
+                window.activityTrackerVersion = 2;
             }
         </script>
     """)
 
     # 注入心跳上报定时器
     async def report_heartbeat() -> None:
+        if client is None or client_id is None:
+            return
         try:
-            last_activity_ms = await ui.run_javascript("return window.lastActivityTime;", timeout=2.0)
+            last_activity_ms = await client.run_javascript("return window.lastActivityTime;", timeout=2.0)
             if last_activity_ms is not None:
-                client_id = ui.context.client.id
                 if client_id in online_users:
+                    online_users[client_id]["username"] = username
+                    online_users[client_id]["last_seen_ts"] = time.time()
                     online_users[client_id]["last_activity_ts"] = last_activity_ms / 1000.0
-        except Exception:
+        except Exception as exc:
             # 用户正在切换页面或刷新时，执行JS会超时，直接忽略即可
-            pass
+            logger.debug("活跃心跳上报失败: %r", exc)
 
     # 每 10 秒向后端同步一次
     ui.timer(10.0, report_heartbeat)
@@ -192,11 +215,13 @@ def handle_connect(client):
         username = app.storage.user.get("current_user", "访客")
 
         # 记录用户信息
+        now = time.time()
         online_users[client.id] = {
             "username": username,
             "login_time": datetime.now().strftime("%H:%M:%S"),
             "ip": client.ip or "Unknown",
-            "last_activity_ts": time.time(),  # 一连上就给一个初始的静态绝对时间戳
+            "last_seen_ts": now,
+            "last_activity_ts": now,  # 一连上就给一个初始的静态绝对时间戳
         }
     except Exception as e:
         print(f"Connection track error: {e}")
