@@ -958,8 +958,8 @@ async def error_management_page(error_id: str = ""):
             field = bind_input(label, target, key, classes, readonly=readonly)
             if not field_readonly:
 
-                async def handle_blur(event=None, l=label, t=target, k=key, a=allowed_values):
-                    await warn_unknown_wecom_names(l, t.get(k, ""), allowed_values=a)
+                async def handle_blur(event=None, label_text=label, data=target, data_key=key, allowed=allowed_values):
+                    await warn_unknown_wecom_names(label_text, data.get(data_key, ""), allowed_values=allowed)
 
                 field.on("blur", handle_blur)
             return field

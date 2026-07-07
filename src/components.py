@@ -71,6 +71,24 @@ def get_upload_local_path(file_url: str) -> str:
     return os.path.join(UPLOADS_DIR, os.path.basename(normalized_url))
 
 
+def build_contained_image_preview(image_url: str, on_close: Callable[[], None]):
+    """Render an image preview with stable viewport bounds."""
+    with ui.element("div").classes("fixed inset-0 bg-transparent flex items-center justify-center p-3 sm:p-4"):
+        with ui.element("div").classes(
+            "relative w-[95vw] h-[90vh] max-w-[95vw] max-h-[90vh] overflow-hidden flex items-center justify-center"
+        ):
+            image = (
+                ui.image(image_url)
+                .props("fit=contain no-spinner")
+                .classes("w-full h-full cursor-grab select-none")
+                .style("transform-origin: center center;")
+            )
+        ui.button(icon="close", on_click=on_close).props("flat round color=grey-8").classes(
+            "absolute top-3 right-3 z-10 bg-white/80 hover:bg-white shadow-sm"
+        )
+    return image
+
+
 def _is_deactivated_chip(chip_info: dict, req_max_ver: str) -> bool:
     """Return whether a chip should be treated as inactive in the current view."""
     current_state = chip_info.get("select_activ_dic", {}).get(req_max_ver)
@@ -333,6 +351,7 @@ class FileThumbnail:
         file_name_suffix,
         file_lab,
         parents_h,
+        display_lab=None,
         auto_create: bool = True,
         delet_lab: bool = True,
         on_add_ref_click=lambda *args, **kwargs: None,
@@ -357,34 +376,21 @@ class FileThumbnail:
         self.delet_lab = delet_lab
         self.on_add_ref_click = on_add_ref_click
         self.on_question_display_click = on_question_display_click
-        self.dialog = ui.dialog().props("").classes("p-0")
+        self.dialog = ui.dialog().props("maximized").classes("p-0")
         # --- 视频弹窗 ---
         self.video_dialog = ui.dialog().classes("p-0 bg-transparent shadow-none")
         if self.file_type.startswith("image/"):
             with self.dialog:
-                # with (
-                #     ui.card()
-                #     .classes("relative overflow-hidden items-center justify-center")
-                #     .style("background-color: rgba(0,0,0,0);")
-                # ):
-                # ui.label("按ESC键退出图片查看界面").classes("absolute top-15 text-xl text-red-9 z-999")
-                self.image_big = (
-                    ui.interactive_image(
-                        self.file_url,
-                    )
-                    .classes("cursor-grab")
-                    .style("overflow: hidden;")
-                )
-                # self.image_big.props("fit=contain")
+                self.image_big = build_contained_image_preview(self.file_url, self.dialog.close)
                 # 绑定事件
                 self.image_big.on("mousedown", self.start_drag)
-                self.image_big.on_mouse(self.get_img_xy)
                 self.image_big.on("mousemove", self.handle_drag)
                 self.image_big.on("mouseup", self.end_drag)
                 self.image_big.on("mouseleave", self.end_drag)
                 self.image_big.on("wheel", self.handle_zoom)
         # 存取文件计数值，也就是文件数字标记
-        self.file_index = file_lab
+        self.file_index = str(file_lab)
+        self.display_lab = str(display_lab if display_lab is not None else file_lab)
         if auto_create:
             # 初始化并显示缩略图
             self.get_thumbnail()
@@ -477,7 +483,7 @@ class FileThumbnail:
                 'transition-show="fade" transition-hide="fade" max-height="18px"'
             )
             # 缩略图数字标签
-            ui.label(str(self.file_index)).classes(
+            ui.label(self.display_lab).classes(
                 "absolute top-0 left-0 m-0 p-[2px] bg-black text-white text-[10px]/[10px]"
             ).style("z-index: 1000;")  # 添加数字标记
 
@@ -530,8 +536,12 @@ class FileThumbnail:
                 self.other_row.delete()
             elif hasattr(self, "thumbnail"):
                 self.thumbnail.delete()
-            app.storage.client["deleted_files"].append(file_neme_suffix)
-            app.storage.client["file_thumbnail_dic"][self.file_index]["file_information"]["file_del_bool"] = True
+            thumbnail_info = app.storage.client["file_thumbnail_dic"][self.file_index]["file_information"]
+            deleted_files = app.storage.client.setdefault("deleted_files", [])
+            for deleted_file in {file_neme_suffix, thumbnail_info.get("file_name_hash", "")}:
+                if deleted_file and deleted_file not in deleted_files:
+                    deleted_files.append(deleted_file)
+            thumbnail_info["file_del_bool"] = True
         # app.storage.client["file_counter"] -= 1 注释掉使得文件标签数字唯一
 
     # pdf文件打开函数
@@ -660,7 +670,7 @@ class FileThumbnail:
         if e.args.get("button") == 0:
             self.is_dragging = True
             self.last_pos = (e.args["clientX"], e.args["clientY"])
-            self.image_big.classes(replace="cursor-grabbing")
+            self.image_big.classes(remove="cursor-grab", add="cursor-grabbing")
         elif e.args.get("button") == 1:
             self.reset_transform()
 
@@ -676,7 +686,7 @@ class FileThumbnail:
     # 图片结束拖拽
     def end_drag(self, e: GenericEventArguments):
         self.is_dragging = False
-        self.image_big.classes(replace="cursor-grab")
+        self.image_big.classes(remove="cursor-grabbing", add="cursor-grab")
 
     # 获取鼠标相对图片左上角的坐标值
     def get_img_xy(self, e: MouseEventArguments):
@@ -700,7 +710,10 @@ class FileThumbnail:
 
     # 更新图片变换函数
     def update_transform(self):
-        self.image_big.style(f"transform: translate({self.offset[0]}px, {self.offset[1]}px) scale({self.zoom_level})")
+        self.image_big.style(
+            "transform-origin: center center; "
+            f"transform: translate({self.offset[0]}px, {self.offset[1]}px) scale({self.zoom_level})"
+        )
 
     # 重置变换状态
     def reset_transform(self):
@@ -780,7 +793,7 @@ class InteractiveButton:
 
         # 通用复用弹窗
         self.chip_dialog = ui.dialog().classes("")
-        self.img_dialog = ui.dialog().props("").classes("p-0")
+        self.img_dialog = ui.dialog().props("maximized").classes("p-0")
         self.overview_video_dialog = ui.dialog().classes("p-0 bg-transparent shadow-none")
         self.check_down_dialog = ui.dialog().classes("")
         self.activ_dialog = ui.dialog().props("persistent").classes("")
@@ -3267,9 +3280,8 @@ class InteractiveButton:
     def show_fullscreen(self, url_path):
         self.img_dialog.clear()
         with self.img_dialog:
-            self.image_big = ui.interactive_image(url_path).classes("cursor-grab").style("overflow: hidden;")
+            self.image_big = build_contained_image_preview(url_path, self.img_dialog.close)
             self.image_big.on("mousedown", self.start_drag)
-            self.image_big.on_mouse(self.get_img_xy)
             self.image_big.on("mousemove", self.handle_drag)
             self.image_big.on("mouseup", self.end_drag)
             self.image_big.on("mouseleave", self.end_drag)
@@ -3281,7 +3293,7 @@ class InteractiveButton:
         if e.args.get("button") == 0:
             self.is_dragging = True
             self.last_pos = (e.args["clientX"], e.args["clientY"])
-            self.image_big.classes(replace="cursor-grabbing")
+            self.image_big.classes(remove="cursor-grab", add="cursor-grabbing")
         elif e.args.get("button") == 1:
             self.reset_transform()
 
@@ -3295,7 +3307,7 @@ class InteractiveButton:
     def end_drag(self, e: GenericEventArguments):
         self.is_dragging = False
         if hasattr(self, "image_big"):
-            self.image_big.classes(replace="cursor-grab")
+            self.image_big.classes(remove="cursor-grabbing", add="cursor-grab")
 
     def get_img_xy(self, e: MouseEventArguments):
         self.image_x, self.image_y = e.image_x, e.image_y
@@ -3308,6 +3320,7 @@ class InteractiveButton:
     def update_transform(self):
         if hasattr(self, "image_big"):
             self.image_big.style(
+                "transform-origin: center center; "
                 f"transform: translate({self.offset[0]}px, {self.offset[1]}px) scale({self.zoom_level})"
             )
 
@@ -3552,7 +3565,7 @@ class OverviewTableGroup:
 
         # 全局复用的对话框（以节省DOM节点）
         self.chip_dialog = ui.dialog().classes("")
-        self.img_dialog = ui.dialog().props("").classes("p-0")
+        self.img_dialog = ui.dialog().props("maximized").classes("p-0")
         self.overview_video_dialog = ui.dialog().classes("p-0 bg-transparent shadow-none")
         self.check_down_dialog = ui.dialog().classes("")
         self.activ_dialog = ui.dialog().props("persistent").classes("")
@@ -6246,9 +6259,8 @@ class OverviewTableGroup:
     def show_fullscreen(self, url_path):
         self.img_dialog.clear()
         with self.img_dialog:
-            self.image_big = ui.interactive_image(url_path).classes("cursor-grab").style("overflow: hidden;")
+            self.image_big = build_contained_image_preview(url_path, self.img_dialog.close)
             self.image_big.on("mousedown", self.start_drag)
-            self.image_big.on_mouse(self.get_img_xy)
             self.image_big.on("mousemove", self.handle_drag)
             self.image_big.on("mouseup", self.end_drag)
             self.image_big.on("mouseleave", self.end_drag)
@@ -6260,7 +6272,7 @@ class OverviewTableGroup:
         if e.args.get("button") == 0:
             self.is_dragging = True
             self.last_pos = (e.args["clientX"], e.args["clientY"])
-            self.image_big.classes(replace="cursor-grabbing")
+            self.image_big.classes(remove="cursor-grab", add="cursor-grabbing")
         elif e.args.get("button") == 1:
             self.reset_transform()
 
@@ -6275,7 +6287,7 @@ class OverviewTableGroup:
     def end_drag(self, e: GenericEventArguments):
         self.is_dragging = False
         if hasattr(self, "image_big"):
-            self.image_big.classes(replace="cursor-grab")
+            self.image_big.classes(remove="cursor-grabbing", add="cursor-grab")
 
     def get_img_xy(self, e: MouseEventArguments):
         self.image_x, self.image_y = e.image_x, e.image_y
@@ -6288,6 +6300,7 @@ class OverviewTableGroup:
     def update_transform(self):
         if hasattr(self, "image_big"):
             self.image_big.style(
+                "transform-origin: center center; "
                 f"transform: translate({self.offset[0]}px, {self.offset[1]}px) scale({self.zoom_level})"
             )
 

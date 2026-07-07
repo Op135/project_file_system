@@ -14,7 +14,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Optional
-from urllib.parse import quote
+from urllib.parse import quote, unquote
 
 from nicegui import app, ui
 
@@ -76,9 +76,16 @@ def get_attachment_label_number(file_info: dict) -> int:
         return 0
 
 
-def get_active_evidence_files(countermeasure: dict) -> list[dict]:
+def get_sample_attachment_thumbnail_key(scope: str, file_lab: str) -> str:
+    """生成 FileThumbnail 使用的内部唯一 key；显示编号仍按各附件区块独立编号。"""
+    safe_scope = sanitize_upload_path_segment(scope, "attachment")
+    safe_lab = sanitize_upload_path_segment(file_lab, "0")
+    return f"{safe_scope}:{safe_lab}"
+
+
+def get_active_evidence_files(attachment_owner: dict) -> list[dict]:
     """返回未被删除的附件信息，按页面显示序号排序。"""
-    files = countermeasure.get("evidence_files", [])
+    files = attachment_owner.get("evidence_files", [])
     if not isinstance(files, list):
         return []
     active_files = [
@@ -90,6 +97,24 @@ def get_active_evidence_files(countermeasure: dict) -> list[dict]:
         active_files,
         key=get_attachment_label_number,
     )
+
+
+def get_active_attachment_hashes_from_thumbnail_state(thumbnail_dic: dict) -> set[str]:
+    """返回当前界面上仍未删除的附件哈希，用于上传判重。"""
+    active_hashes = set()
+    if not isinstance(thumbnail_dic, dict):
+        return active_hashes
+    for entry in thumbnail_dic.values():
+        if not isinstance(entry, dict):
+            continue
+        file_info = entry.get("file_information", {})
+        if not isinstance(file_info, dict) or file_info.get("file_del_bool"):
+            continue
+        file_name_hash = str(file_info.get("file_name_hash", "")).strip()
+        if file_name_hash:
+            active_hashes.add(file_name_hash)
+            active_hashes.add(unquote(file_name_hash))
+    return active_hashes
 
 
 def sanitize_upload_path_segment(value: str, default: str) -> str:
@@ -190,6 +215,7 @@ def get_sample_issue_template() -> dict:
             "assembled_qty": "",
             "issue_qty": "",
             "recorder_name": "",
+            "evidence_files": [],
         },
         "countermeasure": {
             "owner": "",
@@ -233,6 +259,9 @@ def merge_with_sample_issue_template(db_data: dict) -> dict:
             merged[key] = copy.deepcopy(value)
 
     countermeasure = merged["countermeasure"]
+    basic = merged["basic_info"]
+    if not isinstance(basic.get("evidence_files"), list):
+        basic["evidence_files"] = []
     if not isinstance(countermeasure.get("evidence_files"), list):
         countermeasure["evidence_files"] = []
     if not isinstance(countermeasure.get("extension_requests"), list):
@@ -242,7 +271,6 @@ def merge_with_sample_issue_template(db_data: dict) -> dict:
     countermeasure.setdefault("closure_nature", "")
     if not isinstance(merged.get("reminder_log"), dict):
         merged["reminder_log"] = {}
-    basic = merged["basic_info"]
     original_basic = db_data.get("basic_info", {}) if isinstance(db_data, dict) else {}
     if (
         isinstance(original_basic, dict)
@@ -1228,8 +1256,8 @@ async def sample_issue_collection_page(issue_id: str = ""):
             field = bind_input(label, target, key, classes, readonly=readonly)
             if not readonly:
 
-                async def handle_blur(event=None, l=label, t=target, k=key, a=allowed_values):
-                    await warn_unknown_wecom_names(l, t.get(k, ""), allowed_values=a)
+                async def handle_blur(event=None, label_text=label, data=target, data_key=key, allowed=allowed_values):
+                    await warn_unknown_wecom_names(label_text, data.get(data_key, ""), allowed_values=allowed)
 
                 field.on("blur", handle_blur)
             return field
@@ -1309,21 +1337,49 @@ async def sample_issue_collection_page(issue_id: str = ""):
 
         def initialize_attachment_state():
             """为 FileThumbnail 准备它依赖的客户端附件状态。"""
-            active_files = get_active_evidence_files(local_data["countermeasure"])
+            attachment_counters = {}
+
+            def normalize_section_files(target: dict, scope: str) -> list[dict]:
+                normalized_files = []
+                used_labels = set()
+                max_label = 0
+                for file_info in get_active_evidence_files(target):
+                    file_info["attachment_scope"] = file_info.get("attachment_scope") or scope
+                    file_lab = str(file_info.get("file_lab", "")).strip()
+                    if not file_lab or file_lab in used_labels:
+                        max_label += 1
+                        while str(max_label) in used_labels:
+                            max_label += 1
+                        file_lab = str(max_label)
+                        file_info["file_lab"] = file_lab
+                    else:
+                        try:
+                            max_label = max(max_label, int(file_lab))
+                        except (TypeError, ValueError):
+                            pass
+                    used_labels.add(file_lab)
+                    file_info["thumbnail_key"] = get_sample_attachment_thumbnail_key(scope, file_lab)
+                    normalized_files.append(file_info)
+                target["evidence_files"] = sorted(normalized_files, key=get_attachment_label_number)
+                attachment_counters[scope] = max_label
+                return target["evidence_files"]
+
+            active_basic_files = normalize_section_files(local_data["basic_info"], "basic")
+            active_countermeasure_files = normalize_section_files(local_data["countermeasure"], "countermeasure")
+            active_files = [*active_basic_files, *active_countermeasure_files]
             app.storage.client["file_thumbnail_dic"] = {}
             app.storage.client["files"] = [
                 file_info.get("file_name_hash", "") for file_info in active_files if file_info.get("file_name_hash")
             ]
             app.storage.client["deleted_files"] = []
-            app.storage.client["file_counter"] = max(
-                [get_attachment_label_number(item) for item in active_files] or [0]
-            )
+            app.storage.client["file_counter"] = max(attachment_counters.values() or [0])
+            app.storage.client["sample_attachment_counters"] = attachment_counters
             app.storage.client["ref_question_dic"] = {}
             app.storage.client.setdefault("key_state", {})
             app.storage.client.setdefault("page_elements", {})
 
-        def sync_countermeasure_files_from_thumbnail_state():
-            """把 FileThumbnail 的删除状态同步回当前表单快照。"""
+        def sync_attachment_files_from_thumbnail_state(target: dict, scope: str):
+            """把 FileThumbnail 的删除状态按附件区块同步回当前表单快照。"""
             thumbnail_dic = app.storage.client.get("file_thumbnail_dic", {})
             deleted_files = set(app.storage.client.get("deleted_files", []))
             evidence_files = []
@@ -1333,13 +1389,19 @@ async def sample_issue_collection_page(issue_id: str = ""):
                     continue
                 if file_info.get("file_name_hash") in deleted_files:
                     continue
+                if (file_info.get("attachment_scope") or "countermeasure") != scope:
+                    continue
+                file_info.pop("thumbnail_key", None)
                 evidence_files.append(file_info)
-            local_data["countermeasure"]["evidence_files"] = sorted(evidence_files, key=get_attachment_label_number)
-            return local_data["countermeasure"]["evidence_files"]
+            target["evidence_files"] = sorted(evidence_files, key=get_attachment_label_number)
+            return target["evidence_files"]
 
-        def create_attachment_thumbnail(file_info: dict, deletable: bool):
+        def create_attachment_thumbnail(file_info: dict, deletable: bool, scope: str):
             """使用共用 FileThumbnail 渲染一个附件缩略图。"""
-            file_name_hash = file_info.get("file_name_hash", "")
+            file_info["attachment_scope"] = file_info.get("attachment_scope") or scope
+            display_lab = str(file_info.get("file_lab", ""))
+            thumbnail_key = file_info.get("thumbnail_key") or get_sample_attachment_thumbnail_key(scope, display_lab)
+            file_info["thumbnail_key"] = thumbnail_key
             file_url = file_info.get("file_url", "")
             if file_url:
                 file_path = get_upload_local_path(file_url)
@@ -1349,7 +1411,8 @@ async def sample_issue_collection_page(issue_id: str = ""):
                 file_url=file_url,
                 file_type=file_info.get("file_type", "application/octet-stream"),
                 file_name_suffix=file_info.get("file_name_suffix", file_info.get("file_name", "附件")),
-                file_lab=str(file_info.get("file_lab", "")),
+                file_lab=thumbnail_key,
+                display_lab=display_lab,
                 parents_h=int(file_info.get("parents_h", SAMPLE_ATTACHMENT_PARENTS_H)),
                 delet_lab=deletable,
             )
@@ -1359,16 +1422,16 @@ async def sample_issue_collection_page(issue_id: str = ""):
             }
             return thumbnail
 
-        async def handle_countermeasure_file_upload(e, parents_h):
-            """保存上传文件并追加到当前纠正预防措施附件列表。"""
-            if not can_operate_countermeasure:
+        async def handle_attachment_file_upload(e, parents_h, target: dict, scope: str, can_upload: bool, row_key: str):
+            """保存上传文件并追加到对应附件区块。"""
+            if not can_upload:
                 return ui.notify("当前用户无附件上传权限", type="warning", position="bottom")
 
             try:
                 file_type = e.file.content_type or "application/octet-stream"
                 content = await e.file.read()
                 file_name, file_suffix, file_name_hash = get_upload_file_hash_name(
-                    local_data["issue_id"],
+                    local_data["issue_id"] or local_data.get("created_at", ""),
                     current_user,
                     e.file.name,
                     content,
@@ -1389,18 +1452,34 @@ async def sample_issue_collection_page(issue_id: str = ""):
                         uploaded_file.write(content)
 
                 app.add_static_file(local_file=target_path, url_path=url_path)
-                if file_name_hash in app.storage.client.get(
-                    "files", []
-                ) and file_name_hash not in app.storage.client.get("deleted_files", []):
+                active_attachment_hashes = get_active_attachment_hashes_from_thumbnail_state(
+                    app.storage.client.get("file_thumbnail_dic", {})
+                )
+                if (
+                    file_name_hash in active_attachment_hashes
+                    or quote(file_name_hash, safe="") in active_attachment_hashes
+                ):
                     return ui.notify(f"文件已存在：{e.file.name}", type="warning", position="bottom")
 
-                app.storage.client.setdefault("files", []).append(file_name_hash)
-                app.storage.client["file_counter"] = int(app.storage.client.get("file_counter", 0)) + 1
-                file_lab = str(app.storage.client["file_counter"])
-                if file_name_hash in app.storage.client.get("deleted_files", []):
-                    app.storage.client["deleted_files"].remove(file_name_hash)
+                tracked_files = app.storage.client.setdefault("files", [])
+                if file_name_hash not in tracked_files:
+                    tracked_files.append(file_name_hash)
+                attachment_counters = app.storage.client.setdefault("sample_attachment_counters", {})
+                next_file_lab = int(attachment_counters.get(scope, 0)) + 1
+                attachment_counters[scope] = next_file_lab
+                app.storage.client["file_counter"] = max(
+                    int(app.storage.client.get("file_counter", 0)),
+                    next_file_lab,
+                )
+                file_lab = str(next_file_lab)
+                deleted_files = app.storage.client.setdefault("deleted_files", [])
+                for deleted_file in {file_name_hash, quote(file_name_hash, safe="")}:
+                    while deleted_file in deleted_files:
+                        deleted_files.remove(deleted_file)
 
                 file_info = {
+                    "attachment_scope": scope,
+                    "thumbnail_key": get_sample_attachment_thumbnail_key(scope, file_lab),
                     "file_del_bool": False,
                     "file_name": file_name,
                     "file_url": url_path,
@@ -1412,30 +1491,37 @@ async def sample_issue_collection_page(issue_id: str = ""):
                     "uploaded_by": current_user,
                     "uploaded_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 }
-                current_attachment_row = app.storage.client["page_elements"].get("sample_issue_attachment_row")
+                current_attachment_row = app.storage.client["page_elements"].get(row_key)
                 if current_attachment_row is None:
                     return ui.notify("附件区域尚未初始化，请关闭窗口后重试", type="warning", position="bottom")
 
                 with current_attachment_row:
-                    create_attachment_thumbnail(file_info, deletable=True)
-                sync_countermeasure_files_from_thumbnail_state()
+                    create_attachment_thumbnail(file_info, deletable=True, scope=scope)
+                sync_attachment_files_from_thumbnail_state(target, scope)
                 ui.notify("附件已添加，请保存样品问题", type="positive", position="bottom")
             except Exception as exc:
                 logger.exception("样品问题附件上传失败")
                 ui.notify(f"上传文件 '{e.file.name}' 失败：{exc}", type="negative", position="bottom", multi_line=True)
 
-        def render_countermeasure_attachments():
-            """在纠正预防措施文本下方渲染附件上传按钮和缩略图。"""
-            active_files = get_active_evidence_files(local_data["countermeasure"])
-            if not can_operate_countermeasure and not active_files:
+        def render_attachment_section(title: str, target: dict, scope: str, can_upload: bool, row_key: str):
+            """渲染一个附件上传按钮和缩略图区域。"""
+            active_files = get_active_evidence_files(target)
+            if not can_upload and not active_files:
                 return
 
-            ui.label("附件").classes("text-sm font-bold text-gray-700")
+            ui.label(title).classes("text-sm font-bold text-gray-700")
             with ui.row().classes("w-full flex-wrap items-start gap-2") as attachment_row:
-                app.storage.client["page_elements"]["sample_issue_attachment_row"] = attachment_row
-                if can_operate_countermeasure:
+                app.storage.client["page_elements"][row_key] = attachment_row
+                if can_upload:
                     ButtonUploader(
-                        on_upload=handle_countermeasure_file_upload,
+                        on_upload=lambda e, parents_h, t=target, s=scope, r=row_key: handle_attachment_file_upload(
+                            e,
+                            parents_h,
+                            t,
+                            s,
+                            can_upload,
+                            r,
+                        ),
                         label="上传附件",
                         input_any_suffix=SAMPLE_ATTACHMENT_ACCEPT,
                         classes_str=f"h-{SAMPLE_ATTACHMENT_PARENTS_H}",
@@ -1443,13 +1529,35 @@ async def sample_issue_collection_page(issue_id: str = ""):
                         parents_h=SAMPLE_ATTACHMENT_PARENTS_H,
                     )
                 for file_info in active_files:
-                    create_attachment_thumbnail(file_info, deletable=can_operate_countermeasure)
+                    create_attachment_thumbnail(file_info, deletable=can_upload, scope=scope)
+
+        def render_basic_attachments():
+            """在问题点录入信息区块渲染问题附件。"""
+            render_attachment_section(
+                "问题附件",
+                local_data["basic_info"],
+                "basic",
+                can_edit_base,
+                "sample_issue_basic_attachment_row",
+            )
+
+        def render_countermeasure_attachments():
+            """在纠正预防措施文本下方渲染附件上传按钮和缩略图。"""
+            render_attachment_section(
+                "附件",
+                local_data["countermeasure"],
+                "countermeasure",
+                can_operate_countermeasure,
+                "sample_issue_countermeasure_attachment_row",
+            )
 
         async def save_current_record():
             if not can_save_record:
                 return ui.notify("当前用户无保存权限", type="warning", position="bottom")
+            if can_edit_base:
+                sync_attachment_files_from_thumbnail_state(local_data["basic_info"], "basic")
             if can_edit_countermeasure:
-                sync_countermeasure_files_from_thumbnail_state()
+                sync_attachment_files_from_thumbnail_state(local_data["countermeasure"], "countermeasure")
             if not validate_sample_issue_record(local_data, is_new_record=is_new):
                 return
             result = await save_sample_issue_record(local_data, current_user, current_role, is_new=is_new)
@@ -1742,7 +1850,7 @@ async def sample_issue_collection_page(issue_id: str = ""):
                 return ui.notify(
                     "请先保存完整的原因分析、临时对策、纠正预防措施和预计完成日期", type="warning", position="bottom"
                 )
-            sync_countermeasure_files_from_thumbnail_state()
+            sync_attachment_files_from_thumbnail_state(local_data["countermeasure"], "countermeasure")
             if not validate_sample_issue_record(local_data, is_new_record=False):
                 return
 
@@ -2022,6 +2130,7 @@ async def sample_issue_collection_page(issue_id: str = ""):
                             )
                             bind_input("记录日期", basic, "record_date", "w-full md:w-[32%]", readonly=True)
                         bind_textarea("问题点描述", basic, "issue_description", readonly=not can_edit_base)
+                        render_basic_attachments()
                         with ui.row().classes("w-full gap-4 flex-wrap items-start"):
                             bind_date(
                                 "组装日期",

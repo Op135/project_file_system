@@ -86,6 +86,7 @@ class SampleIssueCollectionDataTests(unittest.TestCase):
         )
 
         self.assertEqual(merged["basic_info"]["assembly_date"], "2026-07-01")
+        self.assertEqual(merged["basic_info"]["evidence_files"], [])
         self.assertEqual(merged["countermeasure"]["evidence_files"], [])
         self.assertEqual(merged["countermeasure"]["extension_requests"], [])
         self.assertEqual(merged["countermeasure"]["close_requests"], [])
@@ -103,6 +104,33 @@ class SampleIssueCollectionDataTests(unittest.TestCase):
         self.assertEqual(target.parent.parent.name, "sample_issue")
         self.assertIn("/uploads/sample_issue/", url_path)
         self.assertEqual(Path(get_upload_local_path(url_path)).parent.name, "李_四")
+
+    def test_attachment_thumbnail_key_allows_independent_section_numbers(self):
+        """问题附件和对策附件可以各自显示 1 号，但内部缩略图 key 不能冲突。"""
+        from src.pages import sample_issue_collection as sample_issue
+
+        self.assertEqual(sample_issue.get_sample_attachment_thumbnail_key("basic", "1"), "basic:1")
+        self.assertEqual(sample_issue.get_sample_attachment_thumbnail_key("countermeasure", "1"), "countermeasure:1")
+        self.assertNotEqual(
+            sample_issue.get_sample_attachment_thumbnail_key("basic", "1"),
+            sample_issue.get_sample_attachment_thumbnail_key("countermeasure", "1"),
+        )
+
+    def test_active_attachment_hashes_ignore_deleted_thumbnails(self):
+        """已删除但未保存的缩略图不应阻止重新上传同一个文件。"""
+        from src.pages import sample_issue_collection as sample_issue
+
+        thumbnail_dic = {
+            "basic:1": {"file_information": {"file_name_hash": "same_hash.jpg", "file_del_bool": True}},
+            "basic:2": {"file_information": {"file_name_hash": "active_hash.jpg", "file_del_bool": False}},
+            "basic:3": {"file_information": {"file_name_hash": "%E9%97%AE%E9%A2%98.jpg", "file_del_bool": False}},
+        }
+
+        active_hashes = sample_issue.get_active_attachment_hashes_from_thumbnail_state(thumbnail_dic)
+
+        self.assertNotIn("same_hash.jpg", active_hashes)
+        self.assertIn("active_hash.jpg", active_hashes)
+        self.assertIn("问题.jpg", active_hashes)
 
     def test_next_sample_issue_id_uses_today_sequence(self):
         """样品问题编号按 SPI年月日三位序列号生成。"""
@@ -841,9 +869,23 @@ class SampleIssueCollectionConcurrencyTests(unittest.IsolatedAsyncioTestCase):
                             "recorder_name": "张三",
                         }
                     )
+                    draft["basic_info"]["evidence_files"] = [
+                        {
+                            "attachment_scope": "basic",
+                            "file_del_bool": False,
+                            "file_name": "问题件",
+                            "file_url": "/uploads/sample_issue/张三/problem.hash.jpg",
+                            "file_name_hash": "sample_issue_SPI-RACE_problem.hash.jpg",
+                            "file_name_suffix": "problem.jpg",
+                            "file_type": "image/jpeg",
+                            "file_lab": "1",
+                            "parents_h": 12,
+                        }
+                    ]
                     draft["countermeasure"]["owner"] = "李四"
                     draft["countermeasure"]["evidence_files"] = [
                         {
+                            "attachment_scope": "countermeasure",
                             "file_del_bool": False,
                             "file_name": "问题照片",
                             "file_url": "/uploads/sample_issue_SPI-RACE_photo.hash.jpg",
@@ -886,6 +928,7 @@ class SampleIssueCollectionConcurrencyTests(unittest.IsolatedAsyncioTestCase):
 
                     stored = isolated_db.get_deep_item([sample_issue.SAMPLE_ISSUE_DATA_KEY, issue_id])
                     self.assertEqual(stored["basic_info"]["product_model"], "MODEL-A")
+                    self.assertEqual(stored["basic_info"]["evidence_files"][0]["file_name_suffix"], "problem.jpg")
                     self.assertEqual(stored["countermeasure"]["reason_analysis"], "连接器接触不良")
                     self.assertEqual(stored["countermeasure"]["evidence_files"][0]["file_name_suffix"], "photo.jpg")
                 finally:
