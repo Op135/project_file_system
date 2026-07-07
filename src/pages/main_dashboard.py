@@ -15,6 +15,7 @@ from ..utils import (
     online_users,
     setup_global_activity_tracking,
 )
+from .design_knowledge import DESIGN_KNOWLEDGE_DATA_KEY, get_design_knowledge_dashboard_pending_count
 from .error_management import ERROR_DATA_KEY, get_error_dashboard_pending_count
 from .sample_issue_collection import SAMPLE_ISSUE_DATA_KEY, get_sample_dashboard_pending_count
 
@@ -135,12 +136,13 @@ def main_page():
     menu_items_metadata = [
         ("assignment", "项目资料", "录入与查看项目资料", "/project_table"),
         ("rule", "项目待办项", "查阅项目相关待办项", "/information"),
-        ("handyman", "分析工具", "提供用于专业分析计算的工具", "/tool"),
+        ("handyman", "分析工具", "专业分析计算工具", "/tool"),
         ("account_tree", "需求项结构", "查阅需求项结构", "/question_tree_tabs"),
         ("equalizer", "统计信息", "查阅系统统计信息", "/statistics"),
         ("published_with_changes", "工程变更", "ECR与ECN流程管理", "/ecn_management"),
-        ("error", "异常单跟进", "查阅和记录异常单处理进度", "/error_management"),
-        ("science", "样品问题跟进", "记录样品问题与对策进度", "/sample_issue_collection"),
+        ("error", "异常单跟进", "查阅记录异常单处理进度", "/error_management"),
+        ("science", "样品问题跟进", "查阅记录样品问题处理进度", "/sample_issue_collection"),
+        ("menu_book", "设计知识库", "沉淀规范与设计案例", "/design_knowledge"),
     ]
     menu_items = []
     for items in menu_items_metadata:
@@ -154,11 +156,18 @@ def main_page():
             k in str(current_role) for k in ["总监", "经理", "主管", "boss", "admin"]
         ):
             continue
+        # 异常单跟进只对角色字符串里含有如下关键字的用户展示
         elif items[3] == "/error_management" and not any(
             k in str(current_role) for k in ["质量", "销售", "工程", "研发", "boss", "admin"]
         ):
             continue
+        # 样品问题跟进只对角色字符串里含有如下关键字的用户展示
         elif items[3] == "/sample_issue_collection" and not any(
+            k in str(current_role) for k in ["质量", "销售", "工程", "研发", "boss", "admin"]
+        ):
+            continue
+        # 样品问题跟进只对角色字符串里含有如下关键字的用户展示
+        elif items[3] == "/design_knowledge" and not any(
             k in str(current_role) for k in ["质量", "销售", "工程", "研发", "boss", "admin"]
         ):
             continue
@@ -216,8 +225,8 @@ def main_page():
     with ui.column().classes("w-full h-[calc(100vh-3rem)] overflow-y-auto items-center justify-center"):
         # 使用 Tailwind 响应式网格布局，替代原先的 calc(70vw) 和动态算列数
         # max-w-6xl 限制最大宽度，在超大屏幕下不会显得过于稀疏
-        # grid-cols-1 到 xl:grid-cols-4 实现浏览器大中小窗口的自适应
-        with ui.grid().classes("w-full max-w-6xl grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 px-6"):
+        # grid-cols-1 到 xl:grid-cols-5 实现浏览器大中小窗口的自适应
+        with ui.grid().classes("w-full max-w-7xl grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-6 px-6"):
             # 所有待修改项目数量
             revise_num_sum = 0
             # 所有登录用户提交的待修改项目数量
@@ -240,6 +249,11 @@ def main_page():
             )
             sample_issue_pending_num_user = get_sample_dashboard_pending_count(
                 db_storage.get_item(SAMPLE_ISSUE_DATA_KEY, {}),
+                current_user,
+                current_role,
+            )
+            design_knowledge_pending_num_user = get_design_knowledge_dashboard_pending_count(
+                db_storage.get_item(DESIGN_KNOWLEDGE_DATA_KEY, {}),
                 current_user,
                 current_role,
             )
@@ -343,6 +357,8 @@ def main_page():
                     pending_count = error_pending_num_user
                 elif target == "/sample_issue_collection":
                     pending_count = sample_issue_pending_num_user
+                elif target == "/design_knowledge":
+                    pending_count = design_knowledge_pending_num_user
 
                 # 2. 定义动态样式 (Dynamic Styling)
                 #    如果有待办，图标变黄；否则保持原本的蓝色

@@ -1,0 +1,177 @@
+{
+    "_说明": "设计知识库模块业务配置。修改后需要重启系统才能生效。内容类型名称会影响历史数据和页面逻辑，暂不建议改为其它名称；如需新增内容类型，需要同步扩展页面代码。",
+    "_字段说明": {
+        "content_types": "知识内容类型，目前页面逻辑支持：设计规范、错误案例、优秀案例；可调整顺序，不建议删除或改名。",
+        "design_domains": "专业领域选项。",
+        "rule_levels": "设计规范的等级选项。",
+        "error_severity_levels": "错误案例的严重等级选项。",
+        "practice_value_levels": "优秀案例的推荐价值选项。",
+        "project_categories": "项目类别筛选和录入选项。",
+        "applicable_phases": "适用环节筛选和录入选项。",
+        "knowledge_editor_role_keywords": "可以新增、编辑、提交知识的角色关键字；按 current_role 做包含匹配，admin 始终有权限。",
+        "tag_manager_role_keywords": "可以维护受控标签、审核发布知识的角色关键字；按 current_role 做包含匹配，admin 始终有权限。",
+        "attachment.dir_name": "附件保存到 uploads 下的模块目录名；保存路径实际为 uploads/dir_name/内容类型/用户名。",
+        "attachment.parents_h": "附件缩略图组件高度参数。",
+        "default_tag_catalog": "各专业领域的默认受控标签库。运行中新增的标签仍保存在系统 storage 中。",
+        "content_type_copy": "不同内容类型下，标题提示和正文表单字段的显示文案。"
+    },
+    "content_types": [
+        "设计规范",
+        "错误案例",
+        "优秀案例"
+    ],
+    "design_domains": [
+        "光学",
+        "结构",
+        "散热",
+        "硬件",
+        "软件",
+        "工艺"
+    ],
+    "rule_levels": [
+        "规定",
+        "推荐",
+        "提示"
+    ],
+    "error_severity_levels": [
+        "致命",
+        "严重",
+        "中等",
+        "轻度"
+    ],
+    "practice_value_levels": [
+        "强推荐",
+        "可参考",
+        "特定场景适用"
+    ],
+    "project_categories": [
+        "通用",
+        "整机",
+        "光学模组",
+        "结构件",
+        "散热系统",
+        "电子硬件",
+        "软件",
+        "工艺制程",
+        "包装/辅料"
+    ],
+    "applicable_phases": [
+        "需求评审",
+        "方案设计",
+        "详细设计",
+        "设计评审",
+        "样机打样",
+        "设计验证",
+        "试产导入",
+        "量产维护"
+    ],
+    "knowledge_editor_role_keywords": [
+        "研发",
+        "工程",
+        "质量",
+        "boss",
+        "admin"
+    ],
+    "tag_manager_role_keywords": [
+        "经理",
+        "主管",
+        "总监",
+        "boss",
+        "admin"
+    ],
+    "attachment": {
+        "dir_name": "design_knowledge",
+        "parents_h": 12
+    },
+    "default_tag_catalog": {
+        "光学": [
+            "杂散光",
+            "MTF",
+            "照度均匀性",
+            "镜头装配",
+            "公差敏感",
+            "光斑",
+            "镀膜"
+        ],
+        "结构": [
+            "防水",
+            "跌落",
+            "卡扣",
+            "螺丝柱",
+            "装配干涉",
+            "公差链",
+            "防呆"
+        ],
+        "散热": [
+            "热阻",
+            "导热垫",
+            "风道",
+            "散热片",
+            "温升",
+            "热仿真",
+            "接触热阻"
+        ],
+        "硬件": [
+            "EMC",
+            "ESD",
+            "电源纹波",
+            "接口防护",
+            "接地",
+            "降额",
+            "线束"
+        ],
+        "软件": [
+            "通信协议",
+            "异常恢复",
+            "升级",
+            "日志",
+            "参数校验",
+            "版本兼容",
+            "看门狗"
+        ],
+        "工艺": [
+            "点胶",
+            "焊接",
+            "灌封",
+            "治具",
+            "可制造性",
+            "扭矩",
+            "来料检验"
+        ]
+    },
+    "content_type_copy": {
+        "设计规范": {
+            "title_hint": "建议格式如：结构防水 - 壳体密封筋最小压缩量要求",
+            "summary_label": "规范摘要",
+            "summary_placeholder": "一句话说明这条规范要求什么，便于列表快速浏览。",
+            "scene_label": "适用范围/约束条件",
+            "scene_placeholder": "说明适用于哪些产品、部件、环境、参数范围或设计前提。",
+            "analysis_label": "设计依据/风险说明",
+            "analysis_placeholder": "说明为什么要这样规定，可填写验证依据、风险后果或历史来源。",
+            "suggestion_label": "规定内容/推荐做法",
+            "suggestion_placeholder": "写清楚必须遵守或推荐采用的具体做法、数值范围、检查点。"
+        },
+        "错误案例": {
+            "title_hint": "建议格式如：RFFM-1519 - 镜头偏心导致光斑不均",
+            "summary_label": "问题摘要",
+            "summary_placeholder": "一句话概括错误案例：发生了什么问题，造成了什么影响。",
+            "scene_label": "问题现象/发生场景",
+            "scene_placeholder": "说明在哪个项目、阶段、条件下发现，现场表现是什么。",
+            "analysis_label": "原因分析",
+            "analysis_placeholder": "说明直接原因、根因、遗漏的检查项或错误决策点。",
+            "suggestion_label": "整改措施/预防建议",
+            "suggestion_placeholder": "说明已采取的整改措施，以及以后如何避免重复发生。"
+        },
+        "优秀案例": {
+            "title_hint": "建议格式如：RFFM-1519 - 导热路径复用降低温升",
+            "summary_label": "案例摘要",
+            "summary_placeholder": "一句话说明这个案例好在哪里，值得后续借鉴什么。",
+            "scene_label": "适用场景",
+            "scene_placeholder": "说明适合在哪类产品、约束条件或设计目标下复用。",
+            "analysis_label": "设计亮点/方案依据",
+            "analysis_placeholder": "说明关键设计思路、验证结果、性能收益或取舍理由。",
+            "suggestion_label": "可借鉴点/复用建议",
+            "suggestion_placeholder": "说明后续项目可以怎样复用，复用时需要注意什么边界条件。"
+        }
+    }
+}
