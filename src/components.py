@@ -489,6 +489,8 @@ class FileThumbnail:
 
     # 为缩略图添加“+”号引用按钮
     def add_add_lab(self, ref_row, k, question_k, question):
+        if not hasattr(self, "thumbnail"):
+            return False
         with self.thumbnail:
             self.ref_lab = (
                 ui.button()
@@ -499,6 +501,7 @@ class FileThumbnail:
             # 而是调用存储在 self.on_add_ref_click 上的回调函数
             self.ref_lab.on("click", lambda: self.on_add_ref_click(self, ref_row, question_k, question, True))
             self.ref_lab.on("click", js_handler="(e) => {e.stopPropagation()}")
+        return True
 
     # 删除文件缩略图
     def clear_thumbnail(self, file_neme_suffix, file_index):

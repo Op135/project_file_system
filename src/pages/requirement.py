@@ -1181,18 +1181,24 @@ async def requirement_page(type="", json_path="", project_name=""):
     # 缩略图加号激活添加函数
     def add_activ_ref(ref_row, question_k, question):
         for k, v in app.storage.client["file_thumbnail_dic"].items():
+            file_information = v.get("file_information", {})
+            file_obj = v.get("file_obj")
+            if file_information.get("file_del_bool") or file_obj is None or not hasattr(file_obj, "thumbnail"):
+                continue
             # 防止重复添加加号激活按键
-            if not v["file_obj"].add_lab_bool:
-                v["file_obj"].add_add_lab(ref_row, k, question_k, question)
-                v["file_obj"].add_lab_bool = True
+            if not file_obj.add_lab_bool and file_obj.add_add_lab(ref_row, k, question_k, question):
+                file_obj.add_lab_bool = True
 
     # 缩略图加号删除函数
     def delete_activ_ref():
         for v in app.storage.client["file_thumbnail_dic"].values():
+            file_obj = v.get("file_obj")
+            if file_obj is None:
+                continue
             # 防止重复添加加号激活按键
-            if v["file_obj"].add_lab_bool:
-                v["file_obj"].ref_lab.delete()
-                v["file_obj"].add_lab_bool = False
+            if file_obj.add_lab_bool and hasattr(file_obj, "ref_lab"):
+                file_obj.ref_lab.delete()
+                file_obj.add_lab_bool = False
 
     # 添加数字引用按钮函数
     def add_ref_button(thumbnail_obj, ref_row, question_k: str, question: str, add_bool: bool):
