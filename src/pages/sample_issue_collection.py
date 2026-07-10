@@ -30,6 +30,11 @@ from ..issue_workflow_utils import (
     unique_nonempty_texts,
 )
 from ..sample_issue_config import (
+    SAMPLE_CLOSE_APPROVAL_NOTIFY_TARGETS,
+    SAMPLE_CLOSE_APPROVER_ROLES,
+    SAMPLE_CLOSE_NOTIFY_REQUESTER_ON_APPROVAL,
+    SAMPLE_CLOSE_NOTIFY_TARGETS,
+    SAMPLE_CLOSE_ROUTING_RULES,
     SAMPLE_DEFAULT_NOTIFY_TARGETS,
     SAMPLE_EDITOR_ROLES,
     SAMPLE_EXTENSION_APPROVAL_NOTIFY_TARGETS,
@@ -309,6 +314,65 @@ def is_sample_extension_approver(role: str) -> bool:
     return any(role_key in str(role) for role_key in SAMPLE_EXTENSION_APPROVER_ROLES)
 
 
+def get_default_sample_close_approval_route() -> dict:
+    """返回样品问题关闭申请默认审批路由。"""
+    return {
+        "key": "default",
+        "label": "默认关闭审批",
+        "requester_role_keywords": [],
+        "approver_roles": copy.deepcopy(SAMPLE_CLOSE_APPROVER_ROLES),
+        "notify_targets": copy.deepcopy(SAMPLE_CLOSE_NOTIFY_TARGETS),
+        "approval_notify_targets": copy.deepcopy(SAMPLE_CLOSE_APPROVAL_NOTIFY_TARGETS),
+        "notify_requester_on_approval": SAMPLE_CLOSE_NOTIFY_REQUESTER_ON_APPROVAL,
+    }
+
+
+def get_sample_close_approval_route(requester_role: str) -> dict:
+    """按申请人角色关键词匹配关闭审批路由；未命中时返回默认路由。"""
+    role_text = str(requester_role or "")
+    for rule in SAMPLE_CLOSE_ROUTING_RULES:
+        if any(keyword in role_text for keyword in rule.get("requester_role_keywords", [])):
+            return copy.deepcopy(rule)
+    return get_default_sample_close_approval_route()
+
+
+def get_sample_close_approval_route_for_request(close_request: Optional[dict]) -> dict:
+    """读取关闭申请保存时固定下来的审批路由；老数据按申请人角色重新匹配。"""
+    if not isinstance(close_request, dict):
+        return get_default_sample_close_approval_route()
+
+    route = get_sample_close_approval_route(close_request.get("requester_role", ""))
+    for key in ["key", "label"]:
+        if isinstance(close_request.get(key), str) and close_request[key].strip():
+            route[key] = close_request[key].strip()
+    for key in ["approver_roles", "notify_targets", "approval_notify_targets"]:
+        if isinstance(close_request.get(key), list):
+            route[key] = copy.deepcopy(close_request[key])
+    if isinstance(close_request.get("notify_requester_on_approval"), bool):
+        route["notify_requester_on_approval"] = close_request["notify_requester_on_approval"]
+    return route
+
+
+def is_sample_close_approver(role: str, close_request: Optional[dict] = None) -> bool:
+    """判断当前角色是否能审批指定关闭申请。"""
+    if close_request is not None:
+        route = get_sample_close_approval_route_for_request(close_request)
+        return any(role_key in str(role) for role_key in route.get("approver_roles", []))
+
+    all_roles = [*SAMPLE_CLOSE_APPROVER_ROLES]
+    for rule in SAMPLE_CLOSE_ROUTING_RULES:
+        all_roles.extend(rule.get("approver_roles", []))
+    return any(role_key in str(role) for role_key in dict.fromkeys(all_roles))
+
+
+def get_all_sample_close_approver_roles() -> list[str]:
+    """返回所有可能的关闭审批角色，用于人员输入白名单提示。"""
+    roles = [*SAMPLE_CLOSE_APPROVER_ROLES]
+    for rule in SAMPLE_CLOSE_ROUTING_RULES:
+        roles.extend(rule.get("approver_roles", []))
+    return list(dict.fromkeys(roles))
+
+
 def is_sample_admin(role: str) -> bool:
     """删除样品问题属于高风险操作，仅允许角色值严格等于 admin。"""
     return str(role).strip().lower() == "admin"
@@ -516,20 +580,27 @@ def get_missing_countermeasure_labels(issue_data: dict) -> list[str]:
     return [label for label, value in required_fields if not str(value).strip()]
 
 
+def has_sample_approval_pending_for_role(issue_data: dict, current_role: str) -> bool:
+    """判断当前角色是否有样品问题审批待办。"""
+    countermeasure = issue_data.get("countermeasure", {})
+    pending_extension = get_pending_extension_request(countermeasure)
+    pending_close = get_pending_close_request(countermeasure)
+    return bool(pending_extension and is_sample_extension_approver(current_role)) or bool(
+        pending_close and is_sample_close_approver(current_role, pending_close)
+    )
+
+
 def get_sample_dashboard_pending_count(all_issues: Any, current_user: str, current_role: str) -> int:
     """计算主页“样品问题收集”卡片对当前用户显示的待办角标数量。"""
     if not isinstance(all_issues, dict):
         return 0
 
-    if is_sample_extension_approver(current_role):
+    if is_sample_extension_approver(current_role) or is_sample_close_approver(current_role):
         return sum(
             1
             for issue_data in all_issues.values()
             if isinstance(issue_data, dict)
-            if (
-                bool(get_pending_extension_request(issue_data.get("countermeasure", {})))
-                or bool(get_pending_close_request(issue_data.get("countermeasure", {})))
-            )
+            and has_sample_approval_pending_for_role(issue_data, current_role)
         )
 
     return sum(
@@ -829,11 +900,12 @@ async def send_sample_extension_wecom_message(
     issue_id: str,
     business_key: str,
     message_type: str,
+    notify_targets=None,
     additional_people: str = "",
     additional_targets=None,
 ) -> tuple[bool, str]:
     """发送样品问题延期相关企业微信通知。"""
-    role_recipients = await resolve_sample_notify_recipients(SAMPLE_EXTENSION_NOTIFY_TARGETS)
+    role_recipients = await resolve_sample_notify_recipients(notify_targets or SAMPLE_EXTENSION_NOTIFY_TARGETS)
     additional_role_recipients = (
         await resolve_sample_notify_recipients(additional_targets) if additional_targets else ""
     )
@@ -999,6 +1071,7 @@ async def submit_sample_close_request(
     """由对策责任人申请关闭样品问题。"""
     note = close_note.strip()
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    close_route = get_sample_close_approval_route(role)
     close_request = {
         "id": f"close_{uuid.uuid4().hex[:8]}",
         "status": "待审批",
@@ -1006,6 +1079,17 @@ async def submit_sample_close_request(
         "requester": user,
         "requester_role": role,
         "requested_at": now_str,
+        "key": close_route.get("key", "default"),
+        "label": close_route.get("label", "默认关闭审批"),
+        "approver_roles": copy.deepcopy(close_route.get("approver_roles", SAMPLE_CLOSE_APPROVER_ROLES)),
+        "notify_targets": copy.deepcopy(close_route.get("notify_targets", SAMPLE_CLOSE_NOTIFY_TARGETS)),
+        "approval_notify_targets": copy.deepcopy(
+            close_route.get("approval_notify_targets", SAMPLE_CLOSE_APPROVAL_NOTIFY_TARGETS)
+        ),
+        "notify_requester_on_approval": close_route.get(
+            "notify_requester_on_approval",
+            SAMPLE_CLOSE_NOTIFY_REQUESTER_ON_APPROVAL,
+        ),
     }
 
     def add_close_request(current):
@@ -1049,9 +1133,6 @@ async def approve_sample_close_request(
     closure_nature: str = "",
 ) -> SampleIssueUpdateResult:
     """审批样品问题关闭申请；通过后整单进入已关闭状态。"""
-    if not is_sample_extension_approver(role):
-        return SampleIssueUpdateResult(db_success=False, changed=False, code="forbidden")
-
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     action_text = "通过关闭申请" if approved else "驳回关闭申请"
     nature = closure_nature.strip()
@@ -1063,6 +1144,8 @@ async def approve_sample_close_request(
         stored_request = find_close_request(countermeasure, request_id)
         if not stored_request:
             return "request_not_found", current
+        if not is_sample_close_approver(role, stored_request):
+            return "forbidden", current
         if stored_request.get("status") != "待审批":
             return "already_processed", current
         if approved and is_sample_issue_closed(current):
@@ -1231,7 +1314,12 @@ async def sample_issue_collection_page(issue_id: str = ""):
             )
         )
         can_save_record = can_edit_base or can_edit_countermeasure
-        owner_allowed_values = [*SAMPLE_EDITOR_ROLES, *SAMPLE_EXTENSION_APPROVER_ROLES, current_role]
+        owner_allowed_values = [
+            *SAMPLE_EDITOR_ROLES,
+            *SAMPLE_EXTENSION_APPROVER_ROLES,
+            *get_all_sample_close_approver_roles(),
+            current_role,
+        ]
 
         def bind_input(label, target, key, classes="w-full", readonly=False):
             props = "outlined dense"
@@ -1887,6 +1975,7 @@ async def sample_issue_collection_page(issue_id: str = ""):
             fresh_request = get_pending_close_request(fresh_countermeasure)
             if not fresh_request:
                 return ui.notify("关闭申请已保存，但读取最新数据失败，请刷新查看", type="warning", position="bottom")
+            close_route = get_sample_close_approval_route_for_request(fresh_request)
             basic = result.record.get("basic_info", {})
             content = (
                 "样品问题关闭申请\n"
@@ -1895,13 +1984,14 @@ async def sample_issue_collection_page(issue_id: str = ""):
                 f"样品单号：{basic.get('sample_order_no', '')}\n"
                 f"问题点：{basic.get('issue_description', '')}\n"
                 f"申请人：{current_user}\n"
-                f"审批角色：{', '.join(SAMPLE_EXTENSION_APPROVER_ROLES)}"
+                f"审批角色：{', '.join(close_route.get('approver_roles', []))}"
             )
             await send_sample_extension_wecom_message(
                 content,
                 issue_id=result.record["issue_id"],
                 business_key=f"{result.record['issue_id']}:{fresh_request['id']}:close_request",
                 message_type="close_request",
+                notify_targets=close_route.get("notify_targets"),
             )
             ui.notify("关闭申请已提交", type="positive", position="bottom")
             refresh_list()
@@ -1909,7 +1999,7 @@ async def sample_issue_collection_page(issue_id: str = ""):
 
         async def approve_close_request_from_dialog(request: dict, approved: bool, closure_nature: str = ""):
             """审批样品问题关闭申请。"""
-            if not is_sample_extension_approver(current_role):
+            if not is_sample_close_approver(current_role, request):
                 return ui.notify("当前角色无关闭审批权限", type="warning", position="bottom")
 
             request_id = str(request.get("id", ""))
@@ -1936,6 +2026,7 @@ async def sample_issue_collection_page(issue_id: str = ""):
             fresh_request = find_close_request(fresh_countermeasure, request_id)
             if not fresh_request:
                 return ui.notify("关闭审批已保存，但读取最新数据失败，请刷新查看", type="warning", position="bottom")
+            close_route = get_sample_close_approval_route_for_request(fresh_request)
             basic = result.record.get("basic_info", {})
             content = (
                 "样品问题关闭申请审批结果\n"
@@ -1953,10 +2044,11 @@ async def sample_issue_collection_page(issue_id: str = ""):
                     issue_id=result.record["issue_id"],
                     business_key=f"{result.record['issue_id']}:{fresh_request['id']}:close_approval",
                     message_type="close_approval",
+                    notify_targets=close_route.get("notify_targets"),
                     additional_people=(
-                        fresh_request.get("requester", "") if SAMPLE_EXTENSION_NOTIFY_REQUESTER_ON_APPROVAL else ""
+                        fresh_request.get("requester", "") if close_route.get("notify_requester_on_approval") else ""
                     ),
-                    additional_targets=SAMPLE_EXTENSION_APPROVAL_NOTIFY_TARGETS if approved else None,
+                    additional_targets=close_route.get("approval_notify_targets") if approved else None,
                 ),
                 "样品问题关闭审批企业微信通知",
             )
@@ -2054,11 +2146,15 @@ async def sample_issue_collection_page(issue_id: str = ""):
                     return
 
                 if pending_close:
+                    pending_close_route = get_sample_close_approval_route_for_request(pending_close)
                     ui.label(f"待审批关闭申请：{pending_close.get('requested_at', '-')}").classes(
                         "text-sm font-bold text-purple-800"
                     )
                     ui.label(f"申请人：{pending_close.get('requester', '-')}").classes("text-sm text-purple-700")
-                    if is_sample_extension_approver(current_role):
+                    ui.label(f"审批角色：{', '.join(pending_close_route.get('approver_roles', []))}").classes(
+                        "text-xs text-purple-600"
+                    )
+                    if is_sample_close_approver(current_role, pending_close):
 
                         async def reject_close(event=None, r=pending_close):
                             await approve_close_request_from_dialog(r, False)
@@ -2331,9 +2427,7 @@ async def sample_issue_collection_page(issue_id: str = ""):
                                 and not is_sample_issue_closed(issue_data)
                                 and not pending_close
                             )
-                            is_approval_pending = is_sample_extension_approver(current_role) and (
-                                bool(pending_extension) or bool(pending_close)
-                            )
+                            is_approval_pending = has_sample_approval_pending_for_role(issue_data, current_role)
 
                             with ui.element("div").classes(
                                 "w-full bg-white border border-gray-200 border-l-4 rounded-md p-3 shadow-sm "

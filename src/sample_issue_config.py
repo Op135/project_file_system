@@ -11,6 +11,8 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from .issue_workflow_utils import normalize_time_window
+
 logger = logging.getLogger(__name__)
 
 SAMPLE_ISSUE_CONFIG_PATH = Path(__file__).parent.parent / "sample_issue_collection_config.json"
@@ -45,11 +47,19 @@ _DEFAULT_CONFIG = {
             "approval_notify_targets": [{"position": "研发经理"}, {"position": "研发助理"}],
             "notify_requester_on_approval": True,
         },
+        "close": {
+            "approver_roles": ["研发经理", "admin"],
+            "notify_targets": [{"position": "研发经理"}],
+            "approval_notify_targets": [{"position": "研发经理"}, {"position": "研发助理"}],
+            "notify_requester_on_approval": True,
+            "routing_rules": [],
+        },
     },
     "reminders": {
         "background_enabled": True,
         "initial_delay_seconds": 60,
         "check_interval_seconds": 3600,
+        "check_window": {"enabled": True, "start": "08:30", "end": "18:30"},
         "rules": [
             {"key": "due_7_days", "label": "预计完成日期前7天", "days_until_due": 7, "enabled": True},
             {"key": "due_3_days", "label": "预计完成日期前3天", "days_until_due": 3, "enabled": True},
@@ -144,6 +154,84 @@ def _notify_targets(config: dict, key: str, default: list) -> list:
         return copy.deepcopy(value)
     logger.warning("样品问题配置 %s 无效，已使用默认值", key)
     return copy.deepcopy(default)
+
+
+def _string_values(value) -> list[str]:
+    """标准化配置中的字符串或字符串列表。"""
+    if isinstance(value, str) and value.strip():
+        return [value.strip()]
+    if isinstance(value, list) and all(isinstance(item, str) and item.strip() for item in value):
+        return list(dict.fromkeys(item.strip() for item in value))
+    return []
+
+
+def _notify_targets_from_roles(roles: list[str]) -> list[dict]:
+    """把审批角色按企业微信职位规则转换为通知对象；admin 不作为职位推送。"""
+    return [{"position": role} for role in roles if role.lower() != "admin"]
+
+
+def _time_window(config: dict, key: str, default: dict) -> dict:
+    """读取后台提醒检查时间窗口；enabled=false 表示不限制检查时间。"""
+    normalized = normalize_time_window(config.get(key), default)
+    if normalized is not None:
+        return normalized
+    logger.warning("样品问题配置 %s 无效，已使用默认值", key)
+    return copy.deepcopy(default)
+
+
+def _close_routing_rules(config: dict, default_close: dict) -> list[dict]:
+    """读取按申请人角色关键词路由的关闭审批规则。"""
+    value = config.get("routing_rules", [])
+    if not isinstance(value, list):
+        logger.warning("样品问题关闭审批路由 routing_rules 必须是列表，已忽略")
+        return []
+
+    normalized_rules = []
+    seen_keys = set()
+    for index, rule in enumerate(value):
+        if not isinstance(rule, dict):
+            logger.warning("样品问题关闭审批路由第 %s 项不是对象，已忽略", index + 1)
+            continue
+        if rule.get("enabled", True) is False:
+            continue
+
+        role_keywords = _string_values(
+            rule.get("requester_role_keywords")
+            or rule.get("requester_role_contains")
+            or rule.get("role_keywords")
+        )
+        approver_roles = _string_values(rule.get("approver_roles"))
+        if not role_keywords or not approver_roles:
+            logger.warning("样品问题关闭审批路由第 %s 项缺少角色关键词或审批角色，已忽略", index + 1)
+            continue
+
+        key = str(rule.get("key") or f"close_route_{index + 1}").strip()
+        if not key or key in seen_keys:
+            logger.warning("样品问题关闭审批路由第 %s 项 key 无效或重复，已忽略", index + 1)
+            continue
+
+        default_notify_targets = _notify_targets_from_roles(approver_roles) or default_close["notify_targets"]
+        normalized_rules.append(
+            {
+                "key": key,
+                "label": str(rule.get("label") or key).strip(),
+                "requester_role_keywords": role_keywords,
+                "approver_roles": approver_roles,
+                "notify_targets": _notify_targets(rule, "notify_targets", default_notify_targets),
+                "approval_notify_targets": _notify_targets(
+                    rule,
+                    "approval_notify_targets",
+                    default_close["approval_notify_targets"],
+                ),
+                "notify_requester_on_approval": _bool_value(
+                    rule,
+                    "notify_requester_on_approval",
+                    default_close["notify_requester_on_approval"],
+                ),
+            }
+        )
+        seen_keys.add(key)
+    return normalized_rules
 
 
 def _reminder_rules(config: dict, default: list[dict]) -> list[dict]:
@@ -243,7 +331,33 @@ def load_sample_issue_config() -> dict[str, Any]:
 
     raw_wecom = raw_config.get("wecom", {}) if isinstance(raw_config.get("wecom"), dict) else {}
     raw_extension = raw_wecom.get("extension", {}) if isinstance(raw_wecom.get("extension"), dict) else {}
+    raw_close = raw_wecom.get("close", {}) if isinstance(raw_wecom.get("close"), dict) else {}
     raw_reminders = raw_config.get("reminders", {}) if isinstance(raw_config.get("reminders"), dict) else {}
+    default_close = default_wecom["close"]
+
+    close_config = {
+        "approver_roles": _string_list(
+            raw_close,
+            "approver_roles",
+            default_close["approver_roles"],
+        ),
+        "notify_targets": _notify_targets(
+            raw_close,
+            "notify_targets",
+            default_close["notify_targets"],
+        ),
+        "approval_notify_targets": _notify_targets(
+            raw_close,
+            "approval_notify_targets",
+            default_close["approval_notify_targets"],
+        ),
+        "notify_requester_on_approval": _bool_value(
+            raw_close,
+            "notify_requester_on_approval",
+            default_close["notify_requester_on_approval"],
+        ),
+    }
+    close_config["routing_rules"] = _close_routing_rules(raw_close, close_config)
 
     return {
         "public_base_url": _string_value(raw_config, "public_base_url", _DEFAULT_CONFIG["public_base_url"]).rstrip("/"),
@@ -277,6 +391,7 @@ def load_sample_issue_config() -> dict[str, Any]:
                     default_extension["notify_requester_on_approval"],
                 ),
             },
+            "close": close_config,
         },
         "reminders": {
             "background_enabled": _bool_value(
@@ -293,6 +408,11 @@ def load_sample_issue_config() -> dict[str, Any]:
                 raw_reminders,
                 "check_interval_seconds",
                 default_reminders["check_interval_seconds"],
+            ),
+            "check_window": _time_window(
+                raw_reminders,
+                "check_window",
+                default_reminders["check_window"],
             ),
             "rules": _reminder_rules(raw_reminders, default_reminders["rules"]),
             "incomplete_rules": _incomplete_reminder_rules(
@@ -318,8 +438,14 @@ SAMPLE_EXTENSION_APPROVAL_NOTIFY_TARGETS = SAMPLE_ISSUE_CONFIG["wecom"]["extensi
 SAMPLE_EXTENSION_NOTIFY_REQUESTER_ON_APPROVAL = SAMPLE_ISSUE_CONFIG["wecom"]["extension"][
     "notify_requester_on_approval"
 ]
+SAMPLE_CLOSE_APPROVER_ROLES = SAMPLE_ISSUE_CONFIG["wecom"]["close"]["approver_roles"]
+SAMPLE_CLOSE_NOTIFY_TARGETS = SAMPLE_ISSUE_CONFIG["wecom"]["close"]["notify_targets"]
+SAMPLE_CLOSE_APPROVAL_NOTIFY_TARGETS = SAMPLE_ISSUE_CONFIG["wecom"]["close"]["approval_notify_targets"]
+SAMPLE_CLOSE_NOTIFY_REQUESTER_ON_APPROVAL = SAMPLE_ISSUE_CONFIG["wecom"]["close"]["notify_requester_on_approval"]
+SAMPLE_CLOSE_ROUTING_RULES = SAMPLE_ISSUE_CONFIG["wecom"]["close"]["routing_rules"]
 SAMPLE_BACKGROUND_REMINDER_ENABLED = SAMPLE_ISSUE_CONFIG["reminders"]["background_enabled"]
 SAMPLE_BACKGROUND_REMINDER_INITIAL_DELAY_SECONDS = SAMPLE_ISSUE_CONFIG["reminders"]["initial_delay_seconds"]
 SAMPLE_BACKGROUND_REMINDER_INTERVAL_SECONDS = SAMPLE_ISSUE_CONFIG["reminders"]["check_interval_seconds"]
+SAMPLE_REMINDER_CHECK_WINDOW = SAMPLE_ISSUE_CONFIG["reminders"]["check_window"]
 SAMPLE_REMINDER_RULES = SAMPLE_ISSUE_CONFIG["reminders"]["rules"]
 SAMPLE_INCOMPLETE_REMINDER_RULES = SAMPLE_ISSUE_CONFIG["reminders"]["incomplete_rules"]

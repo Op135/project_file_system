@@ -22,11 +22,14 @@ from .error_management_config import (
     ERROR_BACKGROUND_REMINDER_ENABLED,
     ERROR_BACKGROUND_REMINDER_INITIAL_DELAY_SECONDS,
     ERROR_BACKGROUND_REMINDER_INTERVAL_SECONDS,
+    ERROR_REMINDER_CHECK_WINDOW,
 )
+from .issue_workflow_utils import is_time_in_window
 from .sample_issue_config import (
     SAMPLE_BACKGROUND_REMINDER_ENABLED,
     SAMPLE_BACKGROUND_REMINDER_INITIAL_DELAY_SECONDS,
     SAMPLE_BACKGROUND_REMINDER_INTERVAL_SECONDS,
+    SAMPLE_REMINDER_CHECK_WINDOW,
 )
 from .user_service import UserService
 from .utils import (  # 导入上面定义的函数
@@ -217,6 +220,14 @@ def init_error_reminder_task():
         return
 
     async def check_error_reminders():
+        if not is_time_in_window(ERROR_REMINDER_CHECK_WINDOW):
+            logger.info(
+                "生产异常提醒检查已跳过：当前时间不在配置窗口 %s-%s。",
+                ERROR_REMINDER_CHECK_WINDOW["start"],
+                ERROR_REMINDER_CHECK_WINDOW["end"],
+            )
+            return
+
         # 延迟导入页面模块，避免应用启动阶段因页面与 main 互相导入形成循环依赖。
         from .pages.error_management import check_and_send_error_reminders
 
@@ -227,9 +238,11 @@ def init_error_reminder_task():
     app.timer(ERROR_BACKGROUND_REMINDER_INITIAL_DELAY_SECONDS, check_error_reminders, once=True)
     app.timer(ERROR_BACKGROUND_REMINDER_INTERVAL_SECONDS, check_error_reminders)
     logger.info(
-        "生产异常后台提醒检查任务已挂载（首次 %s 秒，循环 %s 秒）。",
+        "生产异常后台提醒检查任务已挂载（首次 %s 秒，循环 %s 秒，窗口 %s-%s）。",
         ERROR_BACKGROUND_REMINDER_INITIAL_DELAY_SECONDS,
         ERROR_BACKGROUND_REMINDER_INTERVAL_SECONDS,
+        ERROR_REMINDER_CHECK_WINDOW["start"],
+        ERROR_REMINDER_CHECK_WINDOW["end"],
     )
 
 
@@ -240,6 +253,14 @@ def init_sample_issue_reminder_task():
         return
 
     async def check_sample_issue_reminders():
+        if not is_time_in_window(SAMPLE_REMINDER_CHECK_WINDOW):
+            logger.info(
+                "样品问题提醒检查已跳过：当前时间不在配置窗口 %s-%s。",
+                SAMPLE_REMINDER_CHECK_WINDOW["start"],
+                SAMPLE_REMINDER_CHECK_WINDOW["end"],
+            )
+            return
+
         from .pages.sample_issue_collection import check_and_send_sample_issue_reminders
 
         sent_count, fail_count = await check_and_send_sample_issue_reminders(show_result=False)
@@ -249,9 +270,11 @@ def init_sample_issue_reminder_task():
     app.timer(SAMPLE_BACKGROUND_REMINDER_INITIAL_DELAY_SECONDS, check_sample_issue_reminders, once=True)
     app.timer(SAMPLE_BACKGROUND_REMINDER_INTERVAL_SECONDS, check_sample_issue_reminders)
     logger.info(
-        "样品问题后台提醒检查任务已挂载（首次 %s 秒，循环 %s 秒）。",
+        "样品问题后台提醒检查任务已挂载（首次 %s 秒，循环 %s 秒，窗口 %s-%s）。",
         SAMPLE_BACKGROUND_REMINDER_INITIAL_DELAY_SECONDS,
         SAMPLE_BACKGROUND_REMINDER_INTERVAL_SECONDS,
+        SAMPLE_REMINDER_CHECK_WINDOW["start"],
+        SAMPLE_REMINDER_CHECK_WINDOW["end"],
     )
 
 

@@ -13,6 +13,7 @@
         "reminders.background_enabled": "是否在系统启动后自动运行到期提醒检查。",
         "reminders.initial_delay_seconds": "系统启动多少秒后执行第一次提醒检查，必须为正整数。",
         "reminders.check_interval_seconds": "后台提醒检查间隔秒数，必须为正整数。",
+        "reminders.check_window": "后台提醒检查时间窗口。enabled=false 表示不限制时间；start/end 使用 HH:MM，支持跨午夜窗口。",
         "reminders.rules": "提醒策略列表。days_until_due 表示恰好提前几天，max_days_until_due 表示小于等于几天；每条规则只能配置其中一种。enabled=false 可临时停用。"
     },
     "public_base_url": "http://192.168.1.102:8080",
@@ -68,6 +69,11 @@
         "background_enabled": true,
         "initial_delay_seconds": 60,
         "check_interval_seconds": 3600,
+        "check_window": {
+            "enabled": true,
+            "start": "08:30",
+            "end": "18:30"
+        },
         "rules": [
             {
                 "key": "due_7_days",

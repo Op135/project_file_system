@@ -15,6 +15,8 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from .issue_workflow_utils import normalize_time_window
+
 logger = logging.getLogger(__name__)
 
 ERROR_MANAGEMENT_CONFIG_PATH = Path(__file__).parent.parent / "error_management_config.json"
@@ -39,6 +41,7 @@ _DEFAULT_CONFIG = {
         "background_enabled": True,
         "initial_delay_seconds": 60,
         "check_interval_seconds": 3600,
+        "check_window": {"enabled": True, "start": "08:30", "end": "18:30"},
         "rules": [
             {"key": "due_7_days", "label": "约定完成日期前7天", "days_until_due": 7, "enabled": True},
             {"key": "due_3_days", "label": "约定完成日期前3天", "days_until_due": 3, "enabled": True},
@@ -113,6 +116,15 @@ def _notify_targets(config: dict, key: str, default: list) -> list:
     value = config.get(key)
     if isinstance(value, list) and all(isinstance(item, (str, dict)) for item in value):
         return copy.deepcopy(value)
+    logger.warning("生产异常配置 %s 无效，已使用默认值", key)
+    return copy.deepcopy(default)
+
+
+def _time_window(config: dict, key: str, default: dict) -> dict:
+    """读取后台提醒检查时间窗口；enabled=false 表示不限制检查时间。"""
+    normalized = normalize_time_window(config.get(key), default)
+    if normalized is not None:
+        return normalized
     logger.warning("生产异常配置 %s 无效，已使用默认值", key)
     return copy.deepcopy(default)
 
@@ -227,6 +239,11 @@ def load_error_management_config() -> dict[str, Any]:
                 "check_interval_seconds",
                 default_reminders["check_interval_seconds"],
             ),
+            "check_window": _time_window(
+                raw_reminders,
+                "check_window",
+                default_reminders["check_window"],
+            ),
             "rules": _reminder_rules(raw_reminders, default_reminders["rules"]),
         },
     }
@@ -251,4 +268,5 @@ ERROR_EXTENSION_NOTIFY_REQUESTER_ON_APPROVAL = ERROR_MANAGEMENT_CONFIG["wecom"][
 ERROR_BACKGROUND_REMINDER_ENABLED = ERROR_MANAGEMENT_CONFIG["reminders"]["background_enabled"]
 ERROR_BACKGROUND_REMINDER_INITIAL_DELAY_SECONDS = ERROR_MANAGEMENT_CONFIG["reminders"]["initial_delay_seconds"]
 ERROR_BACKGROUND_REMINDER_INTERVAL_SECONDS = ERROR_MANAGEMENT_CONFIG["reminders"]["check_interval_seconds"]
+ERROR_REMINDER_CHECK_WINDOW = ERROR_MANAGEMENT_CONFIG["reminders"]["check_window"]
 ERROR_REMINDER_RULES = ERROR_MANAGEMENT_CONFIG["reminders"]["rules"]

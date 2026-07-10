@@ -71,6 +71,67 @@ def parse_date(value: str):
     return None
 
 
+def parse_time_of_day(value: str):
+    """解析 HH:MM 或 HH:MM:SS 时间；无法识别时返回 None。"""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    for fmt in ["%H:%M", "%H:%M:%S"]:
+        try:
+            return datetime.strptime(value.strip(), fmt).time()
+        except ValueError:
+            continue
+    return None
+
+
+def normalize_time_window(value, default: dict) -> dict | None:
+    """标准化提醒检查时间窗口配置；无效时返回 None 交由调用方回退。"""
+    if not isinstance(value, dict):
+        return None
+
+    enabled = value.get("enabled", default.get("enabled", True))
+    if not isinstance(enabled, bool):
+        return None
+
+    start_value = value.get("start", default.get("start", ""))
+    end_value = value.get("end", default.get("end", ""))
+    if not enabled:
+        start_time = parse_time_of_day(start_value) or parse_time_of_day(default.get("start", "00:00"))
+        end_time = parse_time_of_day(end_value) or parse_time_of_day(default.get("end", "23:59"))
+        return {
+            "enabled": False,
+            "start": start_time.strftime("%H:%M") if start_time else "00:00",
+            "end": end_time.strftime("%H:%M") if end_time else "23:59",
+        }
+
+    start_time = parse_time_of_day(start_value)
+    end_time = parse_time_of_day(end_value)
+    if start_time is None or end_time is None or start_time == end_time:
+        return None
+
+    return {
+        "enabled": enabled,
+        "start": start_time.strftime("%H:%M"),
+        "end": end_time.strftime("%H:%M"),
+    }
+
+
+def is_time_in_window(window: dict, now: datetime | None = None) -> bool:
+    """判断当前时间是否处于配置窗口内；窗口禁用或无效时视为不限制。"""
+    normalized = normalize_time_window(window, {"enabled": False, "start": "00:00", "end": "23:59"})
+    if normalized is None or not normalized["enabled"]:
+        return True
+
+    current_time = (now or datetime.now()).time()
+    start_time = parse_time_of_day(normalized["start"])
+    end_time = parse_time_of_day(normalized["end"])
+    if start_time is None or end_time is None:
+        return True
+
+    if start_time < end_time:
+        return start_time <= current_time <= end_time
+    return current_time >= start_time or current_time <= end_time
+
+
 def is_current_responsible(owner_text: str, current_user: str, current_role: str) -> bool:
     """负责人字段可填写姓名或角色，因此同时使用当前用户名和当前角色进行匹配。"""
     for owner in split_people(owner_text):

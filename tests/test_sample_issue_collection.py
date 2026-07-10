@@ -273,7 +273,10 @@ class SampleIssueCollectionConfigTests(unittest.TestCase):
         self.assertTrue(config["wecom"]["extension"]["approver_roles"])
         self.assertTrue(config["wecom"]["extension"]["approval_notify_targets"])
         self.assertTrue(config["wecom"]["extension"]["notify_requester_on_approval"])
+        self.assertTrue(config["wecom"]["close"]["approver_roles"])
+        self.assertIn("routing_rules", config["wecom"]["close"])
         self.assertTrue(config["reminders"]["background_enabled"])
+        self.assertEqual(config["reminders"]["check_window"], {"enabled": True, "start": "08:30", "end": "18:30"})
         self.assertTrue(config["reminders"]["rules"])
         self.assertTrue(config["reminders"]["incomplete_rules"])
         self.assertTrue(sample_issue_config.SAMPLE_ISSUE_CONFIG_PATH.exists())
@@ -292,11 +295,24 @@ class SampleIssueCollectionConfigTests(unittest.TestCase):
                     "approver_roles": ["样品经理"],
                     "notify_requester_on_approval": "false",
                 },
+                "close": {
+                    "approver_roles": ["默认关闭审批"],
+                    "routing_rules": [
+                        {
+                            "key": "pie_to_quality",
+                            "requester_role_keywords": ["PIE"],
+                            "approver_roles": ["品质经理"],
+                            "notify_requester_on_approval": False,
+                        },
+                        {"key": "bad_rule", "requester_role_keywords": ["QE"]},
+                    ],
+                },
             },
             "reminders": {
                 "background_enabled": "true",
                 "initial_delay_seconds": 0,
                 "check_interval_seconds": "3600",
+                "check_window": {"enabled": True, "start": "bad", "end": "17:30"},
                 "rules": [
                     {"key": "invalid"},
                     {"key": "custom_due_today", "label": "当天提醒", "days_until_due": 0, "enabled": True},
@@ -341,9 +357,15 @@ class SampleIssueCollectionConfigTests(unittest.TestCase):
         self.assertEqual(loaded["wecom"]["default_notify_targets"], [{"position": "研发经理"}])
         self.assertEqual(loaded["wecom"]["extension"]["approver_roles"], ["样品经理"])
         self.assertTrue(loaded["wecom"]["extension"]["notify_requester_on_approval"])
+        self.assertEqual(loaded["wecom"]["close"]["approver_roles"], ["默认关闭审批"])
+        self.assertEqual(loaded["wecom"]["close"]["routing_rules"][0]["key"], "pie_to_quality")
+        self.assertEqual(loaded["wecom"]["close"]["routing_rules"][0]["approver_roles"], ["品质经理"])
+        self.assertEqual(loaded["wecom"]["close"]["routing_rules"][0]["notify_targets"], [{"position": "品质经理"}])
+        self.assertFalse(loaded["wecom"]["close"]["routing_rules"][0]["notify_requester_on_approval"])
         self.assertTrue(loaded["reminders"]["background_enabled"])
         self.assertEqual(loaded["reminders"]["initial_delay_seconds"], 60)
         self.assertEqual(loaded["reminders"]["check_interval_seconds"], 3600)
+        self.assertEqual(loaded["reminders"]["check_window"], {"enabled": True, "start": "08:30", "end": "18:30"})
         self.assertEqual(
             loaded["reminders"]["rules"],
             [{"key": "custom_due_today", "label": "当天提醒", "days_until_due": 0}],
@@ -626,6 +648,110 @@ class SampleIssueCollectionConcurrencyTests(unittest.IsolatedAsyncioTestCase):
                     )
                 finally:
                     sample_issue.db_storage = original_db_storage
+            finally:
+                await isolated_db.close_db()
+
+    async def test_close_request_approval_uses_requester_role_route(self):
+        """关闭申请应按申请人角色关键词固定到配置的审批角色。"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            isolated_db = load_isolated_db_storage(
+                "test_sample_issue_close_route_db_storage",
+                Path(temp_dir) / "sample_issue_close_route.db",
+            )
+            try:
+                await isolated_db.init_db()
+                from src.pages import sample_issue_collection as sample_issue
+
+                original_db_storage = sample_issue.db_storage
+                original_route_values = {
+                    "SAMPLE_CLOSE_APPROVER_ROLES": sample_issue.SAMPLE_CLOSE_APPROVER_ROLES,
+                    "SAMPLE_CLOSE_NOTIFY_TARGETS": sample_issue.SAMPLE_CLOSE_NOTIFY_TARGETS,
+                    "SAMPLE_CLOSE_APPROVAL_NOTIFY_TARGETS": sample_issue.SAMPLE_CLOSE_APPROVAL_NOTIFY_TARGETS,
+                    "SAMPLE_CLOSE_NOTIFY_REQUESTER_ON_APPROVAL": sample_issue.SAMPLE_CLOSE_NOTIFY_REQUESTER_ON_APPROVAL,
+                    "SAMPLE_CLOSE_ROUTING_RULES": sample_issue.SAMPLE_CLOSE_ROUTING_RULES,
+                }
+                sample_issue.db_storage = isolated_db
+                sample_issue.SAMPLE_CLOSE_APPROVER_ROLES = ["研发经理", "admin"]
+                sample_issue.SAMPLE_CLOSE_NOTIFY_TARGETS = [{"position": "研发经理"}]
+                sample_issue.SAMPLE_CLOSE_APPROVAL_NOTIFY_TARGETS = [{"position": "PIE工程师"}]
+                sample_issue.SAMPLE_CLOSE_NOTIFY_REQUESTER_ON_APPROVAL = True
+                sample_issue.SAMPLE_CLOSE_ROUTING_RULES = [
+                    {
+                        "key": "pie_to_quality",
+                        "label": "PIE关闭审批",
+                        "requester_role_keywords": ["PIE"],
+                        "approver_roles": ["品质经理"],
+                        "notify_targets": [{"position": "品质经理"}],
+                        "approval_notify_targets": [{"position": "PIE工程师"}],
+                        "notify_requester_on_approval": True,
+                    }
+                ]
+                try:
+                    draft = sample_issue.generate_initial_sample_issue_data("张三", "PIE工程师")
+                    draft["basic_info"].update(
+                        {
+                            "product_model": "MODEL-ROUTE",
+                            "issue_description": "样机外观划伤",
+                            "sample_order_no": "SAMPLE-ROUTE",
+                            "record_date": "2026-07-10",
+                            "assembled_qty": "3",
+                            "issue_qty": "1",
+                            "recorder_name": "张三",
+                        }
+                    )
+                    draft["countermeasure"].update(
+                        {
+                            "owner": "PIE工程师",
+                            "reason_analysis": "周转防护不足",
+                            "temporary_action": "增加隔离袋",
+                            "corrective_preventive_action": "更新周转规范",
+                            "due_date": "2026-07-15",
+                        }
+                    )
+                    created = await sample_issue.save_sample_issue_record(
+                        draft,
+                        "张三",
+                        "PIE工程师",
+                        is_new=True,
+                    )
+                    self.assertTrue(created.changed)
+                    assert created.record is not None
+                    issue_id = created.record["issue_id"]
+
+                    requested = await sample_issue.submit_sample_close_request(issue_id, "李四", "PIE工程师")
+
+                    self.assertTrue(requested.changed)
+                    assert requested.record is not None
+                    close_request = sample_issue.get_pending_close_request(requested.record["countermeasure"])
+                    assert close_request is not None
+                    self.assertEqual(close_request["key"], "pie_to_quality")
+                    self.assertEqual(close_request["approver_roles"], ["品质经理"])
+
+                    old_default_approver = await sample_issue.approve_sample_close_request(
+                        issue_id,
+                        close_request["id"],
+                        True,
+                        "经理",
+                        "研发经理",
+                        "流程问题",
+                    )
+                    self.assertEqual(old_default_approver.code, "forbidden")
+
+                    routed_approver = await sample_issue.approve_sample_close_request(
+                        issue_id,
+                        close_request["id"],
+                        True,
+                        "品质经理A",
+                        "品质经理",
+                        "流程问题",
+                    )
+                    self.assertTrue(routed_approver.changed)
+                    assert routed_approver.record is not None
+                    self.assertEqual(routed_approver.record["countermeasure"]["closed_by"], "品质经理A")
+                finally:
+                    sample_issue.db_storage = original_db_storage
+                    for name, value in original_route_values.items():
+                        setattr(sample_issue, name, value)
             finally:
                 await isolated_db.close_db()
 

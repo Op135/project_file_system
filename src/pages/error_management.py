@@ -374,11 +374,23 @@ def error_matches_filter(error_data: dict, filter_state: str) -> bool:
     if filter_state == ERROR_FILTER_ALL_STATE:
         return True
     if filter_state == ERROR_FILTER_PENDING_EXTENSION_STATE:
-        return any(
-            isinstance(action, dict) and get_pending_extension_request(action)
-            for action in error_data.get("preventive_actions", [])
-        )
+        return has_pending_error_extension(error_data)
     return calculate_error_status(error_data) == filter_state
+
+
+def has_pending_error_extension(error_data: dict) -> bool:
+    """判断异常单是否存在任一待审批延期申请。"""
+    return any(
+        isinstance(action, dict) and get_pending_extension_request(action)
+        for action in error_data.get("preventive_actions", [])
+    )
+
+
+def get_error_card_status(error_data: dict) -> str:
+    """返回总览卡片优先展示的状态标签。"""
+    if has_pending_error_extension(error_data):
+        return ERROR_FILTER_PENDING_EXTENSION_STATE
+    return calculate_error_status(error_data)
 
 
 def get_error_management_url(error_id: str = "") -> str:
@@ -1816,6 +1828,8 @@ async def error_management_page(error_id: str = ""):
     def status_color(status: str) -> str:
         if status == "已关闭":
             return "green"
+        if status == ERROR_FILTER_PENDING_EXTENSION_STATE:
+            return "orange"
         if status == "纠正预防执行中":
             return "orange"
         if status == "应急处理中":
@@ -1827,6 +1841,7 @@ async def error_management_page(error_id: str = ""):
     def status_border_color(status: str) -> str:
         return {
             "已关闭": "#22c55e",
+            ERROR_FILTER_PENDING_EXTENSION_STATE: "#f97316",
             "纠正预防执行中": "#f97316",
             "应急处理中": "#3b82f6",
             "原因分析中": "#a855f7",
@@ -1889,6 +1904,7 @@ async def error_management_page(error_id: str = ""):
                         for error_data in valid_errors:
                             basic = error_data.get("basic_info", {})
                             status = calculate_error_status(error_data)
+                            card_status = get_error_card_status(error_data)
                             owner_text = "、".join(
                                 [
                                     item.get("owner", "")
@@ -1937,7 +1953,7 @@ async def error_management_page(error_id: str = ""):
                                 async def open_card_detail(_, e_id=error_data["error_id"]):
                                     await open_error_detail_dialog(e_id)
 
-                                card.style(f"border-left-color: {status_border_color(status)}")
+                                card.style(f"border-left-color: {status_border_color(card_status)}")
                                 card.on("click", open_card_detail)
                                 with ui.row().classes("w-full justify-between items-start gap-4"):
                                     with ui.column().classes("gap-1 min-w-0"):
@@ -1945,7 +1961,7 @@ async def error_management_page(error_id: str = ""):
                                             ui.label(error_data["error_id"]).classes(
                                                 "font-mono font-bold text-lg text-gray-800"
                                             )
-                                            ui.badge(status, color=status_color(status)).props("outline")
+                                            ui.badge(card_status, color=status_color(card_status)).props("outline")
                                             if is_my_pending:
                                                 ui.chip("待我处理", icon="notifications_active", color="red").props(
                                                     "dense outline size=sm"

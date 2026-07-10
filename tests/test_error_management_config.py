@@ -9,6 +9,7 @@ import importlib
 import sys
 import tempfile
 import unittest
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
@@ -34,6 +35,7 @@ class ErrorManagementConfigTests(unittest.TestCase):
         self.assertTrue(config["wecom"]["extension"]["approver_roles"])
         self.assertTrue(config["wecom"]["extension"]["approval_notify_targets"])
         self.assertTrue(config["wecom"]["extension"]["notify_requester_on_approval"])
+        self.assertEqual(config["reminders"]["check_window"], {"enabled": True, "start": "08:30", "end": "18:30"})
         self.assertTrue(config["reminders"]["rules"])
         self.assertNotIn("YueYeXiaoSheng", error_management_config.ERROR_MANAGEMENT_CONFIG_PATH.read_text(encoding="utf-8"))
 
@@ -46,6 +48,7 @@ class ErrorManagementConfigTests(unittest.TestCase):
             "reminders": {
                 "initial_delay_seconds": -1,
                 "check_interval_seconds": 120,
+                "check_window": {"enabled": True, "start": "09:00", "end": "17:30"},
                 "rules": [
                     {
                         "key": "disabled",
@@ -80,7 +83,23 @@ class ErrorManagementConfigTests(unittest.TestCase):
         )
         self.assertEqual(loaded["reminders"]["initial_delay_seconds"], 60)
         self.assertEqual(loaded["reminders"]["check_interval_seconds"], 120)
+        self.assertEqual(loaded["reminders"]["check_window"], {"enabled": True, "start": "09:00", "end": "17:30"})
         self.assertEqual(loaded["reminders"]["rules"], [{"key": "valid", "label": "有效规则", "days_until_due": 2}])
+
+    def test_time_window_matches_daytime_and_overnight_ranges(self):
+        """提醒时间窗口支持普通工作时段、跨午夜时段和关闭限制。"""
+        from src.issue_workflow_utils import is_time_in_window
+
+        daytime_window = {"enabled": True, "start": "08:30", "end": "18:30"}
+        overnight_window = {"enabled": True, "start": "22:00", "end": "06:00"}
+
+        self.assertTrue(is_time_in_window(daytime_window, datetime(2026, 7, 10, 9, 0)))
+        self.assertFalse(is_time_in_window(daytime_window, datetime(2026, 7, 10, 7, 0)))
+        self.assertTrue(is_time_in_window(overnight_window, datetime(2026, 7, 10, 23, 0)))
+        self.assertTrue(is_time_in_window(overnight_window, datetime(2026, 7, 11, 2, 0)))
+        self.assertFalse(is_time_in_window(overnight_window, datetime(2026, 7, 10, 12, 0)))
+        self.assertTrue(is_time_in_window({"enabled": False, "start": "08:30", "end": "18:30"}))
+        self.assertTrue(is_time_in_window({"enabled": False, "start": "", "end": ""}, datetime(2026, 7, 10, 3, 0)))
 
 
 class ErrorManagementNotificationTests(unittest.IsolatedAsyncioTestCase):
@@ -165,6 +184,12 @@ class ErrorManagementDashboardPendingTests(unittest.TestCase):
         """延期申请中筛选应跨越异常单主状态，并排除没有待审批申请的异常单。"""
         self.assertTrue(error_management.error_matches_filter(self.all_errors["ERR-001"], "延期申请中"))
         self.assertFalse(error_management.error_matches_filter(self.all_errors["ERR-002"], "延期申请中"))
+
+    def test_card_status_prioritizes_pending_extension(self):
+        """总览卡片应优先显示延期申请中，而不是底层流程主状态。"""
+        self.assertEqual(error_management.calculate_error_status(self.all_errors["ERR-001"]), "纠正预防执行中")
+        self.assertEqual(error_management.get_error_card_status(self.all_errors["ERR-001"]), "延期申请中")
+        self.assertEqual(error_management.get_error_card_status(self.all_errors["ERR-002"]), "纠正预防执行中")
 
     def test_manual_reminder_check_is_rd_manager_only(self):
         """人工检查提醒入口只对研发经理角色开放。"""
