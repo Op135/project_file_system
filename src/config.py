@@ -211,6 +211,9 @@ TABLE_IGNORE_REGULAR = ["^无$", "L[PB][0-9A-Z]{2}[A-Z]"]
 NONE_REGULAR = ["^无$"]
 # 项目状态可选项
 PROJECT_STATE_LIST = ["作废", "待定", "研发", "转产", "试产", "量产"]
+# 项目信息表按角色限制显示的状态规则：命中角色关键词时，仅显示这些状态的项目。
+PROJECT_TABLE_STATE_FILTER_ROLE_KEYWORDS = ["生产", "质量", "采购", "客服", "IE工程"]
+PROJECT_TABLE_STATE_FILTER_ALLOWED_STATES = ["试产", "量产"]
 # 默认头像路径
 PRESET_AVATARS = [
     f"{IMG_URL_DIR}/avatars/avatar1.png",

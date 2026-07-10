@@ -10,7 +10,16 @@ from datetime import date, datetime, timedelta
 from nicegui import app, ui
 
 from .. import db_storage  # 导入我们创建的模块
-from ..config import BASE_DIR, IMG_DIR, PRESET_AVATARS, PROJECT_STATE_LIST, REQ_DIR, TABLE_IGNORE_REGULAR
+from ..config import (
+    BASE_DIR,
+    IMG_DIR,
+    PRESET_AVATARS,
+    PROJECT_STATE_LIST,
+    PROJECT_TABLE_STATE_FILTER_ALLOWED_STATES,
+    PROJECT_TABLE_STATE_FILTER_ROLE_KEYWORDS,
+    REQ_DIR,
+    TABLE_IGNORE_REGULAR,
+)
 from ..utils import (
     find_files_with_prefix_and_version,
     get_cache_busted_path,
@@ -201,7 +210,17 @@ def project_table_page():
         ui.navigate.to("/login")  # 如果未登录，跳转到登录页
         return
     current_user = app.storage.user.get("current_user")
-    current_role = app.storage.user.get("current_role")
+    current_role = app.storage.user.get("current_role", "")
+    current_role_text = str(current_role)
+    state_filter_enabled = any(
+        role_keyword in current_role_text for role_keyword in PROJECT_TABLE_STATE_FILTER_ROLE_KEYWORDS
+    )
+
+    def should_show_project_by_role(row_data: dict) -> bool:
+        if not state_filter_enabled:
+            return True
+        return row_data.get("state", "") in PROJECT_TABLE_STATE_FILTER_ALLOWED_STATES
+
     # 从全局存储中获取用户当前的头像设置
     # (在 main.py 中定义 "user_preferences")
     user_prefs = app.storage.general.get("user_preferences", {}).get(current_user, {})
@@ -693,6 +712,9 @@ def project_table_page():
             # 或 匹配字符为“-”且匹配字符不在项目名里（筛选特殊项目，如RM3000,RM5000,所有不含-字符的项目）
             # 判断是否符合筛选条件
             if s == "all" or (s != "-" and s in project_name_str) or (s == "-" and s not in project_name_str):
+                if not should_show_project_by_role(raw_row_data):
+                    continue
+
                 # === 性能优化：仅对筛选通过的行进行浅拷贝(Shallow Copy)，防止污染源数据，避免耗时的全量深拷贝 ===
                 row_data = raw_row_data.copy()
                 project_name = row_data["sub_project"]
