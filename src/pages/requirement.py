@@ -3431,9 +3431,9 @@ async def requirement_page(type="", json_path="", project_name=""):
             return
 
         # 判断服务器存储器概述数据字典里是否已经存在该项目键值对，没有则创建，用于后续储存该项目需求概述资料
-        # 定义更新规则：如果当前存在有效数据则原样返回保留，如果为 None 则初始化为空字典
+        # 定义更新规则：如果当前存在有效数据则跳过写入，如果为 None 则初始化为空字典
         def init_if_missing(current_data):
-            return current_data if current_data is not None else {}
+            return db_storage.ATOMIC_NO_UPDATE if current_data is not None else {}
 
         # 将检查与初始化的动作合并为一个原子操作
         await db_storage.atomic_deep_update([f"{project_name}_over_data"], init_if_missing)
@@ -3572,7 +3572,16 @@ async def requirement_page(type="", json_path="", project_name=""):
             with ui.row().classes("font-sans h-[calc(100vh-9rem)] items-stretch flex-nowrap w-full mt-3 text-black"):
                 # 需求内容列
                 with ui.column().classes("w-5/12 min-w-[400px]"):
-                    ui.label(f"{project_name} 需求内容").classes("text-xl text-center w-full")
+                    requirements_loading_row = None
+                    with ui.row().classes("relative w-full items-center justify-center min-h-[32px]"):
+                        ui.label(f"{project_name} 需求内容").classes("text-xl text-center w-full")
+                        if json_data:
+                            requirements_loading_row = ui.row().classes(
+                                "absolute left-2 top-1/2 -translate-y-1/2 items-center gap-1 flex-nowrap"
+                            )
+                            with requirements_loading_row:
+                                ui.spinner("dots", size="1.5em", color="primary")
+                                ui.label("需求内容加载中...").classes("text-xs text-gray-500 whitespace-nowrap")
                     with ui.column().classes("w-full overflow-y-auto p-1 gap-4"):
                         if json_data:
                             # === 步骤 1: 预处理 - 收集所有条目并获取其排序/分组信息 ===
@@ -3580,94 +3589,53 @@ async def requirement_page(type="", json_path="", project_name=""):
                             # 储存最新版元素
                             ui_expansion = {}
                             ui_elements_latest = {}
-                            for version in version_keys:
-                                all_items_info = {}
-                                version_data = json_data[version]
-                                # 从 added 和 deleted 和 modified.new_data 中收集
-                                all_change_items = (
-                                    list(version_data.get("added", {}).values())
-                                    + list(version_data.get("deleted", {}).values())
-                                    + [v["new_data"] for v in version_data.get("modified", {}).values()]
-                                )
-                                for item_data in all_change_items:
+                            render_batch_size = 20  # 每批处理的需求项数量；调大更快，调小更流畅
+                            render_yield_delay = 0  # 仅让出事件循环，不额外增加固定等待时间
+                            version_render_jobs = []
+                            version_expansions = []
+
+                            def sync_latest_version_markers(version, version_data):
+                                """保持汇总视图中的最后变更版本标记，不依赖历史版本 UI 是否已经展开。"""
+                                if version == "0":
+                                    return
+                                for item_data in version_data.get("added", {}).values():
                                     node_id = item_data.get("node_id")
-                                    if node_id and node_id not in all_items_info:
-                                        all_items_info[node_id] = {
-                                            "node_id": node_id,
-                                            "num": item_data.get("num", 999),  # 默认值，确保未提供序号的排在最后
-                                            "option_group_id": item_data.get("option_group_id", 999),
-                                        }
+                                    if node_id in ui_elements_latest and format_show_string(item_data) != "无":
+                                        ui_elements_latest[node_id] = version
+                                for item_data in version_data.get("modified", {}).values():
+                                    node_id = item_data.get("new_data", {}).get("node_id")
+                                    if node_id not in ui_elements_latest:
+                                        continue
+                                    old_text = format_show_string(item_data.get("old_data", {}))
+                                    new_text = format_show_string(item_data.get("new_data", {}))
+                                    if old_text != "无" or new_text != "无":
+                                        ui_elements_latest[node_id] = version
 
-                                # === 步骤 2: 排序 - 根据分组ID和组内序号进行排序 ===
-                                sorted_items = sorted(
-                                    all_items_info.values(),
-                                    key=lambda x: (int(float(x["option_group_id"])), int(float(x["num"]))),
-                                )
+                            async def render_version_content(
+                                exp,
+                                version,
+                                version_data,
+                                sorted_items,
+                                ui_elements,
+                                ui_cards,
+                                group_id_li,
+                            ):
+                                content_items_processed = 0
 
-                                # === 步骤 3: 搭建UI骨架 - 根据排序结果创建占位容器和分隔线 ===
-                                ui_elements = {}
-                                ui_cards = {}
-                                group_id_li = []
-                                original_str = ""
-                                original_version = version_data.get("original_version", "0.0")
-                                original_project = version_data.get("original_project", "")
-                                # 非全新配置需求
-                                if original_project != "":
-                                    # 处理项目名来源信息
-                                    if original_project == project_name:
-                                        original_str = f"修改自：{original_project}"
-                                    elif version == "1.0":
-                                        original_str = f"复制自：{original_project}"
-                                    else:
-                                        original_str = f"衍生自：{original_project}"
+                                async def finish_content_item():
+                                    nonlocal content_items_processed
+                                    content_items_processed += 1
+                                    if content_items_processed % render_batch_size == 0:
+                                        await asyncio.sleep(render_yield_delay)
 
-                                    # 增加版本信息
-                                    # 不是呈现最新版本栏，且衍生自某个版本
-                                    if version != "0" and original_version != "0.0":
-                                        original_str = f"{original_str}，V{original_version}"
-                                    # 双重保险，即使有参照项目名（参照自己），只要参照版本为0.0（参照别的项目不会是0.0），包括特殊情况（全新输入再提交前改了名字），依旧判定为全新
-                                    elif version != "0" and original_version == "0.0":
-                                        original_str = "全新配置需求"
-                                    # 属于呈现最新版本栏
-                                    else:
-                                        original_str = ""
-                                # 全新配置需求
-                                else:
-                                    # 不是呈现最新版本栏
-                                    if version != "0":
-                                        original_str = "全新配置需求"
-
-                                # 处理需求内容标题内容
-                                version_label = f"版本V{version}变更内容"
-                                # 获取需求提交日期
-                                pass_time = (
-                                    app.storage.general["wait_review"]
-                                    .get(project_name, {})
-                                    .get(version, {})
-                                    .get("pass_time", "")
-                                )
-                                if pass_time and version != "0":
-                                    req_time = datetime.fromisoformat(pass_time).strftime("%Y年%m月%d日%H时%M分%S秒")
-                                    original_str = f"{original_str}，于{req_time}评审通过生效。"
-                                if version == "0":
-                                    version_label = f"需求汇总内容（更新到版本V{version_data['version']}）"
-                                exp = ui.expansion(
-                                    version_label,
-                                    icon="text_snippet" if version == "0" else "difference",
-                                    value=False,
-                                    caption=f"{original_str}",
-                                    group="group",
-                                ).classes("gap-1 w-full bg-gray-100/30 rounded")
-                                # 将最新版扩展元素存放，以便后续持续刷新
-                                if version == "0":
-                                    ui_expansion["latest"] = exp
                                 with exp:
                                     with ui.column().classes("w-full gap-4") as exp_content:
-                                        for item_info in sorted_items:
+                                        for item_index, item_info in enumerate(sorted_items):
                                             # 获取需求ID
                                             node_id = item_info["node_id"]
                                             # 获取分组ID
                                             group_id = item_info["option_group_id"]
+                                            change_type = item_info["change_type"]
 
                                             if group_id == "":
                                                 continue
@@ -3696,13 +3664,21 @@ async def requirement_page(type="", json_path="", project_name=""):
                                                 ) as container:
                                                     # 将容器的可见性先设为False，有内容时再打开
                                                     container.visible = False
-                                                    with ui.column().classes("items-start w-full gap-0") as old_column:
-                                                        old_content = ui.markdown()
-                                                        with ui.row().classes("items-start gap-0") as old_row:
-                                                            ui.label("引用文件：")
-                                                            old_ref_row = ui.row().classes("gap-0")
-                                                        old_row.visible = False
-                                                    old_column.visible = False
+                                                    old_column = None
+                                                    old_content = None
+                                                    old_row = None
+                                                    old_ref_row = None
+                                                    # 只有修改项才需要“修改前”整套展示结构
+                                                    if change_type == "modified":
+                                                        with ui.column().classes(
+                                                            "items-start w-full gap-0"
+                                                        ) as old_column:
+                                                            old_content = ui.markdown()
+                                                            with ui.row().classes("items-start gap-0") as old_row:
+                                                                ui.label("引用文件：")
+                                                                old_ref_row = ui.row().classes("gap-0")
+                                                            old_row.visible = False
+                                                        old_column.visible = False
                                                     with ui.row().classes("items-start w-full gap-0"):
                                                         version_badge = ui.badge().classes("my-1 mr-1")
                                                         with ui.column().classes("items-start gap-0"):
@@ -3733,6 +3709,10 @@ async def requirement_page(type="", json_path="", project_name=""):
                                                     # 单独创建最新版模块的元素字典
                                                     # if version == "0":
                                                     #     ui_elements_latest[node_id] = ui_elements[node_id]
+
+                                            # 分批创建UI，避免一次性占满事件循环导致页面无响应
+                                            if (item_index + 1) % render_batch_size == 0:
+                                                await asyncio.sleep(render_yield_delay)
 
                                         # === 步骤 4: 按时间顺序填充和更新UI ===
                                         # for version in version_keys:
@@ -3796,6 +3776,9 @@ async def requirement_page(type="", json_path="", project_name=""):
                                                             for role in item_data["option_view"].split("+"):
                                                                 add_role_badge(role)
 
+                                            # 分批填充内容，使已经生成的部分可以及时发送到浏览器
+                                            await finish_content_item()
+
                                         # 处理删除
                                         for item_data in version_data.get("deleted", {}).values():
                                             node_id = item_data.get("node_id")
@@ -3832,6 +3815,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                                                         with target["role_badge"]:
                                                             for role in item_data["option_view"].split("+"):
                                                                 add_role_badge(role)
+                                            await finish_content_item()
                                         # 处理修改
                                         for item_data in version_data.get("modified", {}).values():
                                             node_id = item_data.get("new_data", {}).get("node_id")
@@ -3954,6 +3938,8 @@ async def requirement_page(type="", json_path="", project_name=""):
                                                                 ):
                                                                     add_role_badge(role)
 
+                                            await finish_content_item()
+
                                 # 只给显示出来的card进行间隔上色
                                 n = 1
                                 for child in exp_content.default_slot.children:
@@ -3965,6 +3951,114 @@ async def requirement_page(type="", json_path="", project_name=""):
                                     else:
                                         child.classes("bg-amber-100/40 shadow-xs shadow-amber-300/30")
                                         n = 1
+
+                            for version in version_keys:
+                                all_items_info = {}
+                                version_data = json_data[version]
+                                # 从 added 和 deleted 和 modified.new_data 中收集
+                                all_change_items = (
+                                    [("added", item) for item in version_data.get("added", {}).values()]
+                                    + [("deleted", item) for item in version_data.get("deleted", {}).values()]
+                                    + [
+                                        ("modified", item["new_data"])
+                                        for item in version_data.get("modified", {}).values()
+                                    ]
+                                )
+                                for change_type, item_data in all_change_items:
+                                    node_id = item_data.get("node_id")
+                                    if node_id and node_id not in all_items_info:
+                                        all_items_info[node_id] = {
+                                            "node_id": node_id,
+                                            "num": item_data.get("num", 999),  # 默认值，确保未提供序号的排在最后
+                                            "option_group_id": item_data.get("option_group_id", 999),
+                                            "change_type": change_type,
+                                        }
+
+                                # === 步骤 2: 排序 - 根据分组ID和组内序号进行排序 ===
+                                sorted_items = sorted(
+                                    all_items_info.values(),
+                                    key=lambda x: (int(float(x["option_group_id"])), int(float(x["num"]))),
+                                )
+
+                                # === 步骤 3: 搭建UI骨架 - 根据排序结果创建占位容器和分隔线 ===
+                                ui_elements = {}
+                                ui_cards = {}
+                                group_id_li = []
+                                original_str = ""
+                                original_version = version_data.get("original_version", "0.0")
+                                original_project = version_data.get("original_project", "")
+                                # 非全新配置需求
+                                if original_project != "":
+                                    # 处理项目名来源信息
+                                    if original_project == project_name:
+                                        original_str = f"修改自：{original_project}"
+                                    elif version == "1.0":
+                                        original_str = f"复制自：{original_project}"
+                                    else:
+                                        original_str = f"衍生自：{original_project}"
+
+                                    # 增加版本信息
+                                    # 不是呈现最新版本栏，且衍生自某个版本
+                                    if version != "0" and original_version != "0.0":
+                                        original_str = f"{original_str}，V{original_version}"
+                                    # 双重保险，即使有参照项目名（参照自己），只要参照版本为0.0（参照别的项目不会是0.0），包括特殊情况（全新输入再提交前改了名字），依旧判定为全新
+                                    elif version != "0" and original_version == "0.0":
+                                        original_str = "全新配置需求"
+                                    # 属于呈现最新版本栏
+                                    else:
+                                        original_str = ""
+                                # 全新配置需求
+                                else:
+                                    # 不是呈现最新版本栏
+                                    if version != "0":
+                                        original_str = "全新配置需求"
+
+                                # 处理需求内容标题内容
+                                version_label = f"版本V{version}变更内容"
+                                # 获取需求提交日期
+                                pass_time = (
+                                    app.storage.general["wait_review"]
+                                    .get(project_name, {})
+                                    .get(version, {})
+                                    .get("pass_time", "")
+                                )
+                                if pass_time and version != "0":
+                                    req_time = datetime.fromisoformat(pass_time).strftime("%Y年%m月%d日%H时%M分%S秒")
+                                    original_str = f"{original_str}，于{req_time}评审通过生效。"
+                                if version == "0":
+                                    version_label = f"需求汇总内容（更新到版本V{version_data['version']}）"
+                                exp = ui.expansion(
+                                    version_label,
+                                    icon="text_snippet" if version == "0" else "difference",
+                                    value=False,
+                                    caption=f"{original_str}",
+                                    group="group",
+                                ).classes("gap-1 w-full bg-gray-100/30 rounded")
+                                # 将最新版扩展元素存放，以便后续持续刷新
+                                if version == "0":
+                                    ui_expansion["latest"] = exp
+                                exp.props("disable")
+                                version_expansions.append(exp)
+                                version_render_jobs.append(
+                                    (exp, version, version_data, sorted_items, ui_elements, ui_cards, group_id_li)
+                                )
+
+                            async def load_all_requirement_versions():
+                                # 先让页面和加载提示发送到浏览器，再开始后台构建需求内容
+                                await asyncio.sleep(0.05)
+                                try:
+                                    for render_job in version_render_jobs:
+                                        await render_version_content(*render_job)
+                                    for history_version in version_keys:
+                                        sync_latest_version_markers(history_version, json_data[history_version])
+                                finally:
+                                    if requirements_loading_row is not None:
+                                        requirements_loading_row.delete()
+                                    for expansion in version_expansions:
+                                        expansion.props(remove="disable")
+
+                            # 必须禁用 immediate，确保页面框架和加载提示先发送到浏览器，再启动后台构建
+                            ui.timer(0.2, load_all_requirement_versions, once=True, immediate=False)
                         else:
                             ui.label("暂无需求数据").classes("text-gray-500 text-center w-full mt-10")
                 ui.separator().props("vertical size=1px")
