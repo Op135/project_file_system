@@ -41,5 +41,10 @@
         "boss",
         "研发经理",
         "研发样品"
+    ],
+    "optical_curve_manager": [
+        "admin",
+        "研发经理",
+        "研发光学"
     ]
 }

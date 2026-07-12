@@ -11,6 +11,7 @@ from src.tools.etendue_calculator import EtendueCalculator
 from src.tools.material_matcher import MaterialMatcherTool
 from src.tools.microlens_calculator import MicrolensCalculator
 from src.tools.mode_calculator import ModeCalculator
+from src.tools.optical_curve_manager import OpticalCurveManagerTool
 from src.tools.simple_coupling_calculator import SimpleCouplingCalculator
 from src.tools.spherical_lens_calculator import SphericalLensCalculator
 
@@ -106,6 +107,14 @@ def tool_page():
             "icon": "inventory_2",
             "color": "green",
             "cls": MaterialMatcherTool,
+        },
+        {
+            "key": "optical_curve_manager",
+            "title": "研发光学曲线资料库",
+            "subtitle": "两列数据归一化录入与多条件曲线筛选",
+            "icon": "show_chart",
+            "color": "cyan",
+            "cls": OpticalCurveManagerTool,
         },
     ]
 
