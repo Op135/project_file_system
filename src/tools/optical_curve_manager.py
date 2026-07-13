@@ -253,11 +253,14 @@ def _chart_options(
             }
         )
 
-    legend_capacity = max(80, int(120 * 15 / legend_font_size))
+    # 计算图例每行的最大字符数，考虑中文字符占两位，英文字符占一位
+    legend_capacity = max(80, int(150 * 15 / legend_font_size))
     legend_rows: list[list[str]] = [[]]
     occupied_units = 0
     for label in legend_labels:
+        # 计算图例标签的字符数，中文字符占两位，英文字符占一位
         label_units = 8 + sum(2 if ord(char) > 255 else 1 for char in label)
+        # 每行图例的字符数超过 legend_capacity 时换行
         if legend_rows[-1] and occupied_units + label_units > legend_capacity:
             legend_rows.append([])
             occupied_units = 0
@@ -1507,9 +1510,7 @@ class OpticalCurveManagerTool:
                                         display_records, formula_status = build_display_records()
                                         with ui.row().classes("w-full items-center justify-between"):
                                             ui.label("曲线对比").classes("text-lg font-bold text-slate-800")
-                                            ui.badge(f"显示 {len(display_records)} 条", color="cyan-8").props(
-                                                "rounded"
-                                            )
+                                            ui.badge(f"显示 {len(display_records)} 条", color="cyan-8").props("rounded")
                                         formula_status_holder["label"] = ui.label(formula_status).classes(
                                             "text-xs text-rose-600"
                                         )

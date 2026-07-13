@@ -34,6 +34,10 @@ from ..design_knowledge_config import (
     PRACTICE_VALUE_LEVELS,
     PROJECT_CATEGORIES,
     RULE_LEVELS,
+    can_review_design_knowledge_submission as can_review_submission,
+    is_design_knowledge_review_approver_role as is_review_approver_role,
+    resolve_design_knowledge_review_route as get_review_route,
+    resolve_design_knowledge_submission_review_route as get_review_route_for_submission,
 )
 from ..utils import get_cache_busted_path, logout, setup_global_activity_tracking
 
@@ -195,6 +199,9 @@ def get_design_knowledge_template() -> dict:
         "attachments": [],
         "extra_keywords": "",
         "status": RECORD_STATUS_DRAFT,
+        "review_route_key": "",
+        "review_route_label": "",
+        "approver_roles": [],
         "created_by": "",
         "created_role": "",
         "created_at": "",
@@ -211,7 +218,14 @@ def merge_with_knowledge_template(db_data: Any) -> dict:
         return merged
 
     for key, value in db_data.items():
-        if key in {"applicable_phases", "tags", "reference_projects", "attachments", "operation_log"}:
+        if key in {
+            "applicable_phases",
+            "tags",
+            "reference_projects",
+            "attachments",
+            "approver_roles",
+            "operation_log",
+        }:
             merged[key] = copy.deepcopy(value) if isinstance(value, list) else []
         elif key in merged:
             merged[key] = copy.deepcopy(value)
@@ -366,23 +380,25 @@ def get_level_options_for_content_type(content_type: str) -> list[str]:
 def get_design_knowledge_dashboard_pending_count(all_records: Any, current_user: str, current_role: str) -> int:
     """返回主页设计知识库角标数量。
 
-    管理角色看待审核知识；普通录入人看自己被退回后需要修改的知识。
+    审核人只看路由分配给自己的待审核知识；录入人看自己被退回后需要修改的知识。
     """
     if not isinstance(all_records, dict):
         return 0
 
     current_user = str(current_user or "")
-    is_manager = is_tag_manager(current_user, current_role)
     pending_count = 0
     for record_data in all_records.values():
         if not isinstance(record_data, dict):
             continue
         record = merge_with_knowledge_template(record_data)
-        if is_manager and record.get("status") == RECORD_STATUS_REVIEW:
+        if record.get("status") == RECORD_STATUS_REVIEW and can_review_submission(
+            record,
+            current_user,
+            current_role,
+        ):
             pending_count += 1
         elif (
-            not is_manager
-            and record.get("created_by") == current_user
+            record.get("created_by") == current_user
             and record.get("status") == RECORD_STATUS_RETURNED
         ):
             pending_count += 1
@@ -405,7 +421,7 @@ def is_design_knowledge_admin(current_user: str, current_role: str) -> bool:
 
 
 def can_edit_record(record: dict, current_user: str, current_role: str) -> bool:
-    if is_tag_manager(current_user, current_role):
+    if can_review_submission(record, current_user, current_role):
         return True
     return (
         is_knowledge_editor(current_user, current_role)
@@ -426,6 +442,7 @@ async def save_knowledge_record(
         record = merge_with_knowledge_template(record_data)
         knowledge_id = normalize_text(record.get("knowledge_id"))
         is_new = not knowledge_id or knowledge_id not in records
+        existing: Optional[dict] = None
 
         if is_new:
             knowledge_id = get_next_knowledge_id(records)
@@ -458,7 +475,14 @@ async def save_knowledge_record(
         record["attachments"] = get_active_attachments(record)
         record["status"] = LEGACY_STATUS_MAP.get(record["status"], record["status"])
         record["status"] = record["status"] if record["status"] in RECORD_STATUSES else RECORD_STATUS_DRAFT
-        if record["status"] in {RECORD_STATUS_PUBLISHED, RECORD_STATUS_INACTIVE} and not is_tag_manager(
+        if record["status"] == RECORD_STATUS_REVIEW:
+            route = get_review_route(record.get("created_role", current_role))
+            record["review_route_key"] = route["key"]
+            record["review_route_label"] = route["label"]
+            record["approver_roles"] = copy.deepcopy(route["approver_roles"])
+        permission_record = existing or record
+        if record["status"] in {RECORD_STATUS_PUBLISHED, RECORD_STATUS_INACTIVE} and not can_review_submission(
+            permission_record,
             current_user,
             current_role,
         ):
@@ -479,12 +503,16 @@ async def save_knowledge_record(
     if result["code"] == "conflict":
         return False, "这条知识已被其他人更新，请刷新后再编辑", None
     if result["code"] == "permission":
-        return False, "普通录入人不能直接发布或标记不再适用，请提交审核", None
+        return False, "当前用户不是该知识指定的审核人，不能发布或调整其状态", None
     if result["code"] != "saved":
         return False, "未保存任何修改", None
 
     await db_storage.set_item(DESIGN_KNOWLEDGE_VERSION_KEY, time.time())
-    return True, "保存成功", result["record"]
+    saved_record = result["record"]
+    if saved_record and saved_record.get("status") == RECORD_STATUS_REVIEW:
+        approver_text = "、".join(saved_record.get("approver_roles", [])) or "默认审核角色"
+        return True, f"已提交至 {approver_text} 审核", saved_record
+    return True, "保存成功", saved_record
 
 
 async def delete_knowledge_record(knowledge_id: str, current_user: str, current_role: str) -> tuple[bool, str]:
@@ -543,6 +571,7 @@ async def submit_tag_request(
         return False, "该标签已在受控标签库中"
 
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    review_route = get_review_route(current_role)
 
     def update_requests(all_requests: Any) -> Any:
         requests = all_requests if isinstance(all_requests, dict) else {}
@@ -556,13 +585,17 @@ async def submit_tag_request(
             "created_by": current_user,
             "created_role": current_role,
             "created_at": now_str,
+            "review_route_key": review_route["key"],
+            "review_route_label": review_route["label"],
+            "approver_roles": copy.deepcopy(review_route["approver_roles"]),
             "handled_by": "",
             "handled_at": "",
         }
         return requests
 
     success = await db_storage.atomic_deep_update([DESIGN_TAG_REQUESTS_KEY], update_requests)
-    return success, "标签申请已提交" if success else "标签申请提交失败"
+    approver_text = "、".join(review_route["approver_roles"]) or "默认审核角色"
+    return success, f"标签申请已提交至 {approver_text}" if success else "标签申请提交失败"
 
 
 async def update_tag_request_status(
@@ -570,12 +603,16 @@ async def update_tag_request_status(
 ) -> tuple[bool, str]:
     """审批或驳回标签申请。"""
     request_data = {}
+    outcome = {"code": "not_found"}
 
     def update_requests(all_requests: Any) -> Any:
         nonlocal request_data
         requests = all_requests if isinstance(all_requests, dict) else {}
         current = requests.get(request_id)
         if not isinstance(current, dict) or current.get("status") != "待审核":
+            return db_storage.ATOMIC_NO_UPDATE
+        if not can_review_submission(current, current_user, current_role):
+            outcome["code"] = "forbidden"
             return db_storage.ATOMIC_NO_UPDATE
         current = copy.deepcopy(current)
         current["status"] = status
@@ -584,9 +621,12 @@ async def update_tag_request_status(
         current["handled_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         requests[request_id] = current
         request_data = current
+        outcome["code"] = "updated"
         return requests
 
     success = await db_storage.atomic_deep_update([DESIGN_TAG_REQUESTS_KEY], update_requests)
+    if outcome["code"] == "forbidden":
+        return False, "当前用户不是该标签申请指定的审核人"
     if not success or not request_data:
         return False, "标签申请状态更新失败或已被处理"
 
@@ -633,6 +673,12 @@ def design_knowledge_page():
     current_display_path = get_cache_busted_path(current_avatar_path)
     can_add_or_edit = is_knowledge_editor(current_user, current_role)
     can_manage_tags = is_tag_manager(current_user, current_role)
+    can_review_assigned_role = is_review_approver_role(current_role) or is_design_knowledge_admin(
+        current_user,
+        current_role,
+    )
+    can_access_tag_manager = can_manage_tags or can_review_assigned_role
+    can_view_workflow_records = can_add_or_edit or can_review_assigned_role
     can_delete_record = is_design_knowledge_admin(current_user, current_role)
 
     page_state = {
@@ -643,7 +689,7 @@ def design_knowledge_page():
         "phase": FILTER_ALL,
         "tag": FILTER_ALL,
         "level": FILTER_ALL,
-        "status": FILTER_ALL if can_add_or_edit else RECORD_STATUS_PUBLISHED,
+        "status": FILTER_ALL if can_view_workflow_records else RECORD_STATUS_PUBLISHED,
         "version_stamp": 0.0,
     }
 
@@ -665,14 +711,14 @@ def design_knowledge_page():
         return tags
 
     def record_matches_filters(record: dict) -> bool:
-        if not can_add_or_edit and record.get("status") != RECORD_STATUS_PUBLISHED:
+        if not can_view_workflow_records and record.get("status") != RECORD_STATUS_PUBLISHED:
             return False
         if record.get("status") == RECORD_STATUS_DRAFT and record.get("created_by") != current_user:
             return False
         if (
             record.get("status") != RECORD_STATUS_PUBLISHED
-            and not can_manage_tags
             and record.get("created_by") != current_user
+            and not can_review_submission(record, current_user, current_role)
         ):
             return False
         if page_state["content_type"] != FILTER_ALL and record.get("content_type") != page_state["content_type"]:
@@ -740,15 +786,12 @@ def design_knowledge_page():
         ui.badge(record.get("status", ""), color=get_status_color(record.get("status", ""))).props("outline")
 
     async def change_record_status(knowledge_id: str, target_status: str) -> None:
-        if not can_manage_tags:
-            ui.notify("只有管理角色可以审核或调整知识状态", type="warning", position="bottom")
-            return
         if target_status not in RECORD_STATUSES:
             ui.notify("目标状态无效", type="warning", position="bottom")
             return
 
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        result = {"changed": False}
+        result = {"changed": False, "code": "not_found"}
 
         def update_all_records(all_records: Any) -> Any:
             records = all_records if isinstance(all_records, dict) else {}
@@ -756,6 +799,9 @@ def design_knowledge_page():
             if not isinstance(current, dict):
                 return db_storage.ATOMIC_NO_UPDATE
             record_data = merge_with_knowledge_template(current)
+            if not can_review_submission(record_data, current_user, current_role):
+                result["code"] = "forbidden"
+                return db_storage.ATOMIC_NO_UPDATE
             record_data["status"] = target_status
             record_data["_revision"] = int(record_data.get("_revision", 0)) + 1
             record_data["updated_by"] = current_user
@@ -765,9 +811,13 @@ def design_knowledge_page():
             )
             records[knowledge_id] = record_data
             result["changed"] = True
+            result["code"] = "updated"
             return records
 
         success = await db_storage.atomic_deep_update([DESIGN_KNOWLEDGE_DATA_KEY], update_all_records)
+        if result["code"] == "forbidden":
+            ui.notify("当前用户不是该知识指定的审核人", type="warning", position="bottom")
+            return
         if not success or not result["changed"]:
             ui.notify("状态调整失败，请刷新后重试", type="warning", position="bottom")
             return
@@ -857,6 +907,9 @@ def design_knowledge_page():
                         detail_field("专业领域", record.get("domain", ""), emphasize=True)
                         detail_field("等级", level_label, emphasize=True)
                         detail_field("状态", record.get("status", ""), emphasize=True)
+                        if record.get("status") == RECORD_STATUS_REVIEW:
+                            review_route = get_review_route_for_submission(record)
+                            detail_field("审核角色", "、".join(review_route.get("approver_roles", [])))
                         detail_field("适用对象", record.get("project_category", ""))
                         detail_field("适用环节", "、".join(record.get("applicable_phases", [])))
                         detail_field("受控标签", "、".join(record.get("tags", [])))
@@ -908,11 +961,12 @@ def design_knowledge_page():
                     ui.label(f"补充关键词：{record.get('extra_keywords')}").classes("text-xs text-gray-500")
 
             with ui.row().classes("w-full justify-end gap-2 border-t px-5 py-3 bg-white"):
+                can_review_current_record = can_review_submission(record, current_user, current_role)
                 if can_edit_record(record, current_user, current_role):
                     ui.button("编辑", icon="edit", on_click=lambda _=None, r=record: open_edit_dialog(r)).props(
                         "color=primary"
                     )
-                if can_manage_tags and record.get("status") == RECORD_STATUS_REVIEW:
+                if can_review_current_record and record.get("status") == RECORD_STATUS_REVIEW:
 
                     async def approve_current_record(_=None, k=record["knowledge_id"]):
                         await change_record_status(k, RECORD_STATUS_PUBLISHED)
@@ -922,7 +976,7 @@ def design_knowledge_page():
 
                     ui.button("审核通过", icon="check_circle", on_click=approve_current_record).props("color=green")
                     ui.button("退回修改", icon="reply", on_click=return_current_record).props("outline color=orange")
-                elif can_manage_tags and record.get("status") == RECORD_STATUS_PUBLISHED:
+                elif can_review_current_record and record.get("status") == RECORD_STATUS_PUBLISHED:
 
                     async def deactivate_current_record(_=None, k=record["knowledge_id"]):
                         await change_record_status(k, RECORD_STATUS_INACTIVE)
@@ -932,7 +986,7 @@ def design_knowledge_page():
                         icon="archive",
                         on_click=deactivate_current_record,
                     ).props("outline color=grey")
-                elif can_manage_tags and record.get("status") == RECORD_STATUS_INACTIVE:
+                elif can_review_current_record and record.get("status") == RECORD_STATUS_INACTIVE:
 
                     async def restore_current_record(_=None, k=record["knowledge_id"]):
                         await change_record_status(k, RECORD_STATUS_PUBLISHED)
@@ -1004,27 +1058,30 @@ def design_knowledge_page():
                         .props("outlined dense")
                         .classes("w-40")
                     )
-                    new_tag_input = (
-                        ui.input("新增正式标签", value=manager_state["new_tag"]).props("outlined dense").classes("w-56")
-                    )
+                    if can_manage_tags:
+                        new_tag_input = (
+                            ui.input("新增正式标签", value=manager_state["new_tag"])
+                            .props("outlined dense")
+                            .classes("w-56")
+                        )
 
-                    async def handle_add_tag():
-                        tag_name = normalize_text(new_tag_input.value)
-                        domain = option_text_in(domain_select.value, DESIGN_DOMAINS, DESIGN_DOMAINS[0])
-                        if not tag_name:
-                            ui.notify("请输入标签名称", type="warning", position="bottom")
-                            return
-                        catalog = get_tag_catalog()
-                        if tag_name in catalog.get(domain, []):
-                            ui.notify("该标签已存在", type="info", position="bottom")
-                            return
-                        catalog[domain].append(tag_name)
-                        await save_tag_catalog(catalog)
-                        new_tag_input.value = ""
-                        ui.notify("标签已加入受控标签库", type="positive", position="bottom")
-                        render_tag_manager()
+                        async def handle_add_tag():
+                            tag_name = normalize_text(new_tag_input.value)
+                            domain = option_text_in(domain_select.value, DESIGN_DOMAINS, DESIGN_DOMAINS[0])
+                            if not tag_name:
+                                ui.notify("请输入标签名称", type="warning", position="bottom")
+                                return
+                            catalog = get_tag_catalog()
+                            if tag_name in catalog.get(domain, []):
+                                ui.notify("该标签已存在", type="info", position="bottom")
+                                return
+                            catalog[domain].append(tag_name)
+                            await save_tag_catalog(catalog)
+                            new_tag_input.value = ""
+                            ui.notify("标签已加入受控标签库", type="positive", position="bottom")
+                            render_tag_manager()
 
-                    ui.button("加入标签库", icon="add", on_click=handle_add_tag).props("color=primary")
+                        ui.button("加入标签库", icon="add", on_click=handle_add_tag).props("color=primary")
 
                 tag_list_container = ui.column().classes("w-full gap-2")
                 request_container = ui.column().classes("w-full gap-2 mt-5")
@@ -1044,7 +1101,11 @@ def design_knowledge_page():
                         [
                             request
                             for request in requests.values()
-                            if isinstance(request, dict) and request.get("status") == "待审核"
+                            if (
+                                isinstance(request, dict)
+                                and request.get("status") == "待审核"
+                                and can_review_submission(request, current_user, current_role)
+                            )
                         ]
                         if isinstance(requests, dict)
                         else []
@@ -1052,7 +1113,7 @@ def design_knowledge_page():
                     pending_requests = sorted(pending_requests, key=lambda item: item.get("created_at", ""))
                     with request_container:
                         ui.separator()
-                        ui.label("待审核标签申请").classes("text-sm font-bold text-gray-700")
+                        ui.label("分配给我的待审核标签申请").classes("text-sm font-bold text-gray-700")
                         if not pending_requests:
                             ui.label("暂无待审核标签申请").classes("text-sm text-gray-500")
                             return
@@ -1170,7 +1231,7 @@ def design_knowledge_page():
                             "标题",
                             value=form_data["title"],
                             placeholder=copy_text["title_hint"],
-                        ).bind_value(form_data, "title").props("outlined dense autofocus").classes("w-full")
+                        ).bind_value(form_data, "title").props("outlined dense autofocus").classes("w-full mb-3")
                         # ui.label(copy_text["title_hint"]).classes("text-xs text-gray-500 mb-3")
                         ui.textarea(
                             copy_text["summary_label"],
@@ -1342,6 +1403,11 @@ def design_knowledge_page():
                         attachment_row = app.storage.client["page_elements"].get("design_knowledge_attachment_row")
                         if attachment_row is None:
                             return ui.notify("附件区域尚未初始化，请关闭窗口后重试", type="warning", position="bottom")
+                        empty_label = app.storage.client["page_elements"].get(
+                            "design_knowledge_attachment_empty_label"
+                        )
+                        if empty_label is not None:
+                            empty_label.set_visibility(False)
                         with attachment_row:
                             create_attachment_thumbnail(file_info, deletable=True)
                         sync_attachments_from_thumbnail_state()
@@ -1371,8 +1437,11 @@ def design_knowledge_page():
                             )
                         with ui.row().classes("w-full flex-wrap items-start gap-2") as attachment_row:
                             app.storage.client["page_elements"]["design_knowledge_attachment_row"] = attachment_row
-                            if not active_files:
-                                ui.label("暂无附件").classes("text-xs text-gray-400")
+                            empty_label = ui.label("暂无附件").classes("text-xs text-gray-400")
+                            empty_label.set_visibility(not active_files)
+                            app.storage.client["page_elements"][
+                                "design_knowledge_attachment_empty_label"
+                            ] = empty_label
                             for file_info in active_files:
                                 create_attachment_thumbnail(file_info, deletable=True)
 
@@ -1573,7 +1642,7 @@ def design_knowledge_page():
                 elif form_data["status"] == RECORD_STATUS_REVIEW:
                     ui.button("保存修改", icon="save", on_click=save_review_record).props("color=primary")
                 elif form_data["status"] == RECORD_STATUS_PUBLISHED:
-                    if can_manage_tags:
+                    if can_review_submission(form_data, current_user, current_role):
                         ui.button("保存修改", icon="save", on_click=save_published_record).props("color=primary")
                     else:
                         ui.button("提交审核", icon="approval", on_click=submit_for_review).props("color=primary")
@@ -1607,7 +1676,7 @@ def design_knowledge_page():
                             "outline color=primary"
                         )
                     with ui.row().classes("gap-2 items-center"):
-                        if can_manage_tags:
+                        if can_access_tag_manager:
                             ui.button("标签管理", icon="local_offer", on_click=open_tag_manager_dialog).props(
                                 "outline color=primary"
                             )
