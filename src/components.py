@@ -247,7 +247,7 @@ def _render_bulk_pending_dialog(
         with ui.scroll_area().classes("w-full h-[55vh]"):
             for version, chips in pending_by_version.items():
                 with ui.expansion(
-                    f"需求 V{version} —— {len(chips)} 项待判断", icon="pending_actions", value=True
+                    f"需求 V{version} 共 {len(chips)} 项待判断", icon="pending_actions", value=True
                 ).classes("w-full border-b border-grey-3"):
                     with ui.row().classes("w-full justify-end gap-1"):
                         ui.button(
