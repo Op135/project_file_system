@@ -83,6 +83,58 @@ def _curve_legend_label(record: dict[str, Any]) -> str:
     return f"{title} & {' & '.join(condition_values)}" if condition_values else title
 
 
+def _curve_data_text(record: dict[str, Any]) -> str:
+    """生成可直接粘贴到 Excel 或数据录入框的 X/Y 两列文本。"""
+
+    x_data = record.get("x_data", [])
+    y_data = record.get("y_data", [])
+    if not isinstance(x_data, list) or not isinstance(y_data, list) or len(x_data) != len(y_data):
+        return ""
+    return "\n".join(f"{x_value}\t{y_value}" for x_value, y_value in zip(x_data, y_data))
+
+
+def _prepare_curve_data(normalize_text: str, preserve_text: str) -> dict[str, Any]:
+    """解析二选一的数据入口，并按入口语义决定是否归一化。"""
+
+    normalize_text = str(normalize_text or "").strip()
+    preserve_text = str(preserve_text or "").strip()
+    if normalize_text and preserve_text:
+        raise CurveDataError("请只在一个数据框中粘贴数据")
+    if not normalize_text and not preserve_text:
+        raise CurveDataError("请在“需要归一化”或“保持原值”数据框中粘贴两列数据")
+
+    if normalize_text:
+        x_data, raw_y_data = parse_curve_rows(normalize_text)
+        y_data, factor = normalize_y_values(raw_y_data)
+        return {
+            "x_data": x_data,
+            "y_data": y_data,
+            "normalization_factor": factor,
+            "normalization_mode": "auto_normalize",
+        }
+
+    x_data, y_data = parse_curve_rows(preserve_text)
+    return {
+        "x_data": x_data,
+        "y_data": y_data,
+        "normalization_factor": 1.0,
+        "normalization_mode": "keep_original",
+    }
+
+
+def _curve_tree_group_ids(nodes: list[dict[str, Any]]) -> list[str]:
+    """按显示顺序收集树中所有可展开的分组节点。"""
+
+    group_ids: list[str] = []
+    for node in nodes:
+        children = node.get("children", [])
+        if not isinstance(children, list) or not children:
+            continue
+        group_ids.append(str(node.get("id", "")))
+        group_ids.extend(_curve_tree_group_ids(children))
+    return group_ids
+
+
 def _build_curve_tree(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """按 Y 轴表征名和条件层级构建只在叶节点勾选曲线的树。"""
 
@@ -137,7 +189,7 @@ def _build_curve_tree(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
         current["children"].append(
             {
                 "id": str(record.get("id", "")),
-                "label": _curve_legend_label(record),
+                "label": str(record.get("title") or "未命名曲线"),
                 "icon": "show_chart",
             }
         )
@@ -156,6 +208,7 @@ def _chart_options(
     *,
     preview: bool = False,
     settings: dict[str, Any] | None = None,
+    show_legend: bool = True,
 ) -> dict[str, Any]:
     """生成录入预览或筛选结果使用的 ECharts 配置。"""
 
@@ -168,9 +221,11 @@ def _chart_options(
     x_interval = settings.get("x_interval")
     y_interval = settings.get("y_interval")
     series = []
+    legend_labels: list[str] = []
     y_axis_names: list[str] = []
     for index, record in enumerate(records):
         title = _curve_legend_label(record)
+        legend_labels.append(title)
         y_axis_name = str(record.get("y_axis_name") or "Y轴").strip()
         if not record.get("is_fused") and y_axis_name and y_axis_name not in y_axis_names:
             y_axis_names.append(y_axis_name)
@@ -192,6 +247,36 @@ def _chart_options(
             }
         )
 
+    legend_capacity = max(80, int(120 * 15 / legend_font_size))
+    legend_rows: list[list[str]] = [[]]
+    occupied_units = 0
+    for label in legend_labels:
+        label_units = 8 + sum(2 if ord(char) > 255 else 1 for char in label)
+        if legend_rows[-1] and occupied_units + label_units > legend_capacity:
+            legend_rows.append([])
+            occupied_units = 0
+        legend_rows[-1].append(label)
+        occupied_units += label_units
+    legend_row_height = legend_font_size + 10
+    legend_options: dict[str, Any] | list[dict[str, Any]]
+    if show_legend:
+        legend_options = [
+            {
+                "type": "plain",
+                "orient": "horizontal",
+                "top": 4 + row_index * legend_row_height,
+                "left": "center",
+                "data": row_labels,
+                "itemGap": 16,
+                "textStyle": {"fontFamily": font_family, "fontSize": legend_font_size},
+            }
+            for row_index, row_labels in enumerate(legend_rows)
+        ]
+        grid_top = max(52, 18 + len(legend_rows) * legend_row_height)
+    else:
+        legend_options = {"show": False}
+        grid_top = 36
+
     options: dict[str, Any] = {
         "animation": not preview,
         "textStyle": {"fontFamily": font_family, "fontSize": font_size},
@@ -200,12 +285,8 @@ def _chart_options(
             "axisPointer": {"type": "cross"},
             "textStyle": {"fontFamily": font_family, "fontSize": font_size},
         },
-        "legend": {
-            "type": "scroll",
-            "top": 0,
-            "textStyle": {"fontFamily": font_family, "fontSize": legend_font_size},
-        },
-        "grid": {"top": 52, "left": 86, "right": 36, "bottom": 72, "containLabel": True},
+        "legend": legend_options,
+        "grid": {"top": grid_top, "left": 86, "right": 36, "bottom": 72, "containLabel": True},
         "toolbox": {
             "right": 12,
             "feature": {"dataZoom": {}, "restore": {}, "saveAsImage": {"title": "保存图片"}},
@@ -262,8 +343,22 @@ class OpticalCurveManagerTool:
     """面向研发光学角色的曲线资料库工具。"""
 
     def __init__(self) -> None:
-        self.form = {"title": "", "y_axis_name": "", "data_text": ""}
+        self.form = {
+            "title": "",
+            "y_axis_name": "",
+            "normalize_data_text": "",
+            "preserve_data_text": "",
+        }
         self.condition_rows = [{"name": "", "value": ""}]
+        self.edit_record_id = ""
+        self.edit_form = {
+            "title": "",
+            "y_axis_name": "",
+            "normalize_data_text": "",
+            "preserve_data_text": "",
+        }
+        self.edit_condition_rows = [{"name": "", "value": ""}]
+        self.edit_original_record: dict[str, Any] | None = None
         self.filter_state = {"title_query": "", "y_axis_name": ""}
         self.filter_rows = [{"name": "", "value": ""}]
         self.selected_curve_ids: list[str] = []
@@ -280,6 +375,7 @@ class OpticalCurveManagerTool:
         self.axis_range_draft: dict[str, Any] = {"x_min": None, "x_max": None}
         self.left_sidebar_open = False
         self.right_sidebar_open = False
+        self.expanded_curve_group_ids: list[str] = []
         self.preview_record: dict[str, Any] | None = None
 
     @staticmethod
@@ -295,6 +391,44 @@ class OpticalCurveManagerTool:
         if 0 <= index < len(rows):
             rows[index][key] = str(value or "")
 
+    def _clear_edit_record(self) -> None:
+        """清空修改页当前载入的曲线。"""
+
+        self.edit_record_id = ""
+        self.edit_form.update(
+            {
+                "title": "",
+                "y_axis_name": "",
+                "normalize_data_text": "",
+                "preserve_data_text": "",
+            }
+        )
+        self.edit_condition_rows[:] = [{"name": "", "value": ""}]
+        self.edit_original_record = None
+
+    def _load_edit_record(self, record: dict[str, Any]) -> None:
+        """把一条数据库曲线载入修改页，并默认保持现有数据值。"""
+
+        conditions = [
+            {
+                "name": str(item.get("name", "") or ""),
+                "value": str(item.get("value", "") or ""),
+            }
+            for item in record.get("conditions", [])
+            if isinstance(item, dict)
+        ]
+        self.edit_record_id = str(record.get("id", ""))
+        self.edit_form.update(
+            {
+                "title": str(record.get("title", "") or ""),
+                "y_axis_name": str(record.get("y_axis_name", "") or ""),
+                "normalize_data_text": "",
+                "preserve_data_text": _curve_data_text(record),
+            }
+        )
+        self.edit_condition_rows[:] = conditions or [{"name": "", "value": ""}]
+        self.edit_original_record = copy.deepcopy(record)
+
     def show(self, dialog: ui.dialog) -> None:
         """在全屏工具弹窗中渲染界面。"""
 
@@ -309,6 +443,7 @@ class OpticalCurveManagerTool:
             tabs = ui.tabs().classes("w-full bg-white text-slate-600")
             with tabs:
                 entry_tab = ui.tab("数据录入", icon="edit_note")
+                edit_tab = ui.tab("修改数据", icon="edit")
                 query_tab = ui.tab("筛选与曲线", icon="query_stats")
 
             with ui.tab_panels(tabs, value=entry_tab).classes("w-full flex-1 bg-slate-50"):
@@ -319,9 +454,9 @@ class OpticalCurveManagerTool:
                                 with ui.card().classes("lg:col-span-3 w-full h-full p-4 rounded-xl shadow-sm"):
                                     ui.label("1. 曲线信息").classes("text-lg font-bold text-slate-800")
                                     ui.label("标题、表征名及条件用于后续检索。").classes("text-xs text-slate-500 mb-1")
-                                    ui.input("本次数据标题 *", placeholder="例如：白光LED/550nm二向色").bind_value(
-                                        self.form, "title"
-                                    ).props("outlined dense clearable").classes("w-full")
+                                    ui.input(
+                                        "本次数据标题 *", placeholder="例如：415nmLED/白光LED（型号）/550nm二向色"
+                                    ).bind_value(self.form, "title").props("outlined dense clearable").classes("w-full")
                                     ui.input(
                                         "Y 轴表征名 *", placeholder="例如：透过率/反射率/相对光谱功率密度"
                                     ).bind_value(self.form, "y_axis_name").props("outlined dense clearable").classes(
@@ -370,21 +505,41 @@ class OpticalCurveManagerTool:
 
                                 with ui.card().classes("lg:col-span-3 w-full h-full p-4 rounded-xl shadow-sm"):
                                     ui.label("2. 粘贴两列数据").classes("text-lg font-bold text-slate-800")
-                                    ui.label("第一列为波长（nm），第二列为 Y；支持从 Excel 复制粘贴。").classes(
-                                        "text-xs text-slate-500"
-                                    )
-                                    data_input = (
-                                        ui.textarea(
-                                            "X轴：波长 (nm)        Y轴：原始数据 *",
-                                            placeholder="400\t0.12\n450\t0.48\n500\t0.96\n550\t0.72",
-                                        )
-                                        .bind_value(self.form, "data_text")
-                                        .props("outlined rows=15 input-style='font-family: monospace'")
-                                        .classes("w-full")
-                                    )
                                     ui.label(
-                                        "保存时系统按 Y 的最大绝对值自动归一化，原始 Y 序列不会写入数据库。"
-                                    ).classes("text-xs text-cyan-700")
+                                        "两个框二选一；第一列为波长（nm），第二列为 Y，支持从 Excel 复制粘贴。"
+                                    ).classes("text-xs text-slate-500")
+                                    with ui.grid().classes("w-full grid-cols-1 xl:grid-cols-2 gap-3"):
+                                        with ui.column().classes("w-full gap-1"):
+                                            ui.label("需要系统归一化").classes("font-semibold text-amber-700")
+                                            ui.label("用于原始测量值；保存前按 Y 的最大绝对值归一化。").classes(
+                                                "text-xs text-slate-500"
+                                            )
+                                            normalize_data_input = (
+                                                ui.textarea(
+                                                    "X / Y 数据，归一化处理",
+                                                    placeholder="400\t12\n450\t48\n500\t96\n550\t72",
+                                                )
+                                                .bind_value(self.form, "normalize_data_text")
+                                                .props("outlined rows=13 input-style='font-family: monospace'")
+                                                .classes("w-full")
+                                            )
+                                        with ui.column().classes("w-full gap-1"):
+                                            ui.label("保持粘贴原值").classes("font-semibold text-emerald-700")
+                                            ui.label("用于已经归一化的数据；系统不会再次缩放 Y 值。").classes(
+                                                "text-xs text-slate-500"
+                                            )
+                                            preserve_data_input = (
+                                                ui.textarea(
+                                                    "X / Y 数据，不归一化",
+                                                    placeholder="400\t0.12\n450\t0.48\n500\t0.95\n550\t0.72",
+                                                )
+                                                .bind_value(self.form, "preserve_data_text")
+                                                .props("outlined rows=13 input-style='font-family: monospace'")
+                                                .classes("w-full")
+                                            )
+                                    ui.label("开始在任一框输入时会自动清空另一个框，避免误用处理模式。").classes(
+                                        "text-xs text-cyan-700"
+                                    )
                                     with ui.row().classes("w-full justify-end"):
                                         ui.button(
                                             "解析并预览",
@@ -399,16 +554,35 @@ class OpticalCurveManagerTool:
 
                                 with ui.card().classes("lg:col-span-6 w-full h-full p-4 rounded-xl shadow-sm"):
                                     with ui.row().classes("w-full items-center justify-between"):
-                                        ui.label("归一化预览").classes("text-lg font-bold text-slate-800")
-                                        preview_summary = ui.label("请先解析两列数据").classes("text-sm text-slate-500")
+                                        ui.label("曲线预览").classes("text-lg font-bold text-slate-800")
+                                        preview_summary = ui.label("请先在任一数据框粘贴两列数据").classes(
+                                            "text-sm text-slate-500"
+                                        )
                                     preview_chart = ui.echart(_chart_options([], preview=True)).classes(
-                                        "w-full h-[500px]"
+                                        "w-full h-[430px]"
                                     )
+
+                            def use_normalize_input(event: Any) -> None:
+                                if not str(event.value or "").strip():
+                                    return
+                                self.form["preserve_data_text"] = ""
+                                preserve_data_input.update()
+
+                            def use_preserve_input(event: Any) -> None:
+                                if not str(event.value or "").strip():
+                                    return
+                                self.form["normalize_data_text"] = ""
+                                normalize_data_input.update()
+
+                            normalize_data_input.on_value_change(use_normalize_input)
+                            preserve_data_input.on_value_change(use_preserve_input)
 
                             def parse_preview(*, notify: bool = True) -> dict[str, Any] | None:
                                 try:
-                                    x_data, raw_y_data = parse_curve_rows(self.form["data_text"])
-                                    y_data, factor = normalize_y_values(raw_y_data)
+                                    prepared = _prepare_curve_data(
+                                        self.form["normalize_data_text"],
+                                        self.form["preserve_data_text"],
+                                    )
                                 except CurveDataError as exc:
                                     self.preview_record = None
                                     if notify:
@@ -418,17 +592,24 @@ class OpticalCurveManagerTool:
                                 preview = {
                                     "title": self.form["title"].strip() or "当前录入预览",
                                     "y_axis_name": self.form["y_axis_name"].strip() or "Y轴数据",
-                                    "x_data": x_data,
-                                    "y_data": y_data,
-                                    "normalization_factor": factor,
+                                    **prepared,
                                 }
                                 self.preview_record = preview
                                 preview_chart.options.clear()
                                 preview_chart.options.update(_chart_options([preview], preview=True))
                                 preview_chart.update()
-                                preview_summary.set_text(f"{len(x_data)} 个数据点 · 归一化因子 {factor:.6g}")
+                                if preview["normalization_mode"] == "auto_normalize":
+                                    summary = (
+                                        f"{len(preview['x_data'])} 个数据点 · 已按因子 "
+                                        f"{preview['normalization_factor']:.6g} 归一化"
+                                    )
+                                    message = "数据解析成功，预览中已完成归一化"
+                                else:
+                                    summary = f"{len(preview['x_data'])} 个数据点 · 保持粘贴原值"
+                                    message = "数据解析成功，预览保持粘贴原值"
+                                preview_summary.set_text(summary)
                                 if notify:
-                                    ui.notify("数据解析成功，已生成归一化预览", type="positive")
+                                    ui.notify(message, type="positive")
                                 return preview
 
                             async def save_record() -> None:
@@ -459,6 +640,7 @@ class OpticalCurveManagerTool:
                                     "x_data": preview["x_data"],
                                     "y_data": preview["y_data"],
                                     "normalization_factor": preview["normalization_factor"],
+                                    "normalization_mode": preview["normalization_mode"],
                                     "created_by": app.storage.user.get("current_user", "未知用户"),
                                     "created_role": app.storage.user.get("current_role", ""),
                                     "created_at": now,
@@ -474,13 +656,332 @@ class OpticalCurveManagerTool:
                                     ui.notify("保存失败，请稍后重试", type="negative")
                                     return
 
-                                self.form.update({"title": "", "y_axis_name": "", "data_text": ""})
+                                self.form.update(
+                                    {
+                                        "title": "",
+                                        "y_axis_name": "",
+                                        "normalize_data_text": "",
+                                        "preserve_data_text": "",
+                                    }
+                                )
                                 self.condition_rows[:] = [{"name": "", "value": ""}]
                                 self.preview_record = None
-                                data_input.update()
+                                normalize_data_input.update()
+                                preserve_data_input.update()
                                 render_condition_rows.refresh()
+                                edit_panel.refresh()
                                 filter_panel.refresh()
-                                ui.notify("曲线已归一化并保存", type="positive")
+                                if preview["normalization_mode"] == "auto_normalize":
+                                    ui.notify("曲线已归一化并保存", type="positive")
+                                else:
+                                    ui.notify("曲线已按粘贴原值保存", type="positive")
+
+                with ui.tab_panel(edit_tab).classes("p-0"):
+                    with ui.scroll_area().classes("w-full h-[calc(100vh-112px)]"):
+
+                        @ui.refreshable
+                        def edit_panel() -> None:
+                            all_edit_records = self._all_records()
+                            edit_record_lookup = {
+                                str(record.get("id", "")): record
+                                for record in all_edit_records
+                                if str(record.get("id", ""))
+                            }
+                            if self.edit_record_id and self.edit_record_id not in edit_record_lookup:
+                                self._clear_edit_record()
+
+                            def change_edit_selection(event: Any) -> None:
+                                record_id = str(event.value or "")
+                                record = edit_record_lookup.get(record_id)
+                                if record is None:
+                                    self._clear_edit_record()
+                                else:
+                                    self._load_edit_record(record)
+                                edit_panel.refresh()
+
+                            def reload_edit_record() -> None:
+                                fresh_lookup = {str(record.get("id", "")): record for record in self._all_records()}
+                                record = fresh_lookup.get(self.edit_record_id)
+                                if record is None:
+                                    self._clear_edit_record()
+                                    ui.notify("原曲线已不存在", type="warning")
+                                else:
+                                    self._load_edit_record(record)
+                                    ui.notify("已重新载入数据库中的曲线", type="positive")
+                                edit_panel.refresh()
+
+                            with ui.column().classes("w-full max-w-[1800px] mx-auto p-2 gap-3"):
+                                with ui.card().classes("w-full p-4 rounded-xl shadow-sm"):
+                                    with ui.row().classes("w-full items-center gap-3 flex-wrap"):
+                                        edit_options = {
+                                            str(record.get("id", "")): (
+                                                f"{_curve_legend_label(record)} · "
+                                                f"{str(record.get('y_axis_name') or 'Y轴')}"
+                                            )
+                                            for record in all_edit_records
+                                        }
+                                        ui.select(
+                                            edit_options,
+                                            label="选择需要修改的已录入曲线",
+                                            value=self.edit_record_id or None,
+                                            clearable=True,
+                                            on_change=change_edit_selection,
+                                        ).props("outlined dense options-dense use-input").classes(
+                                            "min-w-[280px] flex-1"
+                                        )
+                                        ui.button(
+                                            "重新载入",
+                                            icon="refresh",
+                                            on_click=reload_edit_record,
+                                        ).props("outline dense no-caps color=grey-7").set_enabled(
+                                            bool(self.edit_record_id)
+                                        )
+                                    ui.label(
+                                        "修改页会原样载入数据库中的现有曲线；只有改用“需要系统归一化”框时才会重新缩放 Y。"
+                                    ).classes("text-xs text-cyan-700")
+
+                                active_record = edit_record_lookup.get(self.edit_record_id)
+                                if active_record is None:
+                                    with ui.card().classes(
+                                        "w-full min-h-[420px] items-center justify-center rounded-xl shadow-sm"
+                                    ):
+                                        ui.icon("edit_note", size="58px").classes("text-slate-300")
+                                        ui.label("请先选择一条已录入曲线").classes("text-slate-500")
+                                    return
+
+                                with ui.grid().classes("w-full grid-cols-1 lg:grid-cols-12 gap-2 items-stretch"):
+                                    with ui.card().classes("lg:col-span-3 w-full h-full p-4 rounded-xl shadow-sm"):
+                                        ui.label("1. 修改曲线信息").classes("text-lg font-bold text-slate-800")
+                                        ui.input("数据标题 *").bind_value(self.edit_form, "title").props(
+                                            "outlined dense clearable"
+                                        ).classes("w-full")
+                                        ui.input("Y 轴表征名 *").bind_value(self.edit_form, "y_axis_name").props(
+                                            "outlined dense clearable"
+                                        ).classes("w-full")
+                                        with ui.row().classes("w-full items-center justify-between mt-1"):
+                                            ui.label("成立条件（可选）").classes("font-semibold text-slate-700")
+                                            ui.button(
+                                                "增加条件",
+                                                icon="add",
+                                                on_click=lambda: self._add_edit_condition(render_edit_condition_rows),
+                                            ).props("flat dense no-caps color=cyan-8")
+
+                                        @ui.refreshable
+                                        def render_edit_condition_rows() -> None:
+                                            with ui.column().classes("w-full gap-2"):
+                                                if not self.edit_condition_rows:
+                                                    ui.label("未设置成立条件").classes("text-sm text-slate-400")
+                                                for index, row in enumerate(self.edit_condition_rows):
+                                                    with ui.row().classes("w-full items-center gap-2 flex-nowrap"):
+                                                        ui.input(
+                                                            "条件名",
+                                                            value=row["name"],
+                                                            on_change=lambda e, i=index: self._set_row_value(
+                                                                self.edit_condition_rows, i, "name", e.value
+                                                            ),
+                                                        ).props("outlined dense").classes("flex-1")
+                                                        ui.input(
+                                                            "条件值",
+                                                            value=row["value"],
+                                                            on_change=lambda e, i=index: self._set_row_value(
+                                                                self.edit_condition_rows, i, "value", e.value
+                                                            ),
+                                                        ).props("outlined dense").classes("flex-1")
+                                                        ui.button(
+                                                            icon="delete_outline",
+                                                            on_click=self._make_remove_handler(
+                                                                self.edit_condition_rows,
+                                                                index,
+                                                                render_edit_condition_rows,
+                                                            ),
+                                                        ).props("flat dense round color=grey-6").tooltip("删除条件")
+
+                                        render_edit_condition_rows()
+
+                                    with ui.card().classes("lg:col-span-3 w-full h-full p-4 rounded-xl shadow-sm"):
+                                        ui.label("2. 修改两列数据").classes("text-lg font-bold text-slate-800")
+                                        ui.label("两个框二选一；当前数据库数据默认放在右侧保持原值。").classes(
+                                            "text-xs text-slate-500"
+                                        )
+                                        with ui.grid().classes("w-full grid-cols-1 xl:grid-cols-2 gap-3"):
+                                            with ui.column().classes("w-full gap-1"):
+                                                ui.label("需要系统归一化").classes("font-semibold text-amber-700")
+                                                ui.label("粘贴新的需归一化测量值。").classes("text-xs text-slate-500")
+                                                edit_normalize_input = (
+                                                    ui.textarea("新的 X / Y 数据，归一化处理")
+                                                    .bind_value(self.edit_form, "normalize_data_text")
+                                                    .props("outlined rows=13 input-style='font-family: monospace'")
+                                                    .classes("w-full")
+                                                )
+                                            with ui.column().classes("w-full gap-1"):
+                                                ui.label("保持粘贴原值").classes("font-semibold text-emerald-700")
+                                                ui.label("修改现有值或粘贴不归一化数据。").classes(
+                                                    "text-xs text-slate-500"
+                                                )
+                                                edit_preserve_input = (
+                                                    ui.textarea("新的 X / Y 数据，不归一化")
+                                                    .bind_value(self.edit_form, "preserve_data_text")
+                                                    .props("outlined rows=13 input-style='font-family: monospace'")
+                                                    .classes("w-full")
+                                                )
+                                        with ui.row().classes("w-full justify-end"):
+                                            ui.button(
+                                                "解析并预览",
+                                                icon="preview",
+                                                on_click=lambda: parse_edit_preview(),
+                                            ).props("outline no-caps color=cyan-8")
+                                            ui.button(
+                                                "保存修改",
+                                                icon="save",
+                                                on_click=lambda: save_edit_record(),
+                                            ).props("unelevated no-caps color=cyan-8")
+
+                                    with ui.card().classes("lg:col-span-6 w-full h-full p-4 rounded-xl shadow-sm"):
+                                        with ui.row().classes("w-full items-center justify-between"):
+                                            ui.label("修改预览").classes("text-lg font-bold text-slate-800")
+                                            edit_preview_summary = ui.label(
+                                                f"当前数据库曲线 · {len(active_record.get('x_data', []))} 个数据点"
+                                            ).classes("text-sm text-slate-500")
+                                        edit_preview_chart = ui.echart(
+                                            _chart_options([active_record], preview=True)
+                                        ).classes("w-full h-[430px]")
+
+                                def use_edit_normalize_input(event: Any) -> None:
+                                    if not str(event.value or "").strip():
+                                        return
+                                    self.edit_form["preserve_data_text"] = ""
+                                    edit_preserve_input.update()
+
+                                def use_edit_preserve_input(event: Any) -> None:
+                                    if not str(event.value or "").strip():
+                                        return
+                                    self.edit_form["normalize_data_text"] = ""
+                                    edit_normalize_input.update()
+
+                                edit_normalize_input.on_value_change(use_edit_normalize_input)
+                                edit_preserve_input.on_value_change(use_edit_preserve_input)
+
+                                def parse_edit_preview(*, notify: bool = True) -> dict[str, Any] | None:
+                                    try:
+                                        prepared = _prepare_curve_data(
+                                            self.edit_form["normalize_data_text"],
+                                            self.edit_form["preserve_data_text"],
+                                        )
+                                    except CurveDataError as exc:
+                                        if notify:
+                                            ui.notify(str(exc), type="warning")
+                                        return None
+
+                                    preview = {
+                                        "title": self.edit_form["title"].strip() or "修改预览",
+                                        "y_axis_name": self.edit_form["y_axis_name"].strip() or "Y轴数据",
+                                        **prepared,
+                                    }
+                                    edit_preview_chart.options.clear()
+                                    edit_preview_chart.options.update(_chart_options([preview], preview=True))
+                                    edit_preview_chart.update()
+                                    if preview["normalization_mode"] == "auto_normalize":
+                                        summary = (
+                                            f"{len(preview['x_data'])} 个数据点 · 将按因子 "
+                                            f"{preview['normalization_factor']:.6g} 归一化"
+                                        )
+                                    else:
+                                        summary = f"{len(preview['x_data'])} 个数据点 · 将保持输入原值"
+                                    edit_preview_summary.set_text(summary)
+                                    if notify:
+                                        ui.notify("修改数据解析成功", type="positive")
+                                    return preview
+
+                                async def save_edit_record() -> None:
+                                    record_id = self.edit_record_id
+                                    title = str(self.edit_form["title"] or "").strip()
+                                    y_axis_name = str(self.edit_form["y_axis_name"] or "").strip()
+                                    if not record_id or not title or not y_axis_name:
+                                        ui.notify("请选择曲线并填写标题和 Y 轴表征名", type="warning")
+                                        return
+                                    try:
+                                        conditions = normalize_conditions(self.edit_condition_rows)
+                                    except CurveDataError as exc:
+                                        ui.notify(str(exc), type="warning")
+                                        return
+                                    preview = parse_edit_preview(notify=False)
+                                    if preview is None:
+                                        ui.notify("两列数据格式不正确，请检查后重试", type="warning")
+                                        return
+
+                                    original = copy.deepcopy(self.edit_original_record)
+                                    editor = app.storage.user.get("current_user", "未知用户")
+                                    editor_role = app.storage.user.get("current_role", "")
+                                    now = datetime.now().isoformat(timespec="seconds")
+                                    outcome: dict[str, Any] = {"status": "missing", "record": None}
+
+                                    def update_record(current: Any) -> Any:
+                                        if not isinstance(current, dict):
+                                            return db_storage.ATOMIC_NO_UPDATE
+                                        tracked_fields = (
+                                            "title",
+                                            "y_axis_name",
+                                            "conditions",
+                                            "x_data",
+                                            "y_data",
+                                            "normalization_factor",
+                                            "normalization_mode",
+                                        )
+                                        if isinstance(original, dict) and any(
+                                            current.get(key) != original.get(key) for key in tracked_fields
+                                        ):
+                                            outcome["status"] = "conflict"
+                                            return db_storage.ATOMIC_NO_UPDATE
+
+                                        updated = copy.deepcopy(current)
+                                        data_unchanged = preview["x_data"] == current.get("x_data") and preview[
+                                            "y_data"
+                                        ] == current.get("y_data")
+                                        normalization_factor = preview["normalization_factor"]
+                                        normalization_mode = preview["normalization_mode"]
+                                        if data_unchanged and normalization_mode == "keep_original":
+                                            normalization_factor = current.get("normalization_factor", 1.0)
+                                            normalization_mode = current.get("normalization_mode") or "auto_normalize"
+                                        updated.update(
+                                            {
+                                                "title": title,
+                                                "y_axis_name": y_axis_name,
+                                                "conditions": conditions,
+                                                "x_data": preview["x_data"],
+                                                "y_data": preview["y_data"],
+                                                "normalization_factor": normalization_factor,
+                                                "normalization_mode": normalization_mode,
+                                                "updated_by": editor,
+                                                "updated_role": editor_role,
+                                                "updated_at": now,
+                                            }
+                                        )
+                                        outcome.update(status="updated", record=updated)
+                                        return updated
+
+                                    success = await db_storage.atomic_deep_update(
+                                        [OPTICAL_CURVE_DATA_KEY, record_id],
+                                        update_record,
+                                    )
+                                    if not success:
+                                        ui.notify("修改保存失败，请稍后重试", type="negative")
+                                        return
+                                    if outcome["status"] == "conflict":
+                                        ui.notify("该曲线已被其他操作修改，请重新载入后再编辑", type="warning")
+                                        return
+                                    updated_record = outcome.get("record")
+                                    if not isinstance(updated_record, dict):
+                                        self._clear_edit_record()
+                                        edit_panel.refresh()
+                                        ui.notify("原曲线已不存在", type="warning")
+                                        return
+
+                                    self._load_edit_record(updated_record)
+                                    edit_panel.refresh()
+                                    filter_panel.refresh()
+                                    ui.notify("曲线修改已保存", type="positive")
+
+                        edit_panel()
 
                 with ui.tab_panel(query_tab).classes("p-0"):
                     with ui.element("div").classes("w-full h-[calc(100vh-112px)] overflow-hidden"):
@@ -650,6 +1151,9 @@ class OpticalCurveManagerTool:
                                     self.left_sidebar_open = True
                                     render_workspace.refresh()
 
+                                def change_curve_expansion(event: Any) -> None:
+                                    self.expanded_curve_group_ids = [str(value) for value in (event.value or [])]
+
                                 def select_all_matches() -> None:
                                     self.selected_curve_ids = list(
                                         dict.fromkeys(self.selected_curve_ids + sorted(match_ids))
@@ -744,6 +1248,19 @@ class OpticalCurveManagerTool:
 
                                     return change_color
 
+                                def make_copy_handler(record: dict[str, Any]) -> Callable[[], None]:
+                                    title = str(record.get("title") or "未命名曲线")
+
+                                    def copy_curve_data() -> None:
+                                        data_text = _curve_data_text(record)
+                                        if not data_text:
+                                            ui.notify("该曲线没有可复制的完整 X/Y 数据", type="warning")
+                                            return
+                                        ui.clipboard.write(data_text)
+                                        ui.notify(f"已复制“{title}”的 {len(record.get('x_data', []))} 个归一化数据点")
+
+                                    return copy_curve_data
+
                                 def render_filter_and_tree() -> None:
                                     with ui.card().classes("w-full p-3 rounded-xl shadow-sm gap-2"):
                                         with ui.row().classes("w-full items-center justify-between"):
@@ -799,9 +1316,19 @@ class OpticalCurveManagerTool:
                                                 )
                                         if tree_nodes:
                                             with ui.scroll_area().classes("w-full h-[calc(100vh-500px)] min-h-[260px]"):
+                                                available_group_ids = _curve_tree_group_ids(tree_nodes)
+                                                expanded_group_ids = [
+                                                    group_id
+                                                    for group_id in self.expanded_curve_group_ids
+                                                    if group_id in available_group_ids
+                                                ]
+                                                if not expanded_group_ids:
+                                                    expanded_group_ids = [str(node["id"]) for node in tree_nodes]
+                                                self.expanded_curve_group_ids = expanded_group_ids
                                                 curve_tree = (
                                                     ui.tree(
                                                         tree_nodes,
+                                                        on_expand=change_curve_expansion,
                                                         on_tick=change_curve_selection,
                                                         tick_strategy="leaf",
                                                     )
@@ -815,7 +1342,7 @@ class OpticalCurveManagerTool:
                                                         if record_id in match_ids
                                                     ]
                                                 )
-                                                curve_tree.expand([node["id"] for node in tree_nodes])
+                                                curve_tree.expand(expanded_group_ids)
                                         else:
                                             ui.label("没有符合搜索或筛选条件的曲线").classes(
                                                 "text-sm text-slate-400 py-4"
@@ -895,7 +1422,7 @@ class OpticalCurveManagerTool:
                                                 on_change=make_chart_setting_handler("legend_font_size"),
                                             ).props("outlined dense")
                                         ui.separator().classes("my-1")
-                                        ui.label("已选曲线与颜色").classes("text-sm font-semibold text-slate-700")
+                                        ui.label("已选曲线、颜色与数据").classes("text-sm font-semibold text-slate-700")
                                         if selected_records:
                                             with ui.scroll_area().classes("w-full h-[260px]"):
                                                 with ui.column().classes("w-full gap-1 pr-2"):
@@ -910,11 +1437,20 @@ class OpticalCurveManagerTool:
                                                                 ui.label(str(record.get("y_axis_name", "Y轴"))).classes(
                                                                     "text-xs text-slate-400"
                                                                 )
-                                                            ui.color_input(
-                                                                value=_curve_color(record, index),
-                                                                on_change=make_color_handler(record),
-                                                                preview=True,
-                                                            ).props("outlined dense").classes("w-28")
+                                                            with ui.row().classes(
+                                                                "items-center gap-1 flex-nowrap shrink-0"
+                                                            ):
+                                                                ui.color_input(
+                                                                    value=_curve_color(record, index),
+                                                                    on_change=make_color_handler(record),
+                                                                    preview=True,
+                                                                ).props("outlined dense").classes("w-36")
+                                                                ui.button(
+                                                                    icon="content_copy",
+                                                                    on_click=make_copy_handler(record),
+                                                                ).props("flat dense round color=cyan-8").tooltip(
+                                                                    "复制 X/Y 两列数据（Y 为当前保存值）"
+                                                                )
                                         else:
                                             ui.label("请先在层级树中勾选曲线").classes("text-sm text-slate-400")
 
@@ -941,18 +1477,25 @@ class OpticalCurveManagerTool:
                                             ):
                                                 ui.icon("query_stats", size="56px").classes("text-slate-300")
                                                 ui.label("请从左侧边栏勾选需要显示的曲线").classes("text-slate-500")
-                                    # 控制侧边栏宽度与高度
-                                    sidebar_with = "w-1"
-                                    sidebar_hight = "top-[150px]"
+                                    # 侧边栏按视口比例伸缩，并设置合理的最小与最大宽度。
+                                    sidebar_rail_width = "w-1"
+                                    sidebar_panel_width = "w-[var(--optical-sidebar-width)]"
+                                    sidebar_top = "top-[150px]"
+                                    sidebar_style = "--optical-sidebar-width: clamp(20rem, 32vw, 36rem);"
 
-                                    left_base_width = "w-[370px]" if self.left_sidebar_open else sidebar_with
+                                    left_base_width = (
+                                        sidebar_panel_width if self.left_sidebar_open else sidebar_rail_width
+                                    )
                                     with (
                                         ui.element("div")
                                         .classes(
-                                            f"fixed left-0 {sidebar_hight} bottom-0 z-40 {left_base_width} hover:w-[370px] "
-                                            "focus-within:w-[370px] transition-[width] duration-300 delay-300 "
+                                            f"fixed left-0 {sidebar_top} bottom-0 z-40 {left_base_width} "
+                                            "hover:w-[var(--optical-sidebar-width)] "
+                                            "focus-within:w-[var(--optical-sidebar-width)] "
+                                            "transition-[width] duration-300 delay-300 "
                                             "hover:delay-0 focus-within:delay-0 overflow-hidden group"
                                         )
+                                        .style(sidebar_style)
                                         .on(
                                             "mouseleave",
                                             close_left_sidebar,
@@ -975,28 +1518,33 @@ class OpticalCurveManagerTool:
                                         )
                                     ):
                                         with ui.row().classes(
-                                            "absolute left-0 top-0 w-[370px] h-full flex-nowrap gap-0"
+                                            "absolute left-0 top-0 w-[var(--optical-sidebar-width)] h-full flex-nowrap gap-0"
                                         ):
                                             with ui.column().classes(
-                                                f"{sidebar_with} h-full shrink-0 bg-cyan-500/60 text-white items-center "
+                                                f"{sidebar_rail_width} h-full shrink-0 bg-cyan-500/60 text-white items-center "
                                                 "justify-center p-0 shadow-lg"
                                             ):
                                                 # ui.icon("tune", size="16px")
                                                 ui.tooltip("筛选与选择")
                                             with ui.scroll_area().classes(
-                                                "w-[350px] h-full bg-slate-100/95 backdrop-blur shadow-2xl p-2"
+                                                "flex-1 min-w-0 h-full bg-slate-100/95 backdrop-blur shadow-2xl p-2"
                                             ):
                                                 with ui.column().classes("w-full gap-3 pr-1"):
                                                     render_filter_and_tree()
 
-                                    right_base_width = "w-[370px]" if self.right_sidebar_open else sidebar_with
+                                    right_base_width = (
+                                        sidebar_panel_width if self.right_sidebar_open else sidebar_rail_width
+                                    )
                                     with (
                                         ui.element("div")
                                         .classes(
-                                            f"fixed right-0 {sidebar_hight} bottom-0 z-40 {right_base_width} hover:w-[370px] "
-                                            "focus-within:w-[370px] transition-[width] duration-300 delay-300 "
+                                            f"fixed right-0 {sidebar_top} bottom-0 z-40 {right_base_width} "
+                                            "hover:w-[var(--optical-sidebar-width)] "
+                                            "focus-within:w-[var(--optical-sidebar-width)] "
+                                            "transition-[width] duration-300 delay-300 "
                                             "hover:delay-0 focus-within:delay-0 overflow-hidden group"
                                         )
+                                        .style(sidebar_style)
                                         .on(
                                             "mouseleave",
                                             close_right_sidebar,
@@ -1019,15 +1567,15 @@ class OpticalCurveManagerTool:
                                         )
                                     ):
                                         with ui.row().classes(
-                                            "absolute right-0 top-0 w-[370px] h-full flex-nowrap gap-0"
+                                            "absolute right-0 top-0 w-[var(--optical-sidebar-width)] h-full flex-nowrap gap-0"
                                         ):
                                             with ui.scroll_area().classes(
-                                                "w-[390px] h-full bg-slate-100/95 backdrop-blur shadow-2xl p-2"
+                                                "flex-1 min-w-0 h-full bg-slate-100/95 backdrop-blur shadow-2xl p-2"
                                             ):
                                                 with ui.column().classes("w-full gap-3 pr-1"):
                                                     render_display_settings()
                                             with ui.column().classes(
-                                                f"{sidebar_with} h-full shrink-0 bg-amber-500/60 text-white items-center "
+                                                f"{sidebar_rail_width} h-full shrink-0 bg-amber-500/60 text-white items-center "
                                                 "justify-center p-0 shadow-lg"
                                             ):
                                                 # ui.icon("display_settings", size="16px")
@@ -1039,6 +1587,10 @@ class OpticalCurveManagerTool:
 
     def _add_condition(self, renderer: Any) -> None:
         self.condition_rows.append({"name": "", "value": ""})
+        renderer.refresh()
+
+    def _add_edit_condition(self, renderer: Any) -> None:
+        self.edit_condition_rows.append({"name": "", "value": ""})
         renderer.refresh()
 
     def _add_condition_filter(self, renderer: Any) -> None:
