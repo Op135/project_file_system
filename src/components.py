@@ -18,7 +18,7 @@ from collections import defaultdict
 from copy import deepcopy
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Callable, DefaultDict, Final, Optional, Tuple
+from typing import Callable, DefaultDict, Dict, Final, Optional, Tuple
 from urllib.parse import unquote
 
 import httpx
@@ -36,9 +36,9 @@ from .config import (
     OVER_UPLOADS_FILE_TYPE,
     PDF_PREVIEW_CACHE,
     SUBMIT_FILES_DIR,
-    UPLOAD_URL_DIR,
     SVN_PASSWORD,
     SVN_USERNAME,
+    UPLOAD_URL_DIR,
     UPLOADS_DIR,
 )
 from .utils import (
@@ -97,6 +97,335 @@ def _is_deactivated_chip(chip_info: dict, req_max_ver: str) -> bool:
 
     enabled_state = chip_info.get("enabled")
     return (enabled_state is False) or (str(enabled_state).lower() == "false")
+
+
+def _version_sort_key(version: str) -> float:
+    """为需求版本字符串生成稳定的数字排序值。"""
+    try:
+        return float(version)
+    except (TypeError, ValueError):
+        return -1.0
+
+
+def _get_overview_display_version(project: str, labels: list, default: str = "0.0") -> str:
+    """优先使用项目当前版本；运行时版本缺失时，从概述数据推断最新版本。"""
+    configured_version = app.storage.general.get("project_req_max_ver", {}).get(project)
+    if configured_version not in {None, ""}:
+        return str(configured_version)
+
+    latest_version = str(default)
+    for label in labels:
+        chips = db_storage.get_deep_item([f"{project}_over_data", label], {})
+        for chip_info in chips.values():
+            for version in chip_info.get("select_activ_dic", {}):
+                version_text = str(version)
+                if _version_sort_key(version_text) > _version_sort_key(latest_version):
+                    latest_version = version_text
+    return latest_version
+
+
+def _get_pending_chips_by_version(project: str, label: str) -> dict:
+    """按需求版本归集所有明确处于待定状态的 chip。"""
+    pending_by_version = defaultdict(list)
+    chips = db_storage.get_deep_item([f"{project}_over_data", label], {})
+    for chip_id, chip_info in chips.items():
+        for version, state in chip_info.get("select_activ_dic", {}).items():
+            if state is None:
+                pending_by_version[str(version)].append(
+                    {
+                        "id": chip_id,
+                        "content": chip_info.get("content", "未知内容"),
+                        "creator": chip_info.get("creator", "未知"),
+                        "row_id": chip_info.get("row_id"),
+                    }
+                )
+    return dict(sorted(pending_by_version.items(), key=lambda item: _version_sort_key(item[0]), reverse=True))
+
+
+def _has_pending_chips(project: str, label: str) -> bool:
+    return bool(_get_pending_chips_by_version(project, label))
+
+
+def _render_bulk_pending_dialog(
+    dialog,
+    project: str,
+    label: str,
+    title: str,
+    on_submit: Callable,
+    row_context_title: str = "",
+    row_context_by_row_id: Optional[dict] = None,
+) -> bool:
+    """渲染支持多版本区分的批量待定状态判断窗口。"""
+    pending_by_version = _get_pending_chips_by_version(project, label)
+    if not pending_by_version:
+        ui.notify("当前没有待判断的概述内容。", type="info", position="bottom", timeout=2000)
+        return False
+
+    dialog.clear()
+    state_by_version: Dict[str, Dict[str, Optional[bool]]] = {
+        version: {chip["id"]: None for chip in chips} for version, chips in pending_by_version.items()
+    }
+    checkbox_by_version = defaultdict(dict)
+    row_context_by_row_id = row_context_by_row_id or {}
+    is_submitting = False
+    submit_button = None
+    cancel_button = None
+    submit_spinner = None
+
+    def set_version_state(version: str, state: Optional[bool]) -> None:
+        for chip_id, checkbox in checkbox_by_version.get(version, {}).items():
+            state_by_version[version][chip_id] = state
+            checkbox.set_value(state)
+
+    def set_all_states(state: Optional[bool]) -> None:
+        for version in pending_by_version:
+            set_version_state(version, state)
+
+    async def submit_selected() -> None:
+        nonlocal is_submitting
+        if is_submitting:
+            return
+
+        operations = []
+        for version, chip_states in state_by_version.items():
+            for chip in pending_by_version[version]:
+                state = chip_states.get(chip["id"])
+                if state is not None:
+                    operations.append((chip["id"], chip["content"], version, state))
+
+        if not operations:
+            ui.notify("请至少把一个 chip 判断为激活或失活。", type="warning", position="bottom", timeout=2500)
+            return
+
+        is_submitting = True
+        if submit_button and not submit_button.is_deleted:
+            submit_button.disable()
+            submit_button.set_text(f"正在处理 {len(operations)} 项...")
+        if cancel_button and not cancel_button.is_deleted:
+            cancel_button.disable()
+        if submit_spinner and not submit_spinner.is_deleted:
+            submit_spinner.set_visibility(True)
+        await asyncio.sleep(0)
+
+        try:
+            await on_submit(operations)
+        except Exception as ex:
+            logger.error("批量判断待定状态失败", exc_info=True)
+            is_submitting = False
+            if submit_spinner and not submit_spinner.is_deleted:
+                submit_spinner.set_visibility(False)
+            if submit_button and not submit_button.is_deleted:
+                submit_button.set_text("提交批量判断")
+                submit_button.enable()
+            if cancel_button and not cancel_button.is_deleted:
+                cancel_button.enable()
+            ui.notify(
+                f"批量处理失败：{ex}",
+                type="negative",
+                position="center",
+                timeout=0,
+                close_button="✖",
+            )
+
+    with dialog, ui.card().classes("w-full max-w-[960px] max-h-[85vh]"):
+        ui.label(f"批量判断待定状态 · {title}").classes("text-lg font-bold")
+        ui.label("状态含义与单项窗口一致：勾选为激活，空框为失活，横杠为继续待判断。").classes(
+            "text-sm text-grey-7 -mt-3"
+        )
+
+        with ui.row().classes("w-full items-center gap-2"):
+            ui.button("全部设为激活", icon="done_all", on_click=lambda _=None: set_all_states(True)).props(
+                "flat dense color=primary"
+            )
+            ui.button("全部设为失活", icon="block", on_click=lambda _=None: set_all_states(False)).props(
+                "flat dense color=grey"
+            )
+            ui.button("全部恢复待定", icon="remove", on_click=lambda _=None: set_all_states(None)).props(
+                "flat dense color=amber-8"
+            )
+
+        with ui.scroll_area().classes("w-full h-[55vh]"):
+            for version, chips in pending_by_version.items():
+                with ui.expansion(
+                    f"需求 V{version} —— {len(chips)} 项待判断", icon="pending_actions", value=True
+                ).classes("w-full border-b border-grey-3"):
+                    with ui.row().classes("w-full justify-end gap-1"):
+                        ui.button(
+                            "本版本全激活",
+                            on_click=lambda _=None, v=version: set_version_state(v, True),
+                        ).props("flat dense size=sm")
+                        ui.button(
+                            "本版本全失活",
+                            on_click=lambda _=None, v=version: set_version_state(v, False),
+                        ).props("flat dense size=sm color=grey")
+                        ui.button(
+                            "本版本恢复待定",
+                            on_click=lambda _=None, v=version: set_version_state(v, None),
+                        ).props("flat dense size=sm color=amber-8")
+
+                    if row_context_title:
+                        with (
+                            ui.grid(columns=4)
+                            .classes("w-full gap-0 border border-grey-3 rounded overflow-hidden")
+                            .style(
+                                "grid-template-columns: 64px minmax(180px, 1.4fr) "
+                                "minmax(180px, 1.4fr) minmax(100px, 0.7fr);"
+                            )
+                        ):
+                            for header_text in ["状态", title, f"同行{row_context_title}", "维护人"]:
+                                ui.label(header_text).classes(
+                                    "w-full h-full px-2 py-2 bg-blue-50 text-blue-900 font-bold "
+                                    "border-b border-r border-grey-3 last:border-r-0"
+                                )
+
+                            for index, chip in enumerate(chips):
+                                row_bg = "bg-white" if index % 2 == 0 else "bg-grey-1"
+                                first_col_content = row_context_by_row_id.get(
+                                    chip.get("row_id"), "未找到同行第一列 chip"
+                                )
+                                checkbox = ui.checkbox(value=None).classes(
+                                    f"w-full h-full justify-center px-2 py-1 {row_bg} border-b border-r border-grey-2"
+                                )
+                                checkbox.bind_value(state_by_version[version], chip["id"])
+                                checkbox_by_version[version][chip["id"]] = checkbox
+                                ui.label(str(chip["content"])).classes(
+                                    f"w-full h-full px-2 py-2 {row_bg} border-b border-r border-grey-2"
+                                ).style("white-space: normal; word-break: break-word;")
+                                ui.label(first_col_content).classes(
+                                    f"w-full h-full px-2 py-2 {row_bg} border-b border-r border-grey-2"
+                                ).style("white-space: normal; word-break: break-word;")
+                                ui.label(str(chip["creator"])).classes(
+                                    f"w-full h-full px-2 py-2 {row_bg} border-b border-grey-2"
+                                )
+                    else:
+                        with (
+                            ui.grid(columns=3)
+                            .classes("w-full gap-0 border border-grey-3 rounded overflow-hidden")
+                            .style("grid-template-columns: 64px minmax(240px, 1fr) minmax(100px, 0.35fr);")
+                        ):
+                            for header_text in ["状态", title, "维护人"]:
+                                ui.label(header_text).classes(
+                                    "w-full h-full px-2 py-2 bg-blue-50 text-blue-900 font-bold "
+                                    "border-b border-r border-grey-3 last:border-r-0"
+                                )
+
+                            for index, chip in enumerate(chips):
+                                row_bg = "bg-white" if index % 2 == 0 else "bg-grey-1"
+                                checkbox = ui.checkbox(value=None).classes(
+                                    f"w-full h-full justify-center px-2 py-1 {row_bg} border-b border-r border-grey-2"
+                                )
+                                checkbox.bind_value(state_by_version[version], chip["id"])
+                                checkbox_by_version[version][chip["id"]] = checkbox
+                                ui.label(str(chip["content"])).classes(
+                                    f"w-full h-full px-2 py-2 {row_bg} border-b border-r border-grey-2"
+                                ).style("white-space: normal; word-break: break-word;")
+                                ui.label(str(chip["creator"])).classes(
+                                    f"w-full h-full px-2 py-2 {row_bg} border-b border-grey-2"
+                                )
+
+        with ui.row().classes("w-full justify-end items-center gap-2"):
+            submit_spinner = ui.spinner(type="hourglass", size="sm", color="amber-8", thickness=8.0)
+            submit_spinner.set_visibility(False)
+            cancel_button = ui.button("取消", on_click=dialog.close).props("flat dense color=grey")
+            submit_button = ui.button("提交批量判断", color="green", on_click=submit_selected).props("dense")
+
+    dialog.open()
+    return True
+
+
+def _render_bulk_related_dialog(
+    dialog,
+    related_labels: list,
+    changed_chip_count: int,
+    on_submit: Callable,
+    on_skip: Callable,
+) -> None:
+    """批量状态判断完成后，渲染关联影响范围选择窗口。"""
+    dialog.clear()
+    related_select_dic = {related_label: False for related_label in related_labels}
+    is_submitting = False
+    action_buttons = []
+    related_checkboxes = []
+    submit_spinner = None
+    submit_status = None
+
+    async def submit_related(all_related_bool: bool) -> None:
+        nonlocal is_submitting
+        if is_submitting:
+            return
+
+        is_submitting = True
+        selected_related = dict(related_select_dic)
+        for element in [*action_buttons, *related_checkboxes]:
+            if not element.is_deleted:
+                element.disable()
+        if submit_spinner and not submit_spinner.is_deleted:
+            submit_spinner.set_visibility(True)
+        if submit_status and not submit_status.is_deleted:
+            submit_status.set_visibility(True)
+        await asyncio.sleep(0)
+
+        try:
+            await on_submit(all_related_bool, selected_related)
+        except Exception as ex:
+            logger.error("处理批量关联影响失败", exc_info=True)
+            is_submitting = False
+            for element in [*action_buttons, *related_checkboxes]:
+                if not element.is_deleted:
+                    element.enable()
+            if submit_spinner and not submit_spinner.is_deleted:
+                submit_spinner.set_visibility(False)
+            if submit_status and not submit_status.is_deleted:
+                submit_status.set_visibility(False)
+            ui.notify(
+                f"关联影响处理失败：{ex}",
+                type="negative",
+                position="center",
+                timeout=0,
+                close_button="✖",
+            )
+
+    with dialog, ui.card().classes("w-full max-w-[800px]"):
+        ui.label("选择本次操作可能影响的其它概述项：").classes("text-lg font-bold")
+        ui.label(
+            f"本次实际修改了 {changed_chip_count} 个 chip。选中的概述项中，"
+            "所有激活内容将变为待确认状态，相关人员会收到提醒。"
+        ).classes("text-base text-brown font-bold -mt-4")
+
+        with ui.grid(columns=3).classes("w-full gap-0"):
+            for related_label in related_labels:
+                related_title = (
+                    app.storage.general.get("over_config_data_flat", {}).get(related_label, {}).get("title", "未知项")
+                )
+                related_checkboxes.append(ui.checkbox(text=related_title).bind_value(related_select_dic, related_label))
+
+        with ui.row().classes("w-full justify-end items-center"):
+            submit_spinner = ui.spinner(type="hourglass", size="sm", color="amber-8", thickness=8.0)
+            submit_spinner.set_visibility(False)
+            submit_status = ui.label("正在处理关联影响，请稍候...").classes("text-sm text-amber-9")
+            submit_status.set_visibility(False)
+            skip_button = ui.button("本次不影响其它项", color="grey", on_click=lambda _=None: on_skip()).props("flat")
+            selected_button = ui.button("勾选的受影响", color="green", on_click=lambda _=None: submit_related(False))
+            all_button = ui.button("全部受影响", color="blue", on_click=lambda _=None: submit_related(True))
+            action_buttons.extend([skip_button, selected_button, all_button])
+
+    dialog.open()
+
+
+async def _archive_pending_record(project: str, label: str, chip_id: str, creator: str) -> None:
+    """待定状态完成判断后，关闭对应的关联变更记录。"""
+    time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    def process_close_record(chip_record_dic):
+        if not chip_record_dic or "open" not in chip_record_dic:
+            return chip_record_dic
+        open_dic = chip_record_dic.pop("open")
+        open_dic["close_time"] = time_str
+        open_dic["close_related_user"] = creator
+        chip_record_dic[time_str] = open_dic
+        return chip_record_dic
+
+    await db_storage.atomic_deep_update([f"{project}_over_related_record", label, chip_id], process_close_record)
 
 
 class OverviewVersionManager:
@@ -819,19 +1148,41 @@ class InteractiveButton:
         else:
             btn_icon = "text_fields"
 
-        # 主交互按钮
-        btn = (
-            ui.button(self.title, icon=btn_icon).props("flat").classes("p-1 text-[14px]/[14px] mt-2 font-bold relative")
-        )
-        btn.on("click", self._handle_main_button_click, ["ctrlKey"])
+        # 使用独立外层容器承载两个按钮，避免批量按钮被主按钮自身的裁剪样式隐藏。
+        with ui.element("div").classes("relative inline-flex items-center overflow-visible") as main_button_wrapper:
+            btn = (
+                ui.button(self.title, icon=btn_icon)
+                .props("flat")
+                .classes("p-1 text-[14px]/[14px] mt-2 font-bold relative")
+            )
+            btn.on("click", self._handle_main_button_click, ["ctrlKey"])
 
-        with btn:
-            if self.nature == "必填":
-                self.btn_label = ui.label("●").classes("absolute top-0 left-0 text-[10px] text-red")
-            elif self.nature == "需填":
-                self.btn_label = ui.label("○").classes("absolute top-0 left-0 text-[10px] text-red")
-            else:
-                self.btn_label = ui.label("").classes("absolute top-0 left-0 text-[10px] text-red")
+            with btn:
+                if self.nature == "必填":
+                    self.btn_label = ui.label("●").classes("absolute top-0 left-0 text-[10px] text-red")
+                elif self.nature == "需填":
+                    self.btn_label = ui.label("○").classes("absolute top-0 left-0 text-[10px] text-red")
+                else:
+                    self.btn_label = ui.label("").classes("absolute top-0 left-0 text-[10px] text-red")
+
+            # 批量按钮必须作为主按钮的同级元素，不能嵌套在主按钮内部。
+            self.bulk_pending_button = (
+                ui.button()
+                .classes("absolute right-0 top-1 z-50 m-0 p-0 q-py-0 bg-white text-amber-8 shadow-md")
+                .props('round padding="0px 0px" icon=check_circle')
+                .style("font-size: 8px; display: none;")
+                # .tooltip("批量判断本项全部待定 chip")
+            )
+            self.bulk_pending_button.on("click.stop", lambda _=None: self._open_bulk_pending_dialog())
+            self.bulk_pending_button.on("click", js_handler="(e) => {e.stopPropagation()}")
+
+        def show_bulk_button_on_ctrl(e: GenericEventArguments) -> None:
+            should_show = bool(e.args.get("ctrlKey")) and _has_pending_chips(self.project, self.label)
+            self.bulk_pending_button.style("display: flex;" if should_show else "display: none;")
+
+        main_button_wrapper.on("mouseenter", show_bulk_button_on_ctrl, ["ctrlKey"])
+        main_button_wrapper.on("mousemove", show_bulk_button_on_ctrl, ["ctrlKey"])
+        main_button_wrapper.on("mouseleave", lambda: self.bulk_pending_button.style("display: none;"))
 
         # 芯片主容器
         self.chip_container = ui.row().classes("w-full items-center gap-2 pl-8")
@@ -907,7 +1258,7 @@ class InteractiveButton:
 
     async def _refresh_chip_container(self) -> None:
         """物理重绘整个芯片容器"""
-        req_max_ver = app.storage.general["project_req_max_ver"].get(self.project, "0.0")
+        req_max_ver = _get_overview_display_version(self.project, [self.label])
         self.chip_container.clear()
 
         with self.chip_container:
@@ -1328,28 +1679,28 @@ class InteractiveButton:
 
                 # 功能按钮
                 delete_button = (
-                    ui.button(on_click=lambda d=chip_info: self.delete_chip_info(d))
+                    ui.button(on_click=lambda _=None, d=chip_info: self.delete_chip_info(d))
                     .classes(f"absolute -top-1 -right-2 m-0 p-0 q-py-0 {delete_bg}")
                     .props(f'round padding="0px 0px" icon={delete_icon}')
                     .style("font-size: 8px; display: none;")
                     .on("click", js_handler="(e) => {e.stopPropagation()}")
                 )
                 move_down_button = (
-                    ui.button(on_click=lambda d=chip_info: self.move_down_data(d))
+                    ui.button(on_click=lambda _=None, d=chip_info: self.move_down_data(d))
                     .classes("absolute -top-1 right-2 m-0 p-0 q-py-0 bg-white text-light-blue")
                     .props('round padding="0px 0px" icon="arrow_drop_down"')
                     .style("font-size: 8px; display: none;")
                     .on("click", js_handler="(e) => {e.stopPropagation()}")
                 )
                 move_up_button = (
-                    ui.button(on_click=lambda d=chip_info: self.move_up_data(d))
+                    ui.button(on_click=lambda _=None, d=chip_info: self.move_up_data(d))
                     .classes("absolute -top-1 right-6 m-0 p-0 q-py-0 bg-white text-light-blue")
                     .props('round padding="0px 0px" icon="arrow_drop_up"')
                     .style("font-size: 8px; display: none;")
                     .on("click", js_handler="(e) => {e.stopPropagation()}")
                 )
                 history_button = (
-                    ui.button(on_click=lambda d=chip_info: self.show_chip_history(d))
+                    ui.button(on_click=lambda _=None, d=chip_info: self.show_chip_history(d))
                     .classes("absolute -bottom-1 -right-2 m-0 p-0 q-py-0 bg-white text-purple-8")
                     .props('round padding="0px 0px" icon="history"')
                     .style("font-size: 8px; display: none;")
@@ -1357,7 +1708,7 @@ class InteractiveButton:
                 )
                 # 创建申请变更按钮
                 request_change_button = (
-                    ui.button(on_click=lambda d=chip_info: self.show_change_request_dialog(d))
+                    ui.button(on_click=lambda _=None, d=chip_info: self.show_change_request_dialog(d))
                     .classes("absolute -top-1 right-10 m-0 p-0 q-py-0 bg-white text-orange-500 shadow-md")
                     .props('round padding="0px 0px" icon="rate_review"')
                     .style("font-size: 8px; display: none;")
@@ -1386,7 +1737,7 @@ class InteractiveButton:
             # chip.on("mouseenter", lambda e: check_shift_and_show(e, history_button), ["shiftKey"])
             # chip.on("mousemove", lambda e: check_shift_and_show(e, history_button), ["shiftKey"])
             # chip.on("mouseleave", lambda: history_button.style("display: none;"))
-            chip.on("contextmenu", lambda d=chip_info: self.on_right_click(d))
+            chip.on("contextmenu", lambda _=None, d=chip_info: self.on_right_click(d))
 
         elif chip_info.get("type") == "image":
             image_name = chip_info.get("content")
@@ -1429,35 +1780,35 @@ class InteractiveButton:
                     ui.html(tooltip_text, sanitize=Sanitizer().sanitize)
 
                 delete_button = (
-                    ui.button(on_click=lambda d=chip_info: self.clear_thumbnail(d))
+                    ui.button(on_click=lambda _=None, d=chip_info: self.clear_thumbnail(d))
                     .classes(f"absolute -top-1 -right-2 m-0 p-0 q-py-1 {delete_bg}")
                     .props(f'round padding="0px 0px" icon={delete_icon}')
                     .style("font-size: 8px; display: none;")
                     .on("click", js_handler="(e) => {e.stopPropagation()}")
                 )
                 move_up_button = (
-                    ui.button(on_click=lambda d=chip_info: self.move_up_data(d))
+                    ui.button(on_click=lambda _=None, d=chip_info: self.move_up_data(d))
                     .classes("absolute bottom-3 -right-2 m-0 p-0 q-py-0 bg-white text-light-blue")
                     .props('round padding="0px 0px" icon="arrow_drop_up"')
                     .style("font-size: 8px; display: none;")
                     .on("click", js_handler="(e) => {e.stopPropagation()}")
                 )
                 move_down_button = (
-                    ui.button(on_click=lambda d=chip_info: self.move_down_data(d))
+                    ui.button(on_click=lambda _=None, d=chip_info: self.move_down_data(d))
                     .classes("absolute -bottom-1 -right-2 m-0 p-0 q-py-0 bg-white text-light-blue")
                     .props('round padding="0px 0px" icon="arrow_drop_down"')
                     .style("font-size: 8px; display: none;")
                     .on("click", js_handler="(e) => {e.stopPropagation()}")
                 )
                 history_button = (
-                    ui.button(on_click=lambda d=chip_info: self.show_chip_history(d))
+                    ui.button(on_click=lambda _=None, d=chip_info: self.show_chip_history(d))
                     .classes("absolute -top-1 right-3 m-0 p-0 q-py-0 bg-white text-purple-8")
                     .props('round padding="0px 0px" icon="history"')
                     .style("font-size: 8px; display: none;")
                     .on("click", js_handler="(e) => {e.stopPropagation()}")
                 )
                 request_change_button = (
-                    ui.button(on_click=lambda d=chip_info: self.show_change_request_dialog(d))
+                    ui.button(on_click=lambda _=None, d=chip_info: self.show_change_request_dialog(d))
                     .classes("absolute bottom-3 right-3 m-0 p-0 q-py-0 bg-white text-orange-500 shadow-md")
                     .props('round padding="0px 0px" icon="rate_review"')
                     .style("font-size: 8px; display: none;")
@@ -2528,9 +2879,11 @@ class InteractiveButton:
         if not app.storage.general["over_change_broadcast"][self.project].get(chip_id, {}).get("editor", []):
             app.storage.general["over_change_broadcast"][self.project].pop(chip_id, None)
 
-    async def _set_related_chip_state(self, chip_text, chip_state, all_related_bool, related_select_dic, type):
+    async def _set_related_chip_state(
+        self, chip_text, chip_state, all_related_bool, related_select_dic, type, record_time=""
+    ):
         # 1. 提前获取不需要在锁内计算的静态环境上下文，保证闭包函数（纯函数）的高效执行
-        time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        time_str = record_time or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         current_user = app.storage.user.get("current_user", "匿名用户")
         record_entry = {
             "operate_user": current_user,
@@ -2614,6 +2967,56 @@ class InteractiveButton:
 
     def _show_related_chip_select_dialog(self, chip_text, chip_state, type):
         self.activ_dialog.clear()
+        related_select_dic = {}
+        is_submitting = False
+        action_buttons = []
+        related_checkboxes = []
+        submit_spinner = None
+        submit_status = None
+
+        async def submit_related(all_related_bool: bool) -> None:
+            nonlocal is_submitting
+            if is_submitting:
+                return
+
+            is_submitting = True
+            selected_related = dict(related_select_dic)
+            for element in [*action_buttons, *related_checkboxes]:
+                if not element.is_deleted:
+                    element.disable()
+            if submit_spinner and not submit_spinner.is_deleted:
+                submit_spinner.set_visibility(True)
+            if submit_status and not submit_status.is_deleted:
+                submit_status.set_visibility(True)
+            await asyncio.sleep(0)
+
+            try:
+                await self._set_related_chip_state(
+                    chip_text,
+                    chip_state,
+                    all_related_bool,
+                    selected_related,
+                    type,
+                )
+                self.activ_dialog.close()
+            except Exception as ex:
+                logger.error("处理单项关联影响失败", exc_info=True)
+                is_submitting = False
+                for element in [*action_buttons, *related_checkboxes]:
+                    if not element.is_deleted:
+                        element.enable()
+                if submit_spinner and not submit_spinner.is_deleted:
+                    submit_spinner.set_visibility(False)
+                if submit_status and not submit_status.is_deleted:
+                    submit_status.set_visibility(False)
+                ui.notify(
+                    f"关联影响处理失败：{ex}",
+                    type="negative",
+                    position="center",
+                    timeout=0,
+                    close_button="✖",
+                )
+
         with self.activ_dialog, ui.card().classes("w-full max-w-[800px]"):
             ui.label("选择本次操作可能影响的其它概述项：").classes("text-lg font-bold")
             ui.label("选中的概述项，其内部所有激活的内容将变为待确认状态，相关人员会收到提醒。").classes(
@@ -2621,28 +3024,39 @@ class InteractiveButton:
             )
 
             with ui.grid(columns=3).classes("w-full gap-0"):
-                related_select_dic = {}
                 for related_label in self.impact_list:
                     related_select_dic[related_label] = False
-                    ui.checkbox(
-                        text=app.storage.general["over_config_data_flat"].get(related_label, {}).get("title", "未知项")
-                    ).bind_value(related_select_dic, related_label)
+                    related_checkboxes.append(
+                        ui.checkbox(
+                            text=app.storage.general["over_config_data_flat"]
+                            .get(related_label, {})
+                            .get("title", "未知项")
+                        ).bind_value(related_select_dic, related_label)
+                    )
 
             with ui.row().classes("w-full justify-end items-center"):
-                ui.button(
+                submit_spinner = ui.spinner(type="hourglass", size="sm", color="amber-8", thickness=8.0)
+                submit_spinner.set_visibility(False)
+                submit_status = ui.label("正在处理关联影响，请稍候...").classes("text-sm text-amber-9")
+                submit_status.set_visibility(False)
+                if type == "activ_change":
+                    skip_button = ui.button(
+                        "本次不影响其它项",
+                        color="grey",
+                        on_click=lambda _=None: self.activ_dialog.close(),
+                    ).props("flat")
+                    action_buttons.append(skip_button)
+                selected_button = ui.button(
                     "勾选的受影响",
                     color="green",
-                    on_click=lambda: self._set_related_chip_state(
-                        chip_text, chip_state, False, related_select_dic, type
-                    ),
-                ).on("click", self.activ_dialog.close)
-                ui.button(
+                    on_click=lambda _=None: submit_related(False),
+                )
+                all_button = ui.button(
                     "全部受影响",
                     color="blue",
-                    on_click=lambda: self._set_related_chip_state(
-                        chip_text, chip_state, True, related_select_dic, type
-                    ),
-                ).on("click", self.activ_dialog.close)
+                    on_click=lambda _=None: submit_related(True),
+                )
+                action_buttons.extend([selected_button, all_button])
 
         self.activ_dialog.open()
 
@@ -3516,6 +3930,139 @@ class InteractiveButton:
             else:
                 self._setup_file_notes_dialog()
 
+    def _open_bulk_pending_dialog(self) -> None:
+        if not self._edit_permission_judge():
+            return
+        _render_bulk_pending_dialog(
+            self.activ_dialog,
+            self.project,
+            self.label,
+            self.title,
+            self._apply_bulk_pending_decisions,
+        )
+
+    def _continue_after_bulk_pending_decisions(self) -> None:
+        """关联影响确认结束后，继续处理剩余待定项或关闭窗口。"""
+        if _has_pending_chips(self.project, self.label):
+            _render_bulk_pending_dialog(
+                self.activ_dialog,
+                self.project,
+                self.label,
+                self.title,
+                self._apply_bulk_pending_decisions,
+            )
+        else:
+            self.activ_dialog.close()
+
+    async def _apply_bulk_related_effects(
+        self, impact_operations: list, all_related_bool: bool, related_select_dic: dict
+    ) -> None:
+        """按用户选择的影响范围，为本次批量变更逐项写入关联影响记录。"""
+        for chip_text, chip_state in impact_operations:
+            record_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
+            await self._set_related_chip_state(
+                chip_text,
+                chip_state,
+                all_related_bool,
+                related_select_dic,
+                "activ_change",
+                record_time,
+            )
+        self._continue_after_bulk_pending_decisions()
+
+    def _show_bulk_related_chip_select_dialog(self, impact_operations: list) -> None:
+        """显示批量状态判断对应的关联影响范围选择窗口。"""
+        _render_bulk_related_dialog(
+            self.activ_dialog,
+            self.impact_list,
+            len(impact_operations),
+            lambda all_related, selected: self._apply_bulk_related_effects(impact_operations, all_related, selected),
+            self._continue_after_bulk_pending_decisions,
+        )
+
+    async def _apply_bulk_pending_decisions(self, operations: list) -> None:
+        decisions_by_chip = defaultdict(dict)
+        chip_texts = {}
+        for chip_id, chip_text, version, state in operations:
+            decisions_by_chip[chip_id][version] = state
+            chip_texts[chip_id] = chip_text
+
+        creator = app.storage.user.get("current_user", "匿名用户")
+        applied_states = 0
+        applied_chips = 0
+        skipped_states = 0
+        impact_operations = []
+
+        for chip_id, version_decisions in decisions_by_chip.items():
+            chip_data = db_storage.get_deep_item([f"{self.project}_over_data", self.label, chip_id], {})
+            if not chip_data:
+                skipped_states += len(version_decisions)
+                continue
+
+            select_activ_dic = copy.deepcopy(chip_data.get("select_activ_dic", {}))
+            chip_applied_states = 0
+            applied_versions = set()
+            for version, state in version_decisions.items():
+                if version not in select_activ_dic or select_activ_dic.get(version) is not None:
+                    skipped_states += 1
+                    continue
+                select_activ_dic[version] = state
+                chip_applied_states += 1
+                applied_versions.add(version)
+
+            if not chip_applied_states:
+                continue
+
+            await db_storage.set_deep_item(
+                [f"{self.project}_over_data", self.label, chip_id, "select_activ_dic"], select_activ_dic
+            )
+            latest_version = max(select_activ_dic, key=_version_sort_key)
+            latest_state = select_activ_dic.get(latest_version)
+            if latest_version in applied_versions:
+                if latest_state is True:
+                    await self._update_chip_active_parameter(chip_id, chip_texts[chip_id])
+                elif latest_state is False:
+                    await self._update_chip_block_parameter(chip_id)
+                else:
+                    await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "enabled"], None)
+                    await db_storage.set_deep_item(
+                        [f"{self.project}_over_data", self.label, chip_id, "icon"], "question_mark"
+                    )
+                    await db_storage.set_deep_item(
+                        [f"{self.project}_over_data", self.label, chip_id, "bg_color"], "bg-amber-5"
+                    )
+
+            await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "creator"], creator)
+            await db_storage.set_deep_item(
+                [
+                    f"{self.project}_over_data",
+                    self.label,
+                    chip_id,
+                    "timestamp",
+                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                ],
+                {"creator": creator, "select_activ_dic": copy.deepcopy(select_activ_dic)},
+            )
+            await _archive_pending_record(self.project, self.label, chip_id, creator)
+            applied_states += chip_applied_states
+            applied_chips += 1
+            impact_operations.append((chip_texts[chip_id], latest_state))
+
+        if applied_chips:
+            OverviewVersionManager.bump(self.project, self.label)
+            self._update_local_pending()
+            await self._refresh_chip_container()
+
+        message = f"已完成 {applied_chips} 个 chip、{applied_states} 个版本状态的判断。"
+        if skipped_states:
+            message += f"另有 {skipped_states} 项因状态已被他人更新而跳过。"
+        ui.notify(message, type="positive" if applied_chips else "warning", position="bottom", timeout=3500)
+
+        if impact_operations and self.impact_list:
+            self._show_bulk_related_chip_select_dialog(impact_operations)
+        else:
+            self._continue_after_bulk_pending_decisions()
+
 
 class OverviewTableGroup:
     """
@@ -3758,6 +4305,195 @@ class OverviewTableGroup:
         if e.args.get("ctrlKey"):
             self.show_label_history(config)
 
+    def _show_header_bulk_control(self, e: GenericEventArguments, button, config: dict) -> None:
+        should_show = bool(e.args.get("ctrlKey")) and _has_pending_chips(self.project, config["label"])
+        button.style("display: flex;" if should_show else "display: none;")
+
+    def _get_first_column_row_context(self) -> Tuple[str, dict]:
+        """生成 row_id 到第一列同行 chip 内容的对应关系。"""
+        if not self.configs:
+            return "第一列", {}
+
+        first_config = self.configs[0]
+        first_col_title = first_config.get("title", "第一列")
+        first_col_label = first_config.get("label", "")
+        first_col_chips = db_storage.get_deep_item([f"{self.project}_over_data", first_col_label], {})
+        contents_by_row_id = defaultdict(list)
+        for chip_info in first_col_chips.values():
+            row_id = chip_info.get("row_id")
+            if row_id:
+                contents_by_row_id[row_id].append(str(chip_info.get("content", "未知内容")))
+
+        return first_col_title, {row_id: "、".join(contents) for row_id, contents in contents_by_row_id.items()}
+
+    def _open_column_bulk_pending_dialog(self, config: dict) -> None:
+        if not self._edit_permission_judge(config):
+            return
+        self.current_config = config
+        first_col_title, first_col_context = self._get_first_column_row_context()
+        _render_bulk_pending_dialog(
+            self.activ_dialog,
+            self.project,
+            config["label"],
+            config["title"],
+            lambda operations, c=config: self._apply_column_bulk_pending_decisions(operations, c),
+            first_col_title,
+            first_col_context,
+        )
+
+    def _continue_after_column_bulk_pending_decisions(self, config: dict) -> None:
+        """关联影响确认结束后，继续处理本列剩余待定项或关闭窗口。"""
+        label = config["label"]
+        if _has_pending_chips(self.project, label):
+            first_col_title, first_col_context = self._get_first_column_row_context()
+            _render_bulk_pending_dialog(
+                self.activ_dialog,
+                self.project,
+                label,
+                config["title"],
+                lambda remaining_operations, c=config: self._apply_column_bulk_pending_decisions(
+                    remaining_operations, c
+                ),
+                first_col_title,
+                first_col_context,
+            )
+        else:
+            self.activ_dialog.close()
+
+    async def _apply_column_bulk_related_effects(
+        self,
+        impact_operations: list,
+        all_related_bool: bool,
+        related_select_dic: dict,
+        config: dict,
+    ) -> None:
+        """按用户选择的影响范围，为本列批量变更逐项写入关联影响记录。"""
+        for chip_text, chip_state in impact_operations:
+            record_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
+            await self._set_related_chip_state(
+                chip_text,
+                chip_state,
+                all_related_bool,
+                related_select_dic,
+                "activ_change",
+                config,
+                record_time,
+            )
+        self._continue_after_column_bulk_pending_decisions(config)
+
+    def _show_column_bulk_related_chip_select_dialog(self, impact_operations: list, config: dict) -> None:
+        """显示本列表格批量判断对应的关联影响范围选择窗口。"""
+        _render_bulk_related_dialog(
+            self.activ_dialog,
+            config.get("impact_list", []),
+            len(impact_operations),
+            lambda all_related, selected, c=config: self._apply_column_bulk_related_effects(
+                impact_operations, all_related, selected, c
+            ),
+            lambda c=config: self._continue_after_column_bulk_pending_decisions(c),
+        )
+
+    async def _apply_column_bulk_pending_decisions(self, operations: list, config: dict) -> None:
+        label = config["label"]
+        decisions_by_chip = defaultdict(dict)
+        chip_texts = {}
+        for chip_id, chip_text, version, state in operations:
+            decisions_by_chip[chip_id][version] = state
+            chip_texts[chip_id] = chip_text
+
+        creator = app.storage.user.get("current_user", "匿名用户")
+        first_col_label = list(self.permitted_configs.values())[0]["label"]
+        applied_states = 0
+        applied_chips = 0
+        skipped_states = 0
+        blocked_states = 0
+        cascade_requests = []
+        impact_operations = []
+
+        for chip_id, version_decisions in decisions_by_chip.items():
+            chip_data = db_storage.get_deep_item([f"{self.project}_over_data", label, chip_id], {})
+            if not chip_data:
+                skipped_states += len(version_decisions)
+                continue
+
+            select_activ_dic = copy.deepcopy(chip_data.get("select_activ_dic", {}))
+            chip_applied_states = 0
+            applied_versions = set()
+            for version, state in version_decisions.items():
+                if version not in select_activ_dic or select_activ_dic.get(version) is not None:
+                    skipped_states += 1
+                    continue
+                # 非第一列只有在设为激活时才依赖同行第一列；设为失活必须允许直接提交。
+                if state is True and not self._get_first_col_any_activ_bool(
+                    chip_data.get("row_id"), label, chip_id, version
+                ):
+                    blocked_states += 1
+                    continue
+                select_activ_dic[version] = state
+                chip_applied_states += 1
+                applied_versions.add(version)
+                if label == first_col_label and state is False and chip_data.get("row_id"):
+                    cascade_requests.append((chip_data["row_id"], version))
+
+            if not chip_applied_states:
+                continue
+
+            await db_storage.set_deep_item(
+                [f"{self.project}_over_data", label, chip_id, "select_activ_dic"], select_activ_dic
+            )
+            latest_version = max(select_activ_dic, key=_version_sort_key)
+            latest_state = select_activ_dic.get(latest_version)
+            if latest_version in applied_versions:
+                if latest_state is True:
+                    await self._update_chip_active_parameter(chip_id, chip_texts[chip_id], config)
+                elif latest_state is False:
+                    await self._update_chip_block_parameter(chip_id, config)
+                else:
+                    await db_storage.set_deep_item([f"{self.project}_over_data", label, chip_id, "enabled"], None)
+                    await db_storage.set_deep_item(
+                        [f"{self.project}_over_data", label, chip_id, "icon"], "question_mark"
+                    )
+                    await db_storage.set_deep_item(
+                        [f"{self.project}_over_data", label, chip_id, "bg_color"], "bg-amber-5"
+                    )
+
+            await db_storage.set_deep_item([f"{self.project}_over_data", label, chip_id, "creator"], creator)
+            await db_storage.set_deep_item(
+                [
+                    f"{self.project}_over_data",
+                    label,
+                    chip_id,
+                    "timestamp",
+                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                ],
+                {"creator": creator, "select_activ_dic": copy.deepcopy(select_activ_dic)},
+            )
+            await _archive_pending_record(self.project, label, chip_id, creator)
+            applied_states += chip_applied_states
+            applied_chips += 1
+            impact_operations.append((chip_texts[chip_id], latest_state))
+
+        if applied_chips:
+            OverviewVersionManager.bump(self.project, label)
+            for row_id, version in set(cascade_requests):
+                await self._cascade_deactivate_row(row_id, version, creator)
+            self._update_local_pending(label)
+            await self._update_display()
+
+        message = f"已完成 {applied_chips} 个 chip、{applied_states} 个版本状态的判断。"
+        if skipped_states:
+            message += f"{skipped_states} 项因状态已被他人更新而跳过。"
+        if blocked_states:
+            message += (
+                f"{blocked_states} 项计划激活，但同行第一列在对应版本尚未激活，请先处理第一列；这些项继续保持待定。"
+            )
+        ui.notify(message, type="positive" if applied_chips else "warning", position="bottom", timeout=4000)
+
+        if impact_operations and config.get("impact_list", []):
+            self._show_column_bulk_related_chip_select_dialog(impact_operations, config)
+        else:
+            self._continue_after_column_bulk_pending_decisions(config)
+
     async def _render_header(self, col_configs):
         """仅重绘表头（因为表头的小红点状态可能会变，但节点很少，重绘极快）"""
         self.header_container.clear()
@@ -3791,7 +4527,7 @@ class OverviewTableGroup:
                         "flex-1 p-1 border-r border-blue-200 last:border-r-0 items-center justify-center min-w-[100px] relative cursor-pointer hover:bg-blue-100 transition-colors"
                     )
                     .on("click", lambda e, c=config: self._handle_header_click(e, c), ["ctrlKey"])
-                ):
+                ) as header_cell:
                     if config.get("nature") == "必填":
                         ui.label("●").classes(f"absolute -top-1 left-0 text-[10px] {dot_color}")
                     elif config.get("nature") == "需填":
@@ -3799,6 +4535,27 @@ class OverviewTableGroup:
                     ui.label(config["title"]).classes("font-bold text-sm text-blue-900 text-center").style(
                         "white-space: pre-wrap;"
                     )
+                    bulk_button = (
+                        ui.button()
+                        .classes("absolute right-1 top-1 z-20 m-0 p-0 q-py-0 bg-white text-amber-8 shadow-md")
+                        .props('round padding="0px 0px" icon=check_circle')
+                        .style("font-size: 8px; display: none;")
+                        # .tooltip("批量判断本列全部待定 chip")
+                    )
+                    bulk_button.on("click.stop", lambda _=None, c=config: self._open_column_bulk_pending_dialog(c))
+                    bulk_button.on("click", js_handler="(e) => {e.stopPropagation()}")
+
+                header_cell.on(
+                    "mouseenter",
+                    lambda e, b=bulk_button, c=config: self._show_header_bulk_control(e, b, c),
+                    ["ctrlKey"],
+                )
+                header_cell.on(
+                    "mousemove",
+                    lambda e, b=bulk_button, c=config: self._show_header_bulk_control(e, b, c),
+                    ["ctrlKey"],
+                )
+                header_cell.on("mouseleave", lambda _=None, b=bulk_button: b.style("display: none;"))
 
     async def _diff_and_update_rows(self, rows_list, col_configs, req_max_ver, client_storage):
         """核心：通过 Diff 算法，仅重绘发生变化的行，并自动排序"""
@@ -4059,14 +4816,14 @@ class OverviewTableGroup:
                     # 💡 优化 6：悬浮按钮放在 div 容器内（与 chip 平级），绝对定位，利用 z-20 浮在 chip 上方
                 # 注意 style 中 display 设置为 flex 而非 block，防止图标偏离中心
                 delete_button = (
-                    ui.button(on_click=lambda d=chip_info, cfg=config: self.delete_chip_info(d, cfg))
+                    ui.button(on_click=lambda _=None, d=chip_info, cfg=config: self.delete_chip_info(d, cfg))
                     .classes(f"absolute -top-1 -right-2 m-0 p-0 q-py-0 z-20 {delete_bg} shadow-md")
                     .props(f'round padding="0px 0px" icon={delete_icon}')
                     .style("font-size: 8px; display: none;")
                     .on("click", js_handler="(e) => {e.stopPropagation()}")
                 )
                 move_down_button = (
-                    ui.button(on_click=lambda d=chip_info, cfg=config: self.move_down_data(d, cfg))
+                    ui.button(on_click=lambda _=None, d=chip_info, cfg=config: self.move_down_data(d, cfg))
                     .classes(
                         "absolute -top-1 right-2 m-0 p-0 q-py-0 z-20 bg-white text-light-blue shadow-md border border-gray-200"
                     )
@@ -4075,7 +4832,7 @@ class OverviewTableGroup:
                     .on("click", js_handler="(e) => {e.stopPropagation()}")
                 )
                 move_up_button = (
-                    ui.button(on_click=lambda d=chip_info, cfg=config: self.move_up_data(d, cfg))
+                    ui.button(on_click=lambda _=None, d=chip_info, cfg=config: self.move_up_data(d, cfg))
                     .classes(
                         "absolute -top-1 right-6 m-0 p-0 q-py-0 z-20 bg-white text-light-blue shadow-md border border-gray-200"
                     )
@@ -4084,14 +4841,14 @@ class OverviewTableGroup:
                     .on("click", js_handler="(e) => {e.stopPropagation()}")
                 )
                 history_button = (
-                    ui.button(on_click=lambda d=chip_info, cfg=config: self.show_chip_history(d, cfg))
+                    ui.button(on_click=lambda _=None, d=chip_info, cfg=config: self.show_chip_history(d, cfg))
                     .classes("absolute -bottom-1 -right-2 m-0 p-0 q-py-0 z-20 bg-white text-purple-8 shadow-md")
                     .props('round padding="0px 0px" icon="history"')
                     .style("font-size: 8px; display: none;")
                     .on("click", js_handler="(e) => {e.stopPropagation()}")
                 )
                 request_change_button = (
-                    ui.button(on_click=lambda d=chip_info, cfg=config: self.show_change_request_dialog(d, cfg))
+                    ui.button(on_click=lambda _=None, d=chip_info, cfg=config: self.show_change_request_dialog(d, cfg))
                     .classes(
                         "absolute -top-1 right-10 m-0 p-0 q-py-0 z-20 bg-white text-orange-500 shadow-md border border-gray-200"
                     )
@@ -4121,7 +4878,7 @@ class OverviewTableGroup:
             # wrapper.on("mouseenter", lambda e: check_shift_and_show(e, history_button), ["shiftKey"])
             # wrapper.on("mousemove", lambda e: check_shift_and_show(e, history_button), ["shiftKey"])
             # wrapper.on("mouseleave", lambda: history_button.style("display: none;"))
-            chip.on("contextmenu", lambda d=chip_info: self.on_right_click(d))
+            chip.on("contextmenu", lambda _=None, d=chip_info: self.on_right_click(d))
 
         elif chip_info.get("type") == "image":
             image_name = chip_info.get("content")
@@ -4161,35 +4918,35 @@ class OverviewTableGroup:
                         ui.html(tooltip_text, sanitize=Sanitizer().sanitize)
 
                 delete_button = (
-                    ui.button(on_click=lambda d=chip_info, cfg=config: self.clear_thumbnail(d, cfg))
+                    ui.button(on_click=lambda _=None, d=chip_info, cfg=config: self.clear_thumbnail(d, cfg))
                     .classes(f"absolute -top-1 -right-2 z-20 m-0 p-0 q-py-1 {delete_bg}")
                     .props(f'round padding="0px 0px" icon={delete_icon}')
                     .style("font-size: 8px; display: none;")
                     .on("click", js_handler="(e) => {e.stopPropagation()}")  # 阻止事件冒泡
                 )
                 move_up_button = (
-                    ui.button(on_click=lambda d=chip_info, cfg=config: self.move_up_data(d, cfg))
+                    ui.button(on_click=lambda _=None, d=chip_info, cfg=config: self.move_up_data(d, cfg))
                     .classes("absolute bottom-3 -right-2 z-20 m-0 p-0 q-py-0 bg-white text-light-blue")
                     .props('round padding="0px 0px" icon="arrow_drop_up"')
                     .style("font-size: 8px; display: none;")
                     .on("click", js_handler="(e) => {e.stopPropagation()}")  # 阻止事件冒泡
                 )
                 move_down_button = (
-                    ui.button(on_click=lambda d=chip_info, cfg=config: self.move_down_data(d, cfg))
+                    ui.button(on_click=lambda _=None, d=chip_info, cfg=config: self.move_down_data(d, cfg))
                     .classes("absolute -bottom-1 -right-2 z-20 m-0 p-0 q-py-0 bg-white text-light-blue")
                     .props('round padding="0px 0px" icon="arrow_drop_down"')
                     .style("font-size: 8px; display: none;")
                     .on("click", js_handler="(e) => {e.stopPropagation()}")  # 阻止事件冒泡
                 )
                 history_button = (
-                    ui.button(on_click=lambda d=chip_info, cfg=config: self.show_chip_history(d, cfg))
+                    ui.button(on_click=lambda _=None, d=chip_info, cfg=config: self.show_chip_history(d, cfg))
                     .classes("absolute -top-1 right-3 z-20 m-0 p-0 q-py-0 bg-white text-purple-8")
                     .props('round padding="0px 0px" icon="history"')
                     .style("font-size: 8px; display: none;")
                     .on("click", js_handler="(e) => {e.stopPropagation()}")  # 阻止事件冒泡
                 )
                 request_change_button = (
-                    ui.button(on_click=lambda d=chip_info, cfg=config: self.show_change_request_dialog(d, cfg))
+                    ui.button(on_click=lambda _=None, d=chip_info, cfg=config: self.show_change_request_dialog(d, cfg))
                     .classes(
                         "absolute -top-1 right-10 m-0 p-0 q-py-0 z-20 bg-white text-orange-500 shadow-md border border-gray-200"
                     )
@@ -4280,7 +5037,11 @@ class OverviewTableGroup:
                 col_configs = list(self.permitted_configs.values())
                 client_storage = app.storage.client
                 show_all = client_storage.get("record_switch")
-                req_max_ver = app.storage.general.get("project_req_max_ver", {}).get(self.project, "1.0")
+                req_max_ver = _get_overview_display_version(
+                    self.project,
+                    [config["label"] for config in col_configs],
+                    "1.0",
+                )
                 rows_list = await self._group_and_migrate_data(col_configs, show_all)
 
                 # 2. 执行局部渲染
@@ -5349,29 +6110,91 @@ class OverviewTableGroup:
     # -------------- 对话框和联动刷新 --------------
     def _show_related_chip_select_dialog(self, chip_text, chip_state, type, config):
         self.activ_dialog.clear()
+        related_select_dic = {label: False for label in config.get("impact_list", [])}
+        is_submitting = False
+        action_buttons = []
+        related_checkboxes = []
+        submit_spinner = None
+        submit_status = None
+
+        async def submit_related(all_related_bool: bool) -> None:
+            nonlocal is_submitting
+            if is_submitting:
+                return
+
+            is_submitting = True
+            selected_related = dict(related_select_dic)
+            for element in [*action_buttons, *related_checkboxes]:
+                if not element.is_deleted:
+                    element.disable()
+            if submit_spinner and not submit_spinner.is_deleted:
+                submit_spinner.set_visibility(True)
+            if submit_status and not submit_status.is_deleted:
+                submit_status.set_visibility(True)
+            await asyncio.sleep(0)
+
+            try:
+                await self._set_related_chip_state(
+                    chip_text,
+                    chip_state,
+                    all_related_bool,
+                    selected_related,
+                    type,
+                    config,
+                )
+                self.activ_dialog.close()
+            except Exception as ex:
+                logger.error("处理表格单项关联影响失败", exc_info=True)
+                is_submitting = False
+                for element in [*action_buttons, *related_checkboxes]:
+                    if not element.is_deleted:
+                        element.enable()
+                if submit_spinner and not submit_spinner.is_deleted:
+                    submit_spinner.set_visibility(False)
+                if submit_status and not submit_status.is_deleted:
+                    submit_status.set_visibility(False)
+                ui.notify(
+                    f"关联影响处理失败：{ex}",
+                    type="negative",
+                    position="center",
+                    timeout=0,
+                    close_button="✖",
+                )
+
         with self.activ_dialog, ui.card().classes("w-full max-w-[800px]"):
             ui.label("选择本次操作可能影响的其它概述项：").classes("text-lg font-bold")
             with ui.grid(columns=3).classes("w-full gap-0"):
-                related_select_dic = {label: False for label in config.get("impact_list", [])}
                 for related_label in config.get("impact_list", []):
-                    ui.checkbox(
-                        text=app.storage.general["over_config_data_flat"].get(related_label, {}).get("title", "未知")
-                    ).bind_value(related_select_dic, related_label)
+                    related_checkboxes.append(
+                        ui.checkbox(
+                            text=app.storage.general["over_config_data_flat"]
+                            .get(related_label, {})
+                            .get("title", "未知")
+                        ).bind_value(related_select_dic, related_label)
+                    )
             with ui.row().classes("w-full justify-end items-center"):
-                ui.button(
+                submit_spinner = ui.spinner(type="hourglass", size="sm", color="amber-8", thickness=8.0)
+                submit_spinner.set_visibility(False)
+                submit_status = ui.label("正在处理关联影响，请稍候...").classes("text-sm text-amber-9")
+                submit_status.set_visibility(False)
+                if type == "activ_change":
+                    skip_button = ui.button(
+                        "本次不影响其它项",
+                        color="grey",
+                        on_click=lambda _=None: self.activ_dialog.close(),
+                    ).props("flat")
+                    action_buttons.append(skip_button)
+                selected_button = ui.button(
                     "勾选的受影响",
                     color="green",
-                    on_click=lambda: self._set_related_chip_state(
-                        chip_text, chip_state, False, related_select_dic, type, config
-                    ),
-                ).on("click", self.activ_dialog.close)
-                ui.button(
+                    on_click=lambda _=None: submit_related(False),
+                )
+                all_button = ui.button(
                     "全部受影响",
                     color="blue",
-                    on_click=lambda: self._set_related_chip_state(
-                        chip_text, chip_state, True, related_select_dic, type, config
-                    ),
-                ).on("click", self.activ_dialog.close)
+                    on_click=lambda _=None: submit_related(True),
+                )
+                action_buttons.extend([selected_button, all_button])
         self.activ_dialog.open()
 
     async def _update_autofill_index(self, first_col_label: str, content: str):
@@ -5631,7 +6454,7 @@ class OverviewTableGroup:
         # await self._update_display()
 
     async def _set_related_chip_state(
-        self, chip_text, chip_state, all_related_bool, related_select_dic, type, config=None
+        self, chip_text, chip_state, all_related_bool, related_select_dic, type, config=None, record_time=""
     ):
         """
         【重构：废除全量快照覆盖，改用点对点精准打击，并完美保留历史追溯台账】
@@ -5669,7 +6492,7 @@ class OverviewTableGroup:
                             )
 
                         # --- 独立更新 连带影响的历史台账（原子追加） ---
-                        time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        time_str = record_time or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         current_user = app.storage.user.get("current_user", "匿名用户")
                         record_entry = {
                             "operate_user": current_user,
@@ -5852,10 +6675,13 @@ class OverviewTableGroup:
                             new_chip_data["select_activ_dic"] = {}
                         new_chip_data["select_activ_dic"][req_max_ver] = False
 
-                        # 2. 同步更新UI外观表现字段
-                        new_chip_data["icon"] = "block"
-                        new_chip_data["enabled"] = False
-                        new_chip_data["bg_color"] = "bg-grey-5"
+                        # 2. 只有处理的是最新版本时才同步当前 UI 外观；
+                        #    补判旧版本不能覆盖较新版本正在展示的状态。
+                        latest_version = max(new_chip_data["select_activ_dic"], key=_version_sort_key)
+                        if req_max_ver == latest_version:
+                            new_chip_data["icon"] = "block"
+                            new_chip_data["enabled"] = False
+                            new_chip_data["bg_color"] = "bg-grey-5"
 
                         # 3. 产生标准操作记录
                         # history_creator_label = f"{creator}(连带失活)"
