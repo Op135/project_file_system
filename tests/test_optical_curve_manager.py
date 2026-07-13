@@ -12,9 +12,9 @@ from src.tools.optical_curve_manager import (  # noqa: E402
     OpticalCurveManagerTool,
     _build_curve_tree,
     _chart_options,
+    _curve_alias,
     _curve_data_text,
     _curve_tree_group_ids,
-    _fusion_pending_status,
     _int_at_least,
     _optional_float,
     _prepare_curve_data,
@@ -132,10 +132,12 @@ class OpticalCurveManagerTests(unittest.TestCase):
         self.assertEqual(_int_at_least(None, 12, 8), 12)
         self.assertEqual(_int_at_least("5", 12, 8), 8)
 
-    def test_fusion_prompt_is_hidden_until_one_curve_is_selected(self):
-        self.assertEqual(_fusion_pending_status(0), "")
-        self.assertIn("还需再选择 1 条", _fusion_pending_status(1))
-        self.assertEqual(_fusion_pending_status(2), "")
+    def test_curve_aliases_continue_after_z(self):
+        self.assertEqual(_curve_alias(0), "a")
+        self.assertEqual(_curve_alias(25), "z")
+        self.assertEqual(_curve_alias(26), "aa")
+        self.assertEqual(_curve_alias(51), "az")
+        self.assertEqual(_curve_alias(52), "ba")
 
 
 if __name__ == "__main__":

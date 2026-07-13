@@ -16,7 +16,7 @@ from .. import db_storage
 from .optical_curve_data import (
     CurveDataError,
     curve_matches_filters,
-    fuse_and_normalize_curve_records,
+    evaluate_curve_expression,
     normalize_conditions,
     normalize_y_values,
     parse_curve_rows,
@@ -53,12 +53,18 @@ def _int_at_least(value: object, default: int, minimum: int) -> int:
     return max(minimum, int(numeric)) if numeric is not None else default
 
 
-def _fusion_pending_status(selected_count: int) -> str:
-    if selected_count <= 0:
-        return ""
-    if selected_count == 1:
-        return "已选择 1 条融合曲线，还需再选择 1 条"
-    return ""
+def _curve_alias(index: int) -> str:
+    """按 a 到 z、aa 到 az 的顺序生成不限数量的曲线别名。"""
+
+    if index < 0:
+        raise ValueError("曲线别名序号不能为负数")
+    result = ""
+    while True:
+        index, remainder = divmod(index, 26)
+        result = chr(ord("a") + remainder) + result
+        if index == 0:
+            return result
+        index -= 1
 
 
 def _curve_color(record: dict[str, Any], fallback_index: int = 0) -> str:
@@ -362,7 +368,9 @@ class OpticalCurveManagerTool:
         self.filter_state = {"title_query": "", "y_axis_name": ""}
         self.filter_rows = [{"name": "", "value": ""}]
         self.selected_curve_ids: list[str] = []
-        self.fusion_curve_ids: list[str] = []
+        self.curve_alias_by_id: dict[str, str] = {}
+        self.curve_formula = ""
+        self.formula_normalize = True
         self.chart_settings: dict[str, Any] = {
             "x_min": None,
             "x_max": None,
@@ -1079,45 +1087,66 @@ class OpticalCurveManagerTool:
                                     for record_id in self.selected_curve_ids
                                     if record_id in all_record_lookup
                                 ]
-                                self.fusion_curve_ids = [
-                                    record_id
-                                    for record_id in self.fusion_curve_ids
-                                    if record_id in self.selected_curve_ids
-                                ]
+                                self.curve_alias_by_id = {
+                                    record_id: alias
+                                    for record_id, alias in self.curve_alias_by_id.items()
+                                    if record_id in all_record_lookup
+                                }
+                                used_aliases = set(self.curve_alias_by_id.values())
+                                next_alias_index = 0
+                                for record in selected_records:
+                                    record_id = str(record.get("id", ""))
+                                    if record_id in self.curve_alias_by_id:
+                                        continue
+                                    alias = _curve_alias(next_alias_index)
+                                    while alias in used_aliases:
+                                        next_alias_index += 1
+                                        alias = _curve_alias(next_alias_index)
+                                    self.curve_alias_by_id[record_id] = alias
+                                    used_aliases.add(alias)
+                                formula_alias_records = {
+                                    self.curve_alias_by_id[str(record.get("id", ""))]: record
+                                    for record in selected_records
+                                }
                                 tree_nodes = _build_curve_tree(matches)
                                 chart_holder: dict[str, Any] = {"chart": None}
-                                fusion_status_holder: dict[str, Any] = {"label": None}
+                                formula_status_holder: dict[str, Any] = {"label": None}
 
                                 def build_display_records() -> tuple[list[dict[str, Any]], str]:
                                     display_records = list(selected_records)
-                                    selected = [
-                                        record
-                                        for record in selected_records
-                                        if str(record.get("id", "")) in self.fusion_curve_ids
-                                    ]
-                                    pending_status = _fusion_pending_status(len(selected))
-                                    if len(selected) < 2:
-                                        return display_records, pending_status
+                                    formula = str(self.curve_formula or "").strip()
+                                    if not formula:
+                                        return display_records, ""
                                     try:
-                                        fused_x, fused_y, fusion_factor = fuse_and_normalize_curve_records(selected)
+                                        result_x, result_y = evaluate_curve_expression(
+                                            formula,
+                                            formula_alias_records,
+                                        )
+                                        if self.formula_normalize:
+                                            result_y, result_factor = normalize_y_values(result_y)
+                                        else:
+                                            result_factor = 1.0
                                     except CurveDataError as exc:
                                         return display_records, str(exc)
                                     display_records.append(
                                         {
-                                            "id": "temporary_fusion",
-                                            "title": f"融合曲线（{len(selected)}条累加）",
+                                            "id": "temporary_formula_result",
+                                            "title": "公式运算结果",
                                             "y_axis_name": "",
-                                            "x_data": fused_x,
-                                            "y_data": fused_y,
+                                            "x_data": result_x,
+                                            "y_data": result_y,
                                             "color": "#e11d48",
                                             "is_fused": True,
                                         }
                                     )
-                                    return (
-                                        display_records,
-                                        f"已融合 {len(selected)} 条曲线并重新归一化"
-                                        f"（因子 {fusion_factor:.6g}）· 仅临时显示，不保存数据",
-                                    )
+                                    if self.formula_normalize:
+                                        status = (
+                                            f"公式：{formula} · 结果已按因子 {result_factor:.6g} 归一化"
+                                            " · 仅临时显示，不保存数据"
+                                        )
+                                    else:
+                                        status = f"公式：{formula} · 结果保持运算值 · 仅临时显示，不保存数据"
+                                    return display_records, status
 
                                 def refresh_chart() -> None:
                                     chart = chart_holder.get("chart")
@@ -1127,12 +1156,15 @@ class OpticalCurveManagerTool:
                                     chart.options.clear()
                                     chart.options.update(_chart_options(display_records, settings=self.chart_settings))
                                     chart.update()
-                                    status_label = fusion_status_holder.get("label")
+                                    status_label = formula_status_holder.get("label")
                                     if status_label is not None:
                                         status_label.set_text(status_text)
 
-                                def change_fusion_selection(event: Any) -> None:
-                                    self.fusion_curve_ids = [str(value) for value in (event.value or [])]
+                                def apply_curve_formula() -> None:
+                                    refresh_chart()
+
+                                def change_formula_normalization(event: Any) -> None:
+                                    self.formula_normalize = bool(event.value)
                                     refresh_chart()
 
                                 def change_curve_selection(event: Any) -> None:
@@ -1143,11 +1175,6 @@ class OpticalCurveManagerTool:
                                         str(value) for value in (event.value or []) if str(value) in match_ids
                                     ]
                                     self.selected_curve_ids = list(dict.fromkeys(hidden_selected + visible_selected))
-                                    self.fusion_curve_ids = [
-                                        record_id
-                                        for record_id in self.fusion_curve_ids
-                                        if record_id in self.selected_curve_ids
-                                    ]
                                     self.left_sidebar_open = True
                                     render_workspace.refresh()
 
@@ -1163,7 +1190,6 @@ class OpticalCurveManagerTool:
 
                                 def clear_all_selected() -> None:
                                     self.selected_curve_ids = []
-                                    self.fusion_curve_ids = []
                                     self.left_sidebar_open = True
                                     render_workspace.refresh()
 
@@ -1257,7 +1283,7 @@ class OpticalCurveManagerTool:
                                             ui.notify("该曲线没有可复制的完整 X/Y 数据", type="warning")
                                             return
                                         ui.clipboard.write(data_text)
-                                        ui.notify(f"已复制“{title}”的 {len(record.get('x_data', []))} 个归一化数据点")
+                                        ui.notify(f"已复制“{title}”的 {len(record.get('x_data', []))} 个当前保存数据点")
 
                                     return copy_curve_data
 
@@ -1350,23 +1376,43 @@ class OpticalCurveManagerTool:
 
                                 def render_display_settings() -> None:
                                     with ui.card().classes("w-full p-3 rounded-xl shadow-sm gap-2"):
-                                        ui.label("显示、融合与颜色").classes("text-base font-bold text-slate-800")
-                                        ui.label("临时融合曲线").classes("text-sm font-semibold text-slate-700")
-                                        ui.label("按 X 点并集插值累加，范围外按 0，融合结果再单独归一化。").classes(
+                                        ui.label("显示、运算与颜色").classes("text-base font-bold text-slate-800")
+                                        ui.label("临时曲线公式").classes("text-sm font-semibold text-slate-700")
+                                        ui.label("支持常数、括号和加减乘除；各曲线范围外按 0 参与运算。").classes(
                                             "text-xs text-slate-500"
                                         )
-                                        fusion_options = {
-                                            str(record.get("id", "")): _curve_legend_label(record)
-                                            for record in selected_records
-                                        }
-                                        ui.select(
-                                            fusion_options,
-                                            label="指定参与融合的曲线",
-                                            value=self.fusion_curve_ids,
-                                            multiple=True,
-                                            clearable=True,
-                                            on_change=change_fusion_selection,
-                                        ).props("outlined dense use-chips options-dense").classes("w-full")
+                                        if formula_alias_records:
+                                            with ui.scroll_area().classes("w-full max-h-[150px]"):
+                                                with ui.column().classes("w-full gap-1 pr-2"):
+                                                    for alias, record in formula_alias_records.items():
+                                                        with ui.row().classes("w-full items-center gap-2 flex-nowrap"):
+                                                            ui.badge(alias, color="cyan-8").props("rounded").classes(
+                                                                "w-8 justify-center shrink-0"
+                                                            )
+                                                            ui.label(_curve_legend_label(record)).classes(
+                                                                "text-xs text-slate-600 truncate"
+                                                            ).tooltip(_curve_legend_label(record))
+                                        else:
+                                            ui.label("勾选曲线后会自动生成 a、b、c… 别名").classes(
+                                                "text-xs text-slate-400"
+                                            )
+                                        ui.textarea(
+                                            "运算公式",
+                                            placeholder="例如：a*b + c*(1-d) + e",
+                                        ).bind_value(self, "curve_formula").props(
+                                            "outlined autogrow rows=2 input-style='font-family: monospace'"
+                                        ).classes("w-full")
+                                        with ui.row().classes("w-full items-center justify-between gap-2"):
+                                            ui.switch(
+                                                "结果再次归一化",
+                                                value=self.formula_normalize,
+                                                on_change=change_formula_normalization,
+                                            ).props("dense color=cyan-8")
+                                            ui.button(
+                                                "应用公式",
+                                                icon="functions",
+                                                on_click=apply_curve_formula,
+                                            ).props("unelevated dense no-caps color=cyan-8")
                                         ui.separator().classes("my-1")
                                         ui.label("图表显示设置").classes("text-sm font-semibold text-slate-700")
                                         with ui.grid().classes("w-full grid-cols-2 gap-2"):
@@ -1458,13 +1504,13 @@ class OpticalCurveManagerTool:
                                     with ui.card().classes(
                                         "w-full h-full min-h-0 p-3 rounded-xl shadow-sm flex flex-col overflow-hidden"
                                     ):
+                                        display_records, formula_status = build_display_records()
                                         with ui.row().classes("w-full items-center justify-between"):
                                             ui.label("曲线对比").classes("text-lg font-bold text-slate-800")
-                                            ui.badge(f"显示 {len(selected_records)} 条", color="cyan-8").props(
+                                            ui.badge(f"显示 {len(display_records)} 条", color="cyan-8").props(
                                                 "rounded"
                                             )
-                                        display_records, fusion_status = build_display_records()
-                                        fusion_status_holder["label"] = ui.label(fusion_status).classes(
+                                        formula_status_holder["label"] = ui.label(formula_status).classes(
                                             "text-xs text-rose-600"
                                         )
                                         if selected_records:

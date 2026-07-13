@@ -11,6 +11,7 @@ if str(ROOT_DIR) not in sys.path:
 from src.tools.optical_curve_data import (  # noqa: E402
     CurveDataError,
     curve_matches_filters,
+    evaluate_curve_expression,
     fuse_and_normalize_curve_records,
     fuse_curve_records,
     normalize_conditions,
@@ -105,6 +106,31 @@ class OpticalCurveDataTests(unittest.TestCase):
         self.assertEqual(factor, 1.75)
         self.assertEqual(max(abs(value) for value in y_data), 1.0)
         self.assertAlmostEqual(y_data[1], 1.5 / 1.75)
+
+    def test_curve_expression_supports_chained_arithmetic_and_parentheses(self):
+        variables = {
+            "a": {"x_data": [400, 500], "y_data": [1, 2]},
+            "b": {"x_data": [400, 500], "y_data": [3, 4]},
+            "c": {"x_data": [400, 500], "y_data": [10, 10]},
+            "d": {"x_data": [400, 500], "y_data": [0.2, 0.5]},
+            "e": {"x_data": [400, 500], "y_data": [1, 1]},
+        }
+        x_data, y_data = evaluate_curve_expression("a*b + c*(1-d) + e", variables)
+        self.assertEqual(x_data, [400.0, 500.0])
+        self.assertEqual(y_data, [12.0, 14.0])
+
+    def test_curve_expression_interpolates_and_rejects_invalid_operations(self):
+        variables = {
+            "a": {"x_data": [400, 500], "y_data": [0, 1]},
+            "b": {"x_data": [450, 550], "y_data": [2, 2]},
+        }
+        x_data, y_data = evaluate_curve_expression("a+b", variables)
+        self.assertEqual(x_data, [400.0, 450.0, 500.0, 550.0])
+        self.assertEqual(y_data, [0.0, 2.5, 3.0, 2.0])
+        with self.assertRaisesRegex(CurveDataError, "除零"):
+            evaluate_curve_expression("a/(b-b)", variables)
+        with self.assertRaisesRegex(CurveDataError, "仅支持"):
+            evaluate_curve_expression("max(a, b)", variables)
 
 
 if __name__ == "__main__":
