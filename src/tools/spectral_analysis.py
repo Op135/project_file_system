@@ -122,6 +122,32 @@ class ChromaticityDistance:
     delta_upvp: float
 
 
+@dataclass(frozen=True)
+class SpectrumChromaticityResult:
+    """用于实时混光预览的轻量光谱与色度结果。"""
+
+    name: str
+    wavelengths: tuple[float, ...]
+    values: tuple[float, ...]
+    normalized_values: tuple[float, ...]
+    XYZ: tuple[float, float, float]
+    xy: tuple[float, float]
+    uv: tuple[float, float]
+    upvp: tuple[float, float]
+    cct: float | None
+    duv: float | None
+    warnings: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class ThreeSpectrumMixSolution:
+    """三个峰值归一化光谱反求目标色坐标的结果。"""
+
+    result: SpectrumResult
+    peak_ratios: tuple[float, float, float]
+    luminous_flux: float
+
+
 def _require_colour() -> Any:
     """延迟导入 Colour，避免工具页启动时加载整套标准数据。"""
 
@@ -563,6 +589,147 @@ def analyze_spectrum(spectrum: SpectrumInput) -> SpectrumResult:
         cri_samples=cri_samples,
         rf=rf,
         warnings=tuple(dict.fromkeys(warnings)),
+    )
+
+
+def _aligned_peak_spectra(
+    spectra: tuple[SpectrumInput, ...],
+) -> tuple[np.ndarray, tuple[np.ndarray, ...]]:
+    """把多个光谱插值到统一网格并分别按峰值归一化。"""
+
+    if not spectra:
+        raise SpectralAnalysisError("至少需要一条光谱")
+    calculation_grid = np.arange(CALCULATION_START_NM, CALCULATION_END_NM + 1, dtype=float)
+    aligned: list[np.ndarray] = []
+    for spectrum in spectra:
+        wavelengths = np.asarray(spectrum.wavelengths, dtype=float)
+        values = np.asarray(spectrum.values, dtype=float)
+        if len(wavelengths) < 2 or len(wavelengths) != len(values):
+            raise SpectralAnalysisError(f"{spectrum.name} 没有有效的光谱数据")
+        if wavelengths[0] > MIN_REQUIRED_START_NM or wavelengths[-1] < CALCULATION_END_NM:
+            raise SpectralAnalysisError(
+                f"{spectrum.name} 的波长范围至少应覆盖 {MIN_REQUIRED_START_NM}–{CALCULATION_END_NM} nm"
+            )
+        aligned_values = np.interp(calculation_grid, wavelengths, values, left=0.0, right=0.0)
+        maximum = float(np.max(aligned_values))
+        if not math.isfinite(maximum) or maximum <= 0:
+            raise SpectralAnalysisError(f"{spectrum.name} 的光谱峰值必须大于 0")
+        aligned.append(aligned_values / maximum)
+    return calculation_grid, tuple(aligned)
+
+
+def analyze_spectrum_chromaticity(spectrum: SpectrumInput) -> SpectrumChromaticityResult:
+    """快速计算光谱色度，不执行 CRI 与 CIE Rf。"""
+
+    colour_module = _require_colour()
+    calculation_grid, (aligned_values,) = _aligned_peak_spectra((spectrum,))
+    sd = colour_module.SpectralDistribution(
+        dict(zip(calculation_grid.tolist(), aligned_values.tolist())),
+        name=spectrum.name,
+    )
+    XYZ_raw = np.asarray(colour_module.sd_to_XYZ(sd), dtype=float)
+    if not np.all(np.isfinite(XYZ_raw)) or XYZ_raw[1] <= 0:
+        raise SpectralAnalysisError(f"{spectrum.name} 无法得到有效的三刺激值")
+    XYZ_normalized = XYZ_raw / XYZ_raw[1] * 100
+    xy_values = np.asarray(colour_module.XYZ_to_xy(XYZ_raw), dtype=float)
+    xy = (float(xy_values[0]), float(xy_values[1]))
+    uv = _xy_to_uv(xy)
+    cct, duv, warnings = _cct_duv_from_uv(uv)
+    return SpectrumChromaticityResult(
+        name=spectrum.name,
+        wavelengths=tuple(float(value) for value in calculation_grid),
+        values=tuple(float(value) for value in aligned_values),
+        normalized_values=tuple(float(value) for value in aligned_values / np.max(aligned_values)),
+        XYZ=(
+            float(XYZ_normalized[0]),
+            float(XYZ_normalized[1]),
+            float(XYZ_normalized[2]),
+        ),
+        xy=xy,
+        uv=uv,
+        upvp=(uv[0], uv[1] * 1.5),
+        cct=cct,
+        duv=duv,
+        warnings=tuple(dict.fromkeys(warnings)),
+    )
+
+
+def mix_spectra_by_peak_ratio(
+    first: SpectrumInput,
+    second: SpectrumInput,
+    first_ratio: float,
+    *,
+    name: str = "混合光谱",
+) -> SpectrumChromaticityResult:
+    """按两条光谱归一化峰值的贡献比例生成实时混光结果。"""
+
+    ratio = float(first_ratio)
+    if not math.isfinite(ratio) or not 0 <= ratio <= 1:
+        raise SpectralAnalysisError("峰值比例必须位于 0–1")
+    calculation_grid, (first_values, second_values) = _aligned_peak_spectra((first, second))
+    mixed_values = ratio * first_values + (1 - ratio) * second_values
+    return analyze_spectrum_chromaticity(
+        SpectrumInput(
+            name=name,
+            wavelengths=tuple(float(value) for value in calculation_grid),
+            values=tuple(float(value) for value in mixed_values),
+        )
+    )
+
+
+def solve_three_spectrum_mix(
+    spectra: tuple[SpectrumInput, SpectrumInput, SpectrumInput],
+    target_xy: tuple[float, float],
+    *,
+    name: str = "目标混合光谱",
+) -> ThreeSpectrumMixSolution:
+    """反求三条峰值归一化光谱达到目标 xy 色坐标时的非负配比。"""
+
+    target = _coordinate_result("目标色坐标", target_xy, "xy")
+    colour_module = _require_colour()
+    calculation_grid, basis_values = _aligned_peak_spectra(spectra)
+    XYZ_columns: list[np.ndarray] = []
+    for spectrum, values in zip(spectra, basis_values):
+        sd = colour_module.SpectralDistribution(
+            dict(zip(calculation_grid.tolist(), values.tolist())),
+            name=spectrum.name,
+        )
+        XYZ_columns.append(np.asarray(colour_module.sd_to_XYZ(sd), dtype=float))
+    matrix = np.column_stack(XYZ_columns)
+    if not np.all(np.isfinite(matrix)) or np.linalg.matrix_rank(matrix) < 3:
+        raise SpectralAnalysisError("最终三条光谱的色度信息不足以唯一反求配比")
+    x, y = target.xy
+    target_XYZ = np.asarray((x / y, 1.0, (1 - x - y) / y), dtype=float)
+    try:
+        raw_weights = np.linalg.solve(matrix, target_XYZ)
+    except np.linalg.LinAlgError as exc:
+        raise SpectralAnalysisError("最终三条光谱无法形成稳定的目标色坐标解") from exc
+    tolerance = max(1e-12, float(np.max(np.abs(raw_weights))) * 1e-8)
+    if np.any(raw_weights < -tolerance):
+        raise SpectralAnalysisError("目标色坐标位于最终三条光谱可混合范围之外")
+    weights = np.maximum(raw_weights, 0)
+    weight_sum = float(np.sum(weights))
+    if not math.isfinite(weight_sum) or weight_sum <= 0:
+        raise SpectralAnalysisError("无法得到有效的三光谱配比")
+    ratios = weights / weight_sum
+    mixed_values = np.zeros_like(calculation_grid, dtype=float)
+    for ratio, values in zip(ratios, basis_values):
+        mixed_values += float(ratio) * values
+    mixed_input = SpectrumInput(
+        name=name,
+        wavelengths=tuple(float(value) for value in calculation_grid),
+        values=tuple(float(value) for value in mixed_values),
+    )
+    result = analyze_spectrum(mixed_input)
+    mixed_sd = colour_module.SpectralDistribution(
+        dict(zip(calculation_grid.tolist(), mixed_values.tolist())),
+        name=name,
+    )
+    luminous_flux = float(colour_module.luminous_flux(mixed_sd))
+    return ThreeSpectrumMixSolution(
+        result=result,
+        peak_ratios=(float(ratios[0]), float(ratios[1]), float(ratios[2])),
+        luminous_flux=luminous_flux,
     )
 
 

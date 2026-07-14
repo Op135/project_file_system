@@ -10,6 +10,7 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 from src.tools.spectral_analysis import (  # noqa: E402
+    SpectrumChromaticityResult,
     analyze_cct_reference,
     analyze_spectral_text,
     parse_chromaticity_text,
@@ -23,6 +24,8 @@ from src.tools.spectral_analyzer import (  # noqa: E402
     _cri_pair_chromaticity_chart_options,
     _cri_value_rows,
     _default_series_styles,
+    _mixing_node_options,
+    _mixing_nodes_and_active_ids,
     _option_text,
     _series_style,
     _spectrum_group_key,
@@ -241,6 +244,51 @@ class SpectralAnalyzerOptionsTests(unittest.TestCase):
         reference_options = _spectrum_reference_options(self.spectra)
         self.assertIn("none", reference_options)
         self.assertIn("reference:0", reference_options)
+
+    def test_mixing_graph_supports_parallel_and_multilevel_combinations(self):
+        sources = [replace(self.spectra[index % 2], name=f"光谱 {index + 1}") for index in range(6)]
+        steps = [
+            {
+                "id": "mix:1",
+                "name": "混合 1",
+                "first_id": "source:0",
+                "second_id": "source:1",
+                "ratio": 25,
+            },
+            {
+                "id": "mix:2",
+                "name": "混合 2",
+                "first_id": "source:2",
+                "second_id": "source:3",
+                "ratio": 60,
+            },
+            {
+                "id": "mix:3",
+                "name": "混合 3",
+                "first_id": "mix:1",
+                "second_id": "mix:2",
+                "ratio": 40,
+            },
+        ]
+        nodes, active_ids = _mixing_nodes_and_active_ids(sources, steps)
+        self.assertEqual(active_ids, ["source:4", "source:5", "mix:3"])
+        self.assertIn("mix:1", nodes)
+        self.assertIn("mix:2", nodes)
+        self.assertIn("mix:3", nodes)
+        mixed_result = nodes["mix:3"]
+        self.assertIsInstance(mixed_result, SpectrumChromaticityResult)
+        assert isinstance(mixed_result, SpectrumChromaticityResult)
+        self.assertGreater(mixed_result.xy[0], 0)
+        options = _mixing_node_options(nodes, active_ids)
+        self.assertTrue(options["source:4"].startswith("原始 ·"))
+        self.assertEqual(options["mix:3"], "混合 3")
+        spectrum_options = _spectrum_chart_options([mixed_result], normalized=True)
+        cie_options = _chromaticity_chart_options(
+            coordinate_results=[mixed_result],
+            coordinate_system="xy",
+        )
+        self.assertGreater(len(spectrum_options["series"][0]["data"]), 300)
+        self.assertEqual(cie_options["series"][-1]["name"], "混合 3")
 
     def test_summary_rows_expose_engineering_metrics(self):
         spectrum_row = _spectrum_summary_rows(self.spectra)[0]

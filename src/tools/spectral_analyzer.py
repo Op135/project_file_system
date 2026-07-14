@@ -6,6 +6,7 @@ from __future__ import annotations
 import logging
 import math
 import re
+from collections.abc import Sequence
 from typing import Any
 
 from nicegui import run, ui
@@ -15,7 +16,10 @@ from .spectral_analysis import (
     STANDARD_ILLUMINANTS,
     ChromaticityResult,
     SpectralAnalysisError,
+    SpectrumChromaticityResult,
+    SpectrumInput,
     SpectrumResult,
+    ThreeSpectrumMixSolution,
     analyze_cct_reference,
     analyze_spectral_text,
     analyze_standard_illuminant,
@@ -23,8 +27,10 @@ from .spectral_analysis import (
     chromaticity_background_image,
     chromaticity_isotherms,
     chromaticity_loci,
+    mix_spectra_by_peak_ratio,
     parse_chromaticity_text,
     spectral_example_text,
+    solve_three_spectrum_mix,
 )
 
 logger = logging.getLogger(__name__)
@@ -396,6 +402,62 @@ def _nonnegative_number(value: object, default: float) -> float:
     return number if math.isfinite(number) and number >= 0 else default
 
 
+MixingSpectrumResult = SpectrumResult | SpectrumChromaticityResult
+
+
+def _spectrum_input_from_result(result: MixingSpectrumResult) -> SpectrumInput:
+    """把原始或中间混合结果转换为可继续参与混合的光谱输入。"""
+
+    return SpectrumInput(result.name, result.wavelengths, result.values)
+
+
+def _mixing_nodes_and_active_ids(
+    source_results: list[SpectrumResult],
+    steps: list[dict[str, Any]],
+) -> tuple[dict[str, MixingSpectrumResult], list[str]]:
+    """按组合步骤重建多层混光节点，并返回当前未被消耗的节点。"""
+
+    nodes: dict[str, MixingSpectrumResult] = {
+        f"source:{index}": result for index, result in enumerate(source_results)
+    }
+    active_ids = list(nodes)
+    for index, step in enumerate(steps, start=1):
+        step_id = str(step.get("id") or f"mix:{index}")
+        first_id = str(step.get("first_id") or "")
+        second_id = str(step.get("second_id") or "")
+        if first_id == second_id or first_id not in active_ids or second_id not in active_ids:
+            raise SpectralAnalysisError(f"第 {index} 个混合步骤引用了无效或已消耗的光谱")
+        ratio_value = step.get("ratio", 50.0)
+        ratio_percent = _nonnegative_number(ratio_value, 50.0)
+        if ratio_percent > 100:
+            raise SpectralAnalysisError("峰值比例必须位于 0–100%")
+        first = nodes[first_id]
+        second = nodes[second_id]
+        mixed = mix_spectra_by_peak_ratio(
+            _spectrum_input_from_result(first),
+            _spectrum_input_from_result(second),
+            ratio_percent / 100,
+            name=str(step.get("name") or f"第 {index} 层混合"),
+        )
+        nodes[step_id] = mixed
+        active_ids.remove(first_id)
+        active_ids.remove(second_id)
+        active_ids.append(step_id)
+    return nodes, active_ids
+
+
+def _mixing_node_options(
+    nodes: dict[str, MixingSpectrumResult],
+    active_ids: list[str],
+) -> dict[str, str]:
+    """生成当前仍可参与下一层组合的光谱选项。"""
+
+    return {
+        node_id: (f"原始 · {nodes[node_id].name}" if node_id.startswith("source:") else nodes[node_id].name)
+        for node_id in active_ids
+    }
+
+
 def _spectrum_summary_rows(results: list[SpectrumResult]) -> list[dict[str, Any]]:
     """生成综合指标表数据。"""
 
@@ -419,7 +481,7 @@ def _spectrum_summary_rows(results: list[SpectrumResult]) -> list[dict[str, Any]
 
 
 def _spectrum_chart_options(
-    results: list[SpectrumResult],
+    results: Sequence[MixingSpectrumResult],
     normalized: bool = True,
     reference_result: SpectrumResult | None = None,
     series_styles: dict[str, dict[str, str]] | None = None,
@@ -591,9 +653,9 @@ def _isotherm_series(coordinate_system: str) -> list[dict[str, Any]]:
 
 
 def _chromaticity_chart_options(
-    spectrum_results: list[SpectrumResult] | None = None,
-    coordinate_results: list[ChromaticityResult] | None = None,
-    standard_illuminant_results: list[ChromaticityResult] | None = None,
+    spectrum_results: Sequence[SpectrumResult] | None = None,
+    coordinate_results: Sequence[ChromaticityResult | SpectrumChromaticityResult] | None = None,
+    standard_illuminant_results: Sequence[ChromaticityResult] | None = None,
     *,
     coordinate_system: str = "xy",
     series_styles: dict[str, dict[str, str]] | None = None,
@@ -630,7 +692,9 @@ def _chromaticity_chart_options(
     ]
     if show_isotherms:
         series.extend(_isotherm_series(coordinate_system))
-    all_results: list[tuple[SpectrumResult | ChromaticityResult, str]] = [
+    all_results: list[
+        tuple[SpectrumResult | ChromaticityResult | SpectrumChromaticityResult, str]
+    ] = [
         *((item, "spectrum") for item in spectrum_results),
         *((item, "coordinate") for item in coordinate_results),
         *((item, "standard") for item in standard_illuminant_results),
@@ -911,6 +975,13 @@ class SpectralAnalyzerTool:
             "source_a": "",
             "source_b": "standard:D65",
         }
+        self.mixing_state: dict[str, Any] = {
+            "source_a": "",
+            "source_b": "",
+            "new_ratio": 50.0,
+            "target_x": 0.3127,
+            "target_y": 0.3290,
+        }
         self.chart_state: dict[str, Any] = {
             "spectrum_x_interval": 20.0,
             "spectrum_y_interval": 0.0,
@@ -923,12 +994,15 @@ class SpectralAnalyzerTool:
         self.standard_illuminant_results: list[ChromaticityResult] = []
         self.cri_comparison_results: tuple[SpectrumResult, SpectrumResult] | None = None
         self.spectrum_reference_result: SpectrumResult | None = None
+        self.mixing_steps: list[dict[str, Any]] = []
+        self.mixing_solution: ThreeSpectrumMixSolution | None = None
 
     def show(self, dialog: ui.dialog) -> None:
         """渲染光谱分析工具界面。"""
 
         if self.spectrum_results and not self.series_styles:
             self.series_styles = _default_series_styles(self.spectrum_results)
+        mixing_step_labels: dict[str, Any] = {}
 
         @ui.refreshable
         def render_spectrum_chart() -> None:
@@ -1333,6 +1407,372 @@ class SpectralAnalyzerTool:
                 return
             render_spectrum_chart.refresh()
 
+        def current_mixing_graph() -> tuple[dict[str, MixingSpectrumResult], list[str]]:
+            """返回按当前滑块比例重建后的全部混光节点与活动节点。"""
+
+            return _mixing_nodes_and_active_ids(self.spectrum_results, self.mixing_steps)
+
+        def mixing_step_summary(
+            step: dict[str, Any],
+            nodes: dict[str, MixingSpectrumResult],
+        ) -> str:
+            """格式化单个组合步骤的峰值比例与实时色坐标。"""
+
+            ratio = _nonnegative_number(step.get("ratio"), 50.0)
+            first = nodes[str(step["first_id"])]
+            second = nodes[str(step["second_id"])]
+            result = nodes[str(step["id"])]
+            return (
+                f"{first.name} {ratio:.0f}%  :  {second.name} {100 - ratio:.0f}%"
+                f"    ·    xy = ({result.xy[0]:.6f}, {result.xy[1]:.6f})"
+            )
+
+        @ui.refreshable
+        def render_mixing_solution() -> None:
+            try:
+                nodes, active_ids = current_mixing_graph()
+            except SpectralAnalysisError as exc:
+                ui.label(str(exc)).classes("text-sm text-rose-600")
+                return
+            if len(active_ids) != 3:
+                ui.label(
+                    f"当前剩余 {len(active_ids)} 条光谱；请继续组合，直至恰好剩余 3 条。"
+                ).classes("text-sm text-slate-500")
+                return
+            if self.mixing_solution is None:
+                ui.label("已满足三光谱求解条件，请输入目标 xy 并点击“自动求解配比”。").classes(
+                    "text-sm text-blue-700"
+                )
+                return
+            solution = self.mixing_solution
+            ratio_rows = [
+                {
+                    "name": nodes[node_id].name,
+                    "ratio": f"{ratio * 100:.4f}%",
+                }
+                for node_id, ratio in zip(active_ids, solution.peak_ratios)
+            ]
+            ui.table(
+                columns=[
+                    {"name": "name", "label": "最终光谱", "field": "name", "align": "left"},
+                    {"name": "ratio", "label": "峰值配比", "field": "ratio", "align": "right"},
+                ],
+                rows=ratio_rows,
+            ).props("dense flat bordered").classes("w-full")
+            result = solution.result
+            metrics = [
+                ("目标混合 xy", f"{result.xy[0]:.6f}, {result.xy[1]:.6f}"),
+                ("CCT", "—" if result.cct is None else f"{result.cct:.0f} K"),
+                ("Duv", _metric(result.duv, 6)),
+                ("相对光通量", f"{solution.luminous_flux:.6g}"),
+                ("CRI Ra", _metric(result.ra, 2)),
+                ("R9", _metric(dict(result.ri).get(9), 2)),
+                ("CIE Rf", _metric(result.rf, 2)),
+            ]
+            with ui.grid().classes("w-full grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-2 mt-2"):
+                for label, value in metrics:
+                    with ui.card().classes("w-full p-2 gap-0 bg-slate-50 shadow-none border"):
+                        ui.label(label).classes("text-xs text-slate-500")
+                        ui.label(value).classes("text-base font-bold text-slate-800")
+            ui.label(
+                "光通量按单位峰值混合光谱计算，为相对值；换算绝对 lm 还需要总体辐射功率或光通量标定。"
+            ).classes("text-xs text-amber-700 mt-1")
+
+        @ui.refreshable
+        def render_mixing_charts() -> None:
+            try:
+                nodes, active_ids = current_mixing_graph()
+            except SpectralAnalysisError as exc:
+                ui.label(str(exc)).classes("text-sm text-rose-600")
+                return
+            active_results = [nodes[node_id] for node_id in active_ids]
+            spectrum_results = [item for item in active_results if isinstance(item, SpectrumResult)]
+            coordinate_results: list[Any] = [
+                item for item in active_results if isinstance(item, SpectrumChromaticityResult)
+            ]
+            plot_results: list[Any] = list(active_results)
+            if self.mixing_solution is not None:
+                spectrum_results.append(self.mixing_solution.result)
+                plot_results.append(self.mixing_solution.result)
+            target_x = _nonnegative_number(self.mixing_state.get("target_x"), -1.0)
+            target_y = _nonnegative_number(self.mixing_state.get("target_y"), -1.0)
+            if target_x > 0 and target_y > 0 and target_x + target_y < 1:
+                try:
+                    coordinate_results.extend(
+                        parse_chromaticity_text(f"目标色坐标\t{target_x}\t{target_y}", "xy")
+                    )
+                except SpectralAnalysisError:
+                    pass
+            with ui.grid().classes("w-full grid-cols-1 xl:grid-cols-2 gap-2 items-start"):
+                with ui.card().classes("w-full p-3 rounded-xl shadow-sm"):
+                    ui.label("CIE 1931 xy 实时色坐标").classes("text-lg font-bold text-slate-800")
+                    _render_cie_chart(
+                        _chromaticity_chart_options(
+                            spectrum_results=spectrum_results,
+                            coordinate_results=coordinate_results,
+                            coordinate_system="xy",
+                            axis_interval=_nonnegative_number(self.chart_state.get("xy_interval"), 0.1),
+                            show_isotherms=bool(self.coordinate_state.get("show_isotherms", False)),
+                        ),
+                        viewport_offset=380,
+                    )
+                with ui.card().classes("w-full p-3 rounded-xl shadow-sm"):
+                    ui.label("实时光谱").classes("text-lg font-bold text-slate-800")
+                    ui.echart(
+                        _spectrum_chart_options(
+                            plot_results,
+                            normalized=True,
+                            x_axis_interval=_nonnegative_number(
+                                self.chart_state.get("spectrum_x_interval"), 20.0
+                            ),
+                            y_axis_interval=_nonnegative_number(
+                                self.chart_state.get("spectrum_y_interval"), 0.0
+                            ),
+                        )
+                    ).classes("w-full h-[680px]")
+
+        def refresh_mixing_outputs() -> None:
+            """刷新最终指标与下方双图，不重建正在拖动的滑块。"""
+
+            render_mixing_solution.refresh()
+            render_mixing_charts.refresh()
+
+        def update_mixing_target(_=None) -> None:
+            """目标坐标变化时清除旧解并实时移动 CIE 目标点。"""
+
+            self.mixing_solution = None
+            refresh_mixing_outputs()
+
+        def make_mixing_ratio_handler(step_id: str):
+            """为单个混合步骤创建不会被事件参数覆盖的比例更新回调。"""
+
+            def handle_ratio_change(event: Any) -> None:
+                step = next((item for item in self.mixing_steps if item.get("id") == step_id), None)
+                if step is None:
+                    return
+                step["ratio"] = min(100.0, _nonnegative_number(getattr(event, "value", None), 50.0))
+                self.mixing_solution = None
+                try:
+                    nodes, _ = current_mixing_graph()
+                except SpectralAnalysisError as exc:
+                    ui.notify(str(exc), type="warning")
+                    return
+                label = mixing_step_labels.get(step_id)
+                if label is not None:
+                    label.set_text(mixing_step_summary(step, nodes))
+                refresh_mixing_outputs()
+
+            return handle_ratio_change
+
+        def add_mixing_step() -> None:
+            """消耗两个当前活动节点并生成下一层混合节点。"""
+
+            try:
+                nodes, active_ids = current_mixing_graph()
+            except SpectralAnalysisError as exc:
+                ui.notify(str(exc), type="warning")
+                return
+            if len(active_ids) <= 3:
+                ui.notify("已剩余三条光谱，请直接进行目标色坐标求解", type="info")
+                return
+            allowed = set(active_ids)
+            first_id = _option_text(self.mixing_state.get("source_a"), allowed)
+            second_id = _option_text(self.mixing_state.get("source_b"), allowed)
+            if not first_id or not second_id or first_id == second_id:
+                ui.notify("请选择两条不同的当前光谱", type="warning")
+                return
+            ratio = min(100.0, _nonnegative_number(self.mixing_state.get("new_ratio"), 50.0))
+            step_number = len(self.mixing_steps) + 1
+            step_id = f"mix:{step_number}"
+            self.mixing_steps.append(
+                {
+                    "id": step_id,
+                    "name": f"混合 {step_number} · {nodes[first_id].name} + {nodes[second_id].name}",
+                    "first_id": first_id,
+                    "second_id": second_id,
+                    "ratio": ratio,
+                }
+            )
+            self.mixing_solution = None
+            _, next_active_ids = current_mixing_graph()
+            self.mixing_state["source_a"] = next_active_ids[0] if next_active_ids else ""
+            self.mixing_state["source_b"] = next_active_ids[1] if len(next_active_ids) > 1 else ""
+            render_mixing_workspace.refresh()
+
+        def undo_mixing_step() -> None:
+            """撤销最近一层组合。"""
+
+            if not self.mixing_steps:
+                return
+            self.mixing_steps.pop()
+            self.mixing_solution = None
+            render_mixing_workspace.refresh()
+
+        def reset_mixing_steps() -> None:
+            """恢复到全部导入光谱均未组合的状态。"""
+
+            self.mixing_steps.clear()
+            self.mixing_solution = None
+            if self.spectrum_results:
+                self.mixing_state["source_a"] = "source:0"
+                self.mixing_state["source_b"] = "source:1" if len(self.spectrum_results) > 1 else ""
+            render_mixing_workspace.refresh()
+
+        async def solve_target_mixing() -> None:
+            """对最终三条活动光谱反求目标 xy 对应的峰值配比。"""
+
+            try:
+                nodes, active_ids = current_mixing_graph()
+                if len(active_ids) != 3:
+                    raise SpectralAnalysisError("必须先组合到恰好剩余三条光谱")
+                target_x = _nonnegative_number(self.mixing_state.get("target_x"), -1.0)
+                target_y = _nonnegative_number(self.mixing_state.get("target_y"), -1.0)
+                if target_x <= 0 or target_y <= 0 or target_x + target_y >= 1:
+                    raise SpectralAnalysisError("目标 xy 色坐标无效")
+                spectra = (
+                    _spectrum_input_from_result(nodes[active_ids[0]]),
+                    _spectrum_input_from_result(nodes[active_ids[1]]),
+                    _spectrum_input_from_result(nodes[active_ids[2]]),
+                )
+                waiting = ui.notification(
+                    "正在反求三光谱配比并计算 CRI、CCT 与光通量……",
+                    type="ongoing",
+                    spinner=True,
+                    timeout=None,
+                    position="top",
+                )
+                try:
+                    self.mixing_solution = await run.cpu_bound(
+                        solve_three_spectrum_mix,
+                        spectra,
+                        (target_x, target_y),
+                    )
+                finally:
+                    waiting.dismiss()
+            except SpectralAnalysisError as exc:
+                self.mixing_solution = None
+                ui.notify(str(exc), type="warning")
+                refresh_mixing_outputs()
+                return
+            except Exception as exc:
+                self.mixing_solution = None
+                logger.error("三光谱目标配比求解失败", exc_info=True)
+                ui.notify(f"目标配比求解失败：{exc}", type="negative")
+                refresh_mixing_outputs()
+                return
+            refresh_mixing_outputs()
+            ui.notify("已完成目标色坐标配比与光参数计算", type="positive")
+
+        @ui.refreshable
+        def render_mixing_workspace() -> None:
+            mixing_step_labels.clear()
+            if len(self.spectrum_results) < 3:
+                with ui.column().classes("w-full h-[520px] items-center justify-center gap-3 text-slate-400"):
+                    ui.icon("device_hub", size="64px")
+                    ui.label("请先在“数据录入”中导入并计算至少三条光谱").classes("text-lg")
+                return
+            try:
+                nodes, active_ids = current_mixing_graph()
+            except SpectralAnalysisError as exc:
+                ui.label(str(exc)).classes("text-sm text-rose-600")
+                return
+            options = _mixing_node_options(nodes, active_ids)
+            allowed = set(options)
+            if self.mixing_state.get("source_a") not in allowed:
+                self.mixing_state["source_a"] = active_ids[0]
+            if self.mixing_state.get("source_b") not in allowed or (
+                self.mixing_state.get("source_b") == self.mixing_state.get("source_a")
+            ):
+                self.mixing_state["source_b"] = next(
+                    (node_id for node_id in active_ids if node_id != self.mixing_state.get("source_a")),
+                    "",
+                )
+
+            with ui.card().classes("w-full p-4 rounded-xl shadow-sm"):
+                with ui.row().classes("w-full items-center justify-between gap-3"):
+                    with ui.column().classes("gap-0"):
+                        ui.label("逐层峰值配比组合").classes("text-lg font-bold text-slate-800")
+                        ui.label(
+                            "每次选择两条当前光谱生成一个新节点；被组合的节点不再参与同层选择，新节点可继续进入下一层。"
+                        ).classes("text-xs text-slate-500")
+                    ui.badge(f"当前剩余 {len(active_ids)} 条", color="blue-8").props("rounded")
+                with ui.row().classes("w-full items-end gap-3 flex-wrap mt-2"):
+                    ui.select(options, label="光谱 A").bind_value(self.mixing_state, "source_a").props(
+                        "outlined dense options-dense"
+                    ).classes("w-full max-w-[420px]")
+                    ui.select(options, label="光谱 B").bind_value(self.mixing_state, "source_b").props(
+                        "outlined dense options-dense"
+                    ).classes("w-full max-w-[420px]")
+                    with ui.column().classes("w-full max-w-[360px] gap-0"):
+                        ui.label("新组合中 A 的峰值占比（B 自动取余）").classes("text-xs text-slate-600")
+                        ui.slider(min=0, max=100, step=1).bind_value(
+                            self.mixing_state, "new_ratio"
+                        ).props("label label-always")
+                    ui.button(
+                        "加入组合层",
+                        icon="add_link",
+                        on_click=add_mixing_step,
+                    ).props(
+                        "unelevated no-caps color=blue-8"
+                        + (" disable" if len(active_ids) <= 3 else "")
+                    )
+                    ui.button("撤销上一层", icon="undo", on_click=undo_mixing_step).props(
+                        "flat no-caps" + (" disable" if not self.mixing_steps else "")
+                    )
+                    ui.button("重置组合", icon="restart_alt", on_click=reset_mixing_steps).props(
+                        "flat no-caps color=grey-7"
+                    )
+                with ui.row().classes("w-full gap-2 flex-wrap mt-2"):
+                    for node_id in active_ids:
+                        ui.badge(options[node_id], color="blue-grey-6").props("outline")
+
+            if self.mixing_steps:
+                with ui.card().classes("w-full p-4 rounded-xl shadow-sm"):
+                    ui.label("组合层与实时色坐标").classes("text-lg font-bold text-slate-800")
+                    for index, step in enumerate(self.mixing_steps, start=1):
+                        with ui.card().classes("w-full p-3 gap-1 bg-slate-50 shadow-none border"):
+                            ui.label(f"第 {index} 层 · {step['name']}").classes(
+                                "font-semibold text-slate-700"
+                            )
+                            mixing_step_labels[str(step["id"])] = ui.label(
+                                mixing_step_summary(step, nodes)
+                            ).classes("text-sm text-blue-800")
+                            ui.slider(
+                                min=0,
+                                max=100,
+                                step=1,
+                                value=_nonnegative_number(step.get("ratio"), 50.0),
+                                on_change=make_mixing_ratio_handler(str(step["id"])),
+                            ).props("label label-always")
+
+            with ui.card().classes("w-full p-4 rounded-xl shadow-sm"):
+                ui.label("最终三光谱目标求解").classes("text-lg font-bold text-slate-800")
+                ui.label(
+                    "当活动节点恰好剩余三条时，输入目标 CIE 1931 xy；系统将反求非负峰值配比并计算最终光参数。"
+                ).classes("text-xs text-slate-500")
+                with ui.row().classes("w-full items-center gap-3 flex-wrap mt-2"):
+                    ui.number("目标 x", min=0.000001, max=0.999999, step=0.0001).bind_value(
+                        self.mixing_state, "target_x"
+                    ).props("outlined dense input-class=text-right").classes("w-48").on_value_change(
+                        update_mixing_target
+                    )
+                    ui.number("目标 y", min=0.000001, max=0.999999, step=0.0001).bind_value(
+                        self.mixing_state, "target_y"
+                    ).props("outlined dense input-class=text-right").classes("w-48").on_value_change(
+                        update_mixing_target
+                    )
+                    ui.button(
+                        "自动求解配比",
+                        icon="calculate",
+                        on_click=solve_target_mixing,
+                    ).props(
+                        "unelevated no-caps color=indigo-8"
+                        + (" disable" if len(active_ids) != 3 else "")
+                    )
+                render_mixing_solution()
+
+            render_mixing_charts()
+
         async def calculate_spectra() -> None:
             calculate_button.props("loading disable")
             waiting_notification = ui.notification(
@@ -1362,8 +1802,13 @@ class SpectralAnalyzerTool:
                 self.spectrum_reference_result = None
                 self.cri_state["source_a"] = "input:0" if results else "standard:D50"
                 self.cri_state["source_b"] = "input:1" if len(results) > 1 else "standard:D65"
+                self.mixing_steps.clear()
+                self.mixing_solution = None
+                self.mixing_state["source_a"] = "source:0" if results else ""
+                self.mixing_state["source_b"] = "source:1" if len(results) > 1 else ""
                 await load_cri_comparison_sources()
                 render_spectrum_results.refresh()
+                render_mixing_workspace.refresh()
                 workspace_tabs.set_value(analysis_tab)
                 ui.notify(
                     f"已完成 {len(results)} 条光谱与 {len(coordinates)} 个手工色坐标的联合计算",
@@ -1393,8 +1838,11 @@ class SpectralAnalyzerTool:
             self.spectrum_results = []
             self.spectrum_reference_result = None
             self.cri_comparison_results = None
+            self.mixing_steps.clear()
+            self.mixing_solution = None
             spectral_textarea.update()
             render_spectrum_results.refresh()
+            render_mixing_workspace.refresh()
 
         def clear_coordinates() -> None:
             self.coordinate_state["data_text"] = ""
@@ -1413,6 +1861,7 @@ class SpectralAnalyzerTool:
             with workspace_tabs:
                 input_tab = ui.tab("数据录入", icon="edit_note")
                 analysis_tab = ui.tab("分析结果", icon="query_stats")
+                mixing_tab = ui.tab("光谱混合", icon="device_hub")
 
             with ui.tab_panels(workspace_tabs, value=input_tab).classes("w-full flex-1 min-h-0 bg-slate-50"):
                 with ui.tab_panel(input_tab).classes("p-0"):
@@ -1510,3 +1959,8 @@ class SpectralAnalyzerTool:
                         with ui.column().classes("w-full max-w-[1900px] mx-auto p-2 gap-3"):
                             with ui.card().classes("w-full p-3 rounded-xl shadow-sm"):
                                 render_spectrum_results()
+
+                with ui.tab_panel(mixing_tab).classes("p-0"):
+                    with ui.scroll_area().classes("w-full h-[calc(100vh-112px)]"):
+                        with ui.column().classes("w-full max-w-[1900px] mx-auto p-2 gap-3"):
+                            render_mixing_workspace()

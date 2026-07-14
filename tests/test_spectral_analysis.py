@@ -4,12 +4,16 @@ import sys
 import unittest
 from pathlib import Path
 
+import numpy as np
+
 ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 from src.tools.spectral_analysis import (  # noqa: E402
     SpectralAnalysisError,
+    SpectrumInput,
+    analyze_spectrum_chromaticity,
     analyze_cct_reference,
     analyze_spectral_text,
     analyze_standard_illuminant,
@@ -17,10 +21,12 @@ from src.tools.spectral_analysis import (  # noqa: E402
     chromaticity_background_image,
     chromaticity_isotherms,
     chromaticity_loci,
+    mix_spectra_by_peak_ratio,
     pairwise_chromaticity_distances,
     parse_chromaticity_text,
     parse_spectral_text,
     spectral_example_text,
+    solve_three_spectrum_mix,
 )
 
 
@@ -120,6 +126,55 @@ class SpectralCalculationTests(unittest.TestCase):
         reference = analyze_cct_reference(source.cct or 6500)
         self.assertAlmostEqual(reference.cct or 0, source.cct or 0, delta=2)
         self.assertEqual(len(reference.cri_samples), 15)
+
+    def test_peak_ratio_mix_supports_endpoints_and_intermediate_chromaticity(self):
+        first_result, second_result = self.results
+        first = SpectrumInput(first_result.name, first_result.wavelengths, first_result.values)
+        second = SpectrumInput(second_result.name, second_result.wavelengths, second_result.values)
+        first_only = mix_spectra_by_peak_ratio(first, second, 1.0)
+        second_only = mix_spectra_by_peak_ratio(first, second, 0.0)
+        midpoint = mix_spectra_by_peak_ratio(first, second, 0.5)
+        self.assertAlmostEqual(first_only.xy[0], first_result.xy[0], places=5)
+        self.assertAlmostEqual(second_only.xy[0], second_result.xy[0], places=5)
+        self.assertGreater(midpoint.xy[0], min(first_result.xy[0], second_result.xy[0]))
+        self.assertLess(midpoint.xy[0], max(first_result.xy[0], second_result.xy[0]))
+
+    def test_three_spectrum_solver_recovers_known_nonnegative_peak_ratios(self):
+        source_results = (
+            analyze_standard_illuminant("A"),
+            analyze_standard_illuminant("D65"),
+            analyze_standard_illuminant("LED-B3"),
+        )
+        sources = (
+            SpectrumInput(
+                source_results[0].name, source_results[0].wavelengths, source_results[0].values
+            ),
+            SpectrumInput(
+                source_results[1].name, source_results[1].wavelengths, source_results[1].values
+            ),
+            SpectrumInput(
+                source_results[2].name, source_results[2].wavelengths, source_results[2].values
+            ),
+        )
+        grid = np.arange(360, 781, dtype=float)
+        basis = []
+        for source in sources:
+            values = np.interp(grid, source.wavelengths, source.values, left=0.0, right=0.0)
+            basis.append(values / np.max(values))
+        expected_ratios = np.asarray((0.2, 0.3, 0.5), dtype=float)
+        target_values = np.zeros_like(grid, dtype=float)
+        for ratio, values in zip(expected_ratios, basis):
+            target_values += float(ratio) * values
+        target = analyze_spectrum_chromaticity(
+            SpectrumInput("已知目标", tuple(grid), tuple(target_values))
+        )
+        solution = solve_three_spectrum_mix(sources, target.xy)
+        self.assertTrue(np.allclose(solution.peak_ratios, expected_ratios, atol=1e-6))
+        self.assertAlmostEqual(solution.result.xy[0], target.xy[0], places=6)
+        self.assertAlmostEqual(solution.result.xy[1], target.xy[1], places=6)
+        self.assertGreater(solution.luminous_flux, 0)
+        with self.assertRaisesRegex(SpectralAnalysisError, "可混合范围之外"):
+            solve_three_spectrum_mix(sources, (0.70, 0.20))
 
 
 class ChromaticityTests(unittest.TestCase):
