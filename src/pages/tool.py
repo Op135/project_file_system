@@ -13,6 +13,7 @@ from src.tools.microlens_calculator import MicrolensCalculator
 from src.tools.mode_calculator import ModeCalculator
 from src.tools.optical_curve_manager import OpticalCurveManagerTool
 from src.tools.simple_coupling_calculator import SimpleCouplingCalculator
+from src.tools.spectral_analyzer import SpectralAnalyzerTool
 from src.tools.spherical_lens_calculator import SphericalLensCalculator
 
 from ..config import BASE_DIR, IMG_DIR, OVER_DIR, PRESET_AVATARS, REQ_DIR, REQ_REMOVE_DIR
@@ -116,6 +117,14 @@ def tool_page():
             "color": "cyan",
             "cls": OpticalCurveManagerTool,
         },
+        {
+            "key": "spectral_analyzer",
+            "title": "光谱色度与显色分析",
+            "subtitle": "CCT/CRI/色坐标与多光谱对比",
+            "icon": "science",
+            "color": "rose",
+            "cls": SpectralAnalyzerTool,
+        },
     ]
 
     # --- 新增：加载权限配置的函数 ---
@@ -212,13 +221,13 @@ def tool_page():
             # --- 渲染卡片 ---
             if is_visible:
                 visible_tools_count += 1
-                # 这里的 lambda 需要注意闭包捕获问题，使用 default argument (cls=tool["cls"]) 锁定变量
+                # 显式接收事件参数，并用默认参数锁定当前工具类，避免点击事件覆盖闭包变量
                 create_tool_card(
                     tool["title"],
                     tool["subtitle"],
                     tool["icon"],
                     tool["color"],
-                    lambda cls=tool["cls"]: open_tool(cls),
+                    lambda _=None, cls=tool["cls"]: open_tool(cls),
                 )
 
         # 如果没有任何权限，显示友好提示
