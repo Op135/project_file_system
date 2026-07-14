@@ -19,7 +19,9 @@ from .spectral_analysis import (
     analyze_cct_reference,
     analyze_spectral_text,
     analyze_standard_illuminant,
+    analyze_standard_illuminant_chromaticity,
     chromaticity_background_image,
+    chromaticity_isotherms,
     chromaticity_loci,
     parse_chromaticity_text,
     spectral_example_text,
@@ -70,6 +72,7 @@ GROUP_KEYWORDS = (
     "透射",
     "光",
 )
+
 
 def _legend_options(names: list[Any] | None = None) -> dict[str, Any]:
     """生成可自动换行且避开右侧工具栏的图例配置。"""
@@ -146,16 +149,66 @@ def _chromaticity_background_series(coordinate_system: str) -> dict[str, Any]:
     }
 
 
-def _render_cie_chart(options: dict[str, Any], viewport_offset: int = 245) -> None:
-    """以正方形容器渲染支持原生二维缩放和平移的 CIE 图。"""
+def _cie_pointer_visibility_js(chart_id: int, *, visible: bool, scatter_only: bool) -> str:
+    """生成在客户端切换十字指示器并可靠控制散点详情的事件处理器。"""
 
-    (
+    opacity = 0.8 if visible else 0
+    label_visible = "true" if visible else "false"
+    scatter_guard = "if (params?.seriesType !== 'scatter') return;" if scatter_only else ""
+    tooltip_action = (
+        "component.chart.dispatchAction({type: 'hideTip'});"
+        if visible
+        else """
+            if (params?.seriesIndex != null && params?.dataIndex != null) {
+                component.chart.dispatchAction({
+                    type: 'showTip',
+                    seriesIndex: params.seriesIndex,
+                    dataIndex: params.dataIndex
+                });
+            }
+        """
+    )
+    return f"""
+        (params) => {{
+            {scatter_guard}
+            const component = getElement({chart_id});
+            if (!component?.chart) return;
+            component.chart.setOption({{
+                tooltip: {{
+                    axisPointer: {{
+                        lineStyle: {{opacity: {opacity}}},
+                        crossStyle: {{opacity: {opacity}}},
+                        label: {{show: {label_visible}}}
+                    }}
+                }}
+            }});
+            {tooltip_action}
+        }}
+    """
+
+
+def _render_cie_chart(options: dict[str, Any], viewport_offset: int = 245) -> None:
+    """以正方形容器渲染支持缩放、平移和智能十字指示的 CIE 图。"""
+
+    chart = (
         ui.echart(options)
         .classes("mx-auto")
         .style(
             f"width: min(100%, calc(100vh - {viewport_offset}px)); "
             "aspect-ratio: 1 / 1; min-width: 680px; min-height: 680px; cursor: grab;"
         )
+    )
+    chart.on(
+        "chart:mouseover",
+        js_handler=_cie_pointer_visibility_js(chart.id, visible=False, scatter_only=True),
+    )
+    chart.on(
+        "chart:mouseout",
+        js_handler=_cie_pointer_visibility_js(chart.id, visible=True, scatter_only=True),
+    )
+    chart.on(
+        "chart:globalout",
+        js_handler=_cie_pointer_visibility_js(chart.id, visible=True, scatter_only=False),
     )
 
 
@@ -174,16 +227,91 @@ def _chromaticity_tooltip(coordinate_system: str, include_cri: bool = False) -> 
     )
     return f"""
         function(params) {{
-            const data = params.data || {{}};
-            const value = data.value || params.value || [];
-            const title = data.title || data.name || params.name || params.seriesName;
-            let html = `<b>${{title}}</b>`;
-            html += `<br/>{first_axis}: ${{Number(value[0]).toFixed(6)}}`;
-            html += `<br/>{second_axis}: ${{Number(value[1]).toFixed(6)}}`;
-            {cri_line}
-            return html;
+            const items = Array.isArray(params) ? params : [params];
+            const pointItems = items.filter(item =>
+                item && item.seriesType === 'scatter' && item.data && item.data.value
+            );
+            if (pointItems.length === 0) return '';
+            return pointItems.map(param => {{
+                const data = param.data || {{}};
+                const value = data.value || param.value || [];
+                const title = data.title || data.name || param.name || param.seriesName;
+                let html = `<b>${{title}}</b>`;
+                html += `<br/>{first_axis}: ${{Number(value[0]).toFixed(6)}}`;
+                html += `<br/>{second_axis}: ${{Number(value[1]).toFixed(6)}}`;
+                {cri_line}
+                return html;
+            }}).join('<br/>');
         }}
     """
+
+
+def _cie_tooltip_options(coordinate_system: str, include_cri: bool = False) -> dict[str, Any]:
+    """生成兼顾鼠标坐标十字线与数据点详情的 CIE 悬停配置。"""
+
+    return {
+        "trigger": "axis",
+        "triggerOn": "mousemove|click",
+        "confine": True,
+        "transitionDuration": 0,
+        "axisPointer": {
+            "type": "cross",
+            "snap": False,
+            "label": {
+                "show": True,
+                "precision": 6,
+                "color": "#ffffff",
+                "fontSize": 14,
+                "fontWeight": 600,
+                "padding": [5, 8],
+                "backgroundColor": "rgba(30, 41, 59, 0.88)",
+            },
+            "lineStyle": {
+                "color": "#475569",
+                "width": 1,
+                "type": "dashed",
+                "opacity": 0.8,
+            },
+            "crossStyle": {
+                "color": "#475569",
+                "width": 1,
+                "type": "dashed",
+                "opacity": 0.8,
+            },
+        },
+        ":formatter": _chromaticity_tooltip(coordinate_system, include_cri),
+    }
+
+
+def _cie_split_line() -> dict[str, Any]:
+    """生成层级稳定且不抢占色度背景的浅色坐标网格线。"""
+
+    return {
+        "show": True,
+        "lineStyle": {
+            "color": "rgba(71, 85, 105, 0.16)",
+            "width": 1,
+            "type": "solid",
+        },
+    }
+
+
+def _cie_axis_text_options() -> dict[str, Any]:
+    """统一放大 CIE 坐标轴名称和刻度字体。"""
+
+    return {
+        "axisLabel": {
+            "fontSize": 15,
+            "fontWeight": 500,
+            "color": "#334155",
+            "margin": 10,
+        },
+        "nameTextStyle": {
+            "fontSize": 18,
+            "fontWeight": 600,
+            "color": "#1e293b",
+        },
+    }
 
 
 def _option_text(value: object, allowed: set[str] | None = None, default: str = "") -> str:
@@ -295,7 +423,7 @@ def _spectrum_chart_options(
     normalized: bool = True,
     reference_result: SpectrumResult | None = None,
     series_styles: dict[str, dict[str, str]] | None = None,
-    x_axis_interval: float = 50.0,
+    x_axis_interval: float = 20.0,
     y_axis_interval: float = 0.0,
 ) -> dict[str, Any]:
     """生成多光谱叠加折线图配置。"""
@@ -425,18 +553,58 @@ def _spectrum_reference_options(results: list[SpectrumResult]) -> dict[str, str]
     }
 
 
+def _isotherm_series(coordinate_system: str) -> list[dict[str, Any]]:
+    """生成带温度标注且不占用图例空间的等色温线系列。"""
+
+    series: list[dict[str, Any]] = []
+    for cct, start, end in chromaticity_isotherms(coordinate_system):
+        series.append(
+            {
+                "name": f"{cct} K 等色温线",
+                "type": "line",
+                "showSymbol": False,
+                "silent": True,
+                "z": 3,
+                "tooltip": {"show": False},
+                "lineStyle": {
+                    "color": "#64748b",
+                    "width": 1.2,
+                    "type": "dashed",
+                    "opacity": 0.9,
+                },
+                "endLabel": {
+                    "show": True,
+                    "formatter": f"{cct} K",
+                    "color": "#475569",
+                    "fontSize": 10,
+                    "fontWeight": 600,
+                    "distance": 4,
+                },
+                "labelLayout": {
+                    "moveOverlap": "shiftY",
+                    "hideOverlap": False,
+                },
+                "data": [list(start), list(end)],
+            }
+        )
+    return series
+
+
 def _chromaticity_chart_options(
     spectrum_results: list[SpectrumResult] | None = None,
     coordinate_results: list[ChromaticityResult] | None = None,
+    standard_illuminant_results: list[ChromaticityResult] | None = None,
     *,
     coordinate_system: str = "xy",
     series_styles: dict[str, dict[str, str]] | None = None,
     axis_interval: float = 0.1,
+    show_isotherms: bool = False,
 ) -> dict[str, Any]:
-    """生成带颜色背景的轨迹、光谱点与手工坐标联合色度图。"""
+    """生成带颜色背景的轨迹、光谱点、标准光源与手工坐标联合色度图。"""
 
     spectrum_results = spectrum_results or []
     coordinate_results = coordinate_results or []
+    standard_illuminant_results = standard_illuminant_results or []
     spectral_locus, planckian_locus = chromaticity_loci(coordinate_system)
     is_xy = coordinate_system == "xy"
     series: list[dict[str, Any]] = [
@@ -455,29 +623,36 @@ def _chromaticity_chart_options(
             "type": "line",
             "showSymbol": False,
             "silent": True,
-            "z": 3,
+            "z": 4,
             "lineStyle": {"color": "#111827", "width": 2.5, "type": "solid"},
             "data": [list(point) for point in planckian_locus],
         },
     ]
-    all_results: list[SpectrumResult | ChromaticityResult] = [*spectrum_results, *coordinate_results]
-    for index, item in enumerate(all_results):
+    if show_isotherms:
+        series.extend(_isotherm_series(coordinate_system))
+    all_results: list[tuple[SpectrumResult | ChromaticityResult, str]] = [
+        *((item, "spectrum") for item in spectrum_results),
+        *((item, "coordinate") for item in coordinate_results),
+        *((item, "standard") for item in standard_illuminant_results),
+    ]
+    for index, (item, result_kind) in enumerate(all_results):
         point = item.xy if is_xy else item.upvp
-        is_spectrum = isinstance(item, SpectrumResult)
         symbol, color = _series_style(item.name, series_styles, index)
-        if not is_spectrum:
+        if result_kind == "coordinate":
             symbol = "triangle"
+        elif result_kind == "standard":
+            symbol = "diamond"
         series.append(
             {
                 "name": item.name,
                 "type": "scatter",
                 "symbol": symbol,
-                "symbolSize": 13,
+                "symbolSize": 8,
                 "z": 5,
                 "itemStyle": {
                     "color": color,
                     "borderColor": "#ffffff",
-                    "borderWidth": 2,
+                    "borderWidth": 1,
                 },
                 "label": {"show": False},
                 "data": [
@@ -493,11 +668,7 @@ def _chromaticity_chart_options(
     split_number = _axis_split_number(axis_max, axis_interval)
     return {
         "animation": False,
-        "tooltip": {
-            "trigger": "item",
-            "confine": True,
-            ":formatter": _chromaticity_tooltip(coordinate_system),
-        },
+        "tooltip": _cie_tooltip_options(coordinate_system),
         "legend": _legend_options(
             [
                 "光谱轨迹",
@@ -506,12 +677,16 @@ def _chromaticity_chart_options(
                     {
                         "name": item.name,
                         "icon": (
-                            _series_style(item.name, series_styles, index)[0]
-                            if isinstance(item, SpectrumResult)
-                            else "triangle"
+                            "triangle"
+                            if result_kind == "coordinate"
+                            else (
+                                "diamond"
+                                if result_kind == "standard"
+                                else _series_style(item.name, series_styles, index)[0]
+                            )
                         ),
                     }
-                    for index, item in enumerate(all_results)
+                    for index, (item, result_kind) in enumerate(all_results)
                 ],
             ]
         ),
@@ -523,19 +698,25 @@ def _chromaticity_chart_options(
         },
         "dataZoom": _cie_data_zoom(),
         "xAxis": {
+            "z": 1,
             "type": "value",
             "name": "x" if is_xy else "u′",
             "nameLocation": "middle",
             "nameGap": 32,
             "min": 0,
             "max": axis_max,
+            "splitLine": _cie_split_line(),
+            **_cie_axis_text_options(),
             **({"splitNumber": split_number} if split_number is not None else {}),
         },
         "yAxis": {
+            "z": 1,
             "type": "value",
             "name": "y" if is_xy else "v′",
             "min": 0,
             "max": axis_max,
+            "splitLine": _cie_split_line(),
+            **_cie_axis_text_options(),
             **({"splitNumber": split_number} if split_number is not None else {}),
         },
         "series": series,
@@ -549,6 +730,7 @@ def _cri_pair_chromaticity_chart_options(
     coordinate_system: str = "xy",
     series_styles: dict[str, dict[str, str]] | None = None,
     axis_interval: float = 0.1,
+    show_isotherms: bool = False,
 ) -> dict[str, Any]:
     """生成任意两个光源的白点及 R1–R15 实际色样坐标对比图。"""
 
@@ -570,11 +752,13 @@ def _cri_pair_chromaticity_chart_options(
             "type": "line",
             "showSymbol": False,
             "silent": True,
-            "z": 3,
+            "z": 4,
             "lineStyle": {"color": "#111827", "width": 2.5, "type": "solid"},
             "data": [list(point) for point in planckian_locus],
         },
     ]
+    if show_isotherms:
+        series.extend(_isotherm_series(coordinate_system))
     first_samples = {item.index: item for item in first_result.cri_samples}
     second_samples = {item.index: item for item in second_result.cri_samples}
     for index in sorted(set(first_samples) & set(second_samples)):
@@ -608,7 +792,7 @@ def _cri_pair_chromaticity_chart_options(
                 "title": f"{result.name} · 光源白点",
                 "value": [white_point[0], white_point[1]],
                 "symbol": "diamond",
-                "symbolSize": 18,
+                "symbolSize": 14,
             }
         ]
         for item in result.cri_samples:
@@ -621,7 +805,7 @@ def _cri_pair_chromaticity_chart_options(
                     "ri": item.score,
                     "value": [point[0], point[1]],
                     "symbol": symbol,
-                    "symbolSize": 11,
+                    "symbolSize": 8,
                 }
             )
         series.append(
@@ -638,11 +822,7 @@ def _cri_pair_chromaticity_chart_options(
     split_number = _axis_split_number(axis_max, axis_interval)
     return {
         "animation": False,
-        "tooltip": {
-            "trigger": "item",
-            "confine": True,
-            ":formatter": _chromaticity_tooltip(coordinate_system, include_cri=True),
-        },
+        "tooltip": _cie_tooltip_options(coordinate_system, include_cri=True),
         "legend": _legend_options(
             [
                 "光谱轨迹",
@@ -665,19 +845,25 @@ def _cri_pair_chromaticity_chart_options(
         },
         "dataZoom": _cie_data_zoom(),
         "xAxis": {
+            "z": 1,
             "type": "value",
             "name": "x" if is_xy else "u′",
             "nameLocation": "middle",
             "nameGap": 32,
             "min": 0,
             "max": axis_max,
+            "splitLine": _cie_split_line(),
+            **_cie_axis_text_options(),
             **({"splitNumber": split_number} if split_number is not None else {}),
         },
         "yAxis": {
+            "z": 1,
             "type": "value",
             "name": "y" if is_xy else "v′",
             "min": 0,
             "max": axis_max,
+            "splitLine": _cie_split_line(),
+            **_cie_axis_text_options(),
             **({"splitNumber": split_number} if split_number is not None else {}),
         },
         "series": series,
@@ -718,13 +904,15 @@ class SpectralAnalyzerTool:
         self.coordinate_state: dict[str, Any] = {
             "data_text": "",
             "system": "xy",
+            "standard_illuminants": [],
+            "show_isotherms": False,
         }
         self.cri_state: dict[str, Any] = {
             "source_a": "",
             "source_b": "standard:D65",
         }
         self.chart_state: dict[str, Any] = {
-            "spectrum_x_interval": 50.0,
+            "spectrum_x_interval": 20.0,
             "spectrum_y_interval": 0.0,
             "xy_interval": 0.1,
             "upvp_interval": 0.1,
@@ -732,6 +920,7 @@ class SpectralAnalyzerTool:
         self.series_styles: dict[str, dict[str, str]] = {}
         self.spectrum_results: list[SpectrumResult] = []
         self.coordinate_results: list[ChromaticityResult] = []
+        self.standard_illuminant_results: list[ChromaticityResult] = []
         self.cri_comparison_results: tuple[SpectrumResult, SpectrumResult] | None = None
         self.spectrum_reference_result: SpectrumResult | None = None
 
@@ -750,7 +939,7 @@ class SpectralAnalyzerTool:
                     normalized,
                     self.spectrum_reference_result,
                     self.series_styles,
-                    _nonnegative_number(self.chart_state.get("spectrum_x_interval"), 50.0),
+                    _nonnegative_number(self.chart_state.get("spectrum_x_interval"), 20.0),
                     _nonnegative_number(self.chart_state.get("spectrum_y_interval"), 0.0),
                 )
             ).classes("w-full h-[calc(100vh-245px)] min-h-[680px]")
@@ -758,7 +947,7 @@ class SpectralAnalyzerTool:
         @ui.refreshable
         def render_chromaticity_view() -> None:
             ui.label(
-                "光谱点与手工坐标已叠加；背景色仅为屏幕近似效果。滚轮等比例缩放，按住左键可任意方向平移。"
+                "光谱点、手工坐标与所选标准光源已叠加；十字指示线显示鼠标坐标。滚轮等比例缩放，按住左键可任意方向平移。"
             ).classes("text-xs text-slate-500 mb-2")
             cie_tabs = ui.tabs().classes("w-full text-blue-700")
             with cie_tabs:
@@ -770,9 +959,11 @@ class SpectralAnalyzerTool:
                         _chromaticity_chart_options(
                             spectrum_results=self.spectrum_results,
                             coordinate_results=self.coordinate_results,
+                            standard_illuminant_results=self.standard_illuminant_results,
                             coordinate_system="xy",
                             series_styles=self.series_styles,
                             axis_interval=_nonnegative_number(self.chart_state.get("xy_interval"), 0.1),
+                            show_isotherms=bool(self.coordinate_state.get("show_isotherms", False)),
                         )
                     )
                 with ui.tab_panel(cie_upvp_tab).classes("p-0"):
@@ -780,9 +971,11 @@ class SpectralAnalyzerTool:
                         _chromaticity_chart_options(
                             spectrum_results=self.spectrum_results,
                             coordinate_results=self.coordinate_results,
+                            standard_illuminant_results=self.standard_illuminant_results,
                             coordinate_system="upvp",
                             series_styles=self.series_styles,
                             axis_interval=_nonnegative_number(self.chart_state.get("upvp_interval"), 0.1),
+                            show_isotherms=bool(self.coordinate_state.get("show_isotherms", False)),
                         )
                     )
 
@@ -847,6 +1040,7 @@ class SpectralAnalyzerTool:
                             coordinate_system="xy",
                             series_styles=self.series_styles,
                             axis_interval=_nonnegative_number(self.chart_state.get("xy_interval"), 0.1),
+                            show_isotherms=bool(self.coordinate_state.get("show_isotherms", False)),
                         ),
                         viewport_offset=300,
                     )
@@ -858,6 +1052,7 @@ class SpectralAnalyzerTool:
                             coordinate_system="upvp",
                             series_styles=self.series_styles,
                             axis_interval=_nonnegative_number(self.chart_state.get("upvp_interval"), 0.1),
+                            show_isotherms=bool(self.coordinate_state.get("show_isotherms", False)),
                         ),
                         viewport_offset=300,
                     )
@@ -1010,6 +1205,17 @@ class SpectralAnalyzerTool:
                     render_spectrum_chart()
 
                 with ui.tab_panel(chromaticity_tab).classes("p-2"):
+                    with ui.row().classes("w-full items-center justify-between gap-3 mb-2"):
+                        ui.select(
+                            STANDARD_ILLUMINANTS,
+                            label="加入内置标准光源坐标点",
+                            multiple=True,
+                        ).bind_value(self.coordinate_state, "standard_illuminants").props(
+                            "outlined dense options-dense use-chips clearable"
+                        ).classes("w-full max-w-[720px]").on_value_change(update_chromaticity_illuminants)
+                        ui.switch("显示等色温线").bind_value(self.coordinate_state, "show_isotherms").on_value_change(
+                            refresh_chart_appearance
+                        )
                     render_chromaticity_view()
 
                 with ui.tab_panel(cri_tab).classes("p-2"):
@@ -1078,6 +1284,28 @@ class SpectralAnalyzerTool:
                 ui.notify(f"载入对比光源失败：{exc}", type="negative")
                 return
             render_cri_comparison.refresh()
+
+        async def update_chromaticity_illuminants(_=None) -> None:
+            """响应内置标准光源多选变化并刷新色坐标图。"""
+
+            raw_selected = self.coordinate_state.get("standard_illuminants", [])
+            if isinstance(raw_selected, (list, tuple, set)):
+                selected = tuple(str(key) for key in raw_selected if str(key) in STANDARD_ILLUMINANTS)
+            else:
+                selected = ()
+            self.coordinate_state["standard_illuminants"] = list(selected)
+            try:
+                results = [await run.cpu_bound(analyze_standard_illuminant_chromaticity, key) for key in selected]
+            except Exception as exc:
+                logger.error("载入色坐标图内置标准光源失败", exc_info=True)
+                ui.notify(f"载入内置标准光源失败：{exc}", type="negative")
+                self.standard_illuminant_results = []
+                render_chromaticity_view.refresh()
+                return
+            current_selection = self.coordinate_state.get("standard_illuminants", [])
+            if isinstance(current_selection, list) and tuple(current_selection) == selected:
+                self.standard_illuminant_results = results
+                render_chromaticity_view.refresh()
 
         async def update_spectrum_reference(_=None) -> None:
             """按所选光谱的 CCT 异步生成曲线叠加参考源。"""

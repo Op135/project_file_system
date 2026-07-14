@@ -44,6 +44,7 @@ STANDARD_ILLUMINANTS = {
     "LED-BH1": "CIE LED-BH1（混合型 LED）",
     "LED-RGB1": "CIE LED-RGB1（RGB LED）",
 }
+ISOTHERM_TEMPERATURES = (1500, 2000, 2500, 3000, 4000, 5000, 6500, 10000, 20000)
 
 
 class SpectralAnalysisError(ValueError):
@@ -601,6 +602,22 @@ def analyze_standard_illuminant(illuminant_key: str) -> SpectrumResult:
     return analyze_spectrum(spectrum)
 
 
+@lru_cache(maxsize=len(STANDARD_ILLUMINANTS))
+def analyze_standard_illuminant_chromaticity(illuminant_key: str) -> ChromaticityResult:
+    """快速计算一个内置 CIE 标准光源的色坐标并缓存结果。"""
+
+    if illuminant_key not in STANDARD_ILLUMINANTS:
+        raise SpectralAnalysisError("不支持的内置标准光源")
+    colour_module = _require_colour()
+    sd = colour_module.SDS_ILLUMINANTS[illuminant_key]
+    xy_values = np.asarray(colour_module.XYZ_to_xy(colour_module.sd_to_XYZ(sd)), dtype=float)
+    return _coordinate_result(
+        STANDARD_ILLUMINANTS[illuminant_key],
+        (float(xy_values[0]), float(xy_values[1])),
+        "xy",
+    )
+
+
 @lru_cache(maxsize=32)
 def analyze_cct_reference(cct: float) -> SpectrumResult:
     """按给定相关色温生成 CRI 规则对应的等色温标准光源。"""
@@ -643,6 +660,46 @@ def chromaticity_loci(coordinate_system: str) -> tuple[
         uv = (float(uv_values[0]), float(uv_values[1]))
         planckian_points.append(_uv_to_xy(uv) if coordinate_system == "xy" else (uv[0], uv[1] * 1.5))
     return tuple(spectral_points), tuple(planckian_points)
+
+
+@lru_cache(maxsize=2)
+def chromaticity_isotherms(
+    coordinate_system: str,
+) -> tuple[tuple[int, tuple[float, float], tuple[float, float]], ...]:
+    """生成普朗克轨迹上常用色温点对应的等色温线段。"""
+
+    if coordinate_system not in {"xy", "upvp"}:
+        raise SpectralAnalysisError("等色温线仅支持 xy 或 u′v′")
+    colour_module = _require_colour()
+    isotherms: list[tuple[int, tuple[float, float], tuple[float, float]]] = []
+    for cct in ISOTHERM_TEMPERATURES:
+        lower_cct = max(1000.0, cct * 0.995)
+        upper_cct = min(25000.0, cct * 1.005)
+        lower_uv = np.asarray(
+            colour_module.temperature.CCT_to_uv_Planck1900(lower_cct),
+            dtype=float,
+        )
+        upper_uv = np.asarray(
+            colour_module.temperature.CCT_to_uv_Planck1900(upper_cct),
+            dtype=float,
+        )
+        center_uv = np.asarray(
+            colour_module.temperature.CCT_to_uv_Planck1900(float(cct)),
+            dtype=float,
+        )
+        tangent = upper_uv - lower_uv
+        tangent_length = float(np.hypot(tangent[0], tangent[1]))
+        if tangent_length <= 1e-12:
+            continue
+        normal = np.asarray((-tangent[1], tangent[0]), dtype=float) / tangent_length
+        endpoints = (center_uv - normal * 0.025, center_uv + normal * 0.025)
+
+        def convert(point: np.ndarray) -> tuple[float, float]:
+            uv = (float(point[0]), float(point[1]))
+            return _uv_to_xy(uv) if coordinate_system == "xy" else (uv[0], uv[1] * 1.5)
+
+        isotherms.append((cct, convert(endpoints[0]), convert(endpoints[1])))
+    return tuple(isotherms)
 
 
 @lru_cache(maxsize=2)

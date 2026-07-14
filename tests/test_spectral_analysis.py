@@ -13,7 +13,9 @@ from src.tools.spectral_analysis import (  # noqa: E402
     analyze_cct_reference,
     analyze_spectral_text,
     analyze_standard_illuminant,
+    analyze_standard_illuminant_chromaticity,
     chromaticity_background_image,
+    chromaticity_isotherms,
     chromaticity_loci,
     pairwise_chromaticity_distances,
     parse_chromaticity_text,
@@ -87,6 +89,13 @@ class SpectralCalculationTests(unittest.TestCase):
         self.assertEqual(len(xy_spectral), len(uv_spectral))
         self.assertEqual(len(xy_planckian), len(uv_planckian))
 
+    def test_isotherms_are_available_for_both_diagrams(self):
+        xy_isotherms = chromaticity_isotherms("xy")
+        upvp_isotherms = chromaticity_isotherms("upvp")
+        self.assertGreaterEqual(len(xy_isotherms), 8)
+        self.assertEqual([item[0] for item in xy_isotherms], [item[0] for item in upvp_isotherms])
+        self.assertTrue(all(len(item) == 3 for item in xy_isotherms))
+
     def test_continuous_color_background_is_available_for_both_diagrams(self):
         xy_image = chromaticity_background_image("xy")
         upvp_image = chromaticity_background_image("upvp")
@@ -99,6 +108,12 @@ class SpectralCalculationTests(unittest.TestCase):
         self.assertIn("LED-B3", result.name)
         self.assertEqual(len(result.cri_samples), 15)
         self.assertIsNotNone(result.ra)
+
+    def test_builtin_standard_illuminant_chromaticity_uses_lightweight_result(self):
+        result = analyze_standard_illuminant_chromaticity("D65")
+        self.assertIn("D65", result.name)
+        self.assertAlmostEqual(result.xy[0], 0.3127, places=4)
+        self.assertAlmostEqual(result.upvp[1], 0.4683, places=4)
 
     def test_equal_cct_reference_matches_selected_source_temperature(self):
         source = self.results[0]
