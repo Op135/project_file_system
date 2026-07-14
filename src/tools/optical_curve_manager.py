@@ -7,6 +7,7 @@ import copy
 import re
 from collections.abc import Callable
 from datetime import datetime
+from time import monotonic
 from typing import Any
 from uuid import uuid4
 
@@ -307,7 +308,11 @@ def _chart_options(
             "nameLocation": "middle",
             "nameGap": 34,
             "scale": True,
-            "axisLabel": {"fontFamily": font_family, "fontSize": font_size},
+            "axisLabel": {
+                "fontFamily": font_family,
+                "fontSize": font_size,
+                ":formatter": "value => String(value)",
+            },
             "splitLine": {"lineStyle": {"type": "dashed", "color": "#e2e8f0"}},
         },
         "yAxis": {
@@ -374,6 +379,7 @@ class OpticalCurveManagerTool:
         self.curve_alias_by_id: dict[str, str] = {}
         self.curve_formula = ""
         self.formula_normalize = True
+        self.formula_curve_color = "#e11d48"
         self.chart_settings: dict[str, Any] = {
             "x_min": None,
             "x_max": None,
@@ -386,6 +392,7 @@ class OpticalCurveManagerTool:
         self.axis_range_draft: dict[str, Any] = {"x_min": None, "x_max": None}
         self.left_sidebar_open = False
         self.right_sidebar_open = False
+        self.right_sidebar_hold_until = 0.0
         self.expanded_curve_group_ids: list[str] = []
         self.preview_record: dict[str, Any] | None = None
 
@@ -1138,8 +1145,9 @@ class OpticalCurveManagerTool:
                                             "y_axis_name": "",
                                             "x_data": result_x,
                                             "y_data": result_y,
-                                            "color": "#e11d48",
+                                            "color": self.formula_curve_color,
                                             "is_fused": True,
+                                            "is_temporary": True,
                                         }
                                     )
                                     if self.formula_normalize:
@@ -1165,10 +1173,12 @@ class OpticalCurveManagerTool:
 
                                 def apply_curve_formula() -> None:
                                     refresh_chart()
+                                    render_display_settings.refresh()
 
                                 def change_formula_normalization(event: Any) -> None:
                                     self.formula_normalize = bool(event.value)
                                     refresh_chart()
+                                    render_display_settings.refresh()
 
                                 def change_curve_selection(event: Any) -> None:
                                     hidden_selected = [
@@ -1211,10 +1221,16 @@ class OpticalCurveManagerTool:
                                     render_workspace.refresh()
 
                                 def close_right_sidebar() -> None:
+                                    if monotonic() < self.right_sidebar_hold_until:
+                                        return
                                     if not self.right_sidebar_open:
                                         return
                                     self.right_sidebar_open = False
                                     render_workspace.refresh()
+
+                                def pin_right_sidebar(_event: Any = None) -> None:
+                                    self.right_sidebar_open = True
+                                    self.right_sidebar_hold_until = monotonic() + 1.5
 
                                 def make_chart_setting_handler(key: str) -> Callable[[Any], None]:
                                     def change_setting(event: Any) -> None:
@@ -1264,6 +1280,7 @@ class OpticalCurveManagerTool:
                                         if not re.fullmatch(r"#[0-9a-fA-F]{6}", color):
                                             ui.notify("请输入有效的六位十六进制颜色", type="warning")
                                             return
+                                        self.right_sidebar_hold_until = monotonic() + 1.5
                                         success = await db_storage.atomic_deep_update(
                                             [OPTICAL_CURVE_DATA_KEY, record_id, "color"],
                                             lambda _: color,
@@ -1286,9 +1303,23 @@ class OpticalCurveManagerTool:
                                             ui.notify("该曲线没有可复制的完整 X/Y 数据", type="warning")
                                             return
                                         ui.clipboard.write(data_text)
-                                        ui.notify(f"已复制“{title}”的 {len(record.get('x_data', []))} 个当前保存数据点")
+                                        ui.notify(f"已复制“{title}”的 {len(record.get('x_data', []))} 个数据点")
 
                                     return copy_curve_data
+
+                                def make_temporary_color_handler(record: dict[str, Any]) -> Callable[[Any], None]:
+                                    def change_temporary_color(event: Any) -> None:
+                                        color = str(event.value or "").strip()
+                                        if not re.fullmatch(r"#[0-9a-fA-F]{6}", color):
+                                            ui.notify("请输入有效的六位十六进制颜色", type="warning")
+                                            return
+                                        self.right_sidebar_hold_until = monotonic() + 1.5
+                                        self.formula_curve_color = color
+                                        record["color"] = color
+                                        refresh_chart()
+                                        ui.notify("临时公式曲线颜色已更新", type="positive")
+
+                                    return change_temporary_color
 
                                 def render_filter_and_tree() -> None:
                                     with ui.card().classes("w-full p-3 rounded-xl shadow-sm gap-2"):
@@ -1377,6 +1408,7 @@ class OpticalCurveManagerTool:
                                                 "text-sm text-slate-400 py-4"
                                             )
 
+                                @ui.refreshable
                                 def render_display_settings() -> None:
                                     with ui.card().classes("w-full p-3 rounded-xl shadow-sm gap-2"):
                                         ui.label("显示、运算与颜色").classes("text-base font-bold text-slate-800")
@@ -1471,11 +1503,12 @@ class OpticalCurveManagerTool:
                                                 on_change=make_chart_setting_handler("legend_font_size"),
                                             ).props("outlined dense")
                                         ui.separator().classes("my-1")
-                                        ui.label("已选曲线、颜色与数据").classes("text-sm font-semibold text-slate-700")
-                                        if selected_records:
+                                        ui.label("显示曲线、颜色与数据").classes("text-sm font-semibold text-slate-700")
+                                        configurable_records, _ = build_display_records()
+                                        if configurable_records:
                                             with ui.scroll_area().classes("w-full h-[260px]"):
                                                 with ui.column().classes("w-full gap-1 pr-2"):
-                                                    for index, record in enumerate(selected_records):
+                                                    for index, record in enumerate(configurable_records):
                                                         with ui.row().classes(
                                                             "w-full items-center justify-between gap-2 border-b border-slate-100 py-1"
                                                         ):
@@ -1483,22 +1516,45 @@ class OpticalCurveManagerTool:
                                                                 ui.label(
                                                                     str(record.get("title", "未命名曲线"))
                                                                 ).classes("text-sm font-medium text-slate-700 truncate")
-                                                                ui.label(str(record.get("y_axis_name", "Y轴"))).classes(
+                                                                record_subtitle = (
+                                                                    "临时公式结果（未保存）"
+                                                                    if record.get("is_temporary")
+                                                                    else str(record.get("y_axis_name") or "Y轴")
+                                                                )
+                                                                ui.label(record_subtitle).classes(
                                                                     "text-xs text-slate-400"
                                                                 )
                                                             with ui.row().classes(
                                                                 "items-center gap-1 flex-nowrap shrink-0"
                                                             ):
-                                                                ui.color_input(
+                                                                color_input = ui.color_input(
                                                                     value=_curve_color(record, index),
-                                                                    on_change=make_color_handler(record),
+                                                                    on_change=(
+                                                                        make_temporary_color_handler(record)
+                                                                        if record.get("is_temporary")
+                                                                        else make_color_handler(record)
+                                                                    ),
                                                                     preview=True,
                                                                 ).props("outlined dense").classes("w-36")
+                                                                color_input.on(
+                                                                    "click",
+                                                                    pin_right_sidebar,
+                                                                    js_handler="""(event) => {
+                                                                        const sidebar = event.currentTarget.closest(
+                                                                            '.optical-right-sidebar'
+                                                                        );
+                                                                        if (sidebar) {
+                                                                            sidebar.style.width =
+                                                                                'var(--optical-sidebar-width)';
+                                                                        }
+                                                                        emit();
+                                                                    }""",
+                                                                )
                                                                 ui.button(
                                                                     icon="content_copy",
                                                                     on_click=make_copy_handler(record),
                                                                 ).props("flat dense round color=cyan-8").tooltip(
-                                                                    "复制 X/Y 两列数据（Y 为当前保存值）"
+                                                                    "复制 X/Y 两列数据"
                                                                 )
                                         else:
                                             ui.label("请先在层级树中勾选曲线").classes("text-sm text-slate-400")
@@ -1525,7 +1581,7 @@ class OpticalCurveManagerTool:
                                                 ui.icon("query_stats", size="56px").classes("text-slate-300")
                                                 ui.label("请从左侧边栏勾选需要显示的曲线").classes("text-slate-500")
                                     # 侧边栏按视口比例伸缩，并设置合理的最小与最大宽度。
-                                    sidebar_rail_width = "w-1"
+                                    sidebar_rail_width = "w-2"
                                     sidebar_panel_width = "w-[var(--optical-sidebar-width)]"
                                     sidebar_top = "top-[150px]"
                                     sidebar_style = "--optical-sidebar-width: clamp(20rem, 32vw, 36rem);"
@@ -1589,7 +1645,8 @@ class OpticalCurveManagerTool:
                                             "hover:w-[var(--optical-sidebar-width)] "
                                             "focus-within:w-[var(--optical-sidebar-width)] "
                                             "transition-[width] duration-300 delay-300 "
-                                            "hover:delay-0 focus-within:delay-0 overflow-hidden group"
+                                            "hover:delay-0 focus-within:delay-0 overflow-hidden group "
+                                            "optical-right-sidebar"
                                         )
                                         .style(sidebar_style)
                                         .on(
@@ -1597,7 +1654,7 @@ class OpticalCurveManagerTool:
                                             close_right_sidebar,
                                             js_handler="""(event) => {
                                             const focusedInside = event.currentTarget.contains(document.activeElement);
-                                            const popupOpen = document.querySelector('.q-menu');
+                                            const popupOpen = document.querySelector('.q-menu, .q-color-picker');
                                             if (!focusedInside && !popupOpen) emit();
                                         }""",
                                         )
@@ -1607,7 +1664,7 @@ class OpticalCurveManagerTool:
                                             js_handler="""(event) => {
                                             setTimeout(() => {
                                                 const focusedInside = event.currentTarget.contains(document.activeElement);
-                                                const popupOpen = document.querySelector('.q-menu');
+                                                const popupOpen = document.querySelector('.q-menu, .q-color-picker');
                                                 if (!focusedInside && !popupOpen) emit();
                                             }, 100);
                                         }""",

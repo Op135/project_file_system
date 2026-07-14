@@ -122,6 +122,7 @@ class OpticalCurveManagerTests(unittest.TestCase):
         self.assertEqual(options["dataZoom"][1]["endValue"], 680)
         self.assertEqual(options["xAxis"]["axisLabel"]["fontFamily"], "Arial")
         self.assertEqual(options["xAxis"]["axisLabel"]["fontSize"], 14)
+        self.assertEqual(options["xAxis"]["axisLabel"][":formatter"], "value => String(value)")
         self.assertEqual(options["legend"][0]["textStyle"]["fontSize"], 16)
 
     def test_optional_numeric_conversion_handles_none_and_invalid_values(self):
