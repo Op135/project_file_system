@@ -1944,7 +1944,7 @@ async def error_management_page(error_id: str = ""):
                         rendered_count = 0
                         for error_data in valid_errors:
                             basic = error_data.get("basic_info", {})
-                            status = calculate_error_status(error_data)
+                            # status = calculate_error_status(error_data)
                             card_status = get_error_card_status(error_data)
                             owner_text = "、".join(
                                 [

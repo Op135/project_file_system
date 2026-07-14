@@ -4381,6 +4381,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                                                             permission=data["permission"],
                                                             temp_bool=temp_bool,
                                                             nature=is_required_btn,
+                                                            allowed_state=data["allowed_state"],
                                                             # delete_bool=False,
                                                         )
                                                     elif data["processing_type"] in ["file", "image"]:
@@ -4395,6 +4396,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                                                             temp_bool=temp_bool,
                                                             upload_path=data["upload_path"],
                                                             nature=is_required_btn,
+                                                            allowed_state=data["allowed_state"],
                                                             # delete_bool=False,
                                                         )
                                                     elif data["processing_type"] in ["search"]:
@@ -4415,6 +4417,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                                                             search_folder_according_li=data["search_folder_according"],
                                                             search_hierarchy=data["search_hierarchy"],
                                                             nature=is_required_btn,
+                                                            allowed_state=data["allowed_state"],
                                                             # delete_bool=False,
                                                         )
                                                     elif data["processing_type"] in ["svn"]:
@@ -4434,6 +4437,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                                                             search_folder_according_li=data["search_folder_according"],
                                                             search_hierarchy=data["search_hierarchy"],
                                                             nature=is_required_btn,
+                                                            allowed_state=data["allowed_state"],
                                                             # delete_bool=False,
                                                         )
                                                     elif data["processing_type"] in ["test"]:
@@ -4453,6 +4457,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                                                             instrument_options=data["instrument_options"],
                                                             temp_bool=temp_bool,
                                                             nature=is_required_btn,
+                                                            allowed_state=data["allowed_state"],
                                                             # delete_bool=False,
                                                         )
                             ui.timer(2.0, _update_num_chip_text)
