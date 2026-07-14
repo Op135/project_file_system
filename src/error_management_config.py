@@ -27,7 +27,16 @@ _DEFAULT_CONFIG = {
     "public_base_url": "http://192.168.1.102:8080",
     "editor_roles": ["研发经理", "admin", "研发助理"],
     "product_states": ["试产", "量产"],
-    "filter_states": ["全部", "异常录入", "原因分析中", "应急处理中", "纠正预防执行中", "延期申请中", "已关闭"],
+    "filter_states": [
+        "全部",
+        "异常录入",
+        "原因分析中",
+        "应急处理中",
+        "纠正预防执行中",
+        "延期申请中",
+        "关闭申请中",
+        "已关闭",
+    ],
     "wecom": {
         "default_notify_targets": [{"position": "研发经理"}],
         "extension": {
@@ -258,6 +267,7 @@ ERROR_PRODUCT_STATES = ERROR_MANAGEMENT_CONFIG["product_states"]
 ERROR_FILTER_STATES = ERROR_MANAGEMENT_CONFIG["filter_states"]
 ERROR_FILTER_ALL_STATE = "全部"
 ERROR_FILTER_PENDING_EXTENSION_STATE = "延期申请中"
+ERROR_FILTER_PENDING_CLOSE_STATE = "关闭申请中"
 ERROR_DEFAULT_NOTIFY_TARGETS = ERROR_MANAGEMENT_CONFIG["wecom"]["default_notify_targets"]
 ERROR_EXTENSION_APPROVER_ROLES = ERROR_MANAGEMENT_CONFIG["wecom"]["extension"]["approver_roles"]
 ERROR_EXTENSION_NOTIFY_TARGETS = ERROR_MANAGEMENT_CONFIG["wecom"]["extension"]["notify_targets"]

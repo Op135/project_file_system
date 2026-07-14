@@ -31,6 +31,7 @@ class ErrorManagementConfigTests(unittest.TestCase):
         self.assertTrue(config["product_states"])
         self.assertEqual(config["filter_states"][0], "全部")
         self.assertIn("延期申请中", config["filter_states"])
+        self.assertIn("关闭申请中", config["filter_states"])
         self.assertEqual(config["wecom"]["default_notify_targets"], [{"position": "研发经理"}])
         self.assertTrue(config["wecom"]["extension"]["approver_roles"])
         self.assertTrue(config["wecom"]["extension"]["approval_notify_targets"])
@@ -180,6 +181,24 @@ class ErrorManagementDashboardPendingTests(unittest.TestCase):
         count = error_management.get_error_dashboard_pending_count(self.all_errors, "经理", "研发经理")
         self.assertEqual(count, 2)
 
+    def test_card_pending_marker_uses_dashboard_rules(self):
+        """列表待办标识应与主页角标对当前角色采用相同判定口径。"""
+        self.assertTrue(error_management.is_error_pending_for_user(self.all_errors["ERR-001"], "张三", "QE工程师"))
+        self.assertFalse(error_management.is_error_pending_for_user(self.all_errors["ERR-002"], "张三", "QE工程师"))
+        self.assertTrue(error_management.is_error_pending_for_user(self.all_errors["ERR-001"], "经理", "研发经理"))
+        self.assertFalse(error_management.is_error_pending_for_user(self.all_errors["ERR-003"], "经理", "研发经理"))
+
+    def test_card_sort_key_prioritizes_current_user_pending(self):
+        """即使待办更新时间更早，也应排在非待办卡片之前。"""
+        pending = {**self.all_errors["ERR-001"], "updated_at": "2026-01-01 00:00:00"}
+        normal = {**self.all_errors["ERR-002"], "updated_at": "2026-12-31 00:00:00"}
+        records = sorted(
+            [normal, pending],
+            key=lambda item: error_management.get_error_card_sort_key(item, "张三", "QE工程师"),
+            reverse=True,
+        )
+        self.assertEqual(records[0]["error_id"], "ERR-001")
+
     def test_pending_extension_filter_matches_across_main_statuses(self):
         """延期申请中筛选应跨越异常单主状态，并排除没有待审批申请的异常单。"""
         self.assertTrue(error_management.error_matches_filter(self.all_errors["ERR-001"], "延期申请中"))
@@ -190,6 +209,22 @@ class ErrorManagementDashboardPendingTests(unittest.TestCase):
         self.assertEqual(error_management.calculate_error_status(self.all_errors["ERR-001"]), "纠正预防执行中")
         self.assertEqual(error_management.get_error_card_status(self.all_errors["ERR-001"]), "延期申请中")
         self.assertEqual(error_management.get_error_card_status(self.all_errors["ERR-002"]), "纠正预防执行中")
+
+    def test_pending_close_filter_and_card_status(self):
+        """待审批关闭申请应支持筛选，并优先显示为关闭申请中。"""
+        close_pending_error = {
+            "error_id": "ERR-CLOSE",
+            "preventive_actions": [
+                {
+                    "owner": "李四",
+                    "status": "待执行",
+                    "extension_requests": [{"status": "待审批"}],
+                    "close_requests": [{"status": "待审批"}],
+                }
+            ],
+        }
+        self.assertTrue(error_management.error_matches_filter(close_pending_error, "关闭申请中"))
+        self.assertEqual(error_management.get_error_card_status(close_pending_error), "关闭申请中")
 
     def test_manual_reminder_check_is_rd_manager_only(self):
         """人工检查提醒入口只对研发经理角色开放。"""

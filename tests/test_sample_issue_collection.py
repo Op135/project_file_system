@@ -217,6 +217,19 @@ class SampleIssueCollectionDataTests(unittest.TestCase):
         self.assertEqual(sample_issue.get_sample_dashboard_pending_count(all_issues, "李四", "测试工程师"), 2)
         self.assertEqual(sample_issue.get_sample_dashboard_pending_count(all_issues, "王五", "QE工程师"), 1)
         self.assertEqual(sample_issue.get_sample_dashboard_pending_count(all_issues, "经理", "研发经理"), 2)
+        self.assertTrue(sample_issue.is_sample_issue_pending_for_user(all_issues["SPI-1"], "李四", "测试工程师"))
+        self.assertFalse(sample_issue.is_sample_issue_pending_for_user(all_issues["SPI-3"], "李四", "测试工程师"))
+        self.assertTrue(sample_issue.is_sample_issue_pending_for_user(all_issues["SPI-3"], "经理", "研发经理"))
+        self.assertFalse(sample_issue.is_sample_issue_pending_for_user(all_issues["SPI-1"], "经理", "研发经理"))
+
+        pending = {**all_issues["SPI-1"], "updated_at": "2026-01-01 00:00:00"}
+        normal = {**all_issues["SPI-3"], "updated_at": "2026-12-31 00:00:00"}
+        records = sorted(
+            [normal, pending],
+            key=lambda item: sample_issue.get_sample_issue_card_sort_key(item, "李四", "测试工程师"),
+            reverse=True,
+        )
+        self.assertEqual(records[0]["issue_id"], "SPI-1")
 
     def test_find_unknown_wecom_names_uses_contacts_cache(self):
         """人员输入校验应识别企业微信通讯录姓名，并跳过允许填写的角色名。"""

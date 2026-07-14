@@ -46,8 +46,8 @@ from ..sample_issue_config import (
     SAMPLE_FILTER_PENDING_CLOSE_STATE,
     SAMPLE_FILTER_PENDING_EXTENSION_STATE,
     SAMPLE_FILTER_STATES,
-    SAMPLE_PUBLIC_BASE_URL,
     SAMPLE_INCOMPLETE_REMINDER_RULES,
+    SAMPLE_PUBLIC_BASE_URL,
     SAMPLE_REMINDER_RULES,
     SAMPLE_STATUS_CORRECTIVE_ACTION_DONE,
     SAMPLE_STATUS_ISSUE_RECORDED,
@@ -590,6 +590,26 @@ def has_sample_approval_pending_for_role(issue_data: dict, current_role: str) ->
     )
 
 
+def is_sample_issue_pending_for_user(issue_data: dict, current_user: str, current_role: str) -> bool:
+    """按主页角标口径判断一条样品问题是否需要当前用户处理。"""
+    if is_sample_extension_approver(current_role) or is_sample_close_approver(current_role):
+        return has_sample_approval_pending_for_role(issue_data, current_role)
+
+    normalized_issue = merge_with_sample_issue_template(issue_data)
+    countermeasure = normalized_issue.get("countermeasure", {})
+    return (
+        not is_sample_issue_closed(normalized_issue)
+        and not get_pending_close_request(countermeasure)
+        and is_current_responsible(countermeasure.get("owner", ""), current_user, current_role)
+    )
+
+
+def get_sample_issue_card_sort_key(issue_data: dict, current_user: str, current_role: str) -> tuple[bool, str]:
+    """返回卡片排序键：当前用户待办优先，同组内按最近更新时间倒序。"""
+    updated_at = issue_data.get("updated_at") or issue_data.get("created_at") or ""
+    return is_sample_issue_pending_for_user(issue_data, current_user, current_role), str(updated_at)
+
+
 def get_sample_dashboard_pending_count(all_issues: Any, current_user: str, current_role: str) -> int:
     """计算主页“样品问题收集”卡片对当前用户显示的待办角标数量。"""
     if not isinstance(all_issues, dict):
@@ -599,17 +619,13 @@ def get_sample_dashboard_pending_count(all_issues: Any, current_user: str, curre
         return sum(
             1
             for issue_data in all_issues.values()
-            if isinstance(issue_data, dict)
-            and has_sample_approval_pending_for_role(issue_data, current_role)
+            if isinstance(issue_data, dict) and has_sample_approval_pending_for_role(issue_data, current_role)
         )
 
     return sum(
         1
         for issue_data in all_issues.values()
-        if isinstance(issue_data, dict)
-        and not is_sample_issue_closed(merge_with_sample_issue_template(issue_data))
-        and not get_pending_close_request(issue_data.get("countermeasure", {}))
-        and is_current_responsible(issue_data.get("countermeasure", {}).get("owner", ""), current_user, current_role)
+        if isinstance(issue_data, dict) and is_sample_issue_pending_for_user(issue_data, current_user, current_role)
     )
 
 
@@ -1414,8 +1430,8 @@ async def sample_issue_collection_page(issue_id: str = ""):
                     ui.select(nature_options, label="历史性质", on_change=select_nature).props(
                         "outlined dense clearable options-dense"
                     ).classes("w-full")
-                nature_input = ui.input("措施性质", value=state["nature"]).props("outlined dense clearable").classes(
-                    "w-full"
+                nature_input = (
+                    ui.input("措施性质", value=state["nature"]).props("outlined dense clearable").classes("w-full")
                 )
                 nature_input.on_value_change(lambda e: state.__setitem__("nature", str(e.value or "")))
                 with ui.row().classes("w-full justify-end gap-3 mt-3"):
@@ -2389,7 +2405,7 @@ async def sample_issue_collection_page(issue_id: str = ""):
                     ]
                     valid_issues = sorted(
                         valid_issues,
-                        key=lambda item: item.get("updated_at") or item.get("created_at") or "",
+                        key=lambda item: get_sample_issue_card_sort_key(item, current_user, current_role),
                         reverse=True,
                     )
 
@@ -2422,17 +2438,17 @@ async def sample_issue_collection_page(issue_id: str = ""):
                             rendered_count += 1
                             pending_extension = get_pending_extension_request(countermeasure)
                             pending_close = get_pending_close_request(countermeasure)
-                            is_my_pending = (
-                                is_current_responsible(countermeasure.get("owner", ""), current_user, current_role)
-                                and not is_sample_issue_closed(issue_data)
-                                and not pending_close
-                            )
-                            is_approval_pending = has_sample_approval_pending_for_role(issue_data, current_role)
+                            is_my_pending = is_sample_issue_pending_for_user(issue_data, current_user, current_role)
 
-                            with ui.element("div").classes(
-                                "w-full bg-white border border-gray-200 border-l-4 rounded-md p-3 shadow-sm "
-                                "hover:bg-amber-50 cursor-pointer transition-colors"
-                            ) as card:
+                            card_classes = (
+                                "w-full border border-l-4 rounded-md p-3 cursor-pointer transition-colors "
+                                + (
+                                    "bg-rose-50 border-rose-300 shadow-md hover:bg-rose-100"
+                                    if is_my_pending
+                                    else "bg-white border-gray-200 shadow-sm hover:bg-amber-50"
+                                )
+                            )
+                            with ui.element("div").classes(card_classes) as card:
 
                                 async def open_card_detail(_, i_id=issue_data["issue_id"]):
                                     await open_sample_issue_detail_dialog(i_id)
@@ -2453,9 +2469,9 @@ async def sample_issue_collection_page(issue_id: str = ""):
                                                 ui.badge("延期申请中", color="orange").props("outline")
                                             if pending_close and status != SAMPLE_FILTER_PENDING_CLOSE_STATE:
                                                 ui.badge("关闭申请中", color="purple").props("outline")
-                                            if is_my_pending or is_approval_pending:
-                                                ui.chip("待我处理", icon="notifications_active", color="red").props(
-                                                    "dense outline size=sm"
+                                            if is_my_pending:
+                                                ui.chip("待我处理", icon="notifications_active", color="red-4").props(
+                                                    "dense size=sm"
                                                 )
                                     with ui.column().classes("gap-1 min-w-0"):
                                         with ui.row().classes("w-full items-center gap-x-4 gap-y-1 flex-wrap"):

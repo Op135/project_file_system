@@ -40,6 +40,7 @@ from ..error_management_config import (
     ERROR_EXTENSION_NOTIFY_REQUESTER_ON_APPROVAL,
     ERROR_EXTENSION_NOTIFY_TARGETS,
     ERROR_FILTER_ALL_STATE,
+    ERROR_FILTER_PENDING_CLOSE_STATE,
     ERROR_FILTER_PENDING_EXTENSION_STATE,
     ERROR_FILTER_STATES,
     ERROR_PRODUCT_STATES,
@@ -328,6 +329,31 @@ def get_owner_extension_summary(error_data: dict) -> list[tuple[str, int]]:
     return sorted(owner_counts.items(), key=lambda item: (-item[1], item[0]))
 
 
+def is_error_pending_for_user(error_data: dict, current_user: str, current_role: str) -> bool:
+    """按主页角标口径判断一张异常单是否需要当前用户处理。"""
+    actions = error_data.get("preventive_actions", [])
+    if is_error_extension_approver(current_role):
+        return any(
+            isinstance(action, dict)
+            and action.get("status") != "已关闭"
+            and (get_pending_extension_request(action) or get_pending_close_request(action))
+            for action in actions
+        )
+
+    return any(
+        isinstance(action, dict)
+        and action.get("status") != "已关闭"
+        and is_current_responsible(action.get("owner", ""), current_user, current_role)
+        for action in actions
+    )
+
+
+def get_error_card_sort_key(error_data: dict, current_user: str, current_role: str) -> tuple[bool, str]:
+    """返回卡片排序键：当前用户待办优先，同组内按最近更新时间倒序。"""
+    updated_at = error_data.get("updated_at") or error_data.get("created_at") or ""
+    return is_error_pending_for_user(error_data, current_user, current_role), str(updated_at)
+
+
 def get_error_dashboard_pending_count(all_errors: Any, current_user: str, current_role: str) -> int:
     """计算总页面“异常单跟进”卡片对当前用户显示的待办角标数量。
 
@@ -355,26 +381,22 @@ def get_error_dashboard_pending_count(all_errors: Any, current_user: str, curren
     return sum(
         1
         for error_data in all_errors.values()
-        if isinstance(error_data, dict)
-        and any(
-            isinstance(action, dict)
-            and action.get("status") != "已关闭"
-            and is_current_responsible(action.get("owner", ""), current_user, current_role)
-            for action in error_data.get("preventive_actions", [])
-        )
+        if isinstance(error_data, dict) and is_error_pending_for_user(error_data, current_user, current_role)
     )
 
 
 def error_matches_filter(error_data: dict, filter_state: str) -> bool:
     """判断异常单是否符合总览页筛选条件。
 
-    “延期申请中”是跨主状态的特殊筛选：异常单处于任何流程状态，只要存在待审批延期申请就命中。
+    “延期申请中”和“关闭申请中”是跨主状态的特殊筛选，只要存在对应的待审批申请就命中。
     其它筛选项仍与自动推导的异常单主状态进行匹配。
     """
     if filter_state == ERROR_FILTER_ALL_STATE:
         return True
     if filter_state == ERROR_FILTER_PENDING_EXTENSION_STATE:
         return has_pending_error_extension(error_data)
+    if filter_state == ERROR_FILTER_PENDING_CLOSE_STATE:
+        return has_pending_error_close(error_data)
     return calculate_error_status(error_data) == filter_state
 
 
@@ -386,8 +408,18 @@ def has_pending_error_extension(error_data: dict) -> bool:
     )
 
 
+def has_pending_error_close(error_data: dict) -> bool:
+    """判断异常单是否存在任一待审批关闭申请。"""
+    return any(
+        isinstance(action, dict) and get_pending_close_request(action)
+        for action in error_data.get("preventive_actions", [])
+    )
+
+
 def get_error_card_status(error_data: dict) -> str:
     """返回总览卡片优先展示的状态标签。"""
+    if has_pending_error_close(error_data):
+        return ERROR_FILTER_PENDING_CLOSE_STATE
     if has_pending_error_extension(error_data):
         return ERROR_FILTER_PENDING_EXTENSION_STATE
     return calculate_error_status(error_data)
@@ -1061,8 +1093,8 @@ async def error_management_page(error_id: str = ""):
                     ui.select(nature_options, label="历史性质", on_change=select_nature).props(
                         "outlined dense clearable options-dense"
                     ).classes("w-full")
-                nature_input = ui.input("措施性质", value=state["nature"]).props("outlined dense clearable").classes(
-                    "w-full"
+                nature_input = (
+                    ui.input("措施性质", value=state["nature"]).props("outlined dense clearable").classes("w-full")
                 )
                 nature_input.on_value_change(lambda e: state.__setitem__("nature", str(e.value or "")))
                 with ui.row().classes("w-full justify-end gap-3 mt-3"):
@@ -1598,9 +1630,9 @@ async def error_management_page(error_id: str = ""):
                             with ui.element("div").classes(
                                 "w-full border border-purple-200 bg-purple-50 rounded-md p-3 mb-3"
                             ):
-                                ui.label(
-                                    f"关闭申请待审批：{pending_close.get('requested_at', '-')}"
-                                ).classes("text-sm font-bold text-purple-800")
+                                ui.label(f"关闭申请待审批：{pending_close.get('requested_at', '-')}").classes(
+                                    "text-sm font-bold text-purple-800"
+                                )
                                 ui.label(
                                     f"申请人：{pending_close.get('requester', '-')} ｜ "
                                     f"说明：{pending_close.get('note', '-')}"
@@ -1710,10 +1742,16 @@ async def error_management_page(error_id: str = ""):
         with root_dialog, ui.card().classes("w-full h-[100vh] flex flex-col p-0 overflow-hidden bg-gray-100"):
             with ui.row().classes("w-full bg-white px-4 py-3 border-b border-gray-300 justify-between items-center"):
                 with ui.row().classes("items-center gap-3"):
-                    ui.badge(
-                        calculate_error_status(local_data),
-                        color="green" if calculate_error_status(local_data) == "已关闭" else "orange",
-                    )
+                    detail_status = get_error_card_status(local_data)
+                    detail_status_color = {
+                        "已关闭": "green",
+                        ERROR_FILTER_PENDING_CLOSE_STATE: "purple",
+                        ERROR_FILTER_PENDING_EXTENSION_STATE: "orange",
+                        "纠正预防执行中": "teal",
+                        "应急处理中": "blue",
+                        "原因分析中": "purple",
+                    }.get(detail_status, "grey")
+                    ui.badge(detail_status, color=detail_status_color)
                     ui.label(local_data["error_id"] or "新异常单").classes("font-mono font-bold text-lg text-gray-800")
                     ui.label(local_data["basic_info"].get("product_name") or "未命名异常单").classes(
                         "text-base font-bold text-gray-700"
@@ -1830,8 +1868,10 @@ async def error_management_page(error_id: str = ""):
             return "green"
         if status == ERROR_FILTER_PENDING_EXTENSION_STATE:
             return "orange"
+        if status == ERROR_FILTER_PENDING_CLOSE_STATE:
+            return "purple"
         if status == "纠正预防执行中":
-            return "orange"
+            return "teal"
         if status == "应急处理中":
             return "blue"
         if status == "原因分析中":
@@ -1842,7 +1882,8 @@ async def error_management_page(error_id: str = ""):
         return {
             "已关闭": "#22c55e",
             ERROR_FILTER_PENDING_EXTENSION_STATE: "#f97316",
-            "纠正预防执行中": "#f97316",
+            ERROR_FILTER_PENDING_CLOSE_STATE: "#a855f7",
+            "纠正预防执行中": "#0d9488",
             "应急处理中": "#3b82f6",
             "原因分析中": "#a855f7",
             "异常录入": "#64748b",
@@ -1891,7 +1932,7 @@ async def error_management_page(error_id: str = ""):
                     ]
                     valid_errors = sorted(
                         valid_errors,
-                        key=lambda item: item.get("updated_at") or item.get("created_at") or "",
+                        key=lambda item: get_error_card_sort_key(item, current_user, current_role),
                         reverse=True,
                     )
 
@@ -1935,43 +1976,55 @@ async def error_management_page(error_id: str = ""):
                                     if item.get("status") == "已关闭"
                                 ]
                             )
-                            is_my_pending = any(
-                                item.get("status") != "已关闭"
-                                and is_current_responsible(item.get("owner", ""), current_user, current_role)
-                                for item in error_data.get("preventive_actions", [])
-                            )
+                            is_my_pending = is_error_pending_for_user(error_data, current_user, current_role)
                             owner_extension_summary = get_owner_extension_summary(error_data)
                             owner_extension_text = "、".join(
                                 f"{owner} {count}次" for owner, count in owner_extension_summary
                             )
 
-                            with ui.element("div").classes(
-                                "w-full bg-white border border-gray-200 border-l-4 rounded-md p-4 shadow-sm "
-                                "hover:bg-amber-50 cursor-pointer transition-colors"
-                            ) as card:
+                            card_classes = (
+                                "w-full border border-l-4 rounded-md p-3 cursor-pointer transition-colors "
+                                + (
+                                    "bg-rose-50 border-rose-300 shadow-md hover:bg-rose-100"
+                                    if is_my_pending
+                                    else "bg-white border-gray-200 shadow-sm hover:bg-amber-50"
+                                )
+                            )
+                            with ui.element("div").classes(card_classes) as card:
 
                                 async def open_card_detail(_, e_id=error_data["error_id"]):
                                     await open_error_detail_dialog(e_id)
 
                                 card.style(f"border-left-color: {status_border_color(card_status)}")
                                 card.on("click", open_card_detail)
-                                with ui.row().classes("w-full justify-between items-start gap-4"):
+                                with ui.element("div").classes(
+                                    "grid w-full grid-cols-1 lg:grid-cols-[minmax(250px,0.8fr)_minmax(0,1.7fr)_minmax(260px,auto)] "
+                                    "items-center gap-x-6 gap-y-2"
+                                ):
                                     with ui.column().classes("gap-1 min-w-0"):
-                                        with ui.row().classes("items-center gap-2"):
+                                        with ui.row().classes("items-center gap-2 flex-wrap"):
                                             ui.label(error_data["error_id"]).classes(
-                                                "font-mono font-bold text-lg text-gray-800"
+                                                "font-mono font-bold text-base text-gray-800"
                                             )
                                             ui.badge(card_status, color=status_color(card_status)).props("outline")
                                             if is_my_pending:
-                                                ui.chip("待我处理", icon="notifications_active", color="red").props(
-                                                    "dense outline size=sm"
+                                                ui.chip("待我处理", icon="notifications_active", color="red-4").props(
+                                                    "dense size=sm"
                                                 )
                                         ui.label(basic.get("product_name", "未填写产品名称")).classes(
-                                            "font-bold text-gray-800"
+                                            "font-bold text-gray-800 text-sm"
                                         )
-                                        ui.label(
-                                            f"料号：{basic.get('material_no', '') or '-'} ｜ 订单号：{basic.get('order_no', '') or '-'} ｜ 产品状态：{basic.get('product_state', '') or '-'}"
-                                        ).classes("text-sm text-gray-600")
+                                    with ui.column().classes("gap-1 min-w-0"):
+                                        with ui.row().classes("w-full items-center gap-x-4 gap-y-1 flex-wrap"):
+                                            ui.label(f"料号：{basic.get('material_no', '') or '-'}").classes(
+                                                "font-bold text-gray-800 text-sm whitespace-nowrap"
+                                            )
+                                            ui.label(f"订单号：{basic.get('order_no', '') or '-'}").classes(
+                                                "text-sm text-gray-600 whitespace-nowrap"
+                                            )
+                                            ui.label(f"产品状态：{basic.get('product_state', '') or '-'}").classes(
+                                                "text-sm text-gray-600 whitespace-nowrap"
+                                            )
                                         first_desc = next(
                                             (
                                                 item.get("content", "")
@@ -1981,23 +2034,29 @@ async def error_management_page(error_id: str = ""):
                                             "",
                                         )
                                         if first_desc:
-                                            ui.label(first_desc[:120]).classes("text-sm text-gray-500 line-clamp-2")
-                                    with ui.column().classes("items-end gap-1 shrink-0"):
-                                        ui.label(f"发文日期：{basic.get('publish_date', '') or '-'}").classes(
-                                            "text-xs text-gray-500"
-                                        )
-                                        ui.label(f"预计完成：{get_next_due_text(error_data)}").classes(
-                                            "text-xs text-gray-500"
-                                        )
-                                        ui.label(f"纠正预防：{closed_preventive}/{total_preventive}").classes(
-                                            "text-xs text-gray-500"
-                                        )
-                                        if owner_text:
-                                            ui.label(f"负责人：{owner_text}").classes("text-xs text-orange-700")
-                                        if owner_extension_text:
-                                            ui.label(f"负责人延期：{owner_extension_text}").classes(
-                                                "text-xs text-blue-700 max-w-80 text-right"
+                                            ui.label(first_desc[:160]).classes("text-sm text-gray-500 line-clamp-1")
+                                        else:
+                                            ui.label("暂无异常描述").classes("text-sm text-gray-400 line-clamp-1")
+                                    with ui.row().classes("gap-5 min-w-0 lg:justify-self-end lg:items-end text-sm"):
+                                        with ui.column().classes("gap-1"):
+                                            ui.label(f"发文日期：{basic.get('publish_date', '') or '-'}").classes(
+                                                "text-gray-500 whitespace-nowrap"
                                             )
+                                            ui.label(f"预计完成：{get_next_due_text(error_data)}").classes(
+                                                "text-gray-500 whitespace-nowrap"
+                                            )
+                                        with ui.column().classes("gap-1 lg:items-end"):
+                                            ui.label(f"纠正预防：{closed_preventive}/{total_preventive}").classes(
+                                                "text-gray-500 whitespace-nowrap"
+                                            )
+                                            if owner_text:
+                                                ui.label(f"负责人：{owner_text}").classes(
+                                                    "text-orange-700 max-w-80 lg:text-right"
+                                                )
+                                            if owner_extension_text:
+                                                ui.label(f"负责人延期：{owner_extension_text}").classes(
+                                                    "text-blue-700 max-w-80 lg:text-right"
+                                                )
 
                         if rendered_count == 0:
                             ui.label("没有符合筛选条件的异常单").classes("text-gray-500 m-auto mt-10")

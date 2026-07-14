@@ -13,7 +13,7 @@ import re
 import time
 from datetime import datetime
 from typing import Any, Optional
-from urllib.parse import quote, unquote
+from urllib.parse import quote_from_bytes, unquote
 
 from nicegui import app, ui
 
@@ -97,6 +97,11 @@ def option_text_in(value: Any, options: list[str], default: str = "") -> str:
     return text if text in options else fallback
 
 
+def quote_url_component(value: str) -> str:
+    """将字符串按 UTF-8 编码为可安全用于 URL 路径的片段。"""
+    return quote_from_bytes(value.encode("utf-8"), safe="")
+
+
 def get_attachment_label_number(file_info: dict) -> int:
     try:
         return int(str(file_info.get("file_lab", "0")))
@@ -168,9 +173,9 @@ def get_design_attachment_storage_paths(content_type: str, uploader_name: str, f
         [
             UPLOAD_URL_DIR.rstrip("/"),
             DESIGN_ATTACHMENT_DIR_NAME,
-            quote(type_folder, safe=""),
-            quote(user_folder, safe=""),
-            quote(file_name_hash, safe=""),
+            quote_url_component(type_folder),
+            quote_url_component(user_folder),
+            quote_url_component(file_name_hash),
         ]
     )
     return target_path, url_path
@@ -1367,7 +1372,7 @@ def design_knowledge_page():
                         )
                         if (
                             file_name_hash in active_attachment_hashes
-                            or quote(file_name_hash, safe="") in active_attachment_hashes
+                            or quote_url_component(file_name_hash) in active_attachment_hashes
                         ):
                             return ui.notify(f"文件已存在：{e.file.name}", type="warning", position="bottom")
 
@@ -1382,7 +1387,7 @@ def design_knowledge_page():
                         )
                         file_lab = str(next_file_lab)
                         deleted_files = app.storage.client.setdefault("deleted_files", [])
-                        for deleted_file in {file_name_hash, quote(file_name_hash, safe="")}:
+                        for deleted_file in {file_name_hash, quote_url_component(file_name_hash)}:
                             while deleted_file in deleted_files:
                                 deleted_files.remove(deleted_file)
 
