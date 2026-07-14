@@ -479,7 +479,7 @@ def _spectrum_chart_options(
                 for index, item in enumerate(plot_results)
             ]
         ),
-        "grid": {"left": 72, "right": 40, "top": 110, "bottom": 78},
+        "grid": {"left": 72, "right": 40, "top": 110, "bottom": 108},
         "toolbox": {
             "right": 10,
             "top": 5,
@@ -489,7 +489,7 @@ def _spectrum_chart_options(
             "type": "value",
             "name": "波长 (nm)",
             "nameLocation": "middle",
-            "nameGap": 34,
+            "nameGap": 42,
             "min": 380,
             "max": 780,
             **({"splitNumber": x_split_number} if x_split_number is not None else {}),
@@ -502,7 +502,7 @@ def _spectrum_chart_options(
         },
         "dataZoom": [
             {"type": "inside", "filterMode": "none"},
-            {"type": "slider", "height": 20, "bottom": 24, "filterMode": "none"},
+            {"type": "slider", "height": 20, "bottom": 12, "filterMode": "none"},
         ],
         "series": series,
     }
@@ -1364,7 +1364,7 @@ class SpectralAnalyzerTool:
                 self.cri_state["source_b"] = "input:1" if len(results) > 1 else "standard:D65"
                 await load_cri_comparison_sources()
                 render_spectrum_results.refresh()
-                input_expansion.set_value(False)
+                workspace_tabs.set_value(analysis_tab)
                 ui.notify(
                     f"已完成 {len(results)} 条光谱与 {len(coordinates)} 个手工色坐标的联合计算",
                     type="positive",
@@ -1406,74 +1406,107 @@ class SpectralAnalyzerTool:
             with ui.row().classes("w-full bg-white px-5 py-3 border-b items-center justify-between shadow-sm"):
                 with ui.row().classes("items-center gap-3"):
                     ui.icon("science", size="34px").classes("text-blue-700")
-                    with ui.column().classes("gap-0"):
-                        ui.label("光谱色度与显色分析").classes("text-xl font-bold text-slate-800")
-                        ui.label("CCT · Duv · CIE CRI · CIE Rf · 多光谱/色坐标对比").classes("text-xs text-slate-500")
+                    ui.label("光谱色度与显色分析").classes("text-xl font-bold text-slate-800")
                 ui.button(icon="close", on_click=dialog.close).props("flat dense round").tooltip("关闭")
 
-            with ui.scroll_area().classes("w-full h-[calc(100vh-68px)]"):
-                with ui.column().classes("w-full max-w-[1900px] mx-auto p-3 gap-3"):
-                    with ui.expansion("数据录入", icon="input", value=True).classes(
-                        "w-full bg-white rounded-xl shadow-sm border border-slate-200"
-                    ) as input_expansion:
-                        with ui.grid().classes("w-full grid-cols-1 xl:grid-cols-2 gap-4 p-3"):
-                            with ui.column().classes("w-full gap-2"):
-                                ui.label("光谱数据").classes("text-lg font-bold text-slate-800")
-                                ui.label("首列为波长，后续每列为一条光谱；支持 Excel、CSV 和空白分隔。").classes(
-                                    "text-xs text-slate-500"
-                                )
-                                spectral_textarea = (
-                                    ui.textarea(
-                                        "波长 / 光谱值",
-                                        placeholder=(
-                                            "波长(nm)\t样品A\t样品B\n"
-                                            "360\t0.01\t0.02\n"
-                                            "361\t0.02\t0.03\n"
-                                            "...\n780\t0.01\t0.01"
-                                        ),
-                                    )
-                                    .bind_value(self.spectral_state, "data_text")
-                                    .props("outlined rows=12 input-style='font-family: monospace; white-space: pre'")
-                                    .classes("w-full")
-                                )
-                                ui.label("显色计算至少覆盖 380–780 nm；曲线图仅显示该可见光范围。").classes(
-                                    "text-xs text-amber-700"
-                                )
-                            with ui.column().classes("w-full gap-2"):
-                                ui.label("叠加具体色坐标（可选）").classes("text-lg font-bold text-slate-800")
-                                ui.select(
-                                    COORDINATE_SYSTEMS,
-                                    label="输入坐标类型",
-                                ).bind_value(self.coordinate_state, "system").props(
-                                    "outlined dense options-dense"
-                                ).classes("w-full max-w-sm")
-                                combined_coordinate_textarea = (
-                                    ui.textarea(
-                                        "名称 / 坐标值",
-                                        placeholder=("名称\tx\ty\n目标白点\t0.3127\t0.3290\n实测色点\t0.3200\t0.3350"),
-                                    )
-                                    .bind_value(self.coordinate_state, "data_text")
-                                    .props("outlined rows=9 input-style='font-family: monospace; white-space: pre'")
-                                    .classes("w-full")
-                                )
-                                ui.label("这些点会直接叠加到光谱结果的同一张 CIE 图中。").classes(
-                                    "text-xs text-blue-800"
-                                )
-                        with ui.row().classes("w-full px-3 pb-3 gap-2 justify-end"):
-                            ui.button("载入示例", icon="lightbulb", on_click=load_spectral_example).props(
-                                "outline no-caps"
-                            )
-                            ui.button("清空光谱", icon="delete_outline", on_click=clear_spectra).props(
-                                "flat no-caps color=grey-7"
-                            )
-                            ui.button("清空坐标", icon="location_off", on_click=clear_coordinates).props(
-                                "flat no-caps color=grey-7"
-                            )
-                            calculate_button = ui.button(
-                                "联合计算",
-                                icon="calculate",
-                                on_click=calculate_spectra,
-                            ).props("unelevated no-caps color=blue-8")
+            workspace_tabs = ui.tabs().classes("w-full bg-white text-slate-600")
+            with workspace_tabs:
+                input_tab = ui.tab("数据录入", icon="edit_note")
+                analysis_tab = ui.tab("分析结果", icon="query_stats")
 
-                    with ui.card().classes("w-full p-3 rounded-xl shadow-sm"):
-                        render_spectrum_results()
+            with ui.tab_panels(workspace_tabs, value=input_tab).classes("w-full flex-1 min-h-0 bg-slate-50"):
+                with ui.tab_panel(input_tab).classes("p-0"):
+                    with ui.scroll_area().classes("w-full h-[calc(100vh-112px)]"):
+                        with ui.column().classes("w-full max-w-[1800px] mx-auto p-2 gap-3"):
+                            with ui.grid().classes("w-full grid-cols-1 lg:grid-cols-12 gap-2 items-stretch"):
+                                with ui.card().classes(
+                                    "lg:col-span-7 w-full h-full p-4 rounded-xl shadow-sm"
+                                ):
+                                    ui.label("1. 光谱数据").classes("text-lg font-bold text-slate-800")
+                                    ui.label(
+                                        "首列为波长，后续每列为一条光谱；支持 Excel、CSV 和空白分隔。"
+                                    ).classes("text-xs text-slate-500 mb-1")
+                                    spectral_textarea = (
+                                        ui.textarea(
+                                            "波长 / 光谱值",
+                                            placeholder=(
+                                                "波长(nm)\t样品A\t样品B\n"
+                                                "360\t0.01\t0.02\n"
+                                                "361\t0.02\t0.03\n"
+                                                "...\n780\t0.01\t0.01"
+                                            ),
+                                        )
+                                        .bind_value(self.spectral_state, "data_text")
+                                        .props(
+                                            "outlined rows=15 input-style='font-family: monospace; white-space: pre'"
+                                        )
+                                        .classes("w-full")
+                                    )
+                                    ui.label(
+                                        "显色计算至少覆盖 380–780 nm；曲线图仅显示该可见光范围。"
+                                    ).classes("text-xs text-amber-700")
+
+                                with ui.card().classes(
+                                    "lg:col-span-5 w-full h-full p-4 rounded-xl shadow-sm"
+                                ):
+                                    ui.label("2. 叠加具体色坐标（可选）").classes(
+                                        "text-lg font-bold text-slate-800"
+                                    )
+                                    ui.label("手工坐标会叠加到光谱结果的同一张 CIE 图中。").classes(
+                                        "text-xs text-slate-500 mb-1"
+                                    )
+                                    ui.select(
+                                        COORDINATE_SYSTEMS,
+                                        label="输入坐标类型",
+                                    ).bind_value(self.coordinate_state, "system").props(
+                                        "outlined dense options-dense"
+                                    ).classes("w-full")
+                                    combined_coordinate_textarea = (
+                                        ui.textarea(
+                                            "名称 / 坐标值",
+                                            placeholder=(
+                                                "名称\tx\ty\n目标白点\t0.3127\t0.3290\n实测色点\t0.3200\t0.3350"
+                                            ),
+                                        )
+                                        .bind_value(self.coordinate_state, "data_text")
+                                        .props(
+                                            "outlined rows=12 input-style='font-family: monospace; white-space: pre'"
+                                        )
+                                        .classes("w-full")
+                                    )
+                                    ui.label("不填写时仅分析上方光谱数据。").classes("text-xs text-blue-800")
+
+                                with ui.card().classes(
+                                    "lg:col-span-12 w-full p-3 rounded-xl shadow-sm"
+                                ):
+                                    with ui.row().classes(
+                                        "w-full items-center justify-between gap-3 flex-wrap"
+                                    ):
+                                        with ui.column().classes("gap-0"):
+                                            ui.label("3. 运行联合分析").classes(
+                                                "text-lg font-bold text-slate-800"
+                                            )
+                                            ui.label(
+                                                "计算完成后将自动切换到分析结果页。"
+                                            ).classes("text-xs text-slate-500")
+                                        with ui.row().classes("items-center gap-2 flex-wrap"):
+                                            ui.button(
+                                                "载入示例", icon="lightbulb", on_click=load_spectral_example
+                                            ).props("outline no-caps")
+                                            ui.button(
+                                                "清空光谱", icon="delete_outline", on_click=clear_spectra
+                                            ).props("flat no-caps color=grey-7")
+                                            ui.button(
+                                                "清空坐标", icon="location_off", on_click=clear_coordinates
+                                            ).props("flat no-caps color=grey-7")
+                                            calculate_button = ui.button(
+                                                "联合计算",
+                                                icon="calculate",
+                                                on_click=calculate_spectra,
+                                            ).props("unelevated no-caps color=blue-8")
+
+                with ui.tab_panel(analysis_tab).classes("p-0"):
+                    with ui.scroll_area().classes("w-full h-[calc(100vh-112px)]"):
+                        with ui.column().classes("w-full max-w-[1900px] mx-auto p-2 gap-3"):
+                            with ui.card().classes("w-full p-3 rounded-xl shadow-sm"):
+                                render_spectrum_results()

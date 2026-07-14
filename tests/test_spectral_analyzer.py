@@ -92,6 +92,10 @@ class SpectralAnalyzerOptionsTests(unittest.TestCase):
         self.assertAlmostEqual(max(point[1] for point in normalized["series"][0]["data"]), 1.0)
         self.assertEqual(normalized["xAxis"]["min"], 380)
         self.assertEqual(normalized["xAxis"]["max"], 780)
+        slider = normalized["dataZoom"][1]
+        axis_name_offset = normalized["grid"]["bottom"] - normalized["xAxis"]["nameGap"]
+        slider_top_offset = slider["bottom"] + slider["height"]
+        self.assertGreater(axis_name_offset, slider_top_offset + 20)
         self.assertTrue(
             all(380 <= point[0] <= 780 for point in normalized["series"][0]["data"])
         )
