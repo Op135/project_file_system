@@ -68,6 +68,7 @@ logger = logging.getLogger(__name__)
 # 数据键保存全部异常单；版本时间戳只用于通知已打开页面刷新列表，不承担并发控制。
 ERROR_DATA_KEY = "error_management_data"
 ERROR_VERSION_KEY = "error_management_version_stamp"
+ERROR_CLOSURE_NATURE_CATALOG_KEY = "error_closure_nature_catalog"
 
 
 @dataclass
@@ -302,10 +303,39 @@ def get_close_counts(action: dict) -> tuple[int, int]:
     return approved_count, len(requests)
 
 
-def get_error_closure_nature_options(all_errors: Any) -> list[str]:
-    """从历史异常措施关闭审批中提取已使用过的措施性质。"""
+def normalize_closure_nature(value: Any) -> str:
+    """统一措施性质中的首尾空白和连续空格，减少同义重复项。"""
+    return re.sub(r"\s+", " ", str(value or "")).strip()
+
+
+def get_error_closure_nature_catalog_options(catalog: Any) -> list[str]:
+    """按使用次数优先返回独立措施性质词库中的可选项。"""
+    ranked_options = []
+    if isinstance(catalog, dict):
+        for catalog_key, raw_entry in catalog.items():
+            if isinstance(raw_entry, dict):
+                name = normalize_closure_nature(raw_entry.get("name") or catalog_key)
+                try:
+                    use_count = max(0, int(raw_entry.get("use_count", 0)))
+                except (TypeError, ValueError):
+                    use_count = 0
+            else:
+                name = normalize_closure_nature(raw_entry or catalog_key)
+                use_count = 0
+            if name:
+                ranked_options.append((name, use_count))
+    elif isinstance(catalog, list):
+        ranked_options.extend((normalize_closure_nature(value), 0) for value in catalog)
+
+    ranked_options = [(name, count) for name, count in ranked_options if name]
+    ranked_options.sort(key=lambda item: (-item[1], item[0]))
+    return unique_nonempty_texts(name for name, _ in ranked_options)
+
+
+def get_error_closure_nature_options(all_errors: Any, catalog: Any = None) -> list[str]:
+    """优先返回独立词库选项，并用历史关闭审批中的性质补齐旧数据。"""
     if not isinstance(all_errors, dict):
-        return []
+        all_errors = {}
     values = []
     for raw_error in all_errors.values():
         error_data = merge_with_error_template(raw_error) if isinstance(raw_error, dict) else {}
@@ -316,7 +346,54 @@ def get_error_closure_nature_options(all_errors: Any) -> list[str]:
             for request in action.get("close_requests", []):
                 if isinstance(request, dict) and request.get("status") == "已通过":
                     values.append(request.get("closure_nature", ""))
-    return unique_nonempty_texts(values)
+
+    options = []
+    seen = set()
+    for value in [*get_error_closure_nature_catalog_options(catalog), *unique_nonempty_texts(values)]:
+        name = normalize_closure_nature(value)
+        normalized_key = name.casefold()
+        if name and normalized_key not in seen:
+            options.append(name)
+            seen.add(normalized_key)
+    return options
+
+
+async def record_error_closure_nature(
+    closure_nature: str,
+    user: str,
+    role: str,
+    used_at: str = "",
+) -> bool:
+    """在独立词库中原子记录措施性质及其累计使用次数。"""
+    nature = normalize_closure_nature(closure_nature)
+    if not nature:
+        return False
+    timestamp = used_at or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    catalog_key = nature.casefold()
+
+    def update_catalog(current):
+        catalog = copy.deepcopy(current) if isinstance(current, dict) else {}
+        raw_entry = catalog.get(catalog_key, {})
+        entry = copy.deepcopy(raw_entry) if isinstance(raw_entry, dict) else {}
+        try:
+            use_count = max(0, int(entry.get("use_count", 0)))
+        except (TypeError, ValueError):
+            use_count = 0
+        entry.update(
+            {
+                "name": normalize_closure_nature(entry.get("name")) or nature,
+                "use_count": use_count + 1,
+                "last_used_at": timestamp,
+                "last_used_by": user,
+                "last_used_role": role,
+            }
+        )
+        entry.setdefault("created_at", timestamp)
+        entry.setdefault("created_by", user)
+        catalog[catalog_key] = entry
+        return catalog
+
+    return await db_storage.atomic_deep_update([ERROR_CLOSURE_NATURE_CATALOG_KEY], update_catalog)
 
 
 def get_owner_extension_summary(error_data: dict) -> list[tuple[str, int]]:
@@ -628,7 +705,7 @@ async def approve_error_preventive_close_request(
     if not is_error_extension_approver(role):
         return ErrorUpdateResult(db_success=False, changed=False, code="forbidden")
 
-    nature = closure_nature.strip()
+    nature = normalize_closure_nature(closure_nature)
     if approved and not nature:
         return ErrorUpdateResult(db_success=False, changed=False, code="missing_closure_nature")
 
@@ -666,7 +743,12 @@ async def approve_error_preventive_close_request(
         )
         return "updated", current
 
-    return await atomic_error_update(error_id, update_close_request)
+    result = await atomic_error_update(error_id, update_close_request)
+    if approved and result.changed:
+        catalog_saved = await record_error_closure_nature(nature, user, role, now_str)
+        if not catalog_saved:
+            logger.error("措施性质词库保存失败：%s", nature)
+    return result
 
 
 async def delete_error_record(error_id: str, role: str) -> ErrorUpdateResult:
@@ -1066,7 +1148,10 @@ async def error_management_page(error_id: str = ""):
 
         def open_closure_nature_dialog(title: str, description: str, on_submit):
             """审批通过关闭申请前，由审批人补充便于统计的措施性质。"""
-            nature_options = get_error_closure_nature_options(db_storage.get_item(ERROR_DATA_KEY, {}))
+            nature_options = get_error_closure_nature_options(
+                db_storage.get_item(ERROR_DATA_KEY, {}),
+                db_storage.get_item(ERROR_CLOSURE_NATURE_CATALOG_KEY, {}),
+            )
             state = {"nature": ""}
 
             async def submit_nature():
@@ -1081,22 +1166,28 @@ async def error_management_page(error_id: str = ""):
                 ui.label(title).classes("text-lg font-bold text-gray-800")
                 if description:
                     ui.label(description).classes("text-sm text-gray-600")
-                nature_input = None
                 if nature_options:
+                    ui.label(
+                        "请优先选择已有性质；选项按历史使用次数排列，便于后续统一统计。确无合适项时再新增。"
+                    ).classes("text-sm text-orange-700")
 
                     def select_nature(e):
                         state["nature"] = str(e.value or "").strip()
-                        if nature_input is not None:
-                            nature_input.value = state["nature"]
-                            nature_input.update()
 
-                    ui.select(nature_options, label="历史性质", on_change=select_nature).props(
-                        "outlined dense clearable options-dense"
-                    ).classes("w-full")
-                nature_input = (
-                    ui.input("措施性质", value=state["nature"]).props("outlined dense clearable").classes("w-full")
-                )
-                nature_input.on_value_change(lambda e: state.__setitem__("nature", str(e.value or "")))
+                    ui.select(
+                        nature_options,
+                        label="已有措施性质（优先选择）",
+                        on_change=select_nature,
+                        with_input=True,
+                        clearable=True,
+                    ).props("outlined dense options-dense").classes("w-full")
+                    with ui.expansion("没有合适项？新增措施性质", icon="add").classes("w-full"):
+                        nature_input = ui.input("新增措施性质").props("outlined dense clearable").classes("w-full")
+                        nature_input.on_value_change(lambda e: state.__setitem__("nature", str(e.value or "")))
+                else:
+                    ui.label("暂无历史性质，请录入第一项；审批通过后会自动加入词库。").classes("text-sm text-gray-500")
+                    nature_input = ui.input("措施性质").props("outlined dense clearable").classes("w-full")
+                    nature_input.on_value_change(lambda e: state.__setitem__("nature", str(e.value or "")))
                 with ui.row().classes("w-full justify-end gap-3 mt-3"):
                     ui.button("取消", on_click=dialog.close).props("outline color=grey")
                     ui.button("确认通过", icon="check", on_click=submit_nature).props("color=green")

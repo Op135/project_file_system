@@ -257,9 +257,30 @@ class ErrorManagementConcurrencyTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(action["close_note"], "验证完成")
                     self.assertEqual(action["closed_by"], "manager")
                     self.assertEqual(action["closure_nature"], "设计问题")
+                    nature_catalog = isolated_db.get_item(error_management.ERROR_CLOSURE_NATURE_CATALOG_KEY, {})
+                    self.assertEqual(nature_catalog["设计问题"]["name"], "设计问题")
+                    self.assertEqual(nature_catalog["设计问题"]["use_count"], 1)
+                    self.assertEqual(nature_catalog["设计问题"]["last_used_by"], "manager")
                     self.assertEqual(
-                        error_management.get_error_closure_nature_options({"ERR-CLOSE": approved.record}),
+                        error_management.get_error_closure_nature_options(
+                            {"ERR-CLOSE": approved.record},
+                            nature_catalog,
+                        ),
                         ["设计问题"],
+                    )
+
+                    await asyncio.gather(
+                        error_management.record_error_closure_nature(" 工艺   问题 ", "manager", "研发经理"),
+                        error_management.record_error_closure_nature("工艺 问题", "manager", "研发经理"),
+                    )
+                    nature_catalog = isolated_db.get_item(error_management.ERROR_CLOSURE_NATURE_CATALOG_KEY, {})
+                    self.assertEqual(nature_catalog["工艺 问题"]["use_count"], 2)
+                    self.assertEqual(
+                        error_management.get_error_closure_nature_options(
+                            {"ERR-CLOSE": approved.record},
+                            nature_catalog,
+                        ),
+                        ["工艺 问题", "设计问题"],
                     )
                 finally:
                     error_management.db_storage = original_db_storage
