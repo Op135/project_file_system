@@ -446,10 +446,11 @@ def update_overview_charge_pending_dic(scope, des_user="", project_name="", des_
 
         # 2. 遍历项目
         for project, project_dic in app.storage.general.get("overview_role", {}).items():
-            project_engineer = app.storage.general["project_engineer"].get(project, "未指定")
             # 项目工程师未指定的，不用仔细检查整个项目的概述填写情况
-            if project_engineer == "未指定":
-                continue
+            # 展示关闭不检查，让整理过概述但是还没有项目工程师的项目，概述负责人也能在待办项看到条目
+            # project_engineer = app.storage.general["project_engineer"].get(project, "未指定")
+            # if project_engineer == "未指定":
+            #     continue
             for role, charge_user_dic in project_dic.items():
                 latest_user_raw = charge_user_dic.get("latest_user", "")
                 latest_user = latest_user_raw.split("：")[1] if "：" in latest_user_raw else latest_user_raw
