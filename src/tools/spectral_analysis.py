@@ -8,7 +8,7 @@ import csv
 import importlib
 import math
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from functools import lru_cache
 from io import BytesIO, StringIO
 from itertools import combinations
@@ -137,6 +137,7 @@ class SpectrumChromaticityResult:
     cct: float | None
     duv: float | None
     warnings: tuple[str, ...]
+    normalization_factor: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -146,6 +147,17 @@ class ThreeSpectrumMixSolution:
     result: SpectrumResult
     peak_ratios: tuple[float, float, float]
     luminous_flux: float
+
+
+@dataclass(frozen=True)
+class PowerLimitedMixResult:
+    """按原始光谱功率上限缩放后的绝对混光结果。"""
+
+    radiant_power: float
+    luminous_flux: float
+    luminous_efficacy: float
+    source_powers: tuple[float, ...]
+    limiting_source_indices: tuple[int, ...]
 
 
 def _require_colour() -> Any:
@@ -668,12 +680,76 @@ def mix_spectra_by_peak_ratio(
         raise SpectralAnalysisError("峰值比例必须位于 0–1")
     calculation_grid, (first_values, second_values) = _aligned_peak_spectra((first, second))
     mixed_values = ratio * first_values + (1 - ratio) * second_values
-    return analyze_spectrum_chromaticity(
+    result = analyze_spectrum_chromaticity(
         SpectrumInput(
             name=name,
             wavelengths=tuple(float(value) for value in calculation_grid),
             values=tuple(float(value) for value in mixed_values),
         )
+    )
+    return replace(result, normalization_factor=float(np.max(mixed_values)))
+
+
+def calculate_power_limited_mix(
+    source_spectra: tuple[SpectrumInput, ...],
+    source_peak_coefficients: tuple[float, ...],
+    source_power_limits: tuple[float, ...],
+    *,
+    name: str = "功率受限混合光谱",
+) -> PowerLimitedMixResult:
+    """按各原始光谱的辐射功率上限计算最大可实现光功率和光通量。"""
+
+    source_count = len(source_spectra)
+    if source_count == 0:
+        raise SpectralAnalysisError("至少需要一条原始光谱才能计算光功率")
+    if len(source_peak_coefficients) != source_count or len(source_power_limits) != source_count:
+        raise SpectralAnalysisError("光谱配比、功率上限与原始光谱数量不一致")
+
+    coefficients = np.asarray(source_peak_coefficients, dtype=float)
+    limits = np.asarray(source_power_limits, dtype=float)
+    if not np.all(np.isfinite(coefficients)) or np.any(coefficients < 0):
+        raise SpectralAnalysisError("原始光谱峰值系数必须为有限非负数")
+    if not np.all(np.isfinite(limits)) or np.any(limits <= 0):
+        raise SpectralAnalysisError("每条原始光谱的光功率上限必须大于 0 W")
+    if not np.any(coefficients > 0):
+        raise SpectralAnalysisError("最终混合光谱没有有效的原始光谱贡献")
+
+    calculation_grid, basis_values = _aligned_peak_spectra(source_spectra)
+    basis_integrals = np.asarray(
+        [
+            float(np.sum((values[:-1] + values[1:]) * np.diff(calculation_grid) / 2))
+            for values in basis_values
+        ],
+        dtype=float,
+    )
+    unit_source_powers = coefficients * basis_integrals
+    active_mask = unit_source_powers > 0
+    scale = float(np.min(limits[active_mask] / unit_source_powers[active_mask]))
+    source_powers = scale * unit_source_powers
+    radiant_power = float(np.sum(source_powers))
+
+    mixed_values = np.zeros_like(calculation_grid, dtype=float)
+    for coefficient, values in zip(coefficients, basis_values):
+        mixed_values += scale * float(coefficient) * values
+    colour_module = _require_colour()
+    mixed_sd = colour_module.SpectralDistribution(
+        dict(zip(calculation_grid.tolist(), mixed_values.tolist())),
+        name=name,
+    )
+    luminous_flux = float(colour_module.luminous_flux(mixed_sd))
+    if not math.isfinite(luminous_flux) or luminous_flux < 0:
+        raise SpectralAnalysisError("混合光谱无法得到有效的光通量")
+    limiting_source_indices = tuple(
+        int(index)
+        for index, (power, limit, active) in enumerate(zip(source_powers, limits, active_mask))
+        if active and math.isclose(float(power), float(limit), rel_tol=1e-7, abs_tol=1e-10)
+    )
+    return PowerLimitedMixResult(
+        radiant_power=radiant_power,
+        luminous_flux=luminous_flux,
+        luminous_efficacy=luminous_flux / radiant_power,
+        source_powers=tuple(float(value) for value in source_powers),
+        limiting_source_indices=limiting_source_indices,
     )
 
 

@@ -18,6 +18,7 @@ from src.tools.spectral_analysis import (  # noqa: E402
     analyze_spectral_text,
     analyze_standard_illuminant,
     analyze_standard_illuminant_chromaticity,
+    calculate_power_limited_mix,
     chromaticity_background_image,
     chromaticity_isotherms,
     chromaticity_loci,
@@ -175,6 +176,30 @@ class SpectralCalculationTests(unittest.TestCase):
         self.assertGreater(solution.luminous_flux, 0)
         with self.assertRaisesRegex(SpectralAnalysisError, "可混合范围之外"):
             solve_three_spectrum_mix(sources, (0.70, 0.20))
+
+    def test_power_limited_mix_reports_absolute_power_flux_and_limiting_source(self):
+        sources = tuple(
+            SpectrumInput(result.name, result.wavelengths, result.values)
+            for result in self.results
+        )
+        power_result = calculate_power_limited_mix(
+            sources,
+            (0.25, 0.75),
+            (1.0, 0.4),
+        )
+        self.assertGreater(power_result.radiant_power, 0)
+        self.assertGreater(power_result.luminous_flux, 0)
+        self.assertGreater(power_result.luminous_efficacy, 0)
+        self.assertLessEqual(power_result.luminous_efficacy, 683)
+        self.assertLessEqual(power_result.source_powers[0], 1.0 + 1e-9)
+        self.assertLessEqual(power_result.source_powers[1], 0.4 + 1e-9)
+        self.assertTrue(power_result.limiting_source_indices)
+        limiting_index = power_result.limiting_source_indices[0]
+        self.assertAlmostEqual(
+            power_result.source_powers[limiting_index],
+            (1.0, 0.4)[limiting_index],
+            places=8,
+        )
 
 
 class ChromaticityTests(unittest.TestCase):
