@@ -3,7 +3,12 @@
     "_字段说明": {
         "public_base_url": "企业微信消息中的页面跳转地址，不要以 / 结尾；必须是员工浏览器能够访问的地址。",
         "editor_roles": "可以维护样品问题录入区块、协助维护对策区块的角色关键字列表。",
-        "filter_states": "总览页状态筛选项；“全部”即使遗漏，加载器也会自动补到第一项。“延期申请中”用于筛选存在待审批延期申请的样品问题。",
+        "filter_states": "总览页状态筛选项；“全部”即使遗漏，加载器也会自动补到第一项。“试产前特殊准备”用于试产评审会主动筛选查看。",
+        "special_preparation.owner_role": "试产前特殊准备的统一跟进角色；该角色可以更新准备动作并申请最终关闭，但这些问题不计入其主页红点。",
+        "special_preparation.owner_role_keywords": "仅用于兼容尚未绑定具体负责人的历史记录，不作为新记录的主要授权依据。",
+        "special_preparation.default_owner_name": "试产前特殊准备默认负责人姓名。审批时仍可从企业微信 NPI 候选人中改选。",
+        "special_preparation.default_owner_userid": "默认负责人的企业微信 userid。",
+        "special_preparation.default_actions": "关闭审批判断有后续动作时，供审批人勾选的常用准备动作。",
         "wecom.default_notify_targets": "样品问题模块默认通知对象规则。",
         "wecom.extension.approver_roles": "可以通过或驳回样品问题延期申请的角色关键字列表。",
         "wecom.extension.notify_targets": "延期申请通知接收人规则列表；可使用 names、userids、department_contains、position 或 position_contains 等成员筛选条件。",
@@ -32,8 +37,22 @@
         "问题录入完毕",
         "临时对策填写完毕",
         "纠正预防措施填写完毕",
+        "试产前特殊准备",
         "延期申请中"
     ],
+    "special_preparation": {
+        "owner_role": "NPI工程师",
+        "owner_role_keywords": [
+            "NPI工程",
+            "NPI工程师"
+        ],
+        "default_owner_name": "杨铁华",
+        "default_owner_userid": "YangTieHua",
+        "default_actions": [
+            "试产前落实工装治具",
+            "试产前落实到SOP"
+        ]
+    },
     "wecom": {
         "default_notify_targets": [
             {

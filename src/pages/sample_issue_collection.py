@@ -11,7 +11,7 @@ import os
 import re
 import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, Optional
 from urllib.parse import quote, unquote
@@ -49,13 +49,20 @@ from ..sample_issue_config import (
     SAMPLE_INCOMPLETE_REMINDER_RULES,
     SAMPLE_PUBLIC_BASE_URL,
     SAMPLE_REMINDER_RULES,
+    SAMPLE_SPECIAL_PREPARATION_DEFAULT_ACTIONS,
+    SAMPLE_SPECIAL_PREPARATION_DEFAULT_OWNER_NAME,
+    SAMPLE_SPECIAL_PREPARATION_DEFAULT_OWNER_USERID,
+    SAMPLE_SPECIAL_PREPARATION_OWNER_ROLE,
+    SAMPLE_SPECIAL_PREPARATION_OWNER_ROLE_KEYWORDS,
     SAMPLE_STATUS_CORRECTIVE_ACTION_DONE,
     SAMPLE_STATUS_ISSUE_RECORDED,
+    SAMPLE_STATUS_SPECIAL_PREPARATION,
     SAMPLE_STATUS_TEMPORARY_ACTION_DONE,
 )
 from ..utils import apply_chinese_date_locale, get_cache_busted_path, handle_key, logout, setup_global_activity_tracking
 from ..wecom_service import (
     find_unknown_wecom_names,
+    load_wecom_contacts_cache,
     resolve_wecom_recipients,
     retry_failed_wecom_messages,
     send_wecom_text_message,
@@ -65,6 +72,7 @@ logger = logging.getLogger(__name__)
 
 SAMPLE_ISSUE_DATA_KEY = "sample_issue_collection_data"
 SAMPLE_ISSUE_VERSION_KEY = "sample_issue_collection_version_stamp"
+SAMPLE_CLOSURE_NATURE_CATALOG_KEY = "sample_issue_closure_nature_catalog"
 SAMPLE_ISSUE_ID_PREFIX = "SPI"
 SAMPLE_ISSUE_ID_SEQUENCE_WIDTH = 3
 SAMPLE_ISSUE_ID_SEQUENCE_MAX = 999
@@ -204,6 +212,19 @@ class SampleIssueUpdateResult:
     record: Optional[dict] = None
 
 
+@dataclass
+class SampleClosureApprovalState:
+    """保存关闭审批弹窗中的问题性质和后续动作选择。"""
+
+    nature: str = ""
+    follow_up_required: bool = False
+    selected_actions: set[str] = field(default_factory=set)
+    other_action: str = ""
+    owner_name: str = SAMPLE_SPECIAL_PREPARATION_DEFAULT_OWNER_NAME
+    owner_userid: str = SAMPLE_SPECIAL_PREPARATION_DEFAULT_OWNER_USERID
+    owner_position: str = SAMPLE_SPECIAL_PREPARATION_OWNER_ROLE
+
+
 def get_sample_issue_template() -> dict:
     """返回一张完整的空样品问题记录。"""
     today_str = datetime.now().strftime("%Y-%m-%d")
@@ -237,6 +258,20 @@ def get_sample_issue_template() -> dict:
             "closed_role": "",
             "closed_at": "",
         },
+        "special_preparation": {
+            "active": False,
+            "owner_role": SAMPLE_SPECIAL_PREPARATION_OWNER_ROLE,
+            "owner_name": SAMPLE_SPECIAL_PREPARATION_DEFAULT_OWNER_NAME,
+            "owner_userid": SAMPLE_SPECIAL_PREPARATION_DEFAULT_OWNER_USERID,
+            "owner_position": SAMPLE_SPECIAL_PREPARATION_OWNER_ROLE,
+            "actions": [],
+            "started_by": "",
+            "started_role": "",
+            "started_at": "",
+            "completed_by": "",
+            "completed_role": "",
+            "completed_at": "",
+        },
         "created_by": "",
         "created_role": "",
         "created_at": "",
@@ -254,7 +289,7 @@ def merge_with_sample_issue_template(db_data: dict) -> dict:
         return merged
 
     for key, value in db_data.items():
-        if key in ["basic_info", "countermeasure", "reminder_log"] and isinstance(value, dict):
+        if key in ["basic_info", "countermeasure", "special_preparation", "reminder_log"] and isinstance(value, dict):
             merged[key].update(copy.deepcopy(value))
         elif key == "operation_log":
             merged[key] = copy.deepcopy(value) if isinstance(value, list) else []
@@ -274,6 +309,27 @@ def merge_with_sample_issue_template(db_data: dict) -> dict:
     if not isinstance(countermeasure.get("close_requests"), list):
         countermeasure["close_requests"] = []
     countermeasure.setdefault("closure_nature", "")
+    special_preparation = merged["special_preparation"]
+    if not isinstance(special_preparation.get("actions"), list):
+        special_preparation["actions"] = []
+    normalized_actions = []
+    for index, raw_action in enumerate(special_preparation["actions"]):
+        if isinstance(raw_action, dict):
+            action = copy.deepcopy(raw_action)
+            content = str(action.get("content", "")).strip()
+        else:
+            action = {}
+            content = str(raw_action or "").strip()
+        if not content:
+            continue
+        action["id"] = str(action.get("id") or f"special_{index + 1}")
+        action["content"] = content
+        action["completed"] = bool(action.get("completed", False))
+        action.setdefault("completed_by", "")
+        action.setdefault("completed_role", "")
+        action.setdefault("completed_at", "")
+        normalized_actions.append(action)
+    special_preparation["actions"] = normalized_actions
     if not isinstance(merged.get("reminder_log"), dict):
         merged["reminder_log"] = {}
     original_basic = db_data.get("basic_info", {}) if isinstance(db_data, dict) else {}
@@ -373,6 +429,22 @@ def get_all_sample_close_approver_roles() -> list[str]:
     return list(dict.fromkeys(roles))
 
 
+def get_sample_close_approval_additional_people(
+    issue_data: dict,
+    close_request: dict,
+    close_route: dict,
+    approved: bool,
+) -> str:
+    """合并关闭审批结果需要单独通知的申请人与特殊准备负责人。"""
+    special_preparation = issue_data.get("special_preparation", {})
+    return merge_wecom_recipients(
+        close_request.get("requester", "") if close_route.get("notify_requester_on_approval") else "",
+        special_preparation.get("owner_name", "")
+        if approved and close_request.get("follow_up_required")
+        else "",
+    )
+
+
 def is_sample_admin(role: str) -> bool:
     """删除样品问题属于高风险操作，仅允许角色值严格等于 admin。"""
     return str(role).strip().lower() == "admin"
@@ -465,10 +537,39 @@ def get_close_counts(countermeasure: dict) -> tuple[int, int]:
     return approved_count, len(requests)
 
 
-def get_sample_closure_nature_options(all_issues: Any) -> list[str]:
-    """从历史样品问题关闭审批中提取已使用过的措施性质。"""
+def normalize_sample_closure_nature(value: Any) -> str:
+    """统一问题性质中的首尾空白和连续空格，减少同义重复项。"""
+    return re.sub(r"\s+", " ", str(value or "")).strip()
+
+
+def get_sample_closure_nature_catalog_options(catalog: Any) -> list[str]:
+    """按使用次数优先返回独立问题性质词库中的可选项。"""
+    ranked_options = []
+    if isinstance(catalog, dict):
+        for catalog_key, raw_entry in catalog.items():
+            if isinstance(raw_entry, dict):
+                name = normalize_sample_closure_nature(raw_entry.get("name") or catalog_key)
+                try:
+                    use_count = max(0, int(raw_entry.get("use_count", 0)))
+                except (TypeError, ValueError):
+                    use_count = 0
+            else:
+                name = normalize_sample_closure_nature(raw_entry or catalog_key)
+                use_count = 0
+            if name:
+                ranked_options.append((name, use_count))
+    elif isinstance(catalog, list):
+        ranked_options.extend((normalize_sample_closure_nature(value), 0) for value in catalog)
+
+    ranked_options = [(name, count) for name, count in ranked_options if name]
+    ranked_options.sort(key=lambda item: (-item[1], item[0]))
+    return unique_nonempty_texts(name for name, _ in ranked_options)
+
+
+def get_sample_closure_nature_options(all_issues: Any, catalog: Any = None) -> list[str]:
+    """优先返回独立词库选项，并用历史关闭审批中的性质补齐旧数据。"""
     if not isinstance(all_issues, dict):
-        return []
+        all_issues = {}
     values = []
     for raw_issue in all_issues.values():
         issue_data = merge_with_sample_issue_template(raw_issue) if isinstance(raw_issue, dict) else {}
@@ -477,7 +578,123 @@ def get_sample_closure_nature_options(all_issues: Any) -> list[str]:
         for request in countermeasure.get("close_requests", []):
             if isinstance(request, dict) and request.get("status") == "已通过":
                 values.append(request.get("closure_nature", ""))
-    return unique_nonempty_texts(values)
+
+    options = []
+    seen = set()
+    for value in [*get_sample_closure_nature_catalog_options(catalog), *unique_nonempty_texts(values)]:
+        name = normalize_sample_closure_nature(value)
+        normalized_key = name.casefold()
+        if name and normalized_key not in seen:
+            options.append(name)
+            seen.add(normalized_key)
+    return options
+
+
+async def record_sample_closure_nature(
+    closure_nature: str,
+    user: str,
+    role: str,
+    used_at: str = "",
+) -> bool:
+    """在独立词库中原子记录问题性质及其累计使用次数。"""
+    nature = normalize_sample_closure_nature(closure_nature)
+    if not nature:
+        return False
+    timestamp = used_at or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    catalog_key = nature.casefold()
+
+    def update_catalog(current):
+        catalog = copy.deepcopy(current) if isinstance(current, dict) else {}
+        raw_entry = catalog.get(catalog_key, {})
+        entry = copy.deepcopy(raw_entry) if isinstance(raw_entry, dict) else {}
+        try:
+            use_count = max(0, int(entry.get("use_count", 0)))
+        except (TypeError, ValueError):
+            use_count = 0
+        entry.update(
+            {
+                "name": normalize_sample_closure_nature(entry.get("name")) or nature,
+                "use_count": use_count + 1,
+                "last_used_at": timestamp,
+                "last_used_by": user,
+                "last_used_role": role,
+            }
+        )
+        entry.setdefault("created_at", timestamp)
+        entry.setdefault("created_by", user)
+        catalog[catalog_key] = entry
+        return catalog
+
+    return await db_storage.atomic_deep_update([SAMPLE_CLOSURE_NATURE_CATALOG_KEY], update_catalog)
+
+
+def is_sample_special_preparation_active(issue_data: dict) -> bool:
+    """判断样品问题是否处于试产前特殊准备阶段。"""
+    special_preparation = issue_data.get("special_preparation", {})
+    return bool(isinstance(special_preparation, dict) and special_preparation.get("active"))
+
+
+def get_sample_special_owner_candidates(contacts_cache: Any) -> list[dict[str, str]]:
+    """从企业微信缓存中返回可负责试产前特殊准备的在职 NPI 人员。"""
+    contacts = contacts_cache.get("contacts", []) if isinstance(contacts_cache, dict) else []
+    candidates = []
+    seen_userids = set()
+    for contact in contacts:
+        if not isinstance(contact, dict) or not contact.get("is_active", True):
+            continue
+        name = str(contact.get("name", "")).strip()
+        userid = str(contact.get("userid", "")).strip()
+        position = str(contact.get("position", "")).strip()
+        if not name or not userid or not any(keyword in position for keyword in SAMPLE_SPECIAL_PREPARATION_OWNER_ROLE_KEYWORDS):
+            continue
+        candidates.append({"name": name, "userid": userid, "position": position})
+        seen_userids.add(userid.casefold())
+
+    if SAMPLE_SPECIAL_PREPARATION_DEFAULT_OWNER_USERID.casefold() not in seen_userids:
+        candidates.append(
+            {
+                "name": SAMPLE_SPECIAL_PREPARATION_DEFAULT_OWNER_NAME,
+                "userid": SAMPLE_SPECIAL_PREPARATION_DEFAULT_OWNER_USERID,
+                "position": SAMPLE_SPECIAL_PREPARATION_OWNER_ROLE,
+            }
+        )
+    return sorted(
+        candidates,
+        key=lambda item: (
+            item["userid"].casefold() != SAMPLE_SPECIAL_PREPARATION_DEFAULT_OWNER_USERID.casefold(),
+            item["name"],
+        ),
+    )
+
+
+def normalize_sample_special_owner(owner: Any) -> dict[str, str]:
+    """把审批弹窗提交的 NPI 负责人标准化为可持久化快照。"""
+    source = owner if isinstance(owner, dict) else {}
+    return {
+        "name": str(source.get("name", "")).strip(),
+        "userid": str(source.get("userid", "")).strip(),
+        "position": str(source.get("position", "")).strip(),
+    }
+
+
+def can_manage_sample_special_preparation(issue_data: dict, current_user: str, current_role: str) -> bool:
+    """具体负责人优先授权；无负责人姓名的历史记录才回退到角色关键词。"""
+    if str(current_user).strip().lower() == "admin" or str(current_role).strip().lower() == "admin":
+        return True
+    special_preparation = issue_data.get("special_preparation", {})
+    if not isinstance(special_preparation, dict):
+        return False
+    owner_name = str(special_preparation.get("owner_name", "")).strip()
+    if owner_name:
+        return str(current_user).strip() == owner_name
+    return any(keyword in str(current_role) for keyword in SAMPLE_SPECIAL_PREPARATION_OWNER_ROLE_KEYWORDS)
+
+
+def are_sample_special_actions_complete(issue_data: dict) -> bool:
+    """判断试产前特殊准备动作是否存在且已全部完成。"""
+    special_preparation = issue_data.get("special_preparation", {})
+    actions = special_preparation.get("actions", []) if isinstance(special_preparation, dict) else []
+    return bool(actions) and all(isinstance(action, dict) and action.get("completed") for action in actions)
 
 
 def is_sample_issue_closed(issue_data: dict) -> bool:
@@ -485,6 +702,8 @@ def is_sample_issue_closed(issue_data: dict) -> bool:
     countermeasure = issue_data.get("countermeasure", {})
     if countermeasure.get("closed_at"):
         return True
+    if is_sample_special_preparation_active(issue_data):
+        return False
     requests = countermeasure.get("close_requests", [])
     if not isinstance(requests, list):
         return False
@@ -510,6 +729,8 @@ def calculate_sample_issue_status(issue_data: dict) -> str:
     countermeasure = issue_data.get("countermeasure", {})
     if is_sample_issue_closed(issue_data):
         return SAMPLE_FILTER_CLOSED_STATE
+    if is_sample_special_preparation_active(issue_data):
+        return SAMPLE_STATUS_SPECIAL_PREPARATION
     if get_pending_close_request(countermeasure):
         return SAMPLE_FILTER_PENDING_CLOSE_STATE
     if is_countermeasure_complete(issue_data):
@@ -596,6 +817,8 @@ def is_sample_issue_pending_for_user(issue_data: dict, current_user: str, curren
         return has_sample_approval_pending_for_role(issue_data, current_role)
 
     normalized_issue = merge_with_sample_issue_template(issue_data)
+    if is_sample_special_preparation_active(normalized_issue):
+        return False
     countermeasure = normalized_issue.get("countermeasure", {})
     return (
         not is_sample_issue_closed(normalized_issue)
@@ -666,7 +889,7 @@ async def check_and_send_sample_issue_reminders(show_result: bool = False) -> tu
 
     for raw_issue in all_issues.values():
         issue_data = merge_with_sample_issue_template(raw_issue)
-        if is_sample_issue_closed(issue_data):
+        if is_sample_issue_closed(issue_data) or is_sample_special_preparation_active(issue_data):
             continue
 
         countermeasure = issue_data.get("countermeasure", {})
@@ -693,7 +916,11 @@ async def check_and_send_sample_issue_reminders(show_result: bool = False) -> tu
             def claim_reminder(current, marker=marker, rule=rule, claim_id=claim_id):
                 stored = merge_with_sample_issue_template(current)
                 stored_countermeasure = stored.get("countermeasure", {})
-                if is_sample_issue_closed(stored) or get_pending_close_request(stored_countermeasure):
+                if (
+                    is_sample_issue_closed(stored)
+                    or is_sample_special_preparation_active(stored)
+                    or get_pending_close_request(stored_countermeasure)
+                ):
                     return "not_eligible", current
                 if not is_countermeasure_complete(stored):
                     return "not_eligible", current
@@ -786,7 +1013,7 @@ async def check_and_send_sample_issue_reminders(show_result: bool = False) -> tu
 
     for raw_issue in all_issues.values():
         issue_data = merge_with_sample_issue_template(raw_issue)
-        if is_sample_issue_closed(issue_data):
+        if is_sample_issue_closed(issue_data) or is_sample_special_preparation_active(issue_data):
             continue
 
         countermeasure = issue_data.get("countermeasure", {})
@@ -811,7 +1038,11 @@ async def check_and_send_sample_issue_reminders(show_result: bool = False) -> tu
             def claim_incomplete_reminder(current, marker=marker, rule=rule, claim_id=claim_id):
                 stored = merge_with_sample_issue_template(current)
                 stored_countermeasure = stored.get("countermeasure", {})
-                if is_sample_issue_closed(stored) or get_pending_close_request(stored_countermeasure):
+                if (
+                    is_sample_issue_closed(stored)
+                    or is_sample_special_preparation_active(stored)
+                    or get_pending_close_request(stored_countermeasure)
+                ):
                     return "not_eligible", current
 
                 fresh_record_date = get_sample_issue_record_date(stored)
@@ -1084,7 +1315,7 @@ async def submit_sample_close_request(
     role: str,
     close_note: str = "",
 ) -> SampleIssueUpdateResult:
-    """由对策责任人申请关闭样品问题。"""
+    """由当前阶段责任人申请关闭样品问题。"""
     note = close_note.strip()
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     close_route = get_sample_close_approval_route(role)
@@ -1110,22 +1341,36 @@ async def submit_sample_close_request(
 
     def add_close_request(current):
         countermeasure = current.get("countermeasure", {})
+        special_active = is_sample_special_preparation_active(current)
         if is_sample_issue_closed(current):
             return "already_closed", current
-        if not is_current_responsible(countermeasure.get("owner", ""), user, role):
-            return "permission_changed", current
-        if get_pending_extension_request(countermeasure):
-            return "pending_extension", current
         if get_pending_close_request(countermeasure):
             return "pending_close", current
-        if not is_countermeasure_complete(current):
-            return "incomplete_countermeasure", current
+        if special_active:
+            if not can_manage_sample_special_preparation(current, user, role):
+                return "special_permission_changed", current
+            if not are_sample_special_actions_complete(current):
+                return "incomplete_special_preparation", current
+            close_request["stage"] = "special_preparation"
+        else:
+            if not is_current_responsible(countermeasure.get("owner", ""), user, role):
+                return "permission_changed", current
+            if get_pending_extension_request(countermeasure):
+                return "pending_extension", current
+            if not is_countermeasure_complete(current):
+                return "incomplete_countermeasure", current
+            close_request["stage"] = "countermeasure"
 
         countermeasure.setdefault("close_requests", []).append(copy.deepcopy(close_request))
         current["updated_by"] = user
         current["updated_at"] = now_str
         current.setdefault("operation_log", []).append(
-            {"user": user, "role": role, "action": "申请关闭样品问题", "time": now_str}
+            {
+                "user": user,
+                "role": role,
+                "action": "申请关闭试产前特殊准备" if special_active else "申请关闭样品问题",
+                "time": now_str,
+            }
         )
         return "updated", current
 
@@ -1134,6 +1379,8 @@ async def submit_sample_close_request(
 
 async def save_and_submit_sample_close_request(issue_data: dict, user: str, role: str) -> SampleIssueUpdateResult:
     """先保存当前表单快照，再提交样品问题关闭申请。"""
+    if is_sample_special_preparation_active(issue_data):
+        return await submit_sample_close_request(issue_data.get("issue_id", ""), user, role)
     save_result = await save_sample_issue_record(issue_data, user, role, is_new=False)
     if not save_result.changed or not save_result.record:
         return save_result
@@ -1147,13 +1394,18 @@ async def approve_sample_close_request(
     user: str,
     role: str,
     closure_nature: str = "",
+    follow_up_required: bool = False,
+    follow_up_actions: Optional[list[str]] = None,
+    special_owner: Optional[dict] = None,
 ) -> SampleIssueUpdateResult:
-    """审批样品问题关闭申请；通过后整单进入已关闭状态。"""
+    """审批关闭申请；首次通过时可转入试产前特殊准备。"""
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     action_text = "通过关闭申请" if approved else "驳回关闭申请"
-    nature = closure_nature.strip()
-    if approved and not nature:
-        return SampleIssueUpdateResult(db_success=False, changed=False, code="missing_closure_nature")
+    nature = normalize_sample_closure_nature(closure_nature)
+    normalized_follow_up_actions = unique_nonempty_texts(
+        normalize_sample_closure_nature(action) for action in (follow_up_actions or [])
+    )
+    normalized_special_owner = normalize_sample_special_owner(special_owner)
 
     def update_close_request(current):
         countermeasure = current.get("countermeasure", {})
@@ -1166,26 +1418,139 @@ async def approve_sample_close_request(
             return "already_processed", current
         if approved and is_sample_issue_closed(current):
             return "already_closed", current
+        is_special_request = stored_request.get("stage") == "special_preparation"
+        if approved and not is_special_request and not nature:
+            return "missing_closure_nature", current
+        if approved and not is_special_request and follow_up_required and not normalized_follow_up_actions:
+            return "missing_follow_up_actions", current
+        if (
+            approved
+            and not is_special_request
+            and follow_up_required
+            and (not normalized_special_owner["name"] or not normalized_special_owner["userid"])
+        ):
+            return "missing_special_owner", current
+        if approved and is_special_request:
+            if not is_sample_special_preparation_active(current):
+                return "special_preparation_changed", current
+            if not are_sample_special_actions_complete(current):
+                return "incomplete_special_preparation", current
 
+        action_text_for_log = (
+            f"{'通过' if approved else '驳回'}试产前特殊准备关闭申请" if is_special_request else action_text
+        )
         stored_request["status"] = "已通过" if approved else "已驳回"
         stored_request["approver"] = user
         stored_request["approver_role"] = role
         stored_request["approved_at"] = now_str
         if approved:
-            stored_request["closure_nature"] = nature
             countermeasure["close_note"] = stored_request.get("note", "")
-            countermeasure["closure_nature"] = nature
-            countermeasure["closed_by"] = user
-            countermeasure["closed_role"] = role
-            countermeasure["closed_at"] = now_str
+            if is_special_request:
+                special_preparation = current.get("special_preparation", {})
+                special_preparation["active"] = False
+                special_preparation["completed_by"] = user
+                special_preparation["completed_role"] = role
+                special_preparation["completed_at"] = now_str
+                countermeasure["closed_by"] = user
+                countermeasure["closed_role"] = role
+                countermeasure["closed_at"] = now_str
+            else:
+                stored_request["closure_nature"] = nature
+                stored_request["follow_up_required"] = follow_up_required
+                stored_request["follow_up_actions"] = copy.deepcopy(normalized_follow_up_actions)
+                countermeasure["closure_nature"] = nature
+                if follow_up_required:
+                    current["special_preparation"] = {
+                        "active": True,
+                        "owner_role": SAMPLE_SPECIAL_PREPARATION_OWNER_ROLE,
+                        "owner_name": normalized_special_owner["name"],
+                        "owner_userid": normalized_special_owner["userid"],
+                        "owner_position": normalized_special_owner["position"] or SAMPLE_SPECIAL_PREPARATION_OWNER_ROLE,
+                        "actions": [
+                            {
+                                "id": f"special_{uuid.uuid4().hex[:8]}",
+                                "content": action,
+                                "completed": False,
+                                "completed_by": "",
+                                "completed_role": "",
+                                "completed_at": "",
+                            }
+                            for action in normalized_follow_up_actions
+                        ],
+                        "started_by": user,
+                        "started_role": role,
+                        "started_at": now_str,
+                        "completed_by": "",
+                        "completed_role": "",
+                        "completed_at": "",
+                    }
+                    action_text_for_log = "通过关闭申请并转试产前特殊准备"
+                else:
+                    countermeasure["closed_by"] = user
+                    countermeasure["closed_role"] = role
+                    countermeasure["closed_at"] = now_str
+                    action_text_for_log = action_text
         current["updated_by"] = user
         current["updated_at"] = now_str
         current.setdefault("operation_log", []).append(
-            {"user": user, "role": role, "action": action_text, "time": now_str}
+            {"user": user, "role": role, "action": action_text_for_log, "time": now_str}
         )
         return "updated", current
 
-    return await atomic_sample_issue_update(issue_id, update_close_request)
+    result = await atomic_sample_issue_update(issue_id, update_close_request)
+    if approved and result.changed and nature:
+        catalog_saved = await record_sample_closure_nature(nature, user, role, now_str)
+        if not catalog_saved:
+            logger.error("样品问题性质词库保存失败：%s", nature)
+    return result
+
+
+async def set_sample_special_action_completed(
+    issue_id: str,
+    action_id: str,
+    completed: bool,
+    user: str,
+    role: str,
+) -> SampleIssueUpdateResult:
+    """由 NPI 工程师原子更新一项试产前特殊准备动作。"""
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    def update_special_action(current):
+        if not is_sample_special_preparation_active(current):
+            return "special_preparation_changed", current
+        if not can_manage_sample_special_preparation(current, user, role):
+            return "forbidden", current
+        countermeasure = current.get("countermeasure", {})
+        if get_pending_close_request(countermeasure):
+            return "pending_close", current
+        special_preparation = current.get("special_preparation", {})
+        actions = special_preparation.get("actions", [])
+        stored_action = next(
+            (action for action in actions if isinstance(action, dict) and str(action.get("id", "")) == str(action_id)),
+            None,
+        )
+        if not stored_action:
+            return "action_not_found", current
+        if bool(stored_action.get("completed")) == completed:
+            return "already_set", current
+
+        stored_action["completed"] = completed
+        stored_action["completed_by"] = user if completed else ""
+        stored_action["completed_role"] = role if completed else ""
+        stored_action["completed_at"] = now_str if completed else ""
+        current["updated_by"] = user
+        current["updated_at"] = now_str
+        current.setdefault("operation_log", []).append(
+            {
+                "user": user,
+                "role": role,
+                "action": f"{'完成' if completed else '恢复'}试产前准备：{stored_action.get('content', '')}",
+                "time": now_str,
+            }
+        )
+        return "updated", current
+
+    return await atomic_sample_issue_update(issue_id, update_special_action)
 
 
 async def delete_sample_issue_record(issue_id: str, role: str) -> SampleIssueUpdateResult:
@@ -1314,15 +1679,27 @@ async def sample_issue_collection_page(issue_id: str = ""):
         if not isinstance(local_data["countermeasure"].get("close_requests"), list):
             local_data["countermeasure"]["close_requests"] = []
         issue_closed = is_sample_issue_closed(local_data)
-        can_edit_base = is_new or ((not issue_closed) and can_edit_sample_base(local_data, current_user, current_role))
+        special_preparation_active = is_sample_special_preparation_active(local_data)
+        can_manage_special_preparation = (
+            (not is_new)
+            and special_preparation_active
+            and can_manage_sample_special_preparation(local_data, current_user, current_role)
+        )
+        can_edit_base = is_new or (
+            (not issue_closed)
+            and (not special_preparation_active)
+            and can_edit_sample_base(local_data, current_user, current_role)
+        )
         can_edit_countermeasure = (
             (not is_new)
             and (not issue_closed)
+            and (not special_preparation_active)
             and can_edit_sample_countermeasure(local_data, current_user, current_role)
         )
         can_operate_countermeasure = (
             (not is_new)
             and (not issue_closed)
+            and (not special_preparation_active)
             and is_current_responsible(
                 local_data.get("countermeasure", {}).get("owner", ""),
                 current_user,
@@ -1402,38 +1779,145 @@ async def sample_issue_collection_page(issue_id: str = ""):
                 return ui.column().classes("w-full gap-3")
 
         def open_closure_nature_dialog(title: str, description: str, on_submit):
-            """审批通过关闭申请前，由审批人补充便于统计的措施性质。"""
-            nature_options = get_sample_closure_nature_options(db_storage.get_item(SAMPLE_ISSUE_DATA_KEY, {}))
-            state = {"nature": ""}
+            """首次关闭审批通过前，收集问题性质和试产前后续动作。"""
+            nature_options = get_sample_closure_nature_options(
+                db_storage.get_item(SAMPLE_ISSUE_DATA_KEY, {}),
+                db_storage.get_item(SAMPLE_CLOSURE_NATURE_CATALOG_KEY, {}),
+            )
+            owner_candidates = get_sample_special_owner_candidates(load_wecom_contacts_cache())
+            owners_by_userid = {candidate["userid"]: candidate for candidate in owner_candidates}
+            state = SampleClosureApprovalState()
+            selected_owner = owners_by_userid.get(state.owner_userid)
+            if selected_owner:
+                state.owner_name = selected_owner["name"]
+                state.owner_position = selected_owner["position"]
 
             async def submit_nature():
-                nature = state["nature"].strip()
+                nature = normalize_sample_closure_nature(state.nature)
                 if not nature:
-                    return ui.notify("请填写或选择措施性质", type="warning", position="bottom")
+                    return ui.notify("请填写或选择问题性质", type="warning", position="bottom")
+                selected_actions = state.selected_actions
+                actions = [
+                    action for action in SAMPLE_SPECIAL_PREPARATION_DEFAULT_ACTIONS if action in selected_actions
+                ]
+                other_action = normalize_sample_closure_nature(state.other_action)
+                if other_action:
+                    actions.append(other_action)
+                if state.follow_up_required and not actions:
+                    return ui.notify("请选择或填写至少一项试产前后续动作", type="warning", position="bottom")
+                if state.follow_up_required and (not state.owner_name or not state.owner_userid):
+                    return ui.notify("请选择试产前特殊准备的具体 NPI 负责人", type="warning", position="bottom")
                 dialog.close()
-                await on_submit(nature)
+                await on_submit(
+                    nature,
+                    state.follow_up_required,
+                    actions,
+                    {
+                        "name": state.owner_name,
+                        "userid": state.owner_userid,
+                        "position": state.owner_position,
+                    },
+                )
 
             dialog.clear()
             with dialog, ui.card().classes("w-1/3 max-w-lg p-5"):
                 ui.label(title).classes("text-lg font-bold text-gray-800")
                 if description:
                     ui.label(description).classes("text-sm text-gray-600")
-                nature_input = None
                 if nature_options:
+                    ui.label(
+                        "请优先选择已有性质；选项按历史使用次数排列，便于后续统一统计。确无合适项时再新增。"
+                    ).classes("text-sm text-orange-700")
 
                     def select_nature(e):
-                        state["nature"] = str(e.value or "").strip()
-                        if nature_input is not None:
-                            nature_input.value = state["nature"]
-                            nature_input.update()
+                        state.nature = str(e.value or "").strip()
 
-                    ui.select(nature_options, label="历史性质", on_change=select_nature).props(
-                        "outlined dense clearable options-dense"
-                    ).classes("w-full")
-                nature_input = (
-                    ui.input("措施性质", value=state["nature"]).props("outlined dense clearable").classes("w-full")
-                )
-                nature_input.on_value_change(lambda e: state.__setitem__("nature", str(e.value or "")))
+                    ui.select(
+                        nature_options,
+                        label="已有问题性质（优先选择）",
+                        on_change=select_nature,
+                        with_input=True,
+                        clearable=True,
+                    ).props("outlined dense options-dense").classes("w-full")
+                    with ui.expansion("没有合适项？新增问题性质", icon="add").classes("w-full"):
+                        nature_input = ui.input("新增问题性质").props("outlined dense clearable").classes("w-full")
+                        nature_input.on_value_change(lambda e: setattr(state, "nature", str(e.value or "")))
+                else:
+                    ui.label("暂无历史性质，请录入第一项；审批通过后会自动加入词库。").classes("text-sm text-gray-500")
+                    nature_input = ui.input("问题性质").props("outlined dense clearable").classes("w-full")
+                    nature_input.on_value_change(lambda e: setattr(state, "nature", str(e.value or "")))
+
+                ui.separator()
+                ui.label("审批通过后是否还有试产前后续动作？").classes("text-sm font-bold text-gray-700")
+                follow_up_checkboxes: list[Any] = []
+                other_action_inputs: list[Any] = []
+                owner_selects: list[Any] = []
+
+                def select_follow_up(e):
+                    enabled = e.value == "有后续动作"
+                    state.follow_up_required = enabled
+                    if not enabled:
+                        state.selected_actions.clear()
+                        state.other_action = ""
+                    for checkbox in follow_up_checkboxes:
+                        checkbox.set_enabled(enabled)
+                        if not enabled:
+                            checkbox.value = False
+                            checkbox.update()
+                    for action_input in other_action_inputs:
+                        action_input.set_enabled(enabled)
+                        if not enabled:
+                            action_input.value = ""
+                            action_input.update()
+                    for owner_select in owner_selects:
+                        owner_select.set_enabled(enabled)
+
+                ui.radio(
+                    ["无后续动作，直接关闭", "有后续动作"],
+                    value="无后续动作，直接关闭",
+                    on_change=select_follow_up,
+                ).props("inline")
+                with ui.element("div").classes("w-full border border-blue-100 bg-blue-50 rounded-md p-3"):
+                    ui.label(
+                        f"选择“有后续动作”后，问题转为“{SAMPLE_STATUS_SPECIAL_PREPARATION}”，由"
+                        "下方选定的具体 NPI 负责人跟进；该状态不计入其主页红点。"
+                    ).classes("text-xs text-blue-700")
+
+                    def select_special_owner(e):
+                        userid = str(e.value or "").strip()
+                        owner = owners_by_userid.get(userid, {})
+                        state.owner_userid = userid
+                        state.owner_name = owner.get("name", "")
+                        state.owner_position = owner.get("position", "")
+
+                    owner_options = {
+                        candidate["userid"]: f"{candidate['name']}（{candidate['position'] or '职位未填写'}）"
+                        for candidate in owner_candidates
+                    }
+                    owner_select = ui.select(
+                        owner_options,
+                        value=state.owner_userid,
+                        label="试产前特殊准备负责人",
+                        on_change=select_special_owner,
+                    ).props("outlined dense options-dense").classes("w-full")
+                    owner_select.set_enabled(False)
+                    owner_selects.append(owner_select)
+                    for action in SAMPLE_SPECIAL_PREPARATION_DEFAULT_ACTIONS:
+
+                        def update_selected_action(e, action_text=action):
+                            selected = state.selected_actions
+                            if e.value:
+                                selected.add(action_text)
+                            else:
+                                selected.discard(action_text)
+
+                        action_checkbox = ui.checkbox(action, on_change=update_selected_action)
+                        action_checkbox.set_enabled(False)
+                        follow_up_checkboxes.append(action_checkbox)
+                    other_action_input = ui.input("其它试产前动作").props("outlined dense clearable").classes("w-full")
+                    other_action_input.set_enabled(False)
+                    other_action_inputs.append(other_action_input)
+                    other_action_input.on_value_change(lambda e: setattr(state, "other_action", str(e.value or "")))
                 with ui.row().classes("w-full justify-end gap-3 mt-3"):
                     ui.button("取消", on_click=dialog.close).props("outline color=grey")
                     ui.button("确认通过", icon="check", on_click=submit_nature).props("color=green")
@@ -1944,19 +2428,30 @@ async def sample_issue_collection_page(issue_id: str = ""):
 
         async def submit_close_request_from_dialog():
             """提交样品问题关闭申请。"""
-            if not can_operate_countermeasure:
+            if special_preparation_active:
+                if not can_manage_special_preparation:
+                    special_owner_name = str(local_data.get("special_preparation", {}).get("owner_name", "")).strip()
+                    return ui.notify(
+                        f"仅特殊准备负责人{special_owner_name or ''}可申请关闭",
+                        type="warning",
+                        position="bottom",
+                    )
+                if not are_sample_special_actions_complete(local_data):
+                    return ui.notify("请先完成全部试产前准备动作", type="warning", position="bottom")
+            elif not can_operate_countermeasure:
                 return ui.notify("仅对策责任人可申请关闭样品问题", type="warning", position="bottom")
-            if get_pending_extension_request(local_data["countermeasure"]):
+            elif get_pending_extension_request(local_data["countermeasure"]):
                 return ui.notify("该样品问题存在待审批延期申请，请先完成审批", type="warning", position="bottom")
             if get_pending_close_request(local_data["countermeasure"]):
                 return ui.notify("该样品问题已有关闭申请待审批", type="warning", position="bottom")
-            if not is_countermeasure_complete(local_data):
+            if not special_preparation_active and not is_countermeasure_complete(local_data):
                 return ui.notify(
                     "请先保存完整的原因分析、临时对策、纠正预防措施和预计完成日期", type="warning", position="bottom"
                 )
-            sync_attachment_files_from_thumbnail_state(local_data["countermeasure"], "countermeasure")
-            if not validate_sample_issue_record(local_data, is_new_record=False):
-                return
+            if not special_preparation_active:
+                sync_attachment_files_from_thumbnail_state(local_data["countermeasure"], "countermeasure")
+                if not validate_sample_issue_record(local_data, is_new_record=False):
+                    return
 
             result = await save_and_submit_sample_close_request(
                 local_data,
@@ -1982,6 +2477,14 @@ async def sample_issue_collection_page(issue_id: str = ""):
                 return ui.notify("该样品问题已有关闭申请待审批，请刷新查看", type="warning", position="bottom")
             if result.code == "permission_changed":
                 return ui.notify("对策责任人已变更，当前用户不能再申请关闭", type="warning", position="bottom")
+            if result.code == "special_permission_changed":
+                return ui.notify(
+                    "当前用户不是该特殊准备的实际负责人，不能申请关闭",
+                    type="warning",
+                    position="bottom",
+                )
+            if result.code == "incomplete_special_preparation":
+                return ui.notify("请先完成全部试产前准备动作", type="warning", position="bottom")
             if result.code in {"already_closed", "not_found"}:
                 return ui.notify("该样品问题已关闭或不存在，请刷新查看", type="warning", position="bottom")
             if not result.changed or not result.record:
@@ -1999,6 +2502,7 @@ async def sample_issue_collection_page(issue_id: str = ""):
                 f"产品型号：{basic.get('product_model', '')}\n"
                 f"样品单号：{basic.get('sample_order_no', '')}\n"
                 f"问题点：{basic.get('issue_description', '')}\n"
+                f"申请阶段：{'试产前特殊准备' if fresh_request.get('stage') == 'special_preparation' else '原问题对策'}\n"
                 f"申请人：{current_user}\n"
                 f"审批角色：{', '.join(close_route.get('approver_roles', []))}"
             )
@@ -2013,7 +2517,14 @@ async def sample_issue_collection_page(issue_id: str = ""):
             refresh_list()
             await open_sample_issue_detail_dialog(local_data["issue_id"])
 
-        async def approve_close_request_from_dialog(request: dict, approved: bool, closure_nature: str = ""):
+        async def approve_close_request_from_dialog(
+            request: dict,
+            approved: bool,
+            closure_nature: str = "",
+            follow_up_required: bool = False,
+            follow_up_actions: Optional[list[str]] = None,
+            special_owner: Optional[dict] = None,
+        ):
             """审批样品问题关闭申请。"""
             if not is_sample_close_approver(current_role, request):
                 return ui.notify("当前角色无关闭审批权限", type="warning", position="bottom")
@@ -2026,14 +2537,28 @@ async def sample_issue_collection_page(issue_id: str = ""):
                 current_user,
                 current_role,
                 closure_nature,
+                follow_up_required,
+                follow_up_actions,
+                special_owner,
             )
             if result.code == "forbidden":
                 return ui.notify("当前角色无关闭审批权限", type="warning", position="bottom")
             if result.code == "missing_closure_nature":
-                return ui.notify("请填写或选择措施性质", type="warning", position="bottom")
+                return ui.notify("请填写或选择问题性质", type="warning", position="bottom")
+            if result.code == "missing_follow_up_actions":
+                return ui.notify("请选择或填写至少一项试产前后续动作", type="warning", position="bottom")
+            if result.code == "missing_special_owner":
+                return ui.notify("请选择试产前特殊准备的具体 NPI 负责人", type="warning", position="bottom")
+            if result.code == "incomplete_special_preparation":
+                return ui.notify("特殊准备动作尚未全部完成，不能通过关闭", type="warning", position="bottom")
             if result.code == "already_processed":
                 return ui.notify("该关闭申请已被其他审批人处理，请刷新查看", type="warning", position="bottom")
-            if result.code in {"request_not_found", "already_closed", "not_found"}:
+            if result.code in {
+                "request_not_found",
+                "already_closed",
+                "not_found",
+                "special_preparation_changed",
+            }:
                 return ui.notify("该关闭申请已发生变化，请刷新查看", type="warning", position="bottom")
             if not result.changed or not result.record:
                 return ui.notify("关闭审批失败，请刷新后重试", type="negative", position="bottom")
@@ -2044,13 +2569,23 @@ async def sample_issue_collection_page(issue_id: str = ""):
                 return ui.notify("关闭审批已保存，但读取最新数据失败，请刷新查看", type="warning", position="bottom")
             close_route = get_sample_close_approval_route_for_request(fresh_request)
             basic = result.record.get("basic_info", {})
+            fresh_special_preparation = result.record.get("special_preparation", {})
+            approval_additional_people = get_sample_close_approval_additional_people(
+                result.record,
+                fresh_request,
+                close_route,
+                approved,
+            )
             content = (
                 "样品问题关闭申请审批结果\n"
                 f"样品问题：{result.record['issue_id']}\n"
                 f"产品型号：{basic.get('product_model', '')}\n"
                 f"样品单号：{basic.get('sample_order_no', '')}\n"
                 f"审批结果：{'通过' if approved else '驳回'}\n"
-                f"措施性质：{fresh_countermeasure.get('closure_nature', '-') or '-'}\n"
+                f"问题性质：{fresh_countermeasure.get('closure_nature', '-') or '-'}\n"
+                f"当前状态：{calculate_sample_issue_status(result.record)}\n"
+                f"试产前后续动作：{'、'.join(fresh_request.get('follow_up_actions', [])) or '-'}\n"
+                f"特殊准备负责人：{fresh_special_preparation.get('owner_name', '-') or '-'}\n"
                 f"申请人：{fresh_request.get('requester', '-')}\n"
                 f"审批人：{current_user}"
             )
@@ -2061,9 +2596,7 @@ async def sample_issue_collection_page(issue_id: str = ""):
                     business_key=f"{result.record['issue_id']}:{fresh_request['id']}:close_approval",
                     message_type="close_approval",
                     notify_targets=close_route.get("notify_targets"),
-                    additional_people=(
-                        fresh_request.get("requester", "") if close_route.get("notify_requester_on_approval") else ""
-                    ),
+                    additional_people=approval_additional_people,
                     additional_targets=close_route.get("approval_notify_targets") if approved else None,
                 ),
                 "样品问题关闭审批企业微信通知",
@@ -2073,6 +2606,8 @@ async def sample_issue_collection_page(issue_id: str = ""):
             await open_sample_issue_detail_dialog(local_data["issue_id"])
 
         def render_extension_controls():
+            if special_preparation_active:
+                return
             countermeasure = local_data["countermeasure"]
             pending_extension = get_pending_extension_request(countermeasure)
             approved_extension_count, extension_request_count = get_extension_counts(countermeasure)
@@ -2125,6 +2660,74 @@ async def sample_issue_collection_page(issue_id: str = ""):
                     elif not is_new:
                         ui.label("仅对策责任人可申请延期。").classes("text-xs text-gray-500")
 
+        def render_special_preparation_controls():
+            """展示试产前特殊准备动作，并允许 NPI 工程师逐项确认。"""
+            special_preparation = local_data.get("special_preparation", {})
+            actions = special_preparation.get("actions", []) if isinstance(special_preparation, dict) else []
+            if not actions:
+                return
+
+            pending_close = get_pending_close_request(local_data.get("countermeasure", {}))
+            with ui.element("div").classes("w-full border border-blue-200 rounded-md bg-blue-50 p-4"):
+                with ui.row().classes("w-full justify-between items-center mb-2"):
+                    with ui.row().classes("items-center gap-2"):
+                        ui.label("试产前特殊准备").classes("font-bold text-sm text-blue-800")
+                        ui.badge(
+                            "跟进中" if special_preparation_active else "已完成",
+                            color="blue" if special_preparation_active else "green",
+                        ).props("outline")
+                    ui.label(
+                        f"负责人：{special_preparation.get('owner_name', '') or '-'}"
+                        f"（{special_preparation.get('owner_position', '') or special_preparation.get('owner_role', '')}）"
+                    ).classes(
+                        "text-xs text-blue-700"
+                    )
+                ui.label("该阶段在试产评审会上主动筛选查看，不计入 NPI 工程师主页红点。").classes(
+                    "text-xs text-blue-700 mb-2"
+                )
+                ui.label(f"问题性质：{local_data.get('countermeasure', {}).get('closure_nature', '') or '-'}").classes(
+                    "text-xs text-blue-700 mb-2"
+                )
+                for action in actions:
+                    if not isinstance(action, dict):
+                        continue
+                    completed = bool(action.get("completed"))
+                    with ui.row().classes("w-full items-center justify-between gap-3 bg-white rounded p-2"):
+                        with ui.row().classes("items-center gap-2 min-w-0"):
+                            ui.icon("check_circle" if completed else "radio_button_unchecked").classes(
+                                "text-green-600" if completed else "text-gray-400"
+                            )
+                            with ui.column().classes("gap-0 min-w-0"):
+                                ui.label(str(action.get("content", ""))).classes("text-sm text-gray-800")
+                                if completed:
+                                    ui.label(
+                                        f"{action.get('completed_by', '')} 于 {action.get('completed_at', '')} 完成"
+                                    ).classes("text-xs text-gray-500")
+                        if can_manage_special_preparation and special_preparation_active and not pending_close:
+
+                            async def toggle_special_action(event=None, item=action, target=not completed):
+                                result = await set_sample_special_action_completed(
+                                    local_data["issue_id"],
+                                    str(item.get("id", "")),
+                                    target,
+                                    current_user,
+                                    current_role,
+                                )
+                                if result.code == "pending_close":
+                                    return ui.notify("关闭申请已提交，不能再修改准备动作", type="warning")
+                                if result.code == "forbidden":
+                                    return ui.notify("当前角色无权更新准备动作", type="warning")
+                                if not result.changed:
+                                    return ui.notify("准备动作已变化，请刷新后重试", type="warning")
+                                refresh_list()
+                                await open_sample_issue_detail_dialog(local_data["issue_id"])
+
+                            ui.button(
+                                "恢复未完成" if completed else "标记完成",
+                                icon="undo" if completed else "check",
+                                on_click=toggle_special_action,
+                            ).props("outline color=blue dense")
+
         def render_close_controls():
             countermeasure = local_data["countermeasure"]
             pending_close = get_pending_close_request(countermeasure)
@@ -2137,7 +2740,10 @@ async def sample_issue_collection_page(issue_id: str = ""):
                 ),
                 None,
             )
-            if not (can_operate_countermeasure or pending_close or is_sample_issue_closed(local_data) or recent_close):
+            can_submit_close = (
+                can_manage_special_preparation if special_preparation_active else can_operate_countermeasure
+            )
+            if not (can_submit_close or pending_close or is_sample_issue_closed(local_data) or recent_close):
                 return
 
             with ui.element("div").classes("w-full border border-gray-200 rounded-md bg-gray-50 p-4"):
@@ -2156,7 +2762,7 @@ async def sample_issue_collection_page(issue_id: str = ""):
                     with ui.row().classes("w-full gap-4 flex-wrap items-start"):
                         bind_input("关闭审批人", countermeasure, "closed_by", "w-full md:w-1/3", readonly=True)
                         bind_input("关闭时间", countermeasure, "closed_at", "w-full md:w-1/3", readonly=True)
-                        bind_input("措施性质", countermeasure, "closure_nature", "w-full md:w-1/3", readonly=True)
+                        bind_input("问题性质", countermeasure, "closure_nature", "w-full md:w-1/3", readonly=True)
                     if str(countermeasure.get("close_note", "")).strip():
                         bind_textarea("关闭说明", countermeasure, "close_note", readonly=True)
                     return
@@ -2178,8 +2784,25 @@ async def sample_issue_collection_page(issue_id: str = ""):
                         async def approve_close(event=None, r=pending_close):
                             basic = local_data.get("basic_info", {})
 
-                            async def submit_with_nature(nature: str, request=r):
-                                await approve_close_request_from_dialog(request, True, nature)
+                            if r.get("stage") == "special_preparation":
+                                await approve_close_request_from_dialog(r, True)
+                                return
+
+                            async def submit_with_nature(
+                                nature: str,
+                                follow_up_required: bool,
+                                follow_up_actions: list[str],
+                                special_owner: dict,
+                                request=r,
+                            ):
+                                await approve_close_request_from_dialog(
+                                    request,
+                                    True,
+                                    nature,
+                                    follow_up_required,
+                                    follow_up_actions,
+                                    special_owner,
+                                )
 
                             open_closure_nature_dialog(
                                 "通过关闭申请",
@@ -2199,12 +2822,13 @@ async def sample_issue_collection_page(issue_id: str = ""):
                         f"最近关闭审批：{recent_close.get('status')}，申请人：{recent_close.get('requester', '-')}"
                     ).classes("text-xs text-gray-500 mb-2")
 
-                if can_operate_countermeasure:
+                if can_submit_close:
 
                     async def apply_close(event=None):
                         await submit_close_request_from_dialog()
 
-                    ui.button("申请关闭该问题", icon="check_circle", on_click=apply_close).props("color=green")
+                    button_label = "申请关闭特殊准备" if special_preparation_active else "申请关闭该问题"
+                    ui.button(button_label, icon="check_circle", on_click=apply_close).props("color=green")
 
         initialize_attachment_state()
         root_dialog.clear()
@@ -2215,6 +2839,7 @@ async def sample_issue_collection_page(issue_id: str = ""):
                     detail_status_color = {
                         SAMPLE_FILTER_CLOSED_STATE: "green",
                         SAMPLE_FILTER_PENDING_CLOSE_STATE: "purple",
+                        SAMPLE_STATUS_SPECIAL_PREPARATION: "blue",
                         SAMPLE_STATUS_CORRECTIVE_ACTION_DONE: "green",
                         SAMPLE_STATUS_TEMPORARY_ACTION_DONE: "orange",
                     }.get(status, "grey")
@@ -2312,6 +2937,7 @@ async def sample_issue_collection_page(issue_id: str = ""):
                                 "text-xs text-gray-500"
                             )
                         else:
+                            render_special_preparation_controls()
                             render_extension_controls()
                             render_close_controls()
 
@@ -2355,6 +2981,8 @@ async def sample_issue_collection_page(issue_id: str = ""):
             return "green"
         if status == SAMPLE_FILTER_PENDING_CLOSE_STATE:
             return "purple"
+        if status == SAMPLE_STATUS_SPECIAL_PREPARATION:
+            return "blue"
         if status == SAMPLE_STATUS_TEMPORARY_ACTION_DONE:
             return "orange"
         return "grey"
@@ -2363,6 +2991,7 @@ async def sample_issue_collection_page(issue_id: str = ""):
         return {
             SAMPLE_FILTER_CLOSED_STATE: "#22c55e",
             SAMPLE_FILTER_PENDING_CLOSE_STATE: "#a855f7",
+            SAMPLE_STATUS_SPECIAL_PREPARATION: "#2563eb",
             SAMPLE_STATUS_CORRECTIVE_ACTION_DONE: "#22c55e",
             SAMPLE_STATUS_TEMPORARY_ACTION_DONE: "#f97316",
             SAMPLE_STATUS_ISSUE_RECORDED: "#64748b",
@@ -2418,6 +3047,7 @@ async def sample_issue_collection_page(issue_id: str = ""):
                         for issue_data in valid_issues:
                             basic = issue_data.get("basic_info", {})
                             countermeasure = issue_data.get("countermeasure", {})
+                            special_preparation = issue_data.get("special_preparation", {})
                             status = calculate_sample_issue_status(issue_data)
                             searchable = " ".join(
                                 [
@@ -2428,6 +3058,13 @@ async def sample_issue_collection_page(issue_id: str = ""):
                                     basic.get("assembly_date", ""),
                                     basic.get("recorder_name", ""),
                                     countermeasure.get("owner", ""),
+                                    special_preparation.get("owner_name", ""),
+                                    special_preparation.get("owner_role", ""),
+                                    " ".join(
+                                        str(action.get("content", ""))
+                                        for action in special_preparation.get("actions", [])
+                                        if isinstance(action, dict)
+                                    ),
                                 ]
                             ).lower()
                             if keyword and keyword not in searchable:
@@ -2502,12 +3139,27 @@ async def sample_issue_collection_page(issue_id: str = ""):
                                                 "text-gray-500 whitespace-nowrap"
                                             )
                                         with ui.column().classes("gap-1"):
-                                            ui.label(f"对策责任人：{countermeasure.get('owner', '') or '-'}").classes(
-                                                "text-orange-700 whitespace-nowrap"
-                                            )
-                                            ui.label(f"预计完成：{get_sample_due_text(issue_data)}").classes(
-                                                "text-gray-500 whitespace-nowrap"
-                                            )
+                                            if is_sample_special_preparation_active(issue_data):
+                                                special_preparation = issue_data.get("special_preparation", {})
+                                                special_actions = special_preparation.get("actions", [])
+                                                completed_action_count = sum(
+                                                    1
+                                                    for action in special_actions
+                                                    if isinstance(action, dict) and action.get("completed")
+                                                )
+                                                ui.label(
+                                                    f"特殊准备负责人：{special_preparation.get('owner_name', '') or '-'}"
+                                                ).classes("text-blue-700 whitespace-nowrap")
+                                                ui.label(
+                                                    f"准备进度：{completed_action_count}/{len(special_actions)}"
+                                                ).classes("text-gray-500 whitespace-nowrap")
+                                            else:
+                                                ui.label(
+                                                    f"对策责任人：{countermeasure.get('owner', '') or '-'}"
+                                                ).classes("text-orange-700 whitespace-nowrap")
+                                                ui.label(f"预计完成：{get_sample_due_text(issue_data)}").classes(
+                                                    "text-gray-500 whitespace-nowrap"
+                                                )
 
                         if rendered_count == 0:
                             ui.label("没有符合筛选条件的样品问题").classes("text-gray-500 m-auto mt-10")

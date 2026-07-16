@@ -90,6 +90,8 @@ class SampleIssueCollectionDataTests(unittest.TestCase):
         self.assertEqual(merged["countermeasure"]["evidence_files"], [])
         self.assertEqual(merged["countermeasure"]["extension_requests"], [])
         self.assertEqual(merged["countermeasure"]["close_requests"], [])
+        self.assertEqual(merged["special_preparation"]["owner_name"], "杨铁华")
+        self.assertEqual(merged["special_preparation"]["owner_userid"], "YangTieHua")
 
     def test_sample_attachment_path_uses_uploader_folder(self):
         """样品附件应保存到 uploads/sample_issue/上传人 文件夹中。"""
@@ -231,6 +233,64 @@ class SampleIssueCollectionDataTests(unittest.TestCase):
         )
         self.assertEqual(records[0]["issue_id"], "SPI-1")
 
+    def test_closure_nature_catalog_options_are_ranked_and_deduplicated(self):
+        """问题性质应优先按独立词库使用次数排序，并用历史数据补齐。"""
+        from src.pages import sample_issue_collection as sample_issue
+
+        catalog = {
+            "设计问题": {"name": "设计问题", "use_count": 2},
+            "process": {"name": "工艺问题", "use_count": 5},
+        }
+        issues = {
+            "SPI-1": {
+                "issue_id": "SPI-1",
+                "countermeasure": {"closure_nature": "设计问题", "close_requests": []},
+            },
+            "SPI-2": {
+                "issue_id": "SPI-2",
+                "countermeasure": {"closure_nature": "物料问题", "close_requests": []},
+            },
+        }
+
+        self.assertEqual(
+            sample_issue.get_sample_closure_nature_options(issues, catalog),
+            ["工艺问题", "设计问题", "物料问题"],
+        )
+
+    def test_special_owner_candidates_use_wecom_position_and_default_owner(self):
+        """特殊准备候选人应来自企业微信 NPI 职位，并把默认负责人排在首位。"""
+        from src.pages import sample_issue_collection as sample_issue
+
+        candidates = sample_issue.get_sample_special_owner_candidates(
+            {
+                "contacts": [
+                    {"userid": "Other", "name": "其他人", "position": "测试工程师", "is_active": True},
+                    {"userid": "NpiB", "name": "NPI乙", "position": "NPI工程师", "is_active": True},
+                    {"userid": "YangTieHua", "name": "杨铁华", "position": "NPI工程师", "is_active": True},
+                ]
+            }
+        )
+
+        self.assertEqual(candidates[0]["userid"], "YangTieHua")
+        self.assertEqual([candidate["name"] for candidate in candidates], ["杨铁华", "NPI乙"])
+
+    def test_close_approval_notification_people_include_special_owner_only_after_approval(self):
+        """关闭审批通过并转特殊准备时，应同时通知申请人和实际 NPI 负责人。"""
+        from src.pages import sample_issue_collection as sample_issue
+
+        issue = {"special_preparation": {"owner_name": "杨铁华"}}
+        request = {"requester": "李四", "follow_up_required": True}
+        route = {"notify_requester_on_approval": True}
+
+        self.assertEqual(
+            sample_issue.get_sample_close_approval_additional_people(issue, request, route, True),
+            "李四|杨铁华",
+        )
+        self.assertEqual(
+            sample_issue.get_sample_close_approval_additional_people(issue, request, route, False),
+            "李四",
+        )
+
     def test_find_unknown_wecom_names_uses_contacts_cache(self):
         """人员输入校验应识别企业微信通讯录姓名，并跳过允许填写的角色名。"""
         from src import wecom_service
@@ -281,7 +341,13 @@ class SampleIssueCollectionConfigTests(unittest.TestCase):
         self.assertEqual(config["filter_states"][0], "全部")
         self.assertIn("延期申请中", config["filter_states"])
         self.assertIn("关闭申请中", config["filter_states"])
+        self.assertIn("试产前特殊准备", config["filter_states"])
         self.assertIn("已关闭", config["filter_states"])
+        self.assertEqual(config["special_preparation"]["owner_role"], "NPI工程师")
+        self.assertIn("NPI工程", config["special_preparation"]["owner_role_keywords"])
+        self.assertEqual(config["special_preparation"]["default_owner_name"], "杨铁华")
+        self.assertEqual(config["special_preparation"]["default_owner_userid"], "YangTieHua")
+        self.assertTrue(config["special_preparation"]["default_actions"])
         self.assertTrue(config["wecom"]["default_notify_targets"])
         self.assertTrue(config["wecom"]["extension"]["approver_roles"])
         self.assertTrue(config["wecom"]["extension"]["approval_notify_targets"])
@@ -365,7 +431,7 @@ class SampleIssueCollectionConfigTests(unittest.TestCase):
         self.assertEqual(loaded["editor_roles"], ["研发经理", "admin", "研发助理"])
         self.assertEqual(
             loaded["filter_states"],
-            ["全部", "纠正预防措施填写完毕", "延期申请中", "关闭申请中", "已关闭"],
+            ["全部", "纠正预防措施填写完毕", "试产前特殊准备", "延期申请中", "关闭申请中", "已关闭"],
         )
         self.assertEqual(loaded["wecom"]["default_notify_targets"], [{"position": "研发经理"}])
         self.assertEqual(loaded["wecom"]["extension"]["approver_roles"], ["样品经理"])
@@ -659,6 +725,200 @@ class SampleIssueCollectionConcurrencyTests(unittest.IsolatedAsyncioTestCase):
                         sample_issue.get_sample_closure_nature_options({issue_id: approved.record}),
                         ["设计问题"],
                     )
+                finally:
+                    sample_issue.db_storage = original_db_storage
+            finally:
+                await isolated_db.close_db()
+
+    async def test_close_approval_can_transfer_to_npi_special_preparation(self):
+        """首次审批可转 NPI 特殊准备，逐项完成后再申请并最终关闭。"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            isolated_db = load_isolated_db_storage(
+                "test_sample_issue_special_preparation_db_storage",
+                Path(temp_dir) / "sample_issue_special_preparation.db",
+            )
+            try:
+                await isolated_db.init_db()
+                from src.pages import sample_issue_collection as sample_issue
+
+                original_db_storage = sample_issue.db_storage
+                sample_issue.db_storage = isolated_db
+                try:
+                    draft = sample_issue.generate_initial_sample_issue_data("张三", "测试工程师")
+                    draft["basic_info"].update(
+                        {
+                            "product_model": "MODEL-NPI",
+                            "issue_description": "试产前需补充准备",
+                            "sample_order_no": "SAMPLE-NPI",
+                            "record_date": "2026-07-16",
+                            "assembled_qty": "3",
+                            "issue_qty": "1",
+                            "recorder_name": "张三",
+                        }
+                    )
+                    draft["countermeasure"].update(
+                        {
+                            "owner": "李四",
+                            "reason_analysis": "工装和文件尚未固化",
+                            "temporary_action": "样品阶段人工确认",
+                            "corrective_preventive_action": "试产前完成准备",
+                            "due_date": "2026-07-20",
+                        }
+                    )
+                    created = await sample_issue.save_sample_issue_record(
+                        draft,
+                        "张三",
+                        "测试工程师",
+                        is_new=True,
+                    )
+                    self.assertTrue(created.changed)
+                    assert created.record is not None
+                    issue_id = created.record["issue_id"]
+
+                    requested = await sample_issue.submit_sample_close_request(
+                        issue_id,
+                        "李四",
+                        "测试工程师",
+                    )
+                    assert requested.record is not None
+                    first_request = sample_issue.get_pending_close_request(requested.record["countermeasure"])
+                    assert first_request is not None
+
+                    missing_actions = await sample_issue.approve_sample_close_request(
+                        issue_id,
+                        first_request["id"],
+                        True,
+                        "经理",
+                        "研发经理",
+                        "流程问题",
+                        True,
+                        [],
+                    )
+                    self.assertEqual(missing_actions.code, "missing_follow_up_actions")
+
+                    missing_owner = await sample_issue.approve_sample_close_request(
+                        issue_id,
+                        first_request["id"],
+                        True,
+                        "经理",
+                        "研发经理",
+                        "流程问题",
+                        True,
+                        ["试产前落实工装治具"],
+                    )
+                    self.assertEqual(missing_owner.code, "missing_special_owner")
+
+                    transferred = await sample_issue.approve_sample_close_request(
+                        issue_id,
+                        first_request["id"],
+                        True,
+                        "经理",
+                        "研发经理",
+                        "流程问题",
+                        True,
+                        ["试产前落实工装治具", "试产前落实到SOP"],
+                        {"name": "杨铁华", "userid": "YangTieHua", "position": "NPI工程师"},
+                    )
+                    self.assertTrue(transferred.changed)
+                    assert transferred.record is not None
+                    self.assertEqual(
+                        sample_issue.calculate_sample_issue_status(transferred.record),
+                        "试产前特殊准备",
+                    )
+                    self.assertFalse(sample_issue.is_sample_issue_closed(transferred.record))
+                    self.assertEqual(transferred.record["special_preparation"]["owner_name"], "杨铁华")
+                    self.assertEqual(transferred.record["special_preparation"]["owner_userid"], "YangTieHua")
+                    self.assertTrue(
+                        sample_issue.can_manage_sample_special_preparation(
+                            transferred.record,
+                            "杨铁华",
+                            "NPI工程",
+                        )
+                    )
+                    self.assertFalse(
+                        sample_issue.can_manage_sample_special_preparation(
+                            transferred.record,
+                            "NPI乙",
+                            "NPI工程师",
+                        )
+                    )
+                    self.assertEqual(
+                        sample_issue.get_sample_dashboard_pending_count(
+                            {issue_id: transferred.record},
+                            "NPI甲",
+                            "NPI工程师",
+                        ),
+                        0,
+                    )
+
+                    actions = transferred.record["special_preparation"]["actions"]
+                    forbidden = await sample_issue.set_sample_special_action_completed(
+                        issue_id,
+                        actions[0]["id"],
+                        True,
+                        "NPI乙",
+                        "NPI工程师",
+                    )
+                    self.assertEqual(forbidden.code, "forbidden")
+
+                    latest_record = transferred.record
+                    for action in actions:
+                        completed = await sample_issue.set_sample_special_action_completed(
+                            issue_id,
+                            action["id"],
+                            True,
+                            "杨铁华",
+                            "NPI工程",
+                        )
+                        self.assertTrue(completed.changed)
+                        assert completed.record is not None
+                        latest_record = completed.record
+                    self.assertTrue(sample_issue.are_sample_special_actions_complete(latest_record))
+
+                    final_requested = await sample_issue.submit_sample_close_request(
+                        issue_id,
+                        "杨铁华",
+                        "NPI工程",
+                    )
+                    self.assertTrue(final_requested.changed)
+                    assert final_requested.record is not None
+                    final_request = sample_issue.get_pending_close_request(final_requested.record["countermeasure"])
+                    assert final_request is not None
+                    self.assertEqual(final_request["stage"], "special_preparation")
+                    self.assertEqual(
+                        sample_issue.calculate_sample_issue_status(final_requested.record),
+                        "试产前特殊准备",
+                    )
+                    self.assertEqual(
+                        sample_issue.get_sample_dashboard_pending_count(
+                            {issue_id: final_requested.record},
+                            "经理",
+                            "研发经理",
+                        ),
+                        1,
+                    )
+                    self.assertEqual(
+                        sample_issue.get_sample_dashboard_pending_count(
+                            {issue_id: final_requested.record},
+                            "NPI甲",
+                            "NPI工程师",
+                        ),
+                        0,
+                    )
+
+                    closed = await sample_issue.approve_sample_close_request(
+                        issue_id,
+                        final_request["id"],
+                        True,
+                        "经理",
+                        "研发经理",
+                    )
+                    self.assertTrue(closed.changed)
+                    assert closed.record is not None
+                    self.assertEqual(sample_issue.calculate_sample_issue_status(closed.record), "已关闭")
+                    self.assertEqual(closed.record["countermeasure"]["closure_nature"], "流程问题")
+                    catalog = isolated_db.get_item(sample_issue.SAMPLE_CLOSURE_NATURE_CATALOG_KEY, {})
+                    self.assertEqual(catalog["流程问题"]["use_count"], 1)
                 finally:
                     sample_issue.db_storage = original_db_storage
             finally:

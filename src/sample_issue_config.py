@@ -20,6 +20,7 @@ SAMPLE_ISSUE_CONFIG_PATH = Path(__file__).parent.parent / "sample_issue_collecti
 SAMPLE_STATUS_ISSUE_RECORDED = "问题录入完毕"
 SAMPLE_STATUS_TEMPORARY_ACTION_DONE = "临时对策填写完毕"
 SAMPLE_STATUS_CORRECTIVE_ACTION_DONE = "纠正预防措施填写完毕"
+SAMPLE_STATUS_SPECIAL_PREPARATION = "试产前特殊准备"
 
 _LEGACY_FILTER_STATE_RENAMES = {
     "问题录入": SAMPLE_STATUS_ISSUE_RECORDED,
@@ -35,10 +36,18 @@ _DEFAULT_CONFIG = {
         SAMPLE_STATUS_ISSUE_RECORDED,
         SAMPLE_STATUS_TEMPORARY_ACTION_DONE,
         SAMPLE_STATUS_CORRECTIVE_ACTION_DONE,
+        SAMPLE_STATUS_SPECIAL_PREPARATION,
         "关闭申请中",
         "延期申请中",
         "已关闭",
     ],
+    "special_preparation": {
+        "owner_role": "NPI工程师",
+        "owner_role_keywords": ["NPI工程", "NPI工程师"],
+        "default_owner_name": "杨铁华",
+        "default_owner_userid": "YangTieHua",
+        "default_actions": ["试产前落实工装治具", "试产前落实到SOP"],
+    },
     "wecom": {
         "default_notify_targets": [{"position": "研发经理"}],
         "extension": {
@@ -123,7 +132,7 @@ def _filter_states(config: dict, default: list[str]) -> list[str]:
     ]
     states = list(dict.fromkeys(states))
     normalized = ["全部", *(state for state in states if state != "全部")]
-    for required_state in ["延期申请中", "关闭申请中", "已关闭"]:
+    for required_state in [SAMPLE_STATUS_SPECIAL_PREPARATION, "延期申请中", "关闭申请中", "已关闭"]:
         if required_state not in normalized:
             normalized.append(required_state)
     return normalized
@@ -333,7 +342,13 @@ def load_sample_issue_config() -> dict[str, Any]:
     raw_extension = raw_wecom.get("extension", {}) if isinstance(raw_wecom.get("extension"), dict) else {}
     raw_close = raw_wecom.get("close", {}) if isinstance(raw_wecom.get("close"), dict) else {}
     raw_reminders = raw_config.get("reminders", {}) if isinstance(raw_config.get("reminders"), dict) else {}
+    raw_special_preparation = (
+        raw_config.get("special_preparation", {})
+        if isinstance(raw_config.get("special_preparation"), dict)
+        else {}
+    )
     default_close = default_wecom["close"]
+    default_special_preparation = _DEFAULT_CONFIG["special_preparation"]
 
     close_config = {
         "approver_roles": _string_list(
@@ -363,6 +378,33 @@ def load_sample_issue_config() -> dict[str, Any]:
         "public_base_url": _string_value(raw_config, "public_base_url", _DEFAULT_CONFIG["public_base_url"]).rstrip("/"),
         "editor_roles": _string_list(raw_config, "editor_roles", _DEFAULT_CONFIG["editor_roles"]),
         "filter_states": _filter_states(raw_config, _DEFAULT_CONFIG["filter_states"]),
+        "special_preparation": {
+            "owner_role": _string_value(
+                raw_special_preparation,
+                "owner_role",
+                default_special_preparation["owner_role"],
+            ),
+            "owner_role_keywords": _string_list(
+                raw_special_preparation,
+                "owner_role_keywords",
+                default_special_preparation["owner_role_keywords"],
+            ),
+            "default_owner_name": _string_value(
+                raw_special_preparation,
+                "default_owner_name",
+                default_special_preparation["default_owner_name"],
+            ),
+            "default_owner_userid": _string_value(
+                raw_special_preparation,
+                "default_owner_userid",
+                default_special_preparation["default_owner_userid"],
+            ),
+            "default_actions": _string_list(
+                raw_special_preparation,
+                "default_actions",
+                default_special_preparation["default_actions"],
+            ),
+        },
         "wecom": {
             "default_notify_targets": _notify_targets(
                 raw_wecom,
@@ -431,6 +473,17 @@ SAMPLE_FILTER_ALL_STATE = "全部"
 SAMPLE_FILTER_PENDING_EXTENSION_STATE = "延期申请中"
 SAMPLE_FILTER_PENDING_CLOSE_STATE = "关闭申请中"
 SAMPLE_FILTER_CLOSED_STATE = "已关闭"
+SAMPLE_SPECIAL_PREPARATION_OWNER_ROLE = SAMPLE_ISSUE_CONFIG["special_preparation"]["owner_role"]
+SAMPLE_SPECIAL_PREPARATION_OWNER_ROLE_KEYWORDS = SAMPLE_ISSUE_CONFIG["special_preparation"][
+    "owner_role_keywords"
+]
+SAMPLE_SPECIAL_PREPARATION_DEFAULT_OWNER_NAME = SAMPLE_ISSUE_CONFIG["special_preparation"][
+    "default_owner_name"
+]
+SAMPLE_SPECIAL_PREPARATION_DEFAULT_OWNER_USERID = SAMPLE_ISSUE_CONFIG["special_preparation"][
+    "default_owner_userid"
+]
+SAMPLE_SPECIAL_PREPARATION_DEFAULT_ACTIONS = SAMPLE_ISSUE_CONFIG["special_preparation"]["default_actions"]
 SAMPLE_DEFAULT_NOTIFY_TARGETS = SAMPLE_ISSUE_CONFIG["wecom"]["default_notify_targets"]
 SAMPLE_EXTENSION_APPROVER_ROLES = SAMPLE_ISSUE_CONFIG["wecom"]["extension"]["approver_roles"]
 SAMPLE_EXTENSION_NOTIFY_TARGETS = SAMPLE_ISSUE_CONFIG["wecom"]["extension"]["notify_targets"]
