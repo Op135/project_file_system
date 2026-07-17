@@ -1307,7 +1307,7 @@ async def set_overview_active_state(project_name: str, ver: str) -> tuple[bool, 
 
 async def copy_overview_data(project_name, version, target_project_name) -> None:
     """
-    用于将某个项目某个版本的概述内容复制衍生成一个 “新项目的初版” 概述
+    用于将某个项目某个版本的概述内容复制衍生成一个 “新项目的初版” 概述，原概述为激活或待定状态则统一处理为待定状态，原概述为禁用状态则统一处理为禁用状态。
 
     Args:
         project_name：概述来源项目名
