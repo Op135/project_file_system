@@ -19,7 +19,7 @@ import re
 import time
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any, Optional
 from urllib.parse import quote
 
@@ -425,10 +425,46 @@ def is_error_pending_for_user(error_data: dict, current_user: str, current_role:
     )
 
 
-def get_error_card_sort_key(error_data: dict, current_user: str, current_role: str) -> tuple[bool, str]:
-    """返回卡片排序键：当前用户待办优先，同组内按最近更新时间倒序。"""
+def has_error_overdue_without_request_for_reviewer(
+    error_data: dict,
+    current_role: str,
+    today: Optional[date] = None,
+) -> bool:
+    """判断评审角色是否需要关注任一已逾期且尚无延期或关闭申请的措施。"""
+    if not is_error_extension_approver(current_role):
+        return False
+
+    reference_date = today or datetime.now().date()
+    for action in error_data.get("preventive_actions", []):
+        if not isinstance(action, dict) or action.get("status") == "已关闭":
+            continue
+        raw_due_date = action.get("due_date", "")
+        due_date = parse_date(raw_due_date if isinstance(raw_due_date, str) else "")
+        if (
+            due_date
+            and due_date < reference_date
+            and not get_pending_extension_request(action)
+            and not get_pending_close_request(action)
+        ):
+            return True
+    return False
+
+
+def get_error_card_sort_key(
+    error_data: dict,
+    current_user: str,
+    current_role: str,
+    today: Optional[date] = None,
+) -> tuple[int, str]:
+    """返回卡片排序键：待我处理最高，评审关注的逾期未申请事项其次。"""
     updated_at = error_data.get("updated_at") or error_data.get("created_at") or ""
-    return is_error_pending_for_user(error_data, current_user, current_role), str(updated_at)
+    if is_error_pending_for_user(error_data, current_user, current_role):
+        priority = 2
+    elif has_error_overdue_without_request_for_reviewer(error_data, current_role, today):
+        priority = 1
+    else:
+        priority = 0
+    return priority, str(updated_at)
 
 
 def get_error_dashboard_pending_count(all_errors: Any, current_user: str, current_role: str) -> int:
@@ -1942,9 +1978,7 @@ async def error_management_page(error_id: str = ""):
     # ==========================================
     with ui.header(elevated=True).classes("flex justify-between items-center bg-blue-500 h-12 px-4"):
         ui.image(f"{IMG_DIR}/Rayfine.png").classes("absolute w-20")
-        ui.label("生产异常管理模块").classes(
-            "text-white text-xl font-bold absolute left-1/2 transform -translate-x-1/2"
-        )
+        ui.label("异常单管理系统").classes("text-white text-xl font-bold absolute left-1/2 transform -translate-x-1/2")
         with ui.avatar(size="lg").classes("cursor-pointer ml-auto -mt-3"):
             ui.image(current_display_path)
             with ui.menu().props("auto-close"):
@@ -2068,6 +2102,9 @@ async def error_management_page(error_id: str = ""):
                                 ]
                             )
                             is_my_pending = is_error_pending_for_user(error_data, current_user, current_role)
+                            is_reviewer_overdue = has_error_overdue_without_request_for_reviewer(
+                                error_data, current_role
+                            )
                             owner_extension_summary = get_owner_extension_summary(error_data)
                             owner_extension_text = "、".join(
                                 f"{owner} {count}次" for owner, count in owner_extension_summary
@@ -2078,7 +2115,11 @@ async def error_management_page(error_id: str = ""):
                                 + (
                                     "bg-rose-50 border-rose-300 shadow-md hover:bg-rose-100"
                                     if is_my_pending
-                                    else "bg-white border-gray-200 shadow-sm hover:bg-amber-50"
+                                    else (
+                                        "bg-orange-50 border-orange-300 shadow-md hover:bg-orange-100"
+                                        if is_reviewer_overdue
+                                        else "bg-white border-gray-200 shadow-sm hover:bg-amber-50"
+                                    )
                                 )
                             )
                             with ui.element("div").classes(card_classes) as card:
@@ -2100,6 +2141,10 @@ async def error_management_page(error_id: str = ""):
                                             ui.badge(card_status, color=status_color(card_status)).props("outline")
                                             if is_my_pending:
                                                 ui.chip("待我处理", icon="notifications_active", color="red-4").props(
+                                                    "dense size=sm"
+                                                )
+                                            if is_reviewer_overdue:
+                                                ui.chip("逾期未申请", icon="event_busy", color="orange-5").props(
                                                     "dense size=sm"
                                                 )
                                         ui.label(basic.get("product_name", "未填写产品名称")).classes(

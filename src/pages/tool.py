@@ -121,7 +121,7 @@ def tool_page():
             "key": "spectral_analyzer",
             "title": "光谱色度与显色分析",
             "subtitle": "CCT/CRI/色坐标、多光谱对比与目标混光",
-            "icon": "science",
+            "icon": "color_lens",
             "color": "rose",
             "cls": SpectralAnalyzerTool,
         },

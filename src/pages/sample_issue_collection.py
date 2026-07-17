@@ -12,7 +12,7 @@ import re
 import time
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any, Optional
 from urllib.parse import quote, unquote
 
@@ -439,9 +439,7 @@ def get_sample_close_approval_additional_people(
     special_preparation = issue_data.get("special_preparation", {})
     return merge_wecom_recipients(
         close_request.get("requester", "") if close_route.get("notify_requester_on_approval") else "",
-        special_preparation.get("owner_name", "")
-        if approved and close_request.get("follow_up_required")
-        else "",
+        special_preparation.get("owner_name", "") if approved and close_request.get("follow_up_required") else "",
     )
 
 
@@ -645,7 +643,11 @@ def get_sample_special_owner_candidates(contacts_cache: Any) -> list[dict[str, s
         name = str(contact.get("name", "")).strip()
         userid = str(contact.get("userid", "")).strip()
         position = str(contact.get("position", "")).strip()
-        if not name or not userid or not any(keyword in position for keyword in SAMPLE_SPECIAL_PREPARATION_OWNER_ROLE_KEYWORDS):
+        if (
+            not name
+            or not userid
+            or not any(keyword in position for keyword in SAMPLE_SPECIAL_PREPARATION_OWNER_ROLE_KEYWORDS)
+        ):
             continue
         candidates.append({"name": name, "userid": userid, "position": position})
         seen_userids.add(userid.casefold())
@@ -827,10 +829,67 @@ def is_sample_issue_pending_for_user(issue_data: dict, current_user: str, curren
     )
 
 
-def get_sample_issue_card_sort_key(issue_data: dict, current_user: str, current_role: str) -> tuple[bool, str]:
-    """返回卡片排序键：当前用户待办优先，同组内按最近更新时间倒序。"""
+def is_sample_issue_overdue_without_request_for_reviewer(
+    issue_data: dict,
+    current_role: str,
+    today: Optional[date] = None,
+) -> bool:
+    """判断评审角色是否需要关注已逾期且尚无延期或关闭申请的问题。"""
+    if not (is_sample_extension_approver(current_role) or is_sample_close_approver(current_role)):
+        return False
+
+    normalized_issue = merge_with_sample_issue_template(issue_data)
+    if is_sample_issue_closed(normalized_issue) or is_sample_special_preparation_active(normalized_issue):
+        return False
+
+    countermeasure = normalized_issue["countermeasure"]
+    raw_due_date = countermeasure.get("due_date", "")
+    due_date = parse_date(raw_due_date if isinstance(raw_due_date, str) else "")
+    reference_date = today or datetime.now().date()
+    return bool(
+        due_date
+        and due_date < reference_date
+        and not get_pending_extension_request(countermeasure)
+        and not get_pending_close_request(countermeasure)
+    )
+
+
+def is_sample_issue_missing_due_date_for_reviewer(issue_data: dict, current_role: str) -> bool:
+    """判断评审角色是否需要关注已指定负责人但尚未填写预计完成日期的问题。"""
+    if not (is_sample_extension_approver(current_role) or is_sample_close_approver(current_role)):
+        return False
+
+    normalized_issue = merge_with_sample_issue_template(issue_data)
+    if is_sample_issue_closed(normalized_issue) or is_sample_special_preparation_active(normalized_issue):
+        return False
+
+    countermeasure = normalized_issue["countermeasure"]
+    owner = countermeasure.get("owner", "")
+    due_date = countermeasure.get("due_date", "")
+    return bool(
+        isinstance(owner, str)
+        and owner.strip()
+        and (not isinstance(due_date, str) or not due_date.strip())
+    )
+
+
+def get_sample_issue_card_sort_key(
+    issue_data: dict,
+    current_user: str,
+    current_role: str,
+    today: Optional[date] = None,
+) -> tuple[int, str]:
+    """返回卡片排序键：待我处理最高，评审关注事项其次。"""
     updated_at = issue_data.get("updated_at") or issue_data.get("created_at") or ""
-    return is_sample_issue_pending_for_user(issue_data, current_user, current_role), str(updated_at)
+    if is_sample_issue_pending_for_user(issue_data, current_user, current_role):
+        priority = 2
+    elif is_sample_issue_overdue_without_request_for_reviewer(
+        issue_data, current_role, today
+    ) or is_sample_issue_missing_due_date_for_reviewer(issue_data, current_role):
+        priority = 1
+    else:
+        priority = 0
+    return priority, str(updated_at)
 
 
 def get_sample_dashboard_pending_count(all_issues: Any, current_user: str, current_role: str) -> int:
@@ -1894,12 +1953,16 @@ async def sample_issue_collection_page(issue_id: str = ""):
                         candidate["userid"]: f"{candidate['name']}（{candidate['position'] or '职位未填写'}）"
                         for candidate in owner_candidates
                     }
-                    owner_select = ui.select(
-                        owner_options,
-                        value=state.owner_userid,
-                        label="试产前特殊准备负责人",
-                        on_change=select_special_owner,
-                    ).props("outlined dense options-dense").classes("w-full")
+                    owner_select = (
+                        ui.select(
+                            owner_options,
+                            value=state.owner_userid,
+                            label="试产前特殊准备负责人",
+                            on_change=select_special_owner,
+                        )
+                        .props("outlined dense options-dense")
+                        .classes("w-full")
+                    )
                     owner_select.set_enabled(False)
                     owner_selects.append(owner_select)
                     for action in SAMPLE_SPECIAL_PREPARATION_DEFAULT_ACTIONS:
@@ -2679,9 +2742,7 @@ async def sample_issue_collection_page(issue_id: str = ""):
                     ui.label(
                         f"负责人：{special_preparation.get('owner_name', '') or '-'}"
                         f"（{special_preparation.get('owner_position', '') or special_preparation.get('owner_role', '')}）"
-                    ).classes(
-                        "text-xs text-blue-700"
-                    )
+                    ).classes("text-xs text-blue-700")
                 ui.label("该阶段在试产评审会上主动筛选查看，不计入 NPI 工程师主页红点。").classes(
                     "text-xs text-blue-700 mb-2"
                 )
@@ -2966,7 +3027,9 @@ async def sample_issue_collection_page(issue_id: str = ""):
 
     with ui.header(elevated=True).classes("flex justify-between items-center bg-blue-500 h-12 px-4"):
         ui.image(f"{IMG_DIR}/Rayfine.png").classes("absolute w-20")
-        ui.label("样品问题收集").classes("text-white text-xl font-bold absolute left-1/2 transform -translate-x-1/2")
+        ui.label("样品问题管理系统").classes(
+            "text-white text-xl font-bold absolute left-1/2 transform -translate-x-1/2"
+        )
         with ui.avatar(size="lg").classes("cursor-pointer ml-auto -mt-3"):
             ui.image(current_display_path)
             with ui.menu().props("auto-close"):
@@ -3076,13 +3139,24 @@ async def sample_issue_collection_page(issue_id: str = ""):
                             pending_extension = get_pending_extension_request(countermeasure)
                             pending_close = get_pending_close_request(countermeasure)
                             is_my_pending = is_sample_issue_pending_for_user(issue_data, current_user, current_role)
+                            is_reviewer_overdue = is_sample_issue_overdue_without_request_for_reviewer(
+                                issue_data, current_role
+                            )
+                            is_reviewer_missing_due_date = is_sample_issue_missing_due_date_for_reviewer(
+                                issue_data, current_role
+                            )
+                            is_reviewer_attention = is_reviewer_overdue or is_reviewer_missing_due_date
 
                             card_classes = (
                                 "w-full border border-l-4 rounded-md p-3 cursor-pointer transition-colors "
                                 + (
                                     "bg-rose-50 border-rose-300 shadow-md hover:bg-rose-100"
                                     if is_my_pending
-                                    else "bg-white border-gray-200 shadow-sm hover:bg-amber-50"
+                                    else (
+                                        "bg-orange-50 border-orange-300 shadow-md hover:bg-orange-100"
+                                        if is_reviewer_attention
+                                        else "bg-white border-gray-200 shadow-sm hover:bg-amber-50"
+                                    )
                                 )
                             )
                             with ui.element("div").classes(card_classes) as card:
@@ -3108,6 +3182,14 @@ async def sample_issue_collection_page(issue_id: str = ""):
                                                 ui.badge("关闭申请中", color="purple").props("outline")
                                             if is_my_pending:
                                                 ui.chip("待我处理", icon="notifications_active", color="red-4").props(
+                                                    "dense size=sm"
+                                                )
+                                            if is_reviewer_overdue:
+                                                ui.chip("逾期未申请", icon="event_busy", color="orange-5").props(
+                                                    "dense size=sm"
+                                                )
+                                            if is_reviewer_missing_due_date:
+                                                ui.chip("未填预计日期", icon="edit_calendar", color="orange-5").props(
                                                     "dense size=sm"
                                                 )
                                     with ui.column().classes("gap-1 min-w-0"):

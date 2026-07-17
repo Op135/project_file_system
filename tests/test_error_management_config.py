@@ -199,6 +199,94 @@ class ErrorManagementDashboardPendingTests(unittest.TestCase):
         )
         self.assertEqual(records[0]["error_id"], "ERR-001")
 
+    def test_reviewer_sees_overdue_without_request_as_second_priority(self):
+        """评审角色应凸显逾期未申请措施，但仍排在本人待审批事项之后。"""
+        reference_date = datetime(2026, 7, 17).date()
+        pending = {
+            "error_id": "ERR-PENDING",
+            "updated_at": "2026-01-01 00:00:00",
+            "preventive_actions": [
+                {
+                    "owner": "张三",
+                    "status": "待执行",
+                    "due_date": "2026-07-10",
+                    "extension_requests": [{"status": "待审批"}],
+                    "close_requests": [],
+                }
+            ],
+        }
+        overdue = {
+            "error_id": "ERR-OVERDUE",
+            "updated_at": "2026-02-01 00:00:00",
+            "preventive_actions": [
+                {
+                    "owner": "李四",
+                    "status": "待执行",
+                    "due_date": "2026-07-10",
+                    "extension_requests": [],
+                    "close_requests": [],
+                }
+            ],
+        }
+        normal = {
+            "error_id": "ERR-NORMAL",
+            "updated_at": "2026-12-31 00:00:00",
+            "preventive_actions": [
+                {
+                    "owner": "王五",
+                    "status": "待执行",
+                    "due_date": "2026-07-20",
+                    "extension_requests": [],
+                    "close_requests": [],
+                }
+            ],
+        }
+
+        self.assertTrue(
+            error_management.has_error_overdue_without_request_for_reviewer(
+                overdue, "研发经理", reference_date
+            )
+        )
+        self.assertFalse(
+            error_management.has_error_overdue_without_request_for_reviewer(
+                overdue, "测试工程师", reference_date
+            )
+        )
+        self.assertFalse(
+            error_management.has_error_overdue_without_request_for_reviewer(
+                pending, "研发经理", reference_date
+            )
+        )
+        close_pending = {
+            "error_id": "ERR-CLOSE-PENDING",
+            "preventive_actions": [
+                {
+                    "owner": "李四",
+                    "status": "待执行",
+                    "due_date": "2026-07-10",
+                    "extension_requests": [],
+                    "close_requests": [{"status": "待审批"}],
+                }
+            ],
+        }
+        self.assertFalse(
+            error_management.has_error_overdue_without_request_for_reviewer(
+                close_pending, "研发经理", reference_date
+            )
+        )
+
+        records = sorted(
+            [normal, overdue, pending],
+            key=lambda item: error_management.get_error_card_sort_key(
+                item, "经理", "研发经理", reference_date
+            ),
+            reverse=True,
+        )
+        self.assertEqual(
+            [item["error_id"] for item in records],
+            ["ERR-PENDING", "ERR-OVERDUE", "ERR-NORMAL"],
+        )
+
     def test_pending_extension_filter_matches_across_main_statuses(self):
         """延期申请中筛选应跨越异常单主状态，并排除没有待审批申请的异常单。"""
         self.assertTrue(error_management.error_matches_filter(self.all_errors["ERR-001"], "延期申请中"))

@@ -233,6 +233,117 @@ class SampleIssueCollectionDataTests(unittest.TestCase):
         )
         self.assertEqual(records[0]["issue_id"], "SPI-1")
 
+    def test_reviewer_sees_overdue_without_request_as_second_priority(self):
+        """评审角色应凸显逾期未申请事项，但仍排在本人待审批事项之后。"""
+        from src.pages import sample_issue_collection as sample_issue
+
+        reference_date = datetime(2026, 7, 17).date()
+        pending = sample_issue.generate_initial_sample_issue_data("张三", "测试工程师")
+        pending.update({"issue_id": "SPI-PENDING", "updated_at": "2026-01-01 00:00:00"})
+        pending["countermeasure"].update(
+            {
+                "owner": "张三",
+                "due_date": "2026-07-10",
+                "extension_requests": [{"id": "ext-1", "status": "待审批"}],
+            }
+        )
+
+        overdue = sample_issue.generate_initial_sample_issue_data("李四", "测试工程师")
+        overdue.update({"issue_id": "SPI-OVERDUE", "updated_at": "2026-02-01 00:00:00"})
+        overdue["countermeasure"].update({"owner": "李四", "due_date": "2026-07-10"})
+
+        normal = sample_issue.generate_initial_sample_issue_data("王五", "测试工程师")
+        normal.update({"issue_id": "SPI-NORMAL", "updated_at": "2026-12-31 00:00:00"})
+        normal["countermeasure"].update({"owner": "王五", "due_date": "2026-07-20"})
+
+        self.assertTrue(
+            sample_issue.is_sample_issue_overdue_without_request_for_reviewer(
+                overdue, "研发经理", reference_date
+            )
+        )
+        self.assertFalse(
+            sample_issue.is_sample_issue_overdue_without_request_for_reviewer(
+                overdue, "测试工程师", reference_date
+            )
+        )
+        self.assertFalse(
+            sample_issue.is_sample_issue_overdue_without_request_for_reviewer(
+                pending, "研发经理", reference_date
+            )
+        )
+        close_pending = copy.deepcopy(overdue)
+        close_pending["countermeasure"]["close_requests"] = [{"id": "close-1", "status": "待审批"}]
+        self.assertFalse(
+            sample_issue.is_sample_issue_overdue_without_request_for_reviewer(
+                close_pending, "研发经理", reference_date
+            )
+        )
+
+        records = sorted(
+            [normal, overdue, pending],
+            key=lambda item: sample_issue.get_sample_issue_card_sort_key(
+                item, "经理", "研发经理", reference_date
+            ),
+            reverse=True,
+        )
+        self.assertEqual(
+            [item["issue_id"] for item in records],
+            ["SPI-PENDING", "SPI-OVERDUE", "SPI-NORMAL"],
+        )
+
+    def test_reviewer_sees_missing_due_date_as_second_priority(self):
+        """评审角色应凸显负责人未填预计日期的问题，并排在普通记录之前。"""
+        from src.pages import sample_issue_collection as sample_issue
+
+        reference_date = datetime(2026, 7, 17).date()
+        pending = sample_issue.generate_initial_sample_issue_data("张三", "测试工程师")
+        pending.update({"issue_id": "SPI-PENDING", "updated_at": "2026-01-01 00:00:00"})
+        pending["countermeasure"].update(
+            {
+                "owner": "张三",
+                "due_date": "2026-07-20",
+                "extension_requests": [{"id": "ext-1", "status": "待审批"}],
+            }
+        )
+
+        missing_due_date = sample_issue.generate_initial_sample_issue_data("李四", "测试工程师")
+        missing_due_date.update({"issue_id": "SPI-MISSING-DUE", "updated_at": "2026-02-01 00:00:00"})
+        missing_due_date["countermeasure"].update({"owner": "李四", "due_date": ""})
+
+        normal = sample_issue.generate_initial_sample_issue_data("王五", "测试工程师")
+        normal.update({"issue_id": "SPI-NORMAL", "updated_at": "2026-12-31 00:00:00"})
+        normal["countermeasure"].update({"owner": "王五", "due_date": "2026-07-20"})
+
+        self.assertTrue(
+            sample_issue.is_sample_issue_missing_due_date_for_reviewer(
+                missing_due_date, "研发经理"
+            )
+        )
+        self.assertFalse(
+            sample_issue.is_sample_issue_missing_due_date_for_reviewer(
+                missing_due_date, "测试工程师"
+            )
+        )
+        unassigned = copy.deepcopy(missing_due_date)
+        unassigned["countermeasure"]["owner"] = ""
+        self.assertFalse(
+            sample_issue.is_sample_issue_missing_due_date_for_reviewer(
+                unassigned, "研发经理"
+            )
+        )
+
+        records = sorted(
+            [normal, missing_due_date, pending],
+            key=lambda item: sample_issue.get_sample_issue_card_sort_key(
+                item, "经理", "研发经理", reference_date
+            ),
+            reverse=True,
+        )
+        self.assertEqual(
+            [item["issue_id"] for item in records],
+            ["SPI-PENDING", "SPI-MISSING-DUE", "SPI-NORMAL"],
+        )
+
     def test_closure_nature_catalog_options_are_ranked_and_deduplicated(self):
         """问题性质应优先按独立词库使用次数排序，并用历史数据补齐。"""
         from src.pages import sample_issue_collection as sample_issue
