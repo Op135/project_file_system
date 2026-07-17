@@ -446,10 +446,11 @@ def update_overview_charge_pending_dic(scope, des_user="", project_name="", des_
 
         # 2. 遍历项目
         for project, project_dic in app.storage.general.get("overview_role", {}).items():
-            project_engineer = app.storage.general["project_engineer"].get(project, "未指定")
             # 项目工程师未指定的，不用仔细检查整个项目的概述填写情况
-            if project_engineer == "未指定":
-                continue
+            # 展示关闭不检查，让整理过概述但是还没有项目工程师的项目，概述负责人也能在待办项看到条目
+            # project_engineer = app.storage.general["project_engineer"].get(project, "未指定")
+            # if project_engineer == "未指定":
+            #     continue
             for role, charge_user_dic in project_dic.items():
                 latest_user_raw = charge_user_dic.get("latest_user", "")
                 latest_user = latest_user_raw.split("：")[1] if "：" in latest_user_raw else latest_user_raw
@@ -1306,7 +1307,7 @@ async def set_overview_active_state(project_name: str, ver: str) -> tuple[bool, 
 
 async def copy_overview_data(project_name, version, target_project_name) -> None:
     """
-    用于将某个项目某个版本的概述内容复制衍生成一个 “新项目的初版” 概述
+    用于将某个项目某个版本的概述内容复制衍生成一个 “新项目的初版” 概述，原概述为激活或待定状态则统一处理为待定状态，原概述为禁用状态则统一处理为禁用状态。
 
     Args:
         project_name：概述来源项目名

@@ -24,6 +24,7 @@ from src.tools.spectral_analyzer import (  # noqa: E402
     _cri_pair_chromaticity_chart_options,
     _cri_value_rows,
     _default_series_styles,
+    _mixing_graph_details,
     _mixing_node_options,
     _mixing_nodes_and_active_ids,
     _option_text,
@@ -91,6 +92,8 @@ class SpectralAnalyzerOptionsTests(unittest.TestCase):
         original = _spectrum_chart_options(self.spectra, normalized=False)
         self.assertEqual(len(normalized["series"]), 2)
         self.assertEqual(normalized["yAxis"]["name"], "相对强度")
+        self.assertEqual(normalized["yAxis"]["nameLocation"], "middle")
+        self.assertEqual(normalized["yAxis"]["nameRotate"], 90)
         self.assertEqual(original["yAxis"]["name"], "输入值")
         self.assertAlmostEqual(max(point[1] for point in normalized["series"][0]["data"]), 1.0)
         self.assertEqual(normalized["xAxis"]["min"], 380)
@@ -118,6 +121,15 @@ class SpectralAnalyzerOptionsTests(unittest.TestCase):
         self.assertNotIn("interval", custom_interval["yAxis"])
         self.assertEqual(custom_interval["xAxis"]["splitNumber"], 16)
         self.assertEqual(custom_interval["yAxis"]["splitNumber"], 5)
+        hidden = _spectrum_chart_options(
+            self.spectra,
+            hidden_series_names={self.spectra[0].name},
+            compact_layout=True,
+        )
+        self.assertFalse(hidden["legend"]["selected"][self.spectra[0].name])
+        self.assertTrue(hidden["legend"]["selected"][self.spectra[1].name])
+        self.assertEqual(hidden["legend"]["type"], "scroll")
+        self.assertLess(hidden["grid"]["top"], normalized["grid"]["top"])
 
     def test_cri_values_are_exposed_as_rows_instead_of_bar_series(self):
         rows = _cri_value_rows(self.spectra)
@@ -162,6 +174,15 @@ class SpectralAnalyzerOptionsTests(unittest.TestCase):
         self.assertTrue(xy_options["yAxis"]["splitLine"]["show"])
         self.assertEqual(xy_options["xAxis"]["z"], 1)
         self.assertIn("rgba", xy_options["xAxis"]["splitLine"]["lineStyle"]["color"])
+        compact_options = _chromaticity_chart_options(
+            spectrum_results=self.spectra,
+            coordinate_system="xy",
+            compact=True,
+        )
+        self.assertEqual(compact_options["grid"]["width"], compact_options["grid"]["height"])
+        self.assertEqual(compact_options["legend"]["type"], "plain")
+        self.assertEqual(compact_options["legend"]["orient"], "vertical")
+        self.assertTrue(str(compact_options["legend"]["left"]).endswith("%"))
         self.assertEqual(xy_options["xAxis"]["axisLabel"]["fontSize"], 15)
         self.assertEqual(xy_options["yAxis"]["axisLabel"]["fontSize"], 15)
         self.assertEqual(xy_options["xAxis"]["nameTextStyle"]["fontSize"], 18)
@@ -283,12 +304,34 @@ class SpectralAnalyzerOptionsTests(unittest.TestCase):
         self.assertTrue(options["source:4"].startswith("原始 ·"))
         self.assertEqual(options["mix:3"], "混合 3")
         spectrum_options = _spectrum_chart_options([mixed_result], normalized=True)
+        mixing_results = [nodes[f"mix:{index}"] for index in range(1, 4)]
+        mixing_styles = _default_series_styles(mixing_results)
+        self.assertEqual(
+            {mixing_styles[item.name]["symbol"] for item in mixing_results},
+            {mixing_styles[mixing_results[0].name]["symbol"]},
+        )
         cie_options = _chromaticity_chart_options(
             coordinate_results=[mixed_result],
             coordinate_system="xy",
+            series_styles=mixing_styles,
         )
         self.assertGreater(len(spectrum_options["series"][0]["data"]), 300)
         self.assertEqual(cie_options["series"][-1]["name"], "混合 3")
+        self.assertEqual(
+            cie_options["legend"]["data"][-1]["icon"],
+            mixing_styles["混合 3"]["symbol"],
+        )
+
+        _, detailed_active_ids, coefficients = _mixing_graph_details(sources, steps)
+        self.assertEqual(detailed_active_ids, active_ids)
+        self.assertEqual(len(coefficients["mix:3"]), len(sources))
+        self.assertTrue(all(value > 0 for value in coefficients["mix:3"][:4]))
+        self.assertEqual(coefficients["mix:3"][4:], (0.0, 0.0))
+        self.assertAlmostEqual(
+            coefficients["mix:1"][0] / coefficients["mix:1"][1],
+            25 / 75,
+            places=8,
+        )
 
     def test_summary_rows_expose_engineering_metrics(self):
         spectrum_row = _spectrum_summary_rows(self.spectra)[0]

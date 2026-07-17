@@ -3,6 +3,7 @@ import copy
 import json
 import logging
 import os
+from collections.abc import Mapping
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -28,6 +29,50 @@ from ..utils import (
 
 # 获取 logger
 logger = logging.getLogger(__name__)
+
+
+# 项目阶段与概述问题共同决定警示级别：0=低，1=还好，2=中，3=高，4=严重
+OVERVIEW_WARNING_LEVELS = {
+    "研发": {"need": 0, "none": 1, "false": 2},
+    "转产": {"need": 1, "none": 2, "false": 3},
+    "试产": {"need": 1, "none": 3, "false": 4},
+    "量产": {"need": 1, "none": 3, "false": 4},
+}
+
+
+def get_overview_warning(project_state: str, counts: dict[str, int]) -> tuple[str, int] | None:
+    """返回当前项目最需关注的概述问题及其综合警示级别。"""
+    # 状态缺失时按量产处理，避免未知项目被低估风险
+    warning_levels = OVERVIEW_WARNING_LEVELS.get(project_state, OVERVIEW_WARNING_LEVELS["量产"])
+    active_keys = [key for key, count in counts.items() if count > 0 and key in warning_levels]
+    if not active_keys:
+        return None
+
+    active_key = max(active_keys, key=lambda key: warning_levels[key])
+    return active_key, warning_levels[active_key]
+
+
+def get_overview_counts(state_dic: Mapping[str, str]) -> dict[str, int]:
+    """统计三类待处理概述问题的数量。"""
+    states = list(state_dic.values())
+    return {
+        "false": states.count("缺必填"),
+        "none": states.count("有待定"),
+        "need": states.count("缺需填"),
+    }
+
+
+def sort_overview_pending_items(
+    pending_items: list[tuple[str, dict[str, str]]], project_states: Mapping[str, str]
+) -> list[tuple[str, dict[str, str]]]:
+    """按综合警示级别从高到低稳定排列概述待办。"""
+
+    def warning_level(item: tuple[str, dict[str, str]]) -> int:
+        project_name, state_dic = item
+        warning = get_overview_warning(project_states.get(project_name, "未知"), get_overview_counts(state_dic))
+        return warning[1] if warning is not None else -1
+
+    return sorted(pending_items, key=warning_level, reverse=True)
 
 
 # --- UI 辅助组件 ---
@@ -60,6 +105,48 @@ def information_page():
 
     # --- 调用全局活跃跟踪组件 ---
     setup_global_activity_tracking()
+    ui.add_css("""
+        @keyframes overview-warning-shake {
+            0%, 100% { transform: translateX(0); }
+            15%, 45%, 75% { transform: translateX(-4px); }
+            30%, 60%, 90% { transform: translateX(4px); }
+        }
+
+        @keyframes overview-warning-flash {
+            0%, 100% {
+                opacity: 1;
+                transform: scale(1);
+                text-shadow: 0 0 2px currentColor;
+            }
+            50% {
+                opacity: 0.25;
+                transform: scale(1.2);
+                text-shadow: 0 0 8px currentColor;
+            }
+        }
+
+        .overview-warning-shake {
+            animation: overview-warning-shake 1.0s ease-in-out infinite;
+            transform-origin: center;
+            will-change: transform;
+        }
+
+        .overview-warning-flash {
+            animation: overview-warning-flash 1.6s ease-in-out infinite;
+            will-change: opacity, transform;
+        }
+
+        .overview-warning-number {
+            display: inline-block;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .overview-warning-shake,
+            .overview-warning-flash {
+                animation: none;
+            }
+        }
+    """)
 
     dialog = ui.dialog().props("persistent").classes("")
     current_user = app.storage.user.get("current_user", "匿名用户")
@@ -603,61 +690,60 @@ def information_page():
                                 with ui.column().classes("w-full gap-2 px-1"):
                                     over_flat = app.storage.general.get("over_config_data_flat", {})
                                     project_summary = app.storage.general.get("project_summary", {})
-                                    over_flat = app.storage.general.get("over_config_data_flat", {})
 
-                                    for project_name, state_dic in list(my_pending.items()):
-                                        # 1. 获取当前项目状态，如果属于作废或待定，则直接隐藏该待办条目
-                                        proj_state = project_summary.get(project_name, {}).get("state", "未知")
-                                        if proj_state in ["作废", "待定"]:
-                                            continue
+                                    project_states = {
+                                        project_name: project_summary.get(project_name, {}).get("state", "未知")
+                                        for project_name in my_pending
+                                    }
+                                    visible_pending_items = [
+                                        (project_name, state_dic)
+                                        for project_name, state_dic in my_pending.items()
+                                        if project_states[project_name] not in ["作废", "待定"]
+                                    ]
+                                    sorted_pending_items = sort_overview_pending_items(
+                                        visible_pending_items, project_states
+                                    )
 
-                                        # 无内容的必填概述分项数量
-                                        false_num = list(state_dic.values()).count("缺必填")
-                                        # 无内容的需填概述分项数量
-                                        need_num = list(state_dic.values()).count("缺需填")
-                                        # 待确认的概述分项数量
-                                        none_num = list(state_dic.values()).count("有待定")
-
-                                        # 2. 动态判定重要程度优先级
-                                        if proj_state in ["研发", "转产"]:
-                                            # 优先级: 待确认 > 缺必填 > 缺需填
-                                            priority_keys = ["none", "false", "need"]
-                                        else:
-                                            # 试产、量产及其他状态的优先级: 缺必填 > 待确认 > 缺需填
-                                            priority_keys = ["false", "none", "need"]
-
-                                        counts = {"false": false_num, "none": none_num, "need": need_num}
+                                    for project_name, state_dic in sorted_pending_items:
+                                        # 1. 获取已经过滤过的当前项目状态
+                                        proj_state = project_states[project_name]
+                                        counts = get_overview_counts(state_dic)
                                         labels_map = {
                                             "false": "项必填概述无内容",
                                             "none": "项概述待确认",
                                             "need": "项需填概述无内容",
                                         }
 
-                                        # 寻找当前实际存在数据的最高优先级
-                                        highest_active = None
-                                        for rank_idx, key in enumerate(priority_keys):
-                                            if counts[key] > 0:
-                                                highest_active = (key, rank_idx)
-                                                break
-
-                                        if not highest_active:
+                                        # 2. 综合项目阶段与概述问题，选出当前最高警示项
+                                        warning = get_overview_warning(proj_state, counts)
+                                        if warning is None:
                                             continue  # 没有任何积压，跳过渲染
 
-                                        active_key, active_rank = highest_active
+                                        active_key, warning_level = warning
 
-                                        # 3. 根据最高优先级的位次，决定当前行的视觉色彩与动画表现
-                                        if active_rank == 0:
-                                            # 最高重要程度：红色行，数字闪烁
+                                        # 3. 根据综合警示级别决定当前行的视觉色彩与动画表现
+                                        if warning_level == 4:
+                                            # 4级警示：紫色行，数字闪烁
+                                            row_bg = "bg-violet-200 border-violet-400 hover:bg-violet-300"
+                                            base_color = "violet"
+                                            is_flash = True
+                                        elif warning_level == 3:
+                                            # 3级警示：红色行，数字闪烁
                                             row_bg = "bg-red-50 border-red-200 hover:bg-red-100"
                                             base_color = "red"
                                             is_flash = True
-                                        elif active_rank == 1:
-                                            # 中等重要程度：黄色行，数字闪烁
+                                        elif warning_level == 2:
+                                            # 2级警示：橙色行，数字闪烁
+                                            row_bg = "bg-orange-50 border-orange-200 hover:bg-orange-100"
+                                            base_color = "orange"
+                                            is_flash = True
+                                        elif warning_level == 1:
+                                            # 1级警示：黄色行，数字闪烁
                                             row_bg = "bg-amber-50 border-amber-200 hover:bg-amber-100"
                                             base_color = "amber"
-                                            is_flash = True
+                                            is_flash = False
                                         else:
-                                            # 最低重要程度：蓝色行，仅加粗不闪烁
+                                            # 0级示：蓝色行，仅加粗不闪烁
                                             row_bg = "bg-blue-50 border-blue-200 hover:bg-blue-100"
                                             base_color = "blue"
                                             is_flash = False
@@ -696,8 +782,10 @@ def information_page():
                                         # ------------------------------------
 
                                         # 4. 渲染最终容器
+                                        row_animation = "overview-warning-shake" if warning_level >= 3 else ""
                                         row_container = ui.row().classes(
-                                            f"w-full items-center justify-between p-3 rounded-lg border transition-colors {row_bg}"
+                                            f"w-full items-center justify-between p-3 rounded-lg border "
+                                            f"transition-colors {row_bg} {row_animation}"
                                         )
 
                                         with row_container:
@@ -711,8 +799,11 @@ def information_page():
                                                 # 如果当前项正是触发最高优先级的项，实施视觉凸显
                                                 if k == active_key:
                                                     if is_flash:
-                                                        # 使用 Tailwind 的 animate-pulse 实现闪烁效果
-                                                        num_html = f'<span class="font-black text-lg animate-pulse text-{base_color}-600">{num}</span>'
+                                                        # 缩放、明暗和发光同时变化，使数字警示更醒目
+                                                        num_html = (
+                                                            '<span class="overview-warning-flash overview-warning-number '
+                                                            f'font-black text-lg text-{base_color}-600">{num}</span>'
+                                                        )
                                                     else:
                                                         # 仅加粗高亮
                                                         num_html = f'<span class="font-black text-lg text-{base_color}-600">{num}</span>'
@@ -723,10 +814,14 @@ def information_page():
                                             title_html = f'<span class="font-medium text-gray-800">{project_name}（{"，".join(parts_html)}）</span>'
 
                                             # ui.element: 创建基础 DOM 元素作为包裹层，避开 v-html 的内部覆盖效应
-                                            title_wrapper = ui.element("div").classes("cursor-help flex items-center")
+                                            title_wrapper = ui.element("div").classes("cursor-help flex items-center gap-2")
 
                                             with title_wrapper:
                                                 ui.html(title_html, sanitize=False)
+                                                if warning_level >= 3:
+                                                    ui.badge("尽快处理", color=base_color).classes(
+                                                        "overview-warning-flash font-bold"
+                                                    )
                                                 with ui.tooltip().classes("text-xs bg-gray-600/90 text-white p-2"):
                                                     ui.html(tooltip_html, sanitize=False)
 
@@ -734,7 +829,7 @@ def information_page():
                                             ui.button(
                                                 "去处理",
                                                 icon="arrow_forward",
-                                                on_click=lambda pn=project_name: get_overviow_page(pn, False),
+                                                on_click=lambda _=None, pn=project_name: get_overviow_page(pn, False),
                                             ).props(f"flat dense color={base_color} size=sm")
 
                     # B. 需求评审队列 (Review Queue)
