@@ -5,6 +5,7 @@ files/
 over/
 req/
 data/*
+!data/zemax_operands.json
 .nicegui/
 uploads/
 *.pyc

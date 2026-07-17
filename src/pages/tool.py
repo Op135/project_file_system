@@ -12,6 +12,7 @@ from src.tools.material_matcher import MaterialMatcherTool
 from src.tools.microlens_calculator import MicrolensCalculator
 from src.tools.mode_calculator import ModeCalculator
 from src.tools.optical_curve_manager import OpticalCurveManagerTool
+from src.tools.operand_lookup import OperandLookupTool
 from src.tools.simple_coupling_calculator import SimpleCouplingCalculator
 from src.tools.spectral_analyzer import SpectralAnalyzerTool
 from src.tools.spherical_lens_calculator import SphericalLensCalculator
@@ -124,6 +125,14 @@ def tool_page():
             "icon": "science",
             "color": "rose",
             "cls": SpectralAnalyzerTool,
+        },
+        {
+            "key": "operand_lookup",
+            "title": "OpticStudio 操作数查询",
+            "subtitle": "分类浏览、全文检索与官方资料一键更新",
+            "icon": "manage_search",
+            "color": "blue",
+            "cls": OperandLookupTool,
         },
     ]
 

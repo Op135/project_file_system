@@ -1,0 +1,3202 @@
+{
+  "schema_version": 1,
+  "title": "分类优化操作数(Optimization Operands by Category)",
+  "source_url": "https://ansyshelp.ansys.com/public/Views/Secured/Zemax/v252/zh-Hans/OpticStudio_User_Guide/OpticStudio_Help/topics/Optimization_Operands_by_Category.html",
+  "version": "v252",
+  "language": "zh-Hans",
+  "updated_at": "2026-07-17T22:54:56+08:00",
+  "category_count": 34,
+  "operand_count": 391,
+  "categories": [
+    {
+      "name": "一阶光学性能(First-Order Optical Properties)",
+      "index_name": "一阶光学性能(First-Order Optical Properties)",
+      "url": "https://ansyshelp.ansys.com/public/Views/Secured/Zemax/v252/zh-Hans/OpticStudio_User_Guide/OpticStudio_Help/topics/First_Order_Optical_Properties.html",
+      "operands": [
+        {
+          "code": "AMAG",
+          "description": "角放大率。它是在Wave定义的波长下，像空间近轴主光线角与物空间近轴主光线角之比。对非近轴系统无效。",
+          "parameters": [
+            "Wave"
+          ]
+        },
+        {
+          "code": "CARD",
+          "description": "基点数据。该操作数将返回物空间的6个基点位置和像空间的6个基点位置，包括主平面、反主平面、节点平面、反节点平面和焦平面，以镜头单位表示。针对任何定义的波长和X-Z或Y-Z平面方向进行计算。物空间位置是参考被定义为Surf1的表面测量得到的，而像空间位置是参考被定义为Surf2的表面测量得到的。考虑物空间和像空间中的折射。\nSurf1：要计算基点的组的起始表面编号。\nSurf2：要计算基点的组的结束表面编号。\n波长(Wave)：用于计算的波长编号。\n方向(Orientation)：用于计算基面位置的方向（0–YZ平面或1–XZ平面）。\n返回的值取决于Data的值，如下所示：\n0 – 物空间焦距\n1 – 像空间焦距\n2 – 物空间焦平面\n3 – 像空间焦平面\n4 – 物空间主平面\n5 – 像空间主平面\n6 – 物空间反主平面\n7 – 像空间反主平面\n8 - 物空间节点平面\n9 - 像空间节点平面\n10 - 物空间反节点平面\n11 – 像空间反节点平面",
+          "parameters": [
+            "Surf1：",
+            "Surf2：",
+            "波长(Wave)：",
+            "方向(Orientation)："
+          ]
+        },
+        {
+          "code": "ENPP",
+          "description": "入瞳位置，以镜头单位表示，相对第一面的位置。它是近轴光瞳位置，仅对共轴系统有效。",
+          "parameters": []
+        },
+        {
+          "code": "EFFL",
+          "description": "有效焦距，以镜头单位表示。所用的波长由Wave定义。该值是针对近轴系统的，对非近轴系统可能并不精确。",
+          "parameters": [
+            "Wave"
+          ]
+        },
+        {
+          "code": "EFLA",
+          "description": "空气中的有效焦距，以镜头单位表示。这是从由Surf定义的表面到下一个表面进行计算的。所用的波长由Wave定义。",
+          "parameters": [
+            "Surf",
+            "Wave"
+          ]
+        },
+        {
+          "code": "EFLX",
+          "description": "在主波长范围内，由Surf1和Surf2定义的局部x平面上的有效焦距。",
+          "parameters": [
+            "Surf1",
+            "Surf2"
+          ]
+        },
+        {
+          "code": "EFLY",
+          "description": "在主波长范围内，由Surf1和Surf2定义的局部y平面上的有效焦距。",
+          "parameters": [
+            "Surf1",
+            "Surf2"
+          ]
+        },
+        {
+          "code": "EPDI",
+          "description": "入瞳直径，以镜头单位表示。",
+          "parameters": []
+        },
+        {
+          "code": "EXPD",
+          "description": "出瞳直径，以镜头单位表示。这是近轴光瞳直径，仅对共轴系统有效。",
+          "parameters": []
+        },
+        {
+          "code": "EXPP",
+          "description": "出瞳位置，以镜头单位表示，以像面为参考。它是近轴光瞳位置，仅对共轴系统有效。",
+          "parameters": []
+        },
+        {
+          "code": "ISFN",
+          "description": "像空间F/#。该操作数是轴向无限共轭F/#。参见WFNO。",
+          "parameters": []
+        },
+        {
+          "code": "ISNA",
+          "description": "像方数值孔径。该操作数是定义的共轭近轴像空间NA。参见ISFN。",
+          "parameters": []
+        },
+        {
+          "code": "LINV",
+          "description": "拉格朗日不变量。在Wave定义的波长下，以镜头单位表示。使用近轴边缘光线和近轴主光线的数据来计算该值。",
+          "parameters": [
+            "Wave"
+          ]
+        },
+        {
+          "code": "OBSN",
+          "description": "物方数值孔径。它只针对有限共轭系统，使用主波长在轴上进行计算。",
+          "parameters": []
+        },
+        {
+          "code": "PIMH",
+          "description": "近轴像高，在Wave定义的波长下，近轴像面上的近轴像高。此操作数不适用于非近轴系统。",
+          "parameters": [
+            "Wave"
+          ]
+        },
+        {
+          "code": "PMAG",
+          "description": "近轴放大率。它是在Wave定义的波长下，近轴像面上的近轴主光线高度与物高的比值。只对有限共轭系统有效。注意，如果系统不是聚焦在近轴焦点，也按照近轴像面来计算。",
+          "parameters": [
+            "Wave"
+          ]
+        },
+        {
+          "code": "POWF",
+          "description": "视场点处光焦度。在计算Wave定义的波长下，光线经过Surf定义的面折射后任意视场点的光焦度或有效焦距。对于Data参数，用0表示球，1表示圆柱，2表示最大值，3表示最小值，4表示子午，5表示弧矢，6表示y向光焦度，7表示x向光焦度，8表示像散光焦度，光焦度的单位为屈光度。要获得EFL值，在这些代码上加9。例如，子午EFL值，用Data = 13表示。对于圆柱，EFL的值为最大和最小焦距的差。对于像散，EFL的值为x方向和y方向焦距的差(x-y)。\n如需了解这种类型的分析的完整描述，请参考\"光焦度视场图(Power Field Map)\"。参见\"Hx、Hy、Px和Py(Hx, Hy, Px, and Py)\"。",
+          "parameters": [
+            "Wave",
+            "Surf",
+            "Data"
+          ]
+        },
+        {
+          "code": "POWP",
+          "description": "光瞳处一点的光焦度。在计算Wave定义的波长下，光线经过Surf定义的面折射后在光瞳中任意一点的光焦度或有效焦距。对于Data参数，用0表示球，1表示圆柱，2表示最大值，3表示最小值，4表示子午，5表示弧矢，6表示y向光焦度，7表示x向光焦度，8表示像散光焦度，光焦度的单位为屈光度。要获得EFL值，在这些代码上加9。例如，子午EFL值，用Data = 13表示。对于圆柱，EFL的值为最大和最小焦距的差。对于像散，EFL的值为x方向和y方向焦距的差(x-y)。\n如需了解这种类型的分析的完整描述，请参考\"光焦度光瞳图(Power Pupil Map)\"。参见\"Hx、Hy、Px和Py(Hx, Hy, Px, and Py)\"。",
+          "parameters": [
+            "Wave",
+            "Surf",
+            "Data"
+          ]
+        },
+        {
+          "code": "POWR",
+          "description": "某一面的光焦度（镜头单位的倒数）。在Wave定义的波长下，由Surf定义的面的光焦度。该操作数只对标准面有效。",
+          "parameters": [
+            "Wave",
+            "Surf"
+          ]
+        },
+        {
+          "code": "SFNO",
+          "description": "弧矢工作F/#，在Field定义的视场上，Wave定义的波长下计算。参见TFNO。",
+          "parameters": [
+            "Field",
+            "Wave"
+          ]
+        },
+        {
+          "code": "TFNO",
+          "description": "子午工作F/#，在Field定义的视场上，Wave定义的波长下计算。参见SFNO。",
+          "parameters": [
+            "Field",
+            "Wave"
+          ]
+        },
+        {
+          "code": "WFNO",
+          "description": "工作F/#。参见\"工作F/#(Working F/#)\"、ISFN、SFNO和TFNO。",
+          "parameters": []
+        }
+      ]
+    },
+    {
+      "name": "像差（分类优化操作数）(Aberrations (optimization operands by category))",
+      "index_name": "像差(分类优化操作数)(Aberrations (optimization operands by category))",
+      "url": "https://ansyshelp.ansys.com/public/Views/Secured/Zemax/v252/zh-Hans/OpticStudio_User_Guide/OpticStudio_Help/topics/Aberrations_optimization_operands_by_category.html",
+      "operands": [
+        {
+          "code": "ABCD",
+          "description": "ABCD值，是网格畸变功能中用来计算广义畸变的。参见\"网格畸变(Grid Distortion)\"。参考的视场序号由Ref Fld定义。波长序号由Wave定义。Data为0时代表A，1时代表B，2时代表C，3时代表D。也可参见\"DISA\"。",
+          "parameters": [
+            "Ref Fld",
+            "Wave",
+            "Data"
+          ]
+        },
+        {
+          "code": "ANAC",
+          "description": "质心角像差。像空间在Wave定义的波长上测得的径向角像差，参考为质心。该量定义如下：\n其中l和m是光线的x和y方向余弦，下标c表示质心。参见\"Hx、Hy、Px和Py(Hx, Hy, Px, and Py)\"。",
+          "parameters": [
+            "Wave"
+          ]
+        },
+        {
+          "code": "ANAR",
+          "description": "主光线角像差。像空间在Wave定义的波长上测量的径向角像差，参考主波长主光线。该数定义如下：\n\n\n\n\n其中l和m是光线的x和y方向余弦，下标c表示主光线。参见\"Hx、Hy、Px和Py(Hx, Hy, Px, and Py)\"。",
+          "parameters": [
+            "Wave"
+          ]
+        },
+        {
+          "code": "ANAX",
+          "description": "x方向主光线角像差。像空间在Wave 定义的波长上测得的x方向的角像差，与主波长主光线相关。该数定义如下：\n\n\n\n\n其中l是光线的x方向余弦，下标c表示主光线。参见\"Hx、Hy、Px和Py(Hx, Hy, Px, and Py)\"。",
+          "parameters": [
+            "Wave"
+          ]
+        },
+        {
+          "code": "ANAY",
+          "description": "y方向主光线角像差。像空间在Wave定义的波长上测得的y方向的角像差，与主波长主光线相关。该数定义如下：\n\n\n\n\n其中m是光线的y方向余弦，下标c表示主光线。参见\"Hx、Hy、Px和Py(Hx, Hy, Px, and Py)\"。",
+          "parameters": [
+            "Wave"
+          ]
+        },
+        {
+          "code": "ANCX",
+          "description": "x方向质心角像差。像空间在Wave定义的波长上\n测量的x方向角像差，参考质心。该数定义如下：\n\n\n\n\n其中l是光线的x方向余弦，下标c表示质心。ANCX与TRAC有相同的限制条件，详细讨论见TRAC。参见\"Hx、Hy、Px和Py(Hx, Hy, Px, and Py)\"。",
+          "parameters": [
+            "Wave"
+          ]
+        },
+        {
+          "code": "ANCY",
+          "description": "y方向质心角像差。像空间在Wave定义的波长上\n测量的y方向角像差，参考质心。该数定义如下：\n\n\n\n\n其中m是光线的y方向余弦，下标c表示质心。ANCY与TRAC有相同的限制条件，详细讨论见TRAC。参见\"Hx、Hy、Px和Py(Hx, Hy, Px, and Py)\"。",
+          "parameters": [
+            "Wave"
+          ]
+        },
+        {
+          "code": "ASTI",
+          "description": "在Wave定义的波长下，Surf定义的表面所产生的像散。如果Surf为零，则计算系统各个表面的像散和。它是用赛德尔系数计算的三阶像散，不适用于非近轴系统。",
+          "parameters": [
+            "Wave",
+            "Surf"
+          ]
+        },
+        {
+          "code": "AXCL",
+          "description": "轴向色差。对有焦系统按镜头单位量度，对无焦系统按屈光度量度。它是由Wave1和Wave2定义的两个波长对应的像的间距。如果Zone为零，近轴光线用于确定近轴像位置。如果Zone大于0，并且小于或等于1 ，就用真实边缘光线确定像的位置。在这种情况下，Zone对应真实边缘光线的Py坐标。\n参见\"Hx、Hy、Px和Py(Hx, Hy, Px, and Py)\"。",
+          "parameters": [
+            "Wave1",
+            "Wave2",
+            "Zone"
+          ]
+        },
+        {
+          "code": "BIOC",
+          "description": "双目收敛度。以毫弧度为单位的双目结构收敛，左右眼的结构用Left和Right的值来表示。其它的参数如下：\n波长(Wave)：要使用的波长编号。\nUseCos：如果为0则表示视场单位是角度，否则视场单位为方向余弦。\nXang/Yang：用于计算X向和Y向的收敛角或角的余弦值。\n如果来自两个结构成指定角的主光线在没有渐晕的情况下没有通过系统成像，会出现错误提示。参见\"发散度/收敛度(Divergence/Convergence)\"，了解更多信息和重要假设。",
+          "parameters": [
+            "Left",
+            "Right",
+            "波长(Wave)",
+            "UseCos",
+            "Xang",
+            "Yang"
+          ]
+        },
+        {
+          "code": "BIOD",
+          "description": "双目发散度。以毫弧度为单位的双眼发散度。详见上面的BIOC。",
+          "parameters": []
+        },
+        {
+          "code": "BSER",
+          "description": "瞄准误差。瞄准误差定义为轴上视场主光线的径向坐标与Wave定义的波长除以有效焦距。这个定义衍生出一种测量像的角误差的方法。",
+          "parameters": [
+            "Wave"
+          ]
+        },
+        {
+          "code": "COMA",
+          "description": "彗差。在Wave定义的波长下，由Surf定义的面引\n起的以波长表示的彗差。如果Surf为零，则计算系统各个表面的像散和。它是由德尔系数计算的三阶彗差，对非近轴系统无效。",
+          "parameters": [
+            "Wave",
+            "Surf"
+          ]
+        },
+        {
+          "code": "DIMX",
+          "description": "最大畸变。这是畸变绝对值的上限。DIMX的计算方法类似于DISG，但与基于赛德尔系数计算的DIST不同。Field可以是0，它指定使用的最大视场的坐标，或任何有效的视场数。注意：最大畸变并不总是发生在最大的视场坐标处。DIMX这个操作数只追迹主光线(Px = Py = 0)，因此Px和Py不需要用户定义。参考视场是轴上视场点(Hx = Hy = 0)，即使光学系统没有定义视场点。更多信息参见\"DISG\"。\n畸变在由Wave定义的波长上计算可得。\n如果Absolute为0，返回值的单位是百分比。如果Absolute为1，畸变作为一个绝对长度给出而不是百分比。\n对于非旋转对称系统，该操作数可能不是有效的。",
+          "parameters": [
+            "Field",
+            "Wave",
+            "Absolute"
+          ]
+        },
+        {
+          "code": "DISA",
+          "description": "ABCD畸变。这个操作数计算由Wave定义的波长上的主光线，相对于参考视场(Ref Fld)在径向X或Y方向的畸变。Data是0表示径向畸变，1表示X方向畸变，2表示Y方向畸变。这个畸变是通过Field定义的视场点处的主光线计算得到的。A、B、C、D值由用户定义。这个畸变的计算方式类似于网格畸变功能的算法（参见\"网格畸变(Grid\nDistortion)\"）。这个操作数和DISG的关键区别在于ABCD的值是由用户自己定义的。参见\"ABCD\"和\"DISG\"。",
+          "parameters": [
+            "Ref Fld",
+            "Ref Fld)在径向X或Y方向的畸变。Data",
+            "Field",
+            "A",
+            "B",
+            "C",
+            "D"
+          ]
+        },
+        {
+          "code": "DISC",
+          "description": "校准畸变。该操作数计算由Wave定义的波长的y视场的校准y-field畸变，并返回根据f-theta线性条件计算得到的最大畸变的绝对值。\n如果Absolute为0，返回值的单位是百分比。如果Absolute为1，畸变作为一个绝对长度给出而不是百分比。这个操作数对设计f-theta镜头很有帮助。",
+          "parameters": [
+            "Wave",
+            "Absolute"
+          ]
+        },
+        {
+          "code": "DISG",
+          "description": "广义畸变。以百分数或绝对距离为单位。该操作数计算在Wave定义的波长上任意视场，任意光瞳处的任意光线的畸变，使用由Field定义的视场点作为参考。所用的方法和假设与网格畸变图相同，见\"网格畸变(Grid Distortion)\"。如果场单位是角度而且最大角等于或大于90度，不能计算DISG。DISG假定预定的放大率不是对称的。\n如果视场是以角度定义，则归一化视场坐标Hx和Hy与其它OpticStudio的功能会有不同的定义。\nH=θ/θM\n是相对于参考视场主光线的角度，而θM则是最大的视场角（参见\"最大视场(Maximum Field)\n\"）。\n如果Wave是一个正数，DISG以百分数返回畸变。如果Wave是一个负数，Wave的绝对值用于定义波长且返回畸变的绝对长度而不是百分数。\n对于所有的畸变概念，避免混淆以及误导的最好方法是使用有限远的物体和有限的物高，而不是\n用视场角来定义视场。\n参见\"Hx、Hy、Px和Py(Hx, Hy, Px, and Py)\"。",
+          "parameters": [
+            "Wave",
+            "Field"
+          ]
+        },
+        {
+          "code": "DIST",
+          "description": "三阶畸变。在由Wave定义的波长上，由Surf定义的的面引起的用单位波长表示的畸变量，由赛德尔系数计算出来（见\"赛德尔系数(Seidel Coefficients)\"，且对非近轴系统无效。\n如果Surf为零，畸变就以百分数给出（详细定义参\n见\"场曲/畸变\")\"）。\n如果Absolute被设为1，并且面序号为零，畸变以绝对长度给出而不是百分数。\n参见DISG。",
+          "parameters": [
+            "Wave",
+            "Surf",
+            "Absolute"
+          ]
+        },
+        {
+          "code": "FCGS",
+          "description": "广义弧矢场曲。Wave定义的波长上计算任何视场点的场曲值。即使是非旋转对称系统，也能得到合理的数值。参见\"场曲/畸变(Field Curvature/Distortion)\"。\n参见\"Hx、Hy、Px和Py(Hx, Hy, Px, and Py)\"。",
+          "parameters": [
+            "Wave"
+          ]
+        },
+        {
+          "code": "FCGT",
+          "description": "广义子午场曲。参见FCGS。",
+          "parameters": []
+        },
+        {
+          "code": "FCUR",
+          "description": "场曲。在Wave定义的波长，由Surf定义的面所产生的场曲，用单位波长表示。如果Surf为零，则计算系统各个表面的像散和。这是由赛德尔系数计算的三阶场曲，对非近轴系统无效。",
+          "parameters": [
+            "Wave",
+            "Surf"
+          ]
+        },
+        {
+          "code": "LACL",
+          "description": "垂轴色差。对有焦系统，这是\nMinw和Maxw定义的两个极限波长下主光线交点之间y方向距离，按镜头单位测量。对于无焦系统，以无焦模式单位表示的是Minw和Maxw定义的两个极限波长下主光线之间的夹角。",
+          "parameters": [
+            "Minw",
+            "Maxw"
+          ]
+        },
+        {
+          "code": "LONA",
+          "description": "轴向像差。对有焦系统按镜头单位测量，对无焦系统按屈光度测量。这是当前Wave定义波长下的像到光瞳Zone定义的像面的离焦量。如果Zone为零，近轴光线用于确定近轴像位置。如果Zone大于0，并且小于或等于1 ，就用真实边缘光线确定像的位置。在这种情况下，Zone对应真实边缘光线的Py坐标。\n参见AXCL。",
+          "parameters": [
+            "Wave",
+            "Zone"
+          ]
+        },
+        {
+          "code": "OPDC",
+          "description": "相对主光线光程差。Wave定义的波长下，光线相对主光线的光程差，用单位波长表示。参见\"Hx、Hy、Px和Py\"。",
+          "parameters": [
+            "Wave"
+          ]
+        },
+        {
+          "code": "OPDM",
+          "description": "光程差。Wave定义的波长下，相对于整个光瞳上光程差平均值的光程差。OPDM与TRAC有相同的限制条件，详细讨论见TRAC。参见\"Hx、Hy、Px和Py(Hx, Hy, Px, and Py)\"。",
+          "parameters": [
+            "Wave"
+          ]
+        },
+        {
+          "code": "OPDX",
+          "description": "光程差。Wave定义的波长下，相对于整个去除倾\n斜的光瞳上光程差平均值的光程差。OPDX与TRAC有相同的限制条件，详细讨论见TRAC。\n参见\"Hx、Hy、Px和Py(Hx, Hy, Px, and Py)\"。",
+          "parameters": [
+            "Wave"
+          ]
+        },
+        {
+          "code": "OSCD",
+          "description": "违正弦条件。在Wave定义的波长下，违正弦条件(OSC)有两种定义。第一种定义如Welford在《Aberrations of Optical System》书中所描述的（参见\"镜头设计参考(References on Lens Design)\"）。这个定义适用于Zone为零的情况。由Roland Shack教授提出的另一种定义支持将OSC作为光瞳函数进行计算，并只使用真实光线。这个定义适用于Zone非零的情况。在这种情况下，Zone对应真实边缘光线的Py坐标。当Zone对应这两种定义都是1.0时，两种定义方法对带有适当F/#和像差的系统会给出相似的结果。这个操作数对非轴对称系统没有意义。",
+          "parameters": [
+            "Wave",
+            "Zone"
+          ]
+        },
+        {
+          "code": "PETC",
+          "description": "在Wave在Wave定义的波长下的Petzval曲率，用镜头单位倒数作为单位。对非近轴系统无效。",
+          "parameters": [
+            "Wave"
+          ]
+        },
+        {
+          "code": "PETZ",
+          "description": "在Wave定义的波长下，Petzval曲率半径，以镜头单位为单位。对非近轴系统无效。",
+          "parameters": [
+            "Wave"
+          ]
+        },
+        {
+          "code": "RSCE",
+          "description": "参考几何像质心的RMS光斑半径，以镜头单位为单位。该操作数使用一个高斯求积的方法，该法对带有非渐晕圆形光瞳的系统是精确的。Ring用于指定的追迹光线环的数目上。如果Wave为0，就\n会进行多波长加权计算，否则，就用指定的波长\n计算。参见\"Hx、Hy、Px和Py(Hx, Hy, Px, and Py)\"。",
+          "parameters": [
+            "Ring",
+            "Wave"
+          ]
+        },
+        {
+          "code": "RSCH",
+          "description": "参考主光线的RMS点光斑半径，以镜头单位为单位。该操作数使用一个高斯求积的方法，该法对带有非渐晕圆形光瞳的系统是精确的。Ring用于指定的追迹光线环的数目上。如果Wave为0，就\n会进行多波长加权计算，否则，就用指定的波长\n计算。参见\"Hx、Hy、Px和Py(Hx, Hy, Px, and Py)\"。",
+          "parameters": [
+            "Ring",
+            "Wave"
+          ]
+        },
+        {
+          "code": "RSRE",
+          "description": "参考几何像质心的RMS光斑半径，以镜头单位为单位。该操作数使用一个矩形栅格光线计算RMS。该操作数考虑渐晕。如果Samp值是n，为n将在每个光瞳区上追迹n x n个栅格。如果Wave为0，就\n会进行多波长加权计算，否则，就用指定的波长\n计算。参见\"Hx、Hy、Px和Py(Hx, Hy, Px, and Py)\"。",
+          "parameters": [
+            "Samp",
+            "Wave"
+          ]
+        },
+        {
+          "code": "RSRH",
+          "description": "参考主光线的RMS点光斑半径，以镜头单位为单位。该操作数使用一个矩形栅格光线计算RMS。该操作数考虑渐晕。如果Samp值是n，为n将在每个光瞳区上追迹n x n个栅格。如果Wave为0，就\n会进行多波长加权计算，否则，就用指定的波长\n计算。参见\"Hx、Hy、Px和Py(Hx, Hy, Px, and Py)\"。",
+          "parameters": [
+            "Samp",
+            "Wave"
+          ]
+        },
+        {
+          "code": "RWCE",
+          "description": "RMS波前差，参考质心，以镜头单位为单位。该操作数使用一个高斯求积的方法，该法对带有非渐晕圆形光瞳的系统是精确的。Ring用于指定的追迹光线环的数目上。如果Wave为0，就\n会进行多波长加权计算，否则，就用指定的波长\n计算。\n参见\"Hx、Hy、Px和Py\"，以及\"优化参考指南\"。",
+          "parameters": [
+            "Ring",
+            "Wave"
+          ]
+        },
+        {
+          "code": "RWCH",
+          "description": "RMS波前差，参考主光线，以波长为单位。该操作数使用一个高斯求积的方法，该法对带有非渐晕圆形光瞳的系统是精确的。Ring用于指定的追迹光线环的数目上。如果Wave为0，就\n会进行多波长加权计算，否则，就用指定的波长\n计算。\n参见\"Hx、Hy、Px和Py\"，以及\"优化参考指南\"。",
+          "parameters": [
+            "Ring",
+            "Wave"
+          ]
+        },
+        {
+          "code": "RWRE",
+          "description": "RMS波前差，参考质心，以镜头单位为单位。该操作数使用一个矩形栅格光线计算RMS。该操作数考虑渐晕。如果Samp值是n，为n将在每个光瞳区上追迹n x n个栅格。如果Wave为0，就\n会进行多波长加权计算，否则，就用指定的波长\n计算。\n参见\"Hx、Hy、Px和Py\"，以及\"优化参考指南\"。",
+          "parameters": [
+            "Samp",
+            "Wave"
+          ]
+        },
+        {
+          "code": "RWRH",
+          "description": "RMS波前差，参考主光线，以波长为单位。该操作数使用一个矩形栅格光线计算RMS。该操作数考虑渐晕。如果Samp值是n，为n将在每个光瞳区上追迹n x n个栅格。如果Wave为0，就\n会进行多波长加权计算，否则，就用指定的波长\n计算。\n参见\"Hx、Hy、Px和Py\"，以及\"优化参考指南\"。",
+          "parameters": [
+            "Samp",
+            "Wave"
+          ]
+        },
+        {
+          "code": "SMIA",
+          "description": "SMIA-TV畸变。Field定义的视场是畸变为零时的参考视场，其值为0时表示参考视场点为(0，0)。Wave用来定义参考波长，其值为0时则参考主波长。X-Width和Y-Width是视场定义的全视场。详细信息参见\"SMIA-TV畸变(SMIA-TV Distortion)\"。",
+          "parameters": [
+            "Field",
+            "Wave",
+            "X-Width",
+            "Y-Width"
+          ]
+        },
+        {
+          "code": "SPCH",
+          "description": "色球差，单位是镜头单位。这是Minw和Maxw定义的两个极值波长的实际边缘轴向色差与近轴光线的轴向色差的差值，这个距离是沿Z轴测量的。Zone定义了计算实际边缘轴向色差所处的光瞳带。Zone实际边缘光线坐标的Py值有关。\n此操作数不适用于非近轴系统。",
+          "parameters": [
+            "Minw",
+            "Maxw",
+            "Zone"
+          ]
+        },
+        {
+          "code": "SPHA",
+          "description": "在Wave定义的波长上由Surf定义的面引起的球差，用单位波长表示。如果Surf为零，则计算系统各个表面的像散和。这是用赛德系数计算的三阶球面像差，对非近轴系统无效。",
+          "parameters": [
+            "Wave",
+            "Surf"
+          ]
+        },
+        {
+          "code": "TRAC",
+          "description": "在Wave定义的波长下，在像平面上测量的径向垂轴像差，参考质心。与其它大多数操作数不同的是，TRAC的正确工作方式严格取决于其它TRAC操作数在评价函数编辑器(Merit Function Editor)中的位置。TRAC操作数必须将视场和波长组合在一起。 OpticStudio 一起追迹具有共同视场点的所有TRAC光线，然后使用这些数据计算所有光线的质心。然后以计算得到的质心为参考点，独立计算每条光线的垂轴像差。该操作数只能通过序列模式评价函数工具(Sequential Merit Function tool)输入到评价函数编辑器，并且不推荐用户直接使用这一操作数。\n参见\"Hx、Hy、Px和Py(Hx, Hy, Px, and Py)\"。",
+          "parameters": [
+            "Wave"
+          ]
+        },
+        {
+          "code": "TRAD",
+          "description": "仅TRAR的x分量。TRAD与TRAC有相同的限制条件，详细讨论见TRAC。",
+          "parameters": []
+        },
+        {
+          "code": "TRAE",
+          "description": "仅TRAR的y分量。TRAE与TRAC有相同的限制条件，详细讨论见TRAC。",
+          "parameters": []
+        },
+        {
+          "code": "TRAI",
+          "description": "径向主光线垂轴像差。在Wave定义的波长下，在Surf定义的面上测量的横向像差，参考主光线。与TRAR相似，但是它可以指定一个面而不是仅针对像面。\n参见\"Hx、Hy、Px和Py(Hx, Hy, Px, and Py)\"。",
+          "parameters": [
+            "Wave",
+            "Surf"
+          ]
+        },
+        {
+          "code": "TRAR",
+          "description": "径向垂轴像差。在Wave定义的波长下，在像空间测得的径向垂轴像差，参考主光线。参见ANAR。\n参见\"Hx、Hy、Px和Py(Hx, Hy, Px, and Py)\"。",
+          "parameters": [
+            "Wave"
+          ]
+        },
+        {
+          "code": "TRAX",
+          "description": "x方向垂轴像差。在Wave定义的波长下，在像空间测得的x方向垂轴像差，参考主光线。\n参见\"Hx、Hy、Px和Py(Hx, Hy, Px, and Py)\"。",
+          "parameters": [
+            "Wave"
+          ]
+        },
+        {
+          "code": "TRAY",
+          "description": "y方向垂轴像差。在Wave定义的波长下，在像空间测得的y方向垂轴像差，参考主光线。\n参见\"Hx、Hy、Px和Py(Hx, Hy, Px, and Py)\"。",
+          "parameters": [
+            "Wave"
+          ]
+        },
+        {
+          "code": "TRCX",
+          "description": "x方向垂轴像差。像空间测得的X方向垂轴像差，参考质心。TRCX与TRAC有相同的限制条件，详细讨论见TRAC。",
+          "parameters": []
+        },
+        {
+          "code": "TRCY",
+          "description": "y方向垂轴像差。像空间测得的y方向垂轴像差，参考质心。TRCY与TRAC有相同的限制条件，详细讨论见TRAC。",
+          "parameters": []
+        },
+        {
+          "code": "ZERN",
+          "description": "Zernike Fringe系数。系数如下：项(Term)：Zernike项序号（fringe项序号为1-37，standard或annular项序号为1-231）。Term值，如果为负或零，也可以用来返回其它Zernike拟合数据，如下所示：\n-8：光程差峰值到谷值（参考质心）-7：光程差峰值到谷值（参考主光线）-6：RMS参考零参考值（OpticStudio不使用）-5：RMS参考主光线-4：RMS参考质心-3：方差-2：斯特利尔比-1：RMS拟合误差0：最大单点拟合误差\n波长(Wave)：波长编号。采样(Samp)：光瞳采样，其中1生成32 x 32，2生成64 x 64等。视场(Field)：视场编号。类型(Type)：Zernike类型（0表示fringe，1表示standard，2表示annular）。Epsilon：遮阑比率（只用于annular系数）。顶点(Vertex?)：如果为1，光程差就是以面顶点为参考点。如果为0，光程差就是以主光线为参考。\n注意：如果使用多个只是\nTerm值不同的ZERN操作数，它们应该放置在编辑器的相邻行中，以便OpticStudio只做一个拟合，否则，计算速度会减慢。即使只求一个系数，在拟合过程中始终使用多个Zernike项。计算中使用的最大term\n值取决于Type和Term设置。所有类型使用的最小Term值为11。这意味着仅当Term值设置为大于或等于11时有效。如果Type是standard或annular时，则计算的最大Term值是被设置的等于任何相邻ZERN操作数中的Term值。\n请注意，有时可能会出现\"ZERN错误\"消息，这通常是由于RAM不足或OpticStudio无法计算OPD所造成的。还有一些其它情况可能导致此错误消息。如果您认为上述原因都不适合您的情况，请联系技术支持。",
+          "parameters": [
+            "项(Term)",
+            "Term",
+            "波长(Wave)",
+            "采样(Samp)",
+            "视场(Field)",
+            "类型(Type)",
+            "Epsilon",
+            "顶点(Vertex?)",
+            "Type"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "MTF数据（MTF Data）",
+      "index_name": "MTF数据(MTF data)",
+      "url": "https://ansyshelp.ansys.com/public/Views/Secured/Zemax/v252/zh-Hans/OpticStudio_User_Guide/OpticStudio_Help/topics/MTF_Data.html",
+      "operands": [
+        {
+          "code": "GMTA",
+          "description": "几何MTF值，为弧矢和子午响应的几何MTF的平均值。参数为：\n采样（Samp）：采样密度越高，得出的计算结果会更准确，但计算时间也就越长。为了保证计算结果有适当的精度，从1开始，增加采样，直至结果变化小于所要求的精度。注意，良好的优化结果不需要极高的精度，三位有效数字通常就足够了。\n波长（Wave）：要使用的波长编号（使用0表示多波长）。\n视场（Field）：视场编号。\n频率（Freq）：以MTF单位表示的空间频率。（参见\"MTF单位\"）\n!Scl：如果是零，那么衍射极限将按比例缩放结果（推荐），否则不缩放。\n如果\"网格\"为0，一个快速、稀疏的采样积分方法将用来计算MTF。快速几何MTF算法只能精确计算有适当切趾或没有切趾的圆形或椭圆形光瞳的光学系统。对不是这种情况的系统，将\"网格\"设为1。GMTA、GMTS和GMTT采用的是快速采样方法，与几何MTF分析功能没有直接的关系。因为只要求单一的空间频率，MTF操作数采用的计算方法与分析功能所采用的算法不同，前者通常要快得多。为了选择用于几何MTF分析功能的备选网格算法，将\"网格\"设为1。如果MTF合理（大于5%），以网格为基础的算法通常比默认的算法要慢。但是如果像差很大，网格算法会变快很多，MTF的结果会很低。\n如果子午和弧矢方向的MTF都需要计算时，将操作数GMTT和GMTS放在邻近的行中，这样就能同时计算这两个操作数。尽管几何MTF是近似的，但计算速度通常比衍射MTF快很多，因此对优化非常有用。参见\"执行优化\"。",
+          "parameters": [
+            "采样（Samp）：",
+            "波长（Wave）",
+            "视场（Field）",
+            "频率（Freq）",
+            "!Scl",
+            "\"网格\""
+          ]
+        },
+        {
+          "code": "GMTS",
+          "description": "弧矢方向的几何MTF值。参见GMTA。",
+          "parameters": []
+        },
+        {
+          "code": "GMTT",
+          "description": "子午方向的几何MTF值。参见GMTA。",
+          "parameters": []
+        },
+        {
+          "code": "MECA",
+          "description": "Moore-Elliot对比度（Moore-Elliot Contrast），为弧矢和子午的平均值。这个操作数用Moore-Elliot对比度方法优化某一特定空间频率的MTF值。有关Moore-Elliott对比度方法的更多信息，请参阅\"MTF优化方法（Optimizing for MTF）\"。参数如下：\n波长（Wave）：要使用的波长编号。\n视场（Field）：视场编号。\n频率（Freq）：在MTF单元中的空间频率，对于有焦系统它的单位为周期/毫米，对于无焦系统其单位为周期/无焦系统单位。（参见\"无焦模式单位（Afocal Mode Units）\"）。\n参见\"Hx、Hy、Px和Py（Hx, Hy, Px, and Py）\"。另请参见操作数MECS和MECT。",
+          "parameters": []
+        },
+        {
+          "code": "MECS",
+          "description": "Moore-Elliott对比度，弧矢响应。详见MECA。",
+          "parameters": []
+        },
+        {
+          "code": "MECT",
+          "description": "Moore-Elliott对比度，子午响应。详见MECA。",
+          "parameters": []
+        },
+        {
+          "code": "MSWA",
+          "description": "调制方波传递函数，弧矢和子午的平均值。有关详细信息，参见MTFA。",
+          "parameters": []
+        },
+        {
+          "code": "MSWS",
+          "description": "调制方波传递函数，弧矢。参见MTFA。",
+          "parameters": []
+        },
+        {
+          "code": "MSWT",
+          "description": "调制方波传递函数，子午。参见MTFA。",
+          "parameters": []
+        },
+        {
+          "code": "MTFA",
+          "description": "衍射调制传递函数，弧矢和子午的平均值。参数如下：采样（Samp）：采样密度越高，得出的计算结果会更准确，但计算时间也就越长。为了保证计算结果有适当的精度，从1开始，增加采样，直至结果变化小于所要求的精度。注意，良好的优化结果不需要极高的精度，三位有效数字通常就足够了。共有两种算法可以用来计算MTF。如果\"网格\"为0（推荐），一个快速、稀疏采样积分法将用来计算MTF。MTFA、MTFS和MTFT采用的是快速采样方法，与几何MTF分析功能没有直接的关系。因为只要求单一的空间频率，MTF操作数采用的计算方法与分析功能所采用的算法不同，前者通常要快得多。为了选择用于几何MTF分析功能的备选网格算法，将\"网格\"设为1。如果MTF合理（大于5%），以网格为基础的算法通常比默认的算法要慢。但是如果像差很大，网格算法会变快很多，MTF的结果会很低。\n波长（Wave）：要使用的波长编号（使用0表示多波长）。\n视场（Field）：视场编号。要提取衍射极限MTF，使用视场等于0和网格参数等于1。MTFS、MTFT、MTFN和MTFX操作数也有类似选项。\n频率（Freq）：以MTF单位表示的空间频率。（参见\"MTF单位\"）如果精确计算MTF时，采样值设置过低，MTF操作数将都返回零。\n如果弧矢和子午方向的MTF都需要计算时，将操作数MTFT和MTFS放在邻近的行中，这样就能同时计算这两个操作数。参见\"执行优化\"。\n数据类型（Data Type）：指定要返回的数据。输入0将返回调幅；输入1将返回实部；输入2将返回虚部；输入3将返回以度为单位的相位。此参数仅适用于MTFA、MTFS和MTFT操作数（不能等效用于方波操作数）。\n详述：\n对于旋转对称系统，衍射极限的MTF子午（MTFT）和弧矢（MTFS）是相同的。MTFT操作数值可通过在评价函数编辑器中的单一空间频率（Freq）设置视场=0和网格=1来获得。对于非对称旋转系统，MTF子午（MTFT）和弧矢（MTFS）在单一空间频率（Freq）下可能会不同。",
+          "parameters": [
+            "采样（Samp）：",
+            "\"网格\"",
+            "波长（Wave）",
+            "视场（Field）",
+            "频率（Freq）",
+            "数据类型（Data Type）"
+          ]
+        },
+        {
+          "code": "MTFS",
+          "description": "调制传递函数，弧矢。参见MTFA。",
+          "parameters": []
+        },
+        {
+          "code": "MTFT",
+          "description": "调制传递函数，子午。参见MTFA。",
+          "parameters": []
+        },
+        {
+          "code": "MTHA",
+          "description": "惠更斯调制传递函数，弧矢和子午的平均值。这个操作数使用惠更斯方法来计算衍射MTF（参见\"惠更斯MTF\"。参数如下：\n采样（Samp）：光瞳采样，其中1生成32 x 32， 2生成64 x 64等。对光瞳和像面来说，采样是相同的。\n波长（Wave）：要使用的波长编号（使用0表示多波长）。\n视场（Field）：视场编号。\n频率（Freq）：以MTF单位表示的空间频率。（参见\"MTF单位\"）如果精确计算MTF时，采样值设置过低，MTF操作数将都返回零。\n偏振（Pol?）：设为0表示忽略偏振，1表示考虑偏振。\n是否所有结构（All Conf?）：设为0时，表示使用当前结构（由这个操作数之前的最后一个CONF操作数定义）；设为1时，表示所有结构的和。有关这个选项的详细讨论请参见\"惠更斯MTF\"。\n像面采样间距Δ（Ima Delta）：用于计算以微米为单位的像面采样间距Δ。如果为零，则采用默认的像面采样间距Δ。\n如果弧矢和子午的MTF都需要计算时；将操作数MTHT和MTHS放在邻近的行中，这样就能同时计算这两个操作数。参见\"执行优化\"。",
+          "parameters": [
+            "采样（Samp）：",
+            "波长（Wave）",
+            "视场（Field）",
+            "频率（Freq）",
+            "偏振（Pol?）：",
+            "是否所有结构（All Conf?）",
+            "像面采样间距Δ（Ima Delta）"
+          ]
+        },
+        {
+          "code": "MTHS",
+          "description": "惠更斯调制传递函数，弧矢。参见MTHA。",
+          "parameters": []
+        },
+        {
+          "code": "MTHT",
+          "description": "惠更斯调制传递函数，子午。参见MTHA。",
+          "parameters": []
+        }
+      ]
+    },
+    {
+      "name": "点扩散函数/斯特列尔比数据(PSF/Strehl Ratio Data)",
+      "index_name": "点扩散函数/斯特列尔比数据(PSF/Strehl Ratio Data)",
+      "url": "https://ansyshelp.ansys.com/public/Views/Secured/Zemax/v252/zh-Hans/OpticStudio_User_Guide/OpticStudio_Help/topics/PSF_Strehl_Ratio_Data.html",
+      "operands": [
+        {
+          "code": "STRH",
+          "description": "斯特列尔比。这个操作数使用惠更斯点扩散函数(PSF)（参见\"惠更斯PSF(Huygens PSF)\"）来计算斯特列尔比。参数如下：\n采样(Samp)：光瞳采样，其中1生成32 × 32， 2生成64 × 64等。对光瞳和像面来说，采样是相同的。\n波长(Wave)：要使用的波长编号（使用0表示多波长）。\n视场(Field)：视场编号。\n偏振？(Pol?)：设为0表示忽略偏振，1表示考虑偏振。\n是否所有结构？(All Conf?)：设为0表示使用当前结构（由该操作数之前的最后一个CONF操作数定义）；设为1表示所有结构的和。有关该选项的完整详述，请参阅\"惠更斯PSF\"。\n默认情况下，在用于计算这个操作数的惠更斯点扩散函数(PSF)计算中，其使用的像面采样间距比名义默认像面采样间距要小2倍。参见\"惠更斯PSF\"中用于计算名义默认像面采样间距的公式。这样做是为了放大PSF的峰值，可以更准确地计算斯特列尔比(Strehl ratio)。结果是，报告的值一般与惠更斯PSF分析中使用名义默认像面采样间距所报告的值不同。",
+          "parameters": [
+            "采样(Samp)：",
+            "波长(Wave)：",
+            "视场(Field)：",
+            "偏振？(Pol?)：",
+            "是否所有结构？(All Conf?)："
+          ]
+        }
+      ]
+    },
+    {
+      "name": "圈入能量（分类优化操作数）（Encircled Energy （optimization operands by category））",
+      "index_name": "圈入能量（分类优化操作数）(Encircled Energy (optimization operands by category))",
+      "url": "https://ansyshelp.ansys.com/public/Views/Secured/Zemax/v252/zh-Hans/OpticStudio_User_Guide/OpticStudio_Help/topics/Encircled_Energy_optimization_operands_by_category.html",
+      "operands": [
+        {
+          "code": "DENC",
+          "description": "衍射圈入能量（距离）。该操作数计算到由百分比（Frac）定义的圈入、方形圈入，仅x方向，或仅y方向的狭缝的衍射能量分数的距离。对于有焦模式，以微米为单位。对于无焦模式，单位是无焦模式的单位。其它的参数是：\n采样（Samp）：光瞳采样，其中1生成32x32，2生成64x64等。\n波长（Wave）：要使用的波长编号（用0表示多波长）。\n视场（Field）：视场编号。\n类型（Type）：1表示圈入，2表示仅x方向，3表示仅y方向，4表示方形。\n参考（Refp）：使用的参考点/算法。对于FFT圈入能量，用Refp=0表示主光线（chief ray），1表示质心，2表示顶点。对于惠更斯圈入能量，用Refp=3表示主光线，4表示质心，5表示顶点。当使用惠更斯方法时，I Samp表示惠更斯像采样（1表示32x32，2表示64x64等等），而I Delta表示惠更斯像间距。如欲了解有关惠更斯像采样和像面采样间距Δ的详细描述，请参见\"圈入能量（Encircled Energy）\"。\n如果采样太低，半径的返回值是le+10。也可参见DENF、GENC和XENC。使用DENF和DENC识别顶点位置的衍射圈入能量，需要检查Frac输入中的像面采样间距Δ值。因为在衍射圈入能量中，我们有最大距离或像面采样间距Δ输入。通过使用最大距离或像面采样间距Δ，我们可以确定某个半径上的峰值。首先，在衍射圈入能量分析中了解顶点的峰值和半径。然后在DENC和DENF中使用这个像面采样间距Δ来纠正顶点的距离值以及顶点能量与距离的比例值。",
+          "parameters": [
+            "百分比（Frac）",
+            "采样（Samp）：",
+            "波长（Wave）",
+            "视场（Field）",
+            "类型（Type）",
+            "参考（Refp）",
+            "Refp",
+            "I Samp",
+            "I Delta",
+            "Frac"
+          ]
+        },
+        {
+          "code": "DENF",
+          "description": "衍射圈入能量（分数）。该操作数计算距离（Dist）定义参考点的距离处圈入、方形圈入、仅x方向或y方向的狭缝的衍射能量分数。对于有焦模式，距离单位是微米。对于无焦模式，距离单位是无焦模式单位。\n选项和设置与DENC一样，除\"距离\"外，在这里距离用作期望能量分数的距离。也可参考DENC、GENC、GENF和XENC。\n如果定义的\"距离\"值超过了圈入能量非常接近100%的点，则返回的分数为1e+10；这样做是为了优化效率。",
+          "parameters": [
+            "距离（Dist）",
+            "\"距离\""
+          ]
+        },
+        {
+          "code": "ERFP",
+          "description": "边缘响应函数的位置。这个操作数计算的是一个点的边缘响应函数达到一个确定的相对值时，此点的x或y的位置。有关边缘响应函数计算的细节，请参见\"几何线/边缘扩散\"。采样（Sampling）值为1代表\n32x32，为2代表64x64，等等。波长（Wave）是波长编号，0代表多波长。视场（Field）是视场编号。类型（Type）决定了要返回的数据。如果类型（Type）是0或1，返回的就是相对于主光线的x位置（即边缘平行于局部y轴）或y位置（即边缘平行于局部x轴），它们使用镜头单位。如果波长（Wave）为0，以主波长的主光线作为参考点。如果类型（Type）是2或3，返回相对于表面顶点的x或y的位置，也使用镜头单位。百分比（Fraction）是边缘响应曲率的相对值，而且必须在0.01和0.99之间。最大半径（Max Radius）是积分窗口径向尺寸的最大值，它以微米为单位。如果最大半径（Max Radius）为0即为默认值。在大多数情况下建议设定为默认值。\n注意，边缘响应函数通常定义为边缘的\"亮（bright）\"侧在整合坐标系的+侧。这就意味着在坐标变为更正时，边缘响应会变为1。为了计算反方向边缘响应的结果，即\"亮\"面在坐标系的负方向，使用值（1-fraction）代替（fraction）。例如，为了得到一个反方向的80%的边缘响应，使用Fraction = 0.20。\n如果使用的是无焦模式，所有的返回值都采用无焦模式的单位。",
+          "parameters": [
+            "采样（Sampling）",
+            "波长（Wave）",
+            "视场（Field）",
+            "类型（Type）",
+            "百分比（Fraction）",
+            "最大半径（Max Radius）",
+            "Fraction"
+          ]
+        },
+        {
+          "code": "GENC",
+          "description": "几何圈入能量（距离）。该操作数计算到指定几何圈入、方形圈入、仅x方向、或仅y方向（狭缝）的由Frac定义的能量分数的距离。对于有焦模式，单位是微米。对无焦模式，单位是无焦模式的单位。其它参数是：\n采样（Samp）：光瞳采样，其中1生成32x32，2生成64x64等。\n波长（Wave）：要使用的波长编号（用0表示多波长）。\n视场（Field）：视场编号。\n类型（Type）：1表示圈入，2表示仅x方向，3表示仅y方向，4表示方形。\n参考（Refp）：使用的参考点。用0表示主光线，1表示质心，2表示顶点，3表示点列中心。\n无衍射极限（No Diff Lim）：如果为0，结果按衍射极限缩放，否则不考虑衍射。\n也可参见GENF、DENC、DENF和XENC。",
+          "parameters": [
+            "Frac",
+            "采样（Samp）",
+            "波长（Wave）",
+            "视场（Field）",
+            "类型（Type）",
+            "参考（Refp）",
+            "无衍射极限（No Diff Lim）"
+          ]
+        },
+        {
+          "code": "GENF",
+          "description": "几何圈入能量（分数）。这个操作数计算从\"距离\"定义的参考点到给定距离位置的几何圈入、方形圈入、仅x方向或仅y方向（狭缝）能量的分数。\n选项和设置与GENC一样，除\"距离\"外，在这里距离用作期望能量分数的距离。也可参见GENC、DENC、DENF和XENC。",
+          "parameters": [
+            "\"距离\""
+          ]
+        },
+        {
+          "code": "XENC",
+          "description": "扩展光源圈入能量（距离）。此操作数使用当前的默认设置，计算到扩展光源几何圈入能量的指定分数距离，单位为微米。若要使用此操作数，请先根据需要定义扩展光源圈入能量特性的设置，然后按设置框中的\"保存（Save）\"按钮。唯一被覆盖的设置是类型（Type）、波长（Wave）以及最大半径（Max Radius）。\n类型（Type）1表示圈入，2表示只有x方向，3表示只有y方向，4表示方形圈入，5表示x分布，6表示y分布。当使用类型2或3时，计算的距离是包含Frac定义能量分数的\"完整（full）\"狭缝宽度。这是分别以所选参考点为中心的[-x, x]或[-y, y]范围的\"完整（full）\"狭缝宽度。例如，如果Dist=20µm，这意味着能量分数包含在+/-10µm的狭缝宽度中。\n波长（Wave）是输入的波长编号。\n百分比（Frac）是所需的能量分数，而且必须介于0和1之间，包含首尾值。此外，类型为5和6时忽略Frac，因为这些类型的返回值是所需能量分数的最大半高全宽值，与Frac无关。\n最大半径（Max Radius）是径向距离的最大距离，单位为微米。如果该值为零，则使用默认设置。\n也可参见XENF、DENC、DENF、GENC和GENF。",
+          "parameters": [
+            "类型（Type）",
+            "波长（Wave）",
+            "最大半径（Max Radius）",
+            "Frac",
+            "百分比（Frac）"
+          ]
+        },
+        {
+          "code": "XENF",
+          "description": "扩展光源圈入能量（分数）。这个操作数计算从参考点到一定距离处的几何圈入、方形圈入、仅x方向、仅y方向（狭缝）能量分数。\n类型（Type）1表示圈入，2表示仅x方向，3表示仅y方向，4表示方形圈入。当使用类型2或3时，PSF中的能量分数分别在以所选参考点为中心的[-x, x]或[-y, y]范围内进行计算。这是由\"距离\"给出的完整狭缝宽度。例如，如果Dist=20 µm，则针对+/-10µm的狭缝宽度计算能量分数。\n波长（Wave）是输入的波长编号。\n选项和设置与XENC一样，除\"距离\"外，在这里距离用作期望能量分数的距离。\n也可参见XENC、GENC、GENF、DENC和DENF。",
+          "parameters": [
+            "类型（Type）",
+            "\"距离\"",
+            "波长（Wave）"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "镜头数据约束(Constraints on Lens Data)",
+      "index_name": "镜头数据约束(Constraints on Lens Data)",
+      "url": "https://ansyshelp.ansys.com/public/Views/Secured/Zemax/v252/zh-Hans/OpticStudio_User_Guide/OpticStudio_Help/topics/Constraints_on_Lens_Data.html",
+      "operands": [
+        {
+          "code": "COGT",
+          "description": "该边界操作数用来约束由Surf定义的面的二次项系数，使其大于指定的目标值。",
+          "parameters": [
+            "Surf"
+          ]
+        },
+        {
+          "code": "COLT",
+          "description": "该边界操作数用来约束由Surf定义的面的二次项系数，使其小于指定的目标值。",
+          "parameters": [
+            "Surf"
+          ]
+        },
+        {
+          "code": "COVA",
+          "description": "二次项系数值。该操作数的返回值是由Surf定义的面的二次项系数。",
+          "parameters": [
+            "Surf"
+          ]
+        },
+        {
+          "code": "CTGT",
+          "description": "中心厚度大于。该边界操作数用来约束由Surf定义的面的中心厚度，使其大于指定的目标值。另请参阅MNCT。",
+          "parameters": [
+            "Surf"
+          ]
+        },
+        {
+          "code": "CTLT",
+          "description": "中心厚度小于。该边界操作数用于约束由Surf定义的面的中心厚度，使其小于指定的目标值。另请参阅MXCT。",
+          "parameters": [
+            "Surf"
+          ]
+        },
+        {
+          "code": "CTVA",
+          "description": "中心厚度值。该边界操作数用于约束由Surf定义的面的中心厚度，使其等于指定的目标值。",
+          "parameters": [
+            "Surf"
+          ]
+        },
+        {
+          "code": "CVGT",
+          "description": "曲率值大于。该边界操作数用于约束由Surf定义的面的曲率，使其大于目标值。",
+          "parameters": [
+            "Surf"
+          ]
+        },
+        {
+          "code": "CVLT",
+          "description": "曲率值小于。该边界操作数用于约束由Surf定义的面的曲率，\n使其小于目标值。",
+          "parameters": [
+            "Surf"
+          ]
+        },
+        {
+          "code": "CVVA",
+          "description": "曲率值。该操作数用于约束由Surf定义的面的曲率，使其等于指定的目标值。",
+          "parameters": [
+            "Surf"
+          ]
+        },
+        {
+          "code": "BLTH",
+          "description": "毛坯厚度。计算根据Surf定义的面创建体积所需要的玻璃材料毛坯的最小厚度。沿着由Code值定义的轴，在200个径向点位置计算该表面以及下一表面的矢高。Code为0表示+Y方向，为1表示+X方向，为2表示-Y方向，为3表示-X方向，为4表示所有方向。该操作数具有模式标记。Mode = 0（默认）则利用镜头数据编辑器上显示的机械半直径计算，Mode = 1则利用净口径值计算。",
+          "parameters": [
+            "Surf",
+            "Code",
+            "Mode"
+          ]
+        },
+        {
+          "code": "DCRV",
+          "description": "由Surf定义的面的曲率数据，以镜头单位表示。曲率数据包括指定表面上的平均、PV、最小或最大曲率值，以及最小曲率值的X或Y坐标，或最大曲率值的X或Y坐标。该操作数具有数据、采样、离轴、移除、最佳拟合球面(BFS)和方向标记。\nData输入的选项包括：\n1 – 表面上的RMS曲率值。\n2 – 表面上的PV曲率值。\n3 – 表面上的最小曲率值。\n4 – 表面上的最大曲率值。\n5 – 表面上具有最小曲率值的点的X坐标。\n6 – 表面上具有最小曲率值的点的Y坐标。\n7 – 表面上具有最大曲率值的点的X坐标。\n8 – 表面上具有最大曲率值的点的Y坐标。\n9 – 最佳拟合球面的ROC\n10 – 最佳拟合球面顶点相对于局部坐标系的Z偏移\n11 – 离轴坐标系相对于表面局部坐标系的X偏心\n12 – 离轴坐标系相对于表面局部坐标系的Y偏心\n13 – 离轴坐标系相对于表面局部坐标系的Z偏心\n14 – 离轴坐标系相对于表面局部坐标系的X(a)倾斜\n15 – 离轴坐标系相对于表面局部坐标系的Y(b)倾斜\n16 – 离轴坐标系相对于表面局部坐标系的Z(g)倾斜",
+          "parameters": [
+            "Data输入的选项包括："
+          ]
+        },
+        {
+          "code": "Data",
+          "description": "由Surf定义的面的曲率数据，以镜头单位表示。曲率数据包括指定表面上的平均、PV、最小或最大曲率值，以及最小曲率值的X或Y坐标，或最大曲率值的X或Y坐标。该操作数具有数据、采样、离轴、移除、最佳拟合球面(BFS)和方向标记。\nData输入的选项包括：\n1 – 表面上的RMS曲率值。\n2 – 表面上的PV曲率值。\n3 – 表面上的最小曲率值。\n4 – 表面上的最大曲率值。\n5 – 表面上具有最小曲率值的点的X坐标。\n6 – 表面上具有最小曲率值的点的Y坐标。\n7 – 表面上具有最大曲率值的点的X坐标。\n8 – 表面上具有最大曲率值的点的Y坐标。\n9 – 最佳拟合球面的ROC\n10 – 最佳拟合球面顶点相对于局部坐标系的Z偏移\n11 – 离轴坐标系相对于表面局部坐标系的X偏心\n12 – 离轴坐标系相对于表面局部坐标系的Y偏心\n13 – 离轴坐标系相对于表面局部坐标系的Z偏心\n14 – 离轴坐标系相对于表面局部坐标系的X(a)倾斜\n15 – 离轴坐标系相对于表面局部坐标系的Y(b)倾斜\n16 – 离轴坐标系相对于表面局部坐标系的Z(g)倾斜",
+          "parameters": [
+            "Data输入的选项包括："
+          ]
+        },
+        {
+          "code": "Samp",
+          "description": "Samp输入的选项包括：\n1 – 33 x 33（默认）\n2 – 65 x 65\n3 – 129 x 129\n4 – 257 x 257\n5 – 513 x 513\n6 – 1025 x 1025\n7 – 2049 x 2049\n8 – 4097 x 4097\n9 – 8193 x 8193\n10 – 16385 x 16385\n\nOff-axis = 0（默认）表示计算根据系统坐标进行，Off-axis = 1表示计算根据倾斜和偏心的坐标系进行，其中坐标系的原点位于离轴部件的顶点。然后，X和Y输入将参考新离轴坐标系中的坐标。\nRemove = 0（默认）表示不移除任何数据。Remove = 1表示在计算前从数据中移除基本曲率半径。Remove = 2表示在计算前从数据中移除最佳拟合球面。Remove = 3表示在计算曲率前从矢高数据中移除基本矢高(Base Sag)。这将移除由表面方程指定的完美表面，以便添加到表面的复合或STAR数据是可见的。Remove = 4表示在计算曲率前从矢高数据中移除复合矢高(Composite Sag)，当复合矢高被添加到表面时，这将让原始表面方程变得可见。\n如果Remove设置为2，BFS将选择要从数据中移除的最佳拟合球面类型。BFS = 0（默认）表示最小体积最佳拟合球面。BFS = 1表示最小RMS最佳拟合球面。BFS = 2表示带偏移的最小RMS最佳拟合球面。偏移允许计算将从顶点处的数据值中移开会导致较低RMS的BFS顶点。\nOrientation用于选择曲率计算的方向。Orientation = 0（默认）表示沿子午方向计算。Orientation = 1表示沿弧矢方向计算。Orientation = 2表示沿X轴方向计算。Orientation = 3表示沿Y轴方向计算。",
+          "parameters": [
+            "Samp输入的选项包括："
+          ]
+        },
+        {
+          "code": "DMGT",
+          "description": "直径大于。该边界操作数约束由Surf定义的面的直径，使其大于指定的目标值。该操作数具有模式标记。Mode = 0（默认）则利用镜头数据编辑器上显示的机械半直径计算，Mode = 1则利用净口径值计算。直径是所选半直径值的两倍。",
+          "parameters": [
+            "Surf",
+            "Mode"
+          ]
+        },
+        {
+          "code": "DMLT",
+          "description": "直径小于。该边界操作数约束由Surf定义的面的直径，使其小于指定的目标值。该操作数具有模式标记。Mode = 0（默认）则利用镜头数据编辑器上显示的机械半直径计算，Mode = 1则利用净口径值计算。直径是所选半直径值的两倍。",
+          "parameters": [
+            "Surf",
+            "Mode"
+          ]
+        },
+        {
+          "code": "DMVA",
+          "description": "直径值。该操作数将Surf定义表面的直径限制为等于指定目标值。该操作数具有模式标记。Mode = 0（默认）则利用镜头数据编辑器上显示的机械半直径计算，Mode = 1则利用净口径值计算。直径是所选半直径值的两倍。",
+          "parameters": [
+            "Surf",
+            "Mode"
+          ]
+        },
+        {
+          "code": "DPHS",
+          "description": "由Surf定义的表面的主系统波长下的相位数据，用波数表示。相位数据包括指定表面上的RMS、PV、最小或最大相位值，以及最小相位值的X或Y坐标，或最大相位值的X或Y坐标。该操作数具有数据、采样和移除标记。\nData输入的选项包括：\n1 – 表面上的RMS相位值。\n2 – 表面上的PV相位值。\n3 – 表面上的最小相位值。\n4 – 表面上的最大相位值。\n5 – 表面上具有最小相位值的点的X坐标。\n6 – 表面上具有最小相位值的点的Y坐标。\n7 – 表面上具有最大相位值的点的X坐标。\n8 – 表面上具有最大相位值的点的Y坐标。\n9 – 从数据中移除的恒定相位值。\n10 – 从数据中移除的X倾斜值。\n11 – 从数据中移除的Y倾斜值。\n12 – 从数据中移除的光焦度值。",
+          "parameters": [
+            "Data输入的选项包括："
+          ]
+        },
+        {
+          "code": "DSAG",
+          "description": "由Surf定义的面的矢高数据，以镜头单位表示。矢高数据包括指定表面上的RMS、PV、最小或最大矢高值，以及最小矢高值的X或Y坐标，或最大矢高值的X或Y坐标。该操作数具有数据、采样、离轴、移除和最佳拟合球面(BFS)标记。\nData输入的选项包括：\n1 – 表面上的RMS矢高值（默认）。\n2 – 表面上的PV矢高值。\n3 – 表面上的最小矢高值。\n4 – 表面上的最大矢高值。\n5 – 表面上具有最小矢高值的点的X坐标。\n6 – 表面上具有最小矢高值的点的Y坐标。\n7 – 表面上具有最大矢高值的点的X坐标。\n8 – 表面上具有最大矢高值的点的Y坐标。\n9 – 最佳拟合球面的曲率半径。\n10 – 最佳拟合球面顶点相对于局部坐标系的Z偏移。\n11 – 离轴坐标系相对于表面局部坐标系的X偏心。\n12 – 离轴坐标系相对于表面局部坐标系的Y偏心。\n13 – 离轴坐标系相对于表面局部坐标系的Z偏心。\n14 – 离轴坐标系相对于表面局部坐标系的X(a)倾斜。\n15 – 离轴坐标系相对于表面局部坐标系的Y(b)倾斜。\n16 – 离轴坐标系相对于表面局部坐标系的Z(g)倾斜。",
+          "parameters": [
+            "Data输入的选项包括："
+          ]
+        },
+        {
+          "code": "DSLP",
+          "description": "由Surf定义的面的斜率数据，以镜头单位表示。斜率数据包括指定表面上的平均、PV、最小或最大斜率值，以及最小斜率值的X或Y坐标，或最大斜率值的X或Y坐标。该操作数具有数据、采样、离轴、移除、最佳拟合球面(BFS)和方向标记。\nData输入的选项包括：\n1 – 表面上的RMS斜率值（默认）。\n2 – 表面上的PV斜率值。\n3 – 表面上的最小斜率值。\n4 – 表面上的最大斜率值。\n5 – 表面上具有最小斜率值的点的X坐标。\n6 – 表面上具有最小斜率值的点的Y坐标。\n7 – 表面上具有最大斜率值的点的X坐标。\n8 – 表面上具有最大斜率值的点的Y坐标。\n9 – 最佳拟合球面的ROC。\n10 – 最佳拟合球面顶点相对于局部坐标系的Z偏移。\n11 – 离轴坐标系相对于表面局部坐标系的X偏心。\n12 – 离轴坐标系相对于表面局部坐标系的Y偏心。\n13 – 离轴坐标系相对于表面局部坐标系的Z偏心。\n14 – 离轴坐标系相对于表面局部坐标系的X(a)倾斜。\n15 – 离轴坐标系相对于表面局部坐标系的Y(b)倾斜。\n16 – 离轴坐标系相对于表面局部坐标系的Z(g)倾斜。",
+          "parameters": [
+            "Data输入的选项包括："
+          ]
+        },
+        {
+          "code": "ETGT",
+          "description": "边缘厚度大于。该边界操作数约束由Surf定义的面的边缘厚度，使其大于指定的目标值。如果Code是0，边缘厚度沿+y轴计算；如果Code是1，沿+x轴计算；如果Code是2，沿-y轴计算，如果Code是3，沿-x轴计算。该操作数具有模式标记。Mode = 0（默认）则利用镜头数据编辑器上显示的机械半直径计算，Mode = 1则利用净口径值计算。另请参阅MNET。",
+          "parameters": [
+            "Surf",
+            "Code",
+            "Mode"
+          ]
+        },
+        {
+          "code": "ETLT",
+          "description": "边缘厚度小于。该边界操作数约束由Surf定义的面的边缘厚度，使其小于指定的目标值。如果Code是0，边缘厚度沿+y轴计算；如果Code是1，沿+x轴计算；如果Code是2，沿-y轴计算，如果Code是3，沿-x轴计算。该操作数具有模式标记。Mode = 0（默认）则利用镜头数据编辑器上显示的机械半直径计算，Mode = 1则利用净口径值计算。另请参阅MXET。",
+          "parameters": [
+            "Surf",
+            "Code",
+            "Mode"
+          ]
+        },
+        {
+          "code": "ETVA",
+          "description": "边缘厚度值。该边界操作数用于约束由Surf定义的面的边缘厚度，使其等于指定的目标值。如果Code是0，边缘厚度沿+y轴计算；如果Code是1，沿+x轴计算；如果Code是2，沿-y轴计算，如果Code是3，沿-x轴计算。该操作数具有模式标记。Mode = 0（默认）则利用镜头数据编辑器上显示的机械半直径计算，Mode = 1则利用净口径值计算。另请参阅MNET。",
+          "parameters": [
+            "Surf",
+            "Code",
+            "Mode"
+          ]
+        },
+        {
+          "code": "FTGT",
+          "description": "总厚度大于。该边界操作数约束Surf面的总厚度，使其大于指定的目标值。总厚度在顶点和边缘之间沿着径向+y方向的200点上计算，包括面的矢高和下一个面的矢高。该操作数具有模式标记。Mode = 0（默认）则利用镜头数据编辑器上显示的机械半直径计算，Mode = 1则利用净口径值计算。该操作数对约束那些中心或边缘没有、但在一些中间带有最小或最大厚度的面很有用。参见FTLT。",
+          "parameters": [
+            "Surf",
+            "Mode"
+          ]
+        },
+        {
+          "code": "FTLT",
+          "description": "总厚度小于。参见FTGT。",
+          "parameters": []
+        },
+        {
+          "code": "MNCA",
+          "description": "空气的最小中心厚度。该边界操作数约束从Surf1到Surf2的表面中每个玻璃类型为空气（即无玻璃）的面的中心厚度，使其大于指定的目标值。另请参见MNCT和MNCG。该操作数可同时控制多个表面。",
+          "parameters": [
+            "Surf1",
+            "Surf2"
+          ]
+        },
+        {
+          "code": "MNCG",
+          "description": "玻璃的最小中心厚度。该边界操作数约束从Surf1到Surf2的表面中每个玻璃类型不为空气的面的中心厚度，使其大于指定的目标值。另请参见MNCT和MNCA。该操作数可同时控制多个表面。",
+          "parameters": [
+            "Surf1",
+            "Surf2"
+          ]
+        },
+        {
+          "code": "MNCT",
+          "description": "最小中心厚度。该边界操作数约束从Surf1到Surf2的每个表面的中心厚度，使其大于指定的目标值。另请参见MNCG和MNCA。该操作数可同时控制多个表面。",
+          "parameters": [
+            "Surf1",
+            "Surf2"
+          ]
+        },
+        {
+          "code": "MNCV",
+          "description": "最小曲率。该边界操作数约束从Surf1到Surf2的面的每一个曲率，使其大于指定的目标值。另请参阅MXCV。该操作数可同时控制多个表面。",
+          "parameters": [
+            "Surf1",
+            "Surf2"
+          ]
+        },
+        {
+          "code": "MNEA",
+          "description": "空气的最小边缘厚度。该边界操作数约束从Surf1到Surf2的表面中每个玻璃类型为空气（即无玻璃）的面的边缘厚度，使其大于指定的目标值。另请参阅MNET、MNEG、ETGT和XNEA。该操作数可同时控制多个表面。该边界约束适用于表面的\"+y\"方向顶部边缘，非旋转对称表面约束请参见XNEA。\nZone如果是非零值，则缩放计算厚度位置的径向孔径。Zone值为0.5，将计算0.5乘以半直径位置的厚度。该操作数具有模式标记。Mode = 0（默认）则利用镜头数据编辑器上显示的机械半直径计算，Mode = 1则利用净口径值计算。",
+          "parameters": [
+            "Surf1",
+            "Surf2",
+            "Zone",
+            "Mode"
+          ]
+        },
+        {
+          "code": "MNEG",
+          "description": "玻璃的最小边缘厚度。该边界操作数约束从Surf1到Surf2表面中每个玻璃类型不为空气的面的边缘厚度，使其大于指定的目标值。另请参阅MNET、MNEA、ETGT和XNEG。该操作数可同时控制多个表面。该边界约束适用于表面的\"+y\"方向顶部边缘，非旋转对称表面约束请参见XNEG。\nZone如果是非零值，则缩放计算厚度位置的径向孔径。Zone值为0.5，将计算0.5乘以半直径位置的厚度。该操作数具有模式标记。Mode = 0（默认）则利用镜头数据编辑器上显示的机械半直径计算，Mode = 1则利用净口径值计算。",
+          "parameters": [
+            "Surf1",
+            "Surf2",
+            "Zone",
+            "Mode"
+          ]
+        },
+        {
+          "code": "MNET",
+          "description": "最小边缘厚度。该边界操作数约束从Surf1到Surf2的表面中每个面的边缘厚度，使其大于指定的目标值。另请参阅MNEG、MNEA、ETGT和XNET。该操作数可同时控制多个表面。该边界约束适用于表面的\"+y\"方向顶部边缘，非旋转对称表面约束请参见XNET。\nZone如果是非零值，则缩放计算厚度位置的径向孔径。Zone值为0.5，将计算0.5乘以半直径位置的厚度。该操作数具有模式标记。Mode = 0（默认）则利用镜头数据编辑器上显示的机械半直径计算，Mode = 1则利用净口径值计算。",
+          "parameters": [
+            "Surf1",
+            "Surf2",
+            "Zone",
+            "Mode"
+          ]
+        },
+        {
+          "code": "MNPD",
+          "description": "最小\n\n\n。该边界操作数约束Surf1和Surf2之间表面的部分色散偏差，使其大于指定的目标值。另请参阅MXPD。该操作数可同时控制多个表面。",
+          "parameters": [
+            "Surf1",
+            "Surf2"
+          ]
+        },
+        {
+          "code": "MXCA",
+          "description": "空气的最大中心厚度。该边界操作数约束从Surf1到Surf2的表面中每个玻璃类型为空气（即无玻璃）的面的中心厚度，使其小于指定的目标值。另请参阅MXCT和MXCG。该操作数可同时控制多个表面。",
+          "parameters": [
+            "Surf1",
+            "Surf2"
+          ]
+        },
+        {
+          "code": "MXCG",
+          "description": "玻璃的最大中心厚度。该边界操作数约束从Surf1到Surf2表面中每个玻璃类型不是空气的面的中心厚度，使其小于指定的目标值。另请参阅MXCT和MXCA。该操作数可同时控制多个表面。",
+          "parameters": [
+            "Surf1",
+            "Surf2"
+          ]
+        },
+        {
+          "code": "MXCT",
+          "description": "最大中心厚度。该边界操作数约束从Surf1到Surf2表面中的每个面的中心厚度，使其小于指定的目标值。另请参阅MXCG和MXCA。该操作数可同时控制多个表面。",
+          "parameters": [
+            "Surf1",
+            "Surf2"
+          ]
+        },
+        {
+          "code": "MXCV",
+          "description": "最大曲率。该边界操作数约束从Surf1到Surf2 表面中的每个面的曲率，使其小于指定的目标值。另请参阅MNCV。该操作数可同时控制多个表面。",
+          "parameters": [
+            "Surf1",
+            "Surf2"
+          ]
+        },
+        {
+          "code": "MXEA",
+          "description": "空气的最大边缘厚度。该边界操作数约束从Surf1到Surf2的表面中每个玻璃类型为空气（即无玻璃）的面的边缘厚度，使其小于指定的目标值。另请参阅MXET、MXEG、ETLT和XXEA。该操作数可同时控制多个表面。该边界约束适用于表面的\"+y\"方向顶部边缘，非旋转对称表面约束请参见XXEA。\nZone如果是非零值，则缩放计算厚度位置的径向孔径。Zone值为0.5，将计算0.5乘以半直径位置的厚度。该操作数具有模式标记。Mode = 0（默认）则利用镜头数据编辑器上显示的机械半直径计算，Mode = 1则利用净口径值计算。",
+          "parameters": [
+            "Surf1",
+            "Surf2",
+            "Zone",
+            "Mode"
+          ]
+        },
+        {
+          "code": "MXEG",
+          "description": "玻璃的最大边缘厚度。该边界操作数约束从Surf1到Surf2的表面中每个玻璃类型为非空气的面的边缘厚度，使其小于目标值。另请参阅MXET、MXEA、ETLT和XXEG。该操作数可同时控制多个表面。该边界约束仅适用于表面的\"+y\"方向顶部边缘，非旋转对称表面约束请参见XXEG。\nZone如果是非零值，则缩放计算厚度位置的径向孔径。Zone值为0.5，将计算0.5乘以半直径位置的厚度。该操作数具有模式标记。Mode = 0（默认）则利用镜头数据编辑器上显示的机械半直径计算，Mode = 1则利用净口径值计算。",
+          "parameters": [
+            "Surf1",
+            "Surf2",
+            "Zone",
+            "Mode"
+          ]
+        },
+        {
+          "code": "MXET",
+          "description": "最大边缘厚度。该边界操作数约束从Surf1到Surf2的表面中每个面的边缘厚度，使其小于指定的目标值。另请参阅\"MXEG\"、\"MXEA\"、\"ETLT\"和\"XXET\"。该操作数可同时控制多个表面。该边界约束适用于表面的\"+y\"方向顶部边缘，非旋转对称表面约束请参见XXET。\nZone如果是非零值，则缩放计算厚度位置的径向孔径。Zone值为0.5，将计算0.5乘以半直径位置的厚度。该操作数具有模式标记。Mode= 0（默认）则利用镜头数据编辑器上显示的机械半直径计算，Mode = 1则利用净口径计算。",
+          "parameters": [
+            "Surf1",
+            "Surf2",
+            "Zone",
+            "Mode"
+          ]
+        },
+        {
+          "code": "MNSD",
+          "description": "最小净口径或半直径。在Surf1到Surf2之间的表面范围内，将净口径或半直径限制为大于指定目标。该操作数可同时控制多个表面。",
+          "parameters": [
+            "Surf1",
+            "Surf2"
+          ]
+        },
+        {
+          "code": "MXSD",
+          "description": "最大净口径或半直径。在Surf1到Surf2之间的表面范围内，将净口径或半直径限制为小于指定目标。",
+          "parameters": [
+            "Surf1",
+            "Surf2"
+          ]
+        },
+        {
+          "code": "OMMI",
+          "description": "最小机械半直径。在Surf1到Surf2之间的表面范围内，将机械半直径限制为大于指定目标。该操作数可同时控制多个表面。",
+          "parameters": [
+            "Surf1",
+            "Surf2"
+          ]
+        },
+        {
+          "code": "OMMX",
+          "description": "最大机械半直径。在Surf1到Surf2之间的表面范围内，将机械半直径限制为小于指定目标。",
+          "parameters": [
+            "Surf1",
+            "Surf2"
+          ]
+        },
+        {
+          "code": "OMSD",
+          "description": "机械半直径。该操作数将Surf定义的表面的机械半直径限制为等于指定目标值。",
+          "parameters": [
+            "Surf"
+          ]
+        },
+        {
+          "code": "QSLP",
+          "description": "返回由Surf定义的表面的主系统波长下的相位斜率数据。该操作数具有数据、采样、移除和方向输入。如果指定的表面编号不是相位表面（如二元面、衍射光栅表面、网格相位面等），则不返回任何值。Data输入的选项包括：1 – 表面上的RMS相位斜率值。2 – 表面上的PV相位斜率值。3 – 表面上的最小相位斜率值。4 – 表面上的最大相位斜率值。5 – 表面上具有最小相位斜率值的点的X坐标。6 – 表面上具有最小相位斜率值的点的Y坐标。7 – 表面上具有最大相位斜率值的点的X坐标。8 – 表面上具有最大相位斜率值的点的Y坐标。9 – 恒定相位值（如果从相位数据中移除）。10 – X倾斜值（如果从相位数据中移除）。11 – Y倾斜值（如果从相位数据中移除）。12 – 光焦度值（如果从相位数据中移除）。Samp输入的选项包括：1 – 33 x 33（默认）2 – 65 x 653 – 129 x 1294 – 257 x 2575 – 513 x 5136 – 1025 x 10257 – 2049 x 20498 – 4097 x 40979 – 8193 x 819310 – 16385 x 16385Remove = 0（默认）表示不移除任何数据。Remove = 1表示在计算相位斜率前从相位数据中移除部件顶点处的任何恒定值。Remove = 2表示在计算相位斜率前从相位数据中移除倾斜项。Remove = 3表示在计算相位斜率前从相位数据中移除光焦度项。Orientation用于选择斜率计算的方向。Orientation = 0（默认）表示沿子午方向（径向向外）计算。Orientation = 1表示沿弧矢方向（与径向向外正交）计算。Orientation = 2表示沿X轴方向计算。Orientation = 3表示沿Y轴方向计算。另请参阅PSLP。",
+          "parameters": []
+        },
+        {
+          "code": "TGTH",
+          "description": "Surf1到Surf2之间的玻璃厚度总和。注意，总和是包括在内的，它不是两个表面之间的厚度。请见TTHI。",
+          "parameters": [
+            "Surf1",
+            "Surf2"
+          ]
+        },
+        {
+          "code": "TTGT",
+          "description": "总厚度大于。该边界操作数将总厚度（包括Surf定义表面和紧随其后的表面在各自净口径或半直径值下的表面矢高）限制为大于指定目标值。如果Code是0，厚度沿+y轴计算；如果 Code是1，沿+x轴计算；如果Code是2，沿-y轴计算，如果Code是3，沿-x轴计算。该操作数在镜像空间中自动改变厚度的符号，总是可为物理上可实现的镜头产生正值。请见TTLT和TTVA。",
+          "parameters": [
+            "Surf",
+            "Code"
+          ]
+        },
+        {
+          "code": "TTHI",
+          "description": "Surf1到Surf2之间的表面厚度总和。请注意，总和包含在内，不是两个表面之间的厚度。请见TGTH。",
+          "parameters": [
+            "Surf1",
+            "Surf2"
+          ]
+        },
+        {
+          "code": "TTLT",
+          "description": "总厚度小于。请见TTGT。",
+          "parameters": []
+        },
+        {
+          "code": "TTVA",
+          "description": "总厚度值。请见TTGT。",
+          "parameters": []
+        },
+        {
+          "code": "XNEA",
+          "description": "Surf1和Surf2定义的空气表面范围的最小边缘厚度。该操作数在表面周边众多点位置检查边缘厚度，并测试所有点是否至少为最小指定厚度。该操作数可同时控制多个表面。请见MNEA。\nZone如果是非零值，则缩放计算厚度位置的径向孔径。Zone值为0.5，将计算0.5乘以半直径位置的厚度。该操作数具有模式标记。Mode = 0（默认）则利用镜头数据编辑器上显示的机械半直径计算，Mode = 1则利用净口径值计算。",
+          "parameters": [
+            "Surf1",
+            "Surf2",
+            "Zone",
+            "Mode"
+          ]
+        },
+        {
+          "code": "XNET",
+          "description": "Surf1和Surf2定义的表面范围的最小边缘厚度。该操作数在表面周边众多点位置检查边缘厚度，并测试所有点是否至少为最小指定厚度。该操作数可同时控制多个表面。请见MNET。\nZone如果是非零值，则缩放计算厚度位置的径向孔径。Zone值为0.5，将计算0.5乘以半直径位置的厚度。该操作数具有模式标记。Mode = 0（默认）则利用镜头数据编辑器上显示的机械半直径计算，Mode = 1则利用净口径值计算。",
+          "parameters": [
+            "Surf1",
+            "Surf2",
+            "Zone",
+            "Mode"
+          ]
+        },
+        {
+          "code": "XNEG",
+          "description": "Surf1和Surf2定义的玻璃表面范围的最小边缘厚度。该操作数在表面周边众多点位置检查边缘厚度，并测试所有点是否至少为最小指定厚度。该操作数可同时控制多个表面。请见MNEG。\nZone如果是非零值，则缩放计算厚度位置的径向孔径。Zone值为0.5，将计算0.5乘以半直径位置的厚度。该操作数具有模式标记。Mode = 0（默认）则利用镜头数据编辑器上显示的机械半直径计算，Mode = 1则利用净口径值计算。",
+          "parameters": [
+            "Surf1",
+            "Surf2",
+            "Zone",
+            "Mode"
+          ]
+        },
+        {
+          "code": "XXEA",
+          "description": "Surf1和Surf2定义的空气表面范围的最大边缘厚度。该操作数在表面周边众多点位置检查边缘厚度，并测试所有点是否没有超过指定的最大厚度。该操作数可同时控制多个表面。参见MXEA。\nZone如果是非零值，则缩放计算厚度位置的径向孔径。Zone值为0.5，将计算0.5乘以半直径位置的厚度。该操作数具有模式标记。Mode = 0（默认）则利用镜头数据编辑器上显示的机械半直径计算，Mode = 1则利用净口径值计算。",
+          "parameters": [
+            "Surf1",
+            "Surf2",
+            "Zone",
+            "Mode"
+          ]
+        },
+        {
+          "code": "XXEG",
+          "description": "Surf1和Surf2定义的玻璃表面范围的最大边缘厚度。该操作数在表面周边众多点位置检查边缘厚度，并测试所有点是否没有超过指定的最大厚度。该操作数可同时控制多个表面。参见MXEG。\nZone如果是非零值，则缩放计算厚度位置的径向孔径。Zone值为0.5，将计算0.5乘以半直径位置的厚度。该操作数具有模式标记。Mode = 0（默认）则利用镜头数据编辑器上显示的机械半直径计算，Mode = 1则利用净口径值计算。",
+          "parameters": [
+            "Surf1",
+            "Surf2",
+            "Zone",
+            "Mode"
+          ]
+        },
+        {
+          "code": "XXET",
+          "description": "Surf1和Surf2定义的表面范围的最大边缘厚度。该操作数在表面周边众多点位置检查边缘厚度，并测试所有点是否没有超过指定的最大厚度。该操作数可同时控制多个表面。参见MXET。\nZone如果是非零值，则缩放计算厚度位置的径向孔径。Zone值为0.5，将计算0.5乘以半直径位置的厚度。该操作数具有模式标记。Mode = 0（默认）则利用镜头数据编辑器上显示的机械半直径计算，Mode = 1则利用净口径值计算。",
+          "parameters": [
+            "Surf1",
+            "Surf2",
+            "Zone",
+            "Mode"
+          ]
+        },
+        {
+          "code": "ZTHI",
+          "description": "该操作数控制多重结构中Surf1和Surf2定义的表面范围的总厚度变量。除了是一个不等式操作符外，它还与TTHI操作数类似。指定的目标值是每个所定义结构位置的TTHI之间允许的最大差值。例如，在有3种结构的情况下，其中TTHI 3 8将分别估值为\n17、19和18.5，如果目标值小于2，ZTHI将返回2（即19-17）。否则，ZTHI将返回目标值。为保持所有的变焦结构具有同样的长度，目标值可设为0。",
+          "parameters": [
+            "Surf1",
+            "Surf2"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "镜头属性约束（Constraints on Lens Properties）",
+      "index_name": "镜头属性约束(Constraints on Lens Properties)",
+      "url": "https://ansyshelp.ansys.com/public/Views/Secured/Zemax/v252/zh-Hans/OpticStudio_User_Guide/OpticStudio_Help/topics/Constraints_on_Lens_Properties.html",
+      "operands": [
+        {
+          "code": "CVOL",
+          "description": "圆柱体积。该操作数计算最小圆柱体的体积，以立方镜头单位表示。该最小圆柱体包含在由Surf1和Surf2定义的表面范围内。在计算中只使用顶点位置和净口径或半直径，而不使用矢高。表面范围不应包含任何坐标断点。该操作数具有模式标记。Mode=0（默认），将使用机械半直径；Mode=1，则使用镜头数据编辑器上显示的净口径值。",
+          "parameters": [
+            "Surf1",
+            "Surf2"
+          ]
+        },
+        {
+          "code": "MNDT",
+          "description": "最小的直径厚度比。按照从Surf1到Surf2的表面直径与表面中心厚度之比控制最小允许值。只考虑折射率不均匀的表面。另请参阅MXDT。该操作数可同时控制多个表面。该操作数具有模式标记。Mode=0（默认），将使用机械半直径；Mode=1，则使用镜头数据编辑器上显示的净口径值。",
+          "parameters": [
+            "Surf1",
+            "Surf2"
+          ]
+        },
+        {
+          "code": "MXDT",
+          "description": "最大的直径厚度比。按照从Surf1到Surf2的表面直径与表面中心厚度之比控制最大允许值。只考虑折射率不均匀的表面。另请参阅MNDT。该操作数可同时控制多个表面。 该操作数具有模式标记。Mode=0（默认），将使用机械半直径；Mode=1，则使用镜头数据编辑器上显示的净口径值。",
+          "parameters": [
+            "Surf1",
+            "Surf2"
+          ]
+        },
+        {
+          "code": "PSLP",
+          "description": "在XY平面的某一点上，位于由\"面\"定义的表面的主系统波长位置的相位斜率，以每镜头单位的2p周期表示。该操作数具有模式、X、Y、移除和方向输入。不考虑孔径，而且会为所有XY坐标返回相关值。如果指定的表面编号不是相位表面（如二元面、衍射光栅表面以及网格相位面等），则不返回任何值。Mode=0或1，表示X和Y坐标以镜头单位表示。Mode=2，表示坐标Xn和Yn由净口径进行归一化。Remove=0（默认），表示不移除任何数据。Remove=1，表示在计算相位斜率之前，从相位数据移除部件顶点的所有恒定值。Remove=2，表示在计算相位斜率之前，从相位数据中移除倾斜项。Remove=3，表示在计算相位斜率之前，从相位数据中移除光焦度项。\"方向\"可选择斜率计算方向。Orientation=0（默认），表示沿子午方向（径向向外）计算。Orientation=1，表示沿弧矢方向（与径向向外正交）计算。Orientation=2，表示沿X轴方向计算。Orientation=3，表示沿Y轴方向计算。请注意，采样设置为33x33。另请参阅QSLP。",
+          "parameters": []
+        },
+        {
+          "code": "SAGX",
+          "description": "\"面\"在X=净口径或半直径、Y=0的位置定义的表面的矢高，以镜头单位表示。另请参阅SSAG。",
+          "parameters": [
+            "\"面\""
+          ]
+        },
+        {
+          "code": "SAGY",
+          "description": "\"面\"在Y=净口径或半直径、X=0的位置定义的表面的矢高，以镜头单位表示。另请参阅SSAG。",
+          "parameters": [
+            "\"面\""
+          ]
+        },
+        {
+          "code": "SCRV",
+          "description": "在XY平面的特定点上，由\"面\"定义的表面的曲率，以镜头单位表示。该操作数具有模式、离轴、移除、最佳拟合球面（BFS）和方向标记。Mode=0或1，表示X和Y坐标均以镜头单位表示，而且对于任何XY而言，都会返回根据表面方程得到的曲率值；曲率值既不考虑部件的平边，也不考虑孔径。Mode=2，表示Xn和Yn坐标位于由净口径归一化的坐标上。对于任意Xn、Yn而言，都会返回根据表面方程得出的曲率值；曲率值既不考虑部件的平边，也不考虑孔径。Off-axis=0（默认），表示计算是根据系统坐标执行计算；Off-axis=1，表示计算是根据倾斜和偏心的坐标系执行计算，其中坐标系的原点位于离轴部件的顶点上。然后，X和Y输入将参考新离轴坐标系中的坐标。Remove=0（默认），表示不移除任何数据。Remove=1，表示在计算之前从数据中移除基本曲率半径。Remove=2，表示在计算之前从数据中移除最佳拟合球面。Remove=3，表示在计算曲率之前从矢高数据中移除基本矢高（Base Sag）。这将移除表面方程指定的完美表面，使添加到表面的复合或STAR数据可见。Remove=4，表示在计算曲率之前从矢高数据中移除复合矢高（Composite Sag），以便在将复合矢高添加至表面时，使原始表面方程可见。如果\"移除\"设置为2，BFS将选择会从数据中移除的最佳拟合球面类型。BFS=0（默认）表示最小体积最佳拟合球面。BFS=1表示最小RMS最佳拟合球面。BFS=2表示带偏移的最小RMS最佳拟合球面。BFS=3表示方向相反的最小体积最佳拟合球面。偏移允许计算将BFS的顶点从顶点数据值移开，前提是它会带来更低的RMS。Orientation可选择曲率计算的方向。Orientation=0（默认），表示沿子午方向（径向向外）计算。Orientation=1，表示沿弧矢方向（与径向向外正交）计算。Orientation=2，表示沿X轴方向计算。Orientation=3，表示沿Y轴方向计算。另请参阅DCRV。",
+          "parameters": []
+        },
+        {
+          "code": "SPHS",
+          "description": "在XY平面的特定点上，由\"面\"定义的表面的主系统波长位置的相位，以波数表示。该操作数具有模式、X、Y、数据和移除输入。不考虑孔径，而且会为任何指定的XY坐标返回相位值。Mode=0或1，表示X和Y坐标以镜头单位表示。Mode=2，表示Xn和Yn坐标由净口径值归一化。Data=0（默认），表示返回值为表面相位。Data=1，如果\"移除\"还设置为2，则会返回相位倾斜项。Data=2，如果移除\"还设置为3，则会返回光焦度项。Remove=0（默认），表示不移除任何数据。Remove=1，表示从数据中移除部件顶点的恒定相位值。Remove=2，表示从数据中移除倾斜项。Remove=3，表示从数据中移除光焦度项。请注意，采样设置为33x33。另请参阅DPHS。",
+          "parameters": []
+        },
+        {
+          "code": "SSAG",
+          "description": "在XY平面的特定点上，由\"面\"定义的表面的矢高，以镜头单位表示。该操作数具有模式、X、Y、离轴、移除和最佳拟合球面（BFS）输入。Mode=0，表示X和Y坐标均以镜头单位表示，而且在（净口径 + 延伸区）外认为部件是平面的；矢高值可以\"看到\"部件的平边。Mode=1，表示X和Y坐标均以镜头单位表示，而且对于任何XY而言，都会返回根据表面方程得到的矢高值；矢高值既不考虑部件的平边，也不考虑孔径。Mode=2，表示Xn和Yn坐标位于由净口径归一化的坐标上。对于任意Xn、Yn而言，都会返回根据表面方程得出的矢高值；矢高值既不考虑部件的平边，也不考虑孔径。Off-axis=0（默认），表示计算是根据系统坐标执行计算；Off-axis=1，表示计算是根据倾斜和偏心的坐标系执行计算，其中坐标系的原点位于离轴部件的顶点上。然后，X和Y输入将参考新离轴坐标系中的坐标。Remove=0（默认），表示不移除任何数据。Remove=1，表示计算之前从数据中移除曲率半径。Remove=2，表示计算之前从数据中移除最佳拟合球面。Remove=3，表示从数据中移除基本矢高（Base Sag）。这将移除表面方程指定的完美表面，使添加到表面的复合或STAR数据可见。Remove=4，表示从数据中移除复合矢高（Composite Sag），以便在复合矢高添加至表面时，使原始表面方程可见。如果\"移除\"设置为2，BFS将选择会从数据中移除的最佳拟合球面类型。BFS=0（默认）表示最小体积最佳拟合球面。BFS=1表示最小RMS最佳拟合球面。BFS=2表示带偏移的最小RMS最佳拟合球面。偏移允许计算将BFS的顶点从顶点数据值移开，前提是它会带来更低的RMS。BFS=3表示方向相反的最小体积最佳拟合球面。请注意，采样设置为33x33。另请参阅DSAG、SAGX、SAGY。",
+          "parameters": []
+        },
+        {
+          "code": "SSLP",
+          "description": "在XY平面的特定点上，由\"面\"定义的表面的斜率，以镜头单位表示。该操作数具有模式、X、Y、离轴、移除、最佳拟合球面（BFS）和方向输入。Mode=0或1，表示X和Y坐标均以镜头单位表示，而且对于任何XY而言，都会返回根据表面方程得到的斜率值；斜率值既不考虑部件的平边，也不考虑孔径。Mode=2，表示Xn和Yn坐标位于由净口径归一化的坐标上。对于任意Xn、Yn而言，都会返回根据表面方程得出的斜率值；斜率值既不考虑部件的平边，也不考虑孔径。Off-axis=0（默认），表示计算是根据系统坐标执行计算；Off-axis=1，表示计算是根据倾斜和偏心的坐标系执行计算，其中坐标系的原点位于离轴部件的顶点上。然后，X和Y输入将参考新离轴坐标系中的坐标。Remove=0（默认），表示不移除任何数据。Remove=1，表示在计算之前从数据中移除基本曲率半径。Remove=2，表示在计算之前从数据中移除最佳拟合球面。Remove=3，表示在计算斜率计算之前从矢高数据中移除基本矢高（Base Sag）。这将移除表面方程指定的完美表面，使添加到表面的复合或STAR数据可见。Remove=4，表示在计算斜率计算之前从矢高数据中移除复合矢高，以便在复合矢高添加至表面时，使原始表面方程可见。如果\"移除\"设置为2，BFS将选择会从数据中移除的最佳拟合球面类型。BFS=0（默认）表示最小体积最佳拟合球面。BFS=1表示最小RMS最佳拟合球面。BFS=2表示带偏移的最小RMS最佳拟合球面。BFS=3表示方向相反的最小体积最佳拟合球面。如果偏移会导致较低的RMS，则其允许计算将BFS的顶点从顶点处的数据值移开。\"方向\"可选择斜率计算方向。Orientation=0（默认），表示沿子午方向（径向向外）计算。Orientation=1，表示沿弧矢方向（与径向向外正交）计算。Orientation=2，表示沿X轴方向计算。Orientation=3，表示沿Y轴方向计算。请注意，采样设置为33x33。另请参阅DSLP。",
+          "parameters": []
+        },
+        {
+          "code": "STHI",
+          "description": "表面厚度。该操作数计算由\"面\"定义的表面到X和Y在该面上定义的坐标位置的下一个表面的厚度。该计算考虑表面的矢高和中心厚度以及下一个表面的矢高，但不考虑两个表面之间的任何倾斜和偏心。该操作数具有模式标记。Mode=0（默认），将使用机械半直径；Mode=1，则使用镜头数据编辑器上显示的净口径值。",
+          "parameters": [
+            "\"面\"",
+            "X",
+            "Y"
+          ]
+        },
+        {
+          "code": "TMAS",
+          "description": "总质量。计算从Surf1到Surf2表面范围内玻璃镜头的质量，以克为单位。表面质量考虑了表面周围的体积，因此，要计算单个元件的质量，第一个表面数和最后一个表面数应该是一样的。参见\"计算元件体积的注释（Comments on computing element volumes）\"，了解如何计算元件质量和体积。该操作数具有模式标记。Mode=0（默认），将使用机械半直径；Mode=1，则使用镜头数据编辑器上显示的净口径值。",
+          "parameters": [
+            "Surf1",
+            "Surf2"
+          ]
+        },
+        {
+          "code": "TOTR",
+          "description": "镜头的总轨迹（Total Track）（长度），以镜头单位表示。参见\"总轨迹\"。",
+          "parameters": []
+        },
+        {
+          "code": "TSAG",
+          "description": "\"面\"定义的表面在法向入射角和表面顶点位置的矢高（采用镜头单位表示），但在任意方向有任意参考点。该操作数的输入模式包括X、Y和Z。Mode=0，表示X和Y坐标均以镜头单位表示，而且在（净口径 + 延伸区）外认为部件是平面的；矢高值可以\"看到\"部件的平边。Mode=1，表示X和Y坐标均以镜头单位表示，而且对于任何XY而言，都会返回根据表面方程得到的矢高值；矢高值既不考虑部件的平边，也不考虑孔径。X、Y、Z是当前表面局部坐标系的参考坐标，标出了测量矢高的点。X倾斜度、Y倾斜度和Z倾斜度是标出测量方向的倾斜度。",
+          "parameters": []
+        },
+        {
+          "code": "VOLU",
+          "description": "元件的体积，采用立方厘米表示。为Surf1和Surf2定义的表面的范围计算镜头和空气间隙的体积。表面体积包括表面周围的体积，因此，要计算单个元件的体积，第一个表面数和最后一个表面数应该是一样的。参见\"计算元件体积的注释\"，了解如何计算元件质量和体积。",
+          "parameters": [
+            "Surf1",
+            "Surf2"
+          ]
+        },
+        {
+          "code": "NORX",
+          "description": "法线向量x分量。在\"面\"定义的表面上，该操作数在X和Y定义的坐标位置返回表面法线向量的x分量。如果Global为0，则向量位于表面的局部坐标上；如果Global为1，而向量则位于全局坐标上。",
+          "parameters": [
+            "\"面\"",
+            "X",
+            "Y",
+            "Global"
+          ]
+        },
+        {
+          "code": "NORY",
+          "description": "法线向量y分量。在\"面\"定义的表面上，该操作数在X和Y定义的坐标位置返回表面法线向量的y分量。如果Global为0，则向量位于表面的局部坐标上；如果Global为1，而向量则位于全局坐标上。",
+          "parameters": [
+            "\"面\"",
+            "X",
+            "Y",
+            "Global"
+          ]
+        },
+        {
+          "code": "NORZ",
+          "description": "法线向量z分量。在\"面\"定义的表面上，该操作数在X和Y定义的任何坐标位置返回表面法线向量的z分量。如果Global为0，则向量位于表面的局部坐标上；如果Global为1，而向量则位于全局坐标上。",
+          "parameters": [
+            "\"面\"",
+            "X",
+            "Y",
+            "Global"
+          ]
+        },
+        {
+          "code": "NORD",
+          "description": "到下一表面的法线距离。在\"面\"定义的表面上，该操作数在X和Y定义的坐标位置计算表面法线向量，然后返回沿法线向量测量的、到下一表面的距离。",
+          "parameters": [
+            "\"面\"",
+            "X",
+            "Y"
+          ]
+        },
+        {
+          "code": "SCUR",
+          "description": "表面曲率。计算\"面\"在X和Y定义的坐标位置定义的表面的曲率及相关数据。在以下任何情况中，\"最大\"数据均通过计算从表面顶点到指定的X和Y坐标的间隔相等50个点的曲率来确定，并返回最大绝对值。\n如果\"数据\"是0-3，返回值分别是子午、弧矢、子午-弧矢或最大子午-弧矢曲率；\n如果\"数据\"是4-7，返回值分别是x、y、x-y或者最大x-y曲率；\n如果\"数据\"是8-9，返回值是（R*Sc）的绝对值，其中R是径向坐标，Sc是弧矢曲率或者该弧矢曲率的最大值。",
+          "parameters": [
+            "\"面\"",
+            "X",
+            "Y",
+            "\"数据\""
+          ]
+        },
+        {
+          "code": "SDRV",
+          "description": "表面导数。计算表面矢高（沿局部Z轴）的一阶或二阶导数，\n该表面是由\"面\"在X和Y定义的坐标位置定义的。\n如果\"数据\"是0或1，返回值就是子午或弧矢方向的一阶导数；\n如果\"数据\"是2或3，返回值就是子午或弧矢方向的二阶导数。",
+          "parameters": [
+            "\"面\"",
+            "X",
+            "Y",
+            "\"数据\""
+          ]
+        }
+      ]
+    },
+    {
+      "name": "参数约束(Constraints on Parameter Data)",
+      "index_name": "参数数据约束(Constraints on Parameter Data)",
+      "url": "https://ansyshelp.ansys.com/public/Views/Secured/Zemax/v252/zh-Hans/OpticStudio_User_Guide/OpticStudio_Help/topics/Constraints_on_Parameter_Data.html",
+      "operands": [
+        {
+          "code": "PMGT",
+          "description": "参数值大于。该边界操作数为由Surf定义的面约束Param定义的参量值，使其大于目标值。根据不同的面型，这些参量值有不同的意义。请参见\"面型\"章节，了解这些参量值的描述。",
+          "parameters": [
+            "Surf",
+            "Param"
+          ]
+        },
+        {
+          "code": "PMLT",
+          "description": "参数值小于。该边界操作数为由Surf定义的面约束Param定义的参量值，使其小于目标值。根据不同的面型，这些参量值有不同的意义。请参见\"面型\"章节，了解这些参量值的描述。",
+          "parameters": [
+            "Surf",
+            "Param"
+          ]
+        },
+        {
+          "code": "PMVA",
+          "description": "参量值。该边界操作数为由Surf定义的面约束Param定义的参量值，使其等于目标值。根据不同的面型，这些参量值有不同的意义。请参见\"面型\"章节，了解这些参量值的描述。",
+          "parameters": [
+            "Surf",
+            "Param"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "约束玻璃参数(Constraints on Glass Data)",
+      "index_name": "约束玻璃参数(Constraints on Glass Data)",
+      "url": "https://ansyshelp.ansys.com/public/Views/Secured/Zemax/v252/zh-Hans/OpticStudio_User_Guide/OpticStudio_Help/topics/Constraints_on_Glass_Data.html",
+      "operands": [
+        {
+          "code": "GCOS",
+          "description": "玻璃价格。该操作数返回玻璃库中所列的相对成本因子，该成本因子主要针对Surf定义的表面上的玻璃。",
+          "parameters": [
+            "Surf"
+          ]
+        },
+        {
+          "code": "GTCE",
+          "description": "玻璃热膨胀系数(TCE)。该操作数返回玻璃库中所列的热膨胀系数Alpha 1，该系数主要针对Surf定义的表面上的玻璃。对于非玻璃表面而言，请参见\"TCVA\"。",
+          "parameters": [
+            "Surf"
+          ]
+        },
+        {
+          "code": "INDX",
+          "description": "折射率。返回表面（由面(Surf)在光波(Wave)定义的波长位置定义的）的当前折射率。",
+          "parameters": [
+            "面(Surf)",
+            "光波(Wave)"
+          ]
+        },
+        {
+          "code": "MNAB",
+          "description": "最小阿贝数。该边界操作数约束Surf1和Surf2之间表面的阿贝数，使其大于指定的目标值。也可参见MXAB。该操作数可同时控制多个表面。",
+          "parameters": [
+            "Surf1",
+            "Surf2"
+          ]
+        },
+        {
+          "code": "MNIN",
+          "description": "d光最小折射率。该边界操作数约束Surf1和Surf2之间表面的Nd值，使其大于指定的目标值。也可参见MXIN。该操作数可同时控制多个表面。",
+          "parameters": [
+            "Surf1",
+            "Surf2"
+          ]
+        },
+        {
+          "code": "MNPD",
+          "description": "请参阅\"镜头数据约束\"下的MNPD。",
+          "parameters": []
+        },
+        {
+          "code": "MXAB",
+          "description": "最大阿贝数。该边界操作数约束Surf1和Surf2之间表面的阿贝数，使其小于指定的目标值。也可参见MNAB。该操作数可同时控制多个表面。",
+          "parameters": [
+            "Surf1",
+            "Surf2"
+          ]
+        },
+        {
+          "code": "MXIN",
+          "description": "d光最大折射率。该边界操作数约束Surf1和Surf2之间表面的Nd值，使其小于指定的目标值。也可参见MNIN。该操作数可同时控制多个表面。",
+          "parameters": [
+            "Surf1",
+            "Surf2"
+          ]
+        },
+        {
+          "code": "MXPD",
+          "description": "最大部分色散(Δ Pg, F)。该边界操作数约束Surf1和Surf2之间表面的部分色散偏差，使其小于指定的目标值。也可参见MNPD。该操作数可同时控制多个表面。",
+          "parameters": [
+            "Surf1",
+            "Surf2"
+          ]
+        },
+        {
+          "code": "RGLA",
+          "description": "合理的玻璃。该操作数将限制折射率、阿贝数以及部分色散值与当前加载的玻璃库中实际玻璃的偏离量。请参见\"优化变焦和多重结构镜头\"，了解完整的介绍，其中包括Wn、Wa和Wp的描述。对Surf1和Surf2指定的表面范围的约束是有效的。",
+          "parameters": [
+            "Wn",
+            "Wa",
+            "Wp",
+            "Surf1",
+            "Surf2"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "约束近轴光线数据(Constraints on Paraxial Ray Data)",
+      "index_name": "约束近轴光线数据(Constraints on Paraxial Ray Data)",
+      "url": "https://ansyshelp.ansys.com/public/Views/Secured/Zemax/v252/zh-Hans/OpticStudio_User_Guide/OpticStudio_Help/topics/Constraints_on_Paraxial_Ray_Data.html",
+      "operands": [
+        {
+          "code": "PANA",
+          "description": "近轴光线表面法线的x方向向量。Wave定义的波长下，在光线与面交点处，近轴光线表面法线的x方向向量。它是在局部坐标系中，指定近轴光线与Surf定义的面的交点处该面法线向量的x分量。参见\"Hx、Hy、Px和Py(Hx, Hy, Px, and Py)\"。",
+          "parameters": [
+            "Wave",
+            "Surf"
+          ]
+        },
+        {
+          "code": "PANB",
+          "description": "近轴光线表面法线的y方向向量。Wave定义的波长下，在光线与面交点处，近轴光线表面法线的y方向向量。它是在局部坐标系中，指定近轴光线与Surf定义的面的交点处该面法线向量的y分量。参见\"Hx、Hy、Px和Py(Hx, Hy, Px, and Py)\"。",
+          "parameters": [
+            "Wave",
+            "Surf"
+          ]
+        },
+        {
+          "code": "PANC",
+          "description": "近轴光线表面法线的z方向向量。Wave定义的波长下，在光线与面交点处，近轴光线表面法线的z方向向量。它是在局部坐标系中，指定近轴光线与Surf定义的面的交点处该面法线向量的z分量。参见\"Hx、Hy、Px和Py(Hx, Hy, Px, and Py)\"。",
+          "parameters": [
+            "Wave",
+            "Surf"
+          ]
+        },
+        {
+          "code": "PARA",
+          "description": "近轴光线x方向余弦。Wave定义的波长下，光线从Surf定义的面折射后，近轴光线x方向的余弦。\n参见\"Hx、Hy、Px和Py(Hx, Hy, Px, and Py)\"。",
+          "parameters": [
+            "Wave",
+            "Surf"
+          ]
+        },
+        {
+          "code": "PARB",
+          "description": "近轴光线y方向余弦。Wave定义的波长下，光线从Surf定义的面折射后，近轴光线y方向的余弦。\n参见\"Hx、Hy、Px和Py(Hx, Hy, Px, and Py)\"。",
+          "parameters": [
+            "Wave",
+            "Surf"
+          ]
+        },
+        {
+          "code": "PARC",
+          "description": "近轴光线z方向余弦。Wave定义的波长下，光线从Surf定义的面折射后，近轴光线z方向的余弦。\n参见\"Hx、Hy、Px和Py\"。",
+          "parameters": [
+            "Wave",
+            "Surf"
+          ]
+        },
+        {
+          "code": "PARR",
+          "description": "近轴光线径向坐标。Wave定义的波长下，在Surf定义的面上，近轴光线的径向坐标，用镜头单位表示。它是在局部坐标系中，从局部光轴到指定近轴光线与Surf定义的面的交点处的径向距离。 参见\"Hx、Hy、Px和Py(Hx, Hy, Px, and Py)\"。",
+          "parameters": [
+            "Wave",
+            "Surf"
+          ]
+        },
+        {
+          "code": "PARX",
+          "description": "近轴光线x坐标。Wave定义的波长下，在Surf定义的面上，近轴光线的x坐标，用镜头单位表示。参见\"Hx、Hy、Px和Py(Hx, Hy, Px, and Py)\"。",
+          "parameters": [
+            "Wave",
+            "Surf"
+          ]
+        },
+        {
+          "code": "PARY",
+          "description": "近轴光线y坐标。Wave定义的波长下，在Surf定义的面上，近轴光线的y坐标，用镜头单位表示。参见\"Hx、Hy、Px和Py(Hx, Hy, Px, and Py)\"。",
+          "parameters": [
+            "Wave",
+            "Surf"
+          ]
+        },
+        {
+          "code": "PARZ",
+          "description": "近轴光线z坐标。Wave定义的波长下，在Surf定义的面上，近轴光线的z坐标，用镜头单位表示。参见\"Hx、Hy、Px和Py\"。",
+          "parameters": [
+            "Wave",
+            "Surf"
+          ]
+        },
+        {
+          "code": "PATX",
+          "description": "近轴光线x方向的正切。它是Wave定义的波长下，近轴光线在Surf定义的面折射后，在X-Z平面上形成的角的正切。参见\"Hx、Hy、Px和Py\"。",
+          "parameters": [
+            "Wave",
+            "Surf"
+          ]
+        },
+        {
+          "code": "PATY",
+          "description": "近轴光线y方向的正切。它是Wave定义的波长下，近轴光线在Surf定义的面折射后，在Y-Z平面上形成的角的正切。参见\"Hx、Hy、Px和Py\"。",
+          "parameters": [
+            "Wave",
+            "Surf"
+          ]
+        },
+        {
+          "code": "YNIP",
+          "description": "近轴YNI。该数是在Wave定义的波长下，近轴边缘光线高度乘以Surf定义的面的折射率再乘以入射角的积。该量与指定表面的Narcissus贡献相关。参见Applied Optics, Vol. 21, 18, p3393.",
+          "parameters": [
+            "Wave",
+            "Surf",
+            "21"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "约束实际光线数据（Constraints on Real Ray Data）",
+      "index_name": "约束实际光线数据(Constraints on Real Ray Data)",
+      "url": "https://ansyshelp.ansys.com/public/Views/Secured/Zemax/v252/zh-Hans/OpticStudio_User_Guide/OpticStudio_Help/topics/Constraints_on_Real_Ray_Data.html",
+      "operands": [
+        {
+          "code": "CEHX",
+          "description": "惠更斯PSF质心X位置。这一操作数使用惠更斯点扩散函数（PSF）确定视场点的质心x坐标。质心计算时考虑所有切趾和孔径，并且可选择是否考虑偏振。该操作数的参数如下：\n波长（Wave）：使用的波长的编号（用0表示多波长，否则使用单色波长的编号）。\n视场（Field）：使用的整数型视场编号。\n偏振（Pol?）：设为0表示忽略偏振，设为1表示考虑偏振。\n光瞳采样（Pupil Samp）：用1表示32 x 32，2表示64 x 64，以此类推。\n像面采样（Image Samp）：用1表示32 x 32，2表示64 x 64，以此类推。\n是否所有结构（All Conf?）：设为0时，表示使用当前结构（由这个操作数之前的最后一个CONF操作数定义）；设为1时，表示所有结构的和。有关该选项的完整详述，请参阅“惠更斯PSF”。\n该功能始终使用默认图像增量。评估表面通常都是像面（参见IMSF）。为了节省计算的时间，当CEHX后跟有一个有着相同设置的CEHY时，两个操作数都会用相同的光线设置计算。\n另请参见CENX、CENY、CNPX、CNPY、CNAX、CNAY。",
+          "parameters": [
+            "波长（Wave）",
+            "视场（Field）：",
+            "偏振（Pol?）：",
+            "光瞳采样（Pupil Samp）",
+            "Image Samp",
+            "Image Samp）",
+            "是否所有结构（All Conf?）："
+          ]
+        },
+        {
+          "code": "CEHY",
+          "description": "惠更斯PSF质心Y位置。参见CEHX。",
+          "parameters": []
+        },
+        {
+          "code": "CENX",
+          "description": "质心X位置。这一操作数使用光线网格确定来自一个视场点的所有光线的质心x坐标。质心计算时考虑切趾和孔径，并且可选择是否考虑偏振。该操作数的参数如下：\n面（Surf）：使用的面的编号（用0表示像面）。\n波长（Wave）：使用的波长的编号（用0表示多波长，否则使用单色波长的编号）。\n视场（Field）：使用的整数型视场编号。\n偏振（Pol?）：设为0表示忽略偏振，设为1表示考虑偏振。\n采样（Samp）：网格尺寸。值为10，将生成一个10 x 10的光线网格。\n为了节省计算的时间，当CENX后跟有一个有着相同设置的CENY时，两个操作数都会用相同的光线设置计算。\n另请参见CEHX、CEHY、CNPX、CNPY、CNAX和CNAY。",
+          "parameters": [
+            "面（Surf",
+            "）",
+            "波长（Wave）",
+            "视场（Field）：",
+            "偏振（Pol?）：",
+            "采样（Samp）："
+          ]
+        },
+        {
+          "code": "CENY",
+          "description": "质心Y位置。参见CENX。",
+          "parameters": []
+        },
+        {
+          "code": "CNAX",
+          "description": "质心x方向角度。这一操作数计算来自任一视场点的光线质心相对于局部Z轴的X方向的角度，以弧度为单位。质心计算时考虑切趾和孔径，并且可选择是否考虑偏振。\n面（Surf）：使用的面的编号（用0表示像面）。\n波长（Wave）：使用的波长的编号（用0表示多波长，否则使用单色波长的编号）。\nHx/Hy：使用的归一化视场坐标。参见“Hx、Hy、Px和Py（Hx, Hy, Px, and Py）”。\n偏振（Pol?）：设为0表示忽略偏振，设为1表示考虑偏振。\n采样（Samp）：网格尺寸。值为10，将生成一个10 x 10的光线网格。\n为了节省计算的时间，当CNAX后跟有一个有着相同设置的CNAY时，两个操作数都会用相同的光线设置计算。\n另请参见CNAY、CNPX、CNPY、CENX、CENY、CEHX、CEHY。",
+          "parameters": [
+            "面（Surf",
+            "）",
+            "波长（Wave）",
+            "Hx/Hy：",
+            "偏振（Pol?）：",
+            "采样（Samp）："
+          ]
+        },
+        {
+          "code": "CNAY",
+          "description": "质心y方向角度。参见CNAX。",
+          "parameters": []
+        },
+        {
+          "code": "CNPX",
+          "description": "与CNAX类似，但该操作数计算的是质心的位置，而不是角度。",
+          "parameters": []
+        },
+        {
+          "code": "CNPY",
+          "description": "与CNAY类似，但该操作数计算的是质心的位置，而不是角度。",
+          "parameters": []
+        },
+        {
+          "code": "DXDX",
+          "description": "垂轴像差x分量针对x光瞳坐标的导数。它是在Wave定义的波长下，光扇图在指定光瞳坐标位置的斜率。\n参见“Hx、Hy、Px和Py”。",
+          "parameters": [
+            "Wave"
+          ]
+        },
+        {
+          "code": "DXDY",
+          "description": "垂轴像差x分量针对y光瞳坐标的导数。它是在Wave定义的波长下，光扇图在指定光瞳坐标位置的斜率。\n参见“Hx、Hy、Px和Py（Hx, Hy, Px, and Py）”。",
+          "parameters": [
+            "Wave"
+          ]
+        },
+        {
+          "code": "DYDX",
+          "description": "垂轴像差y分量针对x光瞳坐标的导数。它是在Wave定义的波长下，光扇图在指定光瞳坐标位置的斜率。\n参见“Hx、Hy、Px和Py（Hx, Hy, Px, and Py）”。",
+          "parameters": [
+            "Wave"
+          ]
+        },
+        {
+          "code": "DYDY",
+          "description": "垂轴像差y分量针对y光瞳坐标的导数。它是在Wave定义的波长下，光扇图在指定光瞳坐标位置的斜率。\n参见“Hx、Hy、Px和Py（Hx, Hy, Px, and Py）”。",
+          "parameters": [
+            "Wave"
+          ]
+        },
+        {
+          "code": "HHCN",
+          "description": "对超半球面条件的测试。 OpticStudio 追迹波长（Wave）定义的波长下的指定光线到面（Surf）定义的面，并计算x、y、z交点的坐标。然后，x和y坐标只用于该面的矢高表达式，以得出z坐标的结果。如果z坐标不相同，那么HHCN返回1，否则返回0。该操作数可用于防止优化实现需要超半球面形状的结果。\n参见“Hx、Hy、Px和Py（Hx, Hy, Px, and Py）”。",
+          "parameters": [
+            "波长（Wave）",
+            "面（Surf）"
+          ]
+        },
+        {
+          "code": "HYLD",
+          "description": "在由“波长”定义的波长下，实际光线在“面”定义的表面上的高效率贡献。这是根据入射或出射光线余弦、表面法线和表面前后的折射率计算得出的。另请参见优化目标（Optimization Goal）。\n参见“Hx、Hy、Px和Py（Hx, Hy, Px, and Py）”。",
+          "parameters": []
+        },
+        {
+          "code": "IMAE",
+          "description": "图像分析数据。除了“显示（Show）”（对于该计算，一般设置为点列图）、“面（Surface）”（可以用Surf选择）、“视场（Field）”（可以用Field选择）以及“视场尺寸（Field Size）”（可以用Field Size选择）外，该操作数可使用所有当前默认的设置返回由几何图像分析功能计算的分数效率、质心或RMS数据。要使用该操作数，首先定义所需的几何图像分析功能的设置，然后在设置框中点击“保存”。IMAE操作数将返回图像分析功能计算的所需数据。\n如果Surf为0，则将使用已保存设置指定的表面。如果Surf大于0，则将在指定表面计算数据。\n如果Field为0，将使用保存的设置所指定的视场序号。如果Field大于0，将在指定视场计算效率数据。\n如果Field Size为0，将使用保存的设置所指定的视场尺寸。如果Field Size大于0，将用指定的视场尺寸计算效率数据。\n如果Data是0，则返回效率值，如果是1，则返回X方向的质心值，如果是2，则返回Y方向的质心值，如果是3-5，则分别返回X向、Y向、或者径向的RMS值。除了效率值，其它都以镜头单位表示。\n如果Wave为0，则将使用已保存设置指定的波长编号。如果Wave大于0，则将用指定波长编号计算效率数据。\n参见详述“使用IMAE操作数进行优化”。",
+          "parameters": [
+            "Surf",
+            "Field",
+            "Field Size",
+            "Data",
+            "Wave"
+          ]
+        },
+        {
+          "code": "MNAI",
+          "description": "最小入射角。该边界操作数追迹来自已定义“视场”的边缘光线和主光线，并报告由“面”定义的表面位置的最小角度。\n面（Surf）：使用的表面编号。使用Surf=0表示所有表面（默认）。\n波长（Wave）：要使用的波长编号。使用Wave=0表示所有波长（默认）。\n视场（Field）：使用的整数型视场编号。使用Field=0表示所有视场（默认）。\n对称性（Symmetry）：定义是否存在X或Y对称，以便仅沿一个轴追迹边缘光线。使用Symmetry=0表示追迹所有边缘光线和核心光线（默认）。使用Symmetry=1表示y对称系统（仅追迹核心光线和y边缘光线），使用Symmetry=2表示x对称系统。\n数据（Data）：定义计算的值。\n0：最小角度（默认）。\n1：光线数（0=核心、1=+y、2=-y、3=+x、4=-x）\n2：最小角度光线的视场编号\n3：最小角度光线的波长编号\n4：最小角度光线的表面编号",
+          "parameters": [
+            "“视场”",
+            "“面”",
+            "面（Surf）：",
+            "波长（Wave）",
+            "视场（Field）：",
+            "对称性（Symmetry）：",
+            "Symmetry",
+            "数据（Data）："
+          ]
+        },
+        {
+          "code": "MNRE",
+          "description": "实际光线最小出射角度。该边界操作数用于约束大量表面的最小出射角度。在Wave定义的波长下，在Surf1到Surf2定义的表面范围内，出射角度是实际出射光线与表面法线的夹角，以度为单位。如果Wave为0，则使用主波长。请注意，出射角始终为正。另请参见MXRE、MNRI和MXRI。\n参见“Hx、Hy、Px和Py（Hx, Hy, Px, and Py）”。",
+          "parameters": [
+            "Wave",
+            "Surf1",
+            "Surf2"
+          ]
+        },
+        {
+          "code": "MNRI",
+          "description": "实际光线最小入射角度。该边界操作数用于约束大量表面的最小入射角度。在Wave定义的波长下，在Surf1到Surf2定义的表面范围内，角度是实际入射光线与表面法线的夹角，以度为单位。如果Wave为0，则使用主波长。请注意，入射角度一定是正值。另请参见MNRE、MXRE和MXRI。\n参见“Hx、Hy、Px和Py（Hx, Hy, Px, and Py）”。",
+          "parameters": [
+            "Wave",
+            "Surf1",
+            "Surf2"
+          ]
+        },
+        {
+          "code": "MXAI",
+          "description": "最大入射角。该边界操作数追迹来自已定义视场（Field）的边缘光线和主光线，并报告由Surf定义的表面处的最大角度。如需了解有关输入参数的更多信息，请参见MNAI。",
+          "parameters": [
+            "视场（Field）",
+            "Surf"
+          ]
+        },
+        {
+          "code": "MXRE",
+          "description": "实际光线最大出射角度。该边界操作数用于约束大量表面的最大出射角度。在Wave定义的波长下，在Surf1到Surf2定义的表面范围内，出射角度是实际出射光线与表面法线的夹角，以度为单位。如果Wave为0，则使用主波长。请注意，出射角始终为正。另请参见MNRE、MNRI和MXRI。参见“Hx、Hy、Px和Py（Hx, Hy, Px, and Py）”。",
+          "parameters": [
+            "Wave",
+            "Surf1",
+            "Surf2"
+          ]
+        },
+        {
+          "code": "MXRI",
+          "description": "实际光线最大入射角度。该边界操作数用于约束大量表面的最大入射角度。在Wave定义的波长下，在Surf1到Surf2定义的表面范围内，角度是实际入射光线与表面法线的夹角，以度为单位。如果Wave为0，则使用主波长。请注意，入射角度一定是正值。另请参见MNRE、MNRI和MXRE。参见“Hx、Hy、Px和Py（Hx, Hy, Px, and Py）”。",
+          "parameters": [
+            "Wave",
+            "Surf1",
+            "Surf2"
+          ]
+        },
+        {
+          "code": "OPTH",
+          "description": "光程。它是在Wave定义的波长下，指定光线到达Surf 定义的面的距离，以镜头单位表示。该距离从有限共轭对象测量；此外，其将参照起始表面。光程取决于介质的折射率以及附加面（诸如光栅和二元光学组件）的相位。参见PLEN。\n参见“Hx、Hy、Px和Py（Hx, Hy, Px, and Py）”。",
+          "parameters": [
+            "Wave",
+            "Surf"
+          ]
+        },
+        {
+          "code": "PLEN",
+          "description": "光程。该操作数计算指定光线在Surf1和Surf2面之间的总光程（包括折射面和相位面），该光线一般在主波长位置追迹。PLEN本质上是两个OPTH操作数之差。参见OPTH。\n参见“Hx、Hy、Px和Py（Hx, Hy, Px, and Py）”。",
+          "parameters": [
+            "Surf1",
+            "Surf2"
+          ]
+        },
+        {
+          "code": "RAED",
+          "description": "实际光线出射角。它是指在Surf定义的表面上，在Wave定义的波长下，折射或反射后的光线与该表面法线的夹角，用度表示。也可参见RAID。\n参见“Hx、Hy、Px和Py（Hx, Hy, Px, and Py）”。",
+          "parameters": [
+            "Surf",
+            "Wave"
+          ]
+        },
+        {
+          "code": "RAEN",
+          "description": "实际光线出射角。它是指在Surf定义的表面上，在Wave定义的波长下，折射或反射后的光线与该表面法线形成的夹角的余弦。也可参见RAIN。\n参见“Hx、Hy、Px和Py（Hx, Hy, Px, and Py）”。",
+          "parameters": [
+            "Surf",
+            "Wave"
+          ]
+        },
+        {
+          "code": "RAGA",
+          "description": "在Wave定义的波长下，光线从Surf定义的面折射后的全局光线x方向的余弦。\n参见“Hx、Hy、Px和Py（Hx, Hy, Px, and Py）”。\n全局坐标系的原点在全局参考面上。",
+          "parameters": [
+            "Wave",
+            "Surf"
+          ]
+        },
+        {
+          "code": "RAGB",
+          "description": "全局光线y方向余弦。参见RAGA。",
+          "parameters": []
+        },
+        {
+          "code": "RAGC",
+          "description": "全局光线z方向余弦。参见RAGA。",
+          "parameters": []
+        },
+        {
+          "code": "RAGX",
+          "description": "全局光线x坐标。它是在Wave定义的波长下，在Surf定义的表面上，全局坐标系中的坐标值，以镜头单位表示。全局坐标系的原点在全局参考面上。\n参见“Hx、Hy、Px和Py（Hx, Hy, Px, and Py）”。",
+          "parameters": [
+            "Wave",
+            "Surf"
+          ]
+        },
+        {
+          "code": "RAGY",
+          "description": "全局光线y坐标。参见RAGX。",
+          "parameters": []
+        },
+        {
+          "code": "RAGZ",
+          "description": "全局光线z坐标。参见RAGX。",
+          "parameters": []
+        },
+        {
+          "code": "RAID",
+          "description": "实际光线入射角。它是指在Surf定义的表面上，在Wave定义的波长下，入射光线与该表面的法线形成的夹角，用度表示。请注意，入射角度一定是正值。也可参见RAED。\n参见“Hx、Hy、Px和Py（Hx, Hy, Px, and Py）”。",
+          "parameters": [
+            "Surf",
+            "Wave"
+          ]
+        },
+        {
+          "code": "RAIN",
+          "description": "实际光线入射角。它是指在Surf定义的表面上，在Wave定义的波长下，光线在折射前与该表面的法线形成的夹角的余弦。也可参见RAEN。\n参见“Hx、Hy、Px和Py（Hx, Hy, Px, and Py）”。",
+          "parameters": [
+            "Surf",
+            "Wave"
+          ]
+        },
+        {
+          "code": "RANG",
+          "description": "光线与z轴的夹角，以弧度为单位。在Wave定义的波长下，相对于Surf定义的表面的局部Z轴测量该角度。\n参见“Hx、Hy、Px和Py（Hx, Hy, Px, and Py）”。",
+          "parameters": [
+            "Wave",
+            "Surf"
+          ]
+        },
+        {
+          "code": "REAA",
+          "description": "实际光线x方向余弦。在Wave定义的波长下，光线从Surf定义的面折射后，实际光线x方向的余弦。\n参见“Hx、Hy、Px和Py”。",
+          "parameters": [
+            "Wave",
+            "Surf"
+          ]
+        },
+        {
+          "code": "REAB",
+          "description": "实际光线y方向余弦。在Wave定义的波长下，光线从Surf定义的面折射后，实际光线y方向的余弦。\n参见“Hx、Hy、Px和Py（Hx, Hy, Px, and Py）”。",
+          "parameters": [
+            "Wave",
+            "Surf"
+          ]
+        },
+        {
+          "code": "REAC",
+          "description": "实际光线z方向余弦。在Wave定义的波长下，光线从Surf定义的面折射后，实际光线z方向的余弦。参见“Hx、Hy、Px和Py（Hx, Hy, Px, and Py）”。",
+          "parameters": [
+            "Wave",
+            "Surf"
+          ]
+        },
+        {
+          "code": "REAR",
+          "description": "局部实际光线径向坐标。在Wave定义的波长下，在Surf定义的面上，局部实际光线的径向坐标，用镜头单位表示。参见“Hx、Hy、Px和Py（Hx, Hy, Px, and Py）”。",
+          "parameters": [
+            "Wave",
+            "Surf"
+          ]
+        },
+        {
+          "code": "REAX",
+          "description": "局部实际光线x方向的坐标。在Wave定义的波长下，在Surf定义的面上，局部实际光线x方向的坐标，用镜头单位表示。参见“Hx、Hy、Px和Py（Hx, Hy, Px, and Py）”。",
+          "parameters": [
+            "Wave",
+            "Surf"
+          ]
+        },
+        {
+          "code": "REAY",
+          "description": "局部实际光线y方向的坐标。在Wave定义的波长下，在Surf定义的面上，局部实际光线y方向的坐标，用镜头单位表示。参见“Hx、Hy、Px和Py（Hx, Hy, Px, and Py）”。",
+          "parameters": [
+            "Wave",
+            "Surf"
+          ]
+        },
+        {
+          "code": "REAZ",
+          "description": "局部实际光线z方向的坐标。在Wave定义的波长下，在Surf定义的面上，局部实际光线z方向的坐标，用镜头单位表示。参见“Hx、Hy、Px和Py（Hx, Hy, Px, and Py）”。",
+          "parameters": [
+            "Wave",
+            "Surf"
+          ]
+        },
+        {
+          "code": "RENA",
+          "description": "实际光线x方向的表面法线。在Wave定义的波长下，在Surf定义的表面上，在光线与表面的交叉点，实际光线x方向的表面法线。\n参见“Hx、Hy、Px和Py（Hx, Hy, Px, and Py）”。",
+          "parameters": [
+            "Wave",
+            "Surf"
+          ]
+        },
+        {
+          "code": "RENB",
+          "description": "实际光线y方向的表面法线。在Wave定义的波长下，在Surf定义的面上，在光线与面的交点处，实际光线y方向的表面法线。\n参见“Hx、Hy、Px和Py（Hx, Hy, Px, and Py）”。",
+          "parameters": [
+            "Wave",
+            "Surf"
+          ]
+        },
+        {
+          "code": "RENC",
+          "description": "实际光线z方向的表面法线。在Wave定义的波长下，在Surf定义的面上，在光线与面的交点处，实际光线z方向的表面法线。\n参见“Hx、Hy、Px和Py（Hx, Hy, Px, and Py）”。",
+          "parameters": [
+            "Wave",
+            "Surf"
+          ]
+        },
+        {
+          "code": "RETX",
+          "description": "实际光线x方向的光线正切（斜率）。在Wave定义的波长下，Surf定义的表面上，实际光线x方向的光线正切值。参见“Hx、Hy、Px和Py（Hx, Hy, Px, and Py）”。",
+          "parameters": [
+            "Wave",
+            "Surf"
+          ]
+        },
+        {
+          "code": "RETY",
+          "description": "实际光线y方向的光线正切（斜率）。在Wave定义的波长下，Surf定义的表面上，实际光线y方向的光线正切值。参见“Hx、Hy、Px和Py（Hx, Hy, Px, and Py）”。",
+          "parameters": [
+            "Wave",
+            "Surf"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "约束元件位置(Constraints on Element Positions)",
+      "index_name": "约束元件位置(Constraints on Element Positions)",
+      "url": "https://ansyshelp.ansys.com/public/Views/Secured/Zemax/v252/zh-Hans/OpticStudio_User_Guide/OpticStudio_Help/topics/Constraints_on_Element_Positions.html",
+      "operands": [
+        {
+          "code": "GLCA",
+          "description": "元件的X方向余弦（全局坐标）。在全局坐标下，面(Surf)定义的元件表面的X方向余弦。",
+          "parameters": [
+            "面(Surf)"
+          ]
+        },
+        {
+          "code": "GLCB",
+          "description": "元件的Y方向余弦（全局坐标）。在全局坐标下， 面(Surf)定义的元件表面的Y方向余弦。",
+          "parameters": [
+            "面(Surf)"
+          ]
+        },
+        {
+          "code": "GLCC",
+          "description": "元件的Z方向余弦（全局坐标）。在全局坐标下，面(Surf)定义的元件表面的Z方向余弦。",
+          "parameters": [
+            "面(Surf)"
+          ]
+        },
+        {
+          "code": "GLCR",
+          "description": "元件的旋转矩阵（全局坐标）。在全局坐标下，面(Surf)定义的元件表面的旋转矩阵。3 x 3 R矩阵有9个分量。如果数值(data)是1，GLCR返回R[1][1]；如果数值 是2，GLCR返回R[1][2]；依次类推，如果数值 是9，GLCR返回R[3][3]。",
+          "parameters": [
+            "面(Surf)",
+            "数值(data)",
+            "数值"
+          ]
+        },
+        {
+          "code": "GLCX",
+          "description": "元件顶点的X坐标（全局坐标）。在全局坐标下，面(Surf)定义的元件表面顶点的X坐标。",
+          "parameters": [
+            "面(Surf)"
+          ]
+        },
+        {
+          "code": "GLCY",
+          "description": "元件顶点的Y坐标（全局坐标）。在全局坐标下，面(Surf)定义的元件表面顶点的Y坐标。",
+          "parameters": [
+            "面(Surf)"
+          ]
+        },
+        {
+          "code": "GLCZ",
+          "description": "元件顶点的Z坐标（全局坐标）。在全局坐标下，面(surf)定义的元件表面顶点的Z坐标。",
+          "parameters": [
+            "面(surf)"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "约束TrueFreeForm™表面数据(Constraints on TrueFreeForm™ Surface Data)",
+      "index_name": "约束TrueFreeForm表面数据(Constraints on TrueFreeForm Surface Data)",
+      "url": "https://ansyshelp.ansys.com/public/Views/Secured/Zemax/v252/zh-Hans/OpticStudio_User_Guide/OpticStudio_Help/topics/Constraints_on_TrueFreeForm_Surface_Data.html",
+      "operands": [
+        {
+          "code": "GOPT",
+          "description": "TrueFreeForm™表面约束的网格优化约束。该操作数根据TrueFreeForm™表面的形状计算各种值。Surf为表面编号。数据(Data)值确定操作数计算的值，如下所示：\n1：最小Z值。\n2：最大Z值。\n3：最小Z增量。这是相邻Z控制点之间的最小差值。\n4：最大Z增量。这是相邻Z控制点之间的最大差值。\n当Data计算结束时，模式(Mode)值将决定操作数的行为方式。模式参数的工作原理如下：\n1：返回数据。\n2：只在数据值小于目标值时，才会返回数据值，否则会返回目标值。该方法主要用来在数据值上强加一个\"大于\"边界。\n3：只在数据值大于目标值时，才会返回数据值，否则会返回目标值。该模式主要用来在数据值上强加一个\"小于\"边界。",
+          "parameters": []
+        }
+      ]
+    },
+    {
+      "name": "更改系统数据(Changing System Data)",
+      "index_name": "更改系统数据(Changing System Data)",
+      "url": "https://ansyshelp.ansys.com/public/Views/Secured/Zemax/v252/zh-Hans/OpticStudio_User_Guide/OpticStudio_Help/topics/Changing_System_Data.html",
+      "operands": [
+        {
+          "code": "CONF",
+          "description": "结构。该操作数可用于在评价函数计算期间，改变由结构(Cfg#)定义的结构编号。这允许用一个评价函数就能对多重结构进行优化。该操作数不需要使用目标或权重栏。",
+          "parameters": [
+            "结构(Cfg#)"
+          ]
+        },
+        {
+          "code": "IMSF",
+          "description": "像面。该操作数动态地将某一面设为\"像面\"，后续优化操作数将此面看作像面进行优化。新的像面由表面(Surface)定义。该操作数主要用于在中间面优化成像质量。将Surface设置为0可将像面重新恢复至原始表面。\n如果Refocus?为0，则指定的面成为新的像面且不能以任何方式进行修改。如果Refocus?为1，则在指定面后会有一个虚拟面，并用一个近轴聚焦解将此虚拟面放置在指定面的焦点上。如果中间面尚未聚焦的话，此选项在优化虚焦点像差时最为有用。\n注意，此操作数只是暂时改变用于估算评价函数的镜头\n数据的副本，而不会影响原始的镜头数据。当所选取的表面在原始光阑表面之前时要特别注意。有关此操作数如何执行的信息，请参阅\"在中间面上的结果评估(Evaluating results at intermediate surfaces)\"。",
+          "parameters": [
+            "表面(Surface)",
+            "Surface",
+            "Refocus?"
+          ]
+        },
+        {
+          "code": "PRIM",
+          "description": "主波长。该操作数通过波长(Wave)定义的波长，改变评价函数用于评价的主波长编号。该操作数不需要使用目标或权重栏。",
+          "parameters": [
+            "波长(Wave)"
+          ]
+        },
+        {
+          "code": "SVIG",
+          "description": "为当前结构设置渐晕因子。精度(Precision)是0、1或2，分别对应高、中、低精度。SVIG操作数执行高精度计算要花大量的时间，尽管最后的优化一般比较好。\n注意，操作数SVIG和CVIG只为计算后续的优化操作数修改渐晕因子。当达到评价函数末尾时，渐晕因子将恢复为它们的初始值。另请参阅\"CVIG\"。",
+          "parameters": [
+            "精度(Precision)"
+          ]
+        },
+        {
+          "code": "WLEN",
+          "description": "波长。该操作数返回由波长(wave)定义的波长值，单位是微米。",
+          "parameters": [
+            "波长(wave)"
+          ]
+        },
+        {
+          "code": "CVIG",
+          "description": "清除渐晕因子。该操作数用于清除当前结构下剩余的渐晕因子。另请参阅\"SVIG\"。",
+          "parameters": []
+        },
+        {
+          "code": "FDMO",
+          "description": "修改视场数据。这个操作数允许对视场位置数据进行暂时修正。它适用于新的视场坐标和任何具有渐晕因子的视场坐标（除了切角不能用这个操作数进行修改）。所有后续操作数都将用到修改过的视场数据。原始的视场数据在下列情况下会被重新采用，当FDRE操作数定义了同一个视场编号参数，或者遇到了一个CONF操作数（不管操作数CONF是否作为参考的结构编号），或者遇到了评价函数中的最后一个操作数。\n视场(Field)：需要修改的视场编号。\nHx，Hy：新视场位置的归一化视场坐标。\nVDX、VDY、VCX、VCY：新视场位置的渐晕因子数据。参见\"渐晕因子\"。",
+          "parameters": [
+            "视场(Field)",
+            "Hx，Hy",
+            "VDX、VDY、VCX、VCY"
+          ]
+        },
+        {
+          "code": "FDRE",
+          "description": "修复视场数据。参见FDMO。\n视场(Field)：需要修复的视场编号。",
+          "parameters": [
+            "视场(Field)"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "数学运算操作数(General Math Operands)",
+      "index_name": "数学运算操作数(General Math Operands)",
+      "url": "https://ansyshelp.ansys.com/public/Views/Secured/Zemax/v252/zh-Hans/OpticStudio_User_Guide/OpticStudio_Help/topics/General_Math_Operands.html",
+      "operands": [
+        {
+          "code": "ABSO",
+          "description": "计算Op#定义的操作数的绝对值。",
+          "parameters": [
+            "Op#"
+          ]
+        },
+        {
+          "code": "ACOS",
+          "description": "计算Op#定义的操作数的反余弦值。如果标志(Flag)为0，则返回值的单位是弧度，否则以角度为单位。",
+          "parameters": [
+            "Op#",
+            "标志(Flag)"
+          ]
+        },
+        {
+          "code": "ASIN",
+          "description": "计算Op#定义的操作数的反正弦值。如果标志(Flag)为0，则返回值的单位是弧度，否则以角度为单位。",
+          "parameters": [
+            "Op#",
+            "标志(Flag)"
+          ]
+        },
+        {
+          "code": "ATAN",
+          "description": "计算Op#定义的操作数的反正切值。如果标志(Flag)为0，则返回值的单位是弧度，否则以角度为单位。",
+          "parameters": [
+            "Op#",
+            "标志(Flag)"
+          ]
+        },
+        {
+          "code": "CONS",
+          "description": "常数。定义一个常数，这个常数可供其他操作数调用。这个值和目标值相等。",
+          "parameters": []
+        },
+        {
+          "code": "COSI",
+          "description": "计算Op#定义的操作数的余弦值。如果标志(Flag)为0，则返回值的单位是弧度，否则以角度为单位。",
+          "parameters": [
+            "Op#",
+            "标志(Flag)"
+          ]
+        },
+        {
+          "code": "DIFF",
+          "description": "两个操作数的的差值(Op#1 - Op#2)。",
+          "parameters": [
+            "Op#1",
+            "Op#2"
+          ]
+        },
+        {
+          "code": "DIVB",
+          "description": "Op#定义的操作数除以因子(Factor)定义的常数。",
+          "parameters": [
+            "Op#",
+            "因子(Factor)"
+          ]
+        },
+        {
+          "code": "DIVI",
+          "description": "定义的第一个操作数除以定义的第二个操作数(Op#1/ Op#2)。参见\"RECI\"。",
+          "parameters": [
+            "Op#1",
+            "Op#2"
+          ]
+        },
+        {
+          "code": "EQUA",
+          "description": "操作数相等运算。该操作数用于约束操作数Op#1和操作数Op#2之间操作数的目标值相等。这个操作数的值是通过找到值范围的平均值来计算的，如果误差超过目标值，则将每个操作数之间的误差的绝对值和平均值相加。参见SUMM和OSUM。",
+          "parameters": [
+            "Op#1",
+            "Op#2"
+          ]
+        },
+        {
+          "code": "LOGE",
+          "description": "以e为底的操作数的对数。Op#是要取对数的操作数值的行号。假如该值小于或者等于零，则返回值为0。",
+          "parameters": [
+            "Op#"
+          ]
+        },
+        {
+          "code": "LOGT",
+          "description": "以10为底的操作数的对数。Op#是要取对数的操作数值的行号。假如该值小于或者等于零，则返回值为0。",
+          "parameters": [
+            "Op#"
+          ]
+        },
+        {
+          "code": "MINN",
+          "description": "返回指定范围内操作数的最小值。参见MAXX。",
+          "parameters": []
+        },
+        {
+          "code": "OPGT",
+          "description": "操作数数值大于。此操作数用来约束Op#定义的操作数的数值大于该操作数的目标值。",
+          "parameters": [
+            "Op#"
+          ]
+        },
+        {
+          "code": "OPLT",
+          "description": "操作数数值小于。此操作数用来约束Op#定义的操作数的数值小于该操作数的目标值。",
+          "parameters": [
+            "Op#"
+          ]
+        },
+        {
+          "code": "OPVA",
+          "description": "操作数数值。此操作数用来约束Op#定义的操作数的数值，使之与目标值相等。",
+          "parameters": [
+            "Op#"
+          ]
+        },
+        {
+          "code": "OSUM",
+          "description": "将Op#1和Op#2所定义的所有操作数的数值相加。参见SUMM。",
+          "parameters": [
+            "Op#1",
+            "Op#2"
+          ]
+        },
+        {
+          "code": "PROB",
+          "description": "Op#定义的操作数的数值乘以因子定义的因数。",
+          "parameters": [
+            "Op#",
+            "因子"
+          ]
+        },
+        {
+          "code": "PROD",
+          "description": "两个操作数的乘积(Op#1 X Op#2)。参见PROB。",
+          "parameters": [
+            "Op#1",
+            "Op#2"
+          ]
+        },
+        {
+          "code": "QSUM",
+          "description": "平方和开根运算。Op#1和Op#2所定义的所有操作数的数值的平方和，再进行平方根运算。参见SUMM、OSUM、EQUA。",
+          "parameters": [
+            "Op#1",
+            "Op#2"
+          ]
+        },
+        {
+          "code": "RECI",
+          "description": "返回Op#1定义的操作数的数值的倒数。参见\"DIVI\"。",
+          "parameters": [
+            "Op#1"
+          ]
+        },
+        {
+          "code": "SQRT",
+          "description": "Op#定义的操作数的数值的平方根。",
+          "parameters": [
+            "Op#"
+          ]
+        },
+        {
+          "code": "SUMM",
+          "description": "两个操作数的和(Op#1 + Op#2)。参见OSUM。",
+          "parameters": [
+            "Op#1",
+            "Op#2"
+          ]
+        },
+        {
+          "code": "SINE",
+          "description": "Op#定义的操作数的数值的正弦值。如果标志(Flag)为0，则返回值的单位是弧度，否则以角度为单位。",
+          "parameters": [
+            "Op#",
+            "标志(Flag)"
+          ]
+        },
+        {
+          "code": "TANG",
+          "description": "Op#定义的操作数的数值的正切值。如果标志(Flag)为0，则返回值的单位是弧度，否则以角度为单位。",
+          "parameters": [
+            "Op#",
+            "标志(Flag)"
+          ]
+        },
+        {
+          "code": "ABGT",
+          "description": "绝对值大于。Op#定义的操作数的数值的绝对值大于该操作数的目标值。",
+          "parameters": [
+            "Op#"
+          ]
+        },
+        {
+          "code": "ABLT",
+          "description": "绝对值小于。Op#定义的操作数的数值的绝对值小于该操作数的目标值",
+          "parameters": [
+            "Op#"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "多重结构（变焦）数据(Multi-Configuration (Zoom) Data)",
+      "index_name": "多重结构（变焦）数据(Multi-Configuration (Zoom) Data)",
+      "url": "https://ansyshelp.ansys.com/public/Views/Secured/Zemax/v252/zh-Hans/OpticStudio_User_Guide/OpticStudio_Help/topics/Multi_Configuration_Zoom_Data.html",
+      "operands": [
+        {
+          "code": "CONF",
+          "description": "请参阅\"更改系统参数(Changing system data)\"操作数下的CONF",
+          "parameters": []
+        },
+        {
+          "code": "MCOG",
+          "description": "多重结构操作数大于指定的数值。它用于约束多重结构编辑器中的数值。其中，Op#定义使用哪个多重结构操作数。Cfg#定义使用哪个结构。",
+          "parameters": [
+            "Op#",
+            "Cfg#"
+          ]
+        },
+        {
+          "code": "MCOL",
+          "description": "多重结构操作数小于指定的数值。它用于约束多重结构编辑器中的数值。请参阅MCOG。",
+          "parameters": []
+        },
+        {
+          "code": "MCOV",
+          "description": "多重结构操作数的数值。它用于在多重结构编辑器中直接定义目标值或计算数值。请参阅MCOG。",
+          "parameters": []
+        },
+        {
+          "code": "ZTHI",
+          "description": "请参阅\"镜头数据约束(Constraints on lens data)\"操作数下的ZTHI",
+          "parameters": []
+        }
+      ]
+    },
+    {
+      "name": "高斯光束数据(Gaussian Beam Data)",
+      "index_name": "高斯光束数据(Gaussian Beam Data)",
+      "url": "https://ansyshelp.ansys.com/public/Views/Secured/Zemax/v252/zh-Hans/OpticStudio_User_Guide/OpticStudio_Help/topics/Gaussian_Beam_Data.html",
+      "operands": [
+        {
+          "code": "GBPD",
+          "description": "近轴高斯光束发散角。在波长(Wave)定义的波长上，由面(Surf)定义面后的光学空间中的高斯光束（近轴）发散度。其它的参数如下：\nUseX：如果这个参数不为零，则计算针对x方向的光束，否则，计算将针对y方向的光束执行。\nW0：输入束腰的尺寸，以镜头单位为单位。\nS1toW：面1到束腰位置的距离，以镜头单位为单位。详见\"高斯光束功能(Gaussian beam feature)\"。\nM2因子(M2 Factor)：光束的M数值的平方；详见\"高斯光束功能(Gaussian beam feature)\"。",
+          "parameters": [
+            "波长(Wave)",
+            "面(Surf)",
+            "UseX",
+            "W0",
+            "S1toW",
+            "M2因子(M2 Factor)"
+          ]
+        },
+        {
+          "code": "GBPP",
+          "description": "近轴高斯光束束腰位置。近轴高斯光束束腰到光学空间中指定表面的距离。参见GBPD。",
+          "parameters": []
+        },
+        {
+          "code": "GBPR",
+          "description": "近轴高斯光束曲率半径。光学空间中指定表面出射的高斯光束曲率半径。参见GBPD。",
+          "parameters": []
+        },
+        {
+          "code": "GBPS",
+          "description": "近轴高斯光束尺寸。光学空间中指定表面出射的高斯光束尺寸。参见GBPD。",
+          "parameters": []
+        },
+        {
+          "code": "GBPW",
+          "description": "近轴高斯光束束腰。光学空间中指定表面出射的高斯光束束腰。参见GBPD。",
+          "parameters": []
+        },
+        {
+          "code": "GBPZ",
+          "description": "近轴高斯光束瑞利范围。光学空间中指定表面出射的高斯光束瑞利范围。参见GBPD。",
+          "parameters": []
+        },
+        {
+          "code": "GBSD",
+          "description": "倾斜的高斯光束发散角。光学空间中指定表面出射的倾斜高斯光束发散角。入射光束沿着视场(Field)定义的视场的主光线方向。其它的参数如下：\nIn#：开始传播的表面数。\nOut#：计算倾斜高斯光束数据的面。\n波长(Wave)：要使用的波长编号。\nStoW：开始面到束腰的距离，以镜头单位为单位。\nW0：输入束腰的尺寸，以镜头单位为单位。如果W0是正的，则计算针对y方向的光束执行，否则就针对x方向的光束执行。\n如欲了解有关倾斜高斯光束功能的详细信息，请参见\"倾斜高斯光束(Skew Gaussian Beam)\"。",
+          "parameters": [
+            "视场(Field)",
+            "In#",
+            "Out#",
+            "波长(Wave)",
+            "StoW",
+            "W0"
+          ]
+        },
+        {
+          "code": "GBSP",
+          "description": "倾斜高斯光束束腰位置。倾斜高斯光束束腰到光学空间中指定表面的距离。参见GBSD。",
+          "parameters": []
+        },
+        {
+          "code": "GBSR",
+          "description": "倾斜高斯光束曲率半径。光学空间中指定表面出射的倾斜高斯光束曲率半径。参见GBSD。",
+          "parameters": []
+        },
+        {
+          "code": "GBSS",
+          "description": "倾斜高斯光束尺寸。光学空间中指定表面出射的倾斜高斯光束尺寸。参见GBSD。",
+          "parameters": []
+        },
+        {
+          "code": "GBSW",
+          "description": "倾斜高斯光束束腰。光学空间中指定表面出射的倾斜高斯光束束腰。参见GBSD。",
+          "parameters": []
+        }
+      ]
+    },
+    {
+      "name": "渐变折射率控制操作数(Gradient Index Control Operands)",
+      "index_name": "渐变折射率控制操作数(Gradient Index Control Operands)",
+      "url": "https://ansyshelp.ansys.com/public/Views/Secured/Zemax/v252/zh-Hans/OpticStudio_User_Guide/OpticStudio_Help/topics/Gradient_Index_Control_Operands.html",
+      "operands": [
+        {
+          "code": "DLTN",
+          "description": "折射率差值（Delta N）。计算由面(Surf)定义的表面上渐变折射率的轴上点折射率最大值与最小值之差。所用的波长由波长(Wave)定义。通过表面两端的矢高来计算所用的最大和最小z坐标。参见\"使用渐变折射率操作数\"部分。",
+          "parameters": [
+            "面(Surf)",
+            "波长(Wave)"
+          ]
+        },
+        {
+          "code": "GRMN",
+          "description": "渐变折射率的最小折射率。该边界操作数设置在波长(Wave)定义的波长下，面(Surf)定义的面的渐变折射率最小值。分别计算六个点的折射率：前顶点、前+y最高点、前+x侧面、后顶点、后+y最高点、后+x侧面。也可参见InGT、InLT和GRMX。",
+          "parameters": [
+            "波长(Wave)",
+            "面(Surf)"
+          ]
+        },
+        {
+          "code": "GRMX",
+          "description": "渐变折射率的最大折射率。该边界操作数设置在波长(Wave)定义的波长下，面(Surf)定义的面的渐变折射率最大值。分别计算六个点的折射率：前顶点、前+y最高点、前+x侧面、后顶点、后+y最高点、后+x侧面。也可参见InGT、InLT和GRMN。",
+          "parameters": [
+            "波长(Wave)",
+            "面(Surf)"
+          ]
+        },
+        {
+          "code": "InGT",
+          "description": "第\"n\"个点的折射率大于。该边界操作数约束在波长(Wave)定义的波长下，面(Surf)定义的表面上渐变折射率镜头中六个点的折射率，其中一个点的折射率大于指定值。如果n＝1是前顶点；n＝2是前+y最高点；n＝3是前+x侧面；n＝4是后顶点；n＝5是后+y最高点；n＝6是后+x侧面。在这些情况下，该操作数约束指定点的折射率要大于指定的目标值。例如，\"I4GT\"约束渐变折射率镜头（下一面的顶点）的面上后顶点的最小折射率。在这些情况下，+y最高点和+x侧面距离由数据编辑器中设置的前后表面净口径或半直径中较大的值定义。也可参见GRMN和GRMX，它们是更易于使用的类似操作数。",
+          "parameters": [
+            "波长(Wave)",
+            "面(Surf)"
+          ]
+        },
+        {
+          "code": "InLT",
+          "description": "第\"n\"个点的折射率小于。该操作数类似于InGT，只不过该操作数约束的是最大值而不是最小值。如需了解关于参数\"n\"的详细描述，请参见InGT。",
+          "parameters": []
+        },
+        {
+          "code": "InVA",
+          "description": "该操作数类似于InGT，只不过该操作数约束的是当前折射率值。如需了解关于\n参数\"n\"的详细描述，请参见InGT。",
+          "parameters": []
+        },
+        {
+          "code": "LPTD",
+          "description": "该边界操作数通过改变渐变折射率指数来约束由面(surf)定义的表面上轴向渐变折射率分布的斜率。参见\"使用渐变折射率操作数\"部分。",
+          "parameters": [
+            "面(surf)"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "傅科分析（分类优化操作数）(Foucault Analysis (optimization operands by category))",
+      "index_name": "傅科分析（分类优化操作数）(Foucault Analysis (optimization operands by category))",
+      "url": "https://ansyshelp.ansys.com/public/Views/Secured/Zemax/v252/zh-Hans/OpticStudio_User_Guide/OpticStudio_Help/topics/Foucault_Analysis_optimization_operands_by_category.html",
+      "operands": [
+        {
+          "code": "FOUC",
+          "description": "傅科分析。该操作数返回傅科分折功能计算的阴影图与参考阴影图之间的RMS差，无论当前的默认设置是什么，都使用该操作数。使用该操作数时，首先要定义所要用的傅科分析功能设\n置，然后按设置框中的\"保存(Save)\"键。无论在保存的配置文件中如何设置\"数据\"选项，FOUC操作数都将返回计算的阴影图和参考阴影图之间的RMS差。使用该操作数，可以优化光学系统的波前像差，以生成参考阴影图。",
+          "parameters": []
+        }
+      ]
+    },
+    {
+      "name": "鬼像控制(Ghost Focus Control)",
+      "index_name": "鬼像控制(Ghost Focus Control)",
+      "url": "https://ansyshelp.ansys.com/public/Views/Secured/Zemax/v252/zh-Hans/OpticStudio_User_Guide/OpticStudio_Help/topics/Ghost_Focus_Control.html",
+      "operands": [
+        {
+          "code": "GAOI",
+          "description": "鬼像入射角。此操作数计算二次反射鬼像反射后光线在任何表面上的入射角（以度为单位）。\nSurf1和Surf2值定义了第一个和第二个表面编号，进而定义鬼像路径。请注意，第一个反射表面编号必须大于第二个反射表面编号。始终使用主波长。Surf3可确定需要计算入射角的表面，并且必须大于Surf2。当Surf3为负数时，其绝对值可直接指定鬼像系统中的表面编号。如需了解有关鬼像系统的更多信息，请参阅\"鬼像发生器(Ghost Focus Generator)\"。在默认情况下，SetVig = 0。当SetVig = 1时，在计算入射角时需要为鬼像系统设置渐晕因子。请注意，通过移动和缩小光束，设置渐晕因子将导致光束在可能的情况下完全通过所有表面孔径。参见\"渐晕(Vignetting)\"。\n请注意，如果Surf2是原始系统中的镜面，则光束无法到达鬼像系统中的像面。因此，Surf3只能为0或负数。Surf3 = 0代表鬼像系统中的终止面，也就是原始系统中的物体表面。\n参见\"Hx、Hy、Px和Py(Hx, Hy, Px, and Py)\"。",
+          "parameters": [
+            "Surf1",
+            "Surf2",
+            "Surf3",
+            "SetVig"
+          ]
+        },
+        {
+          "code": "GPIM",
+          "description": "鬼瞳像。GPIM控制鬼瞳（和任何鬼像像面）相对于像面的位置。二次反射形成光瞳的像面，如果这些像面在焦平面附近，杂散光将破环系统的成像质量。这就是为什么镜头对着太阳时，我们会观察到由光瞳引起\"太阳耀斑\"像。\n该操作数计算任何一个指定的或有可能的鬼瞳像位置并返回一个从像面到最近的瞳面鬼像距离的绝对值的倒数。用这种方法定义该操作数是为了通过设置权重，并将目标值设为0进行优化，从而减小鬼瞳像的影响。如果Surf1和Surf2参数被设置成特定的面编号，那么计算的是特定的鬼像路径，如果Surf1和Surf2其中一个的值或两个值都为-1，则考虑所有可能的面的组合。例如，如果Surf1是12，Surf2 是-1，那么所有的第一次反射在第12面，然后是第一次反射在第11、10、9面等等的二次反射均考虑在内，如果这两个数都是负值，考虑所有可能的鬼像。\n将Mode从0改到1，该操作数也可用来检测并控制系统所成像的鬼像（它不同于瞳面鬼像），或是将Mode设为2用来控制鬼瞳放大率（鬼像出瞳直径与入瞳直径的比率）。\nWFB和WSB栏中将列出发现的最坏的组合，以作为参考和用于可能的进一步分析。只有折射率变化的面才被认为是鬼像发生器。忽略反射镜的第一次反射。\n也可参见GPRT、GPRX、GPRY、GPSX和GPSY。",
+          "parameters": [
+            "Surf1",
+            "Surf2",
+            "Mode",
+            "WFB",
+            "WSB"
+          ]
+        },
+        {
+          "code": "GPRT",
+          "description": "鬼像光线传播。这个操作数计算非偏振光线从物面到像面两次反射的鬼像光路传播情况。Surf1和Surf2值定义第一个和第二个表面编号，进而定义鬼像路径。请注意，第一个反射表面编号必须大于第二个反射表面编号。始终使用主波长。\nGPRT不会改变视场或孔径，因此如果以一种能改变鬼像路径的方法定义视场或孔径数据时，可能返回无意义的结果。在这些情况下不会发生警告。例如，当对视场点使用像高或对系统孔径类型使用像空间F/#时，使用GPRT可能返回无用的结果。推荐的方法是使用视场角或物高，使用入瞳直径并将光阑放在第一反射面之前。如需详细了解二次反射系统，请参见\"鬼像发生器\"。\n参见\"Hx、Hy、Px和Py\"。",
+          "parameters": [
+            "Surf1",
+            "Surf2"
+          ]
+        },
+        {
+          "code": "GPRX",
+          "description": "鬼像实际光线的x坐标。该操作数与GPRT相似，可参见GPRT的相关假设和约束条件。该操作数返回鬼像的实际光线在像面上的x坐标。",
+          "parameters": []
+        },
+        {
+          "code": "GPRY",
+          "description": "鬼像实际光线的y坐标。该操作数与GPRT相似，可参见GPRT的相关假设和约束条件。该操作数返回鬼像的实际光线在像面上的y坐标。",
+          "parameters": []
+        },
+        {
+          "code": "GPSX",
+          "description": "鬼像近轴光线的x坐标。该操作数与GPRT相似，可参见GPRT的相关假设和约束条件。该操作数返回鬼像的近轴光线在像面上的x坐标。",
+          "parameters": []
+        },
+        {
+          "code": "GPSY",
+          "description": "鬼像近轴光线的y坐标。该操作数与GPRT相似，可参见GPRT的相关假设和约束条件。该操作数返回鬼像的近轴光线在像面上的y坐标。",
+          "parameters": []
+        }
+      ]
+    },
+    {
+      "name": "光纤耦合操作数（Fiber Coupling Operands）",
+      "index_name": "光纤耦合操作数(Fiber Coupling Operands)",
+      "url": "https://ansyshelp.ansys.com/public/Views/Secured/Zemax/v252/zh-Hans/OpticStudio_User_Guide/OpticStudio_Help/topics/Fiber_Coupling_Operands.html",
+      "operands": [
+        {
+          "code": "FICL",
+          "description": "单模光纤的光纤耦合效率。计算出的值是相对于总能力的总耦合效率。该操作数的参数为：\n采样（Samp）：光瞳采样，其中1生成32 x 32，2生成64 x 64等。\n波长（Wave）：要使用的波长编号。\n视场（Field）：整数视场位置编号。\nIgSrc：如果这个参数为零，那么靠近物方的光纤就被考虑，否则就被忽略。\nSna：源光纤数值孔径（NA）。\nRna：接收光纤数值孔径（NA）。\n数据（Data）：用来控制返回值的数据类型和使用的算法。\n如果数据为0，使用快速算法，并返回耦合的功率。\n如果数据为1，使用惠更斯算法，并返回耦合的功率。\n如果数据为2或4，使用快速算法，分别返回耦合的振幅的实部或虚部。\n如果数据为3或5，使用惠更斯算法，此时分别返回耦合的振幅的实部或虚部。\n如果数据为6~11，输出值的含义与数据0~5相同，只是设置来自CFG文件。要使用数据6~11：\n定义单模光纤耦合的设置。\n在设置框中点击“保存（Save）”，以保存CFG文件。\n该操作数将根据所保存CFG文件返回数据。",
+          "parameters": [
+            "视场（Field）",
+            "IgSrc",
+            "Sna",
+            "Rna",
+            "数据（Data）"
+          ]
+        },
+        {
+          "code": "FICP",
+          "description": "使用物理光学传播算法计算的光纤耦合效率，使用当前默认的所有的物理光学光场传播（POP）窗口的设置。\n面（Surf）：此参数用来定义POP计算时的最后一个表面。如果Surf为0，则使用POP窗口上保存的最后一个表面；否则采用指定的表面作为计算的最后一个表面。\n波长（Wave）：此参数用来定义POP计算时采用的波长。如果Wave为0，则使用POP窗口上保存的波长；否则采用指定的波长进行计算。\n数据（Data）：控制返回的数据类型。如果Data为0，返回耦合的总功率。如果Data为1，返回Ex场的耦合振幅。如果Data为2或3，分别返回Ex场的耦合振幅的实部或虚部。如果Data为4，返回Ey场的耦合振幅。如果Data为5或6，分别返回Ey场的耦合振幅的实部或虚部。如果光束为非偏振光，Ey值将为0。\nData输入1-6时，入射光场必须是偏振光，才能进行物理光学光场追迹（POP）；否则，光场的耦合功率的振幅和相位不能用物理光学定义。因此，输入场如果是非偏振光时，data值为0。\n要使用这个操作数，首先根据需求在POP窗口上进行设置，然后在设置框上按下保存（Save）。操作数FICP将返回与POP计算出的相同的效率值。\n视场（Field）：此参数用来定义POP计算时采用的视场编号。如果Field为0，则使用POP窗口上保存的视场；否则采用指定的视场进行计算。\n这个操作数与更通用的POPD相比是多余的。\n参见“计算光纤耦合（Computing Fiber Coupling）”。也可参见FICL。",
+          "parameters": [
+            "面（Surf）",
+            "Surf",
+            "Wave",
+            "数据（Data）",
+            "Data",
+            "视场（Field）",
+            "Field"
+          ]
+        },
+        {
+          "code": "POPD",
+          "description": "参见“物理光学传播（Physical Optics Propagation）”操作数下的“POPD”。",
+          "parameters": []
+        }
+      ]
+    },
+    {
+      "name": "相对照度操作数(Relative Illumination Operand)",
+      "index_name": "相对照度操作数(Relative Illumination Operand)",
+      "url": "https://ansyshelp.ansys.com/public/Views/Secured/Zemax/v252/zh-Hans/OpticStudio_User_Guide/OpticStudio_Help/topics/Relative_Illumination_Operand.html",
+      "operands": [
+        {
+          "code": "RELI",
+          "description": "相对照度。该操作数计算由视场(Field)定义的任一视场点相对于(0, 0)视场点的相对照度。值得注意的是，在某些系统中，远离轴的地方照度会增强，这些视场点上的相对照度可能大于1，因为RELI操作数使用(0, 0)视场点作为参考点。该计算始终删除渐晕因子。其它参数为：\n采样(Samp)：网格尺寸。值为10，将生成一个10 x 10的光线网格。\n波长(Wave)：要使用的波长编号。\n偏振(Pol?)：设为0表示忽略偏振，设为1表示考虑偏振。也请参见EFNO。",
+          "parameters": [
+            "视场(Field)",
+            "采样(Samp)",
+            "波长(Wave)",
+            "偏振(Pol?)"
+          ]
+        },
+        {
+          "code": "EFNO",
+          "description": "有效F/#。这个操作数计算由视场(Field)定义的视场点上的有效F/#。关于有效焦距的说明，请参见\"有效F/#(EffectiveF/#)。\"其它参数：\n采样(Samp)：网格尺寸。值为10，将生成一个10 x 10的光线网格。\n波长(Wave)：要使用的波长编号。\n偏振(Pol?)：设为0表示忽略偏振，设为1表示考虑偏振。还请参见RELI。",
+          "parameters": [
+            "视场(Field)",
+            "采样(Samp)",
+            "波长(Wave)",
+            "偏振(Pol?)"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "宏（ZPL）优化操作数(Optimization with ZPL Macros)",
+      "index_name": "宏（ZPL）优化操作数(Optimization with ZPL Macros)",
+      "url": "https://ansyshelp.ansys.com/public/Views/Secured/Zemax/v252/zh-Hans/OpticStudio_User_Guide/OpticStudio_Help/topics/Optimization_with_ZPL_Macros.html",
+      "operands": [
+        {
+          "code": "ZPLM",
+          "description": "宏优化操作数。用于优化ZPL宏计算的数值结果。参见\"用户自定义操作数(User defined operands)\"。",
+          "parameters": []
+        }
+      ]
+    },
+    {
+      "name": "用户自定义操作数（分类优化操作数）(User defined operands (optimization operands by category))",
+      "index_name": "用户自定义操作数（分类优化操作数）(User defined operands (optimization operands by category))",
+      "url": "https://ansyshelp.ansys.com/public/Views/Secured/Zemax/v252/zh-Hans/OpticStudio_User_Guide/OpticStudio_Help/topics/User_defined_operands_optimization_operands_by_category.html",
+      "operands": [
+        {
+          "code": "UDOC",
+          "description": "用户自定义操作数。用户自定义操作数，用于优化外部汇编程序(ZOS-API)中计算的数值结果。参见\"使用ZOS-API编写的程序执行优化(Optimizing with programs written using ZOS-API)\"部分。参见ZPLM。",
+          "parameters": []
+        }
+      ]
+    },
+    {
+      "name": "控制优化函数的操作数(Merit Function Control Operands)",
+      "index_name": "控制优化函数的操作数(Merit Function Control Operands)",
+      "url": "https://ansyshelp.ansys.com/public/Views/Secured/Zemax/v252/zh-Hans/OpticStudio_User_Guide/OpticStudio_Help/topics/Merit_Function_Control_Operands.html",
+      "operands": [
+        {
+          "code": "BLNK",
+          "description": "空操作数。用于隔开不同的优化操作数。可在操作数名称右边空白列做注释行；注释会显示在优化编辑器中，也可显示在评价函数列表中。",
+          "parameters": []
+        },
+        {
+          "code": "DMFS",
+          "description": "默认评价函数的起始点。该操作数只是一个用来说明从哪里加入默认评价函数的标记，如果在优化编辑器创建了一个DMFS的操作数，则在默认评价函数对话框中\"Start At\"的值是该操作数下一行的行数。",
+          "parameters": []
+        },
+        {
+          "code": "ENDX",
+          "description": "结束运行。终止评价函数的计算，忽略所有剩余的操作数。",
+          "parameters": []
+        },
+        {
+          "code": "GOTO",
+          "description": "跳转。跳过GOTO操作数行和Op#定义的操作数编号之间的所有操作数。评价函数从Op#行重新开始运行。",
+          "parameters": [
+            "Op#"
+          ]
+        },
+        {
+          "code": "OOFF",
+          "description": "此操作数表示操作数列表中未使用的项。在评估评价函数时，OOFF操作数会自动转换为BLNK操作数。OOFF仅用于说明评价函数操作数类型未被识别。",
+          "parameters": []
+        },
+        {
+          "code": "SKIN",
+          "description": "如果系统不对称，则跳过。参见SKIS。",
+          "parameters": []
+        },
+        {
+          "code": "SKIS",
+          "description": "如果系统对称，则跳过。如果镜头是旋转对称的，那么计算评价函数时，会从该操作数所在行跳跃到在Op#定义的操作数进行计算。",
+          "parameters": [
+            "Op#"
+          ]
+        },
+        {
+          "code": "USYM",
+          "description": "旋转对称标记。如果该操作数出现在评价函数中，OpticStudio计算时会假定镜头是径向对称的，即使OpticStudio发现系统中并不存在对称。在某些特殊的情况中，它可以加快评价函数的计算速度。请参阅\"假设轴对称(Assume Axial Symmetry)\"。",
+          "parameters": []
+        }
+      ]
+    },
+    {
+      "name": "约束非序列模式物体数据(Constraints on Non-sequential Object Data)",
+      "index_name": "约束非序列模式物体数据(Constraints on Non-sequential Object Data)",
+      "url": "https://ansyshelp.ansys.com/public/Views/Secured/Zemax/v252/zh-Hans/OpticStudio_User_Guide/OpticStudio_Help/topics/Constraints_on_Non_sequential_Object_Data.html",
+      "operands": [
+        {
+          "code": "FREZ",
+          "description": "Freeform Z物体边界约束条件。该操作数将根据FreeForm的形状计算不同的值。\n\"Freeform Z\"中描述的Z物体。面(Surf)是NSC组中的面编号，\n1表示NSC程序模式。物体(Object)是物体的编号，它必须是一个用于这个\n操作数计算任何数据的Freeform Z物体。数据(Data)值确定操作数计算的值，\n如下所示：\n1：最大z值。注意，最小z值总为0。\n2：最大z增量。这是相邻z控制点之间的最大差值。\n3：最小z增量。这是相邻z控制点之间的最小差值。\n4：最小y值。该值适用于实体的整个长度，而不仅仅是控制点。\n5：最大y值。该值适用于实体的整个长度，而不仅仅是控制点。\n6：最大y增量。这是相邻y控制点之间的最大差值。\n7：最小y增量。这是相邻y控制点之间的最小差值。\n8：物体的体积，以镜头单位的立方表述。\n9：单调偏离。这是相邻y值的最大偏离量，其符号偏向第一个y值从0向正z方向变化的符号。\n10：最小斜率。\n11：最大斜率。\n当Data计算结束时，模式(Mode)值将决定操作数的行为方式。如果Mode为1，FREZ操作数将返回数据结果。如果Mode为2，只有当计算数据值小于目标值时操作数才返回数据值，否则将返回目标值。该方法主要用来在数据值上强加一个\"大于\"边界。如果Mode为3，操作数只有在计算数据值大于目标值时，才返回数据值，否则将返回目标值。该模式主要用来在数据值上强加一个\"小于\"边界。",
+          "parameters": [
+            "面(Surf)",
+            "物体(Object)",
+            "数据(Data)",
+            "Data",
+            "模式(Mode)",
+            "Mode"
+          ]
+        },
+        {
+          "code": "NPGT",
+          "description": "非序列模式参数大于。面(Surf)定义NSC组（一般在纯NSC系统中为1）的表面编号。物体(Object)定义NSC组中的物体编号。参数(Param)定义参数编号。",
+          "parameters": [
+            "面(Surf)",
+            "物体(Object)",
+            "参数(Param)"
+          ]
+        },
+        {
+          "code": "NPLT",
+          "description": "非序列模式参数小于。参见NPGT。",
+          "parameters": []
+        },
+        {
+          "code": "NPVA",
+          "description": "非序列模式参数值。参见NPGT。",
+          "parameters": []
+        },
+        {
+          "code": "NPXG",
+          "description": "非序列模式物体位置的x坐标大于。面(Surf)定义NSC组（一般在纯NSC系统中为1）的表面编号。物体(Object)定义NSC组中的物体编号。\n如果Ref?是0，坐标就相对于参考物体。\n如果Ref?是1，坐标就相对于NSC坐标系的原点或输入口。如果Ref?是2，坐标就相对于全局坐标参考面。",
+          "parameters": [
+            "面(Surf)",
+            "物体(Object)",
+            "Ref?"
+          ]
+        },
+        {
+          "code": "NPXL",
+          "description": "非序列模式物体位置的x坐标小于。参见NPXG。",
+          "parameters": []
+        },
+        {
+          "code": "NPXV",
+          "description": "非序列模式物体位置的x坐标值。参见NPXG。",
+          "parameters": []
+        },
+        {
+          "code": "NPYG",
+          "description": "非序列模式物体位置的y坐标大于。参见NPXG。",
+          "parameters": []
+        },
+        {
+          "code": "NPYL",
+          "description": "非序列模式物体位置的y坐标小于。参见NPXG。",
+          "parameters": []
+        },
+        {
+          "code": "NPYV",
+          "description": "非序列模式物体位置的y坐标值。参见NPXG。",
+          "parameters": []
+        },
+        {
+          "code": "NPZG",
+          "description": "非序列模式物体位置的z坐标大于。参见NPXG。",
+          "parameters": []
+        },
+        {
+          "code": "NPZL",
+          "description": "非序列模式物体位置的z坐标小于。参见NPXG。",
+          "parameters": []
+        },
+        {
+          "code": "NPZV",
+          "description": "非序列模式物体位置的z坐标值。参见NPXG。",
+          "parameters": []
+        },
+        {
+          "code": "NSRM",
+          "description": "非序列模式旋转矩阵分量。面(Surf)定义NSC组（一般在纯NSC系统中为1）的表面编号。物体(Object)定义NSC组中的物体编号。\n如果Ref?是0，坐标就相对于参考物体。当使用这个参考时，旋转矩阵总是单位矩阵。\n如果Ref?是1，坐标就相对于NSC坐标系的原点或输入口。如果Ref?是2，坐标就相对于全局坐标参考面。\n3 x 3 R矩阵有9个分量。如果Data为1，NSRM返回R[1][1]；如果Data为2，NSRM返回\nR[1][2]，依次类推，直到Data为9，返回R[3][3]为止。",
+          "parameters": [
+            "面(Surf)",
+            "物体(Object)",
+            "Ref?",
+            "Data"
+          ]
+        },
+        {
+          "code": "NTXG",
+          "description": "非序列模式物体与x轴的夹角大于。参见NPXG。",
+          "parameters": []
+        },
+        {
+          "code": "NTXL",
+          "description": "非序列物体与x轴夹角小于。参见NPXG。",
+          "parameters": []
+        },
+        {
+          "code": "NTXV",
+          "description": "非序列模式物体与x轴的夹角值。参见NPXG。",
+          "parameters": []
+        },
+        {
+          "code": "NTYG",
+          "description": "非序列模式物体与y轴的夹角大于。参见NPXG。",
+          "parameters": []
+        },
+        {
+          "code": "NTYL",
+          "description": "非序列模式物体与y轴的夹角小于。参见NPXG。",
+          "parameters": []
+        },
+        {
+          "code": "NTYV",
+          "description": "非序列模式物体与y轴的夹角值。参见NPXG。",
+          "parameters": []
+        },
+        {
+          "code": "NTZG",
+          "description": "非序列模式物体与z轴的夹角大于。参见NPXG。",
+          "parameters": []
+        },
+        {
+          "code": "NTZL",
+          "description": "非序列模式物体与z轴的夹角小于。参见NPXG。",
+          "parameters": []
+        },
+        {
+          "code": "NTZV",
+          "description": "非序列模式物体与z轴的夹角值。参见NPXG。",
+          "parameters": []
+        }
+      ]
+    },
+    {
+      "name": "非序列模式光线追迹和探测器操作数(Non-sequential Ray Tracing and Detector Operands)",
+      "index_name": "非序列模式光线追迹和探测器操作数(Non-sequential Ray Tracing and Detector Operands)",
+      "url": "https://ansyshelp.ansys.com/public/Views/Secured/Zemax/v252/zh-Hans/OpticStudio_User_Guide/OpticStudio_Help/topics/Non_sequential_Ray_Tracing_and_Detector_Operands.html",
+      "operands": [
+        {
+          "code": "NPAF",
+          "description": "非序列模式PAF文件。\"PAF文件(PAF File)\"定义要保存的PAF文件的名称（最多140个字符）。\n此操作数必须在评价函数中的NSTR操作数之前。",
+          "parameters": []
+        },
+        {
+          "code": "NSDC",
+          "description": "非序列模式相干强度数据。面(Surf)定义非序列模式组（一般在纯非序列模式系统中为1）的表面编号。探测器(Det#)是指所需探测器的物体编号。\n如果像素(Pix#)是一个正整数，那么就返回指定的像素数据。如果Pix#是0，那么返回该探测器物体的所有像素的数据总和。\n数据(Data)为0代表实部，1代表虚部，2代表振幅度，3代表光焦度。如需了解有关完整的详细信息，请参阅\"用户自定义操作数(User defined operands)\"。",
+          "parameters": [
+            "面(Surf)",
+            "探测器(Det#)",
+            "像素(Pix#)",
+            "Pix#",
+            "数据(Data)"
+          ]
+        },
+        {
+          "code": "NSDD",
+          "description": "非序列模式非相干强度数据。面(Surf)定义非序列模式组（一般在纯非序列模式系统中为1）的表面编号。探测器(Det#)是指所需探测器的物体编号。如果Det#是0，那么所有的探测器被清空。如果Det#小于0，那么只有Det#的绝对值所定义的探测器被清空。值得注意的是，NSDD操作数清空探测器数据时，必须优先于任何随后定义的NSDD操作数。\n对于矩形探测器、面探测器以及所有的面元探测器来说：如果Pix#是一个正整数，那么返回值就是指定像素上的数据。否则，不同的Pix#值，将对应不同类型的返回数据，如下说明：\n0：当Data = 0时，指的是所有像素在位置空间中的总光通量。当Data = 1时，指的是位置空间中的平均光通量/面积。当Data = 2时，指的是所有像素在角度空间中的总光通量。请注意，默认情况下，矩形探测器的角度空间在X和Y方向上完全由-90 ~ 90度定义，因此Data = 0和2的值将相同。\n-1：光通量、光通量/面积或光通量/立体角的最大值。\n-2：光通量、光通量/面积或光通量/立体角的最小值。\n-3：到达探测器所有像素的光线总数。当Pix#设置为此值时，不使用数据。\n-4：所有非零像素数据的标准差（均值的RMS）。\n-5：所有非零像素数据的平均值。\n-6、-7、-8：分别表示x、y或z的位置坐标或角辐射度或中心强度。请注意，对于矩形探测器，Data = 0和1的值将相同，因为所有像素都具有相同的大小。\n-9、-10、-11、-12、-13：加权RMS半径、x、y、z或者xy方向到所有像素数据参考质心的距离或者角度。这些分别是方差的平方根或二阶矩r^2、x^2、y^2、z^2和xy。\n加权RMS x是方差x^2的平方根。\n方差x^2等于：\n\n\n\n其中wi是等于基于数据的像素值的权重，xi是像素的x坐标，x*是加权平均值。\n\n\n\n请注意，对于矩形探测器，Data = 0和1的值将相同，因为所有像素都具有相同的大小。y*的计算类似于x*的计算。",
+          "parameters": []
+        },
+        {
+          "code": "NSDE",
+          "description": "非序列模式颜色探测器物体数据。面(Surf)定义非序列模式组（一般在纯非序列模式系统中为1）的表面编号。探测器(Det#)是指所需探测器的物体编号。如果Det#是0，那么所有的探测器被清空。如果Det#小于0，那么只有Det#的绝对值所定义的探测器被清空。\n如果Pix#是大于0的正整数，那么返回值就是指定像素上的数据。否则，不同的Pix#值，将对应不同类型的返回数据，如下说明：0：探测器上所有像素数据的总和。对于色度坐标，这是探测器上所有像素的平均值，是一个非零的流明值。如果Pix#为0，下面描述的<面积>值是整个探测器的面积，以分析单位为单位测量得到的位置空间数据，或者是以球面度为单位测量得到的角空间数据。\n-1：最大数据。\n-2：最小数据。\n-3：到达探测器的光线数目。\nAngle?为0时是位置空间数据，为1时是角空间数据。\nData是一个整数，用来定义要返回的数据类型。定义如下：\n1：光焦度以<sprefix>瓦特为单位，这里<sprefit>是光源单位前缀。\n2：光焦度/面积以<aprefix>瓦特/<area>为单位，这里<aprefix>是分析单位的前缀。如果Angle？\n是0，<area>是分析单位的面积。如果Angle?是1，<area>是以球面度为单位的立体角。\n3：光焦度以<sprefix>流明为单位，这里<sprefix>是光源单位的前缀。\n4：光焦度/面积以<aprefix>流明/<area>为单位，这里<aprefix> 是分析单位的前缀。如果Angle?是0，<area>是分析单位的面积。如果Angle?是1，<area>是以球面度为单位的立体角。\n5/6：CIE 1931色度坐标x/y。\n7/8：CIE 1976色度坐标u’/v’。\n9/10/11：CIE 1931以流明/<area>为单位的三刺激值X、Y、Z的值。如果Angle?是0，<area>是分析单位的面积。如果Angle?是1，<area>是以球面度为单位的立体角。",
+          "parameters": [
+            "面(Surf)",
+            "探测器(Det#)",
+            "Det#",
+            "Pix#",
+            "Angle?",
+            "Data",
+            "Angle？"
+          ]
+        },
+        {
+          "code": "NSDP",
+          "description": "非序列模式极坐标探测器物体数据。面(Surf)定义非序列模式组（一般在纯非序列模式系统中为1）的表面编号。探测器(Det#)是指所需探测器的物体编号。如果Det#是0，那么所有的探测器被清空。如果Det#小于0，那么只有Det#的绝对值所定义的探测器被清空。\n如果Pix#是大于0的正整数，那么返回值就是指定像素上的数据。否则，不同的Pix#值，将对应不同类型的返回数据，如下说明：\n0：探测器上所有像素数据的总和。对于色度坐标，这是探测器上所有像素的平均值，是一个非零的流明值。\n-1：最大数据。\n-2：最小数据。\n-3：到达探测器的光线数目。\n-4：光场分布相对于0度的径向均方根半径，以度为单位。如果Pix#设置为-4，\n则Data的有效输入为1或者3，输入其它数值返回值都为0。\nData是一个整数，用来定义要返回的数据类型。定义如下：\n1：光焦度以<sprefix>瓦特为单位，这里<sprefit>是光源单位前缀。\n2：光焦度/立体角以<sprefix>瓦特/球面度(steradian)为单位，这里<sprefix>是光源单位的前缀。\n3：光焦度以<sprefix>流明为单位，这里<sprefix>是光源单位的前缀。\n4：光焦度/立体角以<sprefix>流明/球面度(steradian)为单位，这里<sprefix>是光源单位的前缀。\n5/6：CIE 1931色度坐标x/y。\n7/8：CIE 1976色度坐标u’/v’。\n9/10/11：CIE 1931以流明/球面度为单位的三刺激值X、Y、Z的值。\n如果光源单位为焦耳，那么data 1和data 2的单位也是焦耳，而data 3和data4的单位为talbot。参阅\"单位(Units)\"。另请参阅NSDD和NSDE。",
+          "parameters": [
+            "面(Surf)",
+            "探测器(Det#)",
+            "Det#",
+            "Pix#",
+            "Data"
+          ]
+        },
+        {
+          "code": "NSLT",
+          "description": "非序列模式光线追迹(LightningTrace)。该操作数追迹由LightningTrace分析定义的大量网格光线。Surf是非序列模式面的表面编号。Src#是用来网格光线追迹的光源的物体编号。如果Src#是0，则追迹所有光源发出的光线。Ray Samp定义光线网格采样数量：0 = Low (1X)、 1\n= 4X、2 = 16X、3 = 64X、4 = 256X、5 = 1024X。Edge Samp定义的采样用于求解物体边缘的光线网格，与Ray Samp的输入有相同的定义（但仅输入从0到4）。RT?定义是否需要追迹大量的网格光线（当RT? = 0），或者定义是否需要使用传统光线追迹方法来追迹所有的分析光线（当RT? = 1）。当RT? = 1，此操作数将会关闭偏振、分光、散射，追迹方式与NSTR操作数类似。\n操作数NSDD、NSDE或NSDP的Det#参数设置为0时，这些操作数必须包含在评价函数中，并在这个操作数之前。\n详细信息参阅\"LightningTrace控件(The LightningTrace Control)\"。参阅NSTR。",
+          "parameters": [
+            "Surf",
+            "Src#",
+            "Ray Samp",
+            "Edge Samp",
+            "RT?",
+            "RT? = 0），或者定义是否需要使用传统光线追迹方法来追迹所有的分析光线（当RT?"
+          ]
+        },
+        {
+          "code": "NSRA",
+          "description": "非序列模式单根光线追迹。Src#指目标光源的物体编号。此光源必须被定义为单根分析光线追迹。如果Splt?不为0，则分光追迹是开启的。如果Pol?不为0，则偏振光追迹是开启的。如果开启光线分裂，将自动选择偏振。\n对于该功能，散射选项通常是关闭的，因为散射的子光线是随机的，并不适合优化。错误往往是会被考虑的。\n如果追迹相同光线的多个NSRA操作数在评价函数编辑器中是相邻的，为了提高追迹效率，优化时只追迹一次。\nSeg#指的是包含返回值的光线区段的编号。用-1表示最后一个区段。\nData是指特定区段的数据类型。\n使用Data值1-9分别表示x坐标、y坐标、z坐标、x-余弦、y-余弦、z-余弦、x-法线分量、y-法线分量和z-法线分量。这些数值都是相对于输入口，参见下方的31-39。\n使用Data值10-15分别表示轨迹(path-to)、强度(intensity)、...的相位(phase of)、在何处的相位(phase\nat)、折射率(index)、初始相位(starting phase)。值得注意的是，在何处的相位值不是2*pi模的大小，与ZRD文件的情况类似。\n使用Data值16-17分别表示从光源到指定区段结束的光线路径总和，或光程，以镜头单位表示。这些值不包括衍射面的相位。\n使用Data值21-26分别表示Ex实部、Ex虚部、Ey实部、Ey虚部、Ez实部和Ez虚部。如果返回实部和虚部数据，必须开启偏振。\n使用Data值27-29分别表示Ex和Ey的相位以及Ex、Ey的相位差。所有值都以弧度为单位。如果返回有效数据，必须开启偏振。\n使用Data值31-39表示坐标数据，由Data值1-9定义转化到相对于全局坐标参考面的坐标。\nSource#指当光源为阵列的形式时，所用的元件序号。有关序号分类表可以参阅物体属性中的\"光源(Sources)\"设置。\n请注意，NSRA区段的列出顺序与ZRD的不同。例如，对于同一条光线，NSRA中Seg# =17的区段与ZRD中列出的第17段不同。\n请注意，phase_at (Data = 13)以光线到达探测器的像素中心为参考。请参阅\"光线数据库（ZRD）文件(Ray Database (ZRD) Files)\"部分中的更多说明。\n如需了解有关这些数据项的更多信息，请参阅\"ZRD未压缩完整数据格式(UFD)(The ZRD Uncompressed Full Data Format (UFD))\"。",
+          "parameters": [
+            "Src#",
+            "Splt?",
+            "Pol?",
+            "Seg#",
+            "Data",
+            "Source#"
+          ]
+        },
+        {
+          "code": "NSRD",
+          "description": "非序列模式光线数据库。\"ZRD文件(ZRD file)\"定义要保存的ZRD文件名。（最多140个字符）如果\"ZRD格式(ZRD format)\"设置为一个正整数，它定义了ZRD文件的格式：未压缩的完整数据1：压缩的基本数据2：压缩的完整数据 如果\"ZRD格式(ZRD format)\"设置为-1，则后续的NSTR操作数将不创建ZRD文件。此操作数必须在评价函数中的NSTR操作数之前。",
+          "parameters": []
+        },
+        {
+          "code": "NSRM",
+          "description": "请参阅\"约束非序列模式物体数据(Constraints on Non-sequential Object Data)\"中的NSRM",
+          "parameters": []
+        },
+        {
+          "code": "NSRW",
+          "description": "非序列模式道路照明数据。\nData指定要返回的道路照明的数据类型。0表示平均亮度；1表示整体亮度均匀性；2表示亮度纵向均匀性；3表示阈值增量；\n4表示环绕比例；5表示平均照度；6表示最小照度；7表示水平方向照度的\n均匀性。参数# Lanes、Lane Width、Spacing和Offset都\n用来定义道路照明分析。Arrange定义灯具沿着道路的排列。0表示单向，1表示双向，2表示交错。Surf.Class定义\n路面分类。0表示R1，1表示R2，2表示R3，3表示R4。\n如需了解更多信息，请参阅\"道路照明(Roadway Lighting)\"。\n具有特定设置的第一个NSRW操作数必须紧跟在一个NSTW操作数之后，以便计算数据。具有相同设置（Data除外）的NSRW操作数必须放在相邻行。这些后续操作数将简单地返回由第一个NSRW操作数缓存的数据。此操作数旨在用作非序列模式道路照明评价函数工具的一部分。\n如需了解更多信息，请参见\"非序列模式道路照明评价函数工具(NSC Roadway Merit Function Tool)\"。",
+          "parameters": [
+            "Data",
+            "# Lanes、Lane Width、Spacing",
+            "Offset",
+            "Arrange",
+            "Surf.Class"
+          ]
+        },
+        {
+          "code": "NSST",
+          "description": "非序列模式单根光线追迹。这个操作数在系统中追迹单条序列模式下的光线至任意指定的非序列模式面，然后返回光线在非序列模式面上的不同数据。Surf是非序列模式面的表面编号。Wave是波长编号。如需了解有关Hx、Hy、Px和Py的定义，请参阅\"Hx、Hy、Px和Py(Hx, Hy, Px, and Py)\"。Data决定NSST要计算和返回的数据类型，说明如下：\n0、1、2：光线和物体交点处的x、y、z坐标。\n3、4、5：光线从表面反射或折射后的x、y、z方向余弦。\n6、7、8：光线到光线与物体交点处的x、y、z方向余弦。\n9、10、11：光线与物体交点处表面的法线。\n12：光线到达的物体的面编号。\nObject用来指定所需要的数据是哪个物体的。\n在一般情况下，一条光线可能多次到达同一个物体。默认情况下，NSST返回光线在指定物体上的最后一个交点的数据。要选择一个指定的交点，在每次光线到达物体时在Data值上加上1000。例如，光线第三次到达物体时，光线的y坐标值，用3001作为Data的值。如果光线没有到达物体，或到达物体的次数不是指定的次数，此时操作数将返回0，但是不会有警告或错误信息的提示。\n所有的坐标和余弦值参考非序列模式面的坐标系。操作数NSDC、NSDD、NSDE或NSDP的Det#参数设置为0时，这些操作数必须包含在评价函数中，并在这个操作数之前。另请参阅NSTR。",
+          "parameters": [
+            "Surf",
+            "Wave",
+            "Hx",
+            "Hy",
+            "Px",
+            "Py",
+            "Data",
+            "Object"
+          ]
+        },
+        {
+          "code": "NSTR",
+          "description": "非序列模式追迹。Src#指目标光源的物体编号。如果Src#是0，将对所有的光源进行追迹。如果Splt?不为0，则分光追迹是开启的。如果Scat?不为0，那么散射就开启。如果Pol?不为0，则偏振光追迹是开启的。如果开启光线分裂，将自动选择偏振。如果IgEr?不为0，将忽略误差。详见\"非序列模式中光源与探测器的优化(Optimizing with sources and detectors in non-sequential mode)\"。\n操作数NSDD、NSDE或NSDP的Det#参数设置为0时，这些操作数必须包含在评价函数中，并在这个操作数之前。\n另请参阅NSST。",
+          "parameters": [
+            "Src#",
+            "Splt?",
+            "Scat?",
+            "Pol?",
+            "IgEr?"
+          ]
+        },
+        {
+          "code": "NSTW",
+          "description": "非序列模式道路照明光线追迹。\n该操作数仅用于非序列模式道路照明应用，并且与NSRW操作数一起用于非序列模式道路照明评价函数。如果Splt?不为0，则分光追迹是开启的。如果Scat?不为0，那么散射就开启。如果Pol?不为0，则偏振光追迹是开启的。如果开启光线分裂，将自动选择偏振。如果IgEr?不为0，将忽略误差。Origin是原始物体的行数。MH是计算中使用的安装高度。\n如需了解更多信息，请参阅\"道路照明(Roadway Lighting)\"。\nNSTW操作数必须紧接着一个NSRW操作数，以便计算数据。此操作数旨在用作非序列模式道路照明评价函数工具的一部分。\n如需了解更多信息，请参见\"非序列模式道路照明评价函数工具(NSC Roadway Merit Function Tool)\"。",
+          "parameters": [
+            "Splt?",
+            "Scat?",
+            "Pol?",
+            "IgEr?",
+            "Origin",
+            "MH"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "约束用于光学制造的全息图的结构光学器件(Constraints on Construction Optics for Optically Fabricated Holograms)",
+      "index_name": "约束用于光学制造的全息图的结构光学器件(Constraints on Construction Optics for Optically Fabricated Holograms)",
+      "url": "https://ansyshelp.ansys.com/public/Views/Secured/Zemax/v252/zh-Hans/OpticStudio_User_Guide/OpticStudio_Help/topics/Constraints_on_Construction_Optics_for_Optically_Fabricated.html",
+      "operands": [
+        {
+          "code": "CMFV",
+          "description": "构造评价函数的值。该操作数调用两个构造系统中任意一个定义的评价函数，这两个构造系统用于定义光学全息图（Optically fabricategd hologram）。Cons#的值可以是1或2，分别表示第一或第二个构造系统。Op#可以是0，将返回构造系统中的所有评价函数的值，也可以是一个整数，它用于定义从哪一行操作数取值。例如，如果Cons#是2，Op#是7，CMFV将返回构造文件2中评价函数中操作数7的值。\n如果在被优化的重现系统中有不止一个光学全息表面，Cons#可以加2和用于定义使用的是第二个面的参数，或加4象征所用的第三个全息构造光学面等等。例如，值为7的Cons#指的是构造系统1中的四个光学全息面。",
+          "parameters": [
+            "Cons#",
+            "Op#"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "约束光学镀膜、偏振光线追迹数据(Constraints on Optical Coatings, Polarization Ray Trace Data)",
+      "index_name": "约束光学膜层、偏振光线追迹数据(Constraints on Optical Coatings, Polarization Ray Trace Data)",
+      "url": "https://ansyshelp.ansys.com/public/Views/Secured/Zemax/v252/zh-Hans/OpticStudio_User_Guide/OpticStudio_Help/topics/Constraints_on_Optical_Coatings_Polarization_Ray_Trace.html",
+      "operands": [
+        {
+          "code": "CMGT",
+          "description": "膜层的multiplier值大于。此边界操作数用于为Surf定义的面约束由Layr定义的膜层的multiplier值，使其大于目标值。用Surf = 0表示所有的面，Layr = 0表示所有的膜层。",
+          "parameters": [
+            "Surf",
+            "Layr"
+          ]
+        },
+        {
+          "code": "CMLT",
+          "description": "膜层的multiplier值小于。此边界操作数用于为Surf定义的面约束由Layr定义的膜层的multiplier值，使其小于目标值。用Surf = 0表示所有的面，Layr = 0表示所有的膜层。",
+          "parameters": [
+            "Surf",
+            "Layr"
+          ]
+        },
+        {
+          "code": "CMVA",
+          "description": "膜层的multiplier值等于。此边界操作数用于为Surf定义的面约束由Layr定义的膜层的multiplier值，使其等于目标值。",
+          "parameters": [
+            "Surf",
+            "Layr"
+          ]
+        },
+        {
+          "code": "CODA",
+          "description": "膜层数据。此功能使用系统设置的全局偏振态对偏振光线进行追迹（参见\"偏振(Polarization)\"）。即使全局偏振态被设置为\"非偏振(unpolarized)\"，仍然使用定义的偏振态的原因是CODA计算的数据是有特定偏振态的。\n偏振光线可以从Field定义的物空间的任一视场点追迹到光瞳的任意点，再到由Surf指定的面。如果Surf为零，光线追迹到像面。波长由Wave定义，Px和Py定义归一化光瞳坐标。Data的绝对值决定返回数据的类型，如下所示：\n0：相对透射偏振强度（参见8）\n1、2、3：分别表示反射强度R、透射强度T、吸收强度A\n4、5：透射场振幅实部和虚部\n6、7：反射场振幅实部和虚部\n8：相对透射非偏振强度（参见0）\n101、102：电场X方向的实部、虚部\n103、104：电场Y方向的实部、虚部\n105、106：电场Z方向的实部、虚部\n110：Ex和Ey之间的相位差Pxy\n111、112、113：电场相位Px、Py、Pz\n121、122、123：分别表示长轴、短轴和椭圆偏振的角度，单位为度\n如果数据与膜层(1--7)相关，且Data为负，则数据用于\"S\"偏振，否则用于\"P\"偏振。\n参见\"Hx、Hy、Px和Py\"。",
+          "parameters": [
+            "Field",
+            "Surf",
+            "Wave",
+            "Px",
+            "Py",
+            "Data"
+          ]
+        },
+        {
+          "code": "CEGT",
+          "description": "膜层的extinction偏移值大于。此边界操作数用于为Surf定义的面约束由Layr定义的膜层的extinction偏移值，使其大于目标值。用Surf = 0表示所有的面，Layr = 0表示所有的膜层。",
+          "parameters": [
+            "Surf",
+            "Layr"
+          ]
+        },
+        {
+          "code": "CELT",
+          "description": "膜层的extinction偏移值小于。此边界操作数用于为Surf定义的面约束由Layr定义的膜层的extinction偏移值，使其小于目标值。用Surf =0表示所有的面，Layr = 0表示所有的膜层。",
+          "parameters": [
+            "Surf",
+            "Layr"
+          ]
+        },
+        {
+          "code": "CEVA",
+          "description": "膜层的extinction偏移值等于。此边界操作数用于为由Surf定义的面约束由Layr定义的膜层的extinction偏移值，使其等于目标值。",
+          "parameters": [
+            "Surf",
+            "Layr"
+          ]
+        },
+        {
+          "code": "CIGT",
+          "description": "膜层的index值大于。此操作数用于为由Surf定义的面约束由Layr定义的膜层的index偏移值，使其大于目标值。用Surf =0表示所有的面，Layr = 0表示所有的膜层。",
+          "parameters": [
+            "Surf",
+            "Layr"
+          ]
+        },
+        {
+          "code": "CILT",
+          "description": "膜层的index偏移值小于。此操作数用于为由Surf定义的面约束由Layr定义的膜层的index偏移值，使其小于目标值。用Surf = 0表示所有的面，Layr = 0表示所有的膜层。",
+          "parameters": [
+            "Surf",
+            "Layr"
+          ]
+        },
+        {
+          "code": "CIVA",
+          "description": "膜层的index偏移值等于。此边界操作数用于为由Surf定义的面约束由Layr定义的膜层的index偏移值，使其等于目标值。",
+          "parameters": [
+            "Surf",
+            "Layr"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "物理光学传播(POP)结果(Physical Optics Propagation (POP) Results)",
+      "index_name": "物理光学传播(POP)结果(Physical Optics Propagation (POP) Results)",
+      "url": "https://ansyshelp.ansys.com/public/Views/Secured/Zemax/v252/zh-Hans/OpticStudio_User_Guide/OpticStudio_Help/topics/Physical_Optics_Propagation_POP_Results.html",
+      "operands": [
+        {
+          "code": "POPD",
+          "description": "物理光学传播数据。如欲了解重要详情，请参见帮助文件的 \"关于物理光学传播(About Physical Optics Propagation)\"部分。\n要使用该操作数，请首先根据需求定义有关POP分析功能的设置，然后在设置框中点击保存(Save)。该操作数将根据所选设置返回数据。\n如果Surf为0，则使用POP窗口上保存的最后一个表面；否则采用指定的表面作为计算的最后一个表面。如果Wave为0，则使用POP窗口上保存的波长编号；否则采用指定的波长编号进行计算。如果Field为0，则使用POP窗口上保存的视场编号；否则采用指定的视场编号进行计算。\nData决定POP功能将计算并返回的如下数据类型：\n0：全光纤耦合。这是系统效率和接受器效率的乘积。\n1：光纤耦合的系统效率。\n2：光纤耦合的接收器效率。\n3：总光焦度。\n4：峰值照度。\n5、6、7：引导光束位置、瑞利范围、束腰（X向）。\n8、9、10：引导光束位置、瑞利范围、束腰（Y向）。\n11、12、13：位于最后一个表面上光束阵列中心的局部X、Y、Z坐标（这是参考点，跟光束振幅大小无关）。\n21、22：光束强度分布质心相对于光束中心局部坐标的X、Y坐标值。这个结果的X/Y轴方向不一定与最后一个表面的方向相同。\n23、24、25、26：分别表示X、Y光束宽度和X、Y的M平方值。对于Data 23和24，Xtr1默认值为0，可在实验室坐标系中计算光束宽度。当Xtr1值设置为1时，沿着主轴方向计算光束宽度。请注意，当计算不对称光束的M平方值时，点击POP分析设置对话框中的\"保存(Save)\"按钮时，必须勾选\"分离X、Y(Separate X, Y)\"。参见\"光束宽度和M的平方\"。",
+          "parameters": [
+            "Surf",
+            "Wave",
+            "Field",
+            "Data",
+            "Xtr1"
+          ]
+        },
+        {
+          "code": "POPI",
+          "description": "物理光学传播数据。如欲了解重要详情，请参见 \"物理光学传播\"的该部分。\n要使用该操作数，请首先根据需求定义有关POP分析功能的设置，然后\n在设置框中点击保存(Save)。该操作数将根据所选设置返回数据。\n如果Surf为0，则使用POP窗口上保存的最后一个表面；否则采用指定的表面作为计算的最后一个表面。如果Wave为0，则使用POP窗口上保存的波长编号；否则采用指定的波长编号进行计算。如果Field为0，则使用POP窗口上保存的视场编号；否则采用指定的视场编号进行计算。\nData决定POP功能将计算并返回的如下数据类型：\n0、1、2：分别表示总辐射强度(Ex + Ey)、仅Ex或者仅Ey方向的辐射强度；\n3、4、5、6：分别表示Ex实部、Ex虚部、Ey实部、Ey虚部；\n7、8：分别表示Ex、Ey的相位，单位为弧度。未定义的Data值返回值也为0。\nPix#指光束的指定像素。像素大于或等于0，但小于nx*ny，其中nx和ny是行数和列数。像素的序号定义为：p = x+y*nx，其中x是整数行序号，y是整数列序号，且有0 <= x<= nx，0 <= y <= ny。\n如果所有相邻的POPI操作数都具有相同的Surf、Wave和Field参数值，那么只进行一次POP分析就同时返回所有的数据。注意，POPI操作数必须位于MFE相邻行，才能实现这样的效率。",
+          "parameters": [
+            "Surf",
+            "Wave",
+            "Field",
+            "Data",
+            "Pix#"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "最佳拟合球面数据(Best Fit Sphere Data)",
+      "index_name": "最佳拟合球面数据(Best Fit Sphere Data)",
+      "url": "https://ansyshelp.ansys.com/public/Views/Secured/Zemax/v252/zh-Hans/OpticStudio_User_Guide/OpticStudio_Help/topics/Best_Fit_Sphere_Data.html",
+      "operands": [
+        {
+          "code": "BFSD",
+          "description": "最佳拟合球面(BFS)数据。完整的讨论请参见\"矢高表(Sag Table)\"。BFSD使用最小体积标准。计算由Surf定义的面的数据。返回的值取决于Data的值，如下所示：\n0 - BFS曲率，单位是镜头单位(lens units)的倒数\n1 - BFS曲率半径，以镜头单位表示\n2 - BFS的顶点偏移，以镜头单位表示\n3 - 要去掉的材料的最大深度，以镜头单位表示\n4 - 要使用的材料的总体积，以立方镜头单位表示\n5 - 表面和BFS(无量纲)的最大斜率(dz/dr)偏差\n6 - 要去掉的材料的深度均方根(RMS)，以镜头单位表示\n7 - 表面和BFS（无量纲）斜率(dz/dr)偏差的均方根\nMinR和MaxR是BFS数据计算区域上的最小和最大径向坐标。如果两个值都是零，最小径向坐标为0，最大径向坐标为表面的净口径或半直径。",
+          "parameters": [
+            "Surf",
+            "Data",
+            "MinR",
+            "MaxR"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "公差灵敏度数据(Tolerance Sensitivity Data)",
+      "index_name": "公差灵敏度数据(Tolerance Sensitivity Data)",
+      "url": "https://ansyshelp.ansys.com/public/Views/Secured/Zemax/v252/zh-Hans/OpticStudio_User_Guide/OpticStudio_Help/topics/Tolerance_Sensitivity_Data.html",
+      "operands": [
+        {
+          "code": "TOLR",
+          "description": "公差数据。数据(Data)为0表示RSS估计性能的变化量，1表示名义上的性能，2表示估计性能（名义性能加上估计变化量）。文件(File)是一个整数，与所用的公差设置文件相对应。组态(Config#)为-2时，则计算CONF操作数定义的最后一个组态；为-1时，计算所有的组态；为0时，计算公差设置文件中使用的组态；为1或者更大的数值时，则计算指定组态。详见\"优化公差灵敏度(Optimizing tolerance sensitivity)\"。",
+          "parameters": [
+            "数据(Data)",
+            "文件(File)",
+            "组态(Config#)"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "热膨胀系数数据(Thermal Coefficient of Expansion Data)",
+      "index_name": "热膨胀系数数据(Thermal Coefficient of Expansion Data)",
+      "url": "https://ansyshelp.ansys.com/public/Views/Secured/Zemax/v252/zh-Hans/OpticStudio_User_Guide/OpticStudio_Help/topics/Thermal_Coefficient_of_Expansion_Data.html",
+      "operands": [
+        {
+          "code": "TCGT",
+          "description": "热膨胀系数(TCE)大于。这个边界操作数约束面(Surf)定义的面的TCE大于指定的目标值。",
+          "parameters": [
+            "面(Surf)"
+          ]
+        },
+        {
+          "code": "TCLT",
+          "description": "热膨胀系数(TCE)小于。这个边界操作数约束面(Surf)定义的面的TCE小于指定的目标值。",
+          "parameters": [
+            "面(Surf)"
+          ]
+        },
+        {
+          "code": "TCVA",
+          "description": "热膨胀系数(TCE)数值。这个边缘操作数约束面(Surf)定义的面的TCE等于指定的目标值。对于玻璃表面，参见\"GTCE\"。",
+          "parameters": [
+            "面(Surf)"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "废弃的操作数(Obsolete Operands)",
+      "index_name": "废弃的操作数(Obsolete Operands)",
+      "url": "https://ansyshelp.ansys.com/public/Views/Secured/Zemax/v252/zh-Hans/OpticStudio_User_Guide/OpticStudio_Help/topics/Obsolete_Operands.html",
+      "operands": [
+        {
+          "code": "PnGT",
+          "description": "该操作数已废弃，用PMGT代替。",
+          "parameters": []
+        },
+        {
+          "code": "PnLT",
+          "description": "该操作数已废弃，用PMLT代替。",
+          "parameters": []
+        },
+        {
+          "code": "PnVA",
+          "description": "该操作数已废弃，用PMVA代替。",
+          "parameters": []
+        }
+      ]
+    }
+  ]
+}
