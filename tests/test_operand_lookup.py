@@ -36,3 +36,10 @@ class OperandLookupTests(TestCase):
         self.assertIsNotNone(next_category)
         assert next_category is not None
         self.assertEqual(self.tool._category_key(next_category), "Constraints_on_Lens_Data")
+
+    def test_only_admin_and_rd_manager_can_update_data(self) -> None:
+        self.assertTrue(self.tool._role_can_update("admin"))
+        self.assertTrue(self.tool._role_can_update("研发经理"))
+        self.assertFalse(self.tool._role_can_update("研发光学"))
+        self.assertFalse(self.tool._role_can_update("boss"))
+        self.assertFalse(self.tool._role_can_update(None))

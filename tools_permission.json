@@ -44,11 +44,13 @@
     ],
     "optical_curve_manager": [
         "admin",
+        "boss",
         "研发经理",
         "研发光学"
     ],
     "spectral_analyzer": [
         "admin",
+        "boss",
         "研发经理",
         "研发光学"
     ],

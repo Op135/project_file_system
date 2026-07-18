@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from nicegui import ui
+from nicegui import app, ui
 
 from ..config import BASE_DIR
 from .operand_data import (
@@ -160,6 +160,7 @@ class OperandLookupTool:
         self.selected_category: str | None = None
         self.selected_operand: dict[str, Any] | None = None
         self.is_updating = False
+        self.can_update = False
         self.status_text = ""
         self.stats_text = ""
 
@@ -172,11 +173,14 @@ class OperandLookupTool:
         self._update_stats_text()
 
     def show(self, parent_dialog: ui.dialog) -> None:
+        self.can_update = self._role_can_update(self._current_role())
         with ui.column().classes("absolute inset-0 w-full h-screen bg-white overflow-hidden gap-0"):
             self._render_top_bar(parent_dialog)
             with ui.row().classes("w-full flex-1 min-h-0 gap-0 flex-nowrap"):
-                with ui.column().classes("h-full bg-white border-r border-slate-200 gap-0").style(
-                    "width: 310px; min-width: 310px; display: flex;"
+                with (
+                    ui.column()
+                    .classes("h-full bg-white border-r border-slate-200 gap-0")
+                    .style("width: 310px; min-width: 310px; display: flex;")
                 ):
                     with ui.row().classes("w-full h-14 px-6 items-center border-b border-slate-100"):
                         ui.label("Zemax 操作数手册").classes("text-base font-bold text-slate-700")
@@ -188,20 +192,25 @@ class OperandLookupTool:
                     with self.content_scroll:
                         self.render_content()  # type: ignore
 
-        self._build_update_dialog()
+        if self.can_update:
+            self._build_update_dialog()
 
     def _render_top_bar(self, parent_dialog: ui.dialog) -> None:
-        with ui.row().classes(
-            "w-full h-[68px] px-4 md:px-6 items-center gap-3 bg-white border-b border-slate-200 shrink-0 flex-nowrap"
-        ).style("padding-right: 72px;"):
-            with ui.row().classes("items-center gap-2 shrink-0"):
-                with ui.element("div").classes(
-                    "w-9 h-9 rounded-lg bg-blue-600 text-white flex items-center justify-center"
-                ):
-                    ui.icon("manage_search", size="23px")
-                with ui.column().classes("gap-0"):
-                    ui.label("操作数查询").classes("text-base font-bold text-slate-800")
-                    ui.label().bind_text_from(self, "stats_text").classes("text-[11px] text-slate-400")
+        with (
+            ui.row()
+            .classes(
+                "w-full h-[68px] px-4 md:px-6 items-center gap-3 bg-white border-b border-slate-200 shrink-0 flex-nowrap"
+            )
+            .style("padding-right: 72px;")
+        ):
+            # with ui.row().classes("items-center gap-2 shrink-0"):
+            #     with ui.element("div").classes(
+            #         "w-9 h-9 rounded-lg bg-blue-600 text-white flex items-center justify-center"
+            #     ):
+            #         ui.icon("manage_search", size="23px")
+            with ui.column().classes("gap-0"):
+                ui.label("操作数查询").classes("text-base font-bold text-slate-800")
+                ui.label().bind_text_from(self, "stats_text").classes("text-[11px] text-slate-400")
 
             self.search_input = (
                 ui.input(placeholder="搜索操作数代码或说明…", on_change=self._on_search_change)
@@ -212,9 +221,10 @@ class OperandLookupTool:
             self.search_input.add_slot("prepend", '<q-icon name="search" color="primary" />')
 
             ui.space()
-            ui.button("更新资料", icon="cloud_sync", on_click=self._open_update_dialog).props(
-                "flat color=primary no-caps"
-            ).classes("shrink-0")
+            if self.can_update:
+                ui.button("更新资料", icon="cloud_sync", on_click=self._open_update_dialog).props(
+                    "flat color=primary no-caps"
+                ).classes("shrink-0")
             ui.button(icon="close", on_click=parent_dialog.close).props("flat round color=grey-7").style(
                 "position: fixed; top: 12px; right: 16px; z-index: 10000;"
             ).tooltip("退出工具")
@@ -245,9 +255,23 @@ class OperandLookupTool:
                         ).props("color=primary unelevated no-caps")
 
     def _open_update_dialog(self) -> None:
+        if not self.can_update or self.update_dialog is None:
+            ui.notify("当前角色无权更新操作数资料", type="warning")
+            return
         self.status_text = ""
         self.source_input.value = self.source_url
         self.update_dialog.open()
+
+    @staticmethod
+    def _role_can_update(role: Any) -> bool:
+        return isinstance(role, str) and role in {"admin", "研发经理"}
+
+    @staticmethod
+    def _current_role() -> Any:
+        try:
+            return app.storage.user.get("current_role")
+        except RuntimeError:
+            return None
 
     def _select_initial_category(self) -> None:
         category_by_key = self._category_by_key()
@@ -385,6 +409,9 @@ class OperandLookupTool:
         self._scroll_to_top()
 
     async def _update_data(self) -> None:
+        if not self.can_update:
+            ui.notify("当前角色无权更新操作数资料", type="warning")
+            return
         if self.is_updating:
             return
         requested_url = str(self.source_input.value or "").strip()
@@ -589,8 +616,7 @@ class OperandLookupTool:
                 with (
                     ui.row()
                     .classes(
-                        "w-full min-h-14 py-3 items-center gap-3 border-b border-slate-100 cursor-pointer "
-                        "hover:bg-blue-50/60 transition-colors"
+                        "w-full min-h-14 p-3 items-center gap-3 border-b border-slate-100 cursor-pointer hover:bg-blue-50/60 rounded-lg transition-colors"
                     )
                     .on("click", self._make_category_handler(str(category.get("name", ""))))
                 ):
@@ -702,8 +728,8 @@ class OperandLookupTool:
         with (
             ui.row()
             .classes(
-                "w-full min-h-11 py-2 items-start gap-3 flex-nowrap cursor-pointer border-b border-slate-100 "
-                "hover:bg-blue-50/60 transition-colors"
+                "w-full min-h-11 p-2 items-start gap-3 flex-nowrap cursor-pointer border-b border-slate-100 "
+                "hover:bg-blue-50/60 rounded-lg transition-colors"
             )
             .on("click", self._make_operand_handler(item))
         ):
@@ -810,7 +836,10 @@ class OperandLookupTool:
         with ui.column().classes("w-full items-center py-20 gap-3"):
             ui.icon("cloud_download", size="64px").classes("text-slate-300")
             ui.label("还没有本地操作数资料").classes("text-lg font-bold text-slate-600")
-            ui.label("点击右上角“更新资料”，输入 Ansys 分类页网址开始同步。 ").classes("text-sm text-slate-500")
-            ui.button("更新资料", icon="cloud_sync", on_click=self._open_update_dialog).props(
-                "color=primary unelevated no-caps"
-            )
+            if self.can_update:
+                ui.label("点击右上角“更新资料”，输入 Ansys 分类页网址开始同步。 ").classes("text-sm text-slate-500")
+                ui.button("更新资料", icon="cloud_sync", on_click=self._open_update_dialog).props(
+                    "color=primary unelevated no-caps"
+                )
+            else:
+                ui.label("请联系管理员或研发经理更新操作数资料。 ").classes("text-sm text-slate-500")
