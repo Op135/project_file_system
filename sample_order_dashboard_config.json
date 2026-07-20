@@ -1,0 +1,40 @@
+{
+    "public_base_url": "http://192.168.1.102:8080",
+    "warning_days": 7,
+    "base_editor_roles": [
+        "研发助理",
+        "admin"
+    ],
+    "delay_editor_roles": [
+        "研发样品组长",
+        "admin"
+    ],
+    "special_status_editor_roles": [
+        "研发样品组长",
+        "admin"
+    ],
+    "delay_nature_marker_roles": [
+        "研发经理",
+        "admin"
+    ],
+    "admin_roles": [
+        "admin"
+    ],
+    "special_statuses": [
+        "正常",
+        "暂停",
+        "作废"
+    ],
+    "special_status_reason_required": true,
+    "delay_attention_threshold": 2,
+    "wecom": {
+        "redirect_applicant_notifications_to_manager": true,
+        "notify_applicant_on_extension": true,
+        "notify_applicant_on_special_status": true,
+        "manager_notify_targets": [
+            {
+                "position": "研发经理"
+            }
+        ]
+    }
+}

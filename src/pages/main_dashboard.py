@@ -18,6 +18,10 @@ from ..utils import (
 from .design_knowledge import DESIGN_KNOWLEDGE_DATA_KEY, get_design_knowledge_dashboard_pending_count
 from .error_management import ERROR_DATA_KEY, get_error_dashboard_pending_count
 from .sample_issue_collection import SAMPLE_ISSUE_DATA_KEY, get_sample_dashboard_pending_count
+from .sample_order_dashboard import (
+    SAMPLE_ORDER_DATA_KEY,
+    get_sample_order_dashboard_pending_count,
+)
 
 # 获取一个以此模块命名的 logger
 # 比如：如果你的文件是 src/components.py，这个 logger 的名字就会是 "src.components"
@@ -142,6 +146,7 @@ def main_page():
         ("published_with_changes", "工程变更", "ECR与ECN流程管理", "/ecn_management"),
         ("error", "异常单跟进", "查阅记录异常单处理进度", "/error_management"),
         ("science", "样品问题跟进", "查阅记录样品问题处理进度", "/sample_issue_collection"),
+        ("fact_check", "样品单执行看板", "录入并跟踪样品订单交期", "/sample_order_dashboard"),
         ("menu_book", "设计知识库", "沉淀规范与设计案例", "/design_knowledge"),
     ]
     menu_items = []
@@ -252,6 +257,10 @@ def main_page():
                 current_user,
                 current_role,
             )
+            sample_order_pending_num = get_sample_order_dashboard_pending_count(
+                db_storage.get_item(SAMPLE_ORDER_DATA_KEY, {}),
+                current_role=current_role,
+            )
             design_knowledge_pending_num_user = get_design_knowledge_dashboard_pending_count(
                 db_storage.get_item(DESIGN_KNOWLEDGE_DATA_KEY, {}),
                 current_user,
@@ -357,6 +366,8 @@ def main_page():
                     pending_count = error_pending_num_user
                 elif target == "/sample_issue_collection":
                     pending_count = sample_issue_pending_num_user
+                elif target == "/sample_order_dashboard":
+                    pending_count = sample_order_pending_num
                 elif target == "/design_knowledge":
                     pending_count = design_knowledge_pending_num_user
 
