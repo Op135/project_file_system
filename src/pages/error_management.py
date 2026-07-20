@@ -40,6 +40,8 @@ from ..error_management_config import (
     ERROR_EXTENSION_NOTIFY_REQUESTER_ON_APPROVAL,
     ERROR_EXTENSION_NOTIFY_TARGETS,
     ERROR_FILTER_ALL_STATE,
+    ERROR_FILTER_CLOSED_STATE,
+    ERROR_FILTER_OPEN_STATE,
     ERROR_FILTER_PENDING_CLOSE_STATE,
     ERROR_FILTER_PENDING_EXTENSION_STATE,
     ERROR_FILTER_STATES,
@@ -506,6 +508,8 @@ def error_matches_filter(error_data: dict, filter_state: str) -> bool:
     """
     if filter_state == ERROR_FILTER_ALL_STATE:
         return True
+    if filter_state == ERROR_FILTER_OPEN_STATE:
+        return calculate_error_status(error_data) != ERROR_FILTER_CLOSED_STATE
     if filter_state == ERROR_FILTER_PENDING_EXTENSION_STATE:
         return has_pending_error_extension(error_data)
     if filter_state == ERROR_FILTER_PENDING_CLOSE_STATE:
@@ -1014,7 +1018,7 @@ async def error_management_page(error_id: str = ""):
         app.storage.general.get("user_preferences", {}).get(current_user, {}).get("avatar", PRESET_AVATARS[0])
     )
 
-    page_state = {"search_keyword": "", "filter_state": ERROR_FILTER_ALL_STATE}
+    page_state = {"search_keyword": "", "filter_state": ERROR_FILTER_OPEN_STATE}
 
     # ui.dialog: NiceGUI框架提供的模态对话框组件
     dialog = ui.dialog().props("persistent")

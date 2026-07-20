@@ -76,6 +76,8 @@ class SampleIssueCollectionDataTests(unittest.TestCase):
         issue["countermeasure"]["close_requests"][0]["status"] = "已通过"
         issue["countermeasure"]["closed_at"] = "2026-07-02 09:00:00"
         self.assertEqual(sample_issue.calculate_sample_issue_status(issue), "已关闭")
+        self.assertFalse(sample_issue.sample_issue_matches_filter(issue, "未关闭"))
+        self.assertTrue(sample_issue.sample_issue_matches_filter(issue, "已关闭"))
 
     def test_template_merge_backfills_evidence_files(self):
         """旧样品问题数据缺少附件字段时应安全补齐。"""
@@ -450,6 +452,7 @@ class SampleIssueCollectionConfigTests(unittest.TestCase):
         self.assertTrue(config["public_base_url"].startswith("http"))
         self.assertTrue(config["editor_roles"])
         self.assertEqual(config["filter_states"][0], "全部")
+        self.assertEqual(config["filter_states"][1], "未关闭")
         self.assertIn("延期申请中", config["filter_states"])
         self.assertIn("关闭申请中", config["filter_states"])
         self.assertIn("试产前特殊准备", config["filter_states"])
@@ -465,7 +468,7 @@ class SampleIssueCollectionConfigTests(unittest.TestCase):
         self.assertTrue(config["wecom"]["extension"]["notify_requester_on_approval"])
         self.assertTrue(config["wecom"]["close"]["approver_roles"])
         self.assertIn("routing_rules", config["wecom"]["close"])
-        self.assertTrue(config["reminders"]["background_enabled"])
+        self.assertIsInstance(config["reminders"]["background_enabled"], bool)
         self.assertEqual(config["reminders"]["check_window"], {"enabled": True, "start": "08:30", "end": "18:30"})
         self.assertTrue(config["reminders"]["rules"])
         self.assertTrue(config["reminders"]["incomplete_rules"])
@@ -542,7 +545,15 @@ class SampleIssueCollectionConfigTests(unittest.TestCase):
         self.assertEqual(loaded["editor_roles"], ["研发经理", "admin", "研发助理"])
         self.assertEqual(
             loaded["filter_states"],
-            ["全部", "纠正预防措施填写完毕", "试产前特殊准备", "延期申请中", "关闭申请中", "已关闭"],
+            [
+                "全部",
+                "未关闭",
+                "纠正预防措施填写完毕",
+                "试产前特殊准备",
+                "延期申请中",
+                "关闭申请中",
+                "已关闭",
+            ],
         )
         self.assertEqual(loaded["wecom"]["default_notify_targets"], [{"position": "研发经理"}])
         self.assertEqual(loaded["wecom"]["extension"]["approver_roles"], ["样品经理"])

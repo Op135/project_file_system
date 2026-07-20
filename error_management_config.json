@@ -67,7 +67,7 @@
         }
     },
     "reminders": {
-        "background_enabled": true,
+        "background_enabled": false,
         "initial_delay_seconds": 60,
         "check_interval_seconds": 3600,
         "check_window": {

@@ -29,6 +29,7 @@ _DEFAULT_CONFIG = {
     "product_states": ["试产", "量产"],
     "filter_states": [
         "全部",
+        "未关闭",
         "异常录入",
         "原因分析中",
         "应急处理中",
@@ -97,9 +98,13 @@ def _string_list(config: dict, key: str, default: list[str], *, allow_empty: boo
 
 
 def _filter_states(config: dict, default: list[str]) -> list[str]:
-    """确保总览页的特殊筛选项“全部”始终存在且位于第一项。"""
+    """确保“全部”和聚合筛选“未关闭”始终位于筛选项前部。"""
     states = _string_list(config, "filter_states", default)
-    return ["全部", *(state for state in states if state != "全部")]
+    return [
+        "全部",
+        "未关闭",
+        *(state for state in states if state not in {"全部", "未关闭"}),
+    ]
 
 
 def _positive_int(config: dict, key: str, default: int) -> int:
@@ -266,6 +271,8 @@ ERROR_EDITOR_ROLES = ERROR_MANAGEMENT_CONFIG["editor_roles"]
 ERROR_PRODUCT_STATES = ERROR_MANAGEMENT_CONFIG["product_states"]
 ERROR_FILTER_STATES = ERROR_MANAGEMENT_CONFIG["filter_states"]
 ERROR_FILTER_ALL_STATE = "全部"
+ERROR_FILTER_OPEN_STATE = "未关闭"
+ERROR_FILTER_CLOSED_STATE = "已关闭"
 ERROR_FILTER_PENDING_EXTENSION_STATE = "延期申请中"
 ERROR_FILTER_PENDING_CLOSE_STATE = "关闭申请中"
 ERROR_DEFAULT_NOTIFY_TARGETS = ERROR_MANAGEMENT_CONFIG["wecom"]["default_notify_targets"]

@@ -33,6 +33,7 @@ _DEFAULT_CONFIG = {
     "editor_roles": ["研发经理", "admin", "研发助理"],
     "filter_states": [
         "全部",
+        "未关闭",
         SAMPLE_STATUS_ISSUE_RECORDED,
         SAMPLE_STATUS_TEMPORARY_ACTION_DONE,
         SAMPLE_STATUS_CORRECTIVE_ACTION_DONE,
@@ -131,7 +132,11 @@ def _filter_states(config: dict, default: list[str]) -> list[str]:
         for state in _string_list(config, "filter_states", default)
     ]
     states = list(dict.fromkeys(states))
-    normalized = ["全部", *(state for state in states if state != "全部")]
+    normalized = [
+        "全部",
+        "未关闭",
+        *(state for state in states if state not in {"全部", "未关闭"}),
+    ]
     for required_state in [SAMPLE_STATUS_SPECIAL_PREPARATION, "延期申请中", "关闭申请中", "已关闭"]:
         if required_state not in normalized:
             normalized.append(required_state)
@@ -470,6 +475,7 @@ SAMPLE_PUBLIC_BASE_URL = SAMPLE_ISSUE_CONFIG["public_base_url"]
 SAMPLE_EDITOR_ROLES = SAMPLE_ISSUE_CONFIG["editor_roles"]
 SAMPLE_FILTER_STATES = SAMPLE_ISSUE_CONFIG["filter_states"]
 SAMPLE_FILTER_ALL_STATE = "全部"
+SAMPLE_FILTER_OPEN_STATE = "未关闭"
 SAMPLE_FILTER_PENDING_EXTENSION_STATE = "延期申请中"
 SAMPLE_FILTER_PENDING_CLOSE_STATE = "关闭申请中"
 SAMPLE_FILTER_CLOSED_STATE = "已关闭"

@@ -43,6 +43,7 @@ from ..sample_issue_config import (
     SAMPLE_EXTENSION_NOTIFY_TARGETS,
     SAMPLE_FILTER_ALL_STATE,
     SAMPLE_FILTER_CLOSED_STATE,
+    SAMPLE_FILTER_OPEN_STATE,
     SAMPLE_FILTER_PENDING_CLOSE_STATE,
     SAMPLE_FILTER_PENDING_EXTENSION_STATE,
     SAMPLE_FILTER_STATES,
@@ -746,6 +747,8 @@ def sample_issue_matches_filter(issue_data: dict, filter_state: str) -> bool:
     """判断记录是否符合列表筛选条件。"""
     if filter_state == SAMPLE_FILTER_ALL_STATE:
         return True
+    if filter_state == SAMPLE_FILTER_OPEN_STATE:
+        return calculate_sample_issue_status(issue_data) != SAMPLE_FILTER_CLOSED_STATE
     if filter_state == SAMPLE_FILTER_PENDING_EXTENSION_STATE:
         return bool(get_pending_extension_request(issue_data.get("countermeasure", {})))
     if filter_state == SAMPLE_FILTER_PENDING_CLOSE_STATE:
@@ -1666,7 +1669,7 @@ async def sample_issue_collection_page(issue_id: str = ""):
         app.storage.general.get("user_preferences", {}).get(current_user, {}).get("avatar", PRESET_AVATARS[0])
     )
 
-    page_state = {"search_keyword": "", "filter_state": SAMPLE_FILTER_ALL_STATE}
+    page_state = {"search_keyword": "", "filter_state": SAMPLE_FILTER_OPEN_STATE}
     dialog = ui.dialog().props("persistent")
     root_dialog = ui.dialog().props("maximized persistent")
     can_delete_record = is_sample_admin(current_role)

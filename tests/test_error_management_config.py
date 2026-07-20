@@ -30,6 +30,7 @@ class ErrorManagementConfigTests(unittest.TestCase):
         self.assertTrue(config["editor_roles"])
         self.assertTrue(config["product_states"])
         self.assertEqual(config["filter_states"][0], "全部")
+        self.assertEqual(config["filter_states"][1], "未关闭")
         self.assertIn("延期申请中", config["filter_states"])
         self.assertIn("关闭申请中", config["filter_states"])
         self.assertEqual(config["wecom"]["default_notify_targets"], [{"position": "研发经理"}])
@@ -76,7 +77,7 @@ class ErrorManagementConfigTests(unittest.TestCase):
 
         self.assertEqual(loaded["public_base_url"], "http://192.168.1.102:8080")
         self.assertEqual(loaded["editor_roles"], ["研发经理", "admin", "研发助理"])
-        self.assertEqual(loaded["filter_states"], ["全部", "已关闭"])
+        self.assertEqual(loaded["filter_states"], ["全部", "未关闭", "已关闭"])
         self.assertEqual(loaded["wecom"]["default_notify_targets"], [{"position": "研发经理"}])
         self.assertEqual(
             loaded["wecom"]["extension"]["approval_notify_targets"],
@@ -291,6 +292,18 @@ class ErrorManagementDashboardPendingTests(unittest.TestCase):
         """延期申请中筛选应跨越异常单主状态，并排除没有待审批申请的异常单。"""
         self.assertTrue(error_management.error_matches_filter(self.all_errors["ERR-001"], "延期申请中"))
         self.assertFalse(error_management.error_matches_filter(self.all_errors["ERR-002"], "延期申请中"))
+
+    def test_open_filter_hides_only_fully_closed_errors(self):
+        """默认未关闭筛选应保留处理中记录，并隐藏全部措施均关闭的异常单。"""
+        closed_error = {
+            "error_id": "ERR-CLOSED",
+            "preventive_actions": [{"status": "已关闭"}],
+        }
+        self.assertTrue(
+            error_management.error_matches_filter(self.all_errors["ERR-001"], "未关闭")
+        )
+        self.assertFalse(error_management.error_matches_filter(closed_error, "未关闭"))
+        self.assertTrue(error_management.error_matches_filter(closed_error, "已关闭"))
 
     def test_card_status_prioritizes_pending_extension(self):
         """总览卡片应优先显示延期申请中，而不是底层流程主状态。"""
