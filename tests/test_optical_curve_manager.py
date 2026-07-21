@@ -12,12 +12,14 @@ from src.tools.optical_curve_manager import (  # noqa: E402
     OpticalCurveManagerTool,
     _build_curve_tree,
     _chart_options,
+    _clipboard_click_handler,
     _curve_alias,
     _curve_data_text,
     _curve_tree_group_ids,
     _int_at_least,
     _optional_float,
     _prepare_curve_data,
+    _select_textarea_script,
 )
 from src.tools.optical_curve_data import CurveDataError  # noqa: E402
 
@@ -76,6 +78,21 @@ class OpticalCurveManagerTests(unittest.TestCase):
     def test_curve_data_text_uses_two_tab_separated_columns(self):
         self.assertEqual(_curve_data_text(self.records[0]), "400\t0.0\n500\t1.0")
         self.assertEqual(_curve_data_text({"x_data": [400], "y_data": []}), "")
+
+    def test_clipboard_handler_uses_api_only_in_secure_context(self):
+        handler = _clipboard_click_handler('400\t0.5\n500\t"0.95"')
+        self.assertIn('const text = "400\\t0.5\\n500\\t\\"0.95\\"";', handler)
+        self.assertIn("navigator.clipboard?.writeText", handler)
+        self.assertIn("reason: 'insecure'", handler)
+        self.assertNotIn("document.execCommand('copy')", handler)
+        self.assertIn("emit({", handler)
+
+    def test_manual_copy_script_selects_the_complete_textarea(self):
+        script = _select_textarea_script(42, delay_ms=150)
+        self.assertIn("getHtmlElement(42)", script)
+        self.assertIn("textarea.select()", script)
+        self.assertIn("setSelectionRange(0, textarea.value.length)", script)
+        self.assertIn("}, 150);", script)
 
     def test_prepare_curve_data_only_normalizes_the_left_input(self):
         auto_data = _prepare_curve_data("400\t0.5\n500\t0.95", "")

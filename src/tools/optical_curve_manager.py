@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import copy
+import json
 import re
 from collections.abc import Callable
 from datetime import datetime
@@ -98,6 +99,49 @@ def _curve_data_text(record: dict[str, Any]) -> str:
     if not isinstance(x_data, list) or not isinstance(y_data, list) or len(x_data) != len(y_data):
         return ""
     return "\n".join(f"{x_value}\t{y_value}" for x_value, y_value in zip(x_data, y_data))
+
+
+def _clipboard_click_handler(text: str) -> str:
+    """生成安全上下文中由浏览器点击事件直接执行的复制脚本。"""
+
+    serialized_text = json.dumps(text, ensure_ascii=False)
+    return f"""async (event) => {{
+        event.stopPropagation();
+        const text = {serialized_text};
+        if (!text) {{
+            emit({{ok: false, reason: 'empty'}});
+            return;
+        }}
+
+        if (window.isSecureContext && navigator.clipboard?.writeText) {{
+            try {{
+                await navigator.clipboard.writeText(text);
+                emit({{ok: true, method: 'clipboard'}});
+                return;
+            }} catch (error) {{
+                emit({{ok: false, reason: 'blocked', error: String(error)}});
+                return;
+            }}
+        }}
+        emit({{
+            ok: false,
+            reason: 'insecure',
+        }});
+    }}"""
+
+
+def _select_textarea_script(element_id: int, delay_ms: int = 0) -> str:
+    """生成聚焦并全选指定文本框内容的浏览器脚本。"""
+
+    return f"""setTimeout(() => {{
+        const root = getHtmlElement({element_id});
+        const textarea = root?.matches?.('textarea') ? root : root?.querySelector?.('textarea');
+        if (textarea) {{
+            textarea.focus({{preventScroll: true}});
+            textarea.select();
+            textarea.setSelectionRange(0, textarea.value.length);
+        }}
+    }}, {max(0, delay_ms)});"""
 
 
 def _prepare_curve_data(normalize_text: str, preserve_text: str) -> dict[str, Any]:
@@ -1294,18 +1338,41 @@ class OpticalCurveManagerTool:
 
                                     return change_color
 
-                                def make_copy_handler(record: dict[str, Any]) -> Callable[[], None]:
+                                def make_copy_handler(
+                                    record: dict[str, Any],
+                                    manual_dialog: Any,
+                                    manual_textarea_id: int,
+                                ) -> Callable[[Any], None]:
                                     title = str(record.get("title") or "未命名曲线")
 
-                                    def copy_curve_data() -> None:
-                                        data_text = _curve_data_text(record)
-                                        if not data_text:
+                                    def report_copy_result(event: Any) -> None:
+                                        result = event.args if isinstance(event.args, dict) else {}
+                                        if result.get("reason") == "empty":
                                             ui.notify("该曲线没有可复制的完整 X/Y 数据", type="warning")
                                             return
-                                        ui.clipboard.write(data_text)
-                                        ui.notify(f"已复制“{title}”的 {len(record.get('x_data', []))} 个数据点")
+                                        if result.get("ok") is True:
+                                            compatibility_hint = "（兼容模式）" if result.get("method") == "legacy" else ""
+                                            ui.notify(
+                                                f"已复制“{title}”的 {len(record.get('x_data', []))} 个数据点"
+                                                f"{compatibility_hint}"
+                                            )
+                                            return
+                                        manual_dialog.open()
+                                        ui.run_javascript(
+                                            _select_textarea_script(manual_textarea_id, delay_ms=150)
+                                        )
+                                        if result.get("reason") == "insecure":
+                                            ui.notify(
+                                                "当前为内网 HTTP，数据已全选，请按 Ctrl+C",
+                                                type="warning",
+                                            )
+                                            return
+                                        ui.notify(
+                                            "浏览器阻止了自动复制，数据已全选，请按 Ctrl+C",
+                                            type="warning",
+                                        )
 
-                                    return copy_curve_data
+                                    return report_copy_result
 
                                 def make_temporary_color_handler(record: dict[str, Any]) -> Callable[[Any], None]:
                                     def change_temporary_color(event: Any) -> None:
@@ -1550,11 +1617,48 @@ class OpticalCurveManagerTool:
                                                                         emit();
                                                                     }""",
                                                                 )
-                                                                ui.button(
-                                                                    icon="content_copy",
-                                                                    on_click=make_copy_handler(record),
-                                                                ).props("flat dense round color=cyan-8").tooltip(
-                                                                    "复制 X/Y 两列数据"
+                                                                data_text = _curve_data_text(record)
+                                                                with ui.dialog() as manual_copy_dialog, ui.card().classes(
+                                                                    "p-4 gap-3 max-w-[92vw]"
+                                                                ):
+                                                                    ui.label(f"复制“{record.get('title') or '未命名曲线'}”数据").classes(
+                                                                        "text-base font-bold text-slate-800"
+                                                                    )
+                                                                    ui.label(
+                                                                        "当前浏览器不允许网页自动写入剪贴板。"
+                                                                        "下方数据已全选，请按 Ctrl+C 复制。"
+                                                                    ).classes("text-sm text-slate-600")
+                                                                    manual_textarea = ui.textarea(
+                                                                        label="X / Y 两列数据",
+                                                                        value=data_text,
+                                                                    ).props("outlined readonly rows=16").classes(
+                                                                        "w-[min(48rem,82vw)] font-mono"
+                                                                    )
+                                                                    with ui.row().classes("w-full justify-end gap-2"):
+                                                                        select_button = ui.button(
+                                                                            "重新全选", icon="select_all"
+                                                                        ).props("outline color=cyan-8")
+                                                                        select_button.on(
+                                                                            "click",
+                                                                            js_handler=f"() => {{"
+                                                                            f"{_select_textarea_script(manual_textarea.id)}"
+                                                                            "}",
+                                                                        )
+                                                                        ui.button(
+                                                                            "关闭",
+                                                                            on_click=manual_copy_dialog.close,
+                                                                        ).props("flat color=grey-7")
+                                                                copy_button = ui.button(icon="content_copy").props(
+                                                                    "flat dense round color=cyan-8"
+                                                                ).tooltip("复制 X/Y 两列数据")
+                                                                copy_button.on(
+                                                                    "click",
+                                                                    make_copy_handler(
+                                                                        record,
+                                                                        manual_copy_dialog,
+                                                                        manual_textarea.id,
+                                                                    ),
+                                                                    js_handler=_clipboard_click_handler(data_text),
                                                                 )
                                         else:
                                             ui.label("请先在层级树中勾选曲线").classes("text-sm text-slate-400")

@@ -176,6 +176,11 @@ def main_page():
             k in str(current_role) for k in ["质量", "销售", "工程", "研发", "boss", "admin"]
         ):
             continue
+        # 样品单执行看板只对角色字符串里含有如下关键字的用户展示
+        elif items[3] == "/sample_order_dashboard" and not any(
+            k in str(current_role) for k in ["销售", "工程", "研发", "boss", "admin"]
+        ):
+            continue
         # elif items[3] == "/ecn_management" and not any(k in str(current_role) for k in ["研发经理", "admin"]):
         #     continue
         menu_items.append(items)
