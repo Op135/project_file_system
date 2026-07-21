@@ -159,6 +159,8 @@ OVER_UPLOADS_FILE_TYPE = {
     ".webm",
     ".mov",
     ".step",
+    ".stp",
+    ".x_t",
 }
 # 需求可上传文件类型，除了图片，图片都可以
 REQ_UPLOADS_FILE_TYPE = {

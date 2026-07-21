@@ -1,12 +1,15 @@
 # -*- encoding: utf-8 -*-
 import copy
+import io
 import json
 import tempfile
 import unittest
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any, cast
 from unittest.mock import AsyncMock, patch
+
+from openpyxl import Workbook
 
 from src import db_storage
 from src import sample_order_dashboard_config as dashboard_config
@@ -210,6 +213,28 @@ class SampleOrderCalculationTests(unittest.TestCase):
         metrics = dashboard.calculate_sample_order_metrics(record, date(2026, 7, 18))
         self.assertTrue(metrics["many_delays"])
 
+    def test_kpi_detail_matching_uses_the_same_status_rules(self):
+        record = make_record()
+        warning_metrics = {
+            "attention_level": "warning",
+            "many_delays": False,
+            "assessment_score": None,
+        }
+        self.assertTrue(dashboard.sample_order_matches_kpi(record, warning_metrics, "执行中"))
+        self.assertTrue(dashboard.sample_order_matches_kpi(record, warning_metrics, "预警"))
+        self.assertFalse(dashboard.sample_order_matches_kpi(record, warning_metrics, "延期"))
+
+        completed = make_record()
+        completed["execution"]["actual_delivery_date"] = "2026-07-20"
+        scored_metrics = {
+            "attention_level": "completed",
+            "many_delays": True,
+            "assessment_score": 120,
+        }
+        self.assertFalse(dashboard.sample_order_matches_kpi(completed, scored_metrics, "执行中"))
+        self.assertTrue(dashboard.sample_order_matches_kpi(completed, scored_metrics, "多次延期"))
+        self.assertTrue(dashboard.sample_order_matches_kpi(completed, scored_metrics, "平均考核分"))
+
     def test_legacy_two_delay_fields_are_migrated_to_extension_history(self):
         raw = make_record()
         raw.pop("extensions", None)
@@ -325,6 +350,99 @@ class SampleOrderCalculationTests(unittest.TestCase):
         )
 
 
+class SampleOrderExcelImportTests(unittest.TestCase):
+    def test_excel_parser_maps_business_columns_and_reports_invalid_rows(self):
+        workbook = Workbook()
+        worksheet = workbook.active
+        assert worksheet is not None
+        worksheet.title = "导入数据"
+        worksheet.append(["研发部样品单执行情况记录表"])
+        worksheet.append([])
+        worksheet.append(
+            [
+                "样品单号",
+                "客户编码",
+                "产品型号 ",
+                "申请数量",
+                "申请日期",
+                "申请人",
+                "计划\n交货日期",
+                "备注",
+                "实际\n交货日期",
+                "制样\n负责人",
+                "首次延期\n目标日期",
+                "首次\n延期原因",
+                "二次延期\n目标日期",
+                "二次\n延期原因",
+            ]
+        )
+        worksheet.append(
+            [
+                "Y26072101",
+                19021034,
+                "RFTS-TEST",
+                2,
+                datetime(2026, 7, 21),
+                "申请人A",
+                datetime(2026, 7, 25),
+                "测试备注",
+                None,
+                "负责人A",
+                datetime(2026, 7, 26),
+                "等待确认",
+                datetime(2026, 7, 27),
+                "再次调整",
+            ]
+        )
+        worksheet.append(
+            [
+                "Y26072102",
+                19021035,
+                "RFTS-BAD",
+                1,
+                datetime(2026, 7, 21),
+                "",
+                datetime(2026, 7, 25),
+            ]
+        )
+        worksheet.append(
+            [
+                "Y26072103",
+                19021036,
+                "RFTS-WARNING",
+                1,
+                datetime(2026, 7, 21),
+                "申请人B",
+                datetime(2026, 7, 25),
+                "",
+                None,
+                "负责人B",
+                datetime(2026, 7, 26),
+                "",
+            ]
+        )
+        output = io.BytesIO()
+        workbook.save(output)
+
+        preview = dashboard.parse_sample_order_excel(output.getvalue(), "导入测试.xlsx")
+
+        self.assertEqual(preview.total_rows, 3)
+        self.assertEqual(len(preview.records), 2)
+        self.assertEqual(len(preview.errors), 1)
+        self.assertEqual(len(preview.warnings), 1)
+        record = preview.records[0]
+        self.assertEqual(record["basic_info"]["customer_code"], "19021034")
+        self.assertEqual(record["basic_info"]["application_date"], "2026-07-21")
+        self.assertEqual(record["execution"]["sample_owner"], "叶子浩")
+        self.assertEqual(len(record["extensions"]), 2)
+        self.assertIn("请填写：申请人", preview.errors[0])
+        warning_record = preview.records[1]
+        self.assertEqual(
+            warning_record["extensions"][0]["reason"],
+            "历史Excel未填写延期原因",
+        )
+
+
 class SampleOrderValidationTests(unittest.TestCase):
     def test_role_permissions_are_separated(self):
         self.assertTrue(dashboard.is_sample_order_base_editor("研发助理"))
@@ -335,6 +453,10 @@ class SampleOrderValidationTests(unittest.TestCase):
         self.assertTrue(dashboard.is_sample_order_delay_nature_marker("研发经理"))
         self.assertFalse(dashboard.is_sample_order_delay_nature_marker("研发样品组长"))
         self.assertTrue(dashboard.is_sample_order_admin("admin"))
+        self.assertTrue(dashboard.can_view_sample_order_average_score("研发样品组长"))
+        self.assertTrue(dashboard.can_view_sample_order_average_score("研发经理"))
+        self.assertFalse(dashboard.can_view_sample_order_average_score("研发助理"))
+        self.assertFalse(dashboard.can_view_sample_order_average_score("admin"))
 
     def test_delay_date_and_reason_must_be_filled_together(self):
         record = make_record()
@@ -642,6 +764,40 @@ class SampleOrderAtomicSaveTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result.changed)
         self.assertEqual(result.code, "forbidden")
         atomic_update.assert_not_awaited()
+
+    async def test_excel_import_is_atomic_and_keeps_identical_rows(self):
+        first = make_record()
+        first["record_id"] = ""
+        second = copy.deepcopy(first)
+        second["basic_info"]["application_qty"] = 3
+        saved: dict[str, object] = {}
+
+        async def fake_atomic(_path, callback):
+            updated = callback({})
+            saved["records"] = updated
+            return True
+
+        with (
+            patch.object(db_storage, "atomic_deep_update", side_effect=fake_atomic),
+            patch.object(db_storage, "set_item", new=AsyncMock()),
+        ):
+            result = await dashboard.import_sample_order_records(
+                [first, copy.deepcopy(first), second],
+                "助理A",
+                "研发助理",
+                source_name="导入测试.xlsx",
+            )
+
+        self.assertEqual(result.imported_count, 3)
+        stored_records = cast(dict[str, Any], saved["records"])
+        self.assertEqual(len(stored_records), 3)
+        self.assertTrue(
+            all(record["import_info"]["source_name"] == "导入测试.xlsx" for record in stored_records.values())
+        )
+        self.assertTrue(all(record["_revision"] == 1 for record in stored_records.values()))
+        self.assertTrue(
+            all(record["execution"]["sample_owner"] == "叶子浩" for record in stored_records.values())
+        )
 
 
 class SampleOrderNotificationTests(unittest.IsolatedAsyncioTestCase):

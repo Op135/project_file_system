@@ -6,9 +6,12 @@
 """
 
 import copy
+import io
 import logging
+import re
 import time
 import uuid
+import warnings
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import Any, Optional
@@ -16,6 +19,9 @@ from urllib.parse import quote
 
 from chinese_calendar import is_holiday
 from nicegui import app, ui
+from nicegui.events import UploadEventArguments
+from openpyxl import load_workbook
+from openpyxl.utils.datetime import from_excel
 
 from .. import db_storage
 from ..config import IMG_DIR, PRESET_AVATARS
@@ -41,11 +47,12 @@ from ..wecom_service import resolve_wecom_recipients, send_wecom_text_message
 
 SAMPLE_ORDER_DATA_KEY = "sample_order_dashboard_data"
 SAMPLE_ORDER_VERSION_KEY = "sample_order_dashboard_version_stamp"
+SAMPLE_ORDER_EXCEL_IMPORT_OWNER = "叶子浩"
 
 logger = logging.getLogger(__name__)
 
 FILTER_ALL = "全部"
-FILTER_IN_PROGRESS = "执行中"
+FILTER_IN_PROGRESS = "制样中"
 FILTER_COMPLETED = "已完成"
 FILTER_WARNING = "预警"
 FILTER_DELAYED = "延期"
@@ -78,6 +85,26 @@ class SampleOrderUpdateResult:
     code: str
     record: Optional[dict] = None
     notification_failures: tuple[str, ...] = ()
+
+
+@dataclass
+class SampleOrderImportPreview:
+    """Excel解析后的样品单导入预览。"""
+
+    records: list[dict]
+    errors: list[str]
+    warnings: list[str]
+    source_name: str
+    total_rows: int
+
+
+@dataclass
+class SampleOrderImportResult:
+    """一次Excel批量导入的结构化结果。"""
+
+    db_success: bool
+    imported_count: int
+    code: str
 
 
 def option_text(value: object, default: str = "") -> str:
@@ -186,6 +213,10 @@ def get_sample_order_template() -> dict:
             "marked_at": "",
             "history": [],
         },
+        "import_info": {
+            "source_name": "",
+            "source_row": 0,
+        },
         "created_by": "",
         "created_role": "",
         "created_at": "",
@@ -214,7 +245,13 @@ def merge_with_sample_order_template(raw: object) -> dict:
     ):
         if key in raw:
             merged[key] = copy.deepcopy(raw[key])
-    for section in ("basic_info", "execution", "special_status", "delay_nature"):
+    for section in (
+        "basic_info",
+        "execution",
+        "special_status",
+        "delay_nature",
+        "import_info",
+    ):
         source = raw.get(section)
         if isinstance(source, dict):
             merged[section].update(copy.deepcopy(source))
@@ -273,6 +310,206 @@ def normalize_extension(raw: object) -> dict:
     }
 
 
+SAMPLE_ORDER_EXCEL_HEADERS = {
+    "sample_order_no": "样品单号",
+    "customer_code": "客户编码",
+    "product_model": "产品型号",
+    "application_qty": "申请数量",
+    "application_date": "申请日期",
+    "applicant": "申请人",
+    "planned_delivery_date": "计划交货日期",
+    "remark": "备注",
+    "actual_delivery_date": "实际交货日期",
+    "sample_owner": "制样负责人",
+    "first_target_date": "首次延期目标日期",
+    "first_reason": "首次延期原因",
+    "second_target_date": "二次延期目标日期",
+    "second_reason": "二次延期原因",
+}
+
+
+def normalize_sample_order_excel_header(value: object) -> str:
+    """移除Excel表头中的换行和空格，便于稳定匹配列。"""
+    if not isinstance(value, str):
+        return ""
+    return re.sub(r"\s+", "", value)
+
+
+def sample_order_excel_text(value: object) -> str:
+    """把Excel单元格转换为不带多余小数位的文本。"""
+    if value is None or isinstance(value, bool):
+        return ""
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        return str(int(value)) if value.is_integer() else str(value).strip()
+    return str(value).strip()
+
+
+def sample_order_excel_date(value: object) -> str:
+    """把Excel日期单元格标准化为ISO日期字符串。"""
+    if isinstance(value, datetime):
+        return value.date().isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        try:
+            converted = from_excel(value)
+            if isinstance(converted, datetime):
+                return converted.date().isoformat()
+            if isinstance(converted, date):
+                return converted.isoformat()
+            return ""
+        except (TypeError, ValueError, OverflowError):
+            return ""
+    text_value = sample_order_excel_text(value)
+    if not text_value:
+        return ""
+    for date_format in ("%Y-%m-%d", "%Y/%m/%d", "%Y.%m.%d", "%Y-%m-%d %H:%M:%S"):
+        try:
+            return datetime.strptime(text_value, date_format).date().isoformat()
+        except ValueError:
+            continue
+    return ""
+
+
+def parse_sample_order_excel(content: bytes, source_name: str = "") -> SampleOrderImportPreview:
+    """解析样品单Excel，忽略物料、支援、公式提示和考核派生列。"""
+    if not content:
+        return SampleOrderImportPreview([], ["上传文件为空"], [], source_name, 0)
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", UserWarning)
+            workbook = load_workbook(io.BytesIO(content), data_only=True, read_only=False)
+    except Exception as exc:
+        logger.warning("样品单Excel解析失败：%s", exc)
+        return SampleOrderImportPreview([], ["文件不是可读取的.xlsx工作簿"], [], source_name, 0)
+
+    worksheet = None
+    header_row = 0
+    column_map: dict[str, int] = {}
+    expected_headers = {
+        normalized: key
+        for key, header in SAMPLE_ORDER_EXCEL_HEADERS.items()
+        if (normalized := normalize_sample_order_excel_header(header))
+    }
+    for candidate in workbook.worksheets:
+        for row_number in range(1, min(candidate.max_row, 10) + 1):
+            candidate_map: dict[str, int] = {}
+            for column_number, cell in enumerate(candidate[row_number], start=1):
+                header_key = expected_headers.get(normalize_sample_order_excel_header(cell.value))
+                if header_key:
+                    candidate_map[header_key] = column_number
+            required_keys = {
+                "sample_order_no",
+                "customer_code",
+                "product_model",
+                "application_qty",
+                "application_date",
+                "applicant",
+                "planned_delivery_date",
+            }
+            if required_keys.issubset(candidate_map):
+                worksheet = candidate
+                header_row = row_number
+                column_map = candidate_map
+                break
+        if worksheet is not None:
+            break
+    if worksheet is None:
+        workbook.close()
+        return SampleOrderImportPreview(
+            [],
+            ["未找到包含样品单号、客户编码、产品型号等必要表头的工作表"],
+            [],
+            source_name,
+            0,
+        )
+
+    records: list[dict] = []
+    errors: list[str] = []
+    import_warnings: list[str] = []
+    total_rows = 0
+    for row_number, row_values in enumerate(
+        worksheet.iter_rows(min_row=header_row + 1, values_only=True),
+        start=header_row + 1,
+    ):
+        raw_values = {
+            key: row_values[column_number - 1] if column_number <= len(row_values) else None
+            for key, column_number in column_map.items()
+        }
+        if not any(value not in (None, "") for value in raw_values.values()):
+            continue
+        total_rows += 1
+        record = get_sample_order_template()
+        basic = record["basic_info"]
+        execution = record["execution"]
+        basic.update(
+            {
+                "sample_order_no": sample_order_excel_text(raw_values.get("sample_order_no")),
+                "customer_code": sample_order_excel_text(raw_values.get("customer_code")),
+                "product_model": sample_order_excel_text(raw_values.get("product_model")),
+                "application_qty": normalize_int(raw_values.get("application_qty"), 0),
+                "application_date": sample_order_excel_date(raw_values.get("application_date")),
+                "applicant": sample_order_excel_text(raw_values.get("applicant")),
+                "planned_delivery_date": sample_order_excel_date(raw_values.get("planned_delivery_date")),
+                "remark": sample_order_excel_text(raw_values.get("remark")),
+            }
+        )
+        execution.update(
+            {
+                "actual_delivery_date": sample_order_excel_date(raw_values.get("actual_delivery_date")),
+                "sample_owner": SAMPLE_ORDER_EXCEL_IMPORT_OWNER,
+            }
+        )
+        row_warnings: list[str] = []
+        for extension_number, (target_key, reason_key) in enumerate(
+            (
+                ("first_target_date", "first_reason"),
+                ("second_target_date", "second_reason"),
+            ),
+            start=1,
+        ):
+            raw_target = raw_values.get(target_key)
+            target_date = sample_order_excel_date(raw_target)
+            reason = sample_order_excel_text(raw_values.get(reason_key))
+            if raw_target not in (None, "") and not target_date:
+                row_warnings.append(f"第{extension_number}次延期目标日期格式不正确，已忽略该次延期")
+            if target_date or reason:
+                if target_date and not reason:
+                    reason = "历史Excel未填写延期原因"
+                    row_warnings.append(f"第{extension_number}次延期缺少原因，已使用占位说明")
+                if target_date and reason:
+                    record["extensions"].append(normalize_extension({"target_date": target_date, "reason": reason}))
+                elif reason:
+                    existing_remark = option_text(basic.get("remark"))
+                    extra_remark = f"历史Excel第{extension_number}次延期原因：{reason}（目标日期缺失）"
+                    basic["remark"] = "；".join(text for text in (existing_remark, extra_remark) if text)
+                    row_warnings.append(f"第{extension_number}次延期缺少目标日期，原因已追加到备注")
+        validation_errors = validate_sample_order_submission(
+            record,
+            check_basic=True,
+            check_execution=True,
+            check_delay=False,
+            check_special_status=False,
+        )
+        row_errors = list(dict.fromkeys(validation_errors))
+        if row_errors:
+            errors.append(f"第{row_number}行：{'；'.join(row_errors)}")
+            continue
+        if row_warnings:
+            import_warnings.append(f"第{row_number}行：{'；'.join(dict.fromkeys(row_warnings))}")
+        record["import_info"].update(
+            {
+                "source_name": source_name,
+                "source_row": row_number,
+            }
+        )
+        records.append(record)
+    workbook.close()
+    return SampleOrderImportPreview(records, errors, import_warnings, source_name, total_rows)
+
+
 def _role_matches(role: object, allowed_roles: list[str]) -> bool:
     role_text = option_text(role).lower()
     return any(allowed.lower() in role_text for allowed in allowed_roles)
@@ -301,6 +538,29 @@ def is_sample_order_special_status_editor(role: object) -> bool:
 def is_sample_order_delay_nature_marker(role: object) -> bool:
     """判断角色是否可以为已完成延期订单标记性质。"""
     return is_sample_order_admin(role) or _role_matches(role, SAMPLE_ORDER_DELAY_NATURE_MARKER_ROLES)
+
+
+def can_view_sample_order_average_score(role: object) -> bool:
+    """平均考核分仅向研发样品组长和研发经理展示。"""
+    return _role_matches(role, ["研发样品组长", "研发经理"])
+
+
+def sample_order_matches_kpi(record: object, metrics: dict, label: str) -> bool:
+    """判断一张样品单是否属于指定的顶部统计卡片。"""
+    if label == "制样中":
+        return sample_order_matches_filter(record, FILTER_IN_PROGRESS)
+    if label == "预警":
+        return metrics.get("attention_level") in {"missing", "warning"}
+    if label == "延期":
+        return metrics.get("attention_level") == "overdue"
+    if label == "多次延期":
+        return bool(metrics.get("many_delays"))
+    if label == "待性质标记":
+        return is_delay_nature_pending(record)
+    if label == "平均考核分":
+        score = metrics.get("assessment_score")
+        return isinstance(score, int) and not isinstance(score, bool)
+    return False
 
 
 def get_record_revision(record: object) -> int:
@@ -830,6 +1090,94 @@ async def save_sample_order_record(
     )
 
 
+async def import_sample_order_records(
+    records: list[dict],
+    user: str,
+    role: str,
+    *,
+    source_name: str,
+) -> SampleOrderImportResult:
+    """由研发助理把预览通过的Excel记录一次性原子导入。"""
+    if not is_sample_order_base_editor(role):
+        return SampleOrderImportResult(True, 0, "forbidden")
+    if not records:
+        return SampleOrderImportResult(True, 0, "empty")
+
+    normalized_records = [merge_with_sample_order_template(record) for record in records]
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    outcome: dict[str, Any] = {
+        "imported_count": 0,
+        "code": "db_error",
+    }
+
+    def apply_import(current: object) -> object:
+        if current is None:
+            all_records: dict[str, Any] = {}
+        elif isinstance(current, dict):
+            all_records = current
+        else:
+            outcome["code"] = "invalid_storage"
+            return db_storage.ATOMIC_NO_UPDATE
+
+        for source_record in normalized_records:
+            imported = merge_with_sample_order_template(source_record)
+            record_id = uuid.uuid4().hex
+            while record_id in all_records:
+                record_id = uuid.uuid4().hex
+            imported["record_id"] = record_id
+            imported["created_by"] = user
+            imported["created_role"] = role
+            imported["created_at"] = now_str
+            imported["updated_by"] = user
+            imported["updated_role"] = role
+            imported["updated_at"] = now_str
+            imported["_revision"] = 1
+            imported["execution"]["sample_owner"] = SAMPLE_ORDER_EXCEL_IMPORT_OWNER
+            imported["import_info"].update(
+                {
+                    "source_name": source_name,
+                }
+            )
+            imported_extensions: list[dict] = []
+            for extension in imported["extensions"]:
+                normalized_extension = normalize_extension(extension)
+                normalized_extension.update(
+                    {
+                        "extension_id": uuid.uuid4().hex,
+                        "created_by": user,
+                        "created_role": role,
+                        "created_at": now_str,
+                    }
+                )
+                imported_extensions.append(normalized_extension)
+            imported["extensions"] = imported_extensions
+            imported["operation_log"] = [
+                {
+                    "user": user,
+                    "role": role,
+                    "action": f"从Excel导入（第{normalize_int(imported['import_info'].get('source_row'), 0)}行）",
+                    "time": now_str,
+                }
+            ]
+            all_records[record_id] = imported
+            outcome["imported_count"] += 1
+
+        if outcome["imported_count"] == 0:
+            outcome["code"] = "no_new_records"
+            return db_storage.ATOMIC_NO_UPDATE
+        outcome["code"] = "imported"
+        return all_records
+
+    success = await db_storage.atomic_deep_update([SAMPLE_ORDER_DATA_KEY], apply_import)
+    if success and outcome["imported_count"]:
+        await db_storage.set_item(SAMPLE_ORDER_VERSION_KEY, time.time())
+    return SampleOrderImportResult(
+        db_success=success,
+        imported_count=outcome["imported_count"] if success else 0,
+        code=outcome["code"] if success else "db_error",
+    )
+
+
 async def mark_sample_order_delay_nature(
     record_id: str,
     nature_tag: str,
@@ -1094,6 +1442,122 @@ async def sample_order_dashboard_page(record_id: str = "") -> None:
     }
     detail_dialog = ui.dialog().props("maximized persistent")
     confirm_dialog = ui.dialog().props("persistent")
+    import_dialog = ui.dialog().props("persistent")
+
+    def open_sample_order_import_dialog() -> None:
+        """打开Excel上传、预览和确认导入弹窗。"""
+        if not can_edit_base:
+            ui.notify("仅研发助理可以导入样品单", type="warning", position="bottom")
+            return
+        import_state: dict[str, Any] = {"preview": None}
+        import_dialog.clear()
+        with import_dialog, ui.card().classes("w-[900px] max-w-[95vw] max-h-[90vh] p-5"):
+            with ui.row().classes("w-full items-center justify-between"):
+                with ui.row().classes("items-center gap-2"):
+                    ui.icon("upload_file", color="blue")
+                    ui.label("导入样品单Excel").classes("text-xl font-bold")
+                ui.button(icon="close", on_click=import_dialog.close).props("flat round")
+            ui.label("读取样品单基础信息、制样执行及首次/二次延期；物料、支援、公式提示和考核列不会导入。").classes(
+                "text-sm text-gray-600"
+            )
+            ui.label(
+                "上传后先预览，确认时一次性写入；每一行均按独立订单新增，制样负责人统一为叶子浩，且不会发送企业微信通知。"
+            ).classes("text-sm text-orange-700")
+            preview_container = ui.column().classes("w-full flex-grow overflow-y-auto gap-2")
+
+            def render_import_preview(preview: SampleOrderImportPreview) -> None:
+                preview_container.clear()
+                with preview_container:
+                    with ui.row().classes("w-full gap-3 flex-wrap"):
+                        ui.badge(f"读取数据行：{preview.total_rows}", color="blue").props("outline")
+                        ui.badge(f"可导入：{len(preview.records)}", color="green").props("outline")
+                        ui.badge(f"异常行：{len(preview.errors)}", color="red").props("outline")
+                        ui.badge(f"需留意：{len(preview.warnings)}", color="orange").props("outline")
+                    if preview.records:
+                        ui.label("前10条有效记录预览").classes("font-bold text-gray-700 mt-2")
+                        for record in preview.records[:10]:
+                            basic = record["basic_info"]
+                            execution = record["execution"]
+                            source_row = normalize_int(record["import_info"].get("source_row"), 0)
+                            ui.label(
+                                f"第{source_row}行 · {basic.get('sample_order_no', '')} · "
+                                f"{basic.get('product_model', '')} · 数量{basic.get('application_qty', '')} · "
+                                f"实际交样{execution.get('actual_delivery_date', '') or '未交样'} · "
+                                f"延期{len(record['extensions'])}次"
+                            ).classes("w-full text-sm text-gray-600 border-b pb-1")
+                    if preview.errors:
+                        with ui.expansion(
+                            f"查看异常行（{len(preview.errors)}）",
+                            icon="error_outline",
+                        ).classes("w-full border rounded-lg mt-2"):
+                            for error in preview.errors[:100]:
+                                ui.label(error).classes("text-sm text-red-700")
+                            if len(preview.errors) > 100:
+                                ui.label("仅显示前100条异常信息").classes("text-xs text-gray-500")
+                    if preview.warnings:
+                        with ui.expansion(
+                            f"查看需留意的数据（{len(preview.warnings)}）",
+                            icon="warning_amber",
+                        ).classes("w-full border rounded-lg mt-2"):
+                            for warning_text in preview.warnings[:100]:
+                                ui.label(warning_text).classes("text-sm text-orange-700")
+
+            async def handle_excel_upload(event: UploadEventArguments) -> None:
+                file_name = option_text(event.file.name)
+                if not file_name.lower().endswith(".xlsx"):
+                    ui.notify("请选择.xlsx格式的Excel文件", type="warning", position="bottom")
+                    return
+                try:
+                    content = await event.file.read()
+                    preview = parse_sample_order_excel(content, file_name)
+                except Exception:
+                    logger.exception("样品单Excel上传解析失败")
+                    ui.notify("Excel解析失败，请检查文件格式", type="negative", position="bottom")
+                    return
+                import_state["preview"] = preview
+                render_import_preview(preview)
+                if preview.records:
+                    ui.notify("Excel解析完成，请核对预览后确认导入", type="positive", position="bottom")
+                else:
+                    ui.notify("文件中没有可导入的有效记录", type="warning", position="bottom")
+
+            ui.upload(
+                label="选择样品单Excel文件",
+                on_upload=handle_excel_upload,
+                auto_upload=True,
+                max_files=1,
+            ).props('accept=".xlsx" max-file-size=20971520').classes("w-full")
+
+            async def confirm_excel_import() -> None:
+                preview = import_state.get("preview")
+                if not isinstance(preview, SampleOrderImportPreview) or not preview.records:
+                    ui.notify("请先上传并成功解析Excel文件", type="warning", position="bottom")
+                    return
+                result = await import_sample_order_records(
+                    preview.records,
+                    current_user,
+                    current_role,
+                    source_name=preview.source_name,
+                )
+                if not result.db_success:
+                    ui.notify("导入写入失败，请稍后重试", type="negative", position="bottom")
+                    return
+                if result.code == "forbidden":
+                    ui.notify("当前角色没有导入权限", type="negative", position="bottom")
+                    return
+                import_dialog.close()
+                ui.notify(
+                    f"导入完成：新增{result.imported_count}条",
+                    type="positive" if result.imported_count else "info",
+                    position="bottom",
+                    timeout=6000,
+                )
+                refresh_dashboard()
+
+            with ui.row().classes("w-full justify-end gap-2"):
+                ui.button("取消", on_click=import_dialog.close).props("flat color=grey")
+                ui.button("确认导入", icon="database", on_click=confirm_excel_import).props("color=primary")
+        import_dialog.open()
 
     async def open_detail_dialog(target_record_id: Optional[str] = None) -> None:
         is_new = target_record_id is None
@@ -1228,25 +1692,6 @@ async def sample_order_dashboard_page(record_id: str = "") -> None:
                         bind_date_input("申请日期 *", basic, "application_date", editable=can_edit_base)
                         bind_text_input("申请人 *", basic, "applicant", editable=can_edit_base)
                         bind_date_input("计划交货日期 *", basic, "planned_delivery_date", editable=can_edit_base)
-                        with ui.element("div").classes("w-full rounded-lg bg-blue-50 border border-blue-200 p-3"):
-                            ui.label("系统示警规则").classes("text-xs text-blue-600")
-                            ui.label(f"提前 {SAMPLE_ORDER_WARNING_DAYS} 个工作日").classes(
-                                "font-semibold text-blue-900"
-                            )
-                    bind_text_input(
-                        "备注",
-                        basic,
-                        "remark",
-                        editable=can_edit_base,
-                        classes="w-full xl:w-2/3",
-                        textarea=True,
-                    )
-
-                with ui.card().classes("w-full h-full p-5 shadow-sm border bg-amber-50/50"):
-                    with ui.row().classes("items-center gap-2 mb-3"):
-                        ui.icon("precision_manufacturing", color="teal")
-                        ui.label("制样执行 · 研发助理维护").classes("text-lg font-bold")
-                    with ui.grid().classes("w-full grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4"):
                         bind_text_input("制样负责人", execution, "sample_owner", editable=execution_editable)
                         bind_date_input(
                             "实际交货日期",
@@ -1254,6 +1699,19 @@ async def sample_order_dashboard_page(record_id: str = "") -> None:
                             "actual_delivery_date",
                             editable=execution_editable,
                         )
+                        with ui.element("div").classes("w-full rounded-lg bg-blue-50 border border-blue-200 p-3"):
+                            ui.label(f"系统提前 {SAMPLE_ORDER_WARNING_DAYS} 个工作日警示").classes(
+                                "text-xs text-blue-600"
+                            )
+
+                    bind_text_input(
+                        "备注",
+                        basic,
+                        "remark",
+                        editable=can_edit_base,
+                        classes="w-full",
+                        textarea=True,
+                    )
 
                 with ui.card().classes("w-full h-full p-5 shadow-sm border bg-blue-100/50"):
                     with ui.row().classes("w-full items-center justify-between mb-1"):
@@ -1264,9 +1722,7 @@ async def sample_order_dashboard_page(record_id: str = "") -> None:
                             ui.button("新增一次延期", icon="add", on_click=lambda: add_extension()).props(
                                 "outline color=orange"
                             )
-                    ui.label(
-                        "延期记录保存后不可修改；若原因为样品组主责，请明确写入“主责”，系统将沿用此前考核基准。"
-                    ).classes("text-sm text-orange-700 mb-3")
+
                     extension_container = ui.column().classes("w-full gap-3")
 
                     def remove_extension(index: int) -> None:
@@ -1322,7 +1778,6 @@ async def sample_order_dashboard_page(record_id: str = "") -> None:
 
                     render_extensions()
 
-                with ui.card().classes("w-full h-full p-5 shadow-sm border bg-blue-100/50"):
                     with ui.row().classes("items-center gap-2 mb-1"):
                         ui.icon("flag_circle", color="purple")
                         ui.label("订单特殊状态 · 研发样品组长设置").classes("text-lg font-bold")
@@ -1571,6 +2026,11 @@ async def sample_order_dashboard_page(record_id: str = "") -> None:
                 with ui.row().classes("items-center gap-3"):
                     ui.label("默认仅显示未交样订单，点击卡片查看详情").classes("text-xs text-gray-500")
                     if can_edit_base:
+                        ui.button(
+                            "导入Excel",
+                            icon="upload_file",
+                            on_click=open_sample_order_import_dialog,
+                        ).props("outline color=primary")
                         ui.button("录入样品单", icon="add", on_click=lambda: open_detail_dialog()).props(
                             "color=primary"
                         )
@@ -1674,7 +2134,7 @@ async def sample_order_dashboard_page(record_id: str = "") -> None:
                                 with ui.column().classes("gap-1 min-w-0"):
                                     with ui.row().classes("items-center gap-2 flex-wrap"):
                                         ui.label(option_text(row.get("sample_order_no"), "未填写单号")).classes(
-                                            "font-mono font-bold text-base text-gray-800"
+                                            "font-mono text-base text-gray-800"
                                         )
                                         expected_status = option_text(
                                             row.get("expected_status"),
@@ -1697,7 +2157,7 @@ async def sample_order_dashboard_page(record_id: str = "") -> None:
                                                 color="purple",
                                             ).props("outline")
                                     ui.label(option_text(row.get("alert_message"), "暂无提示")).classes(
-                                        "text-sm font-medium text-gray-600"
+                                        "text-base font-bold text-gray-600"
                                     )
                                     ui.label(f"申请人：{option_text(row.get('applicant'), '-')}").classes(
                                         "text-sm text-gray-500"
@@ -1706,7 +2166,7 @@ async def sample_order_dashboard_page(record_id: str = "") -> None:
                                 with ui.column().classes("gap-1 min-w-0"):
                                     with ui.row().classes("w-full items-center gap-x-4 gap-y-1 flex-wrap"):
                                         ui.label(f"产品型号：{option_text(row.get('product_model'), '-')}").classes(
-                                            "font-bold text-gray-800 text-sm"
+                                            "font-bold text-gray-800 text-base"
                                         )
                                         ui.label(f"客户编码：{option_text(row.get('customer_code'), '-')}").classes(
                                             "text-sm text-gray-600 whitespace-nowrap"
@@ -1770,32 +2230,42 @@ async def sample_order_dashboard_page(record_id: str = "") -> None:
                         if current_page >= total_pages:
                             next_button.props("disable")
 
-                metrics_list = [calculate_sample_order_metrics(record) for record in valid_records]
+                records_with_metrics = [(record, calculate_sample_order_metrics(record)) for record in valid_records]
+                metrics_list = [metrics for _, metrics in records_with_metrics]
                 total_count = len(valid_records)
-                in_progress_count = sum(
-                    1 for record in valid_records if sample_order_matches_filter(record, FILTER_IN_PROGRESS)
-                )
-                warning_count = sum(1 for item in metrics_list if item["attention_level"] in {"missing", "warning"})
-                overdue_count = sum(1 for item in metrics_list if item["attention_level"] == "overdue")
-                many_delay_count = sum(1 for item in metrics_list if item["many_delays"])
-                nature_pending_count = sum(1 for record in valid_records if is_delay_nature_pending(record))
                 scores = [
                     item["assessment_score"] for item in metrics_list if isinstance(item.get("assessment_score"), int)
                 ]
                 average_score = round(sum(scores) / len(scores), 1) if scores else "--"
+
+                def kpi_records(label: str) -> list[dict]:
+                    """收集统计卡片对应的订单，用于生成悬停明细。"""
+                    return [
+                        record
+                        for record, metrics in records_with_metrics
+                        if sample_order_matches_kpi(record, metrics, label)
+                    ]
+
+                in_progress_records = kpi_records("制样中")
+                warning_records = kpi_records("预警")
+                overdue_records = kpi_records("延期")
+                many_delay_records = kpi_records("多次延期")
                 kpi_items = [
-                    ("全部样品单", total_count, "inventory_2", "blue"),
-                    ("执行中", in_progress_count, "pending_actions", "indigo"),
-                    ("预警", warning_count, "notifications_active", "orange"),
-                    ("延期", overdue_count, "warning", "red"),
-                    ("多次延期", many_delay_count, "repeat", "purple"),
-                    ("平均考核分", average_score, "military_tech", "green"),
+                    ("全部样品单", total_count, "inventory_2", "blue", None),
+                    ("制样中", len(in_progress_records), "pending_actions", "indigo", in_progress_records),
+                    ("预警", len(warning_records), "notifications_active", "orange", warning_records),
+                    ("延期", len(overdue_records), "warning", "red", overdue_records),
+                    ("多次延期", len(many_delay_records), "repeat", "purple", many_delay_records),
                 ]
                 if can_mark_delay_nature:
-                    kpi_items.insert(5, ("待性质标记", nature_pending_count, "sell", "red"))
+                    pending_records = kpi_records("待性质标记")
+                    kpi_items.append(("待性质标记", len(pending_records), "sell", "red", pending_records))
+                if can_view_sample_order_average_score(current_role):
+                    # score_records = kpi_records("平均考核分")
+                    kpi_items.append(("平均考核分", average_score, "military_tech", "green", None))
                 kpi_container.clear()
                 with kpi_container:
-                    for label, value, icon, color in kpi_items:
+                    for label, value, icon, color, detail_records in kpi_items:
                         with (
                             ui.card()
                             .classes("flex-1 min-w-40 p-3 shadow-sm border-l-4")
@@ -1806,6 +2276,22 @@ async def sample_order_dashboard_page(record_id: str = "") -> None:
                                     ui.label(label).classes("text-xs text-gray-500")
                                     ui.label(str(value)).classes("text-2xl font-bold text-gray-800")
                                 ui.icon(icon, color=color, size="md")
+                            if detail_records is not None:
+                                with ui.tooltip().classes(
+                                    "bg-slate-800/80 text-white p-3 max-w-3xl max-h-[70vh] overflow-y-auto"
+                                ):
+                                    ui.label(f"{label}对应订单（{len(detail_records)}条）").classes("font-bold mb-2")
+                                    if detail_records:
+                                        with ui.element("div").classes("grid grid-cols-2 gap-x-5 gap-y-1"):
+                                            for detail_record in detail_records:
+                                                basic = detail_record["basic_info"]
+                                                ui.label(
+                                                    f"{option_text(basic.get('sample_order_no'), '未填写单号')} · "
+                                                    f"{option_text(basic.get('product_model'), '未填写型号')} · "
+                                                    f"申请人：{option_text(basic.get('applicant'), '未填写申请人')}"
+                                                ).classes("text-xs whitespace-nowrap")
+                                    else:
+                                        ui.label("暂无对应订单").classes("text-xs")
 
             def refresh_if_version_changed() -> None:
                 latest_version = db_storage.get_item(SAMPLE_ORDER_VERSION_KEY, 0)

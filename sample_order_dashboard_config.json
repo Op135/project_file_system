@@ -1,4 +1,21 @@
 {
+    "_配置说明": {
+        "生效方式": "修改本文件后需要重启服务；以_开头的说明键仅供维护人员阅读，不参与业务逻辑。",
+        "public_base_url": "企业微信通知中样品单详情链接使用的系统访问地址，不要以斜杠结尾。",
+        "warning_days": "交期预警提前量，单位为工作日；剩余工作日小于等于该值时进入预警。",
+        "base_editor_roles": "允许新建、导入和修改样品单基础信息及制样执行信息的角色列表。",
+        "delay_editor_roles": "允许填写延期目标和延期原因的角色列表。",
+        "special_status_editor_roles": "允许设置暂停、作废等订单特殊状态的角色列表。",
+        "delay_nature_marker_roles": "允许为已完成且存在延期记录的订单标记延期性质的角色列表。",
+        "admin_roles": "拥有样品单模块管理权限的角色列表。",
+        "special_statuses": "订单特殊状态的可选值列表；正常状态必须保留。",
+        "special_status_reason_required": "设置非正常特殊状态时是否强制填写原因，true为必须填写。",
+        "delay_attention_threshold": "多次延期关注阈值；延期次数超过该数字时突出显示并提醒研发经理。",
+        "wecom.redirect_applicant_notifications_to_manager": "调试开关；true时原本发给申请人的企业微信消息改发给研发经理，上线后改为false。",
+        "wecom.notify_applicant_on_extension": "新增延期记录时是否发送企业微信通知。",
+        "wecom.notify_applicant_on_special_status": "设置订单特殊状态时是否发送企业微信通知。",
+        "wecom.manager_notify_targets": "研发经理通知对象列表；position表示按系统中的职位名称匹配接收人。"
+    },
     "public_base_url": "http://192.168.1.102:8080",
     "warning_days": 7,
     "base_editor_roles": [
@@ -28,7 +45,7 @@
     "special_status_reason_required": true,
     "delay_attention_threshold": 2,
     "wecom": {
-        "redirect_applicant_notifications_to_manager": true,
+        "redirect_applicant_notifications_to_manager": false,
         "notify_applicant_on_extension": true,
         "notify_applicant_on_special_status": true,
         "manager_notify_targets": [
