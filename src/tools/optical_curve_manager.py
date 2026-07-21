@@ -6,7 +6,7 @@ from __future__ import annotations
 import copy
 import json
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime
 from time import monotonic
 from typing import Any
@@ -156,7 +156,8 @@ def _prepare_curve_data(normalize_text: str, preserve_text: str) -> dict[str, An
 
     if normalize_text:
         x_data, raw_y_data = parse_curve_rows(normalize_text)
-        y_data, factor = normalize_y_values(raw_y_data)
+        raw_y_data = _clamp_negative_y_values(raw_y_data)
+        y_data, factor = _normalize_nonnegative_y_values(raw_y_data)
         return {
             "x_data": x_data,
             "y_data": y_data,
@@ -165,12 +166,45 @@ def _prepare_curve_data(normalize_text: str, preserve_text: str) -> dict[str, An
         }
 
     x_data, y_data = parse_curve_rows(preserve_text)
+    y_data = _clamp_negative_y_values(y_data)
     return {
         "x_data": x_data,
         "y_data": y_data,
         "normalization_factor": 1.0,
         "normalization_mode": "keep_original",
     }
+
+
+def _clamp_negative_y_values(values: Sequence[float]) -> list[float]:
+    """将光谱中低于零的 Y 值按业务规则截断为零。"""
+
+    return [max(0.0, float(value)) for value in values]
+
+
+def _normalize_nonnegative_y_values(values: Sequence[float]) -> tuple[list[float], float]:
+    """归一化已截断的数据；全零光谱保持为零，使用单位因子。"""
+
+    numeric_values = [float(value) for value in values]
+    if numeric_values and not any(numeric_values):
+        return numeric_values, 1.0
+    return normalize_y_values(numeric_values)
+
+
+def _prepare_formula_data(
+    expression: str,
+    variables: Mapping[str, Mapping[str, Any]],
+    *,
+    normalize: bool,
+) -> tuple[list[float], list[float], float]:
+    """计算公式光谱，并在可选归一化之前把负结果截断为零。"""
+
+    result_x, result_y = evaluate_curve_expression(expression, variables)
+    result_y = _clamp_negative_y_values(result_y)
+    if normalize:
+        result_y, result_factor = _normalize_nonnegative_y_values(result_y)
+    else:
+        result_factor = 1.0
+    return result_x, result_y, result_factor
 
 
 def _curve_tree_group_ids(nodes: list[dict[str, Any]]) -> list[str]:
@@ -1172,14 +1206,11 @@ class OpticalCurveManagerTool:
                                     if not formula:
                                         return display_records, ""
                                     try:
-                                        result_x, result_y = evaluate_curve_expression(
+                                        result_x, result_y, result_factor = _prepare_formula_data(
                                             formula,
                                             formula_alias_records,
+                                            normalize=self.formula_normalize,
                                         )
-                                        if self.formula_normalize:
-                                            result_y, result_factor = normalize_y_values(result_y)
-                                        else:
-                                            result_factor = 1.0
                                     except CurveDataError as exc:
                                         return display_records, str(exc)
                                     display_records.append(
