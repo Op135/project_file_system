@@ -22,7 +22,6 @@ colour: Any | None = None
 CALCULATION_START_NM = 360
 CALCULATION_END_NM = 780
 MIN_REQUIRED_START_NM = 380
-MAX_SPECTRA_COUNT = 12
 CRI_CHROMATICITY_DISTANCE_LIMIT = 5.4e-3
 COORDINATE_SYSTEMS = {
     "xy": "CIE 1931 xy",
@@ -239,9 +238,6 @@ def parse_spectral_text(raw_text: str) -> list[SpectrumInput]:
 
     if not data_rows:
         raise SpectralAnalysisError("表头下方没有光谱数据")
-    if len(names) > MAX_SPECTRA_COUNT:
-        raise SpectralAnalysisError(f"一次最多比较 {MAX_SPECTRA_COUNT} 条光谱")
-
     expected_columns = len(names) + 1
     wavelengths: list[float] = []
     value_columns: list[list[float]] = [[] for _ in names]
@@ -301,6 +297,61 @@ def _validate_xy(xy: tuple[float, float]) -> None:
     x, y = xy
     if x < 0 or y <= 0 or x > 1 or y > 1 or x + y > 1 + 1e-9:
         raise SpectralAnalysisError(f"无效的 CIE xy 坐标：({x:.6g}, {y:.6g})")
+
+
+def macadam_ellipse_points(
+    xy: tuple[float, float],
+    sdcm: int,
+    coordinate_system: str = "xy",
+    sample_count: int = 121,
+) -> tuple[tuple[float, float], ...]:
+    """生成指定色坐标处的 MacAdam 椭圆边界点。"""
+
+    _validate_xy(xy)
+    if sdcm not in {1, 3, 5, 7}:
+        raise SpectralAnalysisError("SDCM 阶数仅支持 1、3、5 或 7")
+    if coordinate_system not in {"xy", "upvp"}:
+        raise SpectralAnalysisError("MacAdam 椭圆仅支持 xy 或 u′v′ 坐标系")
+    if sample_count < 13:
+        raise SpectralAnalysisError("MacAdam 椭圆采样点数不能少于 13")
+
+    colour_module = _require_colour()
+    table = np.asarray(colour_module.DATA_MACADAM_1942_ELLIPSES, dtype=float)
+    centers = table[:, :2]
+    target = np.asarray(xy, dtype=float)
+    distances = np.linalg.norm(centers - target, axis=1)
+
+    nearest = np.argsort(distances)[:6]
+    if distances[nearest[0]] <= 1e-12:
+        weights = np.zeros(len(nearest), dtype=float)
+        weights[0] = 1.0
+    else:
+        weights = 1.0 / np.maximum(distances[nearest], 1e-12) ** 2
+        weights /= np.sum(weights)
+
+    # 表中拟合半轴以 10^-3 xy 为单位；对局部形状矩阵插值可避免角度跨越 180° 时突变。
+    shape = np.zeros((2, 2), dtype=float)
+    for weight, row_index in zip(weights, nearest):
+        major = table[row_index, 5] / 1000.0
+        minor = table[row_index, 6] / 1000.0
+        angle = math.radians(table[row_index, 7])
+        rotation = np.asarray(
+            [[math.cos(angle), -math.sin(angle)], [math.sin(angle), math.cos(angle)]],
+            dtype=float,
+        )
+        shape += weight * rotation @ np.diag((major**2, minor**2)) @ rotation.T
+
+    transform = np.linalg.cholesky(shape)
+    angles = np.linspace(0.0, 2.0 * math.pi, sample_count, endpoint=True)
+    unit_circle = np.column_stack((np.cos(angles), np.sin(angles)))
+    xy_points = target + float(sdcm) * (unit_circle @ transform.T)
+
+    if coordinate_system == "xy":
+        return tuple((float(point[0]), float(point[1])) for point in xy_points)
+    return tuple(
+        (uv[0], uv[1] * 1.5)
+        for uv in (_xy_to_uv((float(point[0]), float(point[1]))) for point in xy_points)
+    )
 
 
 def _cct_duv_from_uv(uv: tuple[float, float]) -> tuple[float | None, float | None, list[str]]:

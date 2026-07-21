@@ -18,6 +18,7 @@ from src.tools.spectral_analysis import (  # noqa: E402
 )
 from src.tools.spectral_analyzer import (  # noqa: E402
     _chromaticity_chart_options,
+    _chromaticity_result_key,
     _cie_pointer_visibility_js,
     _comparison_source_options,
     _coordinate_summary_rows,
@@ -29,6 +30,8 @@ from src.tools.spectral_analyzer import (  # noqa: E402
     _mixing_nodes_and_active_ids,
     _option_text,
     _series_style,
+    _sdcm_key,
+    _sdcm_orders,
     _spectrum_group_key,
     _spectrum_chart_options,
     _spectrum_reference_options,
@@ -49,6 +52,7 @@ class SpectralAnalyzerOptionsTests(unittest.TestCase):
         self.assertEqual(_option_text(None), "")
         self.assertEqual(_option_text(" xy ", {"xy", "uv"}, "uv"), "xy")
         self.assertEqual(_option_text("错误", {"xy", "uv"}, "uv"), "uv")
+        self.assertEqual(_sdcm_orders([5, "3", 5, 2, None]), (3, 5))
 
     def test_cie_pointer_visibility_handler_only_hides_for_scatter_points(self):
         hide_handler = _cie_pointer_visibility_js(42, visible=False, scatter_only=True)
@@ -233,6 +237,79 @@ class SpectralAnalyzerOptionsTests(unittest.TestCase):
                 for item in isotherm_series
             )
         )
+
+    def test_chromaticity_chart_adds_independent_sdcm_ellipses(self):
+        options = _chromaticity_chart_options(
+            spectrum_results=self.spectra,
+            coordinate_results=self.coordinates,
+            coordinate_system="xy",
+            sdcm_orders={
+                _sdcm_key("spectrum", "D65"): [3, 5],
+                _sdcm_key("coordinate", "D65"): [1],
+            },
+        )
+        ellipse_series = [item for item in options["series"] if "SDCM" in item["name"]]
+        self.assertEqual(
+            [item["name"] for item in ellipse_series],
+            ["D65 · 3 SDCM", "D65 · 5 SDCM", "D65 · 1 SDCM"],
+        )
+        self.assertTrue(all(item["type"] == "line" for item in ellipse_series))
+        self.assertTrue(all(item["silent"] for item in ellipse_series))
+        self.assertTrue(all(len(item["data"]) == 121 for item in ellipse_series))
+        self.assertTrue(all(item["endLabel"]["show"] for item in ellipse_series))
+        self.assertEqual(ellipse_series[0]["endLabel"]["formatter"], "3 SDCM")
+        self.assertTrue(all(item["id"].startswith("sdcm:") for item in ellipse_series))
+        legend_names = [
+            item if isinstance(item, str) else item["name"]
+            for item in options["legend"]["data"]
+        ]
+        self.assertNotIn("D65 · 3 SDCM", legend_names)
+
+        upvp_options = _chromaticity_chart_options(
+            spectrum_results=[self.spectra[0]],
+            coordinate_system="upvp",
+            sdcm_orders={_sdcm_key("spectrum", "D65"): [5]},
+        )
+        upvp_ellipse = next(item for item in upvp_options["series"] if "SDCM" in item["name"])
+        self.assertEqual(upvp_ellipse["name"], "D65 · 5 SDCM")
+
+    def test_chromaticity_chart_connects_multiple_sources_to_one_target(self):
+        target_key = _chromaticity_result_key("spectrum", "D65")
+        spectrum_source_key = _chromaticity_result_key("spectrum", "标准A光源")
+        coordinate_source_key = _chromaticity_result_key("coordinate", "D65")
+        options = _chromaticity_chart_options(
+            spectrum_results=self.spectra,
+            coordinate_results=self.coordinates,
+            coordinate_system="xy",
+            connection_target=target_key,
+            connection_sources=[spectrum_source_key, coordinate_source_key, target_key],
+        )
+        connections = [
+            item for item in options["series"] if str(item.get("id", "")).startswith("coordinate-connection:")
+        ]
+        self.assertEqual([item["name"] for item in connections], ["标准A光源 → D65", "D65 → D65"])
+        self.assertEqual(connections[0]["data"][0], list(self.spectra[1].xy))
+        self.assertEqual(connections[0]["data"][1], list(self.spectra[0].xy))
+        self.assertEqual(connections[1]["data"][0], list(self.coordinates[0].xy))
+        self.assertEqual(connections[1]["data"][1], list(self.spectra[0].xy))
+        legend_names = [
+            item if isinstance(item, str) else item["name"]
+            for item in options["legend"]["data"]
+        ]
+        self.assertNotIn("标准A光源 → D65", legend_names)
+
+        upvp_options = _chromaticity_chart_options(
+            spectrum_results=self.spectra,
+            coordinate_system="upvp",
+            connection_target=target_key,
+            connection_sources=[spectrum_source_key],
+        )
+        upvp_connection = next(
+            item
+            for item in upvp_options["series"]
+            if str(item.get("id", "")).startswith("coordinate-connection:")
+        )
+        self.assertEqual(upvp_connection["data"], [list(self.spectra[1].upvp), list(self.spectra[0].upvp)])
 
     def test_cri_chromaticity_chart_compares_two_sources_and_all_samples(self):
         options = _cri_pair_chromaticity_chart_options(

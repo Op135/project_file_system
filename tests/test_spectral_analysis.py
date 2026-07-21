@@ -22,6 +22,7 @@ from src.tools.spectral_analysis import (  # noqa: E402
     chromaticity_background_image,
     chromaticity_isotherms,
     chromaticity_loci,
+    macadam_ellipse_points,
     mix_spectra_by_peak_ratio,
     pairwise_chromaticity_distances,
     parse_chromaticity_text,
@@ -58,6 +59,14 @@ class SpectralParsingTests(unittest.TestCase):
         with self.assertRaisesRegex(SpectralAnalysisError, "不能全部为 0"):
             parse_spectral_text("波长\t样品\n360\t0\n780\t0")
 
+    def test_parse_does_not_limit_spectrum_column_count(self):
+        names = [f"样品{index}" for index in range(1, 16)]
+        header = "波长\t" + "\t".join(names)
+        values = "\t".join("1" for _ in names)
+        spectra = parse_spectral_text(f"{header}\n360\t{values}\n780\t{values}")
+        self.assertEqual(len(spectra), 15)
+        self.assertEqual(spectra[-1].name, "样品15")
+
 
 class SpectralCalculationTests(unittest.TestCase):
     @classmethod
@@ -87,6 +96,30 @@ class SpectralCalculationTests(unittest.TestCase):
     def test_calculation_requires_visible_range_coverage(self):
         with self.assertRaisesRegex(SpectralAnalysisError, "至少应覆盖"):
             analyze_spectral_text("波长\t样品\n400\t1\n780\t1")
+
+    def test_macadam_ellipse_has_true_sdcm_scale_and_upvp_projection(self):
+        center = (0.305, 0.323)
+        one_sdcm = np.asarray(macadam_ellipse_points(center, 1), dtype=float)
+        three_sdcm = np.asarray(macadam_ellipse_points(center, 3), dtype=float)
+        upvp = np.asarray(macadam_ellipse_points(center, 1, "upvp"), dtype=float)
+
+        self.assertEqual(one_sdcm.shape, (121, 2))
+        np.testing.assert_allclose(one_sdcm[0], one_sdcm[-1], atol=1e-12)
+        np.testing.assert_allclose(
+            three_sdcm - np.asarray(center),
+            3 * (one_sdcm - np.asarray(center)),
+            atol=1e-12,
+        )
+        self.assertLess(float(np.max(np.linalg.norm(one_sdcm - np.asarray(center), axis=1))), 0.004)
+        denominator = -2 * one_sdcm[:, 0] + 12 * one_sdcm[:, 1] + 3
+        expected_upvp = np.column_stack(
+            (4 * one_sdcm[:, 0] / denominator, 9 * one_sdcm[:, 1] / denominator)
+        )
+        np.testing.assert_allclose(upvp, expected_upvp, atol=1e-12)
+
+    def test_macadam_ellipse_rejects_unsupported_order(self):
+        with self.assertRaisesRegex(SpectralAnalysisError, "仅支持"):
+            macadam_ellipse_points((0.3127, 0.3290), 2)
 
     def test_loci_are_available_for_both_diagrams(self):
         xy_spectral, xy_planckian = chromaticity_loci("xy")

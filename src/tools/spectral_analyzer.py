@@ -7,7 +7,7 @@ import asyncio
 import logging
 import math
 import re
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 from nicegui import run, ui
@@ -30,6 +30,7 @@ from .spectral_analysis import (
     chromaticity_background_image,
     chromaticity_isotherms,
     chromaticity_loci,
+    macadam_ellipse_points,
     mix_spectra_by_peak_ratio,
     parse_chromaticity_text,
     solve_three_spectrum_mix,
@@ -81,6 +82,115 @@ GROUP_KEYWORDS = (
     "透射",
     "光",
 )
+SDCM_OPTIONS = {
+    1: "1 SDCM",
+    3: "3 SDCM",
+    5: "5 SDCM",
+    7: "7 SDCM",
+}
+
+
+def _sdcm_key(result_kind: str, name: str) -> str:
+    """生成不同来源色坐标互不冲突的 SDCM 状态键。"""
+
+    return _chromaticity_result_key(result_kind, name)
+
+
+def _chromaticity_result_key(result_kind: str, name: str) -> str:
+    """生成色度图结果点在交互状态中的唯一键。"""
+
+    return f"{result_kind}:{name}"
+
+
+def _sdcm_orders(value: Any) -> tuple[int, ...]:
+    """把界面单值或多选值规范为有序且不重复的 SDCM 阶数。"""
+
+    raw_values = value if isinstance(value, (list, tuple, set)) else (value,)
+    normalized: set[int] = set()
+    for raw_value in raw_values:
+        try:
+            order = int(raw_value)
+        except (TypeError, ValueError):
+            continue
+        if order in SDCM_OPTIONS:
+            normalized.add(order)
+    return tuple(order for order in SDCM_OPTIONS if order in normalized)
+
+
+def _sdcm_ellipse_series(
+    item: SpectrumResult | ChromaticityResult | SpectrumChromaticityResult,
+    result_kind: str,
+    coordinate_system: str,
+    order: int,
+    color: str,
+    *,
+    visible: bool = True,
+) -> dict[str, Any]:
+    """生成一条可按稳定 ID 原位更新的 SDCM 椭圆系列。"""
+
+    return {
+        "id": f"sdcm:{result_kind}:{item.name}:{order}",
+        "name": f"{item.name} · {order} SDCM",
+        "type": "line",
+        "showSymbol": False,
+        "silent": True,
+        "z": 4,
+        "tooltip": {"show": False},
+        "lineStyle": {
+            "color": color,
+            "width": 2,
+            "type": "dashed",
+            "opacity": 0.95,
+        },
+        "endLabel": {
+            "show": visible,
+            "formatter": f"{order} SDCM",
+            "color": color,
+            "fontSize": 11,
+            "fontWeight": 700,
+            "backgroundColor": "rgba(255,255,255,0.88)",
+            "borderRadius": 3,
+            "padding": [2, 4],
+            "distance": 4,
+        },
+        "labelLayout": {"hideOverlap": False},
+        "data": (
+            [list(point) for point in macadam_ellipse_points(item.xy, order, coordinate_system)]
+            if visible
+            else []
+        ),
+    }
+
+
+def _coordinate_connection_series(
+    source: SpectrumResult | ChromaticityResult | SpectrumChromaticityResult,
+    source_kind: str,
+    target: SpectrumResult | ChromaticityResult | SpectrumChromaticityResult,
+    coordinate_system: str,
+    color: str,
+    *,
+    visible: bool = True,
+) -> dict[str, Any]:
+    """生成一条从光源坐标点指向目标坐标点的稳定连线系列。"""
+
+    source_point = source.xy if coordinate_system == "xy" else source.upvp
+    target_point = target.xy if coordinate_system == "xy" else target.upvp
+    return {
+        "id": f"coordinate-connection:{_chromaticity_result_key(source_kind, source.name)}",
+        "name": f"{source.name} → {target.name}",
+        "type": "line",
+        "showSymbol": False,
+        "silent": True,
+        "z": 4,
+        "tooltip": {"show": False},
+        "lineStyle": {
+            "color": color,
+            "width": 1.8,
+            "type": "solid",
+            "opacity": 0.85,
+        },
+        "data": [list(source_point), list(target_point)] if visible else [],
+    }
 
 
 def _legend_options(names: list[Any] | None = None) -> dict[str, Any]:
@@ -238,7 +348,7 @@ def _cie_pointer_visibility_js(chart_id: int, *, visible: bool, scatter_only: bo
     """
 
 
-def _render_cie_chart(options: dict[str, Any], viewport_offset: int = 245) -> None:
+def _render_cie_chart(options: dict[str, Any], viewport_offset: int = 245) -> Any:
     """以正方形容器渲染支持缩放、平移和智能十字指示的 CIE 图。"""
 
     chart = (
@@ -250,6 +360,7 @@ def _render_cie_chart(options: dict[str, Any], viewport_offset: int = 245) -> No
         )
     )
     _bind_cie_pointer_events(chart)
+    return chart
 
 
 def _bind_cie_pointer_events(chart: Any) -> None:
@@ -769,6 +880,9 @@ def _chromaticity_chart_options(
     *,
     coordinate_system: str = "xy",
     series_styles: dict[str, dict[str, str]] | None = None,
+    sdcm_orders: Mapping[str, Sequence[int] | int] | None = None,
+    connection_target: str | None = None,
+    connection_sources: Sequence[str] | None = None,
     axis_interval: float = 0.1,
     show_isotherms: bool = False,
     compact: bool = False,
@@ -778,6 +892,8 @@ def _chromaticity_chart_options(
     spectrum_results = spectrum_results or []
     coordinate_results = coordinate_results or []
     standard_illuminant_results = standard_illuminant_results or []
+    sdcm_orders = sdcm_orders or {}
+    connection_sources = connection_sources or []
     spectral_locus, planckian_locus = chromaticity_loci(coordinate_system)
     is_xy = coordinate_system == "xy"
     series: list[dict[str, Any]] = [
@@ -814,6 +930,28 @@ def _chromaticity_chart_options(
         ),
         *((item, "standard") for item in standard_illuminant_results),
     ]
+    keyed_results = {
+        _chromaticity_result_key(result_kind, item.name): (item, result_kind, index)
+        for index, (item, result_kind) in enumerate(all_results)
+    }
+    target_entry = keyed_results.get(connection_target or "")
+    if target_entry is not None:
+        target_item = target_entry[0]
+        for source_key in connection_sources:
+            source_entry = keyed_results.get(str(source_key))
+            if source_entry is None or str(source_key) == connection_target:
+                continue
+            source_item, source_kind, source_index = source_entry
+            _, source_color = _series_style(source_item.name, series_styles, source_index)
+            series.append(
+                _coordinate_connection_series(
+                    source_item,
+                    source_kind,
+                    target_item,
+                    coordinate_system,
+                    source_color,
+                )
+            )
     for index, (item, result_kind) in enumerate(all_results):
         point = item.xy if is_xy else item.upvp
         symbol, color = _series_style(item.name, series_styles, index)
@@ -821,6 +959,16 @@ def _chromaticity_chart_options(
             symbol = "triangle"
         elif result_kind == "standard":
             symbol = "diamond"
+        for sdcm in _sdcm_orders(sdcm_orders.get(_sdcm_key(result_kind, item.name), ())):
+            series.append(
+                _sdcm_ellipse_series(
+                    item,
+                    result_kind,
+                    coordinate_system,
+                    sdcm,
+                    color,
+                )
+            )
         series.append(
             {
                 "name": item.name,
@@ -1101,7 +1249,12 @@ class SpectralAnalyzerTool:
             "xy_interval": 0.1,
             "upvp_interval": 0.1,
         }
+        self.coordinate_connection_state: dict[str, Any] = {
+            "target": "",
+            "sources": [],
+        }
         self.series_styles: dict[str, dict[str, str]] = {}
+        self.sdcm_orders: dict[str, list[int]] = {}
         self.spectrum_results: list[SpectrumResult] = []
         self.coordinate_results: list[ChromaticityResult] = []
         self.standard_illuminant_results: list[ChromaticityResult] = []
@@ -1122,6 +1275,7 @@ class SpectralAnalyzerTool:
         mixing_solve_generation = 0
         mixing_solve_pending = False
         mixing_solve_error = ""
+        cie_charts: dict[str, Any] = {}
 
         @ui.refreshable
         def render_spectrum_chart() -> None:
@@ -1137,40 +1291,257 @@ class SpectralAnalyzerTool:
                 )
             ).classes("w-full h-[calc(100vh-545px)] min-h-[480px]")
 
+        def analysis_chromaticity_options(coordinate_system: str) -> dict[str, Any]:
+            """按当前分析状态生成一张色度图配置。"""
+
+            interval_key = "xy_interval" if coordinate_system == "xy" else "upvp_interval"
+            return _chromaticity_chart_options(
+                spectrum_results=self.spectrum_results,
+                coordinate_results=self.coordinate_results,
+                standard_illuminant_results=self.standard_illuminant_results,
+                coordinate_system=coordinate_system,
+                series_styles=self.series_styles,
+                sdcm_orders=self.sdcm_orders,
+                connection_target=str(self.coordinate_connection_state.get("target") or ""),
+                connection_sources=(
+                    self.coordinate_connection_state.get("sources")
+                    if isinstance(self.coordinate_connection_state.get("sources"), list)
+                    else []
+                ),
+                axis_interval=_nonnegative_number(self.chart_state.get(interval_key), 0.1),
+                show_isotherms=bool(self.coordinate_state.get("show_isotherms", False)),
+            )
+
+        def analysis_chromaticity_items() -> list[
+            tuple[SpectrumResult | ChromaticityResult, str]
+        ]:
+            """返回分析色度图中全部结果点及其来源类型。"""
+
+            return [
+                *((item, "spectrum") for item in self.spectrum_results),
+                *((item, "coordinate") for item in self.coordinate_results),
+                *((item, "standard") for item in self.standard_illuminant_results),
+            ]
+
+        def update_sdcm_chart_series() -> None:
+            """只合并更新椭圆系列，保留 ECharts 当前缩放和平移状态。"""
+
+            items = analysis_chromaticity_items()
+            for coordinate_system, chart in tuple(cie_charts.items()):
+                ellipse_series: list[dict[str, Any]] = []
+                for index, (item, result_kind) in enumerate(items):
+                    _, color = _series_style(item.name, self.series_styles, index)
+                    selected = set(
+                        _sdcm_orders(
+                            self.sdcm_orders.get(_sdcm_key(result_kind, item.name), ())
+                        )
+                    )
+                    ellipse_series.extend(
+                        _sdcm_ellipse_series(
+                            item,
+                            result_kind,
+                            coordinate_system,
+                            order,
+                            color,
+                            visible=order in selected,
+                        )
+                        for order in SDCM_OPTIONS
+                    )
+                chart.run_chart_method(
+                    "setOption",
+                    {"series": ellipse_series},
+                    {"notMerge": False, "lazyUpdate": False},
+                )
+
+        def update_sdcm_orders(event: Any, key: str) -> None:
+            """保存单个色坐标的多选 SDCM 阶数并原位更新椭圆。"""
+
+            self.sdcm_orders[key] = list(_sdcm_orders(getattr(event, "value", ())))
+            update_sdcm_chart_series()
+
+        def connection_point_options() -> dict[str, str]:
+            """生成目标点与光源点选择器共用的坐标点选项。"""
+
+            source_labels = {
+                "spectrum": "光谱",
+                "coordinate": "手工坐标",
+                "standard": "标准光源",
+            }
+            return {
+                _chromaticity_result_key(result_kind, item.name): (
+                    f"{source_labels[result_kind]} · {item.name}"
+                )
+                for item, result_kind in analysis_chromaticity_items()
+            }
+
+        def normalized_connection_sources(allowed_keys: set[str], target_key: str) -> list[str]:
+            """过滤无效、重复以及与目标点相同的光源点键。"""
+
+            raw_sources = self.coordinate_connection_state.get("sources", [])
+            if not isinstance(raw_sources, (list, tuple, set)):
+                return []
+            return list(
+                dict.fromkeys(
+                    str(key)
+                    for key in raw_sources
+                    if str(key) in allowed_keys and str(key) != target_key
+                )
+            )
+
+        def update_coordinate_connection_chart_series() -> None:
+            """只更新坐标连线系列，保留 CIE 图当前视口。"""
+
+            items = analysis_chromaticity_items()
+            keyed_items = {
+                _chromaticity_result_key(result_kind, item.name): (item, result_kind, index)
+                for index, (item, result_kind) in enumerate(items)
+            }
+            target_key = str(self.coordinate_connection_state.get("target") or "")
+            target_entry = keyed_items.get(target_key)
+            selected_sources = set(normalized_connection_sources(set(keyed_items), target_key))
+            for coordinate_system, chart in tuple(cie_charts.items()):
+                connection_series: list[dict[str, Any]] = []
+                for source_key, (source_item, source_kind, source_index) in keyed_items.items():
+                    if target_entry is None:
+                        connection_series.append(
+                            {
+                                "id": f"coordinate-connection:{source_key}",
+                                "data": [],
+                            }
+                        )
+                        continue
+                    _, color = _series_style(source_item.name, self.series_styles, source_index)
+                    connection_series.append(
+                        _coordinate_connection_series(
+                            source_item,
+                            source_kind,
+                            target_entry[0],
+                            coordinate_system,
+                            color,
+                            visible=source_key in selected_sources and source_key != target_key,
+                        )
+                    )
+                chart.run_chart_method(
+                    "setOption",
+                    {"series": connection_series},
+                    {"notMerge": False, "lazyUpdate": False},
+                )
+
+        def update_connection_target(event: Any) -> None:
+            """更新目标坐标点并移除与其重复的光源点。"""
+
+            options = connection_point_options()
+            raw_target = str(getattr(event, "value", "") or "")
+            target_key = raw_target if raw_target in options else ""
+            self.coordinate_connection_state["target"] = target_key
+            self.coordinate_connection_state["sources"] = normalized_connection_sources(
+                set(options),
+                target_key,
+            )
+            render_coordinate_connection_controls.refresh()
+            update_coordinate_connection_chart_series()
+
+        def update_connection_sources(event: Any) -> None:
+            """更新需要连接到目标点的多个光源坐标点。"""
+
+            raw_sources = getattr(event, "value", [])
+            self.coordinate_connection_state["sources"] = (
+                list(raw_sources) if isinstance(raw_sources, (list, tuple, set)) else []
+            )
+            options = connection_point_options()
+            target_key = str(self.coordinate_connection_state.get("target") or "")
+            self.coordinate_connection_state["sources"] = normalized_connection_sources(
+                set(options),
+                target_key,
+            )
+            update_coordinate_connection_chart_series()
+
+        @ui.refreshable
+        def render_coordinate_connection_controls() -> None:
+            """渲染目标坐标点与多光源坐标点的连线设置。"""
+
+            options = connection_point_options()
+            if not options:
+                return
+            allowed_keys = set(options)
+            target_key = str(self.coordinate_connection_state.get("target") or "")
+            if target_key not in allowed_keys:
+                target_key = ""
+                self.coordinate_connection_state["target"] = ""
+            sources = normalized_connection_sources(allowed_keys, target_key)
+            self.coordinate_connection_state["sources"] = sources
+            source_options = {
+                key: label for key, label in options.items() if key != target_key
+            }
+            with ui.card().classes("w-full p-3 bg-slate-50 border border-slate-200"):
+                with ui.row().classes("w-full items-center gap-2"):
+                    ui.icon("polyline").classes("text-blue-700")
+                    ui.label("坐标点连线").classes("font-bold text-slate-800")
+                ui.select(
+                    options,
+                    value=target_key or None,
+                    label="目标坐标点",
+                    on_change=update_connection_target,
+                ).props("outlined dense options-dense clearable").classes("w-full")
+                source_select = ui.select(
+                    source_options,
+                    value=sources,
+                    label="光源坐标点（可多选）",
+                    multiple=True,
+                    on_change=update_connection_sources,
+                ).props("outlined dense options-dense use-chips clearable").classes("w-full")
+                if not target_key:
+                    source_select.props("disable")
+
+        def render_sdcm_controls() -> None:
+            """渲染每个分析结果点各自独立的 MacAdam 椭圆选项。"""
+
+            items: list[tuple[SpectrumResult | ChromaticityResult, str, str]] = [
+                *((item, "spectrum", "光谱") for item in self.spectrum_results),
+                *((item, "coordinate", "手工坐标") for item in self.coordinate_results),
+                *((item, "standard", "标准光源") for item in self.standard_illuminant_results),
+            ]
+            if not items:
+                return
+            with ui.card().classes("w-full p-3 bg-slate-50 border border-slate-200"):
+                with ui.row().classes("w-full items-center gap-2"):
+                    ui.icon("radio_button_unchecked").classes("text-blue-700")
+                    ui.label("麦克亚当椭圆（SDCM）").classes("font-bold text-slate-800")
+                ui.label(
+                    "每个点可同时选择多个阶数；清空选项即不显示。"
+                ).classes("text-xs text-slate-500")
+                with ui.column().classes(
+                    "w-full gap-2 max-h-[calc(100vh-360px)] min-h-48 overflow-y-auto pr-1"
+                ):
+                    for item, result_kind, source_label in items:
+                        key = _sdcm_key(result_kind, item.name)
+                        ui.select(
+                            SDCM_OPTIONS,
+                            value=list(_sdcm_orders(self.sdcm_orders.get(key, ()))),
+                            label=f"{source_label} · {item.name}",
+                            multiple=True,
+                            on_change=lambda event, state_key=key: update_sdcm_orders(event, state_key),
+                        ).props("outlined dense options-dense use-chips clearable").classes("w-full")
+
         @ui.refreshable
         def render_chromaticity_view() -> None:
-            ui.label(
-                "光谱点、手工坐标与所选标准光源已叠加；十字指示线显示鼠标坐标。滚轮等比例缩放，按住左键可任意方向平移。"
-            ).classes("text-xs text-slate-500 mb-2")
-            cie_tabs = ui.tabs().classes("w-full text-blue-700")
-            with cie_tabs:
-                cie_xy_tab = ui.tab("CIE 1931 xy")
-                cie_upvp_tab = ui.tab("CIE 1976 u′v′")
-            with ui.tab_panels(cie_tabs, value=cie_xy_tab).classes("w-full"):
-                with ui.tab_panel(cie_xy_tab).classes("p-0"):
-                    _render_cie_chart(
-                        _chromaticity_chart_options(
-                            spectrum_results=self.spectrum_results,
-                            coordinate_results=self.coordinate_results,
-                            standard_illuminant_results=self.standard_illuminant_results,
-                            coordinate_system="xy",
-                            series_styles=self.series_styles,
-                            axis_interval=_nonnegative_number(self.chart_state.get("xy_interval"), 0.1),
-                            show_isotherms=bool(self.coordinate_state.get("show_isotherms", False)),
-                        )
-                    )
-                with ui.tab_panel(cie_upvp_tab).classes("p-0"):
-                    _render_cie_chart(
-                        _chromaticity_chart_options(
-                            spectrum_results=self.spectrum_results,
-                            coordinate_results=self.coordinate_results,
-                            standard_illuminant_results=self.standard_illuminant_results,
-                            coordinate_system="upvp",
-                            series_styles=self.series_styles,
-                            axis_interval=_nonnegative_number(self.chart_state.get("upvp_interval"), 0.1),
-                            show_isotherms=bool(self.coordinate_state.get("show_isotherms", False)),
-                        )
-                    )
+            with ui.row().classes("w-full flex-nowrap items-start gap-3"):
+                with ui.column().classes("flex-1 min-w-0 gap-0"):
+                    ui.label(
+                        "光谱点、手工坐标与所选标准光源已叠加；十字指示线显示鼠标坐标。滚轮等比例缩放，按住左键可任意方向平移。"
+                    ).classes("text-xs text-slate-500 mb-2")
+                    cie_tabs = ui.tabs().classes("w-full text-blue-700")
+                    with cie_tabs:
+                        cie_xy_tab = ui.tab("CIE 1931 xy")
+                        cie_upvp_tab = ui.tab("CIE 1976 u′v′")
+                    with ui.tab_panels(cie_tabs, value=cie_xy_tab).classes("w-full"):
+                        with ui.tab_panel(cie_xy_tab).classes("p-0"):
+                            cie_charts["xy"] = _render_cie_chart(analysis_chromaticity_options("xy"))
+                        with ui.tab_panel(cie_upvp_tab).classes("p-0"):
+                            cie_charts["upvp"] = _render_cie_chart(analysis_chromaticity_options("upvp"))
+                with ui.column().classes("w-80 shrink-0 gap-3 sticky top-2"):
+                    render_coordinate_connection_controls()
+                    render_sdcm_controls()
 
         def refresh_chart_appearance(_=None) -> None:
             """刷新所有受图标、颜色和坐标轴间隔影响的图表。"""
@@ -1256,7 +1627,7 @@ class SpectralAnalyzerTool:
                 with ui.column().classes("w-full h-[520px] items-center justify-center text-slate-400 gap-3"):
                     ui.icon("query_stats", size="64px")
                     ui.label("粘贴光谱后点击“联合计算”").classes("text-lg")
-                    ui.label("支持共享波长列和最多 12 列光谱值").classes("text-sm")
+                    ui.label("支持共享波长列，不限制光谱列数").classes("text-sm")
                 return
 
             warning_items = [(result.name, warning) for result in self.spectrum_results for warning in result.warnings]
