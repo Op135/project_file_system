@@ -19,6 +19,7 @@ from src.tools.optical_curve_manager import (  # noqa: E402
     _int_at_least,
     _optional_float,
     _prepare_curve_data,
+    _prepare_formula_data,
     _select_textarea_script,
 )
 from src.tools.optical_curve_data import CurveDataError  # noqa: E402
@@ -104,6 +105,37 @@ class OpticalCurveManagerTests(unittest.TestCase):
         self.assertEqual(preserved_data["normalization_mode"], "keep_original")
         self.assertEqual(preserved_data["normalization_factor"], 1.0)
         self.assertEqual(preserved_data["y_data"], [0.5, 0.95])
+
+    def test_prepare_curve_data_clamps_negative_y_values_before_normalizing(self):
+        auto_data = _prepare_curve_data("400\t-2\n500\t1", "")
+        self.assertEqual(auto_data["normalization_factor"], 1.0)
+        self.assertEqual(auto_data["y_data"], [0.0, 1.0])
+
+        preserved_data = _prepare_curve_data("", "400\t-2\n500\t1")
+        self.assertEqual(preserved_data["y_data"], [0.0, 1.0])
+
+        negative_only_data = _prepare_curve_data("400\t-2\n500\t-1", "")
+        self.assertEqual(negative_only_data["normalization_factor"], 1.0)
+        self.assertEqual(negative_only_data["y_data"], [0.0, 0.0])
+
+    def test_prepare_formula_data_clamps_negative_results_before_normalizing(self):
+        variables = {
+            "a": {"x_data": [400, 500], "y_data": [1, 3]},
+            "b": {"x_data": [400, 500], "y_data": [2, 1]},
+        }
+
+        x_data, y_data, factor = _prepare_formula_data("a-b", variables, normalize=False)
+        self.assertEqual(x_data, [400.0, 500.0])
+        self.assertEqual(y_data, [0.0, 2.0])
+        self.assertEqual(factor, 1.0)
+
+        _, normalized_y, normalized_factor = _prepare_formula_data("a-b", variables, normalize=True)
+        self.assertEqual(normalized_y, [0.0, 1.0])
+        self.assertEqual(normalized_factor, 2.0)
+
+        _, zero_y, zero_factor = _prepare_formula_data("b-a-3", variables, normalize=True)
+        self.assertEqual(zero_y, [0.0, 0.0])
+        self.assertEqual(zero_factor, 1.0)
 
     def test_prepare_curve_data_requires_exactly_one_input(self):
         with self.assertRaises(CurveDataError):
