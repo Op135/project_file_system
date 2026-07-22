@@ -27,6 +27,83 @@ def load_isolated_db_storage(module_name: str, db_path: Path) -> Any:
 
 
 class JsonEntityStorageTests(unittest.IsolatedAsyncioTestCase):
+    async def test_deep_reads_copy_only_the_requested_branch(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage = load_isolated_db_storage(
+                "test_deep_read_copy",
+                Path(temp_dir) / "deep-read.db",
+            )
+            await storage.init_db()
+            try:
+                await storage.set_item(
+                    "overview",
+                    {
+                        "large_unrelated_branch": [
+                            {"index": index, "payload": "x" * 100}
+                            for index in range(1000)
+                        ],
+                        "target": {"status": "进行中"},
+                    },
+                )
+                target = storage.get_deep_item(["overview", "target"])
+                target["status"] = "已修改返回值"
+                self.assertEqual(
+                    storage.get_deep_item(["overview", "target", "status"]),
+                    "进行中",
+                )
+                self.assertIs(
+                    storage.get_deep_item(["overview", "target"], return_ref=True),
+                    storage.get_item("overview", return_ref=True)["target"],
+                )
+            finally:
+                await storage.close_db()
+
+    async def test_cross_instance_deep_set_and_delete_use_latest_database_value(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = Path(temp_dir) / "deep-concurrency.db"
+            left = load_isolated_db_storage("test_deep_left", db_path)
+            right = load_isolated_db_storage("test_deep_right", db_path)
+            await left.init_db()
+            await left.set_item(
+                "overview",
+                {"left": {"value": 0}, "right": {"value": 0}, "obsolete": True},
+            )
+            await right.init_db()
+            try:
+                await left.set_deep_item(["overview", "left", "value"], 1)
+                await right.set_deep_item(["overview", "right", "value"], 2)
+                await left.set_deep_item(["overview", "created_later"], "保留")
+                self.assertTrue(await right.del_deep_item(["overview", "obsolete"]))
+
+                connection = sqlite3.connect(db_path)
+                try:
+                    stored_json = connection.execute(
+                        "SELECT value FROM general_storage WHERE key = ?",
+                        ("overview",),
+                    ).fetchone()[0]
+                finally:
+                    connection.close()
+                stored = json.loads(stored_json)
+                self.assertEqual(stored["left"]["value"], 1)
+                self.assertEqual(stored["right"]["value"], 2)
+                self.assertEqual(stored["created_later"], "保留")
+                self.assertNotIn("obsolete", stored)
+            finally:
+                await left.close_db()
+                await right.close_db()
+
+    async def test_resource_locks_are_reused_only_for_the_same_resource(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage = load_isolated_db_storage(
+                "test_resource_locks",
+                Path(temp_dir) / "locks.db",
+            )
+            same_left = storage._get_resource_lock("general:module-a")
+            same_right = storage._get_resource_lock("general:module-a")
+            different = storage._get_resource_lock("general:module-b")
+            self.assertIs(same_left, same_right)
+            self.assertIsNot(same_left, different)
+
     async def test_legacy_dictionary_is_migrated_once_and_kept_as_backup(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             storage = load_isolated_db_storage(
