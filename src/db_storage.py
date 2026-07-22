@@ -15,10 +15,15 @@ logger = logging.getLogger(__name__)
 BASE_DIR = Path(__file__).parent.parent  # 项目根目录
 DB_PATH = f"{BASE_DIR}/db/nicegui_storage.db"  # 数据库文件名
 TABLE_NAME = "general_storage"  # 模拟 general storage
+JSON_ENTITY_TABLE_NAME = "json_entity_storage"  # 按业务实体逐行保存JSON，避免整块集合重写
+JSON_ENTITY_NAMESPACE_TABLE_NAME = "json_entity_namespaces"  # 记录已初始化命名空间，允许合法空集合
 ATOMIC_NO_UPDATE = object()  # update_function 返回此值时，原子事务不写入任何数据
+ATOMIC_DELETE = object()  # update_function 返回此值时，原子删除当前实体
 # 内存缓存 (The "Instant Retrieval" part)
 # 这就是实现“即时获取”的关键。数据从内存中读取。
 _data_cache: Dict[str, Any] = {}
+_entity_cache: Dict[str, Dict[str, Any]] = {}
+_entity_namespaces: set[str] = set()
 _db: Optional[aiosqlite.Connection] = None
 
 # 1. 初始化事件：防止在缓存加载完成前执行 RMW 操作
@@ -37,7 +42,7 @@ async def init_db() -> None:
     2. 创建表（如果不存在）。
     3. 将数据库中的所有数据加载到内存缓存 _data_cache 中。
     """
-    global _db, _data_cache
+    global _db, _data_cache, _entity_cache, _entity_namespaces
     _db = await aiosqlite.connect(DB_PATH)
     # 启用 WAL 模式 (Write-Ahead Logging) 提高并发性能
     await _db.execute("PRAGMA journal_mode=WAL;")
@@ -52,6 +57,23 @@ async def init_db() -> None:
             value TEXT
         )
     """)
+    await _db.execute(f"""
+        CREATE TABLE IF NOT EXISTS {JSON_ENTITY_TABLE_NAME} (
+            namespace TEXT NOT NULL,
+            entity_id TEXT NOT NULL,
+            value TEXT NOT NULL,
+            PRIMARY KEY (namespace, entity_id)
+        )
+    """)
+    await _db.execute(
+        f"CREATE INDEX IF NOT EXISTS idx_{JSON_ENTITY_TABLE_NAME}_namespace "
+        f"ON {JSON_ENTITY_TABLE_NAME} (namespace)"
+    )
+    await _db.execute(f"""
+        CREATE TABLE IF NOT EXISTS {JSON_ENTITY_NAMESPACE_TABLE_NAME} (
+            namespace TEXT PRIMARY KEY
+        )
+    """)
     await _db.commit()
 
     # 从数据库加载所有现有数据到内存缓存
@@ -64,6 +86,28 @@ async def init_db() -> None:
             except json.JSONDecodeError:
                 logger.error(f"警告: 不能从键'{key}'中解码json数据", exc_info=True)
                 _data_cache[key] = None  # 或 other default
+
+    _entity_cache = {}
+    _entity_namespaces = set()
+    async with _db.execute(
+        f"SELECT namespace FROM {JSON_ENTITY_NAMESPACE_TABLE_NAME}"
+    ) as cursor:
+        async for (namespace,) in cursor:
+            _entity_namespaces.add(namespace)
+            _entity_cache.setdefault(namespace, {})
+    async with _db.execute(
+        f"SELECT namespace, entity_id, value FROM {JSON_ENTITY_TABLE_NAME}"
+    ) as cursor:
+        async for namespace, entity_id, value_json in cursor:
+            try:
+                _entity_cache.setdefault(namespace, {})[entity_id] = json.loads(value_json)
+            except json.JSONDecodeError:
+                logger.error(
+                    "不能解码实体存储数据：namespace=%s, entity_id=%s",
+                    namespace,
+                    entity_id,
+                    exc_info=True,
+                )
 
     logger.info(f"装载{len(_data_cache)}条数据到缓存中.")
     # 通知所有等待者，初始化已完成
@@ -150,6 +194,243 @@ def get_item(key: str, default: Any = None, return_ref: bool = False) -> Any:
         return val  # 极速模式：直接返回引用
 
     return copy.deepcopy(val)  # 安全模式：返回深拷贝
+
+
+def get_json_entities(namespace: str, return_ref: bool = False) -> Dict[str, Any]:
+    """读取一个命名空间下的全部独立JSON实体。"""
+    entities = _entity_cache.get(namespace, {})
+    return entities if return_ref else copy.deepcopy(entities)
+
+
+def is_json_entity_namespace_initialized(namespace: str) -> bool:
+    """判断实体命名空间是否已完成建库或旧数据迁移。"""
+    return namespace in _entity_namespaces
+
+
+def get_json_entity(namespace: str, entity_id: str, default: Any = None) -> Any:
+    """读取一个独立JSON实体并返回深拷贝。"""
+    entity = _entity_cache.get(namespace, {}).get(entity_id, default)
+    if entity is default or entity is None:
+        return default
+    return copy.deepcopy(entity)
+
+
+async def get_fresh_item(key: str, default: Any = None) -> Any:
+    """直接从SQLite读取顶层键并刷新本进程缓存，供多进程版本检查使用。"""
+    await _init_done.wait()
+    if _db is None:
+        return default
+    async with _write_lock:
+        try:
+            async with _db.execute(
+                f"SELECT value FROM {TABLE_NAME} WHERE key = ?",
+                (key,),
+            ) as cursor:
+                row = await cursor.fetchone()
+            if row is None:
+                _data_cache.pop(key, None)
+                return default
+            value = json.loads(row[0])
+            _data_cache[key] = copy.deepcopy(value)
+            return copy.deepcopy(value)
+        except Exception:
+            logger.exception("读取最新顶层键失败：%s", key)
+            return default
+
+
+async def refresh_json_entities(namespace: str) -> int:
+    """从SQLite重新加载一个实体命名空间，确保多服务实例间能够看到最新记录。"""
+    await _init_done.wait()
+    if _db is None:
+        return 0
+    async with _write_lock:
+        try:
+            refreshed: Dict[str, Any] = {}
+            async with _db.execute(
+                f"SELECT entity_id, value FROM {JSON_ENTITY_TABLE_NAME} WHERE namespace = ?",
+                (namespace,),
+            ) as cursor:
+                async for entity_id, value_json in cursor:
+                    refreshed[entity_id] = json.loads(value_json)
+            _entity_cache[namespace] = refreshed
+            return len(refreshed)
+        except Exception:
+            logger.exception("刷新实体命名空间失败：%s", namespace)
+            return 0
+
+
+async def migrate_json_dict_to_entities(
+    namespace: str,
+    legacy_key: str,
+) -> int:
+    """首次启动时把旧的字典型顶层键原子复制到独立实体表。"""
+    await _init_done.wait()
+    if _db is None:
+        logger.error("实体数据迁移失败：数据库尚未初始化")
+        return 0
+
+    async with _write_lock:
+        try:
+            await _db.execute("BEGIN IMMEDIATE")
+            async with _db.execute(
+                f"SELECT COUNT(*) FROM {JSON_ENTITY_TABLE_NAME} WHERE namespace = ?",
+                (namespace,),
+            ) as cursor:
+                existing_row = await cursor.fetchone()
+            if existing_row and int(existing_row[0]) > 0:
+                await _db.execute(
+                    f"INSERT OR IGNORE INTO {JSON_ENTITY_NAMESPACE_TABLE_NAME} (namespace) VALUES (?)",
+                    (namespace,),
+                )
+                await _db.commit()
+                _entity_namespaces.add(namespace)
+                return 0
+
+            async with _db.execute(
+                f"SELECT value FROM {TABLE_NAME} WHERE key = ?",
+                (legacy_key,),
+            ) as cursor:
+                legacy_row = await cursor.fetchone()
+            legacy_data = json.loads(legacy_row[0]) if legacy_row else {}
+            if not isinstance(legacy_data, dict):
+                await _db.rollback()
+                logger.error("实体数据迁移失败：旧键 %s 不是字典", legacy_key)
+                return 0
+
+            migrated: Dict[str, Any] = {}
+            for entity_id, value in legacy_data.items():
+                if not isinstance(entity_id, str) or not isinstance(value, dict):
+                    continue
+                value_json = json.dumps(value)
+                await _db.execute(
+                    f"INSERT INTO {JSON_ENTITY_TABLE_NAME} (namespace, entity_id, value) VALUES (?, ?, ?)",
+                    (namespace, entity_id, value_json),
+                )
+                migrated[entity_id] = json.loads(value_json)
+            await _db.execute(
+                f"INSERT OR IGNORE INTO {JSON_ENTITY_NAMESPACE_TABLE_NAME} (namespace) VALUES (?)",
+                (namespace,),
+            )
+            await _db.commit()
+            _entity_cache[namespace] = migrated
+            _entity_namespaces.add(namespace)
+            if migrated:
+                logger.info(
+                    "已把旧键 %s 的 %s 条记录迁移到实体命名空间 %s；旧键保留为只读回滚备份",
+                    legacy_key,
+                    len(migrated),
+                    namespace,
+                )
+            return len(migrated)
+        except Exception:
+            if _db.in_transaction:
+                await _db.rollback()
+            logger.exception("实体数据迁移失败：namespace=%s, legacy_key=%s", namespace, legacy_key)
+            return 0
+
+
+async def atomic_json_entity_update(
+    namespace: str,
+    entity_id: str,
+    update_function: Callable,
+    *args,
+    **kwargs,
+) -> bool:
+    """在单个事务内读取、校验并更新或删除一条JSON实体。"""
+    await _init_done.wait()
+    if _db is None:
+        logger.error("实体更新失败：数据库尚未初始化")
+        return False
+
+    async with _write_lock:
+        try:
+            await _db.execute("BEGIN IMMEDIATE")
+            async with _db.execute(
+                f"SELECT value FROM {JSON_ENTITY_TABLE_NAME} WHERE namespace = ? AND entity_id = ?",
+                (namespace, entity_id),
+            ) as cursor:
+                row = await cursor.fetchone()
+            current_value = json.loads(row[0]) if row else None
+            new_value = update_function(copy.deepcopy(current_value), *args, **kwargs)
+            if new_value is ATOMIC_NO_UPDATE:
+                await _db.rollback()
+                if current_value is None:
+                    _entity_cache.setdefault(namespace, {}).pop(entity_id, None)
+                else:
+                    _entity_cache.setdefault(namespace, {})[entity_id] = copy.deepcopy(current_value)
+                return True
+            if new_value is ATOMIC_DELETE:
+                await _db.execute(
+                    f"DELETE FROM {JSON_ENTITY_TABLE_NAME} WHERE namespace = ? AND entity_id = ?",
+                    (namespace, entity_id),
+                )
+                await _db.commit()
+                _entity_cache.setdefault(namespace, {}).pop(entity_id, None)
+                _entity_namespaces.add(namespace)
+                return True
+
+            value_json = json.dumps(new_value)
+            await _db.execute(
+                f"INSERT OR REPLACE INTO {JSON_ENTITY_TABLE_NAME} (namespace, entity_id, value) VALUES (?, ?, ?)",
+                (namespace, entity_id, value_json),
+            )
+            await _db.execute(
+                f"INSERT OR IGNORE INTO {JSON_ENTITY_NAMESPACE_TABLE_NAME} (namespace) VALUES (?)",
+                (namespace,),
+            )
+            await _db.commit()
+            _entity_cache.setdefault(namespace, {})[entity_id] = json.loads(value_json)
+            _entity_namespaces.add(namespace)
+            return True
+        except Exception:
+            if _db.in_transaction:
+                await _db.rollback()
+            logger.exception(
+                "独立实体原子更新失败：namespace=%s, entity_id=%s",
+                namespace,
+                entity_id,
+            )
+            return False
+
+
+async def insert_json_entities(namespace: str, entities: Dict[str, Any]) -> bool:
+    """在一个事务内批量新增独立JSON实体，任意主键冲突都会整体回滚。"""
+    if not entities:
+        return True
+    await _init_done.wait()
+    if _db is None:
+        logger.error("实体批量新增失败：数据库尚未初始化")
+        return False
+
+    async with _write_lock:
+        try:
+            serialized = {
+                entity_id: json.dumps(value)
+                for entity_id, value in entities.items()
+            }
+            await _db.execute("BEGIN IMMEDIATE")
+            await _db.executemany(
+                f"INSERT INTO {JSON_ENTITY_TABLE_NAME} (namespace, entity_id, value) VALUES (?, ?, ?)",
+                [
+                    (namespace, entity_id, value_json)
+                    for entity_id, value_json in serialized.items()
+                ],
+            )
+            await _db.execute(
+                f"INSERT OR IGNORE INTO {JSON_ENTITY_NAMESPACE_TABLE_NAME} (namespace) VALUES (?)",
+                (namespace,),
+            )
+            await _db.commit()
+            namespace_cache = _entity_cache.setdefault(namespace, {})
+            for entity_id, value_json in serialized.items():
+                namespace_cache[entity_id] = json.loads(value_json)
+            _entity_namespaces.add(namespace)
+            return True
+        except Exception:
+            if _db.in_transaction:
+                await _db.rollback()
+            logger.exception("独立实体批量新增失败：namespace=%s", namespace)
+            return False
 
 
 async def set_item(key: str, value: Any) -> None:

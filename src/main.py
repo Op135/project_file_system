@@ -31,6 +31,7 @@ from .sample_issue_config import (
     SAMPLE_BACKGROUND_REMINDER_INTERVAL_SECONDS,
     SAMPLE_REMINDER_CHECK_WINDOW,
 )
+from .pages.sample_order_dashboard import initialize_sample_order_storage
 from .user_service import UserService
 from .utils import (  # 导入上面定义的函数
     handle_connect,
@@ -289,6 +290,9 @@ async def master_startup():
 
     # 第一顺位：建立底层基础设施（必须加 await 等待完成）
     await db_storage.init_db()
+
+    # 样品单从旧版整块JSON自动迁移为逐订单实体存储；旧键保留作回滚备份。
+    await initialize_sample_order_storage()
 
     # 第二顺位：执行依赖数据库的全局数据加载与配置更新
     # 此时可以100%确定数据库已经就绪

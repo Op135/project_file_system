@@ -7,7 +7,7 @@ import unittest
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any, cast
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 from openpyxl import Workbook
 
@@ -127,11 +127,22 @@ class SampleOrderCalculationTests(unittest.TestCase):
     def test_completed_record_calculates_status_and_score(self):
         record = make_record()
         record["execution"]["actual_delivery_date"] = "2026-07-18"
-        metrics = dashboard.calculate_sample_order_metrics(record, date(2026, 7, 21))
+        with patch.object(dashboard, "business_days_between") as workday_calculator:
+            metrics = dashboard.calculate_sample_order_metrics(record, date(2026, 7, 21))
         self.assertEqual(metrics["attention_level"], "completed")
         self.assertEqual(metrics["expected_status"], "按期")
         self.assertEqual(metrics["assessment_days"], -2)
         self.assertEqual(metrics["assessment_score"], 130)
+        self.assertIsNone(metrics["remaining_workdays"])
+        workday_calculator.assert_not_called()
+
+    def test_past_target_does_not_iterate_historical_workdays(self):
+        record = make_record()
+        with patch.object(dashboard, "business_days_between") as workday_calculator:
+            metrics = dashboard.calculate_sample_order_metrics(record, date(2026, 7, 21))
+        self.assertEqual(metrics["remaining_workdays"], -1)
+        self.assertEqual(metrics["attention_level"], "overdue")
+        workday_calculator.assert_not_called()
 
     def test_in_progress_status_distinguishes_plan_and_current_target(self):
         record = make_record()
@@ -220,7 +231,7 @@ class SampleOrderCalculationTests(unittest.TestCase):
             "many_delays": False,
             "assessment_score": None,
         }
-        self.assertTrue(dashboard.sample_order_matches_kpi(record, warning_metrics, "执行中"))
+        self.assertTrue(dashboard.sample_order_matches_kpi(record, warning_metrics, "制样中"))
         self.assertTrue(dashboard.sample_order_matches_kpi(record, warning_metrics, "预警"))
         self.assertFalse(dashboard.sample_order_matches_kpi(record, warning_metrics, "延期"))
 
@@ -234,6 +245,21 @@ class SampleOrderCalculationTests(unittest.TestCase):
         self.assertFalse(dashboard.sample_order_matches_kpi(completed, scored_metrics, "执行中"))
         self.assertTrue(dashboard.sample_order_matches_kpi(completed, scored_metrics, "多次延期"))
         self.assertTrue(dashboard.sample_order_matches_kpi(completed, scored_metrics, "平均考核分"))
+
+    def test_filter_and_row_reuse_precalculated_metrics(self):
+        record = make_record()
+        metrics = dashboard.calculate_sample_order_metrics(record, date(2026, 7, 18))
+        with patch.object(dashboard, "calculate_sample_order_metrics") as calculator:
+            self.assertTrue(
+                dashboard.sample_order_matches_filter(
+                    record,
+                    dashboard.FILTER_WARNING,
+                    calculated_metrics=metrics,
+                )
+            )
+            row = dashboard.build_sample_order_row(record, calculated_metrics=metrics)
+        self.assertEqual(row["attention_level"], metrics["attention_level"])
+        calculator.assert_not_called()
 
     def test_legacy_two_delay_fields_are_migrated_to_extension_history(self):
         raw = make_record()
@@ -541,13 +567,13 @@ class SampleOrderAtomicSaveTests(unittest.IsolatedAsyncioTestCase):
         submitted["special_status"].update({"status": "作废", "reason": "不应被写入"})
         saved: dict[str, object] = {}
 
-        async def fake_atomic(_path, callback):
+        async def fake_atomic(_namespace, _entity_id, callback):
             updated = callback(copy.deepcopy(stored))
             saved["record"] = updated
             return True
 
         with (
-            patch.object(db_storage, "atomic_deep_update", side_effect=fake_atomic),
+            patch.object(db_storage, "atomic_json_entity_update", side_effect=fake_atomic),
             patch.object(db_storage, "set_item", new=AsyncMock()),
         ):
             result = await dashboard.save_sample_order_record(
@@ -575,15 +601,19 @@ class SampleOrderAtomicSaveTests(unittest.IsolatedAsyncioTestCase):
         )
         saved: dict[str, object] = {}
 
-        async def fake_atomic(_path, callback):
+        async def fake_atomic(_namespace, _entity_id, callback):
             updated = callback(copy.deepcopy(stored))
             saved["record"] = updated
             return True
 
         with (
-            patch.object(db_storage, "atomic_deep_update", side_effect=fake_atomic),
+            patch.object(db_storage, "atomic_json_entity_update", side_effect=fake_atomic),
             patch.object(db_storage, "set_item", new=AsyncMock()),
-            patch.object(dashboard, "_send_sample_order_change_notifications", new=AsyncMock(return_value=())),
+            patch.object(
+                dashboard,
+                "schedule_background_task",
+                side_effect=lambda coroutine, _name: coroutine.close(),
+            ),
         ):
             result = await dashboard.save_sample_order_record(
                 submitted,
@@ -612,13 +642,13 @@ class SampleOrderAtomicSaveTests(unittest.IsolatedAsyncioTestCase):
         submitted = copy.deepcopy(stored)
         submitted["extensions"][0]["reason"] = "篡改历史"
 
-        async def fake_atomic(_path, callback):
+        async def fake_atomic(_namespace, _entity_id, callback):
             result = callback(copy.deepcopy(stored))
             self.assertIs(result, db_storage.ATOMIC_NO_UPDATE)
             return True
 
         with (
-            patch.object(db_storage, "atomic_deep_update", side_effect=fake_atomic),
+            patch.object(db_storage, "atomic_json_entity_update", side_effect=fake_atomic),
             patch.object(db_storage, "set_item", new=AsyncMock()),
         ):
             result = await dashboard.save_sample_order_record(
@@ -637,16 +667,16 @@ class SampleOrderAtomicSaveTests(unittest.IsolatedAsyncioTestCase):
         submitted["special_status"].update({"status": "暂停", "reason": "等待物料"})
         saved: dict[str, object] = {}
 
-        async def fake_atomic(_path, callback):
+        async def fake_atomic(_namespace, _entity_id, callback):
             updated = callback(copy.deepcopy(stored))
             saved["record"] = updated
             return True
 
-        notify = AsyncMock(return_value=())
+        schedule = Mock(side_effect=lambda coroutine, _name: coroutine.close())
         with (
-            patch.object(db_storage, "atomic_deep_update", side_effect=fake_atomic),
+            patch.object(db_storage, "atomic_json_entity_update", side_effect=fake_atomic),
             patch.object(db_storage, "set_item", new=AsyncMock()),
-            patch.object(dashboard, "_send_sample_order_change_notifications", new=notify),
+            patch.object(dashboard, "schedule_background_task", new=schedule),
         ):
             result = await dashboard.save_sample_order_record(
                 submitted,
@@ -659,20 +689,20 @@ class SampleOrderAtomicSaveTests(unittest.IsolatedAsyncioTestCase):
         saved_record = cast(dict[str, Any], saved["record"])
         self.assertEqual(saved_record["special_status"]["status"], "暂停")
         self.assertEqual(len(saved_record["special_status"]["history"]), 1)
-        notify.assert_awaited_once()
+        schedule.assert_called_once()
 
     async def test_stale_revision_is_rejected_inside_atomic_update(self):
         stored = make_record()
         stored["_revision"] = 2
         submitted = make_record()
 
-        async def fake_atomic(_path, callback):
+        async def fake_atomic(_namespace, _entity_id, callback):
             result = callback(copy.deepcopy(stored))
             self.assertIs(result, db_storage.ATOMIC_NO_UPDATE)
             return True
 
         with (
-            patch.object(db_storage, "atomic_deep_update", side_effect=fake_atomic),
+            patch.object(db_storage, "atomic_json_entity_update", side_effect=fake_atomic),
             patch.object(db_storage, "set_item", new=AsyncMock()),
         ):
             result = await dashboard.save_sample_order_record(
@@ -695,14 +725,14 @@ class SampleOrderAtomicSaveTests(unittest.IsolatedAsyncioTestCase):
         ]
         saved: dict[str, object] = {}
 
-        async def fake_atomic(_path, callback):
+        async def fake_atomic(_namespace, _entity_id, callback):
             updated = callback(copy.deepcopy(stored))
             saved["record"] = updated
             return True
 
         set_version = AsyncMock()
         with (
-            patch.object(db_storage, "atomic_deep_update", side_effect=fake_atomic),
+            patch.object(db_storage, "atomic_json_entity_update", side_effect=fake_atomic),
             patch.object(db_storage, "set_item", new=set_version),
         ):
             result = await dashboard.mark_sample_order_delay_nature(
@@ -731,13 +761,13 @@ class SampleOrderAtomicSaveTests(unittest.IsolatedAsyncioTestCase):
             )
         ]
 
-        async def fake_atomic(_path, callback):
+        async def fake_atomic(_namespace, _entity_id, callback):
             updated = callback(copy.deepcopy(stored))
             self.assertIs(updated, db_storage.ATOMIC_NO_UPDATE)
             return True
 
         with (
-            patch.object(db_storage, "atomic_deep_update", side_effect=fake_atomic),
+            patch.object(db_storage, "atomic_json_entity_update", side_effect=fake_atomic),
             patch.object(db_storage, "set_item", new=AsyncMock()),
         ):
             result = await dashboard.mark_sample_order_delay_nature(
@@ -752,7 +782,7 @@ class SampleOrderAtomicSaveTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.code, "revision_conflict")
 
     async def test_non_manager_cannot_mark_delay_nature(self):
-        with patch.object(db_storage, "atomic_deep_update", new=AsyncMock()) as atomic_update:
+        with patch.object(db_storage, "atomic_json_entity_update", new=AsyncMock()) as atomic_update:
             result = await dashboard.mark_sample_order_delay_nature(
                 "record-1",
                 "内部排产",
@@ -772,13 +802,13 @@ class SampleOrderAtomicSaveTests(unittest.IsolatedAsyncioTestCase):
         second["basic_info"]["application_qty"] = 3
         saved: dict[str, object] = {}
 
-        async def fake_atomic(_path, callback):
-            updated = callback({})
-            saved["records"] = updated
+        async def fake_insert(_namespace, entities):
+            saved["records"] = entities
             return True
 
         with (
-            patch.object(db_storage, "atomic_deep_update", side_effect=fake_atomic),
+            patch.object(dashboard, "get_all_sample_order_records", return_value={}),
+            patch.object(db_storage, "insert_json_entities", side_effect=fake_insert),
             patch.object(db_storage, "set_item", new=AsyncMock()),
         ):
             result = await dashboard.import_sample_order_records(
@@ -831,6 +861,7 @@ class SampleOrderNotificationTests(unittest.IsolatedAsyncioTestCase):
         with (
             patch.object(dashboard, "resolve_wecom_recipients", side_effect=fake_resolve),
             patch.object(dashboard, "send_wecom_text_message", new=send_message),
+            patch.object(dashboard, "SAMPLE_ORDER_REDIRECT_APPLICANT_NOTIFICATIONS_TO_MANAGER", True),
         ):
             failures = await dashboard._send_sample_order_change_notifications(record, events, None)
 
@@ -860,6 +891,7 @@ class SampleOrderNotificationTests(unittest.IsolatedAsyncioTestCase):
         with (
             patch.object(dashboard, "resolve_wecom_recipients", side_effect=fake_resolve),
             patch.object(dashboard, "send_wecom_text_message", new=send_message),
+            patch.object(dashboard, "SAMPLE_ORDER_REDIRECT_APPLICANT_NOTIFICATIONS_TO_MANAGER", True),
         ):
             failures = await dashboard._send_sample_order_change_notifications(record, [], status_event)
 

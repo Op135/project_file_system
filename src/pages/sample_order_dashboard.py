@@ -14,6 +14,7 @@ import uuid
 import warnings
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
+from html import escape
 from typing import Any, Optional
 from urllib.parse import quote
 
@@ -25,7 +26,7 @@ from openpyxl.utils.datetime import from_excel
 
 from .. import db_storage
 from ..config import IMG_DIR, PRESET_AVATARS
-from ..issue_workflow_utils import merge_wecom_recipients
+from ..issue_workflow_utils import merge_wecom_recipients, schedule_background_task
 from ..sample_order_dashboard_config import (
     SAMPLE_ORDER_ADMIN_ROLES,
     SAMPLE_ORDER_BASE_EDITOR_ROLES,
@@ -46,10 +47,27 @@ from ..utils import get_cache_busted_path, logout, setup_global_activity_trackin
 from ..wecom_service import resolve_wecom_recipients, send_wecom_text_message
 
 SAMPLE_ORDER_DATA_KEY = "sample_order_dashboard_data"
+SAMPLE_ORDER_ENTITY_NAMESPACE = "sample_order_dashboard"
 SAMPLE_ORDER_VERSION_KEY = "sample_order_dashboard_version_stamp"
 SAMPLE_ORDER_EXCEL_IMPORT_OWNER = "叶子浩"
 
 logger = logging.getLogger(__name__)
+
+
+async def initialize_sample_order_storage() -> int:
+    """启动时把旧版整块JSON数据安全迁移到逐订单实体表。"""
+    migrated_count = await db_storage.migrate_json_dict_to_entities(
+        SAMPLE_ORDER_ENTITY_NAMESPACE,
+        SAMPLE_ORDER_DATA_KEY,
+    )
+    if not db_storage.is_json_entity_namespace_initialized(SAMPLE_ORDER_ENTITY_NAMESPACE):
+        raise RuntimeError("样品单实体存储初始化失败，已阻止系统以空数据状态启动")
+    return migrated_count
+
+
+def get_all_sample_order_records() -> dict[str, Any]:
+    """从逐订单实体缓存读取全部样品单的安全副本。"""
+    return db_storage.get_json_entities(SAMPLE_ORDER_ENTITY_NAMESPACE)
 
 FILTER_ALL = "全部"
 FILTER_IN_PROGRESS = "制样中"
@@ -548,7 +566,11 @@ def can_view_sample_order_average_score(role: object) -> bool:
 def sample_order_matches_kpi(record: object, metrics: dict, label: str) -> bool:
     """判断一张样品单是否属于指定的顶部统计卡片。"""
     if label == "制样中":
-        return sample_order_matches_filter(record, FILTER_IN_PROGRESS)
+        return sample_order_matches_filter(
+            record,
+            FILTER_IN_PROGRESS,
+            calculated_metrics=metrics,
+        )
     if label == "预警":
         return metrics.get("attention_level") in {"missing", "warning"}
     if label == "延期":
@@ -556,7 +578,7 @@ def sample_order_matches_kpi(record: object, metrics: dict, label: str) -> bool:
     if label == "多次延期":
         return bool(metrics.get("many_delays"))
     if label == "待性质标记":
-        return is_delay_nature_pending(record)
+        return _is_delay_nature_pending_from_data(merge_with_sample_order_template(record))
     if label == "平均考核分":
         score = metrics.get("assessment_score")
         return isinstance(score, int) and not isinstance(score, bool)
@@ -570,9 +592,8 @@ def get_record_revision(record: object) -> int:
     return max(0, normalize_int(record.get("_revision"), 0))
 
 
-def calculate_assessment_days(record: object) -> Optional[int]:
-    """复刻原 Excel 的责任归属口径，计算实际交付相对考核基准的自然日差。"""
-    data = merge_with_sample_order_template(record)
+def _calculate_assessment_days_from_data(data: dict) -> Optional[int]:
+    """使用已经标准化的样品单计算考核天数，避免重复深拷贝。"""
     basic = data["basic_info"]
     execution = data["execution"]
     actual = parse_iso_date(execution.get("actual_delivery_date"))
@@ -586,6 +607,11 @@ def calculate_assessment_days(record: object) -> Optional[int]:
         if target_date is not None and "主责" not in option_text(extension.get("reason")):
             assessment_target = target_date
     return (actual - assessment_target).days
+
+
+def calculate_assessment_days(record: object) -> Optional[int]:
+    """复刻原 Excel 的责任归属口径，计算实际交付相对考核基准的自然日差。"""
+    return _calculate_assessment_days_from_data(merge_with_sample_order_template(record))
 
 
 def calculate_assessment_score(days: Optional[int]) -> Optional[int]:
@@ -632,7 +658,10 @@ def calculate_sample_order_metrics(record: object, today: Optional[date] = None)
     target_date = valid_extension_targets[-1] if valid_extension_targets else planned_date
     delay_count = len(extensions)
     stage = f"第{delay_count}次延期" if delay_count else ""
-    remaining_days = business_days_between(today_value, target_date) if target_date else None
+    remaining_days = None
+    if special_status == "正常" and actual_date is None and target_date is not None:
+        # 历史目标只需要判定已经逾期，不必从历史日期逐日倒算到今天。
+        remaining_days = -1 if target_date < today_value else business_days_between(today_value, target_date)
 
     if special_status == "作废":
         alert_message = "订单已作废"
@@ -656,7 +685,7 @@ def calculate_sample_order_metrics(record: object, today: Optional[date] = None)
         alert_message = f"第{delay_count + 1}次延期目标日期未填"
         attention_level = "overdue"
 
-    assessment_days = calculate_assessment_days(data)
+    assessment_days = _calculate_assessment_days_from_data(data)
     assessment_score = calculate_assessment_score(assessment_days)
     if special_status == "作废":
         assessment_days = None
@@ -695,9 +724,8 @@ def sample_order_requires_attention(record: object, today: Optional[date] = None
     return level in {"missing", "warning", "overdue", "paused"}
 
 
-def is_delay_nature_pending(record: object) -> bool:
-    """判断订单是否已交付、有延期且尚未由研发经理标记延期性质。"""
-    data = merge_with_sample_order_template(record)
+def _is_delay_nature_pending_from_data(data: dict) -> bool:
+    """使用已经标准化的样品单判断是否待标记延期性质。"""
     actual_date = parse_iso_date(data["execution"].get("actual_delivery_date"))
     return bool(
         actual_date
@@ -705,6 +733,11 @@ def is_delay_nature_pending(record: object) -> bool:
         and data["special_status"].get("status") != "作废"
         and not option_text(data["delay_nature"].get("tag"))
     )
+
+
+def is_delay_nature_pending(record: object) -> bool:
+    """判断订单是否已交付、有延期且尚未由研发经理标记延期性质。"""
+    return _is_delay_nature_pending_from_data(merge_with_sample_order_template(record))
 
 
 def get_delay_nature_catalog(all_records: object) -> list[str]:
@@ -927,6 +960,21 @@ async def _send_sample_order_change_notifications(
     return tuple(failures)
 
 
+async def _send_sample_order_notifications_in_background(
+    record: dict,
+    extension_events: list[dict],
+    status_event: Optional[dict],
+) -> None:
+    """后台发送样品单通知；失败由统一重试记录接管并写入日志。"""
+    failures = await _send_sample_order_change_notifications(
+        record,
+        extension_events,
+        status_event,
+    )
+    if failures:
+        logger.warning("样品单后台通知未即时成功：%s", "；".join(failures))
+
+
 async def save_sample_order_record(
     submitted: dict,
     user: str,
@@ -1071,22 +1119,27 @@ async def save_sample_order_record(
         outcome["record"] = copy.deepcopy(updated)
         return updated
 
-    success = await db_storage.atomic_deep_update([SAMPLE_ORDER_DATA_KEY, record_id], apply_update)
-    notification_failures: tuple[str, ...] = ()
+    success = await db_storage.atomic_json_entity_update(
+        SAMPLE_ORDER_ENTITY_NAMESPACE,
+        record_id,
+        apply_update,
+    )
     if success and outcome["changed"]:
         await db_storage.set_item(SAMPLE_ORDER_VERSION_KEY, time.time())
         if outcome["record"] and (outcome["extension_events"] or outcome["status_event"]):
-            notification_failures = await _send_sample_order_change_notifications(
-                outcome["record"],
-                outcome["extension_events"],
-                outcome["status_event"],
+            schedule_background_task(
+                _send_sample_order_notifications_in_background(
+                    copy.deepcopy(outcome["record"]),
+                    copy.deepcopy(outcome["extension_events"]),
+                    copy.deepcopy(outcome["status_event"]),
+                ),
+                f"样品单{record_id}企业微信通知",
             )
     return SampleOrderUpdateResult(
         db_success=success,
         changed=bool(success and outcome["changed"]),
         code=outcome["code"] if success else "db_error",
         record=outcome["record"],
-        notification_failures=notification_failures,
     )
 
 
@@ -1105,76 +1158,56 @@ async def import_sample_order_records(
 
     normalized_records = [merge_with_sample_order_template(record) for record in records]
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    outcome: dict[str, Any] = {
-        "imported_count": 0,
-        "code": "db_error",
-    }
-
-    def apply_import(current: object) -> object:
-        if current is None:
-            all_records: dict[str, Any] = {}
-        elif isinstance(current, dict):
-            all_records = current
-        else:
-            outcome["code"] = "invalid_storage"
-            return db_storage.ATOMIC_NO_UPDATE
-
-        for source_record in normalized_records:
-            imported = merge_with_sample_order_template(source_record)
+    existing_ids = set(get_all_sample_order_records())
+    imported_entities: dict[str, Any] = {}
+    for source_record in normalized_records:
+        imported = merge_with_sample_order_template(source_record)
+        record_id = uuid.uuid4().hex
+        while record_id in existing_ids or record_id in imported_entities:
             record_id = uuid.uuid4().hex
-            while record_id in all_records:
-                record_id = uuid.uuid4().hex
-            imported["record_id"] = record_id
-            imported["created_by"] = user
-            imported["created_role"] = role
-            imported["created_at"] = now_str
-            imported["updated_by"] = user
-            imported["updated_role"] = role
-            imported["updated_at"] = now_str
-            imported["_revision"] = 1
-            imported["execution"]["sample_owner"] = SAMPLE_ORDER_EXCEL_IMPORT_OWNER
-            imported["import_info"].update(
+        imported["record_id"] = record_id
+        imported["created_by"] = user
+        imported["created_role"] = role
+        imported["created_at"] = now_str
+        imported["updated_by"] = user
+        imported["updated_role"] = role
+        imported["updated_at"] = now_str
+        imported["_revision"] = 1
+        imported["execution"]["sample_owner"] = SAMPLE_ORDER_EXCEL_IMPORT_OWNER
+        imported["import_info"]["source_name"] = source_name
+        imported_extensions: list[dict] = []
+        for extension in imported["extensions"]:
+            normalized_extension = normalize_extension(extension)
+            normalized_extension.update(
                 {
-                    "source_name": source_name,
+                    "extension_id": uuid.uuid4().hex,
+                    "created_by": user,
+                    "created_role": role,
+                    "created_at": now_str,
                 }
             )
-            imported_extensions: list[dict] = []
-            for extension in imported["extensions"]:
-                normalized_extension = normalize_extension(extension)
-                normalized_extension.update(
-                    {
-                        "extension_id": uuid.uuid4().hex,
-                        "created_by": user,
-                        "created_role": role,
-                        "created_at": now_str,
-                    }
-                )
-                imported_extensions.append(normalized_extension)
-            imported["extensions"] = imported_extensions
-            imported["operation_log"] = [
-                {
-                    "user": user,
-                    "role": role,
-                    "action": f"从Excel导入（第{normalize_int(imported['import_info'].get('source_row'), 0)}行）",
-                    "time": now_str,
-                }
-            ]
-            all_records[record_id] = imported
-            outcome["imported_count"] += 1
+            imported_extensions.append(normalized_extension)
+        imported["extensions"] = imported_extensions
+        imported["operation_log"] = [
+            {
+                "user": user,
+                "role": role,
+                "action": f"从Excel导入（第{normalize_int(imported['import_info'].get('source_row'), 0)}行）",
+                "time": now_str,
+            }
+        ]
+        imported_entities[record_id] = imported
 
-        if outcome["imported_count"] == 0:
-            outcome["code"] = "no_new_records"
-            return db_storage.ATOMIC_NO_UPDATE
-        outcome["code"] = "imported"
-        return all_records
-
-    success = await db_storage.atomic_deep_update([SAMPLE_ORDER_DATA_KEY], apply_import)
-    if success and outcome["imported_count"]:
+    success = await db_storage.insert_json_entities(
+        SAMPLE_ORDER_ENTITY_NAMESPACE,
+        imported_entities,
+    )
+    if success:
         await db_storage.set_item(SAMPLE_ORDER_VERSION_KEY, time.time())
     return SampleOrderImportResult(
         db_success=success,
-        imported_count=outcome["imported_count"] if success else 0,
-        code=outcome["code"] if success else "db_error",
+        imported_count=len(imported_entities) if success else 0,
+        code="imported" if success else "db_error",
     )
 
 
@@ -1258,7 +1291,11 @@ async def mark_sample_order_delay_nature(
         outcome["record"] = copy.deepcopy(record)
         return record
 
-    success = await db_storage.atomic_deep_update([SAMPLE_ORDER_DATA_KEY, record_id], apply_mark)
+    success = await db_storage.atomic_json_entity_update(
+        SAMPLE_ORDER_ENTITY_NAMESPACE,
+        record_id,
+        apply_mark,
+    )
     if success and outcome["changed"]:
         await db_storage.set_item(SAMPLE_ORDER_VERSION_KEY, time.time())
     return SampleOrderUpdateResult(
@@ -1275,17 +1312,20 @@ async def delete_sample_order_record(record_id: str, role: str) -> SampleOrderUp
         return SampleOrderUpdateResult(True, False, "forbidden")
     outcome: dict[str, Any] = {"changed": False, "code": "db_error", "record": None}
 
-    def remove_record(all_records: object) -> object:
-        if not isinstance(all_records, dict) or record_id not in all_records:
+    def remove_record(current: object) -> object:
+        if not isinstance(current, dict):
             outcome["code"] = "not_found"
             return db_storage.ATOMIC_NO_UPDATE
-        outcome["record"] = copy.deepcopy(all_records[record_id])
-        del all_records[record_id]
+        outcome["record"] = copy.deepcopy(current)
         outcome["changed"] = True
         outcome["code"] = "deleted"
-        return all_records
+        return db_storage.ATOMIC_DELETE
 
-    success = await db_storage.atomic_deep_update([SAMPLE_ORDER_DATA_KEY], remove_record)
+    success = await db_storage.atomic_json_entity_update(
+        SAMPLE_ORDER_ENTITY_NAMESPACE,
+        record_id,
+        remove_record,
+    )
     if success and outcome["changed"]:
         await db_storage.set_item(SAMPLE_ORDER_VERSION_KEY, time.time())
     return SampleOrderUpdateResult(
@@ -1296,7 +1336,12 @@ async def delete_sample_order_record(record_id: str, role: str) -> SampleOrderUp
     )
 
 
-def build_sample_order_row(record: object, today: Optional[date] = None) -> dict:
+def build_sample_order_row(
+    record: object,
+    today: Optional[date] = None,
+    *,
+    calculated_metrics: Optional[dict] = None,
+) -> dict:
     """把存储记录整理成表格行数据。"""
     data = merge_with_sample_order_template(record)
     basic = data["basic_info"]
@@ -1304,7 +1349,7 @@ def build_sample_order_row(record: object, today: Optional[date] = None) -> dict
     extensions = data["extensions"]
     special_status = data["special_status"]
     delay_nature = data["delay_nature"]
-    metrics = calculate_sample_order_metrics(data, today)
+    metrics = calculated_metrics if isinstance(calculated_metrics, dict) else calculate_sample_order_metrics(data, today)
     assessment_days = metrics["assessment_days"]
     assessment_score = metrics["assessment_score"]
     return {
@@ -1329,7 +1374,7 @@ def build_sample_order_row(record: object, today: Optional[date] = None) -> dict
         "special_status": special_status["status"],
         "special_status_reason": special_status["reason"],
         "delay_nature_tag": delay_nature["tag"],
-        "nature_pending": is_delay_nature_pending(data),
+        "nature_pending": _is_delay_nature_pending_from_data(data),
         "assessment_days": assessment_days if assessment_days is not None else "",
         "assessment_score": assessment_score if assessment_score is not None else "",
         "attention_level": metrics["attention_level"],
@@ -1382,28 +1427,42 @@ def get_sample_order_card_palette(
     )
 
 
-def sample_order_matches_filter(record: object, filter_value: str, today: Optional[date] = None) -> bool:
+def sample_order_matches_filter(
+    record: object,
+    filter_value: str,
+    today: Optional[date] = None,
+    *,
+    calculated_metrics: Optional[dict] = None,
+) -> bool:
     """判断记录是否符合页面状态筛选条件。"""
     data = merge_with_sample_order_template(record)
-    metrics = calculate_sample_order_metrics(record, today)
-    level = metrics["attention_level"]
+    actual_date = parse_iso_date(data["execution"].get("actual_delivery_date"))
     if filter_value == FILTER_COMPLETED:
-        return parse_iso_date(data["execution"].get("actual_delivery_date")) is not None
+        return actual_date is not None
     if filter_value == FILTER_IN_PROGRESS:
         return bool(
-            parse_iso_date(data["execution"].get("actual_delivery_date")) is None
+            actual_date is None
             and data["special_status"].get("status") != "作废"
         )
+    if filter_value == FILTER_NATURE_PENDING:
+        return _is_delay_nature_pending_from_data(data)
+    if filter_value in SAMPLE_ORDER_SPECIAL_STATUSES and filter_value != "正常":
+        return data["special_status"].get("status") == filter_value
+    if filter_value == FILTER_ALL:
+        return True
+
+    metrics = (
+        calculated_metrics
+        if isinstance(calculated_metrics, dict)
+        else calculate_sample_order_metrics(data, today)
+    )
+    level = metrics["attention_level"]
     if filter_value == FILTER_WARNING:
         return level in {"missing", "warning"}
     if filter_value == FILTER_DELAYED:
         return level == "overdue" or metrics["expected_status"] == "延期"
     if filter_value == FILTER_MANY_DELAYS:
         return bool(metrics["many_delays"])
-    if filter_value == FILTER_NATURE_PENDING:
-        return is_delay_nature_pending(record)
-    if filter_value in SAMPLE_ORDER_SPECIAL_STATUSES and filter_value != "正常":
-        return metrics["special_status"] == filter_value
     return True
 
 
@@ -1439,6 +1498,11 @@ async def sample_order_dashboard_page(record_id: str = "") -> None:
         "filter_state": DEFAULT_SAMPLE_ORDER_FILTER,
         "page": 1,
         "last_version": db_storage.get_item(SAMPLE_ORDER_VERSION_KEY, 0),
+        "kpi_cache_key": None,
+    }
+    dashboard_data_cache: dict[str, Any] = {
+        "key": None,
+        "records_with_metrics": [],
     }
     detail_dialog = ui.dialog().props("maximized persistent")
     confirm_dialog = ui.dialog().props("persistent")
@@ -1564,7 +1628,7 @@ async def sample_order_dashboard_page(record_id: str = "") -> None:
         if is_new and not can_edit_base:
             ui.notify("仅研发助理可以新建样品单", type="warning", position="bottom")
             return
-        all_records = db_storage.get_item(SAMPLE_ORDER_DATA_KEY, {})
+        all_records = get_all_sample_order_records()
         if is_new:
             local_data = get_sample_order_template()
             local_data["record_id"] = uuid.uuid4().hex
@@ -1578,9 +1642,9 @@ async def sample_order_dashboard_page(record_id: str = "") -> None:
         detail_dialog.clear()
         with detail_dialog, ui.card().classes("w-full h-full rounded-none p-0"):
             preview_container = ui.row().classes("w-full gap-3 flex-wrap")
+            preview_value_labels: list[Any] = []
 
             def render_preview() -> None:
-                preview_container.clear()
                 metrics = calculate_sample_order_metrics(local_data)
                 preview_items = [
                     ("交样周期", f"{metrics['cycle_days']} 天" if metrics["cycle_days"] is not None else "--"),
@@ -1593,11 +1657,17 @@ async def sample_order_dashboard_page(record_id: str = "") -> None:
                         else "待实际交付",
                     ),
                 ]
-                with preview_container:
-                    for label, value in preview_items:
-                        with ui.card().classes("min-w-40 flex-1 p-3 bg-slate-50 shadow-none border"):
-                            ui.label(label).classes("text-xs text-gray-500")
-                            ui.label(str(value)).classes("font-semibold text-gray-800")
+                if not preview_value_labels:
+                    with preview_container:
+                        for label, value in preview_items:
+                            with ui.card().classes("min-w-40 flex-1 p-3 bg-slate-50 shadow-none border"):
+                                ui.label(label).classes("text-xs text-gray-500")
+                                preview_value_labels.append(
+                                    ui.label(str(value)).classes("font-semibold text-gray-800")
+                                )
+                    return
+                for value_label, (_, value) in zip(preview_value_labels, preview_items):
+                    value_label.set_text(str(value))
 
             def bind_text_input(
                 label: str,
@@ -1607,6 +1677,7 @@ async def sample_order_dashboard_page(record_id: str = "") -> None:
                 editable: bool,
                 classes: str = "w-full",
                 textarea: bool = False,
+                refresh_metrics: bool = False,
             ) -> None:
                 value = option_text(target.get(key))
                 field = ui.textarea(label, value=value) if textarea else ui.input(label, value=value)
@@ -1615,7 +1686,8 @@ async def sample_order_dashboard_page(record_id: str = "") -> None:
 
                     def set_value(event: Any, data: dict = target, data_key: str = key) -> None:
                         data[data_key] = option_text(event.value)
-                        render_preview()
+                        if refresh_metrics:
+                            render_preview()
 
                     field.on_value_change(set_value)
                 else:
@@ -1774,6 +1846,7 @@ async def sample_order_dashboard_page(record_id: str = "") -> None:
                                             "reason",
                                             editable=can_edit_delay and not saved,
                                             classes="w-full md:col-span-9",
+                                            refresh_metrics=True,
                                         )
 
                     render_extensions()
@@ -1840,11 +1913,11 @@ async def sample_order_dashboard_page(record_id: str = "") -> None:
                         and extensions
                         and special_status.get("status") != "作废"
                     )
-                    nature_catalog = get_delay_nature_catalog(all_records)
                     nature_state = {"selected": current_nature_tag, "custom": ""}
                     if not nature_applicable:
                         ui.label("订单完成且存在延期记录后才需要标记。").classes("text-sm text-gray-500")
                     elif can_mark_delay_nature:
+                        nature_catalog = get_delay_nature_catalog(all_records)
                         with ui.grid().classes("w-full grid-cols-1 md:grid-cols-4 xl:grid-cols-6 gap-4"):
                             nature_select = (
                                 ui.select(
@@ -2040,18 +2113,34 @@ async def sample_order_dashboard_page(record_id: str = "") -> None:
             pagination_container = ui.row().classes("w-full justify-center items-center gap-2")
 
             def refresh_dashboard() -> None:
-                all_records = db_storage.get_item(SAMPLE_ORDER_DATA_KEY, {})
-                stored_values = all_records.values() if isinstance(all_records, dict) else []
-                valid_records = [
-                    merge_with_sample_order_template(item) for item in stored_values if isinstance(item, dict)
-                ]
+                # 主动刷新时同步版本号，避免本客户端在5秒轮询时重复刷新同一版本。
+                current_version = db_storage.get_item(SAMPLE_ORDER_VERSION_KEY, 0)
+                page_state["last_version"] = current_version
+                calculation_key = (current_version, date.today().isoformat())
+                if dashboard_data_cache.get("key") != calculation_key:
+                    all_records = get_all_sample_order_records()
+                    stored_values = all_records.values() if isinstance(all_records, dict) else []
+                    valid_records = [
+                        merge_with_sample_order_template(item)
+                        for item in stored_values
+                        if isinstance(item, dict)
+                    ]
+                    records_with_metrics = [
+                        (record, calculate_sample_order_metrics(record)) for record in valid_records
+                    ]
+                    dashboard_data_cache["key"] = calculation_key
+                    dashboard_data_cache["records_with_metrics"] = records_with_metrics
+                else:
+                    cached_entries = dashboard_data_cache.get("records_with_metrics")
+                    records_with_metrics = cached_entries if isinstance(cached_entries, list) else []
+                    valid_records = [record for record, _metrics in records_with_metrics]
                 keyword = option_text(page_state.get("search_keyword")).lower()
                 filter_value = option_text(
                     page_state.get("filter_state"),
                     DEFAULT_SAMPLE_ORDER_FILTER,
                 )
-                visible_records: list[dict] = []
-                for record in valid_records:
+                visible_entries: list[tuple[dict, dict]] = []
+                for record, metrics in records_with_metrics:
                     basic = record["basic_info"]
                     execution = record["execution"]
                     searchable = " ".join(
@@ -2066,18 +2155,22 @@ async def sample_order_dashboard_page(record_id: str = "") -> None:
                     ).lower()
                     if keyword and keyword not in searchable:
                         continue
-                    if not sample_order_matches_filter(record, filter_value):
+                    if not sample_order_matches_filter(
+                        record,
+                        filter_value,
+                        calculated_metrics=metrics,
+                    ):
                         continue
-                    visible_records.append(record)
+                    visible_entries.append((record, metrics))
 
-                visible_records.sort(
-                    key=lambda item: (
-                        item["execution"].get("actual_delivery_date", "") != "",
-                        calculate_sample_order_metrics(item).get("effective_target_date", "9999-12-31"),
-                        item["basic_info"].get("sample_order_no", ""),
+                visible_entries.sort(
+                    key=lambda entry: (
+                        entry[0]["execution"].get("actual_delivery_date", "") != "",
+                        entry[1].get("effective_target_date", "9999-12-31"),
+                        entry[0]["basic_info"].get("sample_order_no", ""),
                     )
                 )
-                total_visible = len(visible_records)
+                total_visible = len(visible_entries)
                 total_pages = max(
                     1,
                     (total_visible + SAMPLE_ORDER_CARD_PAGE_SIZE - 1) // SAMPLE_ORDER_CARD_PAGE_SIZE,
@@ -2088,19 +2181,19 @@ async def sample_order_dashboard_page(record_id: str = "") -> None:
                 )
                 page_state["page"] = current_page
                 page_start = (current_page - 1) * SAMPLE_ORDER_CARD_PAGE_SIZE
-                page_records = visible_records[page_start : page_start + SAMPLE_ORDER_CARD_PAGE_SIZE]
+                page_entries = visible_entries[page_start : page_start + SAMPLE_ORDER_CARD_PAGE_SIZE]
 
                 list_container.clear()
                 with list_container:
-                    if not page_records:
+                    if not page_entries:
                         empty_text = (
                             "暂无未交样订单，可通过状态筛选查看已完成或全部订单"
                             if filter_value == DEFAULT_SAMPLE_ORDER_FILTER and not keyword
                             else "没有符合当前条件的样品单"
                         )
                         ui.label(empty_text).classes("text-gray-500 m-auto mt-10")
-                    for record in page_records:
-                        row = build_sample_order_row(record)
+                    for record, metrics in page_entries:
+                        row = build_sample_order_row(record, calculated_metrics=metrics)
                         level = option_text(row.get("attention_level"), "normal")
                         nature_pending = bool(row.get("nature_pending"))
                         many_delays = normalize_int(row.get("delay_count"), 0) > SAMPLE_ORDER_DELAY_ATTENTION_THRESHOLD
@@ -2230,11 +2323,15 @@ async def sample_order_dashboard_page(record_id: str = "") -> None:
                         if current_page >= total_pages:
                             next_button.props("disable")
 
-                records_with_metrics = [(record, calculate_sample_order_metrics(record)) for record in valid_records]
+                if page_state.get("kpi_cache_key") == calculation_key:
+                    return
+
                 metrics_list = [metrics for _, metrics in records_with_metrics]
                 total_count = len(valid_records)
                 scores = [
-                    item["assessment_score"] for item in metrics_list if isinstance(item.get("assessment_score"), int)
+                    item["assessment_score"]
+                    for item in metrics_list
+                    if isinstance(item.get("assessment_score"), int)
                 ]
                 average_score = round(sum(scores) / len(scores), 1) if scores else "--"
 
@@ -2282,20 +2379,25 @@ async def sample_order_dashboard_page(record_id: str = "") -> None:
                                 ):
                                     ui.label(f"{label}对应订单（{len(detail_records)}条）").classes("font-bold mb-2")
                                     if detail_records:
-                                        with ui.element("div").classes("grid grid-cols-2 gap-x-5 gap-y-1"):
-                                            for detail_record in detail_records:
-                                                basic = detail_record["basic_info"]
-                                                ui.label(
-                                                    f"{option_text(basic.get('sample_order_no'), '未填写单号')} · "
-                                                    f"{option_text(basic.get('product_model'), '未填写型号')} · "
-                                                    f"申请人：{option_text(basic.get('applicant'), '未填写申请人')}"
-                                                ).classes("text-xs whitespace-nowrap")
+                                        detail_html = "".join(
+                                            "<div class='break-inside-avoid whitespace-nowrap'>"
+                                            f"{escape(option_text(detail_record['basic_info'].get('sample_order_no'), '未填写单号'))} · "
+                                            f"{escape(option_text(detail_record['basic_info'].get('product_model'), '未填写型号'))} · "
+                                            f"申请人：{escape(option_text(detail_record['basic_info'].get('applicant'), '未填写申请人'))}"
+                                            "</div>"
+                                            for detail_record in detail_records
+                                        )
+                                        ui.html(detail_html, sanitize=False).classes(
+                                            "text-xs leading-5 columns-2 gap-5"
+                                        )
                                     else:
                                         ui.label("暂无对应订单").classes("text-xs")
+                page_state["kpi_cache_key"] = calculation_key
 
-            def refresh_if_version_changed() -> None:
-                latest_version = db_storage.get_item(SAMPLE_ORDER_VERSION_KEY, 0)
+            async def refresh_if_version_changed() -> None:
+                latest_version = await db_storage.get_fresh_item(SAMPLE_ORDER_VERSION_KEY, 0)
                 if latest_version != page_state.get("last_version"):
+                    await db_storage.refresh_json_entities(SAMPLE_ORDER_ENTITY_NAMESPACE)
                     page_state["last_version"] = latest_version
                     refresh_dashboard()
 
