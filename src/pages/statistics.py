@@ -33,6 +33,8 @@ def record_daily_stats(project_summary, pending_data):
     rows = []
 
     for user, p_dict in pending_data.items():
+        if user == "待定负责人":
+            continue  # 跳过“待定负责人”用户
         stats_map = {}
         for proj, issues in p_dict.items():
             state = project_summary.get(proj, {}).get("state", "未知")
@@ -180,8 +182,8 @@ def statistics_page():
                 for user, pending_project_dic in list(
                     pending_data.items()
                 ):  # 之所以要 list() 包裹，是为了在循环中修改字典结构时不报错
-                    # if not pending_project_dic or user == "待定负责人":
-                    if not pending_project_dic:
+                    if not pending_project_dic or user == "待定负责人":
+                        # if not pending_project_dic:
                         pending_data.pop(user, None)
                 # =========================================================
                 # 左侧列 (主要工作流)
