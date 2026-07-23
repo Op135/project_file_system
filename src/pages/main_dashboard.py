@@ -8,6 +8,7 @@ from nicegui import app, ui
 
 from .. import db_storage  # 导入我们创建的模块
 from ..config import ECN_SCHEME_WRITER_ROLES, IMG_DIR, PRESET_AVATARS, ECNState
+from ..overview_warning import get_urgent_overview_projects
 from ..utils import (
     get_cache_busted_path,
     get_project_engineer_project_list_dic,
@@ -47,6 +48,53 @@ def main_page():
             .animate-shake {
                 animation: hard-shake 1.0s ease-in-out infinite; /* n秒循环一次 */
             }
+
+            @keyframes dashboard-urgent-flash {
+                0%, 100% { opacity: 1; transform: scale(1); }
+                50% { opacity: 0.35; transform: scale(1.08); }
+            }
+
+            @keyframes dashboard-urgent-red-glow {
+                0%, 100% { box-shadow: 0 0 0 rgba(239, 68, 68, 0.15); }
+                50% { box-shadow: 0 0 22px rgba(239, 68, 68, 0.55); }
+            }
+
+            @keyframes dashboard-urgent-violet-glow {
+                0%, 100% { box-shadow: 0 0 0 rgba(124, 58, 237, 0.2); }
+                50% { box-shadow: 0 0 28px rgba(124, 58, 237, 0.7); }
+            }
+
+            @keyframes dashboard-urgent-nudge {
+                0%, 86%, 100% { translate: 0 0; }
+                88%, 92%, 96% { translate: -4px 0; }
+                90%, 94%, 98% { translate: 4px 0; }
+            }
+
+            .dashboard-urgent-level-3 {
+                border: 2px solid #ef4444 !important;
+                animation: dashboard-urgent-red-glow 1.8s ease-in-out infinite;
+            }
+
+            .dashboard-urgent-level-4 {
+                border: 2px solid #7c3aed !important;
+                animation:
+                    dashboard-urgent-violet-glow 1.6s ease-in-out infinite,
+                    dashboard-urgent-nudge 4s ease-in-out infinite;
+                will-change: translate, box-shadow;
+            }
+
+            .dashboard-urgent-flash {
+                animation: dashboard-urgent-flash 1.6s ease-in-out infinite;
+            }
+
+            @media (prefers-reduced-motion: reduce) {
+                .dashboard-urgent-level-3,
+                .dashboard-urgent-level-4,
+                .dashboard-urgent-flash {
+                    animation: none;
+                }
+            }
+
             /* --- 新增：防穿透与背景底纹 --- */
             /* 1. 禁用全局 html/body 的滚动，将滚动权下放给局部容器 */
             html, body {
@@ -247,6 +295,8 @@ def main_page():
             pending_num_user = 0
             # 所有登录用户负责的概述维护项目数量
             over_charge_num = 0
+            # 当前用户负责且达到3级以上的概述项目
+            overview_urgent_projects: list[tuple[str, int]] = []
             # 所有登录用户负责的概述变更任务数量
             change_task_count = 0
             # --- 新增：统计工程变更 (ECN) 的待办数量 ---
@@ -328,13 +378,33 @@ def main_page():
 
             # --- 仅针对项目概述待办进行状态过滤 ---
             project_summary = app.storage.general.get("project_summary", {})
-            if current_user in app.storage.general.get("overview_charge_pending", {}):
+            overview_pending_by_user = app.storage.general.get("overview_charge_pending", {})
+            current_overview_pending = overview_pending_by_user.get(current_user, {})
+            if current_overview_pending:
                 # 仅统计状态非“作废”且非“待定”的项目，确保与 information.py 逻辑一致
                 over_charge_num = sum(
                     1
-                    for p_name in app.storage.general["overview_charge_pending"][current_user].keys()
+                    for p_name in current_overview_pending
                     if project_summary.get(p_name, {}).get("state", "未知") not in ["作废", "待定"]
                 )
+                overview_project_states = {
+                    project_name: project_summary.get(project_name, {}).get("state", "未知")
+                    for project_name in current_overview_pending
+                }
+                overview_urgent_projects = get_urgent_overview_projects(
+                    current_overview_pending,
+                    overview_project_states,
+                )
+
+            # 销售角色的项目待办卡片不包含概述维护任务，避免显示无关紧急提示
+            if current_role in ["销售", "销售总监"]:
+                overview_urgent_projects = []
+
+            overview_urgent_count = len(overview_urgent_projects)
+            overview_max_warning_level = max(
+                (warning_level for _, warning_level in overview_urgent_projects),
+                default=-1,
+            )
 
             change_reqs = app.storage.general.get("overview_change_requests", {})
 
@@ -383,13 +453,21 @@ def main_page():
                 icon_color_class = "text-red-500 animate-pulse" if pending_count > 0 else "text-blue-500"
                 # 为图标底座准备一个极淡的背景色
                 icon_bg_class = "bg-red-50" if pending_count > 0 else "bg-blue-50"
+                card_urgent_class = ""
+                if target == "/information" and overview_max_warning_level >= 4:
+                    icon_color_class = "text-violet-600 animate-pulse"
+                    icon_bg_class = "bg-violet-100"
+                    card_urgent_class = "dashboard-urgent-level-4"
+                elif target == "/information" and overview_max_warning_level >= 3:
+                    card_urgent_class = "dashboard-urgent-level-3"
+
                 # 3. 渲染卡片 (【修改重点】增加大圆角、软阴影、悬浮抬升和过渡动画)
                 with ui.card().classes(
                     "relative flex flex-col items-center justify-center p-6 -space-y-2 cursor-pointer bg-white/90 backdrop-blur-sm "
                     "rounded-xl "
                     "shadow-[0_6px_20px_-4px_rgba(0,0,0,0.06)] "
                     "hover:shadow-[0_12px_30px_-6px_rgba(0,0,0,0.15)] "
-                    "hover:-translate-y-1.5 transition-all duration-300 ease-out"
+                    f"hover:-translate-y-1.5 transition-all duration-300 ease-out {card_urgent_class}"
                 ) as card:
                     card.on("click", lambda _, t=target: ui.navigate.to(t))
 
@@ -400,6 +478,30 @@ def main_page():
                     # 【修改】标题文字加粗，颜色加深，使其更锐利
                     ui.label(title).classes("text-xl font-bold text-gray-800")
                     ui.label(subtitle).classes("text-center text-gray-500 text-sm mt-2")
+
+                    if target == "/information" and overview_urgent_count > 0:
+                        if overview_max_warning_level >= 4:
+                            urgent_text = f"重要警示 · {overview_urgent_count}个待办"
+                            urgent_classes = "bg-violet-100/40 text-violet-800 border-violet-300/50"
+                        else:
+                            urgent_text = f"尽快处理 · {overview_urgent_count}个待办"
+                            urgent_classes = "bg-red-100/40 text-red-800 border-red-300/50"
+
+                        with ui.element("div").classes("absolute bottom-10 left-1/2 z-10 w-max -translate-x-1/2"):
+                            with ui.element("div").classes(
+                                f"dashboard-urgent-flash inline-flex items-center gap-1.5 whitespace-nowrap "
+                                f"px-3 py-1 rounded-full border shadow-sm backdrop-blur-xs "
+                                f"text-base font-bold {urgent_classes}"
+                            ):
+                                ui.icon("notification_important").classes("text-base")
+                                ui.label(urgent_text)
+                                # with ui.tooltip().classes("bg-gray-800 text-white p-2"):
+                                #     ui.label(f"最高警示级别：{overview_max_warning_level}级").classes("font-bold")
+                                #     for project_name, warning_level in overview_urgent_projects[:3]:
+                                #         ui.label(f"{warning_level}级 · {project_name}")
+                                #     remaining_count = overview_urgent_count - 3
+                                #     if remaining_count > 0:
+                                #         ui.label(f"另有{remaining_count}个紧急项目")
 
                     # 4. 渲染增强后的 Badge (红点)
                     if pending_count > 0:

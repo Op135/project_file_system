@@ -1,4 +1,8 @@
-from src.pages.information import get_overview_warning, sort_overview_pending_items
+from src.overview_warning import (
+    get_overview_warning,
+    get_urgent_overview_projects,
+    sort_overview_pending_items,
+)
 
 
 def test_overview_warning_uses_project_and_overview_status_matrix():
@@ -48,4 +52,27 @@ def test_overview_pending_items_are_stably_sorted_by_warning_level():
         "高级项目B",
         "中级项目",
         "低级项目",
+    ]
+
+
+def test_urgent_overview_projects_filters_and_sorts_dashboard_alerts():
+    pending_items = {
+        "三级项目A": {"概述A": "缺必填"},
+        "四级项目": {"概述A": "缺必填"},
+        "二级项目": {"概述A": "缺必填"},
+        "三级项目B": {"概述A": "有待定"},
+        "作废项目": {"概述A": "缺必填"},
+    }
+    project_states = {
+        "三级项目A": "转产",
+        "四级项目": "量产",
+        "二级项目": "研发",
+        "三级项目B": "试产",
+        "作废项目": "作废",
+    }
+
+    assert get_urgent_overview_projects(pending_items, project_states) == [
+        ("四级项目", 4),
+        ("三级项目A", 3),
+        ("三级项目B", 3),
     ]
