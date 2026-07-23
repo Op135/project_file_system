@@ -44,7 +44,7 @@ from ..sample_order_dashboard_config import (
     SAMPLE_ORDER_WARNING_DAYS,
 )
 from ..utils import get_cache_busted_path, logout, setup_global_activity_tracking
-from ..wecom_service import resolve_wecom_recipients, send_wecom_text_message
+from ..wecom_service import find_unknown_wecom_names, resolve_wecom_recipients, send_wecom_text_message
 
 SAMPLE_ORDER_DATA_KEY = "sample_order_dashboard_data"
 SAMPLE_ORDER_ENTITY_NAMESPACE = "sample_order_dashboard"
@@ -724,6 +724,11 @@ def sample_order_requires_attention(record: object, today: Optional[date] = None
     return level in {"missing", "warning", "overdue", "paused"}
 
 
+def sample_order_is_overdue(record: object, today: Optional[date] = None) -> bool:
+    """判断未完成订单是否已经超过当前有效目标日期。"""
+    return calculate_sample_order_metrics(record, today).get("attention_level") == "overdue"
+
+
 def _is_delay_nature_pending_from_data(data: dict) -> bool:
     """使用已经标准化的样品单判断是否待标记延期性质。"""
     actual_date = parse_iso_date(data["execution"].get("actual_delivery_date"))
@@ -771,7 +776,7 @@ def get_sample_order_dashboard_pending_count(
         return sum(1 for record in valid_records if is_delay_nature_pending(record))
     if not is_sample_order_delay_editor(current_role):
         return 0
-    return sum(1 for record in valid_records if sample_order_requires_attention(record, today))
+    return sum(1 for record in valid_records if sample_order_is_overdue(record, today))
 
 
 def validate_sample_order_submission(
@@ -1678,6 +1683,7 @@ async def sample_order_dashboard_page(record_id: str = "") -> None:
                 classes: str = "w-full",
                 textarea: bool = False,
                 refresh_metrics: bool = False,
+                validate_person: bool = False,
             ) -> None:
                 value = option_text(target.get(key))
                 field = ui.textarea(label, value=value) if textarea else ui.input(label, value=value)
@@ -1690,6 +1696,26 @@ async def sample_order_dashboard_page(record_id: str = "") -> None:
                             render_preview()
 
                     field.on_value_change(set_value)
+                    if validate_person:
+
+                        async def warn_unknown_name(
+                            _event: Any = None,
+                            label_text: str = label,
+                            data: dict = target,
+                            data_key: str = key,
+                        ) -> None:
+                            unknown_names = await find_unknown_wecom_names(data.get(data_key, ""))
+                            if unknown_names:
+                                display_label = label_text.rstrip(" *")
+                                ui.notify(
+                                    f"{display_label}未在企业微信通讯录中找到："
+                                    f"{'、'.join(unknown_names)}，请检查是否有错别字",
+                                    type="warning",
+                                    position="bottom",
+                                    multi_line=True,
+                                )
+
+                        field.on("blur", warn_unknown_name)
                 else:
                     field.props("disable")
 
@@ -1762,9 +1788,21 @@ async def sample_order_dashboard_page(record_id: str = "") -> None:
                         else:
                             qty_field.props("disable")
                         bind_date_input("申请日期 *", basic, "application_date", editable=can_edit_base)
-                        bind_text_input("申请人 *", basic, "applicant", editable=can_edit_base)
+                        bind_text_input(
+                            "申请人 *",
+                            basic,
+                            "applicant",
+                            editable=can_edit_base,
+                            validate_person=True,
+                        )
                         bind_date_input("计划交货日期 *", basic, "planned_delivery_date", editable=can_edit_base)
-                        bind_text_input("制样负责人", execution, "sample_owner", editable=execution_editable)
+                        bind_text_input(
+                            "制样负责人",
+                            execution,
+                            "sample_owner",
+                            editable=execution_editable,
+                            validate_person=True,
+                        )
                         bind_date_input(
                             "实际交货日期",
                             execution,

@@ -289,6 +289,34 @@ class SampleOrderCalculationTests(unittest.TestCase):
             1,
         )
 
+    def test_leader_badge_counts_only_overdue_orders(self):
+        overdue = make_record()
+
+        warning = make_record()
+        warning["record_id"] = "record-warning"
+        warning["basic_info"]["planned_delivery_date"] = "2026-07-24"
+
+        missing_date = make_record()
+        missing_date["record_id"] = "record-missing"
+        missing_date["basic_info"]["planned_delivery_date"] = ""
+
+        paused = make_record()
+        paused["record_id"] = "record-paused"
+        paused["special_status"].update({"status": "暂停", "reason": "等待物料"})
+
+        records = {
+            record["record_id"]: record
+            for record in [overdue, warning, missing_date, paused]
+        }
+        self.assertEqual(
+            dashboard.get_sample_order_dashboard_pending_count(
+                records,
+                date(2026, 7, 21),
+                current_role="研发样品组长",
+            ),
+            1,
+        )
+
     def test_completed_delayed_order_requires_nature_mark(self):
         record = make_record()
         record["execution"]["actual_delivery_date"] = "2026-07-25"

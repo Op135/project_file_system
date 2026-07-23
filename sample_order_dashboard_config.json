@@ -43,9 +43,9 @@
         "作废"
     ],
     "special_status_reason_required": true,
-    "delay_attention_threshold": 2,
+    "delay_attention_threshold": 1,
     "wecom": {
-        "redirect_applicant_notifications_to_manager": false,
+        "redirect_applicant_notifications_to_manager": true,
         "notify_applicant_on_extension": true,
         "notify_applicant_on_special_status": true,
         "manager_notify_targets": [

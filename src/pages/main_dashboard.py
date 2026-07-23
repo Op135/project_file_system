@@ -19,7 +19,7 @@ from .design_knowledge import DESIGN_KNOWLEDGE_DATA_KEY, get_design_knowledge_da
 from .error_management import ERROR_DATA_KEY, get_error_dashboard_pending_count
 from .sample_issue_collection import SAMPLE_ISSUE_DATA_KEY, get_sample_dashboard_pending_count
 from .sample_order_dashboard import (
-    SAMPLE_ORDER_DATA_KEY,
+    get_all_sample_order_records,
     get_sample_order_dashboard_pending_count,
 )
 
@@ -263,7 +263,7 @@ def main_page():
                 current_role,
             )
             sample_order_pending_num = get_sample_order_dashboard_pending_count(
-                db_storage.get_item(SAMPLE_ORDER_DATA_KEY, {}),
+                get_all_sample_order_records(),
                 current_role=current_role,
             )
             design_knowledge_pending_num_user = get_design_knowledge_dashboard_pending_count(
