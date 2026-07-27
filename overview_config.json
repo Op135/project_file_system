@@ -2163,7 +2163,7 @@
                     "^无$",
                     "DC|C\\S*?V±\\S*"
                 ],
-                "dialog_placeholder": "DC/AC_V±_%",
+                "dialog_placeholder": "DC12V±10%/AC100~240V±10%",
                 "allowed_state": [
                     "研发",
                     "转产",

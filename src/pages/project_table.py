@@ -742,7 +742,12 @@ def project_table_page():
                         # === 性能优化：使用 List 作为文本收集器，替代低效的 += 字符串频繁拼接 ===
                         text_parts = []
                         # 遍历对照配置列表（可能一个项目简介配置了多个对应的概述数据项）
-                        for over_key in over_key_li:
+                        all_null = None  # 标记该项显示内容是否所有概述chip都填了“无”
+
+                        #
+                        def _get_overview_data_for_key(over_key, OVERVIEW_DATA):
+                            _text_parts = []
+                            _all_null = None
                             # 当前概述数据项label存在服务器概述数据对应项目里，说明可能存在概述内容
                             if over_key in OVERVIEW_DATA:
                                 CHIP_DATA_LI = OVERVIEW_DATA.get(over_key, {}).values()
@@ -758,6 +763,12 @@ def project_table_page():
                                         elif CHIP_DATA.get("type") in ["search", "svn", "file", "image"]:
                                             text = ".".join(CHIP_DATA["content"].split(".")[:-1])
 
+                                        if text == "无":
+                                            _all_null = True
+                                        else:
+                                            _all_null = False
+
+                                        # 复合某些正则表达式的文本内容，直接忽略不显示，比如LED铜基板不显示
                                         ignore_bool = False
                                         for regular in TABLE_IGNORE_REGULAR:
                                             match = re.search(regular, text)
@@ -771,9 +782,12 @@ def project_table_page():
                                             text = f"「{text}」?"
 
                                         if text:
-                                            text_parts.append(text)
-                                        # 将文本拼接到待显示字符串上
-                                        # 这几类换行拼接
+                                            _text_parts.append(text)
+                            return _all_null, _text_parts
+
+                        for over_key in over_key_li:
+                            all_null, text_parts = _get_overview_data_for_key(over_key, OVERVIEW_DATA)
+
                         # 执行高效的字符串合并
                         if pro_key in [
                             "light_source",
@@ -783,9 +797,19 @@ def project_table_page():
                             "software_executable_file",
                         ]:
                             show_str = "\n".join(text_parts)
+                        elif pro_key in ["input_voltage", "input_mode"]:
+                            if all_null:
+                                all_null, text_parts = _get_overview_data_for_key("light_vf", OVERVIEW_DATA)
+                                if all_null:
+                                    show_str = "无"
+                                elif all_null is False:
+                                    show_str = "\n".join(text_parts)
+                                else:
+                                    show_str = ""
+                            else:
+                                show_str = "，".join(text_parts)
                         else:
                             show_str = "，".join(text_parts)
-
                         # 定制内容列，则在概述内容基础上，拼接添加需求项输出标签内容
                         if pro_key == "custom_labels":
                             label_list = custom_labels_dict.get(project_name, [])

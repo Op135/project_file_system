@@ -207,8 +207,10 @@ IMG_URL_DIR = "/img"
 # 用它来临时存储 PDF 字节，完全绕过 JSON 序列化
 PDF_PREVIEW_CACHE = {}
 
-# 总表识别到符合以下正则的内容将不显示
-TABLE_IGNORE_REGULAR = ["^无$", "L[PB][0-9A-Z]{2}[A-Z]"]
+# 总表识别到符合以下正则的内容将不显示，"^无$"之前不显示，现在显示
+TABLE_IGNORE_REGULAR = [
+    "L[PB][0-9A-Z]{2}[A-Z]",
+]
 # 概述填写内容识别到符合以下正则的内容将等同于填写“无”
 NONE_REGULAR = ["^无$"]
 # 项目状态可选项
