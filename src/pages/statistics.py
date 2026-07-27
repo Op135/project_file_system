@@ -24,42 +24,113 @@ logger = logging.getLogger(__name__)
 STATS_FILE = os.path.join(f"{BASE_DIR}/data", "daily_project_stats.xlsx")
 
 
-def record_daily_stats(project_summary, pending_data):
+def normalize_overview_user(raw_user):
+    """移除负责人字段的显示前缀，返回可用于统计的用户名。"""
+    if raw_user is None:
+        return ""
+    user = str(raw_user).strip()
+    if "：" in user:
+        user = user.split("：", 1)[1].strip()
+    if user in {"", "——", "待定负责人"}:
+        return ""
+    return user
+
+
+def build_overview_management_snapshot(overview_role, pending_data):
+    """
+    将负责人和待办内存数据聚合为用户维度快照。
+
+    同一用户在同一项目负责多个角色时只计一次；只要项目任一负责人（含尚未
+    指定负责人）存在 ``缺必填`` 或 ``有待定``，项目即未完成。``缺需填``
+    不影响完成判定。
+    """
+    managed_projects = {}
+    for project_name, role_data in (overview_role or {}).items():
+        if not isinstance(role_data, dict):
+            continue
+        for charge_data in role_data.values():
+            if not isinstance(charge_data, dict):
+                continue
+            user = normalize_overview_user(charge_data.get("latest_user", ""))
+            if user:
+                managed_projects.setdefault(user, set()).add(project_name)
+
+    blocking_projects = set()
+    for user_pending in (pending_data or {}).values():
+        if not isinstance(user_pending, dict):
+            continue
+        for project_name, project_pending in user_pending.items():
+            statuses = set(project_pending.values()) if isinstance(project_pending, dict) else set()
+            if statuses.intersection({"缺必填", "有待定"}):
+                blocking_projects.add(project_name)
+
+    snapshot = {}
+    for user, projects in managed_projects.items():
+        completed_projects = []
+        incomplete_projects = []
+
+        for project_name in sorted(projects):
+            if project_name in blocking_projects:
+                incomplete_projects.append(project_name)
+            else:
+                completed_projects.append(project_name)
+
+        snapshot[user] = {
+            "managed_projects": sorted(projects),
+            "completed_projects": completed_projects,
+            "incomplete_projects": incomplete_projects,
+        }
+    return snapshot
+
+
+def record_daily_stats(project_summary, pending_data, overview_role=None):
     """
     持久化记录函数 (由 APScheduler 每日定时调用)
     处理逻辑：计算当天快照数据，并追加到 Excel 中
     """
     today = datetime.now().strftime("%Y-%m-%d")
-    rows = []
+    row_map = {}
+
+    def get_row(user, state):
+        return row_map.setdefault(
+            (user, state),
+            {
+                "日期": today,
+                "用户": user,
+                "项目状态": state,
+                "缺必填数": 0,
+                "有待定数": 0,
+                "缺需填数": 0,
+                "负责项目数": 0,
+                "填写完成项目数": 0,
+            },
+        )
 
     for user, p_dict in pending_data.items():
         if user == "待定负责人":
             continue  # 跳过“待定负责人”用户
-        stats_map = {}
         for proj, issues in p_dict.items():
             state = project_summary.get(proj, {}).get("state", "未知")
-            if state not in stats_map:
-                stats_map[state] = {"缺必填": 0, "有待定": 0, "缺需填": 0}
-
+            row = get_row(user, state)
             issue_types = set(issues.values())
             if "缺必填" in issue_types:
-                stats_map[state]["缺必填"] += 1
+                row["缺必填数"] += 1
             if "有待定" in issue_types:
-                stats_map[state]["有待定"] += 1
+                row["有待定数"] += 1
             if "缺需填" in issue_types:
-                stats_map[state]["缺需填"] += 1
+                row["缺需填数"] += 1
 
-        for state, counts in stats_map.items():
-            rows.append(
-                {
-                    "日期": today,
-                    "用户": user,
-                    "项目状态": state,
-                    "缺必填数": counts["缺必填"],
-                    "有待定数": counts["有待定"],
-                    "缺需填数": counts["缺需填"],
-                }
-            )
+    management_snapshot = build_overview_management_snapshot(overview_role or {}, pending_data)
+    for user, stats in management_snapshot.items():
+        completed_projects = set(stats["completed_projects"])
+        for project_name in stats["managed_projects"]:
+            state = project_summary.get(project_name, {}).get("state", "未知")
+            row = get_row(user, state)
+            row["负责项目数"] += 1
+            if project_name in completed_projects:
+                row["填写完成项目数"] += 1
+
+    rows = list(row_map.values())
 
     if not rows:
         return
@@ -70,7 +141,8 @@ def record_daily_stats(project_summary, pending_data):
         try:
             old_df = pd.read_excel(STATS_FILE)
             # 幂等性处理：如果当天已记录（如手动触发修复），则先剔除当天旧数据
-            old_df = old_df[old_df["日期"] != today]
+            old_dates = pd.to_datetime(old_df["日期"], errors="coerce").dt.strftime("%Y-%m-%d")
+            old_df = old_df[old_dates != today]
             final_df = pd.concat([old_df, new_df], ignore_index=True)
         except Exception as e:
             logger.error(f"读取历史统计文件失败: {e}")
@@ -179,18 +251,38 @@ def statistics_page():
                 req_ver_data = app.storage.general.get("project_req_max_ver", {})
                 # 数据结构：{人名：{项目名：{概述项label:状态}}}，用于待办统计分析,状态主要有：缺需填、缺必填、有待定
                 pending_data = copy.deepcopy(app.storage.general.get("overview_charge_pending", {}))
+                management_pending_data = copy.deepcopy(pending_data)
                 for user, pending_project_dic in list(
                     pending_data.items()
                 ):  # 之所以要 list() 包裹，是为了在循环中修改字典结构时不报错
                     if not pending_project_dic or user == "待定负责人":
                         # if not pending_project_dic:
                         pending_data.pop(user, None)
+
+                can_view_overview_stats = current_role in module_show_data.get("overview_charge_pending_statistics", [])
+                overview_role = app.storage.general.get("overview_role", {})
+                management_snapshot = build_overview_management_snapshot(overview_role, management_pending_data)
+
+                # 两个历史卡片共用一次 Excel 读取，避免在同一页面重复加载和解析。
+                statistics_history_df = pd.DataFrame(
+                    columns=["日期", "用户", "项目状态", "缺必填数", "有待定数", "缺需填数"]
+                )
+                if can_view_overview_stats and os.path.exists(STATS_FILE):
+                    try:
+                        statistics_history_df = pd.read_excel(STATS_FILE)
+                        statistics_history_df["日期"] = pd.to_datetime(statistics_history_df["日期"], errors="coerce")
+                        statistics_history_df = statistics_history_df.dropna(subset=["日期"]).sort_values("日期")
+                    except Exception as e:
+                        logger.error(f"数据加载失败: {e}")
+                        statistics_history_df = pd.DataFrame(
+                            columns=["日期", "用户", "项目状态", "缺必填数", "有待定数", "缺需填数"]
+                        )
                 # =========================================================
                 # 左侧列 (主要工作流)
                 # =========================================================
                 with ui.column().classes("col-span-12 lg:col-span-6 gap-4"):
                     # C. 概述统计图表 (Statistics)
-                    if current_role in module_show_data.get("overview_charge_pending_statistics", []):
+                    if can_view_overview_stats:
                         # ----------------- 图表 1：团队待办概览 (已修改横纵轴及排序) -----------------
                         # 增加 relative 类以支持绝对定位下拉框
                         with ui.card().classes(
@@ -733,12 +825,134 @@ def statistics_page():
 
                                 ui_select_user.on_value_change(update_chart)
 
+                        # F. 待办项历史趋势 (Pending Items Historical Trend Analysis)
+                        # ----------------- 图表 0：30日多维趋势分析 -----------------
+                        with ui.card().classes(
+                            "w-full rounded-xl shadow-sm border border-gray-100 overflow-hidden bg-white relative"
+                        ):
+                            ui_card_header("近30日待办状态趋势（项目数）", "history", "amber-600")
+
+                            cutoff_date = datetime.now() - timedelta(days=30)
+                            df = statistics_history_df[statistics_history_df["日期"] >= cutoff_date].copy()
+                            if not df.empty:
+                                df["日期_str"] = df["日期"].dt.strftime("%m-%d")
+
+                            if df.empty:
+                                ui.label("暂无历史统计数据，数据将在每日工作日 18:00 自动累积生成。").classes(
+                                    "p-8 text-gray-400 text-center w-full"
+                                )
+                            else:
+                                # 计算转产阶段总积压最多的前三人作为默认项
+                                recent_date = df["日期"].max()
+                                latest_data = df[df["日期"] == recent_date]
+                                top_users_df = latest_data[latest_data["项目状态"] == "转产"].copy()
+                                top_users_df["total_issues"] = (
+                                    top_users_df["缺必填数"] + top_users_df["有待定数"] + top_users_df["缺需填数"]
+                                )
+                                default_top_users = (
+                                    top_users_df.groupby("用户")["total_issues"].sum().nlargest(3).index.tolist()
+                                )
+
+                                if not default_top_users:
+                                    default_top_users = df["用户"].unique()[:3].tolist()
+
+                                with ui.row().classes("w-full px-4 gap-4 items-center justify-between"):
+                                    sel_users = ui.select(
+                                        options=df["用户"].unique().tolist(),
+                                        value=default_top_users,
+                                        multiple=True,
+                                        label="人员选择",
+                                    ).classes("w-1/3 min-w-[150px]")
+
+                                    sel_states = ui.select(
+                                        options=df["项目状态"].unique().tolist(),
+                                        value=["转产"],
+                                        multiple=True,
+                                        label="阶段过滤",
+                                    ).classes("w-1/4 min-w-[120px]")
+
+                                    sel_metric = ui.select(
+                                        options={
+                                            "缺必填数": "缺必填数",
+                                            "有待定数": "有待定数",
+                                            "缺需填数": "缺需填数",
+                                        },
+                                        value="缺必填数",
+                                        label="考察指标",
+                                    ).classes("w-1/4 min-w-[120px]")
+
+                                @ui.refreshable
+                                def render_history_chart(users, states, metric):
+                                    if not users or not states:
+                                        ui.label("请至少选择一名人员和一个阶段。").classes("p-4 text-gray-400")
+                                        return
+
+                                    mask = df["用户"].isin(users) & df["项目状态"].isin(states)
+                                    filtered_df = (
+                                        df[mask].groupby(["日期_str", "用户"])[metric].sum().unstack().fillna(0)
+                                    )
+
+                                    dates = filtered_df.index.tolist()
+                                    series = []
+                                    for user in filtered_df.columns:
+                                        series.append(
+                                            {
+                                                "name": user,
+                                                "type": "line",
+                                                "smooth": False,
+                                                "symbolSize": 6,
+                                                "data": filtered_df[user].tolist(),
+                                            }
+                                        )
+
+                                    echart_config = {
+                                        "tooltip": {"trigger": "axis"},
+                                        "legend": {"bottom": 0, "type": "scroll"},
+                                        "grid": {
+                                            "top": 40,
+                                            "bottom": 60,
+                                            "left": 40,
+                                            "right": 20,
+                                            "containLabel": True,
+                                        },
+                                        "xAxis": {
+                                            "type": "category",
+                                            "data": dates,
+                                            "boundaryGap": False,
+                                            "splitLine": {"show": True, "lineStyle": {"type": "dashed"}},
+                                        },
+                                        "yAxis": {
+                                            "type": "value",
+                                            "minInterval": 1,
+                                            "splitLine": {"lineStyle": {"type": "dashed"}},
+                                        },
+                                        "series": series,
+                                    }
+                                    ui.echart(echart_config).classes("w-full h-80")
+
+                                render_history_chart(sel_users.value, sel_states.value, sel_metric.value)
+
+                                sel_users.on_value_change(
+                                    lambda: render_history_chart.refresh(
+                                        sel_users.value, sel_states.value, sel_metric.value
+                                    )
+                                )
+                                sel_states.on_value_change(
+                                    lambda: render_history_chart.refresh(
+                                        sel_users.value, sel_states.value, sel_metric.value
+                                    )
+                                )
+                                sel_metric.on_value_change(
+                                    lambda: render_history_chart.refresh(
+                                        sel_users.value, sel_states.value, sel_metric.value
+                                    )
+                                )
                 # =========================================================
                 # 右侧列
                 # =========================================================
                 with ui.column().classes("col-span-12 lg:col-span-6 gap-4"):
                     # D. 其他统计信息 (Other Statistics)
-                    if current_role in module_show_data.get("overview_charge_pending_statistics", []):
+                    if can_view_overview_stats:
                         with ui.card().classes(
                             "w-full rounded-xl shadow-sm border border-gray-100 overflow-hidden bg-white mb-2"
                         ):
@@ -1030,134 +1244,284 @@ def statistics_page():
                                         }});
                                     }}, 200); // 极小延迟，确保图表已被浏览器完全渲染
                                 """)
-                    # E. 待办项历史趋势分析 (Pending Items Historical Trend Analysis)
-                    if current_role in module_show_data.get("overview_charge_pending_statistics", []):
-                        # ----------------- 图表 0：30日多维趋势分析 -----------------
+                    # E. 概述负责人项目完成统计
+                    if can_view_overview_stats:
                         with ui.card().classes(
                             "w-full rounded-xl shadow-sm border border-gray-100 overflow-hidden bg-white relative"
                         ):
-                            ui_card_header("近30日待办状态趋势分析（项目数）", "history", "amber-600")
+                            ui_card_header("概述负责人项目完成统计", "manage_accounts", "emerald-600")
+                            ui.label("完成口径：必填项已填且无待定状态；仅缺需填项仍计为完成。").classes(
+                                "text-xs text-gray-500 px-4 -mt-1"
+                            )
 
-                            if os.path.exists(STATS_FILE):
-                                try:
-                                    df = pd.read_excel(STATS_FILE)
-                                    df["日期"] = pd.to_datetime(df["日期"])
-                                    cutoff_date = datetime.now() - timedelta(days=30)
-                                    df = df[df["日期"] >= cutoff_date].sort_values("日期")
-                                    df["日期_str"] = df["日期"].dt.strftime("%m-%d")
-                                except Exception as e:
-                                    logger.error(f"数据加载失败: {e}")
-                                    df = pd.DataFrame()
-                            else:
-                                df = pd.DataFrame()
-
-                            if df.empty:
-                                ui.label("暂无历史统计数据，数据将在每日工作日 18:00 自动累积生成。").classes(
-                                    "p-8 text-gray-400 text-center w-full"
+                            if management_snapshot:
+                                current_users = sorted(
+                                    management_snapshot,
+                                    key=lambda user: (
+                                        -len(management_snapshot[user]["managed_projects"]),
+                                        -len(management_snapshot[user]["completed_projects"]),
+                                        user,
+                                    ),
                                 )
-                            else:
-                                # 计算转产阶段总积压最多的前三人作为默认项
-                                recent_date = df["日期"].max()
-                                latest_data = df[df["日期"] == recent_date]
-                                top_users_df = latest_data[latest_data["项目状态"] == "转产"].copy()
-                                top_users_df["total_issues"] = (
-                                    top_users_df["缺必填数"] + top_users_df["有待定数"] + top_users_df["缺需填数"]
-                                )
-                                default_top_users = (
-                                    top_users_df.groupby("用户")["total_issues"].sum().nlargest(3).index.tolist()
-                                )
-
-                                if not default_top_users:
-                                    default_top_users = df["用户"].unique()[:3].tolist()
-
-                                with ui.row().classes("w-full px-4 gap-4 items-center justify-between"):
-                                    sel_users = ui.select(
-                                        options=df["用户"].unique().tolist(),
-                                        value=default_top_users,
-                                        multiple=True,
-                                        label="人员选择",
-                                    ).classes("w-1/3 min-w-[150px]")
-
-                                    sel_states = ui.select(
-                                        options=df["项目状态"].unique().tolist(),
-                                        value=["转产"],
-                                        multiple=True,
-                                        label="阶段过滤",
-                                    ).classes("w-1/4 min-w-[120px]")
-
-                                    sel_metric = ui.select(
-                                        options={
-                                            "缺必填数": "缺必填数",
-                                            "有待定数": "有待定数",
-                                            "缺需填数": "缺需填数",
+                                current_chart_config = {
+                                    "tooltip": {
+                                        "trigger": "item",
+                                        "confine": True,
+                                        ":formatter": """
+                                            function(params) {
+                                                const projects = (params.data && params.data.projects) || [];
+                                                let html = `<b>${params.name}</b><br/>${params.seriesName}: <b>${params.value}</b>`;
+                                                if (projects.length) {
+                                                    html += '<br/>' + projects.map(p => `• ${p}`).join('<br/>');
+                                                }
+                                                return html;
+                                            }
+                                            """,
+                                    },
+                                    "legend": {"top": 0, "data": ["填写完成", "未完成"]},
+                                    "grid": {
+                                        "top": 40,
+                                        "bottom": 45,
+                                        "left": 30,
+                                        "right": 20,
+                                        "containLabel": True,
+                                    },
+                                    "xAxis": {
+                                        "type": "category",
+                                        "data": current_users,
+                                        "axisTick": {"show": False},
+                                        "axisLabel": {"interval": 0, "rotate": 30},
+                                    },
+                                    "yAxis": {
+                                        "type": "value",
+                                        "name": "负责项目数",
+                                        "minInterval": 1,
+                                        "splitLine": {"lineStyle": {"type": "dashed"}},
+                                    },
+                                    "series": [
+                                        {
+                                            "name": "填写完成",
+                                            "type": "bar",
+                                            "stack": "managed",
+                                            "barWidth": "50%",
+                                            "itemStyle": {"color": "#10b981"},
+                                            "label": {
+                                                "show": True,
+                                                "position": "top",
+                                                "color": "#374151",
+                                                "fontWeight": "bold",
+                                                ":formatter": """
+                                                    function(params) {
+                                                        return params.data.showTotal ? params.data.total : '';
+                                                    }
+                                                    """,
+                                            },
+                                            "data": [
+                                                {
+                                                    "value": len(management_snapshot[user]["completed_projects"]),
+                                                    "projects": management_snapshot[user]["completed_projects"],
+                                                    "total": len(management_snapshot[user]["managed_projects"]),
+                                                    "showTotal": not management_snapshot[user]["incomplete_projects"],
+                                                }
+                                                for user in current_users
+                                            ],
                                         },
-                                        value="缺必填数",
-                                        label="考察指标",
-                                    ).classes("w-1/4 min-w-[120px]")
+                                        {
+                                            "name": "未完成",
+                                            "type": "bar",
+                                            "stack": "managed",
+                                            "barWidth": "50%",
+                                            "itemStyle": {"color": "#f59e0b", "borderRadius": [4, 4, 0, 0]},
+                                            "label": {
+                                                "show": True,
+                                                "position": "top",
+                                                "color": "#374151",
+                                                "fontWeight": "bold",
+                                                ":formatter": """
+                                                    function(params) {
+                                                        return params.value > 0 ? params.data.total : '';
+                                                    }
+                                                    """,
+                                            },
+                                            "data": [
+                                                {
+                                                    "value": len(management_snapshot[user]["incomplete_projects"]),
+                                                    "projects": management_snapshot[user]["incomplete_projects"],
+                                                    "total": len(management_snapshot[user]["managed_projects"]),
+                                                }
+                                                for user in current_users
+                                            ],
+                                        },
+                                    ],
+                                }
+                                ui.echart(current_chart_config).classes("w-full h-80")
+                            else:
+                                current_users = []
+                                ui.label("当前没有已指定的概述负责人。").classes("p-8 text-gray-400 text-center w-full")
+
+                            required_history_columns = {"日期", "用户", "负责项目数", "填写完成项目数"}
+                            if required_history_columns.issubset(statistics_history_df.columns):
+                                management_history_df = statistics_history_df[
+                                    ["日期", "用户", "负责项目数", "填写完成项目数"]
+                                ].copy()
+                                management_history_df["负责项目数"] = pd.to_numeric(
+                                    management_history_df["负责项目数"], errors="coerce"
+                                )
+                                management_history_df["填写完成项目数"] = pd.to_numeric(
+                                    management_history_df["填写完成项目数"], errors="coerce"
+                                )
+                                management_history_df = management_history_df.dropna(
+                                    subset=["日期", "用户", "负责项目数", "填写完成项目数"]
+                                )
+                                management_history_df = (
+                                    management_history_df.groupby(["日期", "用户"], as_index=False)[
+                                        ["负责项目数", "填写完成项目数"]
+                                    ]
+                                    .sum()
+                                    .sort_values("日期")
+                                )
+                            else:
+                                management_history_df = pd.DataFrame(
+                                    columns=["日期", "用户", "负责项目数", "填写完成项目数"]
+                                )
+
+                            history_users = set(management_history_df["用户"].tolist())
+                            all_management_users = sorted(set(current_users) | history_users)
+                            today_timestamp = pd.Timestamp(datetime.now().date())
+                            if not management_history_df.empty:
+                                management_history_df = management_history_df[
+                                    management_history_df["日期"].dt.normalize() != today_timestamp
+                                ]
+                            live_rows = []
+                            for user in all_management_users:
+                                user_snapshot = management_snapshot.get(user, {})
+                                live_rows.append(
+                                    {
+                                        "日期": today_timestamp,
+                                        "用户": user,
+                                        "负责项目数": len(user_snapshot.get("managed_projects", [])),
+                                        "填写完成项目数": len(user_snapshot.get("completed_projects", [])),
+                                    }
+                                )
+                            if live_rows:
+                                management_history_df = pd.concat(
+                                    [management_history_df, pd.DataFrame(live_rows)], ignore_index=True
+                                ).sort_values("日期")
+
+                            if all_management_users:
+                                default_management_user = current_users[0] if current_users else all_management_users[0]
+                                with ui.row().classes("w-full px-4 pt-3 gap-4 items-center"):
+                                    management_user_select = ui.select(
+                                        options=all_management_users,
+                                        value=default_management_user,
+                                        label="选择人员",
+                                    ).classes("w-2/5 min-w-[150px]")
+                                    management_period_select = ui.select(
+                                        options={"daily": "每日（近30日）", "monthly": "每月（近12月）"},
+                                        value="daily",
+                                        label="统计周期",
+                                    ).classes("w-2/5 min-w-[150px]")
 
                                 @ui.refreshable
-                                def render_history_chart(users, states, metric):
-                                    if not users or not states:
-                                        ui.label("请至少选择一名人员和一个阶段。").classes("p-4 text-gray-400")
-                                        return
-
-                                    mask = df["用户"].isin(users) & df["项目状态"].isin(states)
-                                    filtered_df = (
-                                        df[mask].groupby(["日期_str", "用户"])[metric].sum().unstack().fillna(0)
+                                def render_management_history(selected_user, period):
+                                    user_snapshot = management_snapshot.get(selected_user, {})
+                                    managed_count = len(user_snapshot.get("managed_projects", []))
+                                    completed_count = len(user_snapshot.get("completed_projects", []))
+                                    completion_rate = (
+                                        round(completed_count / managed_count * 100, 1) if managed_count else 0
                                     )
 
-                                    dates = filtered_df.index.tolist()
-                                    series = []
-                                    for user in filtered_df.columns:
-                                        series.append(
-                                            {
-                                                "name": user,
-                                                "type": "line",
-                                                "smooth": False,
-                                                "symbolSize": 6,
-                                                "data": filtered_df[user].tolist(),
-                                            }
-                                        )
+                                    with ui.row().classes("w-full px-4 pt-3 gap-3"):
+                                        for label, value, color in [
+                                            ("当前负责", managed_count, "text-indigo-600"),
+                                            ("填写完成", completed_count, "text-emerald-600"),
+                                            ("完成率", f"{completion_rate}%", "text-blue-600"),
+                                        ]:
+                                            with ui.column().classes(
+                                                "flex-1 min-w-[100px] gap-0 items-center rounded-lg bg-gray-50 py-2"
+                                            ):
+                                                ui.label(str(value)).classes(f"text-xl font-bold {color}")
+                                                ui.label(label).classes("text-xs text-gray-500")
 
-                                    echart_config = {
+                                    person_df = management_history_df[
+                                        management_history_df["用户"] == selected_user
+                                    ].copy()
+                                    if person_df.empty:
+                                        ui.label("该人员暂无可用快照。").classes("p-8 text-gray-400 text-center w-full")
+                                        return
+
+                                    if period == "monthly":
+                                        cutoff = (today_timestamp.to_period("M") - 11).start_time
+                                        person_df = person_df[person_df["日期"] >= cutoff].sort_values("日期")
+                                        person_df["周期"] = person_df["日期"].dt.to_period("M")
+                                        chart_df = person_df.groupby("周期", as_index=False).tail(1)
+                                        x_axis = chart_df["周期"].astype(str).tolist()
+                                        period_note = "每月采用当月最后一份快照，本月为实时数据"
+                                    else:
+                                        cutoff = today_timestamp - timedelta(days=29)
+                                        chart_df = person_df[person_df["日期"] >= cutoff].sort_values("日期")
+                                        x_axis = chart_df["日期"].dt.strftime("%m-%d").tolist()
+                                        period_note = "每日快照，今天为实时数据"
+
+                                    if chart_df.empty:
+                                        ui.label("所选周期内暂无可用快照。历史将在工作日 18:00 累积。").classes(
+                                            "p-8 text-gray-400 text-center w-full"
+                                        )
+                                        return
+
+                                    history_chart_config = {
+                                        "title": {
+                                            "text": selected_user,
+                                            "subtext": period_note,
+                                            "left": "center",
+                                            "textStyle": {"fontSize": 14},
+                                        },
                                         "tooltip": {"trigger": "axis"},
-                                        "legend": {"bottom": 0, "type": "scroll"},
+                                        "legend": {"bottom": 0},
                                         "grid": {
-                                            "top": 40,
-                                            "bottom": 60,
-                                            "left": 40,
+                                            "top": 65,
+                                            "bottom": 55,
+                                            "left": 35,
                                             "right": 20,
                                             "containLabel": True,
                                         },
                                         "xAxis": {
                                             "type": "category",
-                                            "data": dates,
+                                            "data": x_axis,
                                             "boundaryGap": False,
-                                            "splitLine": {"show": True, "lineStyle": {"type": "dashed"}},
                                         },
                                         "yAxis": {
                                             "type": "value",
                                             "minInterval": 1,
                                             "splitLine": {"lineStyle": {"type": "dashed"}},
                                         },
-                                        "series": series,
+                                        "series": [
+                                            {
+                                                "name": "负责项目数",
+                                                "type": "line",
+                                                "smooth": False,
+                                                "symbolSize": 6,
+                                                "data": [int(v) for v in chart_df["负责项目数"].tolist()],
+                                                "lineStyle": {"color": "#6366f1"},
+                                                "itemStyle": {"color": "#6366f1"},
+                                            },
+                                            {
+                                                "name": "填写完成项目数",
+                                                "type": "line",
+                                                "smooth": False,
+                                                "symbolSize": 6,
+                                                "data": [int(v) for v in chart_df["填写完成项目数"].tolist()],
+                                                "lineStyle": {"color": "#10b981"},
+                                                "itemStyle": {"color": "#10b981"},
+                                            },
+                                        ],
                                     }
-                                    ui.echart(echart_config).classes("w-full h-80")
+                                    ui.echart(history_chart_config).classes("w-full h-80")
 
-                                render_history_chart(sel_users.value, sel_states.value, sel_metric.value)
-
-                                sel_users.on_value_change(
-                                    lambda: render_history_chart.refresh(
-                                        sel_users.value, sel_states.value, sel_metric.value
-                                    )
+                                render_management_history(management_user_select.value, management_period_select.value)
+                                management_user_select.on_value_change(
+                                    lambda e: render_management_history.refresh(e.value, management_period_select.value)
                                 )
-                                sel_states.on_value_change(
-                                    lambda: render_history_chart.refresh(
-                                        sel_users.value, sel_states.value, sel_metric.value
-                                    )
-                                )
-                                sel_metric.on_value_change(
-                                    lambda: render_history_chart.refresh(
-                                        sel_users.value, sel_states.value, sel_metric.value
-                                    )
+                                management_period_select.on_value_change(
+                                    lambda e: render_management_history.refresh(management_user_select.value, e.value)
                                 )

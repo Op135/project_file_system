@@ -168,7 +168,8 @@ def init_pending_history_task():
             # 3. 触发 Excel 长期持久化 (服务于前端 30日多维图表)
             if record_daily_stats:
                 project_summary = app.storage.general.get("project_summary", {})
-                record_daily_stats(project_summary, current_pending)
+                overview_role = app.storage.general.get("overview_role", {})
+                record_daily_stats(project_summary, current_pending, overview_role)
 
         except Exception as e:
             logger.error(f"每日待办项快照记录出错: {e}")
