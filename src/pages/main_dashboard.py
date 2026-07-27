@@ -15,6 +15,7 @@ from ..utils import (
     logout,
     online_users,
     setup_global_activity_tracking,
+    sync_current_user_role,
 )
 from .design_knowledge import DESIGN_KNOWLEDGE_DATA_KEY, get_design_knowledge_dashboard_pending_count
 from .error_management import ERROR_DATA_KEY, get_error_dashboard_pending_count
@@ -176,7 +177,7 @@ def main_page():
         ui.navigate.to("/login")  # 如果未登录，跳转到登录页
         return
     current_user = app.storage.user.get("current_user", "匿名用户")
-    current_role = app.storage.user.get("current_role", "未知角色")
+    current_role = sync_current_user_role()
     # 从全局存储中获取用户当前的头像设置
     # (在 main.py 中定义 "user_preferences")
     user_prefs = app.storage.general.get("user_preferences", {}).get(current_user, {})

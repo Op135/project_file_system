@@ -43,7 +43,7 @@ from ..sample_order_dashboard_config import (
     SAMPLE_ORDER_SPECIAL_STATUSES,
     SAMPLE_ORDER_WARNING_DAYS,
 )
-from ..utils import get_cache_busted_path, logout, setup_global_activity_tracking
+from ..utils import get_cache_busted_path, logout, setup_global_activity_tracking, sync_current_user_role
 from ..wecom_service import find_unknown_wecom_names, resolve_wecom_recipients, send_wecom_text_message
 
 SAMPLE_ORDER_DATA_KEY = "sample_order_dashboard_data"
@@ -1489,7 +1489,9 @@ async def sample_order_dashboard_page(record_id: str = "") -> None:
         return
 
     current_user = option_text(app.storage.user.get("current_user"), "未知用户")
-    current_role = option_text(app.storage.user.get("current_role"), "未知角色")
+    # 用户会话会跨服务器重启保留；每次进入权限页都从当前用户表同步角色，避免管理员改完角色后
+    # 浏览器仍沿用旧的 current_role。
+    current_role = option_text(sync_current_user_role(), "未知角色")
     current_display_path = get_cache_busted_path(
         app.storage.general.get("user_preferences", {}).get(current_user, {}).get("avatar", PRESET_AVATARS[0])
     )

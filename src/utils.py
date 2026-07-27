@@ -813,6 +813,41 @@ def update_users_data():
         )
 
 
+def sync_current_user_role(default: str = "未知角色") -> str:
+    """用当前用户表中的角色刷新浏览器会话，并返回最新角色。
+
+    ``app.storage.user`` 会跨服务重启保留，因此不能把登录时写入的
+    ``current_role`` 长期当作权限事实来源。管理员修改用户角色后，页面入口调用本函数即可
+    让现有浏览器会话在刷新时同步到最新角色。
+    """
+    current_user = str(app.storage.user.get("current_user", "")).strip()
+    if not current_user:
+        return default
+
+    users_data = getattr(app.state, "users_data", {})
+    user_info = users_data.get(current_user, {}) if isinstance(users_data, dict) else {}
+    user_service = getattr(app.state, "user_service", None)
+    if user_service is not None:
+        try:
+            # 直接读取用户表，兼容未来启用多进程后其它进程刚完成的角色修改。
+            fresh_user_info = user_service.get_user(current_user)
+            if isinstance(fresh_user_info, dict) and fresh_user_info:
+                user_info = fresh_user_info
+        except Exception:
+            # 用户表短暂不可读时使用启动时/后台保存后刷新的内存数据，避免把正常会话踢下线。
+            logger.warning("刷新当前用户角色失败，暂时使用内存用户数据：%s", current_user, exc_info=True)
+    if not isinstance(user_info, dict):
+        return default
+
+    latest_role = str(user_info.get("role") or "").strip()
+    if not latest_role:
+        return default
+
+    app.storage.user["current_role"] = latest_role
+    app.storage.user["is_admin"] = latest_role.lower() == "admin"
+    return latest_role
+
+
 # 全局键盘事件跟踪处理函数
 def handle_key(e: KeyEventArguments):
     key_state = app.storage.client.setdefault("key_state", {})

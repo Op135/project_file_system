@@ -4,7 +4,7 @@ import io
 import json
 import tempfile
 import unittest
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
 from unittest.mock import AsyncMock, Mock, patch
@@ -624,7 +624,10 @@ class SampleOrderAtomicSaveTests(unittest.IsolatedAsyncioTestCase):
         submitted["execution"]["sample_owner"] = "不应被写入"
         submitted["extensions"].append(
             dashboard.normalize_extension(
-                {"target_date": "2026-07-25", "reason": "等待客户确认"}
+                {
+                    "target_date": (date.today() + timedelta(days=1)).isoformat(),
+                    "reason": "等待客户确认",
+                }
             )
         )
         saved: dict[str, object] = {}
