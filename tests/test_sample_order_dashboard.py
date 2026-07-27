@@ -191,16 +191,38 @@ class SampleOrderCalculationTests(unittest.TestCase):
             )
         )
 
-    def test_in_progress_filter_keeps_undelivered_paused_order(self):
-        record = make_record()
-        record["special_status"].update({"status": "暂停", "reason": "等待客户"})
+    def test_in_progress_filter_excludes_undelivered_special_status_orders(self):
+        for status in ("暂停", "作废"):
+            with self.subTest(status=status):
+                record = make_record()
+                record["special_status"].update({"status": status, "reason": "等待处理"})
 
-        self.assertTrue(
-            dashboard.sample_order_matches_filter(
-                record,
-                dashboard.FILTER_IN_PROGRESS,
+                self.assertFalse(
+                    dashboard.sample_order_matches_filter(
+                        record,
+                        dashboard.FILTER_IN_PROGRESS,
+                    )
+                )
+                self.assertTrue(
+                    dashboard.sample_order_matches_filter(
+                        record,
+                        status,
+                    )
+                )
+
+    def test_in_progress_kpi_excludes_special_status_orders(self):
+        for status in ("暂停", "作废"):
+            record = make_record()
+            record["special_status"].update({"status": status, "reason": "等待处理"})
+            metrics = dashboard.calculate_sample_order_metrics(record, date(2026, 7, 18))
+            self.assertFalse(
+                dashboard.sample_order_matches_kpi(
+                    record,
+                    metrics,
+                    "制样中",
+                ),
+                status,
             )
-        )
 
     def test_special_status_overrides_normal_execution_status(self):
         record = make_record()

@@ -1447,7 +1447,7 @@ def sample_order_matches_filter(
     if filter_value == FILTER_IN_PROGRESS:
         return bool(
             actual_date is None
-            and data["special_status"].get("status") != "作废"
+            and data["special_status"].get("status") == "正常"
         )
     if filter_value == FILTER_NATURE_PENDING:
         return _is_delay_nature_pending_from_data(data)

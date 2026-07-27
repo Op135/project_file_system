@@ -1,0 +1,6 @@
+# 固定项目的 Ruff 检查范围，避免 Ruff 升级后默认规则变化导致全项目告警突增。
+line-length = 120
+
+[lint]
+select = ["E4", "E7", "E9", "F"]
+ignore = ["F401"]
