@@ -1,4 +1,3 @@
-# -*- encoding: utf-8 -*-
 import io
 import logging
 import uuid  # 用于生成唯一文件名
@@ -103,7 +102,7 @@ def user_profile_page():
         except Exception as ex:
             logger.error("头像上传处理失败", exc_info=True)  # 在服务器端打印错误详情
             ui.notify(
-                f"上传文件 '{e.file.name}' 失败: {str(ex)}",
+                f"上传文件 '{e.file.name}' 失败: {ex!s}",
                 type="negative",
                 position="center",
                 timeout=0,
@@ -139,7 +138,7 @@ def user_profile_page():
         current_avatar_display = ui.image(current_display_path).classes(
             "w-16 h-16 rounded-full self-center ring-4 ring-blue-500"
         )
-
+        ui.label(app.storage.user.get("current_role", "匿名用户")).classes("text-sm font-semibold")
         ui.separator()
 
         ui.label("选择新头像").classes("text-xl font-semibold")
