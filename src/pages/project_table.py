@@ -742,12 +742,37 @@ def project_table_page():
                         # === 性能优化：使用 List 作为文本收集器，替代低效的 += 字符串频繁拼接 ===
                         text_parts = []
                         # 遍历对照配置列表（可能一个项目简介配置了多个对应的概述数据项）
-                        all_null = None  # 标记该项显示内容是否所有概述chip都填了“无”
+                        any_ture = None  # 标记该项显示内容是否存在有意义的概述
 
-                        #
-                        def _get_overview_data_for_key(over_key, OVERVIEW_DATA):
+                        def _get_overview_data_for_key(
+                            over_key, OVERVIEW_DATA, is_table_overview=False, first_column_regular=None
+                        ):
+                            """获取指定概述项的可显示文本。
+
+                            表格模式下，会通过 row_id 找到当前 chip 同行的第一列 chip，
+                            并将正则匹配到的第一列内容拼接到当前文本前面。
+                            """
                             _text_parts = []
-                            _all_null = None
+                            _any_ture = None
+
+                            first_column_pattern = None
+                            first_column_contents_by_row_id = {}
+                            if is_table_overview and first_column_regular:
+                                first_column_pattern = re.compile(first_column_regular)
+                                over_config = storage.get("over_config_data_flat", {}).get(over_key, {})
+                                role = over_config.get("role")
+                                group_name = over_config.get("group_name")
+                                group_configs = storage.get("over_config_data", {}).get(role, {}).get(group_name, [])
+                                if group_configs:
+                                    first_column_label = group_configs[0].get("label")
+                                    first_column_chips = OVERVIEW_DATA.get(first_column_label, {}).values()
+                                    for first_column_chip in first_column_chips:
+                                        row_id = first_column_chip.get("row_id")
+                                        if row_id:
+                                            first_column_contents_by_row_id.setdefault(row_id, []).append(
+                                                str(first_column_chip.get("content", ""))
+                                            )
+
                             # 当前概述数据项label存在服务器概述数据对应项目里，说明可能存在概述内容
                             if over_key in OVERVIEW_DATA:
                                 CHIP_DATA_LI = OVERVIEW_DATA.get(over_key, {}).values()
@@ -763,10 +788,8 @@ def project_table_page():
                                         elif CHIP_DATA.get("type") in ["search", "svn", "file", "image"]:
                                             text = ".".join(CHIP_DATA["content"].split(".")[:-1])
 
-                                        if text == "无":
-                                            _all_null = True
-                                        else:
-                                            _all_null = False
+                                        if text not in ["无", ""]:
+                                            _any_ture = True
 
                                         # 复合某些正则表达式的文本内容，直接忽略不显示，比如LED铜基板不显示
                                         ignore_bool = False
@@ -781,13 +804,30 @@ def project_table_page():
                                         if CHIP_DATA["enabled"] is None:
                                             text = f"「{text}」?"
 
+                                        if text and first_column_pattern:
+                                            first_column_contents = first_column_contents_by_row_id.get(
+                                                CHIP_DATA.get("row_id"), []
+                                            )
+                                            matched_prefixes = []
+                                            for first_column_content in first_column_contents:
+                                                match = first_column_pattern.search(first_column_content)
+                                                if match:
+                                                    matched_prefixes.append(match.group(0))
+                                            if matched_prefixes:
+                                                text = f"{'、'.join(matched_prefixes)}：{text}"
+
                                         if text:
                                             _text_parts.append(text)
-                            return _all_null, _text_parts
+                            return _any_ture, _text_parts
 
                         for over_key in over_key_li:
-                            all_null, text_parts = _get_overview_data_for_key(over_key, OVERVIEW_DATA)
+                            any_ture, parts = _get_overview_data_for_key(over_key, OVERVIEW_DATA)
+                            text_parts.extend(parts)
 
+                        if text_parts and all(part == "无" for part in text_parts):
+                            text_parts = ["无"]
+                        else:
+                            text_parts = [part for part in text_parts if part != "无"]
                         # 执行高效的字符串合并
                         if pro_key in [
                             "light_source",
@@ -797,12 +837,16 @@ def project_table_page():
                             "software_executable_file",
                         ]:
                             show_str = "\n".join(text_parts)
-                        elif pro_key in ["input_voltage", "input_mode"]:
-                            if all_null:
-                                all_null, text_parts = _get_overview_data_for_key("light_vf", OVERVIEW_DATA)
-                                if all_null:
+                        elif pro_key in ["input_voltage"]:
+                            # 有填概述且没有任何有意义的概述内容，全为“无”
+                            if not any_ture and text_parts:
+                                any_ture, text_parts = _get_overview_data_for_key(
+                                    "light_vf", OVERVIEW_DATA, True, r"^[^:：]+"
+                                )
+
+                                if not any_ture and text_parts:
                                     show_str = "无"
-                                elif all_null is False:
+                                elif any_ture:
                                     show_str = "\n".join(text_parts)
                                 else:
                                     show_str = ""
