@@ -1471,6 +1471,125 @@ def sample_order_matches_filter(
     return True
 
 
+def get_sample_order_monthly_statistics(
+    all_records: object,
+    today: Optional[date] = None,
+) -> list[dict[str, object]]:
+    """按计划交货月份统计过去11个月、当前月及已有未来计划月份。"""
+    reference_date = today or date.today()
+    reference_month_number = reference_date.year * 12 + reference_date.month - 1
+
+    if isinstance(all_records, dict):
+        raw_records = list(all_records.values())
+    elif isinstance(all_records, (list, tuple)):
+        raw_records = list(all_records)
+    else:
+        raw_records = []
+
+    normalized_records: list[tuple[dict, date]] = []
+    latest_month_number = reference_month_number
+    for raw_record in raw_records:
+        if not isinstance(raw_record, dict):
+            continue
+        record = merge_with_sample_order_template(raw_record)
+        planned_date = parse_iso_date(record["basic_info"].get("planned_delivery_date"))
+        if planned_date is None:
+            continue
+        normalized_records.append((record, planned_date))
+        planned_month_number = planned_date.year * 12 + planned_date.month - 1
+        latest_month_number = max(latest_month_number, planned_month_number)
+
+    statistics = [
+        {
+            "month": f"{month_number // 12:04d}-{month_number % 12 + 1:02d}",
+            "on_time_completed": 0,
+            "delayed_completed": 0,
+            "incomplete": 0,
+            "total": 0,
+        }
+        for month_number in range(reference_month_number - 11, latest_month_number + 1)
+    ]
+    statistics_by_month = {item["month"]: item for item in statistics}
+
+    for record, planned_date in normalized_records:
+        month_key = planned_date.strftime("%Y-%m")
+        month_statistics = statistics_by_month.get(month_key)
+        if month_statistics is None:
+            continue
+
+        actual_date = parse_iso_date(record["execution"].get("actual_delivery_date"))
+        if actual_date is None:
+            category = "incomplete"
+        elif actual_date <= planned_date:
+            category = "on_time_completed"
+        else:
+            category = "delayed_completed"
+        month_statistics[category] = normalize_int(month_statistics[category], 0) + 1
+        month_statistics["total"] = normalize_int(month_statistics["total"], 0) + 1
+    return statistics
+
+
+def build_sample_order_statistics_chart(statistics: list[dict[str, object]]) -> dict:
+    """生成近12个月订单统计的堆叠柱状图配置。"""
+    months = [option_text(item.get("month")) for item in statistics]
+    series_meta = [
+        ("按时完成", "on_time_completed", "#22c55e"),
+        ("延期完成", "delayed_completed", "#f97316"),
+        ("未完成", "incomplete", "#64748b"),
+    ]
+    series = [
+        {
+            "name": label,
+            "type": "bar",
+            "stack": "orders",
+            "barWidth": "52%",
+            "data": [normalize_int(item.get(key), 0) for item in statistics],
+            "itemStyle": {"color": color},
+            "emphasis": {"focus": "series"},
+        }
+        for label, key, color in series_meta
+    ]
+    # 用透明散点把总数标签稳定地放在每根堆叠柱顶部，即使最上层分类数量为0也能正确显示。
+    series.append(
+        {
+            "name": "总订单数",
+            "type": "scatter",
+            "data": [normalize_int(item.get("total"), 0) for item in statistics],
+            "symbolSize": 1,
+            "silent": True,
+            "itemStyle": {"color": "transparent"},
+            "label": {
+                "show": True,
+                "position": "top",
+                "distance": 6,
+                "formatter": "{c}",
+                "color": "#334155",
+                "fontWeight": "bold",
+            },
+            "tooltip": {"show": False},
+            "z": 10,
+        }
+    )
+    return {
+        "tooltip": {"trigger": "axis", "axisPointer": {"type": "shadow"}},
+        "legend": {"top": 0, "data": [item[0] for item in series_meta]},
+        "grid": {"top": 50, "bottom": 35, "left": 30, "right": 25, "containLabel": True},
+        "xAxis": {
+            "type": "category",
+            "data": months,
+            "axisTick": {"show": False},
+            "axisLabel": {"interval": 0, "rotate": 30},
+        },
+        "yAxis": {
+            "type": "value",
+            "name": "订单数",
+            "minInterval": 1,
+            "splitLine": {"lineStyle": {"type": "dashed"}},
+        },
+        "series": series,
+    }
+
+
 @ui.page("/sample_order_dashboard")
 async def sample_order_dashboard_page(record_id: str = "") -> None:
     """构建样品单执行看板页面。"""
@@ -1514,6 +1633,25 @@ async def sample_order_dashboard_page(record_id: str = "") -> None:
     detail_dialog = ui.dialog().props("maximized persistent")
     confirm_dialog = ui.dialog().props("persistent")
     import_dialog = ui.dialog().props("persistent")
+    statistics_dialog = ui.dialog()
+
+    def open_statistics_dialog() -> None:
+        """打开按计划交货月份汇总的近12个月订单统计。"""
+        statistics = get_sample_order_monthly_statistics(get_all_sample_order_records())
+        chart_options = build_sample_order_statistics_chart(statistics)
+        statistics_dialog.clear()
+        with statistics_dialog, ui.card().classes("w-[1100px] max-w-[96vw] h-[680px] max-h-[92vh] p-5"):
+            with ui.row().classes("w-full items-center justify-between shrink-0"):
+                with ui.row().classes("items-center gap-2"):
+                    ui.icon("stacked_bar_chart", color="blue", size="md")
+                    ui.label("近12个月及未来计划订单统计").classes("text-xl font-bold")
+                ui.button(icon="close", on_click=statistics_dialog.close).props("flat round")
+            ui.label(
+                "显示过去11个月、当前月及已有未来计划月份；订单按计划交货日期归属月份，"
+                "实际交货不晚于计划日期为按时完成，晚于计划日期为延期完成。"
+            ).classes("text-sm text-gray-500 shrink-0")
+            ui.echart(chart_options).classes("w-full flex-grow min-h-0")
+        statistics_dialog.open()
 
     def open_sample_order_import_dialog() -> None:
         """打开Excel上传、预览和确认导入弹窗。"""
@@ -2136,6 +2274,11 @@ async def sample_order_dashboard_page(record_id: str = "") -> None:
                     ).classes("w-40")
                     ui.button("查询", icon="search", on_click=apply_filters).props("outline color=primary")
                     ui.button("刷新", icon="refresh", on_click=lambda: refresh_dashboard()).props("flat color=primary")
+                    ui.button(
+                        "近12个月统计",
+                        icon="stacked_bar_chart",
+                        on_click=open_statistics_dialog,
+                    ).props("flat color=primary")
                 with ui.row().classes("items-center gap-3"):
                     ui.label("默认仅显示未交样订单，点击卡片查看详情").classes("text-xs text-gray-500")
                     if can_edit_base:

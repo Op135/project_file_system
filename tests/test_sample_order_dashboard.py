@@ -283,6 +283,67 @@ class SampleOrderCalculationTests(unittest.TestCase):
         self.assertEqual(row["attention_level"], metrics["attention_level"])
         calculator.assert_not_called()
 
+    def test_monthly_statistics_use_planned_month_and_completion_date(self):
+        on_time = make_record()
+        on_time["basic_info"]["planned_delivery_date"] = "2026-07-20"
+        on_time["execution"]["actual_delivery_date"] = "2026-07-20"
+
+        delayed = make_record()
+        delayed["record_id"] = "record-delayed"
+        delayed["basic_info"]["planned_delivery_date"] = "2026-07-31"
+        delayed["execution"]["actual_delivery_date"] = "2026-08-01"
+
+        incomplete = make_record()
+        incomplete["record_id"] = "record-incomplete"
+        incomplete["basic_info"]["planned_delivery_date"] = "2026-06-15"
+        incomplete["special_status"].update({"status": "暂停", "reason": "等待客户"})
+
+        outside_range = make_record()
+        outside_range["record_id"] = "record-outside"
+        outside_range["basic_info"]["planned_delivery_date"] = "2025-07-31"
+
+        future = make_record()
+        future["record_id"] = "record-future"
+        future["basic_info"]["planned_delivery_date"] = "2026-09-15"
+
+        statistics = dashboard.get_sample_order_monthly_statistics(
+            {
+                record["record_id"]: record
+                for record in (on_time, delayed, incomplete, outside_range, future)
+            },
+            date(2026, 7, 28),
+        )
+        by_month = {item["month"]: item for item in statistics}
+
+        self.assertEqual(len(statistics), 14)
+        self.assertEqual(statistics[0]["month"], "2025-08")
+        self.assertEqual(statistics[-1]["month"], "2026-09")
+        self.assertEqual(by_month["2026-06"]["incomplete"], 1)
+        self.assertEqual(by_month["2026-06"]["total"], 1)
+        self.assertEqual(by_month["2026-07"]["on_time_completed"], 1)
+        self.assertEqual(by_month["2026-07"]["delayed_completed"], 1)
+        self.assertEqual(by_month["2026-07"]["total"], 2)
+        self.assertEqual(by_month["2026-09"]["incomplete"], 1)
+        self.assertEqual(by_month["2026-09"]["total"], 1)
+
+    def test_statistics_chart_is_stacked_and_displays_monthly_totals(self):
+        statistics = [
+            {
+                "month": "2026-07",
+                "on_time_completed": 2,
+                "delayed_completed": 1,
+                "incomplete": 3,
+                "total": 6,
+            }
+        ]
+
+        chart = dashboard.build_sample_order_statistics_chart(statistics)
+
+        self.assertEqual(chart["xAxis"]["data"], ["2026-07"])
+        self.assertEqual([item["stack"] for item in chart["series"][:3]], ["orders"] * 3)
+        self.assertEqual(chart["series"][3]["data"], [6])
+        self.assertTrue(chart["series"][3]["label"]["show"])
+
     def test_legacy_two_delay_fields_are_migrated_to_extension_history(self):
         raw = make_record()
         raw.pop("extensions", None)
