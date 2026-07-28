@@ -36,6 +36,8 @@ from ..utils import (
 # 比如：如果你的文件是 src/components.py，这个 logger 的名字就会是 "src.components"
 logger = logging.getLogger(__name__)
 
+PROJECT_TABLE_SESSION_STORAGE_KEY = "project_table_view_state"
+
 
 @ui.page("/project_table")
 def project_table_page():
@@ -211,6 +213,7 @@ def project_table_page():
         return
     current_user = app.storage.user.get("current_user")
     current_role = app.storage.user.get("current_role", "")
+    project_table_session_storage_key = f"{PROJECT_TABLE_SESSION_STORAGE_KEY}:{current_user}"
     current_role_text = str(current_role)
     state_filter_enabled = any(
         role_keyword in current_role_text for role_keyword in PROJECT_TABLE_STATE_FILTER_ROLE_KEYWORDS
@@ -645,6 +648,95 @@ def project_table_page():
             select_dic[select_major_value["value"]], value=select_dic[select_major_value["value"]][0]
         )
 
+    async def save_project_table_view_state(aggrid):
+        """将当前筛选和列视图保存到浏览器会话存储。
+
+        sessionStorage 在页面跳转、后退和刷新后仍保留，
+        关闭当前浏览器标签页后由浏览器自动清除。
+        """
+        if project_table_view_state["restoring"]:
+            return
+
+        state: dict[str, object] = {
+            "select_major": select_major_value["value"],
+            "select_sub": select_sub_value["value"],
+        }
+        try:
+            filter_model = await aggrid.run_grid_method("getFilterModel")
+            column_state = await aggrid.run_grid_method("getColumnState")
+            state["filter_model"] = filter_model
+            state["column_state"] = column_state
+        except Exception as exc:
+            # 即使表格刚好在重绘，也要优先保存顶部的项目筛选。
+            logger.debug("获取项目总表 AG Grid 状态失败: %s", exc)
+
+        try:
+            storage_key = json.dumps(project_table_session_storage_key)
+            serialized_state = json.dumps(json.dumps(state, ensure_ascii=False), ensure_ascii=False)
+            await ui.run_javascript(f"sessionStorage.setItem({storage_key}, {serialized_state})")
+        except Exception as exc:
+            # 保存视图失败不应阻断用户继续操作总表。
+            logger.debug("保存项目总表会话筛选状态失败: %s", exc)
+
+    async def restore_project_table_view_state(aggrid, select_major, select_sub):
+        """初始化总表，并恢复当前浏览器会话中保存的筛选状态。"""
+        saved_state = {}
+        storage_key = json.dumps(project_table_session_storage_key)
+        try:
+            serialized_state = await ui.run_javascript(f"sessionStorage.getItem({storage_key})")
+            if serialized_state:
+                saved_state = json.loads(serialized_state)
+        except (json.JSONDecodeError, TypeError) as exc:
+            logger.debug("解析项目总表会话筛选状态失败: %s", exc)
+        except Exception as exc:
+            logger.debug("读取项目总表会话筛选状态失败: %s", exc)
+
+        if not isinstance(saved_state, dict):
+            saved_state = {}
+
+        try:
+            restored_major = saved_state.get("select_major")
+            if isinstance(restored_major, str) and restored_major in select_dic:
+                restored_sub_options = select_dic[restored_major]
+                saved_sub = saved_state.get("select_sub")
+                restored_sub: str = (
+                    saved_sub
+                    if isinstance(saved_sub, str) and saved_sub in restored_sub_options
+                    else str(restored_sub_options[0])
+                )
+
+                select_major_value["value"] = restored_major
+                select_sub_value["value"] = restored_sub
+                select_major.value = restored_major
+                select_sub.set_options(restored_sub_options, value=restored_sub)
+
+            await update_aggrid(aggrid)
+
+            # rowData 刷新后再恢复 AG Grid 状态，避免初始渲染覆盖筛选。
+            await asyncio.sleep(0.05)
+            if "filter_model" in saved_state:
+                await aggrid.run_grid_method("setFilterModel", saved_state["filter_model"])
+            if saved_state.get("column_state"):
+                await aggrid.run_grid_method(
+                    "applyColumnState",
+                    {"state": saved_state["column_state"], "applyOrder": True},
+                )
+        finally:
+            project_table_view_state["restoring"] = False
+
+    async def handle_major_filter_change(select_sub, aggrid):
+        if project_table_view_state["restoring"]:
+            return
+        update_sub_select(select_sub)
+        await update_aggrid(aggrid)
+        await save_project_table_view_state(aggrid)
+
+    async def handle_sub_filter_change(aggrid):
+        if project_table_view_state["restoring"]:
+            return
+        await update_aggrid(aggrid)
+        await save_project_table_view_state(aggrid)
+
     # 按照两个选项的值，更新表格行数据，将概述填写内容同步到简介表，刷新表格显示
     async def update_aggrid(aggrid):
         # === 【核心优化 1：保存现有状态】 ===
@@ -979,6 +1071,7 @@ def project_table_page():
         # row_id = event.args["rowId"]  # 点击行的ID
         project_name = row_data["sub_project"]
         if col_id == "requirement":
+            await save_project_table_view_state(aggrid)
             # 查找指定路径下，含有提供项目名的文件，得到一个字典，完整版本为键，值为：{"name":文件名, "v_a":版本号整数部分, "v_b":版本号小数部分}
             project_exists_file = find_files_with_prefix_and_version(REQ_DIR, project_name)
             if project_exists_file:
@@ -993,8 +1086,10 @@ def project_table_page():
                 ui.navigate.to(f"/main/requirement?type=requirement&project_name={row_data['sub_project']}")
 
         elif col_id == "overview":
+            await save_project_table_view_state(aggrid)
             await get_overviow_page(project_name, False)
         elif col_id == "test_summary":
+            await save_project_table_view_state(aggrid)
             ui.run_javascript(f'window.open("/report/test_summary/{project_name}", "_blank")')
 
     async def switch_toggle_vis(visible=None):
@@ -1253,6 +1348,8 @@ def project_table_page():
     # 用于同步两个选项框的选项值
     select_major_value = {"value": "RFFM"}
     select_sub_value = {"value": "10"}
+    # 恢复期间忽略程序设值触发的变更事件，防止默认值覆盖会话记忆。
+    project_table_view_state = {"restoring": True}
     # 获取按照大类和小类整理后的项目类别字典，用于选项框的选项动态生成
     select_dic = get_select_dic(select_li)
     select_major_li = list(select_dic.keys())
@@ -1316,11 +1413,17 @@ def project_table_page():
         ).classes("ag-theme-alpine ag-header-cell-resize::after h-full")
 
         # 按照两个选项的值，更新表格行数据，将概述填写内容同步到简介表，刷新表格显示
-        select_major.on_value_change(lambda select_sub=select_sub: update_sub_select(select_sub))
-        select_major.on_value_change(lambda aggrid=aggrid: update_aggrid(aggrid))
-        select_sub.on_value_change(lambda aggrid=aggrid: update_aggrid(aggrid))
+        select_major.on_value_change(
+            lambda select_sub=select_sub, aggrid=aggrid: handle_major_filter_change(select_sub, aggrid)
+        )
+        select_sub.on_value_change(lambda aggrid=aggrid: handle_sub_filter_change(aggrid))
+        aggrid.on("filterChanged", lambda aggrid=aggrid: save_project_table_view_state(aggrid))
         aggrid.on("cellClicked", lambda e, aggrid=aggrid: handle_cell_click(e, aggrid))
-        ui.timer(0.1, lambda: update_aggrid(aggrid), once=True)
+        ui.timer(
+            0.1,
+            lambda: restore_project_table_view_state(aggrid, select_major, select_sub),
+            once=True,
+        )
 
         with tool_row:
             with ui.row().classes("items-center -space-x-4"):

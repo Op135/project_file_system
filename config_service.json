@@ -4911,6 +4911,14 @@
             "ref_out": [],
             "options": [
                 {
+                    "option_id": "opt_5",
+                    "option_content": "DC5V",
+                    "option_out": "5V",
+                    "option_bold": "5V",
+                    "option_show": "直流输入电压：{V}",
+                    "option_label": ""
+                },
+                {
                     "option_id": "opt_1",
                     "option_content": "DC12V",
                     "option_out": "12V",
@@ -7565,7 +7573,7 @@
             ]
         }
     },
-    "config_timestamp": "2026-07-28T12:54:07.653704",
-    "excel_version_hash": "9c44a0a9",
+    "config_timestamp": "2026-07-28T15:37:21.954461",
+    "excel_version_hash": "10c61168",
     "entry_status": false
 }
