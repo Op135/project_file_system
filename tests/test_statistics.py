@@ -11,7 +11,7 @@ from src.pages import statistics
 
 
 class OverviewManagementSnapshotTests(unittest.TestCase):
-    def test_projects_are_deduplicated_and_completion_is_project_wide(self):
+    def test_projects_are_deduplicated_and_completion_uses_the_users_scope(self):
         overview_role = {
             "P1": {
                 "光学": {"latest_user": "最近：张三"},
@@ -30,10 +30,10 @@ class OverviewManagementSnapshotTests(unittest.TestCase):
         snapshot = statistics.build_overview_management_snapshot(overview_role, pending_data)
 
         self.assertEqual(snapshot["张三"]["managed_projects"], ["P1", "P2"])
-        self.assertEqual(snapshot["张三"]["completed_projects"], ["P1"])
-        self.assertEqual(snapshot["张三"]["incomplete_projects"], ["P2"])
-        self.assertEqual(snapshot["李四"]["completed_projects"], [])
-        self.assertEqual(snapshot["李四"]["incomplete_projects"], ["P3"])
+        self.assertEqual(snapshot["张三"]["completed_projects"], ["P1", "P2"])
+        self.assertEqual(snapshot["张三"]["incomplete_projects"], [])
+        self.assertEqual(snapshot["李四"]["completed_projects"], ["P3"])
+        self.assertEqual(snapshot["李四"]["incomplete_projects"], [])
 
 
 class DailyStatisticsPersistenceTests(unittest.TestCase):
@@ -83,7 +83,7 @@ class DailyStatisticsPersistenceTests(unittest.TestCase):
             self.assertEqual(zhang_rows["负责项目数"].sum(), 2)
             self.assertEqual(zhang_rows["填写完成项目数"].sum(), 1)
             self.assertEqual(li_rows["负责项目数"].sum(), 1)
-            self.assertEqual(li_rows["填写完成项目数"].sum(), 0)
+            self.assertEqual(li_rows["填写完成项目数"].sum(), 1)
 
 
 if __name__ == "__main__":

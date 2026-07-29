@@ -40,9 +40,9 @@ def build_overview_management_snapshot(overview_role, pending_data):
     """
     将负责人和待办内存数据聚合为用户维度快照。
 
-    同一用户在同一项目负责多个角色时只计一次；只要项目任一负责人（含尚未
-    指定负责人）存在 ``缺必填`` 或 ``有待定``，项目即未完成。``缺需填``
-    不影响完成判定。
+    同一用户在同一项目负责多个角色时只计一次；只检查该用户负责范围内的
+    待办状态，存在 ``缺必填`` 或 ``有待定`` 时项目未完成。``缺需填``
+    不影响该用户的完成判定。
     """
     managed_projects = {}
     for project_name, role_data in (overview_role or {}).items():
@@ -55,22 +55,18 @@ def build_overview_management_snapshot(overview_role, pending_data):
             if user:
                 managed_projects.setdefault(user, set()).add(project_name)
 
-    blocking_projects = set()
-    for user_pending in (pending_data or {}).values():
-        if not isinstance(user_pending, dict):
-            continue
-        for project_name, project_pending in user_pending.items():
-            statuses = set(project_pending.values()) if isinstance(project_pending, dict) else set()
-            if statuses.intersection({"缺必填", "有待定"}):
-                blocking_projects.add(project_name)
-
     snapshot = {}
     for user, projects in managed_projects.items():
         completed_projects = []
         incomplete_projects = []
+        user_pending = (pending_data or {}).get(user, {})
+        if not isinstance(user_pending, dict):
+            user_pending = {}
 
         for project_name in sorted(projects):
-            if project_name in blocking_projects:
+            project_pending = user_pending.get(project_name, {})
+            statuses = set(project_pending.values()) if isinstance(project_pending, dict) else set()
+            if statuses.intersection({"缺必填", "有待定"}):
                 incomplete_projects.append(project_name)
             else:
                 completed_projects.append(project_name)
