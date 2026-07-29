@@ -23,6 +23,14 @@ logger = logging.getLogger(__name__)
 # --- 持久化记录配置 ---
 STATS_FILE = os.path.join(f"{BASE_DIR}/data", "daily_project_stats.xlsx")
 
+CLICK_DETAIL_TOOLTIP_FORMATTER = """
+    function(params) {
+        const count = typeof params.value === 'number' ? params.value : 0;
+        return `<b>${params.name}</b><br/>${params.seriesName}: <b>${count}</b>` +
+               '<br/><span style="color:#2563eb;font-weight:600;">点击查看详情</span>';
+    }
+"""
+
 
 def normalize_overview_user(raw_user):
     """移除负责人字段的显示前缀，返回可用于统计的用户名。"""
@@ -165,7 +173,12 @@ def status_badge(text, color_name="gray"):
         "待审": ("orange-100", "orange-800"),
         "已审": ("green-100", "green-800"),
         "待修改": ("red-100", "red-800"),
+        "作废": ("gray-200", "gray-700"),
+        "待定": ("amber-100", "amber-800"),
         "研发": ("blue-100", "blue-800"),
+        "转产": ("red-100", "red-800"),
+        "试产": ("cyan-100", "cyan-800"),
+        "量产": ("green-100", "green-800"),
     }
     bg, fg = colors.get(text, (f"{color_name}-100", f"{color_name}-800"))
     ui.label(text).classes(f"text-xs px-2 py-0.5 rounded bg-{bg} text-{fg} font-medium")
@@ -273,6 +286,64 @@ def statistics_page():
                         statistics_history_df = pd.DataFrame(
                             columns=["日期", "用户", "项目状态", "缺必填数", "有待定数", "缺需填数"]
                         )
+
+                def show_project_list_dialog(title, projects, show_state=True):
+                    """使用统一弹窗展示任意统计柱对应的项目清单。"""
+                    project_list = list(projects or [])
+                    dialog.clear()
+                    with dialog, ui.card().classes("w-full max-w-4xl bg-white"):
+                        with ui.row().classes("w-full justify-between items-center mb-4 border-b pb-2"):
+                            ui.label(f"{title}（共 {len(project_list)} 项）").classes(
+                                "text-xl font-bold text-gray-800"
+                            )
+                            ui.button(icon="close", on_click=dialog.close).props(
+                                "flat round dense text-color=gray"
+                            )
+
+                        with ui.scroll_area().classes("w-full max-h-[60vh] p-2"):
+                            if not project_list:
+                                ui.label("当前分类暂无项目").classes("text-gray-500 text-center w-full mt-4")
+                            else:
+                                with ui.element("div").classes(
+                                    "grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3"
+                                ):
+                                    for project_name in project_list:
+                                        with ui.row().classes(
+                                            "w-full min-w-0 flex-nowrap items-center justify-between gap-2 "
+                                            "bg-gray-50 px-3 py-2 rounded border border-gray-200 text-sm "
+                                            "text-gray-700 hover:bg-blue-50 hover:text-blue-600 "
+                                            "transition-colors cursor-default"
+                                        ):
+                                            ui.label(project_name).classes("min-w-0 flex-1 truncate")
+                                            if show_state:
+                                                project_state = project_summary.get(project_name, {}).get(
+                                                    "state", "未知"
+                                                )
+                                                status_badge(project_state)
+                    dialog.open()
+
+                def bind_project_detail_click(chart, callback):
+                    """把 ECharts 柱子点击统一转发给 NiceGUI 回调。"""
+                    chart.on("project_detail_click", callback)
+                    ui.run_javascript(f"""
+                        setTimeout(() => {{
+                            const el = getElement({chart.id});
+                            if (!el || !el.chart) return;
+                            if (el.__projectDetailHandler) {{
+                                el.chart.off('click', el.__projectDetailHandler);
+                            }}
+                            el.__projectDetailHandler = function(params) {{
+                                if (params.componentType === 'series' && params.seriesType === 'bar') {{
+                                    el.$emit('project_detail_click', {{
+                                        name: params.name,
+                                        series_name: params.seriesName,
+                                        value: params.value
+                                    }});
+                                }}
+                            }};
+                            el.chart.on('click', el.__projectDetailHandler);
+                        }}, 200);
+                    """)
                 # =========================================================
                 # 左侧列 (主要工作流)
                 # =========================================================
@@ -403,19 +474,7 @@ def statistics_page():
                                             "trigger": "item",
                                             "confine": True,
                                             "axisPointer": {"type": "shadow"},
-                                            ":formatter": """
-                                                function(params) {
-                                                    const projects = (params.data && params.data.projects) || [];
-                                                    const count = typeof params.value === 'number' ? params.value : 0;
-                                                    let html = `<b>${params.name}</b><br/>${params.seriesName}: <b>${count}</b>`;
-                                                    if (projects.length) {
-                                                        html += '<br/>' + projects.map(p => `• ${p}`).join('<br/>');
-                                                    } else {
-                                                        html += '<br/>暂无项目';
-                                                    }
-                                                    return html;
-                                                }
-                                                """,
+                                            ":formatter": CLICK_DETAIL_TOOLTIP_FORMATTER,
                                             ":position": """
                                                 function(point, params, dom, rect, size) {
                                                     const boxWidth = size.contentSize[0];
@@ -465,7 +524,17 @@ def statistics_page():
                                         "series": series,
                                     }
                                     # ui.echart: 创建并渲染一个 Apache ECharts 数据可视化实例
-                                    ui.echart(echart_config).classes("w-full h-68")
+                                    pending_overview_chart = ui.echart(echart_config).classes(
+                                        "w-full h-68 cursor-pointer"
+                                    )
+
+                                    def show_pending_projects(e):
+                                        user = e.args.get("name")
+                                        category = e.args.get("series_name")
+                                        projects = user_stack_details.get(user, {}).get(category, [])
+                                        show_project_list_dialog(f"团队待办：{user} · {category}", projects)
+
+                                    bind_project_detail_click(pending_overview_chart, show_pending_projects)
                                     # ui.separator()
 
                                     # ui.expansion: 创建一个可折叠的扩展面板组件 (NiceGUI)
@@ -968,40 +1037,11 @@ def statistics_page():
                                 projects = ordered_status_dict.get(category_name) or overview_categories.get(
                                     category_name, []
                                 )
-                                count = len(projects)
-
-                                # 创建并打开弹窗，限制最大宽度
-                                dialog.clear()
-                                with dialog, ui.card().classes("w-full max-w-4xl bg-white"):
-                                    # 弹窗头部：明确的中文标题与关闭按钮
-                                    with ui.row().classes("w-full justify-between items-center mb-4 border-b pb-2"):
-                                        ui.label(f"项目明细：{category_name} (共 {count} 项)").classes(
-                                            "text-xl font-bold text-gray-800"
-                                        )
-                                        # ui.button: NiceGUI 的按钮组件
-                                        ui.button(icon="close", on_click=dialog.close).props(
-                                            "flat round dense text-color=gray"
-                                        )
-
-                                    # 限制最大高度为视口高度的 60%，超出自动出现垂直滚动条
-                                    with ui.scroll_area().classes("w-full max-h-[60vh] p-2"):
-                                        if not projects:
-                                            ui.label("当前分类暂无项目").classes(
-                                                "text-gray-500 text-center w-full mt-4"
-                                            )
-                                        else:
-                                            # 响应式网格布局：移动端1列，平板2列，小桌面3列，大屏幕4列，完美适配两三百个项目名
-                                            with ui.element("div").classes(
-                                                "grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3"
-                                            ):
-                                                for p_name in projects:
-                                                    ui.label(p_name).classes(
-                                                        "bg-gray-50 px-3 py-2 rounded border border-gray-200 text-sm "
-                                                        "text-gray-700 truncate hover:bg-blue-50 hover:text-blue-600 "
-                                                        "transition-colors cursor-default"
-                                                    )
-
-                                dialog.open()
+                                show_project_list_dialog(
+                                    f"项目明细：{category_name}",
+                                    projects,
+                                    show_state=category_name not in ordered_status_dict,
+                                )
 
                             # 2. 数据处理与清洗
                             # 2.1 统计公司总项目及状态分布 (由计数改为收集项目列表)
@@ -1147,7 +1187,11 @@ def statistics_page():
                                         "itemGap": 15,
                                         "left": "center",
                                     },
-                                    "trigger": "item",
+                                    "tooltip": {
+                                        "trigger": "item",
+                                        "confine": True,
+                                        ":formatter": CLICK_DETAIL_TOOLTIP_FORMATTER,
+                                    },
                                     "grid": {
                                         "top": 100,
                                         "left": "3%",
@@ -1190,7 +1234,11 @@ def statistics_page():
                                         "itemGap": 15,
                                         "left": "center",
                                     },
-                                    "trigger": "item",
+                                    "tooltip": {
+                                        "trigger": "item",
+                                        "confine": True,
+                                        ":formatter": CLICK_DETAIL_TOOLTIP_FORMATTER,
+                                    },
                                     "grid": {
                                         "top": 100,
                                         "left": "3%",
@@ -1219,27 +1267,8 @@ def statistics_page():
                                 # 渲染图表并绑定点击事件
                                 overview_chart = ui.echart(echart_overview_config).classes("w-full h-80 cursor-pointer")
 
-                                status_chart.on("echart_item_click", show_project_details)
-                                overview_chart.on("echart_item_click", show_project_details)
-                                ui.run_javascript(f"""
-                                    setTimeout(() => {{
-                                        [{status_chart.id}, {overview_chart.id}].forEach(id => {{
-                                            const el = getElement(id);
-                                            if (el && el.chart) {{
-                                                // 直接监听 ECharts 实例内部真实的 click
-                                                el.chart.on('click', function(params) {{
-                                                    // 确保只有点击到数据系列（柱子）才触发
-                                                    if (params.componentType === 'series') {{
-                                                        el.$emit('echart_item_click', {{
-                                                            name: params.name,
-                                                            value: params.value
-                                                        }});
-                                                    }}
-                                                }});
-                                            }}
-                                        }});
-                                    }}, 200); // 极小延迟，确保图表已被浏览器完全渲染
-                                """)
+                                bind_project_detail_click(status_chart, show_project_details)
+                                bind_project_detail_click(overview_chart, show_project_details)
                     # E. 概述负责人项目完成统计
                     if can_view_overview_stats:
                         with ui.card().classes(
@@ -1263,16 +1292,7 @@ def statistics_page():
                                     "tooltip": {
                                         "trigger": "item",
                                         "confine": True,
-                                        ":formatter": """
-                                            function(params) {
-                                                const projects = (params.data && params.data.projects) || [];
-                                                let html = `<b>${params.name}</b><br/>${params.seriesName}: <b>${params.value}</b>`;
-                                                if (projects.length) {
-                                                    html += '<br/>' + projects.map(p => `• ${p}`).join('<br/>');
-                                                }
-                                                return html;
-                                            }
-                                            """,
+                                        ":formatter": CLICK_DETAIL_TOOLTIP_FORMATTER,
                                     },
                                     "legend": {"top": 0, "data": ["填写完成", "未完成"]},
                                     "grid": {
@@ -1350,7 +1370,21 @@ def statistics_page():
                                         },
                                     ],
                                 }
-                                ui.echart(current_chart_config).classes("w-full h-80")
+                                management_chart = ui.echart(current_chart_config).classes(
+                                    "w-full h-80 cursor-pointer"
+                                )
+
+                                def show_management_projects(e):
+                                    user = e.args.get("name")
+                                    category = e.args.get("series_name")
+                                    user_snapshot = management_snapshot.get(user, {})
+                                    project_key = (
+                                        "completed_projects" if category == "填写完成" else "incomplete_projects"
+                                    )
+                                    projects = user_snapshot.get(project_key, [])
+                                    show_project_list_dialog(f"负责人完成统计：{user} · {category}", projects)
+
+                                bind_project_detail_click(management_chart, show_management_projects)
                             else:
                                 current_users = []
                                 ui.label("当前没有已指定的概述负责人。").classes("p-8 text-gray-400 text-center w-full")
