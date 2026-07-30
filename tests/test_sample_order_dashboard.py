@@ -344,6 +344,39 @@ class SampleOrderCalculationTests(unittest.TestCase):
         self.assertEqual(chart["series"][3]["data"], [6])
         self.assertTrue(chart["series"][3]["label"]["show"])
 
+    def test_actual_date_basis_groups_completed_orders_and_excludes_incomplete(self):
+        on_time = make_record()
+        on_time["basic_info"]["planned_delivery_date"] = "2026-07-31"
+        on_time["execution"]["actual_delivery_date"] = "2026-07-30"
+
+        delayed = make_record()
+        delayed["record_id"] = "record-delayed"
+        delayed["basic_info"]["planned_delivery_date"] = "2026-07-31"
+        delayed["execution"]["actual_delivery_date"] = "2026-08-02"
+
+        incomplete = make_record()
+        incomplete["record_id"] = "record-incomplete"
+        incomplete["basic_info"]["planned_delivery_date"] = "2026-08-15"
+
+        statistics = dashboard.get_sample_order_monthly_statistics(
+            {record["record_id"]: record for record in (on_time, delayed, incomplete)},
+            date(2026, 8, 20),
+            date_basis="actual",
+        )
+        by_month = {item["month"]: item for item in statistics}
+
+        self.assertEqual(by_month["2026-07"]["on_time_completed"], 1)
+        self.assertEqual(by_month["2026-07"]["total"], 1)
+        self.assertEqual(by_month["2026-08"]["delayed_completed"], 1)
+        self.assertEqual(by_month["2026-08"]["incomplete"], 0)
+        self.assertEqual(by_month["2026-08"]["total"], 1)
+
+        chart = dashboard.build_sample_order_statistics_chart(
+            statistics,
+            include_incomplete=False,
+        )
+        self.assertEqual([item["name"] for item in chart["series"][:-1]], ["按时完成", "延期完成"])
+
     def test_legacy_two_delay_fields_are_migrated_to_extension_history(self):
         raw = make_record()
         raw.pop("extensions", None)
