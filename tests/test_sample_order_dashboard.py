@@ -679,6 +679,32 @@ class SampleOrderValidationTests(unittest.TestCase):
         )
         self.assertIn("第1次延期目标日期不能早于当天", errors)
 
+    def test_actual_delivery_date_cannot_be_later_than_today(self):
+        record = make_record()
+        record["execution"]["actual_delivery_date"] = "2026-07-21"
+
+        errors = dashboard.validate_sample_order_submission(
+            record,
+            check_basic=False,
+            check_execution=True,
+            check_delay=False,
+            check_special_status=False,
+            today=date(2026, 7, 20),
+        )
+
+        self.assertIn("实际交货日期不能晚于当天", errors)
+
+        record["execution"]["actual_delivery_date"] = "2026-07-20"
+        errors = dashboard.validate_sample_order_submission(
+            record,
+            check_basic=False,
+            check_execution=True,
+            check_delay=False,
+            check_special_status=False,
+            today=date(2026, 7, 20),
+        )
+        self.assertNotIn("实际交货日期不能晚于当天", errors)
+
     def test_pause_requires_reason_when_configured(self):
         record = make_record()
         record["special_status"]["status"] = "暂停"

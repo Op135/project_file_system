@@ -69,6 +69,7 @@ def get_all_sample_order_records() -> dict[str, Any]:
     """从逐订单实体缓存读取全部样品单的安全副本。"""
     return db_storage.get_json_entities(SAMPLE_ORDER_ENTITY_NAMESPACE)
 
+
 FILTER_ALL = "全部"
 FILTER_IN_PROGRESS = "制样中"
 FILTER_COMPLETED = "已完成"
@@ -799,6 +800,7 @@ def validate_sample_order_submission(
     application_date = parse_iso_date(basic.get("application_date"))
     planned_date = parse_iso_date(basic.get("planned_delivery_date"))
     actual_date = parse_iso_date(execution.get("actual_delivery_date"))
+    today_value = today or date.today()
 
     if check_basic:
         required = [
@@ -826,9 +828,10 @@ def validate_sample_order_submission(
             errors.append("实际交货日期格式不正确")
         if actual_date and application_date and actual_date < application_date:
             errors.append("实际交货日期不能早于申请日期")
+        if actual_date and actual_date > today_value:
+            errors.append("实际交货日期不能晚于当天")
 
     if check_delay:
-        today_value = today or date.today()
         for index, extension in enumerate(extensions, start=1):
             target_text = option_text(extension.get("target_date"))
             reason = option_text(extension.get("reason"))
@@ -1354,7 +1357,9 @@ def build_sample_order_row(
     extensions = data["extensions"]
     special_status = data["special_status"]
     delay_nature = data["delay_nature"]
-    metrics = calculated_metrics if isinstance(calculated_metrics, dict) else calculate_sample_order_metrics(data, today)
+    metrics = (
+        calculated_metrics if isinstance(calculated_metrics, dict) else calculate_sample_order_metrics(data, today)
+    )
     assessment_days = metrics["assessment_days"]
     assessment_score = metrics["assessment_score"]
     return {
@@ -1445,10 +1450,7 @@ def sample_order_matches_filter(
     if filter_value == FILTER_COMPLETED:
         return actual_date is not None
     if filter_value == FILTER_IN_PROGRESS:
-        return bool(
-            actual_date is None
-            and data["special_status"].get("status") == "正常"
-        )
+        return bool(actual_date is None and data["special_status"].get("status") == "正常")
     if filter_value == FILTER_NATURE_PENDING:
         return _is_delay_nature_pending_from_data(data)
     if filter_value in SAMPLE_ORDER_SPECIAL_STATUSES and filter_value != "正常":
@@ -1457,9 +1459,7 @@ def sample_order_matches_filter(
         return True
 
     metrics = (
-        calculated_metrics
-        if isinstance(calculated_metrics, dict)
-        else calculate_sample_order_metrics(data, today)
+        calculated_metrics if isinstance(calculated_metrics, dict) else calculate_sample_order_metrics(data, today)
     )
     level = metrics["attention_level"]
     if filter_value == FILTER_WARNING:
@@ -1659,11 +1659,15 @@ async def sample_order_dashboard_page(record_id: str = "") -> None:
                 with ui.row().classes("items-center gap-2"):
                     ui.icon("stacked_bar_chart", color="blue", size="md")
                     ui.label("样品订单月度统计").classes("text-xl font-bold")
+                date_basis_toggle = (
+                    ui.toggle(
+                        {"planned": "计划交样口径", "actual": "实际交样口径"},
+                        value="planned",
+                    )
+                    .props("flat no-caps color=primary")
+                    .classes("self-center shrink-0")
+                )
                 ui.button(icon="close", on_click=statistics_dialog.close).props("flat round")
-            date_basis_toggle = ui.toggle(
-                {"planned": "计划交样口径", "actual": "实际交样口径"},
-                value="planned",
-            ).props("no-caps color=primary").classes("self-center shrink-0")
             chart_container = ui.column().classes("w-full flex-grow min-h-0 gap-1")
 
             def render_statistics(date_basis: str) -> None:
@@ -1691,9 +1695,7 @@ async def sample_order_dashboard_page(record_id: str = "") -> None:
                     ui.echart(chart_options).classes("w-full flex-grow min-h-0")
 
             render_statistics("planned")
-            date_basis_toggle.on_value_change(
-                lambda event: render_statistics(option_text(event.value, "planned"))
-            )
+            date_basis_toggle.on_value_change(lambda event: render_statistics(option_text(event.value, "planned")))
         statistics_dialog.open()
 
     def open_sample_order_import_dialog() -> None:
@@ -1850,9 +1852,7 @@ async def sample_order_dashboard_page(record_id: str = "") -> None:
                         for label, value in preview_items:
                             with ui.card().classes("min-w-40 flex-1 p-3 bg-slate-50 shadow-none border"):
                                 ui.label(label).classes("text-xs text-gray-500")
-                                preview_value_labels.append(
-                                    ui.label(str(value)).classes("font-semibold text-gray-800")
-                                )
+                                preview_value_labels.append(ui.label(str(value)).classes("font-semibold text-gray-800"))
                     return
                 for value_label, (_, value) in zip(preview_value_labels, preview_items):
                     value_label.set_text(str(value))
@@ -1910,10 +1910,13 @@ async def sample_order_dashboard_page(record_id: str = "") -> None:
                 editable: bool,
                 classes: str = "w-full",
                 min_date: str = "",
+                max_date: str = "",
             ) -> None:
                 props = "outlined dense type=date"
                 if min_date:
                     props += f" min={min_date}"
+                if max_date:
+                    props += f" max={max_date}"
                 field = ui.input(label, value=option_text(target.get(key))).props(props).classes(classes)
                 if editable:
 
@@ -1991,6 +1994,7 @@ async def sample_order_dashboard_page(record_id: str = "") -> None:
                             execution,
                             "actual_delivery_date",
                             editable=execution_editable,
+                            max_date=date.today().isoformat(),
                         )
                         with ui.element("div").classes("w-full rounded-lg bg-blue-50 border border-blue-200 p-3"):
                             ui.label(f"系统提前 {SAMPLE_ORDER_WARNING_DAYS} 个工作日警示").classes(
@@ -2347,9 +2351,7 @@ async def sample_order_dashboard_page(record_id: str = "") -> None:
                     all_records = get_all_sample_order_records()
                     stored_values = all_records.values() if isinstance(all_records, dict) else []
                     valid_records = [
-                        merge_with_sample_order_template(item)
-                        for item in stored_values
-                        if isinstance(item, dict)
+                        merge_with_sample_order_template(item) for item in stored_values if isinstance(item, dict)
                     ]
                     records_with_metrics = [
                         (record, calculate_sample_order_metrics(record)) for record in valid_records
@@ -2555,9 +2557,7 @@ async def sample_order_dashboard_page(record_id: str = "") -> None:
                 metrics_list = [metrics for _, metrics in records_with_metrics]
                 total_count = len(valid_records)
                 scores = [
-                    item["assessment_score"]
-                    for item in metrics_list
-                    if isinstance(item.get("assessment_score"), int)
+                    item["assessment_score"] for item in metrics_list if isinstance(item.get("assessment_score"), int)
                 ]
                 average_score = round(sum(scores) / len(scores), 1) if scores else "--"
 
