@@ -310,42 +310,137 @@ def _chromaticity_background_series(coordinate_system: str) -> dict[str, Any]:
     }
 
 
-def _cie_pointer_visibility_js(chart_id: int, *, visible: bool, scatter_only: bool) -> str:
-    """生成在客户端切换十字指示器并可靠控制散点详情的事件处理器。"""
+def _cie_interaction_setup_js(chart_id: int, coordinate_system: str) -> str:
+    """生成像素级十字线与空白区域单击坐标事件的客户端初始化脚本。"""
 
-    opacity = 0.8 if visible else 0
-    label_visible = "true" if visible else "false"
-    scatter_guard = "if (params?.seriesType !== 'scatter') return;" if scatter_only else ""
-    tooltip_action = (
-        "component.chart.dispatchAction({type: 'hideTip'});"
-        if visible
-        else """
-            if (params?.seriesIndex != null && params?.dataIndex != null) {
-                component.chart.dispatchAction({
-                    type: 'showTip',
-                    seriesIndex: params.seriesIndex,
-                    dataIndex: params.dataIndex
-                });
-            }
-        """
-    )
+    first_axis, second_axis = ("x", "y") if coordinate_system == "xy" else ("u′", "v′")
     return f"""
-        (params) => {{
-            {scatter_guard}
+        () => {{
             const component = getElement({chart_id});
-            if (!component?.chart) return;
-            component.chart.setOption({{
-                tooltip: {{
-                    axisPointer: {{
-                        lineStyle: {{opacity: {opacity}}},
-                        crossStyle: {{opacity: {opacity}}},
-                        label: {{show: {label_visible}}}
+            if (!component?.chart || component._cieInteractionBound) return;
+            component._cieInteractionBound = true;
+            const chart = component.chart;
+            const root = component.$el;
+            root.style.position = 'relative';
+
+            const createOverlay = (key, cssText) => {{
+                const element = document.createElement('div');
+                element.dataset.cieOverlay = key;
+                element.style.cssText = cssText;
+                root.appendChild(element);
+                return element;
+            }};
+            const commonLine = 'position:absolute;display:none;pointer-events:none;z-index:40;'
+                + 'background:rgba(71,85,105,0.8);';
+            const vertical = createOverlay('vertical', commonLine + 'width:1px;');
+            const horizontal = createOverlay('horizontal', commonLine + 'height:1px;');
+            const commonLabel = 'position:absolute;display:none;pointer-events:none;z-index:41;'
+                + 'padding:4px 7px;border-radius:4px;background:rgba(30,41,59,0.9);'
+                + 'color:white;font:600 13px sans-serif;white-space:nowrap;';
+            const firstLabel = createOverlay('first-label', commonLabel + 'transform:translateX(-50%);');
+            const secondLabel = createOverlay('second-label', commonLabel + 'transform:translateY(-50%);');
+            const overlays = [vertical, horizontal, firstLabel, secondLabel];
+            const hide = () => overlays.forEach(element => element.style.display = 'none');
+
+            let pendingEvent = null;
+            let framePending = false;
+            chart.getZr().on('mousemove', event => {{
+                pendingEvent = event;
+                if (framePending) return;
+                framePending = true;
+                requestAnimationFrame(() => {{
+                    framePending = false;
+                    const current = pendingEvent;
+                    if (!current) return;
+                    const pixel = [current.offsetX, current.offsetY];
+                    if (!chart.containPixel({{gridIndex: 0}}, pixel)) {{
+                        hide();
+                        return;
                     }}
-                }}
+                    const value = chart.convertFromPixel({{gridIndex: 0}}, pixel);
+                    const grid = chart.getModel().getComponent('grid', 0).coordinateSystem.getRect();
+                    vertical.style.display = 'block';
+                    vertical.style.left = `${{pixel[0]}}px`;
+                    vertical.style.top = `${{grid.y}}px`;
+                    vertical.style.height = `${{grid.height}}px`;
+                    horizontal.style.display = 'block';
+                    horizontal.style.left = `${{grid.x}}px`;
+                    horizontal.style.top = `${{pixel[1]}}px`;
+                    horizontal.style.width = `${{grid.width}}px`;
+                    firstLabel.style.display = 'block';
+                    firstLabel.style.left = `${{pixel[0]}}px`;
+                    firstLabel.style.top = `${{grid.y + grid.height - 28}}px`;
+                    firstLabel.textContent = '{first_axis}: ' + Number(value[0]).toFixed(6);
+                    secondLabel.style.display = 'block';
+                    secondLabel.style.left = `${{grid.x + 5}}px`;
+                    secondLabel.style.top = `${{pixel[1]}}px`;
+                    secondLabel.textContent = '{second_axis}: ' + Number(value[1]).toFixed(6);
+                }});
             }});
-            {tooltip_action}
+            chart.getZr().on('globalout', hide);
+            chart.getZr().on('click', event => {{
+                const pixel = [event.offsetX, event.offsetY];
+                if (!chart.containPixel({{gridIndex: 0}}, pixel)) return;
+                const value = chart.convertFromPixel({{gridIndex: 0}}, pixel);
+                emit({{first: Number(value[0]), second: Number(value[1])}});
+            }});
         }}
     """
+
+
+def _cie_clicked_point_series(
+    first: float,
+    second: float,
+    coordinate_system: str,
+) -> dict[str, Any]:
+    """生成单击坐标标记，并在接近普朗克轨迹时附加 CCT。"""
+
+    first_axis, second_axis = ("x", "y") if coordinate_system == "xy" else ("u′", "v′")
+    label_lines = [f"{first_axis}: {first:.6f}", f"{second_axis}: {second:.6f}"]
+    try:
+        result = parse_chromaticity_text(
+            f"单击坐标\t{first:.12g}\t{second:.12g}",
+            coordinate_system,
+        )[0]
+    except SpectralAnalysisError:
+        result = None
+    if (
+        result is not None
+        and result.cct is not None
+        and result.duv is not None
+        and abs(result.duv) <= 0.05
+    ):
+        label_lines.append(f"CCT: {result.cct:.0f} K")
+    return {
+        "id": "cie-click-marker",
+        "name": "单击坐标",
+        "type": "scatter",
+        "symbol": "pin",
+        "symbolSize": 24,
+        "silent": True,
+        "z": 50,
+        "itemStyle": {
+            "color": "#ef4444",
+            "borderColor": "#ffffff",
+            "borderWidth": 1.5,
+        },
+        "label": {
+            "show": True,
+            "formatter": "\n".join(label_lines),
+            "position": "top",
+            "distance": 8,
+            "color": "#1e293b",
+            "fontSize": 12,
+            "fontWeight": 600,
+            "lineHeight": 18,
+            "backgroundColor": "rgba(255,255,255,0.94)",
+            "borderColor": "#cbd5e1",
+            "borderWidth": 1,
+            "borderRadius": 5,
+            "padding": [5, 7],
+        },
+        "data": [[first, second]],
+    }
 
 
 def _render_cie_chart(options: dict[str, Any], viewport_offset: int = 245) -> Any:
@@ -359,24 +454,48 @@ def _render_cie_chart(options: dict[str, Any], viewport_offset: int = 245) -> An
             "aspect-ratio: 1 / 1; min-width: 680px; min-height: 680px; cursor: grab;"
         )
     )
-    _bind_cie_pointer_events(chart)
+    coordinate_system = "xy" if options.get("xAxis", {}).get("name") == "x" else "upvp"
+    _bind_cie_pointer_events(chart, coordinate_system)
     return chart
 
 
-def _bind_cie_pointer_events(chart: Any) -> None:
-    """为任意尺寸的 CIE 图绑定一致的十字指示器行为。"""
+def _bind_cie_pointer_events(chart: Any, coordinate_system: str) -> None:
+    """绑定像素级十字线，以及单击坐标的 CCT 计算和固定标记。"""
+
+    async def handle_chart_click(event: Any) -> None:
+        raw = getattr(event, "args", None)
+        if not isinstance(raw, dict):
+            return
+        first_raw = raw.get("first")
+        second_raw = raw.get("second")
+        if not isinstance(first_raw, (str, int, float)) or not isinstance(
+            second_raw,
+            (str, int, float),
+        ):
+            return
+        try:
+            first = float(first_raw)
+            second = float(second_raw)
+        except (TypeError, ValueError):
+            return
+        if not math.isfinite(first) or not math.isfinite(second):
+            return
+        marker_series = await run.cpu_bound(
+            _cie_clicked_point_series,
+            first,
+            second,
+            coordinate_system,
+        )
+        chart.run_chart_method(
+            "setOption",
+            {"series": [marker_series]},
+            {"notMerge": False, "lazyUpdate": False},
+        )
 
     chart.on(
-        "chart:mouseover",
-        js_handler=_cie_pointer_visibility_js(chart.id, visible=False, scatter_only=True),
-    )
-    chart.on(
-        "chart:mouseout",
-        js_handler=_cie_pointer_visibility_js(chart.id, visible=True, scatter_only=True),
-    )
-    chart.on(
-        "chart:globalout",
-        js_handler=_cie_pointer_visibility_js(chart.id, visible=True, scatter_only=False),
+        "chart:finished",
+        handler=handle_chart_click,
+        js_handler=_cie_interaction_setup_js(chart.id, coordinate_system),
     )
 
 
@@ -389,7 +508,8 @@ def _render_fitted_cie_chart(options: dict[str, Any]) -> None:
             .classes("h-full max-w-full max-h-full")
             .style("width: auto; aspect-ratio: 1 / 1; cursor: grab;")
         )
-        _bind_cie_pointer_events(chart)
+        coordinate_system = "xy" if options.get("xAxis", {}).get("name") == "x" else "upvp"
+        _bind_cie_pointer_events(chart, coordinate_system)
 
 
 def _chromaticity_tooltip(coordinate_system: str, include_cri: bool = False) -> str:
@@ -427,38 +547,13 @@ def _chromaticity_tooltip(coordinate_system: str, include_cri: bool = False) -> 
 
 
 def _cie_tooltip_options(coordinate_system: str, include_cri: bool = False) -> dict[str, Any]:
-    """生成兼顾鼠标坐标十字线与数据点详情的 CIE 悬停配置。"""
+    """生成数据点悬停详情；连续十字线由独立客户端覆盖层负责。"""
 
     return {
-        "trigger": "axis",
-        "triggerOn": "mousemove|click",
+        "trigger": "item",
+        "triggerOn": "mousemove",
         "confine": True,
         "transitionDuration": 0,
-        "axisPointer": {
-            "type": "cross",
-            "snap": False,
-            "label": {
-                "show": True,
-                "precision": 6,
-                "color": "#ffffff",
-                "fontSize": 14,
-                "fontWeight": 600,
-                "padding": [5, 8],
-                "backgroundColor": "rgba(30, 41, 59, 0.88)",
-            },
-            "lineStyle": {
-                "color": "#475569",
-                "width": 1,
-                "type": "dashed",
-                "opacity": 0.8,
-            },
-            "crossStyle": {
-                "color": "#475569",
-                "width": 1,
-                "type": "dashed",
-                "opacity": 0.8,
-            },
-        },
         ":formatter": _chromaticity_tooltip(coordinate_system, include_cri),
     }
 
@@ -1276,6 +1371,7 @@ class SpectralAnalyzerTool:
         mixing_solve_pending = False
         mixing_solve_error = ""
         cie_charts: dict[str, Any] = {}
+        active_analysis_cie_system = "xy"
 
         @ui.refreshable
         def render_spectrum_chart() -> None:
@@ -1323,11 +1419,15 @@ class SpectralAnalyzerTool:
                 *((item, "standard") for item in self.standard_illuminant_results),
             ]
 
-        def update_sdcm_chart_series() -> None:
+        def update_sdcm_chart_series(coordinate_system: str | None = None) -> None:
             """只合并更新椭圆系列，保留 ECharts 当前缩放和平移状态。"""
 
             items = analysis_chromaticity_items()
-            for coordinate_system, chart in tuple(cie_charts.items()):
+            systems = (coordinate_system or active_analysis_cie_system,)
+            for current_system in systems:
+                chart = cie_charts.get(current_system)
+                if chart is None:
+                    continue
                 ellipse_series: list[dict[str, Any]] = []
                 for index, (item, result_kind) in enumerate(items):
                     _, color = _series_style(item.name, self.series_styles, index)
@@ -1340,7 +1440,7 @@ class SpectralAnalyzerTool:
                         _sdcm_ellipse_series(
                             item,
                             result_kind,
-                            coordinate_system,
+                            current_system,
                             order,
                             color,
                             visible=order in selected,
@@ -1388,7 +1488,9 @@ class SpectralAnalyzerTool:
                 )
             )
 
-        def update_coordinate_connection_chart_series() -> None:
+        def update_coordinate_connection_chart_series(
+            coordinate_system: str | None = None,
+        ) -> None:
             """只更新坐标连线系列，保留 CIE 图当前视口。"""
 
             items = analysis_chromaticity_items()
@@ -1399,7 +1501,11 @@ class SpectralAnalyzerTool:
             target_key = str(self.coordinate_connection_state.get("target") or "")
             target_entry = keyed_items.get(target_key)
             selected_sources = set(normalized_connection_sources(set(keyed_items), target_key))
-            for coordinate_system, chart in tuple(cie_charts.items()):
+            systems = (coordinate_system or active_analysis_cie_system,)
+            for current_system in systems:
+                chart = cie_charts.get(current_system)
+                if chart is None:
+                    continue
                 connection_series: list[dict[str, Any]] = []
                 for source_key, (source_item, source_kind, source_index) in keyed_items.items():
                     if target_entry is None:
@@ -1416,7 +1522,7 @@ class SpectralAnalyzerTool:
                             source_item,
                             source_kind,
                             target_entry[0],
-                            coordinate_system,
+                            current_system,
                             color,
                             visible=source_key in selected_sources and source_key != target_key,
                         )
@@ -1426,6 +1532,21 @@ class SpectralAnalyzerTool:
                     {"series": connection_series},
                     {"notMerge": False, "lazyUpdate": False},
                 )
+
+        async def synchronize_analysis_cie_tab(event: Any) -> None:
+            """Tab 首次挂载后按最新状态补刷椭圆和坐标连线。"""
+
+            nonlocal active_analysis_cie_system
+            raw_value = getattr(event, "value", "")
+            selected_system = (
+                raw_value
+                if isinstance(raw_value, str) and raw_value in {"xy", "upvp"}
+                else "xy"
+            )
+            active_analysis_cie_system = selected_system
+            await asyncio.sleep(0.05)
+            update_sdcm_chart_series(selected_system)
+            update_coordinate_connection_chart_series(selected_system)
 
         def update_connection_target(event: Any) -> None:
             """更新目标坐标点并移除与其重复的光源点。"""
@@ -1525,16 +1646,22 @@ class SpectralAnalyzerTool:
 
         @ui.refreshable
         def render_chromaticity_view() -> None:
+            nonlocal active_analysis_cie_system
+            active_analysis_cie_system = "xy"
             with ui.row().classes("w-full flex-nowrap items-start gap-3"):
                 with ui.column().classes("flex-1 min-w-0 gap-0"):
                     ui.label(
-                        "光谱点、手工坐标与所选标准光源已叠加；十字指示线显示鼠标坐标。滚轮等比例缩放，按住左键可任意方向平移。"
+                        "光谱点、手工坐标与所选标准光源已叠加；十字线实时显示鼠标坐标，单击可固定坐标与有效 CCT。滚轮等比例缩放，按住左键可任意方向平移。"
                     ).classes("text-xs text-slate-500 mb-2")
                     cie_tabs = ui.tabs().classes("w-full text-blue-700")
                     with cie_tabs:
-                        cie_xy_tab = ui.tab("CIE 1931 xy")
-                        cie_upvp_tab = ui.tab("CIE 1976 u′v′")
-                    with ui.tab_panels(cie_tabs, value=cie_xy_tab).classes("w-full"):
+                        cie_xy_tab = ui.tab("xy", label="CIE 1931 xy")
+                        cie_upvp_tab = ui.tab("upvp", label="CIE 1976 u′v′")
+                    with ui.tab_panels(
+                        cie_tabs,
+                        value=cie_xy_tab,
+                        on_change=synchronize_analysis_cie_tab,
+                    ).classes("w-full"):
                         with ui.tab_panel(cie_xy_tab).classes("p-0"):
                             cie_charts["xy"] = _render_cie_chart(analysis_chromaticity_options("xy"))
                         with ui.tab_panel(cie_upvp_tab).classes("p-0"):
@@ -1623,11 +1750,11 @@ class SpectralAnalyzerTool:
 
         @ui.refreshable
         def render_spectrum_results() -> None:
-            if not self.spectrum_results:
+            if not self.spectrum_results and not self.coordinate_results:
                 with ui.column().classes("w-full h-[520px] items-center justify-center text-slate-400 gap-3"):
                     ui.icon("query_stats", size="64px")
-                    ui.label("粘贴光谱后点击“联合计算”").classes("text-lg")
-                    ui.label("支持共享波长列，不限制光谱列数").classes("text-sm")
+                    ui.label("输入光谱或色坐标后点击“联合计算”").classes("text-lg")
+                    ui.label("两类数据可以只填写其中一种，也可以同时填写").classes("text-sm")
                 return
 
             warning_items = [(result.name, warning) for result in self.spectrum_results for warning in result.warnings]
@@ -1711,28 +1838,31 @@ class SpectralAnalyzerTool:
 
             with ui.tab_panels(result_tabs, value=summary_tab).classes("w-full bg-white"):
                 with ui.tab_panel(summary_tab).classes("p-2"):
-                    columns = [
-                        {"name": "name", "label": "光谱", "field": "name", "align": "left"},
-                        {"name": "cct", "label": "CCT(K)", "field": "cct", "align": "right"},
-                        {"name": "duv", "label": "Duv", "field": "duv", "align": "right"},
-                        {"name": "x", "label": "x", "field": "x", "align": "right"},
-                        {"name": "y", "label": "y", "field": "y", "align": "right"},
-                        {"name": "up", "label": "u′", "field": "up", "align": "right"},
-                        {"name": "vp", "label": "v′", "field": "vp", "align": "right"},
-                        {"name": "ra", "label": "Ra", "field": "ra", "align": "right"},
-                        {"name": "r9", "label": "R9", "field": "r9", "align": "right"},
-                        {"name": "r15", "label": "R15(JIS)", "field": "r15", "align": "right"},
-                        {"name": "rf", "label": "CIE Rf", "field": "rf", "align": "right"},
-                        {"name": "dc", "label": "CRI Δuv", "field": "dc", "align": "right"},
-                    ]
-                    ui.table(columns=columns, rows=_spectrum_summary_rows(self.spectrum_results)).props(
-                        "dense flat bordered wrap-cells"
-                    ).classes("w-full")
-                    ui.label("XYZ 已按 Y=100 归一化；Ra 仍取 R1–R8 平均，R15 标注为 JIS 扩展。").classes(
-                        "text-xs text-slate-500 mt-2"
-                    )
+                    if self.spectrum_results:
+                        columns = [
+                            {"name": "name", "label": "光谱", "field": "name", "align": "left"},
+                            {"name": "cct", "label": "CCT(K)", "field": "cct", "align": "right"},
+                            {"name": "duv", "label": "Duv", "field": "duv", "align": "right"},
+                            {"name": "x", "label": "x", "field": "x", "align": "right"},
+                            {"name": "y", "label": "y", "field": "y", "align": "right"},
+                            {"name": "up", "label": "u′", "field": "up", "align": "right"},
+                            {"name": "vp", "label": "v′", "field": "vp", "align": "right"},
+                            {"name": "ra", "label": "Ra", "field": "ra", "align": "right"},
+                            {"name": "r9", "label": "R9", "field": "r9", "align": "right"},
+                            {"name": "r15", "label": "R15(JIS)", "field": "r15", "align": "right"},
+                            {"name": "rf", "label": "CIE Rf", "field": "rf", "align": "right"},
+                            {"name": "dc", "label": "CRI Δuv", "field": "dc", "align": "right"},
+                        ]
+                        ui.table(columns=columns, rows=_spectrum_summary_rows(self.spectrum_results)).props(
+                            "dense flat bordered wrap-cells"
+                        ).classes("w-full")
+                        ui.label(
+                            "XYZ 已按 Y=100 归一化；Ra 仍取 R1–R8 平均，R15 标注为 JIS 扩展。"
+                        ).classes("text-xs text-slate-500 mt-2")
                     if self.coordinate_results:
-                        ui.label("手工输入色坐标").classes("text-base font-bold text-slate-700 mt-4")
+                        ui.label("手工输入色坐标").classes(
+                            "text-base font-bold text-slate-700" + (" mt-4" if self.spectrum_results else "")
+                        )
                         coordinate_columns = [
                             {"name": "name", "label": "名称", "field": "name", "align": "left"},
                             *[
@@ -2465,7 +2595,7 @@ class SpectralAnalyzerTool:
                 timeout=None,
                 position="top",
             )
-            data_text = str(self.spectral_state.get("data_text") or "")
+            data_text = str(self.spectral_state.get("data_text") or "").strip()
             coordinate_system = _option_text(
                 self.coordinate_state.get("system"),
                 set(COORDINATE_SYSTEMS),
@@ -2480,8 +2610,10 @@ class SpectralAnalyzerTool:
                 for index, result in enumerate(self.spectrum_results)
             }
             try:
+                if not data_text and not coordinate_text:
+                    raise SpectralAnalysisError("请至少输入一组光谱数据或一组具体色坐标")
                 coordinates = parse_chromaticity_text(coordinate_text, coordinate_system) if coordinate_text else []
-                results = await run.cpu_bound(analyze_spectral_text, data_text)
+                results = await run.cpu_bound(analyze_spectral_text, data_text) if data_text else []
                 self.spectrum_results = results
                 self.coordinate_results = coordinates
                 previous_styles = self.series_styles
@@ -2566,7 +2698,7 @@ class SpectralAnalyzerTool:
                         with ui.column().classes("w-full max-w-[1800px] mx-auto p-2 gap-3"):
                             with ui.grid().classes("w-full grid-cols-1 lg:grid-cols-12 gap-2 items-stretch"):
                                 with ui.card().classes("lg:col-span-7 w-full h-full p-4 rounded-xl shadow-sm"):
-                                    ui.label("1. 光谱数据").classes("text-lg font-bold text-slate-800")
+                                    ui.label("1. 光谱数据（可选）").classes("text-lg font-bold text-slate-800")
                                     ui.label("首列为波长，后续每列为一条光谱；支持 Excel、CSV 和空白分隔。").classes(
                                         "text-xs text-slate-500 mb-1"
                                     )
@@ -2591,8 +2723,8 @@ class SpectralAnalyzerTool:
                                     )
 
                                 with ui.card().classes("lg:col-span-5 w-full h-full p-4 rounded-xl shadow-sm"):
-                                    ui.label("2. 叠加具体色坐标（可选）").classes("text-lg font-bold text-slate-800")
-                                    ui.label("手工坐标会叠加到光谱结果的同一张 CIE 图中。").classes(
+                                    ui.label("2. 具体色坐标（可选）").classes("text-lg font-bold text-slate-800")
+                                    ui.label("可单独计算色坐标，也可叠加到光谱结果的同一张 CIE 图中。").classes(
                                         "text-xs text-slate-500 mb-1"
                                     )
                                     ui.select(
@@ -2614,7 +2746,7 @@ class SpectralAnalyzerTool:
                                         )
                                         .classes("w-full")
                                     )
-                                    ui.label("不填写时仅分析上方光谱数据。").classes("text-xs text-blue-800")
+                                    ui.label("光谱与色坐标至少填写其中一项。").classes("text-xs text-blue-800")
 
                                 with ui.card().classes("lg:col-span-12 w-full p-3 rounded-xl shadow-sm"):
                                     with ui.row().classes("w-full items-center justify-between gap-3 flex-wrap"):

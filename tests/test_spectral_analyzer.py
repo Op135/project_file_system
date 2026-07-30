@@ -19,7 +19,8 @@ from src.tools.spectral_analysis import (  # noqa: E402
 from src.tools.spectral_analyzer import (  # noqa: E402
     _chromaticity_chart_options,
     _chromaticity_result_key,
-    _cie_pointer_visibility_js,
+    _cie_clicked_point_series,
+    _cie_interaction_setup_js,
     _comparison_source_options,
     _coordinate_summary_rows,
     _cri_pair_chromaticity_chart_options,
@@ -54,20 +55,26 @@ class SpectralAnalyzerOptionsTests(unittest.TestCase):
         self.assertEqual(_option_text("错误", {"xy", "uv"}, "uv"), "uv")
         self.assertEqual(_sdcm_orders([5, "3", 5, 2, None]), (3, 5))
 
-    def test_cie_pointer_visibility_handler_only_hides_for_scatter_points(self):
-        hide_handler = _cie_pointer_visibility_js(42, visible=False, scatter_only=True)
-        restore_handler = _cie_pointer_visibility_js(42, visible=True, scatter_only=False)
-        self.assertIn("seriesType !== 'scatter'", hide_handler)
-        self.assertIn("getElement(42)", hide_handler)
-        self.assertIn("opacity: 0", hide_handler)
-        self.assertIn("show: false", hide_handler)
-        self.assertIn("type: 'showTip'", hide_handler)
-        self.assertIn("seriesIndex: params.seriesIndex", hide_handler)
-        self.assertIn("dataIndex: params.dataIndex", hide_handler)
-        self.assertNotIn("seriesType !== 'scatter'", restore_handler)
-        self.assertIn("opacity: 0.8", restore_handler)
-        self.assertIn("show: true", restore_handler)
-        self.assertIn("type: 'hideTip'", restore_handler)
+    def test_cie_interaction_uses_pixel_level_crosshair_and_emits_clicked_coordinate(self):
+        xy_handler = _cie_interaction_setup_js(42, "xy")
+        upvp_handler = _cie_interaction_setup_js(43, "upvp")
+        self.assertIn("getElement(42)", xy_handler)
+        self.assertIn("requestAnimationFrame", xy_handler)
+        self.assertIn("getZr().on('mousemove'", xy_handler)
+        self.assertIn("getZr().on('click'", xy_handler)
+        self.assertIn("convertFromPixel", xy_handler)
+        self.assertIn("toFixed(6)", xy_handler)
+        self.assertIn("emit({first:", xy_handler)
+        self.assertIn("x: ", xy_handler)
+        self.assertIn("u′: ", upvp_handler)
+
+    def test_cie_clicked_point_marker_only_shows_meaningful_cct(self):
+        d65_marker = _cie_clicked_point_series(0.3127, 0.3290, "xy")
+        far_marker = _cie_clicked_point_series(0.2, 0.7, "xy")
+        self.assertEqual(d65_marker["id"], "cie-click-marker")
+        self.assertEqual(d65_marker["data"], [[0.3127, 0.329]])
+        self.assertIn("CCT:", d65_marker["label"]["formatter"])
+        self.assertNotIn("CCT:", far_marker["label"]["formatter"])
 
     def test_title_keywords_share_symbols_and_allow_manual_override(self):
         self.assertEqual(_spectrum_group_key("NBI 模式 1"), "模式")
@@ -198,11 +205,9 @@ class SpectralAnalyzerOptionsTests(unittest.TestCase):
         self.assertEqual(xy_options["series"][-1]["symbol"], "triangle")
         self.assertFalse(xy_options["series"][3]["label"]["show"])
         self.assertIn(":formatter", xy_options["tooltip"])
-        self.assertEqual(xy_options["tooltip"]["trigger"], "axis")
-        self.assertEqual(xy_options["tooltip"]["axisPointer"]["type"], "cross")
-        self.assertFalse(xy_options["tooltip"]["axisPointer"]["snap"])
-        self.assertEqual(xy_options["tooltip"]["axisPointer"]["label"]["precision"], 6)
-        self.assertEqual(xy_options["tooltip"]["axisPointer"]["label"]["fontSize"], 14)
+        self.assertEqual(xy_options["tooltip"]["trigger"], "item")
+        self.assertEqual(xy_options["tooltip"]["triggerOn"], "mousemove")
+        self.assertNotIn("axisPointer", xy_options["tooltip"])
         self.assertIn("Array.isArray", xy_options["tooltip"][":formatter"])
 
         standard_point = replace(self.coordinates[0], name="CIE D65 标准点")
@@ -329,7 +334,7 @@ class SpectralAnalyzerOptionsTests(unittest.TestCase):
         self.assertFalse(first_series["label"]["show"])
         self.assertTrue(options["xAxis"]["splitLine"]["show"])
         self.assertTrue(options["yAxis"]["splitLine"]["show"])
-        self.assertEqual(options["tooltip"]["axisPointer"]["type"], "cross")
+        self.assertEqual(options["tooltip"]["trigger"], "item")
         self.assertEqual(options["xAxis"]["axisLabel"]["fontSize"], 15)
         self.assertEqual(options["yAxis"]["nameTextStyle"]["fontSize"], 18)
 
