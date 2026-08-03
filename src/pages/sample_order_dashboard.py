@@ -1476,9 +1476,11 @@ def get_sample_order_monthly_statistics(
     today: Optional[date] = None,
     *,
     date_basis: str = "planned",
+    count_basis: str = "orders",
 ) -> list[dict[str, object]]:
-    """按计划或实际交货月份统计订单完成情况。"""
+    """按计划或实际交货月份，统计订单数或申请样品数。"""
     normalized_basis = "actual" if date_basis == "actual" else "planned"
+    normalized_count_basis = "samples" if count_basis == "samples" else "orders"
     reference_date = today or date.today()
     reference_month_number = reference_date.year * 12 + reference_date.month - 1
 
@@ -1519,7 +1521,7 @@ def get_sample_order_monthly_statistics(
     ]
     statistics_by_month = {item["month"]: item for item in statistics}
 
-    for _record, planned_date, actual_date in normalized_records:
+    for record, planned_date, actual_date in normalized_records:
         grouping_date = planned_date if normalized_basis == "planned" else actual_date
         if grouping_date is None:
             continue
@@ -1534,15 +1536,81 @@ def get_sample_order_monthly_statistics(
             category = "on_time_completed"
         else:
             category = "delayed_completed"
-        month_statistics[category] = normalize_int(month_statistics[category], 0) + 1
-        month_statistics["total"] = normalize_int(month_statistics["total"], 0) + 1
+        increment = (
+            max(0, normalize_int(record["basic_info"].get("application_qty"), 0))
+            if normalized_count_basis == "samples"
+            else 1
+        )
+        month_statistics[category] = normalize_int(month_statistics[category], 0) + increment
+        month_statistics["total"] = normalize_int(month_statistics["total"], 0) + increment
     return statistics
+
+
+def get_sample_order_statistics_details(
+    all_records: object,
+    month: str,
+    category: str,
+    *,
+    date_basis: str = "planned",
+) -> list[dict[str, object]]:
+    """返回统计图指定月份和完成分类所包含的订单明细。"""
+    normalized_basis = "actual" if date_basis == "actual" else "planned"
+    category_keys = {
+        "按时完成": "on_time_completed",
+        "延期完成": "delayed_completed",
+        "未完成": "incomplete",
+    }
+    target_category = category_keys.get(category)
+    if target_category is None:
+        return []
+
+    if isinstance(all_records, dict):
+        raw_records = all_records.values()
+    elif isinstance(all_records, (list, tuple)):
+        raw_records = all_records
+    else:
+        raw_records = []
+
+    details: list[dict[str, object]] = []
+    for raw_record in raw_records:
+        if not isinstance(raw_record, dict):
+            continue
+        record = merge_with_sample_order_template(raw_record)
+        basic = record["basic_info"]
+        execution = record["execution"]
+        planned_date = parse_iso_date(basic.get("planned_delivery_date"))
+        actual_date = parse_iso_date(execution.get("actual_delivery_date"))
+        if planned_date is None:
+            continue
+        grouping_date = planned_date if normalized_basis == "planned" else actual_date
+        if grouping_date is None or grouping_date.strftime("%Y-%m") != month:
+            continue
+
+        if actual_date is None:
+            record_category = "incomplete"
+        elif actual_date <= planned_date:
+            record_category = "on_time_completed"
+        else:
+            record_category = "delayed_completed"
+        if record_category != target_category:
+            continue
+        details.append(
+            {
+                "record_id": option_text(record.get("record_id")),
+                "sample_order_no": option_text(basic.get("sample_order_no"), "-"),
+                "product_model": option_text(basic.get("product_model"), "-"),
+                "application_qty": max(0, normalize_int(basic.get("application_qty"), 0)),
+                "applicant": option_text(basic.get("applicant"), "-"),
+            }
+        )
+    return sorted(details, key=lambda item: option_text(item.get("sample_order_no")))
 
 
 def build_sample_order_statistics_chart(
     statistics: list[dict[str, object]],
     *,
     include_incomplete: bool = True,
+    value_name: str = "订单数",
 ) -> dict:
     """生成近12个月订单统计的堆叠柱状图配置。"""
     months = [option_text(item.get("month")) for item in statistics]
@@ -1556,7 +1624,7 @@ def build_sample_order_statistics_chart(
         {
             "name": label,
             "type": "bar",
-            "stack": "orders",
+            "stack": "statistics",
             "barWidth": "52%",
             "data": [normalize_int(item.get(key), 0) for item in statistics],
             "itemStyle": {"color": color},
@@ -1567,7 +1635,7 @@ def build_sample_order_statistics_chart(
     # 用透明散点把总数标签稳定地放在每根堆叠柱顶部，即使最上层分类数量为0也能正确显示。
     series.append(
         {
-            "name": "总订单数",
+            "name": f"总{value_name}",
             "type": "scatter",
             "data": [normalize_int(item.get("total"), 0) for item in statistics],
             "symbolSize": 1,
@@ -1597,7 +1665,7 @@ def build_sample_order_statistics_chart(
         },
         "yAxis": {
             "type": "value",
-            "name": "订单数",
+            "name": value_name,
             "minInterval": 1,
             "splitLine": {"lineStyle": {"type": "dashed"}},
         },
@@ -1649,6 +1717,7 @@ async def sample_order_dashboard_page(record_id: str = "") -> None:
     confirm_dialog = ui.dialog().props("persistent")
     import_dialog = ui.dialog().props("persistent")
     statistics_dialog = ui.dialog()
+    statistics_detail_dialog = ui.dialog()
 
     def open_statistics_dialog() -> None:
         """打开可切换计划/实际交样月份口径的订单统计。"""
@@ -1659,26 +1728,109 @@ async def sample_order_dashboard_page(record_id: str = "") -> None:
                 with ui.row().classes("items-center gap-2"):
                     ui.icon("stacked_bar_chart", color="blue", size="md")
                     ui.label("样品订单月度统计").classes("text-xl font-bold")
-                date_basis_toggle = (
-                    ui.toggle(
-                        {"planned": "计划交样口径", "actual": "实际交样口径"},
-                        value="planned",
+                with ui.row().classes("items-center gap-2"):
+                    date_basis_toggle = (
+                        ui.toggle(
+                            {"planned": "计划交样口径", "actual": "实际交样口径"},
+                            value="planned",
+                        )
+                        .props("flat no-caps color=primary")
+                        .classes("self-center shrink-0")
                     )
-                    .props("flat no-caps color=primary")
-                    .classes("self-center shrink-0")
-                )
+                    count_basis_toggle = (
+                        ui.toggle(
+                            {"orders": "订单数", "samples": "样品数"},
+                            value="orders",
+                        )
+                        .props("flat no-caps color=teal")
+                        .classes("self-center shrink-0")
+                    )
                 ui.button(icon="close", on_click=statistics_dialog.close).props("flat round")
             chart_container = ui.column().classes("w-full flex-grow min-h-0 gap-1")
 
-            def render_statistics(date_basis: str) -> None:
+            def open_statistics_details(
+                month: str,
+                category: str,
+                date_basis: str,
+                count_basis: str,
+            ) -> None:
+                details = get_sample_order_statistics_details(
+                    all_records,
+                    month,
+                    category,
+                    date_basis=date_basis,
+                )
+                sample_total = sum(normalize_int(item.get("application_qty"), 0) for item in details)
+                basis_label = "实际交样口径" if date_basis == "actual" else "计划交样口径"
+                summary = (
+                    f"共 {len(details)} 张订单、{sample_total} 个样品"
+                    if count_basis == "samples"
+                    else f"共 {len(details)} 张订单"
+                )
+                statistics_detail_dialog.clear()
+                with statistics_detail_dialog, ui.card().classes("w-[900px] max-w-[95vw] max-h-[85vh] p-5"):
+                    with ui.row().classes("w-full items-center justify-between mb-2"):
+                        with ui.column().classes("gap-0"):
+                            ui.label(f"{month} · {category}").classes("text-xl font-bold")
+                            ui.label(f"{basis_label} · {summary}").classes("text-sm text-gray-500")
+                        ui.button(icon="close", on_click=statistics_detail_dialog.close).props("flat round")
+                    with ui.element("div").classes(
+                        "grid grid-cols-[minmax(150px,1fr)_minmax(180px,1.5fr)_100px_minmax(120px,1fr)] "
+                        "w-full gap-3 px-3 py-2 bg-slate-100 rounded-t font-bold text-sm text-slate-700"
+                    ):
+                        ui.label("订单号")
+                        ui.label("产品型号")
+                        ui.label("数量")
+                        ui.label("申请人")
+                    with ui.scroll_area().classes("w-full h-[55vh] border rounded-b"):
+                        if not details:
+                            ui.label("当前分类暂无订单").classes("w-full text-center text-gray-400 py-8")
+                        for item in details:
+                            with ui.element("div").classes(
+                                "grid grid-cols-[minmax(150px,1fr)_minmax(180px,1.5fr)_100px_minmax(120px,1fr)] "
+                                "w-full gap-3 px-3 py-2 border-b text-sm items-center hover:bg-blue-50"
+                            ):
+                                ui.label(option_text(item.get("sample_order_no"), "-")).classes("font-mono")
+                                ui.label(option_text(item.get("product_model"), "-")).classes("break-all")
+                                ui.label(str(normalize_int(item.get("application_qty"), 0)))
+                                ui.label(option_text(item.get("applicant"), "-"))
+                statistics_detail_dialog.open()
+
+            def bind_statistics_chart_click(chart: Any, callback: Any) -> None:
+                """把 ECharts 堆叠柱点击事件转发给 NiceGUI。"""
+                chart.on("sample_order_statistics_click", callback)
+                ui.run_javascript(f"""
+                    setTimeout(() => {{
+                        const el = getElement({chart.id});
+                        if (!el || !el.chart) return;
+                        if (el.__sampleOrderStatisticsHandler) {{
+                            el.chart.off('click', el.__sampleOrderStatisticsHandler);
+                        }}
+                        el.__sampleOrderStatisticsHandler = function(params) {{
+                            if (params.componentType === 'series' && params.seriesType === 'bar') {{
+                                el.$emit('sample_order_statistics_click', {{
+                                    month: params.name,
+                                    category: params.seriesName
+                                }});
+                            }}
+                        }};
+                        el.chart.on('click', el.__sampleOrderStatisticsHandler);
+                    }}, 200);
+                """)
+
+            def render_statistics(date_basis: str, count_basis: str) -> None:
                 normalized_basis = "actual" if date_basis == "actual" else "planned"
+                normalized_count_basis = "samples" if count_basis == "samples" else "orders"
+                value_name = "样品数" if normalized_count_basis == "samples" else "订单数"
                 statistics = get_sample_order_monthly_statistics(
                     all_records,
                     date_basis=normalized_basis,
+                    count_basis=normalized_count_basis,
                 )
                 chart_options = build_sample_order_statistics_chart(
                     statistics,
                     include_incomplete=normalized_basis == "planned",
+                    value_name=value_name,
                 )
                 chart_container.clear()
                 with chart_container:
@@ -1692,10 +1844,36 @@ async def sample_order_dashboard_page(record_id: str = "") -> None:
                             "显示过去11个月、当前月及已有未来计划月份；订单按计划交货日期归属月份，"
                             "实际交货不晚于计划日期为按时完成，晚于计划日期为延期完成。"
                         ).classes("text-sm text-gray-500 shrink-0")
-                    ui.echart(chart_options).classes("w-full flex-grow min-h-0")
+                    if normalized_count_basis == "samples":
+                        ui.label("样品数按每张订单的申请数量累加。").classes(
+                            "text-sm text-teal-700 shrink-0"
+                        )
+                    chart = ui.echart(chart_options).classes("w-full flex-grow min-h-0 cursor-pointer")
 
-            render_statistics("planned")
-            date_basis_toggle.on_value_change(lambda event: render_statistics(option_text(event.value, "planned")))
+                    def show_clicked_details(event: Any) -> None:
+                        event_args = event.args if isinstance(event.args, dict) else {}
+                        open_statistics_details(
+                            option_text(event_args.get("month")),
+                            option_text(event_args.get("category")),
+                            normalized_basis,
+                            normalized_count_basis,
+                        )
+
+                    bind_statistics_chart_click(chart, show_clicked_details)
+
+            render_statistics("planned", "orders")
+            date_basis_toggle.on_value_change(
+                lambda event: render_statistics(
+                    option_text(event.value, "planned"),
+                    option_text(count_basis_toggle.value, "orders"),
+                )
+            )
+            count_basis_toggle.on_value_change(
+                lambda event: render_statistics(
+                    option_text(date_basis_toggle.value, "planned"),
+                    option_text(event.value, "orders"),
+                )
+            )
         statistics_dialog.open()
 
     def open_sample_order_import_dialog() -> None:

@@ -340,9 +340,72 @@ class SampleOrderCalculationTests(unittest.TestCase):
         chart = dashboard.build_sample_order_statistics_chart(statistics)
 
         self.assertEqual(chart["xAxis"]["data"], ["2026-07"])
-        self.assertEqual([item["stack"] for item in chart["series"][:3]], ["orders"] * 3)
+        self.assertEqual([item["stack"] for item in chart["series"][:3]], ["statistics"] * 3)
         self.assertEqual(chart["series"][3]["data"], [6])
         self.assertTrue(chart["series"][3]["label"]["show"])
+
+    def test_sample_count_basis_sums_application_quantity(self):
+        on_time = make_record()
+        on_time["basic_info"]["application_qty"] = 2
+        on_time["basic_info"]["planned_delivery_date"] = "2026-07-20"
+        on_time["execution"]["actual_delivery_date"] = "2026-07-20"
+
+        delayed = make_record()
+        delayed["record_id"] = "record-delayed"
+        delayed["basic_info"]["application_qty"] = 3
+        delayed["basic_info"]["planned_delivery_date"] = "2026-07-20"
+        delayed["execution"]["actual_delivery_date"] = "2026-07-21"
+
+        incomplete = make_record()
+        incomplete["record_id"] = "record-incomplete"
+        incomplete["basic_info"]["application_qty"] = 4
+        incomplete["basic_info"]["planned_delivery_date"] = "2026-07-20"
+
+        statistics = dashboard.get_sample_order_monthly_statistics(
+            {record["record_id"]: record for record in (on_time, delayed, incomplete)},
+            date(2026, 7, 28),
+            count_basis="samples",
+        )
+        july = next(item for item in statistics if item["month"] == "2026-07")
+
+        self.assertEqual(july["on_time_completed"], 2)
+        self.assertEqual(july["delayed_completed"], 3)
+        self.assertEqual(july["incomplete"], 4)
+        self.assertEqual(july["total"], 9)
+
+        chart = dashboard.build_sample_order_statistics_chart(statistics, value_name="样品数")
+        self.assertEqual(chart["yAxis"]["name"], "样品数")
+        self.assertEqual(chart["series"][-1]["name"], "总样品数")
+
+    def test_statistics_details_match_clicked_month_category_and_basis(self):
+        on_time = make_record()
+        on_time["basic_info"].update({"sample_order_no": "Y-ON-TIME", "application_qty": 2})
+        on_time["basic_info"]["planned_delivery_date"] = "2026-07-31"
+        on_time["execution"]["actual_delivery_date"] = "2026-07-30"
+
+        delayed = make_record()
+        delayed["record_id"] = "record-delayed"
+        delayed["basic_info"].update({"sample_order_no": "Y-DELAYED", "application_qty": 3})
+        delayed["basic_info"]["planned_delivery_date"] = "2026-07-31"
+        delayed["execution"]["actual_delivery_date"] = "2026-08-02"
+
+        records = {record["record_id"]: record for record in (on_time, delayed)}
+        planned_details = dashboard.get_sample_order_statistics_details(
+            records,
+            "2026-07",
+            "延期完成",
+            date_basis="planned",
+        )
+        actual_details = dashboard.get_sample_order_statistics_details(
+            records,
+            "2026-08",
+            "延期完成",
+            date_basis="actual",
+        )
+
+        self.assertEqual([item["sample_order_no"] for item in planned_details], ["Y-DELAYED"])
+        self.assertEqual([item["sample_order_no"] for item in actual_details], ["Y-DELAYED"])
+        self.assertEqual(actual_details[0]["application_qty"], 3)
 
     def test_actual_date_basis_groups_completed_orders_and_excludes_incomplete(self):
         on_time = make_record()
