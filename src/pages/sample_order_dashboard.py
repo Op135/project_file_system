@@ -1610,7 +1610,7 @@ def build_sample_order_statistics_chart(
     statistics: list[dict[str, object]],
     *,
     include_incomplete: bool = True,
-    value_name: str = "订单数",
+    value_name: str = "按订单数",
 ) -> dict:
     """生成近12个月订单统计的堆叠柱状图配置。"""
     months = [option_text(item.get("month")) for item in statistics]
@@ -1731,19 +1731,19 @@ async def sample_order_dashboard_page(record_id: str = "") -> None:
                 with ui.row().classes("items-center gap-2"):
                     date_basis_toggle = (
                         ui.toggle(
-                            {"planned": "计划交样口径", "actual": "实际交样口径"},
+                            {"planned": "按计划交样日期", "actual": "按实际交样日期"},
                             value="planned",
                         )
-                        .props("flat no-caps color=primary")
-                        .classes("self-center shrink-0")
+                        .props("color=grey-3 text-color=grey-5 toggle-color=teal toggle-text-color=white unelevated")
+                        .classes("self-center shrink-0 text-sm")
                     )
                     count_basis_toggle = (
                         ui.toggle(
-                            {"orders": "订单数", "samples": "样品数"},
+                            {"orders": "按订单数", "samples": "按样品数"},
                             value="orders",
                         )
-                        .props("flat no-caps color=teal")
-                        .classes("self-center shrink-0")
+                        .props("color=grey-3 text-color=grey-5 toggle-color=teal toggle-text-color=white unelevated")
+                        .classes("self-center shrink-0 text-sm")
                     )
                 ui.button(icon="close", on_click=statistics_dialog.close).props("flat round")
             chart_container = ui.column().classes("w-full flex-grow min-h-0 gap-1")
@@ -1761,7 +1761,7 @@ async def sample_order_dashboard_page(record_id: str = "") -> None:
                     date_basis=date_basis,
                 )
                 sample_total = sum(normalize_int(item.get("application_qty"), 0) for item in details)
-                basis_label = "实际交样口径" if date_basis == "actual" else "计划交样口径"
+                basis_label = "按实际交样日期" if date_basis == "actual" else "按计划交样日期"
                 summary = (
                     f"共 {len(details)} 张订单、{sample_total} 个样品"
                     if count_basis == "samples"
@@ -1821,7 +1821,7 @@ async def sample_order_dashboard_page(record_id: str = "") -> None:
             def render_statistics(date_basis: str, count_basis: str) -> None:
                 normalized_basis = "actual" if date_basis == "actual" else "planned"
                 normalized_count_basis = "samples" if count_basis == "samples" else "orders"
-                value_name = "样品数" if normalized_count_basis == "samples" else "订单数"
+                value_name = "按样品数" if normalized_count_basis == "samples" else "按订单数"
                 statistics = get_sample_order_monthly_statistics(
                     all_records,
                     date_basis=normalized_basis,
@@ -1845,9 +1845,7 @@ async def sample_order_dashboard_page(record_id: str = "") -> None:
                             "实际交货不晚于计划日期为按时完成，晚于计划日期为延期完成。"
                         ).classes("text-sm text-gray-500 shrink-0")
                     if normalized_count_basis == "samples":
-                        ui.label("样品数按每张订单的申请数量累加。").classes(
-                            "text-sm text-teal-700 shrink-0"
-                        )
+                        ui.label("样品数按每张订单的申请数量累加。").classes("text-sm text-teal-700 shrink-0")
                     chart = ui.echart(chart_options).classes("w-full flex-grow min-h-0 cursor-pointer")
 
                     def show_clicked_details(event: Any) -> None:
