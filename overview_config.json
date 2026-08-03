@@ -1892,7 +1892,7 @@
                 "title": "转接座选型范围",
                 "processing_type": "text",
                 "content_regular": [],
-                "dialog_placeholder": "普通/悬臂检测/接近开关检测/具体型号",
+                "dialog_placeholder": "普通/悬臂检测/接近开关检测/红外对射检测/具体型号",
                 "allowed_state": [
                     "研发",
                     "转产",
