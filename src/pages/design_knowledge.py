@@ -39,7 +39,7 @@ from ..design_knowledge_config import (
     resolve_design_knowledge_review_route as get_review_route,
     resolve_design_knowledge_submission_review_route as get_review_route_for_submission,
 )
-from ..utils import get_cache_busted_path, logout, setup_global_activity_tracking
+from ..utils import get_cache_busted_path, handle_key, logout, setup_global_activity_tracking
 
 logger = logging.getLogger(__name__)
 
@@ -516,7 +516,12 @@ async def save_knowledge_record(
     saved_record = result["record"]
     if saved_record and saved_record.get("status") == RECORD_STATUS_REVIEW:
         approver_text = "、".join(saved_record.get("approver_roles", [])) or "默认审核角色"
-        return True, f"已提交至 {approver_text} 审核", saved_record
+        self_review_hint = "；当前账号也会收到待审批提示" if can_review_submission(
+            saved_record,
+            current_user,
+            current_role,
+        ) else ""
+        return True, f"已提交至 {approver_text} 审核{self_review_hint}", saved_record
     return True, "保存成功", saved_record
 
 
@@ -600,7 +605,18 @@ async def submit_tag_request(
 
     success = await db_storage.atomic_deep_update([DESIGN_TAG_REQUESTS_KEY], update_requests)
     approver_text = "、".join(review_route["approver_roles"]) or "默认审核角色"
-    return success, f"标签申请已提交至 {approver_text}" if success else "标签申请提交失败"
+    self_review_hint = ""
+    if success:
+        request_preview = {
+            "created_by": current_user,
+            "created_role": current_role,
+            "approver_roles": copy.deepcopy(review_route["approver_roles"]),
+            "review_route_key": review_route["key"],
+            "review_route_label": review_route["label"],
+        }
+        if can_review_submission(request_preview, current_user, current_role):
+            self_review_hint = "；当前账号也会收到待审批提示"
+    return success, f"标签申请已提交至 {approver_text}{self_review_hint}" if success else "标签申请提交失败"
 
 
 async def update_tag_request_status(
@@ -649,6 +665,8 @@ async def update_tag_request_status(
 @ui.page("/design_knowledge")
 def design_knowledge_page():
     setup_global_activity_tracking()
+    app.storage.client.setdefault("key_state", {})
+    ui.keyboard(on_key=handle_key)
     ui.add_head_html("""
         <style>
             html, body {
@@ -1408,11 +1426,6 @@ def design_knowledge_page():
                         attachment_row = app.storage.client["page_elements"].get("design_knowledge_attachment_row")
                         if attachment_row is None:
                             return ui.notify("附件区域尚未初始化，请关闭窗口后重试", type="warning", position="bottom")
-                        empty_label = app.storage.client["page_elements"].get(
-                            "design_knowledge_attachment_empty_label"
-                        )
-                        if empty_label is not None:
-                            empty_label.set_visibility(False)
                         with attachment_row:
                             create_attachment_thumbnail(file_info, deletable=True)
                         sync_attachments_from_thumbnail_state()
@@ -1426,12 +1439,10 @@ def design_knowledge_page():
                 def render_attachment_section() -> None:
                     active_files = get_active_attachments(form_data)
                     with ui.column().classes("w-full gap-2 border border-gray-100 rounded-md p-3 mb-3 bg-gray-50"):
-                        with ui.row().classes("w-full justify-between items-center gap-3"):
-                            with ui.column().classes("gap-0"):
-                                ui.label("附件").classes("text-sm font-bold text-gray-700")
-                                ui.label("可上传图片、PDF、Office 等资料作为补充说明。").classes(
-                                    "text-xs text-gray-500"
-                                )
+                        ui.label("附件").classes("text-sm font-bold text-gray-700")
+                        ui.label("可上传图片、PDF、Office 等资料作为补充说明。").classes("text-xs text-gray-500")
+                        with ui.row().classes("w-full flex-wrap items-start gap-2") as attachment_row:
+                            app.storage.client["page_elements"]["design_knowledge_attachment_row"] = attachment_row
                             ButtonUploader(
                                 on_upload=handle_attachment_file_upload,
                                 label="上传附件",
@@ -1440,13 +1451,6 @@ def design_knowledge_page():
                                 props_str="outline color=primary dense",
                                 parents_h=DESIGN_ATTACHMENT_PARENTS_H,
                             )
-                        with ui.row().classes("w-full flex-wrap items-start gap-2") as attachment_row:
-                            app.storage.client["page_elements"]["design_knowledge_attachment_row"] = attachment_row
-                            empty_label = ui.label("暂无附件").classes("text-xs text-gray-400")
-                            empty_label.set_visibility(not active_files)
-                            app.storage.client["page_elements"][
-                                "design_knowledge_attachment_empty_label"
-                            ] = empty_label
                             for file_info in active_files:
                                 create_attachment_thumbnail(file_info, deletable=True)
 

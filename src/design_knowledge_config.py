@@ -80,6 +80,7 @@ _DEFAULT_CONFIG = {
         },
     ],
     "review_fallback_approver_roles": ["经理", "主管", "总监", "boss", "admin"],
+    "allow_self_review_for_approver_roles": True,
     "attachment": {
         "dir_name": "design_knowledge",
         "parents_h": 12,
@@ -171,6 +172,15 @@ def _positive_int(config: dict, key: str, default: int) -> int:
     """读取正整数配置；布尔值虽然属于 int 子类，但不能当作数值使用。"""
     value = config.get(key)
     if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+        return value
+    logger.warning("设计知识库配置 %s 无效，已使用默认值", key)
+    return default
+
+
+def _bool_value(config: dict, key: str, default: bool) -> bool:
+    """读取严格布尔值，避免字符串 ``"false"`` 被误认为已关闭。"""
+    value = config.get(key)
+    if isinstance(value, bool):
         return value
     logger.warning("设计知识库配置 %s 无效，已使用默认值", key)
     return default
@@ -307,6 +317,11 @@ def load_design_knowledge_config() -> dict[str, Any]:
             "review_fallback_approver_roles",
             _DEFAULT_CONFIG["review_fallback_approver_roles"],
         ),
+        "allow_self_review_for_approver_roles": _bool_value(
+            raw_config,
+            "allow_self_review_for_approver_roles",
+            _DEFAULT_CONFIG["allow_self_review_for_approver_roles"],
+        ),
         "attachment": attachment,
         "default_tag_catalog": _tag_catalog(raw_config, domains),
         "content_type_copy": _content_type_copy(raw_config, content_types),
@@ -356,13 +371,18 @@ def is_design_knowledge_review_approver_role(current_role: str) -> bool:
 
 
 def can_review_design_knowledge_submission(submission: Any, current_user: str, current_role: str) -> bool:
-    """判断用户能否审核指定知识或标签申请；admin 可兜底，普通用户不可自审。"""
+    """判断用户能否审核指定知识或标签申请；自审是否允许由 JSON 配置决定。"""
     if str(current_user or "").strip().lower() == "admin" or str(current_role or "").strip().lower() == "admin":
         return True
-    if not isinstance(submission, dict) or submission.get("created_by") == current_user:
+    if not isinstance(submission, dict):
         return False
     route = resolve_design_knowledge_submission_review_route(submission)
-    return any(role_key in str(current_role or "") for role_key in route.get("approver_roles", []))
+    role_matches = any(role_key in str(current_role or "") for role_key in route.get("approver_roles", []))
+    if not role_matches:
+        return False
+    if submission.get("created_by") == current_user and not DESIGN_KNOWLEDGE_ALLOW_SELF_REVIEW_FOR_APPROVER_ROLES:
+        return False
+    return True
 
 
 DESIGN_KNOWLEDGE_CONFIG = load_design_knowledge_config()
@@ -377,6 +397,9 @@ DESIGN_KNOWLEDGE_EDITOR_ROLE_KEYWORDS = DESIGN_KNOWLEDGE_CONFIG["knowledge_edito
 DESIGN_KNOWLEDGE_TAG_MANAGER_ROLE_KEYWORDS = DESIGN_KNOWLEDGE_CONFIG["tag_manager_role_keywords"]
 DESIGN_KNOWLEDGE_REVIEW_ROUTING_RULES = DESIGN_KNOWLEDGE_CONFIG["review_routing_rules"]
 DESIGN_KNOWLEDGE_REVIEW_FALLBACK_APPROVER_ROLES = DESIGN_KNOWLEDGE_CONFIG["review_fallback_approver_roles"]
+DESIGN_KNOWLEDGE_ALLOW_SELF_REVIEW_FOR_APPROVER_ROLES = DESIGN_KNOWLEDGE_CONFIG[
+    "allow_self_review_for_approver_roles"
+]
 DESIGN_ATTACHMENT_DIR_NAME = DESIGN_KNOWLEDGE_CONFIG["attachment"]["dir_name"]
 DESIGN_ATTACHMENT_PARENTS_H = DESIGN_KNOWLEDGE_CONFIG["attachment"]["parents_h"]
 DEFAULT_TAG_CATALOG = DESIGN_KNOWLEDGE_CONFIG["default_tag_catalog"]

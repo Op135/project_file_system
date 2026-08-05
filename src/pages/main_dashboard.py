@@ -195,7 +195,7 @@ def main_page():
         ("published_with_changes", "工程变更", "ECR与ECN流程管理", "/ecn_management"),
         ("error", "异常单跟进", "查阅记录异常单处理进度", "/error_management"),
         ("science", "样品问题跟进", "查阅记录样品问题处理进度", "/sample_issue_collection"),
-        ("fact_check", "样品单执行看板", "录入并跟踪样品订单交期", "/sample_order_dashboard"),
+        ("fact_check", "样品订单看板", "录入并跟踪样品订单交期", "/sample_order_dashboard"),
         ("menu_book", "设计知识库", "沉淀规范与设计案例", "/design_knowledge"),
     ]
     menu_items = []

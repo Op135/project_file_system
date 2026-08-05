@@ -12,6 +12,7 @@
         "tag_manager_role_keywords": "可以直接维护受控标签库的角色关键字；不再代表可以审核所有部门的知识。",
         "review_routing_rules": "知识和标签申请的审核路由；按数组顺序使用提交者角色关键字做包含匹配，首个命中的 approver_roles 为审核角色。",
         "review_fallback_approver_roles": "提交者角色未命中审核路由时的兜底审核角色关键字。",
+        "allow_self_review_for_approver_roles": "提交人本身已命中该条记录的审核角色时，是否允许其在自己的待办中看到并审批自己提交的知识或标签申请。",
         "attachment.dir_name": "附件保存到 uploads 下的模块目录名；保存路径实际为 uploads/dir_name/内容类型/用户名。",
         "attachment.parents_h": "附件缩略图组件高度参数。",
         "default_tag_catalog": "各专业领域的默认受控标签库。运行中新增的标签仍保存在系统 storage 中。",
@@ -141,6 +142,7 @@
         "boss",
         "admin"
     ],
+    "allow_self_review_for_approver_roles": true,
     "attachment": {
         "dir_name": "design_knowledge",
         "parents_h": 12

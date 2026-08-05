@@ -1271,6 +1271,14 @@
                     "option_label": "普通无检测类转接座"
                 },
                 {
+                    "option_id": "opt_5",
+                    "option_content": "红外对射检测",
+                    "option_out": "红外对射",
+                    "option_bold": "红外对射检测",
+                    "option_show": "转接座选用{V}类",
+                    "option_label": "红外对射检测类转接座"
+                },
+                {
                     "option_id": "opt_4",
                     "option_content": "定制检测方案",
                     "option_out": "定制检测",
@@ -7573,7 +7581,7 @@
             ]
         }
     },
-    "config_timestamp": "2026-08-03T16:25:29.824991",
-    "excel_version_hash": "10c61168",
+    "config_timestamp": "2026-08-05T17:21:56.290116",
+    "excel_version_hash": "fd0eb51b",
     "entry_status": false
 }
