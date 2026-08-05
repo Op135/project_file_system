@@ -666,7 +666,7 @@ async def update_tag_request_status(
 def design_knowledge_page():
     setup_global_activity_tracking()
     app.storage.client.setdefault("key_state", {})
-    ui.keyboard(on_key=handle_key)
+    ui.keyboard(on_key=handle_key, ignore=[])
     ui.add_head_html("""
         <style>
             html, body {
@@ -986,9 +986,12 @@ def design_knowledge_page():
             with ui.row().classes("w-full justify-end gap-2 border-t px-5 py-3 bg-white"):
                 can_review_current_record = can_review_submission(record, current_user, current_role)
                 if can_edit_record(record, current_user, current_role):
-                    ui.button("编辑", icon="edit", on_click=lambda _=None, r=record: open_edit_dialog(r)).props(
-                        "color=primary"
-                    )
+
+                    def edit_current_record(_=None, record_data=record) -> None:
+                        detail_dialog.close()
+                        open_edit_dialog(record_data)
+
+                    ui.button("编辑", icon="edit", on_click=edit_current_record).props("color=primary")
                 if can_review_current_record and record.get("status") == RECORD_STATUS_REVIEW:
 
                     async def approve_current_record(_=None, k=record["knowledge_id"]):
