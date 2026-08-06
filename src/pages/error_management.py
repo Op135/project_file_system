@@ -7,9 +7,9 @@
 - 纠正预防措施拥有独立 id，延期申请又拥有自己的 id，便于并发更新时准确定位。
 - ``_revision`` 是整张异常单的版本号，用于阻止较早打开的表单覆盖其他用户或后台任务的新修改。
 
-权限分为两层：配置中的编辑角色可以维护整张异常单；普通用户仅能对自己负责的纠正预防措施
-申请延期或提交关闭说明。延期、审批、关闭等局部业务动作会在原子更新回调里重新检查权限和
-最新状态，不能只依赖页面按钮是否可见。
+权限分为两层：配置中的编辑角色可以维护整张异常单，其中只有 admin 可以修改异常单号或删除
+整张异常单；普通用户仅能对自己负责的纠正预防措施申请延期或提交关闭说明。延期、审批、关闭
+等局部业务动作会在原子更新回调里重新检查权限和最新状态，不能只依赖页面按钮是否可见。
 """
 
 import copy
@@ -596,17 +596,38 @@ def reminder_rule_matches(due_date, today, rule: dict) -> bool:
     return False
 
 
-async def save_error_record(error_data: dict, user: str, role: str, *, is_new: bool) -> ErrorUpdateResult:
+async def save_error_record(
+    error_data: dict,
+    user: str,
+    role: str,
+    *,
+    is_new: bool,
+    original_error_id: str = "",
+) -> ErrorUpdateResult:
     """保存整张表单。
 
     编辑已有记录时把页面打开时的 ``_revision`` 作为期望版本传入；如果期间有其他用户或后台提醒
-    更新过记录，保存会返回 ``revision_conflict``，避免旧页面覆盖新内容。
+    更新过记录，保存会返回 ``revision_conflict``，避免旧页面覆盖新内容。admin 修改已有异常单号时，
+    会改为原子迁移顶层数据库键，确保旧键删除、新键写入和操作日志保存属于同一次事务。
     """
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     record = merge_with_error_template(error_data)
+    source_error_id = str(original_error_id or record["error_id"]).strip()
+    target_error_id = str(record["error_id"]).strip()
+    record["error_id"] = target_error_id
     record["updated_by"] = user
     record["updated_at"] = now_str
     record.setdefault("operation_log", []).append({"user": user, "role": role, "action": "保存异常单", "time": now_str})
+
+    if not is_new and source_error_id != target_error_id:
+        return await rename_error_record(
+            source_error_id,
+            record,
+            user,
+            role,
+            expected_revision=get_record_revision(error_data),
+            renamed_at=now_str,
+        )
 
     def save_record(_current):
         return "updated", copy.deepcopy(record)
@@ -616,6 +637,82 @@ async def save_error_record(error_data: dict, user: str, role: str, *, is_new: b
         save_record,
         expected_revision=None if is_new else get_record_revision(error_data),
         create=is_new,
+    )
+
+
+async def rename_error_record(
+    original_error_id: str,
+    error_data: dict,
+    user: str,
+    role: str,
+    *,
+    expected_revision: Optional[int] = None,
+    renamed_at: str = "",
+) -> ErrorUpdateResult:
+    """仅允许 admin 原子迁移异常单数据库键，并同步记录单号变更日志。"""
+    if not is_error_admin(role):
+        return ErrorUpdateResult(db_success=False, changed=False, code="forbidden")
+
+    source_error_id = str(original_error_id or "").strip()
+    record = merge_with_error_template(error_data)
+    target_error_id = str(record.get("error_id", "")).strip()
+    if not source_error_id or not target_error_id:
+        return ErrorUpdateResult(db_success=False, changed=False, code="invalid_error_id")
+    if source_error_id == target_error_id:
+        return ErrorUpdateResult(db_success=True, changed=False, code="unchanged", record=record)
+
+    now_str = renamed_at or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    outcome = {"changed": False, "code": "db_error", "record": None}
+
+    def rename_record(all_errors):
+        # 单号是顶层字典键，因此必须在同一个顶层事务内同时检查并迁移新旧键。
+        if not isinstance(all_errors, dict) or source_error_id not in all_errors:
+            outcome["code"] = "not_found"
+            return db_storage.ATOMIC_NO_UPDATE
+        if target_error_id in all_errors:
+            outcome["code"] = "already_exists"
+            return db_storage.ATOMIC_NO_UPDATE
+
+        current = merge_with_error_template(all_errors[source_error_id])
+        if expected_revision is not None and get_record_revision(current) != expected_revision:
+            outcome["code"] = "revision_conflict"
+            outcome["record"] = copy.deepcopy(current)
+            return db_storage.ATOMIC_NO_UPDATE
+
+        updated = merge_with_error_template(record)
+        updated["error_id"] = target_error_id
+        updated["updated_by"] = user
+        updated["updated_at"] = now_str
+        updated.setdefault("operation_log", []).append(
+            {
+                "user": user,
+                "role": role,
+                "action": f"修改异常单号：{source_error_id} → {target_error_id}",
+                "time": now_str,
+            }
+        )
+        updated["_revision"] = get_record_revision(current) + 1
+        updated["status"] = calculate_error_status(updated)
+        if updated["status"] == "已关闭" and not updated.get("closed_at"):
+            updated["closed_at"] = now_str
+        elif updated["status"] != "已关闭":
+            updated["closed_at"] = ""
+
+        del all_errors[source_error_id]
+        all_errors[target_error_id] = updated
+        outcome["changed"] = True
+        outcome["code"] = "updated"
+        outcome["record"] = copy.deepcopy(updated)
+        return all_errors
+
+    success = await db_storage.atomic_deep_update([ERROR_DATA_KEY], rename_record)
+    if success and outcome["changed"]:
+        await db_storage.set_item(ERROR_VERSION_KEY, time.time())
+    return ErrorUpdateResult(
+        db_success=success,
+        changed=bool(success and outcome["changed"]),
+        code=outcome["code"] if success else "db_error",
+        record=outcome["record"],
     )
 
 
@@ -1024,8 +1121,10 @@ async def error_management_page(error_id: str = ""):
     dialog = ui.dialog().props("persistent")
     root_dialog = ui.dialog().props("maximized persistent")
 
-    can_edit_all = is_error_editor(current_role)
+    # admin 始终拥有整单编辑权；即使后续配置误删 admin，也不能影响管理员修正基础输入项。
+    can_edit_all = is_error_admin(current_role) or is_error_editor(current_role)
     can_delete_record = is_error_admin(current_role)
+    can_rename_record = is_error_admin(current_role)
     # 此变量只防止同一页面被连续点击触发多个手工检查；跨页面、跨用户的提醒去重由数据库认领机制负责。
     reminder_guard = {"running": False}
 
@@ -1069,6 +1168,7 @@ async def error_management_page(error_id: str = ""):
         延期、审批、关闭等动作则立即使用原子更新写库，成功后重新打开详情展示最新数据。
         """
         is_new = error_id is None
+        stored_error_id = str(error_id or "")
         if is_new and not can_edit_all:
             return ui.notify("当前角色无异常单录入权限", type="warning", position="bottom")
 
@@ -1239,9 +1339,19 @@ async def error_management_page(error_id: str = ""):
                 return ui.notify("当前角色无保存权限", type="warning", position="bottom")
             if not validate_error_record(local_data):
                 return
-            result = await save_error_record(local_data, current_user, current_role, is_new=is_new)
+            result = await save_error_record(
+                local_data,
+                current_user,
+                current_role,
+                is_new=is_new,
+                original_error_id=stored_error_id,
+            )
+            if result.code == "forbidden":
+                return ui.notify("只有 admin 可以修改异常单号", type="warning", position="bottom")
             if result.code == "already_exists":
                 return ui.notify("异常单号已存在，请使用其它单号", type="warning", position="bottom")
+            if result.code == "not_found":
+                return ui.notify("原异常单已不存在，请关闭窗口后刷新", type="warning", position="bottom")
             if result.code == "revision_conflict":
                 return ui.notify(
                     "保存已取消：异常单已被其他用户或后台任务更新，请关闭窗口后重新打开再修改",
@@ -1260,7 +1370,7 @@ async def error_management_page(error_id: str = ""):
             if is_new or not can_delete_record:
                 return ui.notify("当前角色无删除异常单权限", type="warning", position="bottom")
 
-            target_error_id = local_data["error_id"]
+            target_error_id = stored_error_id
 
             async def confirm_delete():
                 result = await delete_error_record(target_error_id, current_role)
@@ -1395,7 +1505,7 @@ async def error_management_page(error_id: str = ""):
                     )
                     return "updated", current
 
-                result = await atomic_error_update(local_data["error_id"], add_extension_request)
+                result = await atomic_error_update(stored_error_id, add_extension_request)
                 if result.code == "pending_exists":
                     return ui.notify("该措施已有延期申请待审批，请刷新查看", type="warning", position="bottom")
                 if result.code == "due_date_changed":
@@ -1436,7 +1546,7 @@ async def error_management_page(error_id: str = ""):
                 ui.notify("延期申请已提交", type="positive", position="bottom")
                 dialog.close()
                 refresh_list()
-                await open_error_detail_dialog(local_data["error_id"])
+                await open_error_detail_dialog(stored_error_id)
 
             dialog.clear()
             with dialog, ui.card().classes("w-1/3 max-w-lg p-5"):
@@ -1491,7 +1601,7 @@ async def error_management_page(error_id: str = ""):
                 )
                 return "updated", current
 
-            result = await atomic_error_update(local_data["error_id"], update_extension_request)
+            result = await atomic_error_update(stored_error_id, update_extension_request)
             if result.code == "already_processed":
                 return ui.notify("该延期申请已被其他审批人处理，请刷新查看", type="warning", position="bottom")
             if result.code == "due_date_changed":
@@ -1537,14 +1647,14 @@ async def error_management_page(error_id: str = ""):
             )
             ui.notify("延期审批已处理", type="positive", position="bottom")
             refresh_list()
-            await open_error_detail_dialog(local_data["error_id"])
+            await open_error_detail_dialog(stored_error_id)
 
         async def submit_close_request_from_dialog(action: dict):
             """由措施负责人发起关闭申请，等待审批角色通过或驳回。"""
             action_id = get_item_id(action)
             close_note = action.get("close_note", "").strip()
             result = await submit_error_preventive_close_request(
-                local_data["error_id"],
+                stored_error_id,
                 action_id,
                 current_user,
                 current_role,
@@ -1587,7 +1697,7 @@ async def error_management_page(error_id: str = ""):
 
             ui.notify("关闭申请已提交", type="positive", position="bottom")
             refresh_list()
-            await open_error_detail_dialog(local_data["error_id"])
+            await open_error_detail_dialog(stored_error_id)
 
         async def approve_close_request_from_dialog(
             action: dict,
@@ -1599,7 +1709,7 @@ async def error_management_page(error_id: str = ""):
             action_id = get_item_id(action)
             request_id = str(request.get("id", ""))
             result = await approve_error_preventive_close_request(
-                local_data["error_id"],
+                stored_error_id,
                 action_id,
                 request_id,
                 approved,
@@ -1648,7 +1758,7 @@ async def error_management_page(error_id: str = ""):
             )
             ui.notify("关闭审批已处理", type="positive", position="bottom")
             refresh_list()
-            await open_error_detail_dialog(local_data["error_id"])
+            await open_error_detail_dialog(stored_error_id)
 
         def render_preventive_items(container):
             """渲染纠正预防措施及其延期、审批、关闭操作。
@@ -1894,7 +2004,13 @@ async def error_management_page(error_id: str = ""):
                     with section("基础信息"):
                         basic = local_data["basic_info"]
                         with ui.row().classes("w-full gap-4 flex-wrap items-start"):
-                            bind_input("异常单号", local_data, "error_id", "w-full md:w-[32%]", readonly=not is_new)
+                            bind_input(
+                                "异常单号",
+                                local_data,
+                                "error_id",
+                                "w-full md:w-[32%]",
+                                readonly=not (is_new or can_rename_record),
+                            )
                             bind_input("产品名称", basic, "product_name", "w-full md:w-[32%]")
                             bind_input("料号", basic, "material_no", "w-full md:w-[32%]")
                         with ui.row().classes("w-full gap-4 flex-wrap items-start"):

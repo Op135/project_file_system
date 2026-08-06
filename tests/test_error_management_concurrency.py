@@ -287,6 +287,90 @@ class ErrorManagementConcurrencyTests(unittest.IsolatedAsyncioTestCase):
             finally:
                 await isolated_db.close_db()
 
+    async def test_only_admin_can_atomically_rename_error_record(self):
+        """admin 修改单号时应迁移数据库键并留痕，且不能覆盖已有单号。"""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            isolated_db = load_isolated_db_storage(
+                "test_error_rename_db_storage",
+                Path(temp_dir) / "error_rename.db",
+            )
+            try:
+                await isolated_db.init_db()
+                from src.pages import error_management
+
+                original_db_storage = error_management.db_storage
+                error_management.db_storage = isolated_db
+                try:
+                    draft = error_management.generate_initial_error_data("assistant-a", "研发助理")
+                    draft["error_id"] = "ERR-WRONG"
+                    draft["basic_info"]["product_name"] = "before rename"
+                    draft["descriptions"] = [{"id": "desc-1", "content": "issue", "speaker": "assistant-a"}]
+                    created = await error_management.save_error_record(
+                        draft,
+                        "assistant-a",
+                        "研发助理",
+                        is_new=True,
+                    )
+                    self.assertTrue(created.changed)
+                    assert created.record is not None
+
+                    non_admin_edit = copy.deepcopy(created.record)
+                    non_admin_edit["error_id"] = "ERR-FORBIDDEN"
+                    forbidden = await error_management.save_error_record(
+                        non_admin_edit,
+                        "assistant-a",
+                        "研发助理",
+                        is_new=False,
+                        original_error_id="ERR-WRONG",
+                    )
+                    self.assertEqual(forbidden.code, "forbidden")
+
+                    await isolated_db.atomic_deep_update(
+                        [error_management.ERROR_DATA_KEY, "ERR-EXISTS"],
+                        lambda _: {"error_id": "ERR-EXISTS"},
+                    )
+                    duplicate_edit = copy.deepcopy(created.record)
+                    duplicate_edit["error_id"] = "ERR-EXISTS"
+                    duplicate = await error_management.save_error_record(
+                        duplicate_edit,
+                        "admin-user",
+                        "admin",
+                        is_new=False,
+                        original_error_id="ERR-WRONG",
+                    )
+                    self.assertEqual(duplicate.code, "already_exists")
+
+                    admin_edit = copy.deepcopy(created.record)
+                    admin_edit["error_id"] = "ERR-CORRECT"
+                    admin_edit["basic_info"]["product_name"] = "after rename"
+                    renamed = await error_management.save_error_record(
+                        admin_edit,
+                        "admin-user",
+                        "admin",
+                        is_new=False,
+                        original_error_id="ERR-WRONG",
+                    )
+                    self.assertTrue(renamed.changed)
+                    self.assertEqual(renamed.code, "updated")
+                    assert renamed.record is not None
+                    self.assertEqual(renamed.record["_revision"], created.record["_revision"] + 1)
+
+                    stored = isolated_db.get_item(error_management.ERROR_DATA_KEY, {})
+                    self.assertNotIn("ERR-WRONG", stored)
+                    self.assertIn("ERR-CORRECT", stored)
+                    self.assertEqual(stored["ERR-CORRECT"]["error_id"], "ERR-CORRECT")
+                    self.assertEqual(stored["ERR-CORRECT"]["basic_info"]["product_name"], "after rename")
+                    self.assertTrue(
+                        any(
+                            log.get("action") == "修改异常单号：ERR-WRONG → ERR-CORRECT"
+                            for log in stored["ERR-CORRECT"]["operation_log"]
+                        )
+                    )
+                finally:
+                    error_management.db_storage = original_db_storage
+            finally:
+                await isolated_db.close_db()
+
     async def test_admin_delete_preserves_concurrent_record_and_rejects_other_roles(self):
         """admin 删除单张异常单时应保留其它实例的并发新增，非 admin 不能删除。"""
         with tempfile.TemporaryDirectory() as temp_dir:
