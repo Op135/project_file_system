@@ -1,0 +1,157 @@
+{
+    "_说明": "ECN工程变更模块业务配置。修改后需要重启系统才能生效。角色关键字用于包含匹配，审批节点角色仍按current_role精确匹配。",
+    "_字段说明": {
+        "allowed_project_states": "允许作为ECR初始变更对象的项目状态。",
+        "permissions.scheme_initiator_roles": "可以发起ECN方案评审的角色关键字。",
+        "permissions.scheme_writer_roles": "可以维护ECN影响和方案的角色关键字。",
+        "permissions.impact_initial_reminder_roles": "ECR通过且ECN影响仍为空、尚无具体处理人时，主页角标提醒的角色关键字。",
+        "reminders.impact_followup_states": "ECN影响具体处理人需要持续收到主页角标的流程状态；方案评审通过进入执行阶段后停止。",
+        "ui.overview_conflict_auto_close_seconds": "概述新增数据与同格已有数据冲突时，警告浮层首次自动弹出的停留秒数。",
+        "workflow_routes": "ECR、ECN方案评审和执行确认的角色审批路由。一个内层数组表示同一节点并行会签。",
+        "schema": "ECN表单的原因、影响、资料类型和物料选项。"
+    },
+    "allowed_project_states": [
+        "试产",
+        "量产"
+    ],
+    "permissions": {
+        "scheme_initiator_roles": [
+            "研发经理",
+            "admin"
+        ],
+        "scheme_writer_roles": [
+            "研发",
+            "工程",
+            "质量"
+        ],
+        "impact_initial_reminder_roles": [
+            "研发助理"
+        ]
+    },
+    "reminders": {
+        "impact_followup_states": [
+            "ECN 方案编写与确认中",
+            "ECN 方案评审中"
+        ]
+    },
+    "ui": {
+        "overview_conflict_auto_close_seconds": 5
+    },
+    "workflow_routes": {
+        "ECR_PHASE": {
+            "SALES_INITIATED": [
+                [
+                    "销售总监"
+                ],
+                [
+                    "研发经理"
+                ]
+            ],
+            "RD_INITIATED": [
+                [
+                    "研发经理"
+                ],
+                [
+                    "销售总监"
+                ]
+            ]
+        },
+        "ECN_SCHEME_REVIEW_PHASE": [
+            [
+                "研发经理"
+            ],
+            [
+                "销售总监"
+            ],
+            [
+                "工程",
+                "质量",
+                "PMC"
+            ]
+        ],
+        "ECN_EXECUTION_PHASE": [
+            [
+                "工程",
+                "生产",
+                "PMC",
+                "质量"
+            ],
+            [
+                "研发经理_EXECUTE"
+            ]
+        ]
+    },
+    "schema": {
+        "material_categories": [
+            "光源",
+            "光源基板",
+            "光学器件",
+            "结构加工件",
+            "标签包材",
+            "紧固件",
+            "外购标准件",
+            "电子料",
+            "PCB",
+            "PCBA",
+            "线材",
+            "固件",
+            "辅料"
+        ],
+        "material_actions": [
+            "新增",
+            "调量",
+            "弃用",
+            "返工使用",
+            "弃用更换"
+        ],
+        "impact_dimensions": [
+            "光学部件",
+            "内部结构",
+            "结构外观",
+            "线材",
+            "标签包装",
+            "硬件易识别",
+            "硬件难识别",
+            "硬件接口",
+            "固件",
+            "UI",
+            "工艺",
+            "工装治具",
+            "成本",
+            "生产效率",
+            "风险等级"
+        ],
+        "document_types": [
+            "光学件图纸",
+            "结构件图纸",
+            "成品/PCBA图档(3D/2D)",
+            "线材图纸",
+            "包材图纸",
+            "原理图/Layout图/丝印图",
+            "其它外购件图纸",
+            "产品总BOM",
+            "电子BOM",
+            "装箱清单",
+            "通讯协议/XML协议文档",
+            "硬件使用说明书",
+            "产品接线说明书",
+            "固件使用说明书",
+            "产品使用说明书",
+            "产品技术规格书",
+            "医疗器械产品风险管理",
+            "SOP/作业指导书",
+            "出厂检测报告",
+            "工装治具清单",
+            "其它"
+        ],
+        "reasons": [
+            "需求更改",
+            "设计改善",
+            "工艺调整",
+            "物料替换",
+            "资料修正",
+            "产品定标",
+            "其他"
+        ]
+    }
+}

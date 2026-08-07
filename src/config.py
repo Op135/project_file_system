@@ -7,6 +7,14 @@ from nicegui import app
 # 生产异常模块拥有独立的根目录 JSON 配置和校验加载器。
 # 此处仅保留旧常量别名，兼容项目中可能仍从 src.config 导入这些名称的其它模块。
 from . import error_management_config as _error_management_config
+from .ecn_management_config import (
+    ECN_ALLOWED_PROJECT_STATES,
+    ECN_SCHEMA_CONFIG,
+    ECN_SCHEME_INITIATOR_ROLES,
+    ECN_SCHEME_WRITER_ROLES,
+    ECN_WORKFLOW_ROUTES,
+    ECNState,
+)
 
 # 从环境变量中读取密钥。如果找不到，则使用一个仅供本地开发的默认值。
 # 在生产环境中，必须设置环境变量，否则会使用不安全的默认值。
@@ -34,101 +42,7 @@ SVN_USERNAME = "temp_t1"
 
 SVN_PASSWORD = "123456"
 
-# ==========================================
-# 工程变更 (ECN) 模块核心配置
-# ==========================================
-# ECN 数据结构字典 (Schema Config)
-ECN_SCHEMA_CONFIG = {
-    "material_categories": [
-        "光源",
-        "光源基板",
-        "光学器件",
-        "结构加工件",
-        "标签包材",
-        "紧固件",
-        "外购标准件",
-        "电子料",
-        "PCB",
-        "PCBA",
-        "线材",
-        "固件",
-        "辅料",
-    ],
-    "material_actions": ["新增", "调量", "弃用", "返工使用", "弃用更换"],
-    # 这里只留纯粹的“知会型”影响
-    "impact_dimensions": [
-        "光学部件",
-        "内部结构",
-        "结构外观",
-        "线材",
-        "标签包装",
-        "硬件易识别",
-        "硬件难识别",
-        "硬件接口",
-        "固件",
-        "UI",
-        "工艺",
-        "工装治具",
-        "成本",
-        "生产效率",
-        "风险等级",
-    ],
-    # 这里放所有需要强制出方案的“交付物”
-    "document_types": [
-        "光学件图纸",
-        "结构件图纸",
-        "成品/PCBA图档(3D/2D)",
-        "线材图纸",
-        "包材图纸",
-        "原理图/Layout图/丝印图",
-        "其它外购件图纸",
-        "产品总BOM",
-        "电子BOM",
-        "装箱清单",
-        "通讯协议/XML协议文档",
-        "硬件使用说明书",
-        "产品接线说明书",
-        "固件使用说明书",
-        "产品使用说明书",
-        "产品技术规格书",
-        "医疗器械产品风险管理",
-        "SOP/作业指导书",
-        "出厂检测报告",
-        "工装治具清单",
-        "其它",
-    ],
-    "reasons": ["需求更改", "设计改善", "工艺调整", "物料替换", "资料修正", "产品定标", "其他"],
-}
-# 1. 允许发起 ECN 变更的项目状态（严格模式）
-ECN_ALLOWED_PROJECT_STATES = ["试产", "量产"]
-
-
-# 1. ECN 状态机枚举增加
-class ECNState:
-    DRAFT = "草稿"
-    ECR_REVIEWING = "ECR 审批中"
-    ECN_SCHEMING = "ECN 方案编写与确认中"  # <--- 协同编辑阶段
-    ECN_REVIEWING = "ECN 方案评审中"  # <--- 评审阶段
-    ECN_EXECUTING = "ECN 等待各部执行确认"
-    PENDING_FINAL_EXECUTE = "等待最终数据变更"
-    CLOSED = "变更已完成"
-    CANCEL = "变更已作废"
-    REJECTED = "已被驳回"  # <--- 驳回态
-
-
-# 2. 方案协同控制角色
-# 有权限点击“发起 ECN 方案审批”的总控角色
-ECN_SCHEME_INITIATOR_ROLES = ["研发经理", "admin"]
-# 允许进入方案区编写方案的角色
-ECN_SCHEME_WRITER_ROLES = ["研发", "工程", "质量"]
-
-# 3. 审批流动态路由配置 (剥离了编写阶段，只保留审批)
-ECN_WORKFLOW_ROUTES = {
-    "ECR_PHASE": {"SALES_INITIATED": [["销售总监"], ["研发经理"]], "RD_INITIATED": [["研发经理"], ["销售总监"]]},
-    # 纯方案评审阶段
-    "ECN_SCHEME_REVIEW_PHASE": [["研发经理"], ["销售总监"], ["工程", "质量", "PMC"]],
-    "ECN_EXECUTION_PHASE": [["工程", "生产", "PMC", "质量"], ["研发经理_EXECUTE"]],
-}
+# ECN 业务配置已迁移到根目录 ecn_management_config.json；上方导入保留兼容导出。
 # 如果某个分组没在这里配置，代码里默认它使用 InteractiveButton。
 OVERVIEW_UI_RENDER_REGISTRY = {
     "光源": "OverviewTableGroup",

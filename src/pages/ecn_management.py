@@ -21,6 +21,14 @@ from ..config import (
     UPLOADS_DIR,
     ECNState,
 )
+from ..ecn_management_config import (
+    ECN_OVERVIEW_CONFLICT_AUTO_CLOSE_SECONDS,
+    build_overview_validation_signature,
+    get_active_overview_row_contents,
+    is_ecn_pending_for_user,
+    is_ecn_review_info_blank,
+    register_ecn_impact_handler,
+)
 from ..utils import get_cache_busted_path, logout, setup_global_activity_tracking
 
 logger = logging.getLogger(__name__)
@@ -86,6 +94,7 @@ def get_ecn_template() -> dict:
             "pending_roles": [],  # 待处理角色
             "step_approvals": {},  # 步骤审批信息
             "scheme_participants": {},  # 方案参与者
+            "impact_handlers": [],  # 实际维护过ECN影响区的具体人员，用于精准待办提醒
         },
         "approval_log": [],  # 审批日志，记录每一步的审批人、时间、意见等信息
         "timestamp": {},  # 时间戳记录，记录每次重要操作的时间和描述，用于前端 O(1) 轮询刷新机制
@@ -284,7 +293,42 @@ async def ecn_management_page():
             "validated_file_type": edit_data.get("new_data", {}).get("file_type", ""),
             "first_col_label": edit_data.get("first_col_label", ""),
             "has_enabled_bool": True,
+            "auto_open_warning_key": None,
+            "auto_shown_warning_keys": set(),
+            "validated_signature": None,
         }
+
+        path_validation_types = {"search", "svn"}
+
+        def get_current_validation_signature():
+            return build_overview_validation_signature(
+                sel_state["processing_type"],
+                sel_state["new_data"].get("content", ""),
+                sel_state["projects"],
+                sel_state["role"],
+                sel_state["label"],
+            )
+
+        def invalidate_path_validation():
+            sel_state["is_valid"] = False
+            sel_state["validated_url"] = ""
+            sel_state["validated_file_type"] = ""
+            sel_state["validated_signature"] = None
+
+        def invalidate_path_validation_if_changed(candidate_signature=None):
+            """忽略 NiceGUI 对相同值的补发事件，只在已校验内容确实变化时作废。"""
+            validated_signature = sel_state.get("validated_signature")
+            if validated_signature is None:
+                return
+            current_signature = candidate_signature or get_current_validation_signature()
+            if current_signature != validated_signature:
+                invalidate_path_validation()
+
+        if is_edit and sel_state["processing_type"] in path_validation_types:
+            if sel_state["validated_url"]:
+                sel_state["validated_signature"] = get_current_validation_signature()
+            else:
+                sel_state["is_valid"] = False
 
         target_projects = list(
             set(
@@ -323,6 +367,31 @@ async def ecn_management_page():
                 if c.get("select_activ_dic", {}).get(req_max_ver) is True:
                     chips[c_id] = c.get("content", "")
             return chips
+
+        def get_existing_cell_contents(project, label, anchor_row_id):
+            """返回所选基准行的当前内容及本单已暂存内容，用于新增数据风险提醒。"""
+            result = []
+            if anchor_row_id and not str(anchor_row_id).startswith("PENDING_NEW_"):
+                req_max_ver = app.storage.general.get("project_req_max_ver", {}).get(project, "1.0")
+                raw_data = db_storage.get_deep_item([f"{project}_over_data", label], {})
+                for content in get_active_overview_row_contents(raw_data, anchor_row_id, req_max_ver):
+                    result.append(("当前已有", content))
+
+            editing_item_id = edit_data.get("item_id")
+            for change_item in ecn_data.get("change_items", []):
+                if change_item.get("item_id") == editing_item_id:
+                    continue
+                if change_item.get("type") != "overview_update" or change_item.get("label") != label:
+                    continue
+                project_state = change_item.get("project_states", {}).get(project, {})
+                if project_state.get("action") != "add":
+                    continue
+                if project_state.get("anchor_row_id") != anchor_row_id:
+                    continue
+                content = str(change_item.get("new_data", {}).get("content", "")).strip() or "（空内容）"
+                if ("本单已暂存", content) not in result:
+                    result.append(("本单已暂存", content))
+            return result
 
         dialog.clear()
         with dialog, ui.card().classes("w-[1000px] max-w-full max-h-[90vh] flex flex-col flex-nowrap"):
@@ -438,8 +507,11 @@ async def ecn_management_page():
                                             )
                                         if state["action"] == "add" and not is_first_col:
                                             state["anchor_row_id"] = None
-                                        sel_state["is_valid"] = False
-                                        sel_state["validated_url"] = ""
+                                        if sel_state["processing_type"] in path_validation_types:
+                                            invalidate_path_validation()
+                                        else:
+                                            sel_state["is_valid"] = False
+                                            sel_state["validated_url"] = ""
                                         render_dynamic_form()
                                         build_matrix_and_sync_state()
 
@@ -484,7 +556,9 @@ async def ecn_management_page():
                                             )
 
                                             def on_anchor_select(e, current_p=p):
-                                                if e.value and e.value.startswith("PENDING_NEW_"):
+                                                if not e.value:
+                                                    sel_state["project_states"][current_p]["anchor_row_id"] = None
+                                                elif str(e.value).startswith("PENDING_NEW_"):
                                                     sel_state["project_states"][current_p]["anchor_row_id"] = e.value
                                                 else:
                                                     selected_chip = db_storage.get_deep_item(
@@ -498,6 +572,12 @@ async def ecn_management_page():
                                                     sel_state["project_states"][current_p]["anchor_row_id"] = (
                                                         selected_chip.get("row_id")
                                                     )
+                                                sel_state["auto_open_warning_key"] = (
+                                                    current_p,
+                                                    sel_state["label"],
+                                                    sel_state["project_states"][current_p]["anchor_row_id"],
+                                                )
+                                                build_matrix_and_sync_state()
 
                                             current_anchor_chip_id = None
                                             for f_cid, _ in first_col_chips.items():
@@ -519,19 +599,88 @@ async def ecn_management_page():
                                                 )
                                                 sel_state["has_enabled_bool"] = False
                                             else:
-                                                ui.select(
-                                                    options=first_col_chips,
-                                                    value=current_anchor_chip_id,
-                                                    label="选择绑定的第一列基准行",
-                                                    on_change=on_anchor_select,
-                                                ).props("dense outlined bg-amber-50").classes("w-full")
+                                                existing_contents = get_existing_cell_contents(
+                                                    p, label, p_state.get("anchor_row_id")
+                                                )
+                                                with ui.row().classes("w-full items-center gap-1 flex-nowrap"):
+                                                    anchor_select = ui.select(
+                                                        options=first_col_chips,
+                                                        value=current_anchor_chip_id,
+                                                        label="选择绑定的第一列基准行",
+                                                        on_change=on_anchor_select,
+                                                    ).props("dense outlined bg-amber-50").classes("flex-1 min-w-0")
+                                                    if existing_contents:
+                                                        parameter_title = get_labels(role).get(label, label)
+                                                        anchor_select.classes("border border-red-300 rounded")
+                                                        warning_key = (p, label, p_state.get("anchor_row_id"))
+                                                        with ui.button(icon="warning").props(
+                                                            "flat round dense color=negative"
+                                                        ).classes("shrink-0"):
+                                                            ui.tooltip(
+                                                                "该基准行的具体参数已有数据，点击查看"
+                                                            ).classes("text-xs")
+                                                            with ui.menu().props(
+                                                                'anchor="bottom right" self="top right"'
+                                                            ).classes("max-w-[480px]") as warning_menu:
+                                                                with ui.column().classes(
+                                                                    "min-w-[320px] max-w-[480px] gap-2 p-3 bg-red-50"
+                                                                ):
+                                                                    ui.label(
+                                                                        f"⚠ 该基准行的「{parameter_title}」已有数据"
+                                                                    ).classes("text-sm font-bold text-red-700")
+                                                                    ui.label(
+                                                                        "继续新增后，同一格将出现多个数据；"
+                                                                        "如业务确有需要，仍可继续保存。"
+                                                                    ).classes("text-xs text-red-600")
+                                                                    ui.separator()
+                                                                    for source, content in existing_contents:
+                                                                        with ui.column().classes("w-full gap-0"):
+                                                                            ui.label(source).classes(
+                                                                                "text-[10px] font-bold text-red-500"
+                                                                            )
+                                                                            ui.label(content).classes(
+                                                                                "text-xs text-gray-800 break-all"
+                                                                            )
+
+                                                        if (
+                                                            sel_state.get("auto_open_warning_key") == warning_key
+                                                            and warning_key not in sel_state["auto_shown_warning_keys"]
+                                                        ):
+                                                            sel_state["auto_shown_warning_keys"].add(warning_key)
+                                                            sel_state["auto_open_warning_key"] = None
+
+                                                            def auto_open_warning(menu=warning_menu):
+                                                                try:
+                                                                    menu.open()
+                                                                except RuntimeError:
+                                                                    return
+
+                                                                def auto_close_warning():
+                                                                    try:
+                                                                        menu.close()
+                                                                    except RuntimeError:
+                                                                        pass
+
+                                                                ui.timer(
+                                                                    ECN_OVERVIEW_CONFLICT_AUTO_CLOSE_SECONDS,
+                                                                    auto_close_warning,
+                                                                    once=True,
+                                                                )
+
+                                                            ui.timer(0.15, auto_open_warning, once=True)
 
                         render_dynamic_form()
 
-                    sel_proj.on_value_change(build_matrix_and_sync_state)
+                    def on_projects_change(e):
+                        sel_state["projects"] = e.value or []
+                        invalidate_path_validation_if_changed()
+                        build_matrix_and_sync_state()
+
+                    sel_proj.on_value_change(on_projects_change)
 
                     def on_role_change(e):
                         sel_state["role"] = e.value
+                        invalidate_path_validation_if_changed()
                         sel_label.set_options(get_labels(e.value))
                         sel_label.set_value(None)
                         sel_state["label"] = None
@@ -544,6 +693,13 @@ async def ecn_management_page():
                         sel_state["label"] = e.value
                         sel_state["config"] = app.storage.general.get("over_config_data_flat", {}).get(e.value, {})
                         sel_state["processing_type"] = sel_state["config"].get("processing_type", "text")
+                        if (
+                            sel_state["processing_type"] in path_validation_types
+                            and sel_state.get("validated_signature") is None
+                        ):
+                            invalidate_path_validation()
+                        else:
+                            invalidate_path_validation_if_changed()
                         sel_state["project_states"].clear()
                         build_matrix_and_sync_state()
 
@@ -642,14 +798,35 @@ async def ecn_management_page():
 
                                     elif ptype in ["search", "svn"]:
                                         with ui.row().classes("w-full items-center gap-2"):
-                                            ui.input("新引用文件名").bind_value(sel_state["new_data"], "content").props(
-                                                "outlined dense bg-white"
-                                            ).classes("flex-grow")
+                                            file_name_input = (
+                                                ui.input("新引用文件名")
+                                                .bind_value(sel_state["new_data"], "content")
+                                                .props("outlined dense bg-white")
+                                                .classes("flex-grow")
+                                            )
+                                            def on_file_name_change(e):
+                                                candidate_signature = build_overview_validation_signature(
+                                                    ptype,
+                                                    e.value,
+                                                    sel_state["projects"],
+                                                    sel_state["role"],
+                                                    sel_state["label"],
+                                                )
+                                                invalidate_path_validation_if_changed(candidate_signature)
+
+                                            file_name_input.on_value_change(on_file_name_change)
 
                                             async def validate_path():
                                                 val = sel_state["new_data"].get("content", "").strip()
                                                 if not val:
                                                     return ui.notify("请先填写文件名", type="warning")
+                                                requested_signature = build_overview_validation_signature(
+                                                    ptype,
+                                                    val,
+                                                    sel_state["projects"],
+                                                    sel_state["role"],
+                                                    sel_state["label"],
+                                                )
                                                 from ..utils import validate_search_path, validate_svn_url
 
                                                 pending_overrides = {}
@@ -677,13 +854,21 @@ async def ecn_management_page():
                                                         val, config, sel_state["projects"], pending_overrides
                                                     )
 
+                                                if requested_signature != get_current_validation_signature():
+                                                    invalidate_path_validation()
+                                                    return ui.notify(
+                                                        "校验期间文件名或目标项目发生变化，请重新校验。",
+                                                        type="warning",
+                                                    )
+
                                                 if is_valid:
                                                     sel_state["is_valid"] = True
                                                     sel_state["validated_url"] = url
                                                     sel_state["validated_file_type"] = ftype
+                                                    sel_state["validated_signature"] = requested_signature
                                                     ui.notify(msg, type="positive")
                                                 else:
-                                                    sel_state["is_valid"] = False
+                                                    invalidate_path_validation()
                                                     ui.notify(msg, type="negative")
 
                                             ui.button("校验有效性", on_click=validate_path).props(
@@ -738,6 +923,12 @@ async def ecn_management_page():
                     return ui.notify("请至少选择一个目标项目", type="warning")
                 if not sel_state["has_enabled_bool"]:
                     return ui.notify("缺少第一列的基准数据，请先为基准列添加方案！", type="warning")
+                if (
+                    sel_state["processing_type"] in path_validation_types
+                    and sel_state.get("validated_signature") != get_current_validation_signature()
+                ):
+                    invalidate_path_validation()
+                    return ui.notify("文件名或校验上下文已变化，请重新校验有效性。", type="warning")
                 if not sel_state["is_valid"]:
                     return ui.notify("未完成文件/路径校验，或数据不合法，请先点击校验有效性。", type="warning")
                 if not sel_state["new_data"].get("content", "").strip():
@@ -929,9 +1120,10 @@ async def ecn_management_page():
         async def auto_save_review(e=None):
             if ecn_id and is_scheme_writer:
 
-                def merge_review_data(current_review, local_review):
-                    if not current_review:
-                        return local_review
+                def merge_review_data(current_ecn, local_review, handler):
+                    if not current_ecn:
+                        return current_ecn
+                    current_review = current_ecn.setdefault("review_info", {})
                     # 仅更新 review_info 中的部分字段，避免覆盖掉 workflow 或 basic 中的其他数据
                     current_review["expanded_projects_mass"] = copy.deepcopy(
                         local_review.get("expanded_projects_mass", [])
@@ -947,9 +1139,15 @@ async def ecn_management_page():
                             current_review.setdefault("involved_materials", {}).setdefault(mat, {}).update(acts)
 
                     current_review["other_docs_desc"] = local_review.get("other_docs_desc", "")
-                    return current_review
+                    # 只有影响区已有有效内容时才认领处理人；已认领者不会因后续取消勾选而丢失。
+                    register_ecn_impact_handler(current_ecn, handler, local_review)
+                    return current_ecn
 
-                await atomic_ecn_deep_update(["ecn_management_data", ecn_id, "review_info"], merge_review_data, review)
+                success = await atomic_ecn_deep_update(
+                    ["ecn_management_data", ecn_id], merge_review_data, review, current_user
+                )
+                if success and not is_ecn_review_info_blank(review):
+                    register_ecn_impact_handler(local_data, current_user, review)
 
                 if dashboard_updater["refresh"]:
                     dashboard_updater["refresh"]()
@@ -2828,18 +3026,8 @@ async def ecn_management_page():
                                 ui.label(f"申请人: {ecn['basic_info']['applicant']}").classes("text-sm text-gray-600")
                                 ui.label(ecn["basic_info"]["apply_date"]).classes("text-xs text-gray-400 font-mono")
 
-                                # ECN为当前角色需要参与决定的，或ECN被驳回且当前用户是申请人，需提醒待处理，这里有问题，后面看能不能精确到人而不是角色
-                                is_pending = (current_role in ecn["workflow"]["pending_roles"]) or (
-                                    current_state == ECNState.REJECTED
-                                    and ecn["basic_info"]["applicant"] == current_user
-                                )
-                                # ECN处于方案编写中，且当前用户角色可参与，且当前用户在方案参与者列表中但未确认完成的，也算待处理，这里有问题，用户没参与时None也符合逻辑
-                                is_scheming = (
-                                    current_state == ECNState.ECN_SCHEMING
-                                    and any(r in current_role for r in ECN_SCHEME_WRITER_ROLES)
-                                    and ecn["workflow"].get("scheme_participants", {}).get(current_user) != "confirmed"
-                                )
-                                if is_pending or is_scheming:
+                                # 与主页角标使用同一套精准待办规则，避免未参与的工程师被提醒。
+                                if is_ecn_pending_for_user(ecn, current_user, current_role):
                                     # ui.chip: NiceGUI框架中用于渲染小标签/徽章的类
                                     ui.chip("待处理", icon="notifications_active", color="red").props(
                                         "dense outline size=sm"

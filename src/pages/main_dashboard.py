@@ -7,7 +7,8 @@ from typing import Any, Dict  # 引入类型提示，便于静态类型检查
 from nicegui import app, ui
 
 from .. import db_storage  # 导入我们创建的模块
-from ..config import ECN_SCHEME_WRITER_ROLES, IMG_DIR, PRESET_AVATARS, ECNState
+from ..config import IMG_DIR, PRESET_AVATARS
+from ..ecn_management_config import ECN_DATA_KEY, get_ecn_dashboard_pending_count
 from ..overview_warning import get_urgent_overview_projects
 from ..utils import (
     get_cache_busted_path,
@@ -300,8 +301,12 @@ def main_page():
             overview_urgent_projects: list[tuple[str, int]] = []
             # 所有登录用户负责的概述变更任务数量
             change_task_count = 0
-            # --- 新增：统计工程变更 (ECN) 的待办数量 ---
-            ecn_pending_num_user = 0
+            # ECN 待办统一按具体审批人、申请人或影响处理人计算。
+            ecn_pending_num_user = get_ecn_dashboard_pending_count(
+                db_storage.get_item(ECN_DATA_KEY, {}),
+                current_user,
+                current_role,
+            )
             # 异常模块待办：普通角色按待处理异常单计数，研发经理按待审批延期申请计数。
             error_pending_num_user = get_error_dashboard_pending_count(
                 db_storage.get_item(ERROR_DATA_KEY, {}),
@@ -324,44 +329,6 @@ def main_page():
             )
             # {项目工程师名:[负责项目,负责项目]}
             project_engineer_dic = get_project_engineer_project_list_dic()
-            # 假设你的 ECN 数据统一存在 db_storage 的 ecn_management_data 键下
-            # 注意：实际使用时如果觉得每次在主页拉取全量 ECN 较慢，可以像 overview 那样做个概要缓存，这里按直接读取演示
-            all_ecns = db_storage.get_item("ecn_management_data", {})
-            for ecn_id, ecn_data in all_ecns.items():
-                # 确保 ecn_data 是一个字典，如果不是（比如是 None），则跳过此条数据
-                if not isinstance(ecn_data, dict):
-                    # 你可以选择在日志里记录一下这个脏数据单号
-                    # logger.warning(f"发现异常 ECN 数据: {ecn_id} 为空，已跳过渲染")
-                    continue
-                workflow = ecn_data.get("workflow", {})
-                basic_info = ecn_data.get("basic_info", {})
-                current_state = workflow.get("current_state")
-                pending_roles = workflow.get("pending_roles", [])
-                applicant = basic_info.get("applicant")
-
-                # 1. 常规审批流待办：如果当前用户角色在待审批角色列表中
-                if current_role in pending_roles:
-                    ecn_pending_num_user += 1
-
-                # 2. 项目工程师专属待办：遇到动态角色且当前用户是目标项目的负责人
-                # elif "PROJECT_ENGINEER" in pending_roles:
-                #     target_projects = ecn_data.get("target_projects", [])
-                #     for proj in target_projects:
-                #         if proj in project_engineer_dic.get(current_user, []):
-                #             ecn_pending_num_user += 1
-                #             break  # 该单已算过，跳出当前项目遍历
-
-                # 3. 申请人专属待办：申请被驳回 (REJECTED) 或 已撤回/草稿 (DRAFT)，需要申请人操作
-                elif current_state in [ECNState.REJECTED, ECNState.DRAFT] and applicant == current_user:
-                    ecn_pending_num_user += 1
-
-                # 4. 方案编写人专属待办：处于方案设计阶段，当前用户有权限编写且尚未点击“确认完成”
-                elif current_state == ECNState.ECN_SCHEMING and any(r in current_role for r in ECN_SCHEME_WRITER_ROLES):
-                    # 获取参与方案编写的人员状态字典
-                    participants = workflow.get("scheme_participants", {})
-                    # 如果状态不是已确认 (confirmed)，则视为有待办事项
-                    if participants.get(current_user) != "confirmed":
-                        ecn_pending_num_user += 1
             for project_name, ver_dic in app.storage.general["wait_review"].items():
                 for ver, dic in ver_dic.items():
                     state = dic.get("state")
