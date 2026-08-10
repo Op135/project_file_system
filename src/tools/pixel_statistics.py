@@ -73,7 +73,7 @@ class PixelStatisticsSettings:
         if self.radius_mm < 0:
             raise PixelStatisticsError("圆形区域半径不能小于 0")
         if self.rectangle_height_mm <= 0 or self.rectangle_width_mm <= 0:
-            raise PixelStatisticsError("矩形区域的长度和宽度必须大于 0")
+            raise PixelStatisticsError("矩形区域的高度和宽度必须大于 0")
         if self.center_mode not in {"geometric", "maximum", "manual", "threshold"}:
             raise PixelStatisticsError("未知的中心算法")
         if not 0 < self.threshold_percent <= 100:
@@ -92,6 +92,7 @@ class ThresholdOutline:
     """阈值中心示意图所需的主连通区域边缘。"""
 
     edge_points: list[tuple[float, float]]
+    edge_values: list[float]
     threshold: float
     region_points: int
     min_row: int
@@ -341,12 +342,14 @@ def _threshold_component_center(matrix: np.ndarray, percent: float) -> tuple[flo
         step = math.ceil(len(boundary_points) / max_chart_points)
         boundary_points = boundary_points[::step]
     edge_points = [(float(col), float(row)) for row, col in boundary_points]
+    edge_values = [float(matrix[int(row), int(col)]) for row, col in boundary_points]
     description = (
         f"最大值的 {percent:g}% 阈值连通区（阈值 {threshold:.4g}，{count} 点，"
         f"范围 R{min_row + 1}:R{max_row + 1}、C{min_col + 1}:C{max_col + 1}）"
     )
     outline = ThresholdOutline(
         edge_points=edge_points,
+        edge_values=edge_values,
         threshold=threshold,
         region_points=count,
         min_row=min_row,
@@ -362,7 +365,7 @@ def locate_center(
 ) -> tuple[float, float, str, ThresholdOutline | None]:
     rows, cols = matrix.shape
     if settings.center_mode == "geometric":
-        return (rows - 1) / 2.0, (cols - 1) / 2.0, "数据几何中心", None
+        return (rows - 1) / 2.0, (cols - 1) / 2.0, "数据全局中心", None
     if settings.center_mode == "maximum":
         flat_index = int(np.nanargmax(matrix))
         row, col = np.unravel_index(flat_index, matrix.shape)
@@ -695,7 +698,14 @@ def _threshold_outline_chart_options(result: SheetAnalysis) -> dict[str, Any]:
     if outline is None:
         return {}
     pixels_per_mm = result.processed_pixels_per_mm
-    edge_data = [[round(col / pixels_per_mm, 6), round(row / pixels_per_mm, 6)] for col, row in outline.edge_points]
+    edge_data = [
+        [
+            round(col / pixels_per_mm, 6),
+            round(row / pixels_per_mm, 6),
+            round(point_value, 6),
+        ]
+        for (col, row), point_value in zip(outline.edge_points, outline.edge_values)
+    ]
     center_data = [
         [
             round((result.center_col - 1.0) / pixels_per_mm, 6),
@@ -712,12 +722,28 @@ def _threshold_outline_chart_options(result: SheetAnalysis) -> dict[str, Any]:
         grid_height = max_grid_size
         grid_width = max(1, round(max_grid_size * full_width_mm / full_height_mm))
     axis_label_formatter = "value => String(Number(Number(value).toFixed(2)))"
+    tooltip_formatter = """
+        params => {
+            const value = Array.isArray(params.value) ? params.value : [];
+            const format = number => String(Number(Number(number).toFixed(4)));
+            const lines = [
+                params.marker + params.seriesName,
+                'X：' + format(value[0]) + ' mm',
+                'Y：' + format(value[1]) + ' mm',
+            ];
+            if (params.seriesName === '阈值区域边缘') {
+                lines.push('边缘点数值：' + format(value[2]));
+                lines.push('判定阈值：' + THRESHOLD_VALUE);
+            }
+            return lines.join('<br/>');
+        }
+    """.replace("THRESHOLD_VALUE", json.dumps(round(outline.threshold, 6)))
     return {
         "animation": False,
         # 显示整张数据，并按其物理长宽比设置绘图区，保证横纵方向毫米单位等比例。
         "grid": {"width": grid_width, "height": grid_height, "left": "center", "top": 72},
         "legend": {"top": 8, "data": ["阈值区域边缘", "计算中心"]},
-        "tooltip": {"trigger": "item"},
+        "tooltip": {"trigger": "item", ":formatter": tooltip_formatter},
         "xAxis": {
             "type": "value",
             "name": "列方向距离（mm）",
@@ -744,6 +770,7 @@ def _threshold_outline_chart_options(result: SheetAnalysis) -> dict[str, Any]:
                 "name": "阈值区域边缘",
                 "type": "scatter",
                 "data": edge_data,
+                "encode": {"x": 0, "y": 1},
                 "symbolSize": 4,
                 "itemStyle": {"color": "#2563eb", "opacity": 0.8},
             },
@@ -751,6 +778,7 @@ def _threshold_outline_chart_options(result: SheetAnalysis) -> dict[str, Any]:
                 "name": "计算中心",
                 "type": "scatter",
                 "data": center_data,
+                "encode": {"x": 0, "y": 1},
                 "symbol": "cross",
                 "symbolSize": 18,
                 "itemStyle": {"color": "#dc2626"},
@@ -794,7 +822,12 @@ class PixelStatisticsTool:
             ) as upload_card:
                 ui.label("1. 上传数据").classes("font-bold text-gray-700")
                 self.upload_control = (
-                    ui.upload(on_upload=self._handle_upload, multiple=True, auto_upload=True)
+                    ui.upload(
+                        on_upload=self._handle_upload,
+                        multiple=True,
+                        auto_upload=True,
+                        label="选择或添加文件",
+                    )
                     .classes("w-full pixel-statistics-upload")
                     .props('accept=".xlsx,.xlsm,.xls,.csv,.cvs" max-files="20" max-file-size="52428800"')
                 )
@@ -804,6 +837,9 @@ class PixelStatisticsTool:
                         display: none !important;
                     }
                     .pixel-statistics-upload .q-uploader__file-status {
+                        display: none !important;
+                    }
+                    .pixel-statistics-upload .q-uploader__subtitle {
                         display: none !important;
                     }
                     @media (min-width: 1280px) {
@@ -821,8 +857,11 @@ class PixelStatisticsTool:
 
             with ui.card().classes("w-full h-full p-4 border shadow-sm") as settings_card:
                 ui.label("2. 常用分析设置").classes("font-bold text-gray-700")
-                with ui.row().classes("w-full flex-wrap gap-3 items-start"):
-                    with ui.column().classes("w-full sm:w-72 gap-2 rounded-lg border bg-slate-50 p-3"):
+                common_card_classes = "w-full h-full min-h-36 gap-2 rounded-lg border bg-slate-50 p-3"
+                with ui.element("div").classes(
+                    "w-full grid grid-cols-1 sm:grid-cols-2 2xl:grid-cols-5 gap-3 items-stretch"
+                ):
+                    with ui.column().classes(common_card_classes):
                         ui.label("比例尺").classes("text-sm font-semibold text-gray-700")
                         with ui.element("div").classes("w-full grid grid-cols-2 gap-2"):
                             self.scale_pixels_input = (
@@ -837,12 +876,12 @@ class PixelStatisticsTool:
                             )
                         ui.label("例：100 像素对应 5 mm").classes("text-xs text-gray-400")
 
-                    with ui.column().classes("w-full sm:w-72 gap-2 rounded-lg border bg-slate-50 p-3"):
+                    with ui.column().classes(common_card_classes):
                         ui.label("中心定位").classes("text-sm font-semibold text-gray-700")
                         self.center_mode_input = (
                             ui.select(
                                 {
-                                    "geometric": "数据几何中心",
+                                    "geometric": "数据全局中心",
                                     "maximum": "全局最大值位置",
                                     "threshold": "最大值百分比区域中心",
                                     "manual": "手工指定中心",
@@ -871,12 +910,12 @@ class PixelStatisticsTool:
                                 ui.number("中心列", value=725, min=1).props("outlined dense").classes("w-full")
                             )
 
-                    with ui.column().classes("w-full sm:w-72 gap-2 rounded-lg border bg-slate-50 p-3"):
+                    with ui.column().classes(common_card_classes):
                         ui.label("统计范围").classes("text-sm font-semibold text-gray-700")
                         self.region_mode_input = (
                             ui.select(
                                 {"full": "全域", "circle": "圆形区域", "rectangle": "矩形区域"},
-                                value="rectangle",
+                                value="circle",
                                 label="范围形状",
                             )
                             .props("outlined dense")
@@ -894,23 +933,23 @@ class PixelStatisticsTool:
                             .bind_visibility_from(self.region_mode_input, "value", lambda value: value == "rectangle")
                         ):
                             self.rectangle_rows_input = (
-                                ui.number("长度 mm（行）", value=336, min=0.000001, step=0.1)
+                                ui.number("高度 mm", value=336, min=0.000001, step=0.1)
                                 .props("outlined dense")
                                 .classes("w-full")
                             )
                             self.rectangle_cols_input = (
-                                ui.number("宽度 mm（列）", value=596, min=0.000001, step=0.1)
+                                ui.number("宽度 mm", value=596, min=0.000001, step=0.1)
                                 .props("outlined dense")
                                 .classes("w-full")
                             )
 
                     with (
                         ui.column()
-                        .classes("w-full sm:w-72 gap-2 rounded-lg border bg-slate-50 p-3")
+                        .classes(common_card_classes)
                         .bind_visibility_from(self.region_mode_input, "value", lambda value: value != "circle")
                     ):
                         ui.label("矩阵均匀性").classes("text-sm font-semibold text-gray-700")
-                        self.matrix_uniformity_input = ui.checkbox("启用矩阵中心采样", value=False).props("dense")
+                        self.matrix_uniformity_input = ui.checkbox("启用矩阵采样", value=False).props("dense")
                         with (
                             ui.element("div")
                             .classes("w-full grid grid-cols-2 gap-2")
@@ -932,20 +971,17 @@ class PixelStatisticsTool:
                             "text-xs text-gray-400"
                         ).bind_visibility_from(self.matrix_uniformity_input, "value")
 
-                    with ui.column().classes("w-full sm:w-72 gap-2 rounded-lg border bg-slate-50 p-3"):
+                    with ui.column().classes(common_card_classes):
                         ui.label("颗粒度").classes("text-sm font-semibold text-gray-700")
-                        self.merge_input = ui.checkbox("统计前进行颗粒度合并", value=False).props("dense")
+                        self.merge_input = ui.checkbox("统计前进行单元格合并", value=False).props("dense")
                         self.granularity_input = (
                             ui.number("合并颗粒度", value=10, min=1, step=1)
                             .props("outlined dense")
                             .classes("w-40 max-w-full")
                             .bind_visibility_from(self.merge_input, "value")
                         )
-                        ui.label("比例尺会自动换算为合并后网格/mm").classes(
-                            "text-xs text-amber-700"
-                        ).bind_visibility_from(self.merge_input, "value")
 
-                with ui.expansion("高级设置（通常无需修改）", icon="tune", value=False).classes(
+                with ui.expansion("高阶设置（通常无需修改）", icon="tune", value=False).classes(
                     "w-full mt-2 border rounded-lg bg-white"
                 ):
                     with ui.element("div").classes(
@@ -953,9 +989,9 @@ class PixelStatisticsTool:
                     ):
                         self.dimension_mode_input = (
                             ui.select(
-                                {"actual": "按实际尺寸", "fixed": "严格固定尺寸"},
+                                {"actual": "按表格实际尺寸", "fixed": "严格指定尺寸"},
                                 value="actual",
-                                label="尺寸策略",
+                                label="统计范围策略",
                             )
                             .props("outlined dense")
                             .classes("w-56 max-w-full")
@@ -990,7 +1026,7 @@ class PixelStatisticsTool:
 
             with ui.row().classes("w-full justify-end gap-3"):
                 ui.button("清空", on_click=self._reset).props("outline color=grey icon=restart_alt")
-                self.analyze_button = ui.button("开始统计", on_click=self._analyze).props(
+                self.analyze_button = ui.button("开始计算", on_click=self._analyze).props(
                     "color=primary icon=play_arrow"
                 )
                 self.export_button = ui.button("导出 Excel", on_click=self._export).props(
@@ -1005,6 +1041,10 @@ class PixelStatisticsTool:
         if not self.uploaded_files:
             ui.label("尚未上传文件").classes("text-sm text-gray-400")
             return
+        total_bytes = sum(len(content) for content in self.uploaded_files.values())
+        ui.label(
+            f"当前 {len(self.uploaded_files)} 个文件，共 {total_bytes / 1024 / 1024:.2f} MB"
+        ).classes("text-xs text-gray-500")
         with ui.row().classes("w-full gap-2 flex-wrap content-start"):
             for filename, content in self.uploaded_files.items():
                 with ui.chip(icon="description").props("outline color=primary"):
@@ -1039,7 +1079,7 @@ class PixelStatisticsTool:
                 ]
                 primary_rows = [{field: row[field] for field in primary_fields} for row in all_rows]
                 primary_columns = [
-                    {"name": field, "label": field, "field": field, "align": "left", "sortable": True}
+                    {"name": field, "label": field, "field": field, "align": "center", "sortable": True}
                     for field in primary_fields
                 ]
                 ui.table(
@@ -1067,7 +1107,7 @@ class PixelStatisticsTool:
                     ]
                     matrix_table_rows = [{field: row[field] for field in matrix_fields} for row in matrix_rows]
                     matrix_columns = [
-                        {"name": field, "label": field, "field": field, "align": "left", "sortable": True}
+                        {"name": field, "label": field, "field": field, "align": "center", "sortable": True}
                         for field in matrix_fields
                     ]
                     ui.table(
@@ -1093,7 +1133,7 @@ class PixelStatisticsTool:
                 ):
                     detail_rows = [{field: row[field] for field in detail_fields} for row in all_rows]
                     detail_columns = [
-                        {"name": field, "label": field, "field": field, "align": "left", "sortable": True}
+                        {"name": field, "label": field, "field": field, "align": "center", "sortable": True}
                         for field in detail_fields
                     ]
                     ui.table(

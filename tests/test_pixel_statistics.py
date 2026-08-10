@@ -52,6 +52,8 @@ class CenterLocationTests(unittest.TestCase):
         assert outline is not None
         self.assertEqual(outline.region_points, 15)
         self.assertGreater(len(outline.edge_points), 0)
+        self.assertEqual(len(outline.edge_points), len(outline.edge_values))
+        self.assertTrue(all(value >= outline.threshold for value in outline.edge_values))
 
         result = analyze_matrix(matrix, "sample.csv", "数据", settings)
         chart = _threshold_outline_chart_options(result)
@@ -68,6 +70,11 @@ class CenterLocationTests(unittest.TestCase):
         )
         self.assertIn("toFixed(2)", chart["xAxis"]["axisLabel"][":formatter"])
         self.assertIn("toFixed(2)", chart["yAxis"]["axisLabel"][":formatter"])
+        self.assertIn("X：", chart["tooltip"][":formatter"])
+        self.assertIn("Y：", chart["tooltip"][":formatter"])
+        self.assertIn("边缘点数值", chart["tooltip"][":formatter"])
+        self.assertIn("判定阈值", chart["tooltip"][":formatter"])
+        self.assertTrue(all(len(point) == 3 for point in chart["series"][0]["data"]))
 
 
 class StatisticsTests(unittest.TestCase):
