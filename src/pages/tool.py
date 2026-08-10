@@ -13,6 +13,7 @@ from src.tools.microlens_calculator import MicrolensCalculator
 from src.tools.mode_calculator import ModeCalculator
 from src.tools.operand_lookup import OperandLookupTool
 from src.tools.optical_curve_manager import OpticalCurveManagerTool
+from src.tools.pixel_statistics import PixelStatisticsTool
 from src.tools.simple_coupling_calculator import SimpleCouplingCalculator
 from src.tools.spectral_analyzer import SpectralAnalyzerTool
 from src.tools.spherical_lens_calculator import SphericalLensCalculator
@@ -22,6 +23,7 @@ from ..utils import (
     get_cache_busted_path,
     logout,
     setup_global_activity_tracking,
+    sync_current_user_role,
 )
 
 # 获取一个以此模块命名的 logger
@@ -49,7 +51,7 @@ def tool_page():
 
     # 获取用户信息
     current_user = app.storage.user.get("current_user")
-    current_role = app.storage.user.get("current_role")
+    current_role = sync_current_user_role()
 
     # 从全局存储中获取用户当前的头像设置
     # (在 main.py 中定义 "user_preferences")
@@ -134,6 +136,14 @@ def tool_page():
             "color": "sky",
             "cls": OperandLookupTool,
         },
+        {
+            "key": "pixel_statistics",
+            "title": "像素数据统计分析",
+            "subtitle": "颗粒度合并、自动中心与区域统计",
+            "icon": "analytics",
+            "color": "blue",
+            "cls": PixelStatisticsTool,
+        },
     ]
 
     # --- 新增：加载权限配置的函数 ---
@@ -175,7 +185,17 @@ def tool_page():
             ui.label(subtitle).classes("text-sm text-gray-400 text-center leading-tight")
 
     # --- 通用 Dialog 打开器 ---
-    def open_tool(ToolClass):
+    def has_tool_permission(tool_key, role):
+        if permissions_config is None:
+            return True
+        return role in permissions_config.get(tool_key, [])
+
+    def open_tool(ToolClass, tool_key):
+        # 点击时重新同步角色并再次校验，避免只依赖工具卡片的可见性。
+        latest_role = sync_current_user_role()
+        if not has_tool_permission(tool_key, latest_role):
+            ui.notify("当前角色没有使用此工具的权限", type="negative")
+            return
         # 创建全屏 Dialog
         dialog = ui.dialog().props("maximized transition-show=slide-up transition-hide=slide-down")
         # 【关键修复】: 当弹窗关闭时，从 DOM 中彻底删除该组件，释放内存和 ID 资源
@@ -219,13 +239,8 @@ def tool_page():
             is_visible = False
 
             # 情况1: 如果配置文件不存在(permissions_config is None)，默认全部显示(或全部隐藏，看你策略)
-            if permissions_config is None:
+            if has_tool_permission(tool_key, current_role):
                 is_visible = True
-            else:
-                # 情况2: 读取配置
-                allowed_roles = permissions_config.get(tool_key, [])
-                if current_role in allowed_roles:
-                    is_visible = True
 
             # --- 渲染卡片 ---
             if is_visible:
@@ -236,7 +251,7 @@ def tool_page():
                     tool["subtitle"],
                     tool["icon"],
                     tool["color"],
-                    lambda _=None, cls=tool["cls"]: open_tool(cls),
+                    lambda _=None, cls=tool["cls"], key=tool_key: open_tool(cls, key),
                 )
 
         # 如果没有任何权限，显示友好提示
