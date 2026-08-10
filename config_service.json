@@ -5835,6 +5835,22 @@
                     "option_label": "波特率19200"
                 },
                 {
+                    "option_id": "opt_4",
+                    "option_content": "38400",
+                    "option_out": "38400",
+                    "option_bold": "38400",
+                    "option_show": "串口通讯波特率选择{V}",
+                    "option_label": "波特率38400"
+                },
+                {
+                    "option_id": "opt_5",
+                    "option_content": "57600",
+                    "option_out": "57600",
+                    "option_bold": "57600",
+                    "option_show": "串口通讯波特率选择{V}",
+                    "option_label": "波特率57600"
+                },
+                {
                     "option_id": "opt_3",
                     "option_content": "115200",
                     "option_out": "115200",
@@ -7617,7 +7633,7 @@
             ]
         }
     },
-    "config_timestamp": "2026-08-07T14:23:58.328331",
-    "excel_version_hash": "d0afa21f",
+    "config_timestamp": "2026-08-10T12:16:25.122857",
+    "excel_version_hash": "348e59e3",
     "entry_status": false
 }

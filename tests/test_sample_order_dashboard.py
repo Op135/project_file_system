@@ -407,6 +407,81 @@ class SampleOrderCalculationTests(unittest.TestCase):
         self.assertEqual([item["sample_order_no"] for item in actual_details], ["Y-DELAYED"])
         self.assertEqual(actual_details[0]["application_qty"], 3)
 
+    def test_delay_reason_statistics_support_threshold_top_n_and_sample_count(self):
+        first = make_record()
+        first["basic_info"].update({"planned_delivery_date": "2026-07-20", "application_qty": 3})
+        first["extensions"] = [
+            dashboard.normalize_extension({"reason": "等待物料", "target_date": "2026-07-25"}),
+            dashboard.normalize_extension({"reason": "等待物料", "target_date": "2026-07-28"}),
+            dashboard.normalize_extension({"reason": "客户变更", "target_date": "2026-07-30"}),
+        ]
+        first["delay_nature"]["tag"] = "等待物料"
+
+        second = make_record()
+        second["record_id"] = "record-second"
+        second["basic_info"].update({"planned_delivery_date": "2026-07-21", "application_qty": 2})
+        second["extensions"] = [
+            dashboard.normalize_extension({"reason": "等待物料", "target_date": "2026-07-26"})
+        ]
+        second["delay_nature"]["tag"] = "等待物料"
+
+        third = make_record()
+        third["record_id"] = "record-third"
+        third["basic_info"].update({"planned_delivery_date": "2026-06-20", "application_qty": 4})
+        third["extensions"] = [
+            dashboard.normalize_extension({"reason": "内部排产", "target_date": "2026-06-25"})
+        ]
+        third["delay_nature"]["tag"] = "内部排产"
+
+        outside = make_record()
+        outside["record_id"] = "record-outside"
+        outside["basic_info"]["planned_delivery_date"] = "2025-08-20"
+        outside["extensions"] = [
+            dashboard.normalize_extension({"reason": "等待物料", "target_date": "2025-08-25"})
+        ]
+        outside["delay_nature"]["tag"] = "等待物料"
+
+        unmarked = make_record()
+        unmarked["record_id"] = "record-unmarked"
+        unmarked["basic_info"]["planned_delivery_date"] = "2026-07-22"
+        unmarked["extensions"] = [
+            dashboard.normalize_extension({"reason": "等待物料", "target_date": "2026-07-27"})
+        ]
+        records = {
+            record["record_id"]: record
+            for record in (first, second, third, outside, unmarked)
+        }
+
+        order_statistics = dashboard.get_sample_order_delay_reason_statistics(
+            records,
+            date(2026, 8, 10),
+            minimum_threshold=1,
+            top_n=2,
+        )
+        self.assertEqual([item["reason"] for item in order_statistics["visible_reasons"]], ["等待物料"])
+        self.assertEqual([item["reason"] for item in order_statistics["top_reasons"]], ["等待物料", "内部排产"])
+        waiting_material = order_statistics["top_reasons"][0]
+        july_index = order_statistics["months"].index("2026-07")
+        self.assertEqual(waiting_material["total"], 2)
+        self.assertEqual(waiting_material["monthly"][july_index], 2)
+
+        sample_statistics = dashboard.get_sample_order_delay_reason_statistics(
+            records,
+            date(2026, 8, 10),
+            count_basis="samples",
+            minimum_threshold=4,
+            top_n=2,
+        )
+        self.assertEqual(sample_statistics["visible_reasons"][0]["reason"], "等待物料")
+        self.assertEqual(sample_statistics["visible_reasons"][0]["total"], 5)
+        impact_chart = dashboard.build_sample_order_delay_reason_impact_chart(sample_statistics)
+        trend_chart = dashboard.build_sample_order_delay_reason_trend_chart(sample_statistics)
+        self.assertEqual(impact_chart["xAxis"]["data"], ["等待物料"])
+        self.assertEqual(impact_chart["yAxis"]["name"], "样品数")
+        self.assertEqual(impact_chart["yAxis"]["nameLocation"], "middle")
+        self.assertEqual(trend_chart["yAxis"]["name"], "样品数")
+        self.assertEqual(trend_chart["yAxis"]["nameLocation"], "middle")
+
     def test_actual_date_basis_groups_completed_orders_and_excludes_incomplete(self):
         on_time = make_record()
         on_time["basic_info"]["planned_delivery_date"] = "2026-07-31"

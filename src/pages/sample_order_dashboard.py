@@ -1673,6 +1673,152 @@ def build_sample_order_statistics_chart(
     }
 
 
+def get_sample_order_delay_reason_statistics(
+    all_records: object,
+    today: Optional[date] = None,
+    *,
+    count_basis: str = "orders",
+    minimum_threshold: int = 0,
+    top_n: int = 5,
+) -> dict[str, Any]:
+    """按计划交货月份统计近12个月延期性质标记的影响量和月度趋势。"""
+    reference_date = today or date.today()
+    reference_month_number = reference_date.year * 12 + reference_date.month - 1
+    month_numbers = range(reference_month_number - 11, reference_month_number + 1)
+    months = [f"{number // 12:04d}-{number % 12 + 1:02d}" for number in month_numbers]
+    month_set = set(months)
+    normalized_count_basis = "samples" if count_basis == "samples" else "orders"
+    threshold = max(0, normalize_int(minimum_threshold, 0))
+    normalized_top_n = max(1, normalize_int(top_n, 5))
+
+    if isinstance(all_records, dict):
+        raw_records = all_records.values()
+    elif isinstance(all_records, (list, tuple)):
+        raw_records = all_records
+    else:
+        raw_records = []
+
+    reason_monthly: dict[str, dict[str, int]] = {}
+    for raw_record in raw_records:
+        if not isinstance(raw_record, dict):
+            continue
+        record = merge_with_sample_order_template(raw_record)
+        planned_date = parse_iso_date(record["basic_info"].get("planned_delivery_date"))
+        if planned_date is None:
+            continue
+        month_key = planned_date.strftime("%Y-%m")
+        if month_key not in month_set:
+            continue
+
+        nature_tag = option_text(record["delay_nature"].get("tag"))
+        if not nature_tag:
+            continue
+        increment = (
+            max(0, normalize_int(record["basic_info"].get("application_qty"), 0))
+            if normalized_count_basis == "samples"
+            else 1
+        )
+        monthly_counts = reason_monthly.setdefault(nature_tag, {month: 0 for month in months})
+        monthly_counts[month_key] += increment
+
+    ranked_reasons = sorted(
+        (
+            {
+                "reason": reason,
+                "total": sum(monthly_counts.values()),
+                "monthly": [monthly_counts[month] for month in months],
+            }
+            for reason, monthly_counts in reason_monthly.items()
+        ),
+        key=lambda item: (-normalize_int(item.get("total"), 0), option_text(item.get("reason"))),
+    )
+    return {
+        "months": months,
+        "visible_reasons": [item for item in ranked_reasons if normalize_int(item.get("total"), 0) > threshold],
+        "top_reasons": ranked_reasons[:normalized_top_n],
+        "count_basis": normalized_count_basis,
+        "minimum_threshold": threshold,
+        "top_n": normalized_top_n,
+    }
+
+
+def build_sample_order_delay_reason_impact_chart(statistics: dict[str, Any]) -> dict:
+    """生成以延期性质标记为横轴的影响量柱状图。"""
+    reasons = statistics.get("visible_reasons", [])
+    valid_reasons = [item for item in reasons if isinstance(item, dict)] if isinstance(reasons, list) else []
+    value_name = "样品数" if statistics.get("count_basis") == "samples" else "订单数"
+    return {
+        "tooltip": {"trigger": "axis", "axisPointer": {"type": "shadow"}},
+        "grid": {"top": 25, "bottom": 105, "left": 55, "right": 25, "containLabel": True},
+        "xAxis": {
+            "type": "category",
+            "data": [option_text(item.get("reason")) for item in valid_reasons],
+            "axisTick": {"show": False},
+            "axisLabel": {"interval": 0, "rotate": 35, "width": 140, "overflow": "truncate"},
+        },
+        "yAxis": {
+            "type": "value",
+            "name": value_name,
+            "nameLocation": "middle",
+            "nameGap": 45,
+            "nameRotate": 90,
+            # "nameTextStyle": {"fontWeight": "bold", "color": "#475569"},
+            "nameTextStyle": {"fontSize": 14, "color": "#475569"},
+            "minInterval": 1,
+            "splitLine": {"lineStyle": {"type": "dashed"}},
+        },
+        "series": [
+            {
+                "name": value_name,
+                "type": "bar",
+                "barMaxWidth": 28,
+                "data": [normalize_int(item.get("total"), 0) for item in valid_reasons],
+                "itemStyle": {"color": "#f97316", "borderRadius": [4, 4, 0, 0]},
+                "label": {"show": True, "position": "top", "fontWeight": "bold"},
+            }
+        ],
+    }
+
+
+def build_sample_order_delay_reason_trend_chart(statistics: dict[str, Any]) -> dict:
+    """生成延期性质标记 Top N 的逐月变化折线图。"""
+    months = statistics.get("months", [])
+    top_reasons = statistics.get("top_reasons", [])
+    valid_reasons = [item for item in top_reasons if isinstance(item, dict)] if isinstance(top_reasons, list) else []
+    value_name = "样品数" if statistics.get("count_basis") == "samples" else "订单数"
+    return {
+        "tooltip": {"trigger": "axis"},
+        "legend": {"type": "scroll", "top": 0},
+        "grid": {"top": 55, "bottom": 35, "left": 55, "right": 25, "containLabel": True},
+        "xAxis": {
+            "type": "category",
+            "data": months if isinstance(months, list) else [],
+            "axisLabel": {"interval": 0, "rotate": 30},
+        },
+        "yAxis": {
+            "type": "value",
+            "name": value_name,
+            "nameLocation": "middle",
+            "nameGap": 45,
+            "nameRotate": 90,
+            "nameTextStyle": {"fontSize": 14, "color": "#475569"},
+            "minInterval": 1,
+            "splitLine": {"lineStyle": {"type": "dashed"}},
+        },
+        "series": [
+            {
+                "name": option_text(item.get("reason")),
+                "type": "line",
+                "data": item.get("monthly", []),
+                "symbolSize": 7,
+                "smooth": False,
+                "emphasis": {"focus": "series"},
+            }
+            for item in valid_reasons
+        ],
+    }
+
+
 @ui.page("/sample_order_dashboard")
 async def sample_order_dashboard_page(record_id: str = "") -> None:
     """构建样品单执行看板页面。"""
@@ -1718,6 +1864,7 @@ async def sample_order_dashboard_page(record_id: str = "") -> None:
     import_dialog = ui.dialog().props("persistent")
     statistics_dialog = ui.dialog()
     statistics_detail_dialog = ui.dialog()
+    delay_reason_statistics_dialog = ui.dialog()
 
     def open_statistics_dialog() -> None:
         """打开可切换计划/实际交样月份口径的订单统计。"""
@@ -1873,6 +2020,96 @@ async def sample_order_dashboard_page(record_id: str = "") -> None:
                 )
             )
         statistics_dialog.open()
+
+    def open_delay_reason_statistics_dialog() -> None:
+        """打开近12个月延期性质标记影响量和趋势统计。"""
+        all_records = get_all_sample_order_records()
+        delay_reason_statistics_dialog.clear()
+        with delay_reason_statistics_dialog, ui.card().classes("w-[1200px] max-w-[97vw] h-[90vh] max-h-[900px] p-5"):
+            with ui.row().classes("w-full items-center justify-between shrink-0"):
+                with ui.row().classes("items-center gap-2"):
+                    ui.icon("query_stats", color="orange", size="md")
+                    ui.label("近12个月延期原因统计").classes("text-xl font-bold")
+                ui.button(icon="close", on_click=delay_reason_statistics_dialog.close).props("flat round")
+
+            with ui.row().classes("w-full items-center gap-4 shrink-0 bg-orange-50 rounded-lg p-3"):
+                reason_count_basis_toggle = (
+                    ui.toggle(
+                        {"orders": "订单数", "samples": "样品数"},
+                        value="orders",
+                    )
+                    .props("color=grey-4 text-color=grey-8 toggle-color=orange toggle-text-color=white unelevated")
+                    .classes("shrink-0")
+                )
+                minimum_threshold_input = (
+                    ui.number("最低阈值（显示 > 阈值）", value=0, min=0, precision=0)
+                    .props("outlined dense")
+                    .classes("w-52")
+                )
+                top_n_input = (
+                    ui.number("逐月趋势 Top N", value=5, min=1, max=20, precision=0)
+                    .props("outlined dense")
+                    .classes("w-44")
+                )
+                # ui.label(
+                #     "每张订单按当前延期性质标记归类，未标记的不统计；样品数按申请数量累加。"
+                #     "只统计近12个月计划交样订单。"
+                # ).classes("text-xs text-orange-800 flex-1")
+
+            reason_chart_container = ui.column().classes("w-full flex-grow min-h-0 overflow-y-auto gap-4")
+
+            def render_delay_reason_statistics(
+                count_basis: object,
+                minimum_threshold: object,
+                top_n: object,
+            ) -> None:
+                normalized_count_basis = "samples" if option_text(count_basis) == "samples" else "orders"
+                statistics = get_sample_order_delay_reason_statistics(
+                    all_records,
+                    count_basis=normalized_count_basis,
+                    minimum_threshold=max(0, normalize_int(minimum_threshold, 0)),
+                    top_n=max(1, normalize_int(top_n, 5)),
+                )
+                visible_reasons = statistics["visible_reasons"]
+                top_reasons = statistics["top_reasons"]
+                value_name = "样品数" if normalized_count_basis == "samples" else "订单数"
+                reason_chart_container.clear()
+                with reason_chart_container:
+                    with ui.card().classes("w-full p-4 shadow-sm border shrink-0"):
+                        ui.label(f"延期性质影响的{value_name}（阈值 {statistics['minimum_threshold']}）").classes(
+                            "text-base font-bold text-slate-700"
+                        )
+                        if visible_reasons:
+                            impact_chart = build_sample_order_delay_reason_impact_chart(statistics)
+                            ui.echart(impact_chart).classes("w-full h-[430px]")
+                        else:
+                            ui.label("当前阈值下没有符合条件的延期性质标记。").classes(
+                                "w-full text-center text-gray-400 py-12"
+                            )
+
+                    with ui.card().classes("w-full p-4 shadow-sm border shrink-0"):
+                        ui.label(
+                            f"延期性质前 {statistics['top_n']} 名逐月变化（按近12个月累计{value_name}排序）"
+                        ).classes("text-base font-bold text-slate-700")
+                        if top_reasons:
+                            ui.echart(build_sample_order_delay_reason_trend_chart(statistics)).classes(
+                                "w-full h-[380px]"
+                            )
+                        else:
+                            ui.label("近12个月暂无延期性质标记数据。").classes("w-full text-center text-gray-400 py-12")
+
+            def refresh_delay_reason_statistics(_event: Any = None) -> None:
+                render_delay_reason_statistics(
+                    reason_count_basis_toggle.value,
+                    minimum_threshold_input.value,
+                    top_n_input.value,
+                )
+
+            render_delay_reason_statistics("orders", 0, 5)
+            reason_count_basis_toggle.on_value_change(refresh_delay_reason_statistics)
+            minimum_threshold_input.on_value_change(refresh_delay_reason_statistics)
+            top_n_input.on_value_change(refresh_delay_reason_statistics)
+        delay_reason_statistics_dialog.open()
 
     def open_sample_order_import_dialog() -> None:
         """打开Excel上传、预览和确认导入弹窗。"""
@@ -2502,6 +2739,11 @@ async def sample_order_dashboard_page(record_id: str = "") -> None:
                         icon="stacked_bar_chart",
                         on_click=open_statistics_dialog,
                     ).props("flat color=primary")
+                    ui.button(
+                        "延期原因统计",
+                        icon="query_stats",
+                        on_click=open_delay_reason_statistics_dialog,
+                    ).props("flat color=orange")
                 with ui.row().classes("items-center gap-3"):
                     ui.label("默认仅显示未交样订单，点击卡片查看详情").classes("text-xs text-gray-500")
                     if can_edit_base:
