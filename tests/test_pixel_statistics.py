@@ -15,6 +15,8 @@ from src.tools.pixel_statistics import (
     PixelStatisticsSettings,
     PixelStatisticsTool,
     _ExcelBytesBuffer,
+    _add_formula_header_tooltips,
+    _result_table_columns,
     _threshold_outline_chart_options,
     analyze_matrix,
     analyze_uploaded_files,
@@ -330,6 +332,20 @@ class StatisticsTests(unittest.TestCase):
 
 
 class UploadStateTests(unittest.TestCase):
+    def test_formula_columns_have_hover_definitions_in_the_header_slot(self):
+        columns = _result_table_columns(["平均值", "最小/最大", "极值最大偏差/平均值"])
+        table = ui.table(columns=columns, rows=[])
+
+        _add_formula_header_tooltips(table)
+
+        self.assertEqual(columns[0]["tooltip"], "")
+        self.assertIn("最小值 ÷ 最大值", columns[1]["tooltip"])
+        self.assertIn("max(|最大值 - 平均值|", columns[2]["tooltip"])
+        self.assertIn("header-cell", table.slots)
+        template = table.slots["header-cell"].template
+        assert template is not None
+        self.assertIn("q-tooltip", template)
+
     def test_more_than_six_outline_charts_are_appended_one_row_at_a_time(self):
         matrix = np.ones((5, 5), dtype=float)
         settings = PixelStatisticsSettings(

@@ -17,6 +17,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 from nicegui import run, ui
+from nicegui.elements.table import Table
 from nicegui.events import ScrollEventArguments
 
 SUPPORTED_EXTENSIONS = {".xlsx", ".xlsm", ".xls", ".csv", ".cvs"}
@@ -24,6 +25,66 @@ MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 MAX_OUTLINE_CHART_POINTS = 800
 OUTLINE_EAGER_LIMIT = 6
 OUTLINE_SCROLL_BATCH_SIZE = 2
+
+STATISTIC_FORMULA_TOOLTIPS = {
+    "最小/最大": "最小值 ÷ 最大值；最大值为 0 时结果不可定义。",
+    "(最大-最小)/(最大+最小)": "(最大值 - 最小值) ÷ (最大值 + 最小值)；分母为 0 时结果不可定义。",
+    "极值最大偏差/平均值": (
+        "max(|最大值 - 平均值|, |最小值 - 平均值|) ÷ 平均值；平均值为 0 时结果不可定义。"
+    ),
+    "相对总体标准差": "总体标准差 ÷ 平均值；平均值为 0 时结果不可定义。",
+    "相对样本标准差": "样本标准差 ÷ 平均值；有效样本少于 2 个或平均值为 0 时结果不可定义。",
+    "矩阵最小/最大": "矩阵采样值最小值 ÷ 最大值；最大值为 0 时结果不可定义。",
+    "矩阵(最大-最小)/(最大+最小)": (
+        "(矩阵采样值最大值 - 最小值) ÷ (最大值 + 最小值)；分母为 0 时结果不可定义。"
+    ),
+    "矩阵极值最大偏差/平均值": (
+        "max(|矩阵采样值最大值 - 平均值|, |最小值 - 平均值|) ÷ 平均值；"
+        "平均值为 0 时结果不可定义。"
+    ),
+    "矩阵相对总体标准差": "矩阵采样值的总体标准差 ÷ 平均值；平均值为 0 时结果不可定义。",
+    "矩阵相对样本标准差": (
+        "矩阵采样值的样本标准差 ÷ 平均值；有效样本少于 2 个或平均值为 0 时结果不可定义。"
+    ),
+}
+
+FORMULA_HEADER_SLOT = """
+    <q-th :props="props">
+        <span>{{ props.col.label }}</span>
+        <q-icon
+            v-if="props.col.tooltip"
+            name="help_outline"
+            size="14px"
+            class="q-ml-xs text-grey-6"
+        />
+        <q-tooltip
+            v-if="props.col.tooltip"
+            anchor="bottom middle"
+            self="top middle"
+            style="max-width: 380px; white-space: normal;"
+        >
+            {{ props.col.tooltip }}
+        </q-tooltip>
+    </q-th>
+"""
+
+
+def _result_table_columns(fields: list[str]) -> list[dict[str, Any]]:
+    return [
+        {
+            "name": field,
+            "label": field,
+            "field": field,
+            "align": "center",
+            "sortable": True,
+            "tooltip": STATISTIC_FORMULA_TOOLTIPS.get(field, ""),
+        }
+        for field in fields
+    ]
+
+
+def _add_formula_header_tooltips(table: Table) -> None:
+    table.add_slot("header-cell", FORMULA_HEADER_SLOT)
 
 
 class _ExcelBytesBuffer(io.BytesIO):
@@ -1113,15 +1174,13 @@ class PixelStatisticsTool:
                     "相对样本标准差",
                 ]
                 primary_rows = [{field: row[field] for field in primary_fields} for row in all_rows]
-                primary_columns = [
-                    {"name": field, "label": field, "field": field, "align": "center", "sortable": True}
-                    for field in primary_fields
-                ]
-                ui.table(
+                primary_columns = _result_table_columns(primary_fields)
+                primary_table = ui.table(
                     columns=primary_columns,
                     rows=primary_rows,
                     pagination={"rowsPerPage": 10},
                 ).classes("w-full").props("dense flat bordered wrap-cells")
+                _add_formula_header_tooltips(primary_table)
 
                 matrix_rows = [row for result, row in zip(self.batch.results, all_rows) if result.matrix_uniformity]
                 if matrix_rows:
@@ -1142,15 +1201,13 @@ class PixelStatisticsTool:
                         "矩阵相对样本标准差",
                     ]
                     matrix_table_rows = [{field: row[field] for field in matrix_fields} for row in matrix_rows]
-                    matrix_columns = [
-                        {"name": field, "label": field, "field": field, "align": "center", "sortable": True}
-                        for field in matrix_fields
-                    ]
-                    ui.table(
+                    matrix_columns = _result_table_columns(matrix_fields)
+                    matrix_table = ui.table(
                         columns=matrix_columns,
                         rows=matrix_table_rows,
                         pagination={"rowsPerPage": 10},
                     ).classes("w-full").props("dense flat bordered wrap-cells")
+                    _add_formula_header_tooltips(matrix_table)
                 detail_fields = [
                     "文件",
                     "工作表",
@@ -1168,10 +1225,7 @@ class PixelStatisticsTool:
                     "w-full mt-2 border rounded-lg bg-slate-50"
                 ):
                     detail_rows = [{field: row[field] for field in detail_fields} for row in all_rows]
-                    detail_columns = [
-                        {"name": field, "label": field, "field": field, "align": "center", "sortable": True}
-                        for field in detail_fields
-                    ]
+                    detail_columns = _result_table_columns(detail_fields)
                     ui.table(
                         columns=detail_columns,
                         rows=detail_rows,
