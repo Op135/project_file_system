@@ -103,7 +103,7 @@
         "4": {
             "condition": "1==代工",
             "node_id": "4",
-            "guide_content": "代工产品各项收入内容",
+            "guide_content": "代工产品各项输入内容",
             "answer_type": "多行文本",
             "input_num_accor": "2",
             "input_name_accor": "3",
