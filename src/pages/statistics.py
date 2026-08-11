@@ -13,7 +13,9 @@ from ..config import BASE_DIR, IMG_DIR, OVER_DIR, PRESET_AVATARS, PROJECT_STATE_
 from ..utils import (
     get_cache_busted_path,
     logout,
+    overview_role_update,
     setup_global_activity_tracking,
+    update_overview_charge_pending_dic,
 )
 
 # 获取 logger
@@ -237,11 +239,125 @@ def statistics_page():
     current_avatar_path = user_prefs.get("avatar", PRESET_AVATARS[0])
     current_display_path = get_cache_busted_path(current_avatar_path)
 
-    # -------------------------------------------------------------------------
-    # 业务逻辑函数 (保持原有逻辑核心，适配新UI容器)
-    # -------------------------------------------------------------------------
+    # === 新增功能：配置项目概述负责人弹窗 ===
+    def open_set_table_dialog():
+        dialog.clear()
+        # 增加 max-w-[90vw] 以适配不同浏览器页面大中小情况
+        with dialog, ui.card().classes("w-[500px] max-w-[90vw]"):
+            ui.label("配置概述负责人").classes("text-xl font-bold mb-4")
 
-    # --- 核心UI渲染逻辑：单行刷新 ---
+            # 获取所有项目名列表并排序，供自动补全提示使用
+            project_list = list(app.storage.general.get("project_summary", {}).keys())
+            project_list.sort()
+
+            form_data = {"project_name": ""}
+            role_form_data = {}
+
+            # 动态表单容器，用于在切换项目时重绘输入框
+            form_container = ui.column().classes("w-full gap-2")
+
+            def on_project_change(e):
+                pn = e.value
+
+                # 每次输入变化时先清空下方容器
+                form_container.clear()
+                role_form_data.clear()
+
+                # 【核心拦截】：只有当输入的项目名确切存在于总表里时，才进行配置项的渲染
+                if not pn or pn not in app.storage.general.get("project_summary", {}):
+                    return
+
+                # 调用 utils 里的 overview_role_update 进行初始化绑定准备
+                overview_role_update(pn, "initialize")
+
+                # 获取该项目最新的角色字典
+                current_roles = app.storage.general["overview_role"].get(pn, {})
+
+                with form_container:
+                    # 遍历系统中所有的角色配置（如 光学、结构、硬件、软件、UI 等）
+                    for role in app.storage.general.get("over_config_data", {}).keys():
+                        # 获取现有人员，去掉自动记录时的“最近：”或“最多：”前缀，以展示纯净人名
+                        latest_user_raw = current_roles.get(role, {}).get("latest_user", "")
+                        clean_user = latest_user_raw.split("：")[1] if "：" in latest_user_raw else latest_user_raw
+                        role_form_data[role] = clean_user
+
+                        ui.input(f"{role}负责人", value=clean_user).bind_value(role_form_data, role).props(
+                            "outlined"
+                        ).classes("w-full")
+
+            # 将 select 替换为带有 autocomplete 的 input
+            # 支持直接输入，也支持下拉自动补全选择，增加 clearable 方便一键清空重新输入
+            ui.input("输入或选择项目名", autocomplete=project_list).bind_value(
+                form_data, "project_name"
+            ).on_value_change(on_project_change).props("outlined clearable").classes("w-full mb-4")
+
+            with ui.row().classes("w-full justify-end mt-4"):
+
+                async def on_confirm():
+                    pn = form_data["project_name"]
+                    # 提交前再次校验项目名是否合法
+                    if not pn or pn not in app.storage.general.get("project_summary", {}):
+                        ui.notify("请先输入有效的项目名！", type="warning", position="bottom")
+                        return
+
+                    # 运行时初始化，安全获取全局待定状态字典
+                    pending_storage = app.storage.general.setdefault("overview_charge_pending", {})
+
+                    # 将填写的负责人更新到全局存储中
+                    for role, user in role_form_data.items():
+                        new_user = user.strip()
+
+                        # 获取原负责人
+                        old_user_raw = app.storage.general["overview_role"][pn].get(role, {}).get("latest_user", "")
+                        old_user = old_user_raw.split("：")[1] if "：" in old_user_raw else old_user_raw
+
+                        # 【核心逻辑】：只有当负责人发生实质性变化时，才进行后台数据清洗与更新
+                        if old_user != new_user:
+                            # 1. 更新存储标志
+                            if new_user:
+                                # 特意标记为最近指定，这个特殊标记，给全局刷新概述负责人时，可以跳过，不然指定后又被刷新掉
+                                app.storage.general["overview_role"][pn][role]["latest_user"] = f"最近指定：{new_user}"
+                                app.storage.general["overview_role"][pn][role]["latest_designation_time"] = (
+                                    datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                                )
+                            else:
+                                app.storage.general["overview_role"][pn][role]["latest_user"] = ""
+
+                            # 2. 获取该角色下的所有概述项配置，用于精准剥离旧数据和生成新数据
+                            role_config = app.storage.general.get("over_config_data", {}).get(role, {})
+
+                            for group_li in role_config.values():
+                                for chip_dic in group_li:
+                                    # title = chip_dic.get("title")
+                                    label = chip_dic.get("label")
+
+                                    # 步骤 A: 抹除原负责人的待办数据（字典树精准修剪）
+                                    # 原负责人存在，且该项目在原负责人下有待办数据，则清理掉
+                                    if old_user and old_user in pending_storage:
+                                        if pn in pending_storage[old_user]:
+                                            pending_storage[old_user][pn].pop(label, None)
+                                            # 如果该项目下没有其它待办了，清理空项目节点，防止内存泄漏
+                                            if not pending_storage[old_user][pn]:
+                                                pending_storage[old_user].pop(pn, None)
+                                    # 如果原负责人是空的，且该项目在“待定负责人”下有待办数据，也要清理掉
+                                    elif not old_user and pn in pending_storage.get("待定负责人", {}):
+                                        pending_storage["待定负责人"][pn].pop(label, None)
+                                        if not pending_storage["待定负责人"][pn]:
+                                            pending_storage["待定负责人"].pop(pn, None)
+
+                                    # 步骤 B: 利用 local 模式，极速刷新新负责人的待办状态
+                                    # 原负责人空、——、有特定人，均可直接刷新新负责人待办状态，确保数据一致性
+                                    if new_user and new_user != "——" and label:
+                                        update_overview_charge_pending_dic("local", new_user, pn, label)
+                            # 用角色负责人更新函数自动更新一下，确保不会因为代码逻辑问题，导致手动配置无效
+                            overview_role_update(pn, role)
+                    ui.notify(f"项目 {pn} 各角色概述负责人配置成功！", type="positive", position="bottom")
+                    dialog.close()
+
+                ui.button("确认配置", on_click=on_confirm).props("color=blue")
+                ui.button("取消", on_click=dialog.close).props("color=grey-8")
+
+        dialog.open()
 
     # -------------------------------------------------------------------------
     # 页面整体布局
@@ -259,6 +375,8 @@ def statistics_page():
                 ui.menu_item(f"你好, {app.storage.user.get('current_user', '匿名')}").style("white-space: nowrap;")
                 ui.separator().props("size=1px")
                 ui.menu_item("返回主界面", on_click=lambda: ui.navigate.to("/main"))
+                ui.separator().props("size=1px")
+                ui.menu_item("配置概述负责人", on_click=open_set_table_dialog)
                 ui.separator().props("size=1px")
                 ui.menu_item("注销登录", on_click=lambda: logout())
 
