@@ -10,6 +10,20 @@ import pandas as pd
 from src.pages import statistics
 
 
+class OverviewCompletionClassificationTests(unittest.TestCase):
+    def test_unassigned_owner_has_the_highest_priority(self):
+        self.assertEqual(
+            statistics.classify_overview_completion({"缺必填", "有待定"}, has_unassigned_owner=True),
+            "存在概述无负责人",
+        )
+
+    def test_existing_categories_keep_their_priority(self):
+        self.assertEqual(statistics.classify_overview_completion({"缺必填", "有待定"}), "存在缺必填")
+        self.assertEqual(statistics.classify_overview_completion({"有待定", "缺需填"}), "无缺必填有待定")
+        self.assertEqual(statistics.classify_overview_completion({"缺需填"}), "仅缺需填")
+        self.assertEqual(statistics.classify_overview_completion(set()), "概述已完成")
+
+
 class OverviewManagementSnapshotTests(unittest.TestCase):
     def test_projects_are_deduplicated_and_completion_uses_the_users_scope(self):
         overview_role = {

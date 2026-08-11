@@ -87,6 +87,20 @@ def build_overview_management_snapshot(overview_role, pending_data):
     return snapshot
 
 
+def classify_overview_completion(statuses, has_unassigned_owner=False):
+    """按优先级返回已录需求项目的概述完成度分类。"""
+    if has_unassigned_owner:
+        return "概述无负责人"
+    status_set = set(statuses or [])
+    if "缺必填" in status_set:
+        return "存在缺必填"
+    if "有待定" in status_set:
+        return "有待定"
+    if "缺需填" in status_set:
+        return "仅缺需填"
+    return "概述已完成"
+
+
 def record_daily_stats(project_summary, pending_data, overview_role=None):
     """
     持久化记录函数 (由 APScheduler 每日定时调用)
@@ -260,6 +274,8 @@ def statistics_page():
                 req_ver_data = app.storage.general.get("project_req_max_ver", {})
                 # 数据结构：{人名：{项目名：{概述项label:状态}}}，用于待办统计分析,状态主要有：缺需填、缺必填、有待定
                 pending_data = copy.deepcopy(app.storage.general.get("overview_charge_pending", {}))
+                # 存在概述未确定负责人的项目
+                overview_pending_projects = set(pending_data.get("待定负责人", {}))
                 management_pending_data = copy.deepcopy(pending_data)
                 for user, pending_project_dic in list(
                     pending_data.items()
@@ -293,12 +309,8 @@ def statistics_page():
                     dialog.clear()
                     with dialog, ui.card().classes("w-full max-w-4xl bg-white"):
                         with ui.row().classes("w-full justify-between items-center mb-4 border-b pb-2"):
-                            ui.label(f"{title}（共 {len(project_list)} 项）").classes(
-                                "text-xl font-bold text-gray-800"
-                            )
-                            ui.button(icon="close", on_click=dialog.close).props(
-                                "flat round dense text-color=gray"
-                            )
+                            ui.label(f"{title}（共 {len(project_list)} 项）").classes("text-xl font-bold text-gray-800")
+                            ui.button(icon="close", on_click=dialog.close).props("flat round dense text-color=gray")
 
                         with ui.scroll_area().classes("w-full max-h-[60vh] p-2"):
                             if not project_list:
@@ -344,6 +356,7 @@ def statistics_page():
                             el.chart.on('click', el.__projectDetailHandler);
                         }}, 200);
                     """)
+
                 # =========================================================
                 # 左侧列 (主要工作流)
                 # =========================================================
@@ -393,14 +406,14 @@ def statistics_page():
                                         if "缺必填" in statuses:
                                             return "存在缺必填"
                                         if "有待定" in statuses:
-                                            return "无缺必填有待定"
+                                            return "有待定"
                                         if "缺需填" in statuses:
                                             return "仅缺需填"
                                         return None
 
                                     stack_meta = {
                                         "存在缺必填": {"color": "#ef4444"},
-                                        "无缺必填有待定": {"color": "#f59e0b"},
+                                        "有待定": {"color": "#f59e0b"},
                                         "仅缺需填": {"color": "#3b82f6"},
                                     }
                                     stack_order = list(stack_meta.keys())
@@ -420,7 +433,7 @@ def statistics_page():
                                         key=lambda user: (
                                             -sum(len(user_stack_details[user][key]) for key in stack_order),
                                             -len(user_stack_details[user]["存在缺必填"]),
-                                            -len(user_stack_details[user]["无缺必填有待定"]),
+                                            -len(user_stack_details[user]["有待定"]),
                                             -len(user_stack_details[user]["仅缺需填"]),
                                             user,
                                         ),
@@ -513,7 +526,7 @@ def statistics_page():
                                             "type": "category",
                                             "data": user_list,
                                             "axisTick": {"show": False},
-                                            "axisLabel": {"interval": 0, "rotate": 30},  # 倾斜文字防止人名重叠
+                                            "axisLabel": {"interval": 0, "rotate": 0},  # 倾斜文字防止人名重叠
                                         },
                                         "yAxis": {
                                             "type": "value",
@@ -1100,52 +1113,44 @@ def statistics_page():
 
                             # 2.3 统计已录入需求的项目概述完成度 (由计数改为收集项目列表)
                             overview_categories = {
+                                "概述无负责人": [],
                                 "存在缺必填": [],
-                                "无缺必填有待定": [],
+                                "有待定": [],
                                 "仅缺需填": [],
                                 "概述已完成": [],
                             }
 
                             # 遍历所有有需求版本记录的项目
                             for proj in req_ver_data.keys():
-                                # 项目不在问题字典里，意味着项目已经完成概述填写
-                                if proj not in project_issues:
-                                    overview_categories["概述已完成"].append(proj)
+                                statuses = project_issues.get(proj, set())
+                                category = classify_overview_completion(
+                                    statuses,
+                                    has_unassigned_owner=proj in overview_pending_projects,
+                                )
+                                overview_categories[category].append(proj)
+
+                                # 同步供项目表使用的完成/仅缺需填缓存，防止旧分类残留。
+                                if category == "概述已完成":
                                     if proj not in app.storage.general["overview_completed"]:
                                         app.storage.general["overview_completed"].append(proj)
-                                # 项目在问题字典里，根据问题类型进行分类统计
                                 else:
-                                    # 获取该项目的问题类型集合
-                                    statuses = project_issues[proj]
-                                    # 只要有任意一个问题存在，且该项目之前被标记为已完成，则需要删除这条记录
-                                    if (
-                                        any([status in statuses for status in ["缺必填", "缺需填", "有待定"]])
-                                        and proj in app.storage.general["overview_completed"]
-                                    ):
+                                    if proj in app.storage.general["overview_completed"]:
                                         app.storage.general["overview_completed"].remove(proj)
-                                    # 只要有任意一个问题存在，且该项目之前被标记为仅缺需填，则需要删除这条记录
-                                    if (
-                                        any([status in statuses for status in ["缺必填", "有待定"]])
-                                        and proj in app.storage.general["overview_only_need"]
-                                    ):
-                                        app.storage.general["overview_only_need"].remove(proj)
 
-                                    # 按照严重程度优先级进行降维判定并收集项目名称
-                                    if "缺必填" in statuses:
-                                        overview_categories["存在缺必填"].append(proj)
-                                    elif "有待定" in statuses:
-                                        overview_categories["无缺必填有待定"].append(proj)
-                                    elif "缺需填" in statuses:
-                                        overview_categories["仅缺需填"].append(proj)
-                                        if proj not in app.storage.general["overview_only_need"]:
-                                            app.storage.general["overview_only_need"].append(proj)
-                                    else:
-                                        overview_categories["概述已完成"].append(proj)
-                                        if proj not in app.storage.general["overview_completed"]:
-                                            app.storage.general["overview_completed"].append(proj)
+                                if category == "仅缺需填":
+                                    if proj not in app.storage.general["overview_only_need"]:
+                                        app.storage.general["overview_only_need"].append(proj)
+                                elif proj in app.storage.general["overview_only_need"]:
+                                    app.storage.general["overview_only_need"].remove(proj)
 
                             # 准备柱状图系列数据
                             overview_chart_data = [
+                                {
+                                    "value": len(overview_categories["概述无负责人"]),
+                                    "name": "概述无负责人",
+                                    "projects": overview_categories["概述无负责人"],
+                                    "itemStyle": {"color": "#8b5cf6"},
+                                },
                                 {
                                     "value": len(overview_categories["存在缺必填"]),
                                     "name": "存在缺必填",
@@ -1153,9 +1158,9 @@ def statistics_page():
                                     "itemStyle": {"color": "#ef4444"},
                                 },
                                 {
-                                    "value": len(overview_categories["无缺必填有待定"]),
-                                    "name": "无缺必填有待定",
-                                    "projects": overview_categories["无缺必填有待定"],
+                                    "value": len(overview_categories["有待定"]),
+                                    "name": "有待定",
+                                    "projects": overview_categories["有待定"],
                                     "itemStyle": {"color": "#f59e0b"},
                                 },
                                 {
@@ -1202,7 +1207,7 @@ def statistics_page():
                                     "xAxis": {
                                         "type": "category",
                                         "data": status_x_axis_data,
-                                        "axisLabel": {"interval": 0, "rotate": 30},
+                                        "axisLabel": {"interval": 0, "rotate": 0},
                                     },
                                     "yAxis": {"type": "value", "minInterval": 1},
                                     "series": [
@@ -1249,7 +1254,7 @@ def statistics_page():
                                     "xAxis": {
                                         "type": "category",
                                         "data": overview_x_axis_data,
-                                        "axisLabel": {"interval": 0},
+                                        "axisLabel": {"interval": 0, "rotate": 0},
                                     },
                                     "yAxis": {"type": "value", "minInterval": 1},
                                     "series": [
@@ -1306,7 +1311,7 @@ def statistics_page():
                                         "type": "category",
                                         "data": current_users,
                                         "axisTick": {"show": False},
-                                        "axisLabel": {"interval": 0, "rotate": 30},
+                                        "axisLabel": {"interval": 0, "rotate": 0},
                                     },
                                     "yAxis": {
                                         "type": "value",
@@ -1370,9 +1375,7 @@ def statistics_page():
                                         },
                                     ],
                                 }
-                                management_chart = ui.echart(current_chart_config).classes(
-                                    "w-full h-80 cursor-pointer"
-                                )
+                                management_chart = ui.echart(current_chart_config).classes("w-full h-80 cursor-pointer")
 
                                 def show_management_projects(e):
                                     user = e.args.get("name")
