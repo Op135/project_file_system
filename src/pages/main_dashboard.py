@@ -202,7 +202,12 @@ def main_page():
     menu_items = []
     for items in menu_items_metadata:
         # 需求结构图只对角色字符串里含有如下关键字的用户展示
-        if items[3] == "/question_tree_tabs" and not any(
+        if items[3] == "/information" and not any(
+            k in str(current_role) for k in ["销售", "研发", "工程", "质量", "boss", "admin"]
+        ):
+            continue
+        # 需求结构图只对角色字符串里含有如下关键字的用户展示
+        elif items[3] == "/question_tree_tabs" and not any(
             k in str(current_role) for k in ["销售", "研发", "boss", "admin"]
         ):
             continue
