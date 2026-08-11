@@ -2,8 +2,13 @@ import json
 
 from src.ecn_management_config import (
     ECN_CONFIG_PATH,
+    ECN_SCHEME_GROUP_MATERIAL,
+    ECN_SCHEME_GROUP_ORDINARY_DOCUMENT,
+    ECN_SCHEME_GROUP_OVERVIEW_DOCUMENT,
+    ECN_SCHEME_GROUP_UNKNOWN,
     ECNState,
     build_overview_validation_signature,
+    classify_ecn_change_item,
     get_active_overview_row_contents,
     get_ecn_dashboard_pending_count,
     is_ecn_pending_for_user,
@@ -252,3 +257,22 @@ def test_overview_validation_signature_changes_with_content_or_context():
         "光学",
         "light_driver",
     )
+
+
+def test_new_and_legacy_change_items_are_split_into_explicit_document_groups():
+    assert classify_ecn_change_item(
+        {"type": "overview_update", "scheme_category": "document"}
+    ) == ECN_SCHEME_GROUP_OVERVIEW_DOCUMENT
+    assert classify_ecn_change_item(
+        {"type": "overview_update", "scheme_category": ECN_SCHEME_GROUP_OVERVIEW_DOCUMENT}
+    ) == ECN_SCHEME_GROUP_OVERVIEW_DOCUMENT
+    assert classify_ecn_change_item(
+        {"type": "text_desc", "scheme_category": "document"}
+    ) == ECN_SCHEME_GROUP_ORDINARY_DOCUMENT
+    assert classify_ecn_change_item(
+        {"type": "text_desc", "scheme_category": ECN_SCHEME_GROUP_ORDINARY_DOCUMENT}
+    ) == ECN_SCHEME_GROUP_ORDINARY_DOCUMENT
+    assert classify_ecn_change_item(
+        {"type": "text_desc", "scheme_category": ECN_SCHEME_GROUP_MATERIAL}
+    ) == ECN_SCHEME_GROUP_MATERIAL
+    assert classify_ecn_change_item({"type": "legacy_other"}) == ECN_SCHEME_GROUP_UNKNOWN

@@ -23,7 +23,12 @@ from ..config import (
 )
 from ..ecn_management_config import (
     ECN_OVERVIEW_CONFLICT_AUTO_CLOSE_SECONDS,
+    ECN_SCHEME_GROUP_MATERIAL,
+    ECN_SCHEME_GROUP_ORDINARY_DOCUMENT,
+    ECN_SCHEME_GROUP_OVERVIEW_DOCUMENT,
+    ECN_SCHEME_GROUP_UNKNOWN,
     build_overview_validation_signature,
+    classify_ecn_change_item,
     get_active_overview_row_contents,
     is_ecn_pending_for_user,
     is_ecn_review_info_blank,
@@ -267,7 +272,7 @@ async def ecn_management_page():
     root_dialog = ui.dialog().props("maximized persistent")
 
     # ==========================================
-    # 独立解耦弹窗 1：资料变更方案(概述) 设计
+    # 独立解耦弹窗 1：概述资料变更方案设计
     # ==========================================
     def open_overview_change_dialog(ecn_data, current_user, on_save_callback, edit_item=None):
         is_edit = edit_item is not None
@@ -395,7 +400,7 @@ async def ecn_management_page():
 
         dialog.clear()
         with dialog, ui.card().classes("w-[1000px] max-w-full max-h-[90vh] flex flex-col flex-nowrap"):
-            ui.label("修改资料变更方案(概述)" if is_edit else "添加资料变更方案(概述)").classes(
+            ui.label("修改概述资料变更方案" if is_edit else "添加概述资料变更方案").classes(
                 "text-lg font-bold text-blue-900 shrink-0"
             )
 
@@ -948,7 +953,7 @@ async def ecn_management_page():
                 payload = {
                     "item_id": edit_data.get("item_id", str(uuid.uuid4())),
                     "type": "overview_update",
-                    "scheme_category": "document",  # 明确注入分类：资料
+                    "scheme_category": ECN_SCHEME_GROUP_OVERVIEW_DOCUMENT,
                     "author": current_user,
                     "req_idxs": sel_state["req_idxs"],
                     "linked_docs": sel_state["linked_docs"],
@@ -974,19 +979,32 @@ async def ecn_management_page():
     # ==========================================
     # 独立解耦弹窗 2：文本描述方案设计 (复用组件)
     # ==========================================
-    def open_text_change_dialog(ecn_data, current_user, on_save_callback, edit_item=None, scheme_category="document"):
+    def open_text_change_dialog(
+        ecn_data,
+        current_user,
+        on_save_callback,
+        edit_item=None,
+        scheme_category=ECN_SCHEME_GROUP_ORDINARY_DOCUMENT,
+    ):
         is_edit = edit_item is not None
         edit_data = edit_item or {}
 
         # 兼容编辑模式下的类别获取
         if is_edit:
             scheme_category = edit_data.get("scheme_category", scheme_category)
+        if scheme_category == "document":
+            scheme_category = ECN_SCHEME_GROUP_ORDINARY_DOCUMENT
+        is_document_scheme = scheme_category == ECN_SCHEME_GROUP_ORDINARY_DOCUMENT
 
         sel_state = {
             "req_idxs": edit_data.get("req_idxs", []),
-            "linked_docs": edit_data.get("linked_docs", []) if scheme_category == "document" else [],
-            "linked_materials": edit_data.get("linked_materials", []) if scheme_category == "material" else [],
-            "change_type": edit_data.get("change_type", "其它" if scheme_category == "document" else "物料变更"),
+            "linked_docs": edit_data.get("linked_docs", []) if is_document_scheme else [],
+            "linked_materials": (
+                edit_data.get("linked_materials", [])
+                if scheme_category == ECN_SCHEME_GROUP_MATERIAL
+                else []
+            ),
+            "change_type": edit_data.get("change_type", "其它" if is_document_scheme else "物料变更"),
         }
 
         req_options = {
@@ -1003,7 +1021,7 @@ async def ecn_management_page():
 
         dialog.clear()
         with dialog, ui.card().classes("w-[900px] max-w-full"):
-            dialog_title = "资料变更方案(非概述)" if scheme_category == "document" else "物料变更方案"
+            dialog_title = "普通资料变更方案" if is_document_scheme else "物料变更方案"
             ui.label(f"修改{dialog_title}" if is_edit else f"添加{dialog_title}").classes(
                 "text-lg font-bold text-blue-900"
             )
@@ -1015,18 +1033,18 @@ async def ecn_management_page():
                 )
                 with ui.row().classes("w-full gap-2"):
                     # 类别隔离控制显示
-                    if scheme_category == "document" and req_docs:
+                    if is_document_scheme and req_docs:
                         ui.select(options=req_docs, multiple=True, label="对应勾选的文档/图纸项").classes(
                             "flex-1"
                         ).bind_value(sel_state, "linked_docs")
-                    if scheme_category == "material" and req_mats:
+                    if scheme_category == ECN_SCHEME_GROUP_MATERIAL and req_mats:
                         ui.select(options=req_mats, multiple=True, label="对应勾选的物料动作").classes(
                             "flex-1"
                         ).bind_value(sel_state, "linked_materials")
 
             # 根据类别控制可用分类
             type_options = (
-                ["图纸更新", "工艺调整", "SOP修改", "其它"] if scheme_category == "document" else ["物料变更"]
+                ["图纸更新", "工艺调整", "SOP修改", "其它"] if is_document_scheme else ["物料变更"]
             )
             ui.select(type_options, label="方案分类").classes("w-48 mt-4").bind_value(sel_state, "change_type")
 
@@ -1717,27 +1735,29 @@ async def ecn_management_page():
                                     ui.label("产品工程变更方案明细").classes("font-bold text-gray-800 text-lg")
                                     # 在方案可编辑阶段，且用户具有方案编写权限的前提下，才显示添加方案的按钮
                                     if is_scheme_writer:
-                                        with ui.row().classes("gap-2"):
-                                            # ui.menu: nicegui 第三方包用于创建附着于按钮上的下拉交互菜单
-                                            with ui.button("添加资料变更方案", icon="description").props(
+                                        with ui.row().classes("gap-2 flex-wrap justify-end"):
+                                            ui.button(
+                                                "添加普通资料变更方案",
+                                                icon="article",
+                                                on_click=lambda: open_text_change_dialog(
+                                                    local_data,
+                                                    current_user,
+                                                    handle_save_item,
+                                                    scheme_category=ECN_SCHEME_GROUP_ORDINARY_DOCUMENT,
+                                                ),
+                                            ).props(
                                                 f"color=primary outline dense {'disable' if not is_scheming_phase else ''}"
-                                            ):
-                                                with ui.menu():
-                                                    ui.menu_item(
-                                                        "概述变更",
-                                                        on_click=lambda: open_overview_change_dialog(
-                                                            local_data, current_user, handle_save_item
-                                                        ),
-                                                    )
-                                                    ui.menu_item(
-                                                        "非概述变更",
-                                                        on_click=lambda: open_text_change_dialog(
-                                                            local_data,
-                                                            current_user,
-                                                            handle_save_item,
-                                                            scheme_category="document",
-                                                        ),
-                                                    )
+                                            )
+
+                                            ui.button(
+                                                "添加概述资料变更方案",
+                                                icon="view_list",
+                                                on_click=lambda: open_overview_change_dialog(
+                                                    local_data, current_user, handle_save_item
+                                                ),
+                                            ).props(
+                                                f"color=indigo outline dense {'disable' if not is_scheming_phase else ''}"
+                                            )
 
                                             ui.button(
                                                 "添加物料变更方案",
@@ -1746,7 +1766,7 @@ async def ecn_management_page():
                                                     local_data,
                                                     current_user,
                                                     handle_save_item,
-                                                    scheme_category="material",
+                                                    scheme_category=ECN_SCHEME_GROUP_MATERIAL,
                                                 ),
                                             ).props(
                                                 f"color=secondary outline dense {'disable' if not is_scheming_phase else ''}"
@@ -1910,26 +1930,36 @@ async def ecn_management_page():
                                             return
 
                                         # --- 以业务分类为依据，把方案分组预处理，并绑定全局序号 ---
-                                        grouped_items = {"document": [], "material": [], "unknown": []}
+                                        grouped_items = {
+                                            ECN_SCHEME_GROUP_ORDINARY_DOCUMENT: [],
+                                            ECN_SCHEME_GROUP_OVERVIEW_DOCUMENT: [],
+                                            ECN_SCHEME_GROUP_MATERIAL: [],
+                                            ECN_SCHEME_GROUP_UNKNOWN: [],
+                                        }
                                         for global_idx, item in enumerate(local_data["change_items"]):
-                                            # 根据方案条目的 scheme_category 字段进行分组，默认为 "unknown" 类别
-                                            cat = item.get("scheme_category", "unknown")
+                                            # type 优先，确保旧 overview_update 即使仍标 document 也归入概述资料。
+                                            cat = classify_ecn_change_item(item)
                                             # 将全局序号和方案条目数据一起存入对应的分组列表中，方便后续渲染时使用全局序号进行显示和操作
                                             grouped_items[cat].append((global_idx, item))
 
                                         # 定义新的业务分组 UI 映射配置
                                         group_configs = {
-                                            "document": {
-                                                "title": "资料变更方案",
-                                                "icon": "description",
+                                            ECN_SCHEME_GROUP_ORDINARY_DOCUMENT: {
+                                                "title": "普通资料变更方案",
+                                                "icon": "article",
                                                 "color": "blue",
                                             },
-                                            "material": {
+                                            ECN_SCHEME_GROUP_OVERVIEW_DOCUMENT: {
+                                                "title": "概述资料变更方案",
+                                                "icon": "view_list",
+                                                "color": "indigo",
+                                            },
+                                            ECN_SCHEME_GROUP_MATERIAL: {
                                                 "title": "物料变更方案",
                                                 "icon": "inventory",
                                                 "color": "teal",
                                             },
-                                            "unknown": {
+                                            ECN_SCHEME_GROUP_UNKNOWN: {
                                                 "title": "其它/遗留变更方案",
                                                 "icon": "list",
                                                 "color": "grey",
@@ -1937,7 +1967,12 @@ async def ecn_management_page():
                                         }
 
                                         # 遍历业务分组，生成折叠面板
-                                        for g_type in ["document", "material", "unknown"]:
+                                        for g_type in [
+                                            ECN_SCHEME_GROUP_ORDINARY_DOCUMENT,
+                                            ECN_SCHEME_GROUP_OVERVIEW_DOCUMENT,
+                                            ECN_SCHEME_GROUP_MATERIAL,
+                                            ECN_SCHEME_GROUP_UNKNOWN,
+                                        ]:
                                             items_in_group = grouped_items[g_type]
                                             if not items_in_group:
                                                 continue
@@ -1958,6 +1993,23 @@ async def ecn_management_page():
                                                 with ui.column().classes("w-full p-3 gap-3"):
                                                     # 在折叠面板内部渲染当前分类组的具体卡片
                                                     for idx, item in items_in_group:
+                                                        item_group = classify_ecn_change_item(item)
+                                                        badge_text = {
+                                                            ECN_SCHEME_GROUP_OVERVIEW_DOCUMENT: "概述资料",
+                                                            ECN_SCHEME_GROUP_ORDINARY_DOCUMENT: (
+                                                                f"普通资料: {item.get('change_type', '')}"
+                                                            ),
+                                                            ECN_SCHEME_GROUP_MATERIAL: (
+                                                                f"物料: {item.get('change_type', '')}"
+                                                            ),
+                                                            ECN_SCHEME_GROUP_UNKNOWN: "其它/遗留方案",
+                                                        }[item_group]
+                                                        badge_color = {
+                                                            ECN_SCHEME_GROUP_OVERVIEW_DOCUMENT: "indigo",
+                                                            ECN_SCHEME_GROUP_ORDINARY_DOCUMENT: "blue",
+                                                            ECN_SCHEME_GROUP_MATERIAL: "teal",
+                                                            ECN_SCHEME_GROUP_UNKNOWN: "grey",
+                                                        }[item_group]
                                                         with ui.card().classes(
                                                             "w-full p-0 shadow-sm border border-gray-200 relative"
                                                         ):
@@ -1966,14 +2018,7 @@ async def ecn_management_page():
                                                             ):
                                                                 with ui.row().classes("gap-2 items-center flex-wrap"):
                                                                     ui.badge(str(idx + 1), color="grey-7")
-                                                                    ui.badge(
-                                                                        "概述修改"
-                                                                        if item["type"] == "overview_update"
-                                                                        else f"文本/工艺: {item.get('change_type', '')}",
-                                                                        color="blue"
-                                                                        if item["type"] == "overview_update"
-                                                                        else "teal",
-                                                                    )
+                                                                    ui.badge(badge_text, color=badge_color)
                                                                     ui.label(item["author"]).classes(
                                                                         "text-xs text-white bg-cyan-500 px-1 rounded"
                                                                     )
@@ -2020,7 +2065,8 @@ async def ecn_management_page():
                                                                                     handle_save_item,
                                                                                     i,
                                                                                     i.get(
-                                                                                        "scheme_category", "document"
+                                                                                        "scheme_category",
+                                                                                        ECN_SCHEME_GROUP_ORDINARY_DOCUMENT,
                                                                                     ),
                                                                                 )
                                                                             ),

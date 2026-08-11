@@ -16,6 +16,10 @@ logger = logging.getLogger(__name__)
 ECN_CONFIG_PATH = Path(__file__).parent.parent / "ecn_management_config.json"
 ECN_DATA_KEY = "ecn_management_data"
 ECN_VERSION_KEY = "ecn_global_version_stamp"
+ECN_SCHEME_GROUP_ORDINARY_DOCUMENT = "ordinary_document"
+ECN_SCHEME_GROUP_OVERVIEW_DOCUMENT = "overview_document"
+ECN_SCHEME_GROUP_MATERIAL = "material"
+ECN_SCHEME_GROUP_UNKNOWN = "unknown"
 
 
 class ECNState:
@@ -296,6 +300,23 @@ def build_overview_validation_signature(
         str(role or ""),
         str(label or ""),
     )
+
+
+def classify_ecn_change_item(item: Any) -> str:
+    """把新旧方案条目统一归入普通资料、概述资料、物料或未知分组。"""
+    if not isinstance(item, dict):
+        return ECN_SCHEME_GROUP_UNKNOWN
+    if item.get("type") == "overview_update":
+        return ECN_SCHEME_GROUP_OVERVIEW_DOCUMENT
+
+    scheme_category = item.get("scheme_category")
+    if scheme_category == ECN_SCHEME_GROUP_MATERIAL:
+        return ECN_SCHEME_GROUP_MATERIAL
+    if scheme_category in {"document", ECN_SCHEME_GROUP_ORDINARY_DOCUMENT}:
+        return ECN_SCHEME_GROUP_ORDINARY_DOCUMENT
+    if item.get("type") == "text_desc" and not scheme_category:
+        return ECN_SCHEME_GROUP_ORDINARY_DOCUMENT
+    return ECN_SCHEME_GROUP_UNKNOWN
 
 
 def get_ecn_impact_handlers(ecn_data: Any) -> list[str]:
