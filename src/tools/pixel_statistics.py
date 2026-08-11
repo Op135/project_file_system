@@ -17,9 +17,13 @@ from typing import Any
 import numpy as np
 import pandas as pd
 from nicegui import run, ui
+from nicegui.events import ScrollEventArguments
 
 SUPPORTED_EXTENSIONS = {".xlsx", ".xlsm", ".xls", ".csv", ".cvs"}
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024
+MAX_OUTLINE_CHART_POINTS = 800
+OUTLINE_EAGER_LIMIT = 6
+OUTLINE_SCROLL_BATCH_SIZE = 2
 
 
 class _ExcelBytesBuffer(io.BytesIO):
@@ -108,6 +112,7 @@ class CalculatedStatistics:
     maximum: float
     min_max_ratio: float | None
     contrast_ratio: float | None
+    extreme_mean_deviation_ratio: float | None
     relative_population_std: float | None
     relative_sample_std: float | None
 
@@ -124,6 +129,7 @@ class MatrixUniformityResult:
     maximum: float
     min_max_ratio: float | None
     contrast_ratio: float | None
+    extreme_mean_deviation_ratio: float | None
     relative_population_std: float | None
     relative_sample_std: float | None
 
@@ -146,6 +152,7 @@ class SheetAnalysis:
     maximum: float
     min_max_ratio: float | None
     contrast_ratio: float | None
+    extreme_mean_deviation_ratio: float | None
     relative_population_std: float | None
     relative_sample_std: float | None
     ignored_cells: int = 0
@@ -179,6 +186,7 @@ class SheetAnalysis:
             "最大值": value(self.maximum),
             "最小/最大": value(self.min_max_ratio),
             "(最大-最小)/(最大+最小)": value(self.contrast_ratio),
+            "极值最大偏差/平均值": value(self.extreme_mean_deviation_ratio),
             "相对总体标准差": value(self.relative_population_std),
             "相对样本标准差": value(self.relative_sample_std),
             "矩阵划分": f"{matrix.rows}×{matrix.cols}" if matrix else "—",
@@ -189,6 +197,7 @@ class SheetAnalysis:
             "矩阵最大值": value(matrix.maximum if matrix else None),
             "矩阵最小/最大": value(matrix.min_max_ratio if matrix else None),
             "矩阵(最大-最小)/(最大+最小)": value(matrix.contrast_ratio if matrix else None),
+            "矩阵极值最大偏差/平均值": value(matrix.extreme_mean_deviation_ratio if matrix else None),
             "矩阵相对总体标准差": value(matrix.relative_population_std if matrix else None),
             "矩阵相对样本标准差": value(matrix.relative_sample_std if matrix else None),
             "忽略单元格": self.ignored_cells,
@@ -337,9 +346,8 @@ def _threshold_component_center(matrix: np.ndarray, percent: float) -> tuple[flo
             1 + col_delta : 1 + col_delta + cols,
         ]
     boundary_points = np.argwhere(component_mask & ~interior)
-    max_chart_points = 2000
-    if len(boundary_points) > max_chart_points:
-        step = math.ceil(len(boundary_points) / max_chart_points)
+    if len(boundary_points) > MAX_OUTLINE_CHART_POINTS:
+        step = math.ceil(len(boundary_points) / MAX_OUTLINE_CHART_POINTS)
         boundary_points = boundary_points[::step]
     edge_points = [(float(col), float(row)) for row, col in boundary_points]
     edge_values = [float(matrix[int(row), int(col)]) for row, col in boundary_points]
@@ -456,6 +464,10 @@ def _calculate_statistics(values: np.ndarray) -> CalculatedStatistics:
         maximum=maximum,
         min_max_ratio=_safe_ratio(minimum, maximum),
         contrast_ratio=_safe_ratio(maximum - minimum, maximum + minimum),
+        extreme_mean_deviation_ratio=_safe_ratio(
+            max(abs(maximum - mean), abs(minimum - mean)),
+            mean,
+        ),
         relative_population_std=_safe_ratio(population_std, mean),
         relative_sample_std=_safe_ratio(sample_std, mean) if sample_std is not None else None,
     )
@@ -520,6 +532,7 @@ def analyze_uniformity_matrix(
         maximum=statistics.maximum,
         min_max_ratio=statistics.min_max_ratio,
         contrast_ratio=statistics.contrast_ratio,
+        extreme_mean_deviation_ratio=statistics.extreme_mean_deviation_ratio,
         relative_population_std=statistics.relative_population_std,
         relative_sample_std=statistics.relative_sample_std,
     )
@@ -598,6 +611,7 @@ def analyze_matrix(
         maximum=statistics.maximum,
         min_max_ratio=statistics.min_max_ratio,
         contrast_ratio=statistics.contrast_ratio,
+        extreme_mean_deviation_ratio=statistics.extreme_mean_deviation_ratio,
         relative_population_std=statistics.relative_population_std,
         relative_sample_std=statistics.relative_sample_std,
         ignored_cells=ignored_cells,
@@ -802,6 +816,10 @@ class PixelStatisticsTool:
         self.upload_control: Any = None
         self.analyze_button: Any = None
         self.export_button: Any = None
+        self.outline_chart_grid: Any = None
+        self.outline_load_status: Any = None
+        self.outline_results: list[SheetAnalysis] = []
+        self.outline_rendered_count = 0
 
     def show(self, parent_dialog: ui.dialog) -> None:
         with ui.column().classes("w-full min-h-screen bg-slate-50 absolute inset-0 p-3 md:p-5 overflow-auto"):
@@ -865,12 +883,24 @@ class PixelStatisticsTool:
                         ui.label("比例尺").classes("text-sm font-semibold text-gray-700")
                         with ui.element("div").classes("w-full grid grid-cols-2 gap-2"):
                             self.scale_pixels_input = (
-                                ui.number("原始像素点", value=1, min=0.000001, step=1)
+                                ui.number(
+                                    "原始像素点",
+                                    value=1,
+                                    min=0.000001,
+                                    precision=6,
+                                    step=0.0001,
+                                )
                                 .props("outlined dense")
                                 .classes("w-full")
                             )
                             self.scale_length_input = (
-                                ui.number("对应长度 mm", value=1, min=0.000001, step=0.1)
+                                ui.number(
+                                    "对应长度 mm",
+                                    value=1,
+                                    min=0.000001,
+                                    precision=6,
+                                    step=0.0001,
+                                )
                                 .props("outlined dense")
                                 .classes("w-full")
                             )
@@ -1055,6 +1085,10 @@ class PixelStatisticsTool:
 
     @ui.refreshable_method
     def render_results(self) -> None:
+        self.outline_chart_grid = None
+        self.outline_load_status = None
+        self.outline_results = []
+        self.outline_rendered_count = 0
         if self.batch is None:
             return
         with ui.card().classes("w-full p-4 border shadow-sm"):
@@ -1074,6 +1108,7 @@ class PixelStatisticsTool:
                     "最大值",
                     "最小/最大",
                     "(最大-最小)/(最大+最小)",
+                    "极值最大偏差/平均值",
                     "相对总体标准差",
                     "相对样本标准差",
                 ]
@@ -1102,6 +1137,7 @@ class PixelStatisticsTool:
                         "矩阵最大值",
                         "矩阵最小/最大",
                         "矩阵(最大-最小)/(最大+最小)",
+                        "矩阵极值最大偏差/平均值",
                         "矩阵相对总体标准差",
                         "矩阵相对样本标准差",
                     ]
@@ -1159,27 +1195,70 @@ class PixelStatisticsTool:
                     "蓝色点表示最大值百分比主连通区域的边缘，红色十字表示区域几何中心；"
                     "坐标为相对表格起点的毫米距离，横纵方向按 1:1 比例显示。"
                 ).classes("text-xs text-gray-500")
-                with ui.element("div").classes("w-full grid grid-cols-1 xl:grid-cols-2 gap-4"):
-                    for result in outline_results:
-                        outline = result.threshold_outline
-                        if outline is None:
-                            continue
-                        with ui.card().classes("w-full p-3 bg-slate-50 border"):
-                            ui.label(f"{result.source_file} / {result.sheet_name}").classes(
-                                "font-semibold text-gray-700"
-                            )
-                            ui.label(
-                                f"阈值 {outline.threshold:.4g}，区域 {outline.region_points} 点，"
-                                f"中心 R{result.center_row:.2f} / C{result.center_col:.2f}"
-                            ).classes("text-xs text-gray-500")
-                            with ui.element("div").classes("w-full overflow-x-auto"):
-                                with ui.element("div").style(
-                                    "width: 640px; height: 640px; min-width: 640px; min-height: 640px; "
-                                    "margin: 0 auto; flex: 0 0 640px;"
-                                ):
-                                    ui.echart(_threshold_outline_chart_options(result)).style(
-                                        "width: 640px; height: 640px; min-width: 640px; min-height: 640px;"
-                                    )
+                self.outline_results = outline_results
+                self.outline_rendered_count = 0
+                if len(outline_results) <= OUTLINE_EAGER_LIMIT:
+                    self.outline_chart_grid = ui.element("div").classes(
+                        "w-full grid grid-cols-1 xl:grid-cols-2 gap-4"
+                    )
+                    self._append_outline_charts(len(outline_results))
+                else:
+                    ui.label(
+                        f"共 {len(outline_results)} 张示意图，先生成前 {OUTLINE_EAGER_LIMIT} 张；"
+                        "向下滚动时每次继续生成一行。"
+                    ).classes("text-xs text-blue-700")
+                    with ui.scroll_area(on_scroll=self._handle_outline_scroll).classes(
+                        "w-full h-[920px] border rounded-lg bg-slate-50 p-2"
+                    ):
+                        self.outline_chart_grid = ui.element("div").classes(
+                            "w-full grid grid-cols-1 xl:grid-cols-2 gap-4"
+                        )
+                        self._append_outline_charts(OUTLINE_EAGER_LIMIT)
+                        self.outline_load_status = ui.label(self._outline_load_status_text()).classes(
+                            "w-full py-3 text-center text-xs text-gray-500"
+                        )
+
+    def _render_outline_chart(self, result: SheetAnalysis) -> None:
+        outline = result.threshold_outline
+        if outline is None:
+            return
+        with ui.card().classes("w-full p-3 bg-slate-50 border"):
+            ui.label(f"{result.source_file} / {result.sheet_name}").classes("font-semibold text-gray-700")
+            ui.label(
+                f"阈值 {outline.threshold:.4g}，区域 {outline.region_points} 点，"
+                f"中心 R{result.center_row:.2f} / C{result.center_col:.2f}"
+            ).classes("text-xs text-gray-500")
+            with ui.element("div").classes("w-full overflow-x-auto"):
+                with ui.element("div").style(
+                    "width: 640px; height: 640px; min-width: 640px; min-height: 640px; "
+                    "margin: 0 auto; flex: 0 0 640px;"
+                ):
+                    ui.echart(_threshold_outline_chart_options(result)).style(
+                        "width: 640px; height: 640px; min-width: 640px; min-height: 640px;"
+                    )
+
+    def _append_outline_charts(self, count: int) -> None:
+        if self.outline_chart_grid is None or count <= 0:
+            return
+        start = self.outline_rendered_count
+        end = min(start + count, len(self.outline_results))
+        if start >= end:
+            return
+        self.outline_rendered_count = end
+        with self.outline_chart_grid:
+            for result in self.outline_results[start:end]:
+                self._render_outline_chart(result)
+        if self.outline_load_status is not None:
+            self.outline_load_status.set_text(self._outline_load_status_text())
+
+    def _outline_load_status_text(self) -> str:
+        if self.outline_rendered_count >= len(self.outline_results):
+            return f"已生成全部 {len(self.outline_results)} 张示意图"
+        return f"已生成 {self.outline_rendered_count}/{len(self.outline_results)}，继续向下滚动加载"
+
+    def _handle_outline_scroll(self, event: ScrollEventArguments) -> None:
+        if event.vertical_percentage >= 0.9:
+            self._append_outline_charts(OUTLINE_SCROLL_BATCH_SIZE)
 
     async def _handle_upload(self, event: Any) -> None:
         try:

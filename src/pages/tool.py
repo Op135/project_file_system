@@ -138,8 +138,8 @@ def tool_page():
         },
         {
             "key": "pixel_statistics",
-            "title": "像素数据统计分析",
-            "subtitle": "颗粒度合并、自动中心与区域统计",
+            "title": "光斑均匀性计算",
+            "subtitle": "根据灰度数据表计算光斑均匀性",
             "icon": "analytics",
             "color": "blue",
             "cls": PixelStatisticsTool,
