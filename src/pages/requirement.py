@@ -35,6 +35,7 @@ from ..config import (
     UPLOAD_URL_DIR,
     UPLOADS_DIR,
 )
+from ..requirement_overview_impact import RequirementOverviewImpactConfigError
 from ..utils import (
     compare_configs_by_id,
     copy_overview_data,
@@ -42,10 +43,12 @@ from ..utils import (
     find_key_position,
     get_cache_busted_path,
     get_max_numeric_key,
+    get_requirement_overview_impacts,
     handle_key,
     logout,
     merge_data_with_template,
     overview_role_update,
+    refresh_overview_pending_labels,
     set_overview_active_state,
     setup_global_activity_tracking,
     validate_format_regex,
@@ -3443,17 +3446,43 @@ async def requirement_page(type="", json_path="", project_name=""):
             req_max_ver = app.storage.general.get("project_req_max_ver", {}).get(project_name)
             checked_versions = app.storage.general.setdefault("overview_active_state_checked_versions", {})
             if req_max_ver and checked_versions.get(project_name) != req_max_ver:
-                overview_success, changed_labels = await set_overview_active_state(project_name, req_max_ver)
+                try:
+                    if not json_data:
+                        raise RequirementOverviewImpactConfigError("缺少正式概述整理数据，无法推导需求影响范围")
+                    affected_labels, missing_node_ids, _change_node_ids = get_requirement_overview_impacts(
+                        json_data,
+                        req_max_ver,
+                        project_name,
+                    )
+                    overview_success, changed_labels = await set_overview_active_state(
+                        project_name,
+                        req_max_ver,
+                        affected_labels,
+                    )
+                except RequirementOverviewImpactConfigError as exc:
+                    overview_success = False
+                    changed_labels = set()
+                    affected_labels = set()
+                    missing_node_ids = set()
+                    logger.error(
+                        "打开概述页时无法解析精准影响范围: project=%s, version=%s, error=%s",
+                        project_name,
+                        req_max_ver,
+                        exc,
+                    )
                 if overview_success:
                     checked_versions[project_name] = req_max_ver
                     for label in changed_labels:
                         OverviewVersionManager.bump(project_name, label)
+                    refresh_overview_pending_labels(project_name, affected_labels)
                     if changed_labels:
                         logger.info(
-                            "已自动补齐概述激活版本记录: project=%s, version=%s, labels=%s",
+                            "已按需求影响配置自动补齐概述激活版本记录: "
+                            "project=%s, version=%s, labels=%s, unmapped_node_ids=%s",
                             project_name,
                             req_max_ver,
                             sorted(changed_labels),
+                            sorted(missing_node_ids),
                         )
                 else:
                     logger.error(

@@ -36,6 +36,13 @@ from .config import (
     SVN_PASSWORD,
     SVN_USERNAME,
 )
+from .requirement_overview_impact import (
+    REQUIREMENT_OVERVIEW_IMPACT_STORAGE_KEY,
+    RequirementOverviewImpactConfigError,
+    collect_requirement_change_node_ids,
+    load_requirement_overview_impact_config,
+    resolve_requirement_overview_impacts,
+)
 
 # 获取一个以此模块命名的 logger
 # 比如：如果你的文件是 src/components.py，这个 logger 的名字就会是 "src.components"
@@ -1087,6 +1094,51 @@ def get_temp_config_service():
         )
 
 
+# 更新需求节点与概述项的影响关系配置，并缓存到服务端通用内存。
+def update_requirement_overview_impact_config() -> bool:
+    valid_labels = set(app.storage.general.get("over_config_data_flat", {}))
+    try:
+        impact_config = load_requirement_overview_impact_config(valid_overview_labels=valid_labels)
+    except RequirementOverviewImpactConfigError as exc:
+        app.storage.general[REQUIREMENT_OVERVIEW_IMPACT_STORAGE_KEY] = {
+            "valid": False,
+            "error": str(exc),
+            "schema_version": None,
+            "unmapped_policy": "block",
+            "node_impacts": {},
+        }
+        logger.error("需求节点与概述影响配置加载失败：%s", exc)
+        return False
+
+    app.storage.general[REQUIREMENT_OVERVIEW_IMPACT_STORAGE_KEY] = impact_config
+    logger.info(
+        "成功加载需求节点与概述影响配置：已配置 %s 个 node_id，未配置策略=%s。",
+        len(impact_config["node_impacts"]),
+        impact_config["unmapped_policy"],
+    )
+    return True
+
+
+def get_requirement_overview_impacts(
+    overview_data: dict,
+    version: str,
+    project_name: str = "",
+) -> tuple[set[str], set[str], dict]:
+    """使用内存配置解析指定需求版本影响的概述项。"""
+    change_node_ids = collect_requirement_change_node_ids(overview_data, version)
+    impact_config = app.storage.general.get(REQUIREMENT_OVERVIEW_IMPACT_STORAGE_KEY, {})
+    all_overview_labels = set(app.storage.general.get("over_config_data_flat", {}))
+    if project_name:
+        # 兼容已从 overview_config 移除但数据库里仍存在的历史 label。
+        all_overview_labels.update(db_storage.get_item(f"{project_name}_over_data", {}).keys())
+    affected_labels, missing_node_ids = resolve_requirement_overview_impacts(
+        change_node_ids,
+        impact_config,
+        all_overview_labels,
+    )
+    return affected_labels, missing_node_ids, change_node_ids
+
+
 # 更新概述概述项配置设置
 def updata_overview_config():
     try:
@@ -1103,10 +1155,12 @@ def updata_overview_config():
                         over_data["group_name"] = group_name
             app.storage.general["over_config_data"] = over_config_data
             # 扁平化概述项配置字典重新生成
+            app.storage.general["over_config_data_flat"] = {}
             for role, role_dic in app.storage.general["over_config_data"].items():
                 for group_name, group_li in role_dic.items():
                     for chip_dic in group_li:
                         app.storage.general["over_config_data_flat"][chip_dic.get("label")] = chip_dic
+            update_requirement_overview_impact_config()
             logger.info("成功更新概述项配置。")
             # --- 新增：配置结构变更后，强制进行一次全局待定状态重构 ---
             update_overview_charge_pending_dic("all")
@@ -1243,67 +1297,101 @@ def project_summary_update():
         )
 
 
-async def set_overview_active_state(project_name: str, ver: str) -> tuple[bool, set[str]]:
+async def set_overview_active_state(
+    project_name: str,
+    ver: str,
+    affected_labels: set[str] | None = None,
+    *,
+    rollback_context: dict | None = None,
+) -> tuple[bool, set[str]]:
     """
     1. 适用于在项目概述内容复制了旧版本的记录后，统一处理新版本的激活状态记录。
-    2. 查找传入项目project_name的概述资料，遍历各chip的最高版本激活设置。
-    3. 生成从最高版本+1到传入版本的激活状态记录（传入版本必须>该项目找到的最高版本chip记录）。
-    4. 最高版本为True或None的，生成为None的更高版本记录，其它False的，生成为False的更高版本记录。
+    2. 所有概述项都会补齐到目标需求版本，避免精确按版本读取时把缺键误判成失活。
+    3. 未受本次需求影响的概述继承上一版状态；受影响概述的 True/None 转为 None，False 保持 False。
+    4. affected_labels=None 保留旧版兼容语义，即所有概述项均视为受影响。
     """
     req_ver = int(float(ver))
     req_ver_key = f"{req_ver}.0"
     changed_labels = set()
+    affected_label_set = None if affected_labels is None else {str(label) for label in affected_labels}
     # 状态标记：用于记录是否需要触发前端 UI 通知
     ui_warning_needed = False
     warning_max_ver = 0
+    version_conflict = False
 
     # 1. 定义数据更新的纯逻辑函数（将在锁的保护下执行）
     def process_active_state(overview_data):
-        nonlocal ui_warning_needed, warning_max_ver  # 允许修改外部变量以回传状态
+        nonlocal ui_warning_needed, warning_max_ver, version_conflict  # 允许修改外部变量以回传状态
+
+        if rollback_context is not None:
+            rollback_context.clear()
+            rollback_context["before"] = copy.deepcopy(overview_data or {})
 
         if not overview_data:
+            if rollback_context is not None:
+                rollback_context["after"] = copy.deepcopy(overview_data or {})
             return db_storage.ATOMIC_NO_UPDATE
+
+        # 先完整预检，避免遍历到一半才发现数据库里已有更高版本而产生部分业务修改。
+        for chip_dic in overview_data.values():
+            for chip_data in chip_dic.values():
+                numeric_versions = []
+                for version_key in chip_data.get("select_activ_dic", {}):
+                    try:
+                        numeric_versions.append(int(float(version_key)))
+                    except (TypeError, ValueError):
+                        continue
+                if numeric_versions and req_ver < max(numeric_versions):
+                    version_conflict = True
+                    ui_warning_needed = True
+                    warning_max_ver = max(warning_max_ver, max(numeric_versions))
+
+        if version_conflict:
+            if rollback_context is not None:
+                rollback_context["after"] = copy.deepcopy(overview_data)
+            return db_storage.ATOMIC_NO_UPDATE
+
         # 遍历该项目概述内容，字典键为概述的各分类项，值为该项下chip字典
         for label, chip_dic in overview_data.items():
             label_changed = False
+            label_is_affected = affected_label_set is None or label in affected_label_set
             # 遍历各个chip数据
             for chip_data in chip_dic.values():
                 # 将chip数据里的选项激活设置字典的键，也就是版本整理成列表
                 select_activ_dic = chip_data.get("select_activ_dic", {})
-                over_chip_ver_li = [int(float(k)) for k in select_activ_dic.keys()]
+                over_chip_versions = []
+                for version_key in select_activ_dic:
+                    try:
+                        over_chip_versions.append((int(float(version_key)), version_key))
+                    except (TypeError, ValueError):
+                        logger.warning(
+                            "忽略无法解析的概述激活版本键: project=%s, label=%s, version=%r",
+                            project_name,
+                            label,
+                            version_key,
+                        )
                 # 如果列表非空
-                if over_chip_ver_li:
+                if over_chip_versions:
                     # 获取选项激活设置里最大的版本值
-                    max_over_ver = max(over_chip_ver_li)
-                    max_over_ver_key = f"{max_over_ver}.0"
+                    max_over_ver, max_over_ver_key = max(over_chip_versions, key=lambda item: item[0])
 
                     # 适用于正常项目迭代，无论是原项目升版本异或其它项目衍生过来升版本，
                     # 概述内容不会复制，需求版本值肯定大于激活设置的最大版本值
                     # 由指定版本衍生到另外一个新项目，需求版本2.0，概述复制了参照项目的指定版本激活设置，并先记录为目标项目1.0版本概述，需求版本值肯定大于激活设置的最大版本值
                     if req_ver > max_over_ver:
-                        # 获取激活设置最大版本值对应的布尔设置值
-                        activ_max_bool = select_activ_dic.get(max_over_ver_key)
+                        # 获取激活设置最大版本值对应的状态，并逐版本向前继承。
+                        previous_state = select_activ_dic.get(max_over_ver_key)
                         # 从现有激活设置最大版本值+1到当前需求版本值开始生成键值对
                         for key in range(max_over_ver + 1, req_ver + 1):
-                            # 新版本值均设置为激活设置最大值一样的布尔值
-                            # chip_data["select_activ_dic"][f"{key}.0"] = activ_max_bool
-
-                            # 新版本值均设置为None，为第三状态值，待工程师处理
-                            # chip_data["select_activ_dic"][f"{key}.0"] = None
-
-                            # 如果最大版本值为True，则新版本都设置为None
-                            if activ_max_bool or activ_max_bool is None:
-                                select_activ_dic[f"{key}.0"] = None
-                            # 如果最大版本值为False或者None，则新版本都设置为False
-                            else:
-                                select_activ_dic[f"{key}.0"] = False
+                            new_state = previous_state
+                            # 只有本次目标版本、且命中影响配置时，才把原激活状态降为待定。
+                            if key == req_ver and label_is_affected and previous_state is not False:
+                                new_state = None
+                            select_activ_dic[f"{key}.0"] = new_state
+                            previous_state = new_state
                             label_changed = True
-                    elif req_ver < max_over_ver:
-                        # 只记录状态，不执行 ui.notify
-                        ui_warning_needed = True
-                        warning_max_ver = max(warning_max_ver, max_over_ver)
 
-                    if select_activ_dic.get(req_ver_key) is None:
+                    if label_is_affected and select_activ_dic.get(req_ver_key) is None:
                         # 将这个存在未手动选择激活状态的chip的相关状态配置成特殊显示
                         # 设置为None，这个chip的内容在项目总表展示时才会表明待选择处理
                         if (
@@ -1318,7 +1406,11 @@ async def set_overview_active_state(project_name: str, ver: str) -> tuple[bool, 
             if label_changed:
                 changed_labels.add(label)
         if not changed_labels:
+            if rollback_context is not None:
+                rollback_context["after"] = copy.deepcopy(overview_data)
             return db_storage.ATOMIC_NO_UPDATE
+        if rollback_context is not None:
+            rollback_context["after"] = copy.deepcopy(overview_data)
         return overview_data
 
     # 2. 执行原子更新
@@ -1337,7 +1429,49 @@ async def set_overview_active_state(project_name: str, ver: str) -> tuple[bool, 
             close_button="✖",
         )
 
-    return success, changed_labels
+    return success and not version_conflict, changed_labels
+
+
+async def restore_overview_active_state(
+    project_name: str,
+    before_data: dict,
+    expected_current_data: dict,
+) -> bool:
+    """仅在概述仍等于本次审批结果时，补偿恢复审批前快照。"""
+    rollback_conflict = False
+
+    def restore_if_unchanged(current_data):
+        nonlocal rollback_conflict
+        current_normalized = current_data or {}
+        if current_normalized != (expected_current_data or {}):
+            rollback_conflict = True
+            return db_storage.ATOMIC_NO_UPDATE
+        return copy.deepcopy(before_data or {})
+
+    success = await db_storage.atomic_deep_update(
+        [f"{project_name}_over_data"],
+        restore_if_unchanged,
+    )
+    if rollback_conflict:
+        logger.critical("概述审批补偿回滚遇到并发修改，已拒绝覆盖: project=%s", project_name)
+    return success and not rollback_conflict
+
+
+def refresh_overview_pending_labels(project_name: str, labels: set[str]) -> None:
+    """利用服务端内存中的概述配置和负责人信息，只刷新指定概述项的待办状态。"""
+    over_config_flat = app.storage.general.get("over_config_data_flat", {})
+    overview_role = app.storage.general.get("overview_role", {}).get(project_name, {})
+    for label in labels:
+        role = over_config_flat.get(label, {}).get("role")
+        latest_user_raw = overview_role.get(role, {}).get("latest_user", "") if role else ""
+        latest_user = latest_user_raw.split("：", 1)[1] if "：" in latest_user_raw else latest_user_raw
+        if latest_user:
+            update_overview_charge_pending_dic(
+                scope="local",
+                des_user=latest_user,
+                project_name=project_name,
+                des_label=label,
+            )
 
 
 async def copy_overview_data(project_name, version, target_project_name) -> None:
@@ -2102,50 +2236,125 @@ def set_project_custom_labels(project_name):
     app.storage.general["custom_labels"][project_name] = label_list
 
 
+def _canonical_requirement_version(version) -> str:
+    return f"{int(float(version))}.0"
+
+
+def _write_json_atomic(file_path: str | Path, data: dict[str, object]) -> None:
+    """在目标文件同目录完整写入后再原子替换，避免读到半截 JSON。"""
+    destination = Path(file_path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = destination.with_name(f".{destination.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        with temp_path.open("w", encoding="utf-8") as file_obj:
+            json.dump(data, file_obj, indent=4, ensure_ascii=False)
+            file_obj.flush()
+            os.fsync(file_obj.fileno())
+        os.replace(temp_path, destination)
+    finally:
+        temp_path.unlink(missing_ok=True)
+
+
+def snapshot_file_bytes(file_path: str | Path) -> tuple[bool, bytes]:
+    path = Path(file_path)
+    if not path.exists():
+        return False, b""
+    return True, path.read_bytes()
+
+
+def restore_file_bytes(file_path: str | Path, existed: bool, content: bytes) -> None:
+    """补偿恢复文件快照；原文件不存在时删除本次新生成的文件。"""
+    destination = Path(file_path)
+    if not existed:
+        destination.unlink(missing_ok=True)
+        return
+    temp_path = destination.with_name(f".{destination.name}.{uuid.uuid4().hex}.rollback")
+    try:
+        with temp_path.open("wb") as file_obj:
+            file_obj.write(content)
+            file_obj.flush()
+            os.fsync(file_obj.fileno())
+        os.replace(temp_path, destination)
+    finally:
+        temp_path.unlink(missing_ok=True)
+
+
+def create_requirement_overview_candidate_path(project_name: str, version: str) -> str:
+    version_key = _canonical_requirement_version(version)
+    return str(
+        Path(OVER_DIR) / f".{project_name}_概述整理_V{version_key}_{uuid.uuid4().hex}.pending.json"
+    )
+
+
 # 根据传入的需求配置文件清单，核对检查是否有新需求配置未更新到概述文件里，并做相应整理，更新概述整理文件
-async def requirement_version_tidy(project_name, review: bool) -> str:
+async def requirement_version_tidy(
+    project_name,
+    review: bool,
+    *,
+    target_version: str | None = None,
+    output_path: str | Path | None = None,
+) -> str:
     """
-    将需求配置文件与概述整理文件进行比对和更新，确保概述文件里的需求内容是最新的，并且做版本更新记录。
-    概述文件最新版本内容（版本等于最新需求版本）每次都会被更新。
-    project_name： 项目名。
-    review：是否为了审核需求，True为了审核，False普通浏览概述
+    将需求配置文件与概述整理文件进行比对和更新。
+
+    target_version 用于审批：目标版本即使仍为“待审”也会进入候选结果，但任何更高版本都不会混入。
+    output_path 用于把结果写到不可见候选文件；未传时保持原有正式/审核预览路径行为。
     """
-    # 查找指定路径下，含有提供项目名的文件，得到一个字典，"完整版本" 为键，值为：{"name":文件名, "v_a":版本号整数部分, "v_b":版本号小数部分}
-    project_exists_file = find_files_with_prefix_and_version(REQ_DIR, project_name)
-    overview_file_path = os.path.join(OVER_DIR, f"{project_name}_概述整理.json")
-    overview_file_path_temp = os.path.join(OVER_DIR, f"{project_name}_概述整理_temp.json")
-    overviow_data = {}
-    overviow_data["0"] = {"file_dic": {}}
-    if project_exists_file:  # 完整版本为键，值为：{"name":文件名, "v_a":版本号整数部分, "v_b":版本号小数部分}
-        project_version_li = [float(s) for s in project_exists_file.keys()]
+    project_exists_file_raw = find_files_with_prefix_and_version(REQ_DIR, project_name)
+    overview_file_path = Path(OVER_DIR) / f"{project_name}_概述整理.json"
+    overview_file_path_temp = Path(OVER_DIR) / f"{project_name}_概述整理_temp.json"
+    if not project_exists_file_raw:
+        ui.notify(
+            "无该项目需求文件，暂时开放概述整理。",
+            type="warning",
+            position="bottom",
+            timeout=3000,
+            progress=True,
+            close_button="✖",
+        )
+        return ""
 
-        # 为了审核跳转的概述界面，不执行该块代码，直接呈现所有需求整理结果
-        if not review:
-            # 将版本列表按降序排列
-            project_version_li.sort(reverse=True)
-            # 从高版本需求遍历到低版本
-            for v in project_version_li:
-                project_name = project_exists_file[str(v)]["name"].split("_")[0]
-                # old_data_path = os.path.join(REQ_DIR, project_exists_file[str(v)]["name"])
-                # with open(old_data_path, "r", encoding="utf-8") as f:
-                #     # 使用 json.load() 读取文件内容并解析
-                #     old_data = json.load(f)
-                # 遍历直至遇到已审状态的需求
-                # if old_data.get("review_state", True):
-                if app.storage.general["wait_review"].get(project_name, {}):
-                    if (
-                        app.storage.general["wait_review"][project_name].get(str(v), {"state": "已审"})["state"]
-                        == "已审"
-                    ):
-                        # 当前版本需求已审核过了，可以开始处理继续处理概述
-                        # 退出遍历处理
-                        break
-                    # 未审的需求，其版本号删掉，不参与后续需求概述整理
-                    else:
-                        project_version_li.remove(v)
+    project_exists_file = {
+        _canonical_requirement_version(version): file_info
+        for version, file_info in project_exists_file_raw.items()
+    }
+    available_versions = sorted(int(float(version)) for version in project_exists_file)
+    wait_review_data = app.storage.general.get("wait_review", {}).get(project_name, {})
 
-        # 如果处理后的需求列表为空，即所有需求均未审
-        if not project_version_li:
+    if target_version is not None:
+        target_version_key = _canonical_requirement_version(target_version)
+        target_version_number = int(float(target_version_key))
+        if target_version_key not in project_exists_file:
+            logger.error("审批目标需求文件不存在: project=%s, version=%s", project_name, target_version_key)
+            return ""
+
+        lower_unapproved = [
+            _canonical_requirement_version(version)
+            for version in available_versions
+            if version < target_version_number
+            and wait_review_data.get(_canonical_requirement_version(version), {"state": "已审"}).get("state")
+            != "已审"
+        ]
+        if lower_unapproved:
+            logger.error(
+                "审批目标版本之前仍存在未通过版本: project=%s, target=%s, versions=%s",
+                project_name,
+                target_version_key,
+                lower_unapproved,
+            )
+            ui.notify("目标版本之前仍有未通过评审的需求，已中止审批。", type="negative", position="center")
+            return ""
+        selected_versions = [version for version in available_versions if version <= target_version_number]
+    elif review:
+        # 审核预览维持原语义：展示当前已有的全部需求版本。
+        selected_versions = available_versions
+    elif wait_review_data:
+        approved_versions = [
+            version
+            for version in available_versions
+            if wait_review_data.get(_canonical_requirement_version(version), {"state": "已审"}).get("state") == "已审"
+        ]
+        if not approved_versions:
             ui.notify(
                 "该项目不存在审核通过的需求，无法查阅！",
                 type="info",
@@ -2155,117 +2364,96 @@ async def requirement_version_tidy(project_name, review: bool) -> str:
                 close_button="✖",
             )
             return ""
-        # 将版本列表按照升序排序
-        project_version_li.sort()
-        v_max = max(project_version_li)
-
-        if os.path.exists(overview_file_path):
-            try:
-                with open(overview_file_path, "r", encoding="utf-8") as f:
-                    # 使用 json.load() 读取文件内容并解析
-                    overviow_data = json.load(f)
-            except json.JSONDecodeError:
-                logger.error(f"错误：文件 '{overview_file_path}' 不是有效的 JSON 格式。", exc_info=True)
-                return ""
-            except Exception:
-                logger.error("读取文件时发生其他错误", exc_info=True)
-                return ""
-            overviow_version = float(overviow_data["version"])
-            # 可追加情况，需求最高版本大于或等于概述文件版本，均可更新概述文件
-            if v_max >= overviow_version:
-                # 遍历需求配置文件版本号
-                for pro_ver in project_version_li:
-                    # 版本小于概述整理文件版本的跳过，确保不去更新已经审核过的旧版本需求内容
-                    # 不跳过等于概述版本的，确保即便没有新版本需求了，但概述文件也能从初版状态改为非初版状态，防止初版概述chip激活状态修改记录被抹除
-                    if pro_ver < overviow_version:
-                        continue
-                    # 以项目配置文件 版本 为键，该版本配置文件的 增删改内容及状态信息 为值，保存到概述字典里
-                    temp_dict = await extract_requirement(
-                        overviow_data["0"]["file_dic"],
-                        os.path.join(REQ_DIR, project_exists_file[str(pro_ver)]["name"]),
-                    )
-                    if temp_dict:
-                        overviow_data[str(pro_ver)] = temp_dict["contrast"]
-                        overviow_data["0"] = temp_dict["latest"]
-                        overviow_data["version"] = str(pro_ver)
-                        overviow_data["first_create"] = False
-                try:
-                    # 将字典转换为 JSON 字符串
-                    overviow_str = json.dumps(overviow_data, indent=4, ensure_ascii=False)
-                    # 写入文
-                    if review:
-                        with open(overview_file_path_temp, "w", encoding="utf-8") as f:
-                            f.write(overviow_str)
-                        return overview_file_path_temp
-                    else:
-                        with open(overview_file_path, "w", encoding="utf-8") as f:
-                            f.write(overviow_str)
-                        return overview_file_path
-                except Exception:
-                    logger.error("写入概述文件时发生错误", exc_info=True)
-                    return ""
-            # elif v_max == overviow_version:
-            #     # 虽然需求没有新版本，但概述文件已经不是第一次创建
-            #     # 也需将标记改为False，防止初版概述chip激活状态修改记录被抹除
-            #     if overviow_data["first_create"]:
-            #         overviow_data["first_create"] = False
-            #         try:
-            #             # 将字典转换为 JSON 字符串
-            #             overviow_str = json.dumps(overviow_data, indent=4, ensure_ascii=False)
-            #             # 写入文件
-            #             with open(overview_file_path, "w", encoding="utf-8") as f:
-            #                 f.write(overviow_str)
-            #         except Exception:
-            #             logger.error("写入概述文件时发生错误", exc_info=True)
-            #             return ""
-            #     return overview_file_path
-            else:
-                ui.notify(
-                    "出现需求配置丢失现象，请联系管理员处理，否则该项目资料将一直无法展示！",
-                    type="warning",
-                    position="bottom",
-                    timeout=3000,
-                    progress=True,
-                    close_button="✖",
-                )
-                return ""
-        # 初次生成概述文件
-        else:
-            for pro_ver in project_version_li:
-                # 以项目配置文件 版本 为键，该版本配置文件的 增删改内容及状态信息 为值，保存到概述字典里
-                temp_dict = await extract_requirement(
-                    overviow_data["0"]["file_dic"], os.path.join(REQ_DIR, project_exists_file[str(pro_ver)]["name"])
-                )
-                if temp_dict:
-                    overviow_data[str(pro_ver)] = temp_dict["contrast"]
-                    overviow_data["0"] = temp_dict["latest"]
-                    overviow_data["version"] = str(pro_ver)
-                    overviow_data["first_create"] = True
-            try:
-                # 将字典转换为 JSON 字符串
-                overviow_str = json.dumps(overviow_data, indent=4, ensure_ascii=False)
-                if review:
-                    with open(overview_file_path_temp, "w", encoding="utf-8") as f:
-                        f.write(overviow_str)
-                    return overview_file_path_temp
-                else:
-                    with open(overview_file_path, "w", encoding="utf-8") as f:
-                        f.write(overviow_str)
-                    return overview_file_path
-            except Exception:
-                logger.error("写入概述文件时发生错误", exc_info=True)
-                return ""
+        max_approved_version = max(approved_versions)
+        selected_versions = [version for version in available_versions if version <= max_approved_version]
     else:
-        ui.notify(
-            "无该项目需求文件，暂时开放概述整理。",
-            type="warning",
-            position="bottom",
-            timeout=3000,
-            progress=True,
-            close_button="✖",
-        )
-        await asyncio.sleep(2)
+        selected_versions = available_versions
+
+    if not selected_versions:
         return ""
+
+    # 根节点同时包含版本字典、字符串版本号和布尔标记，必须显式声明为异构 JSON 对象；
+    # 否则 Pylance 会按首个字面量推断为 dict[str, dict]，并拒绝后续写入 str/bool。
+    overview_data: dict[str, object] = {"0": {"file_dic": {}}}
+    overview_version = None
+    if overview_file_path.exists():
+        try:
+            with overview_file_path.open("r", encoding="utf-8") as file_obj:
+                loaded_overview_data = json.load(file_obj)
+            if not isinstance(loaded_overview_data, dict):
+                raise TypeError("概述整理文件根节点必须是 JSON 对象")
+            overview_data = loaded_overview_data
+            raw_overview_version = overview_data.get("version")
+            if not isinstance(raw_overview_version, (str, int, float)) or isinstance(raw_overview_version, bool):
+                raise TypeError("概述整理文件 version 必须是数字或数字字符串")
+            overview_version = int(float(raw_overview_version))
+        except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError):
+            logger.error("读取正式概述整理文件失败: %s", overview_file_path, exc_info=True)
+            return ""
+
+        if max(selected_versions) < overview_version:
+            ui.notify(
+                "出现需求配置丢失现象，请联系管理员处理，否则该项目资料将一直无法展示！",
+                type="warning",
+                position="bottom",
+                timeout=3000,
+                progress=True,
+                close_button="✖",
+            )
+            return ""
+
+    for version_number in selected_versions:
+        if overview_version is not None and version_number < overview_version:
+            continue
+        version_key = _canonical_requirement_version(version_number)
+        latest_section = overview_data.get("0")
+        latest_file_dic = {}
+        if isinstance(latest_section, dict):
+            raw_file_dic = latest_section.get("file_dic")
+            if isinstance(raw_file_dic, dict):
+                latest_file_dic = raw_file_dic
+        temp_dict = await extract_requirement(
+            latest_file_dic,
+            os.path.join(REQ_DIR, project_exists_file[version_key]["name"]),
+        )
+        if not temp_dict:
+            logger.error("整理需求版本失败: project=%s, version=%s", project_name, version_key)
+            return ""
+        overview_data[version_key] = temp_dict["contrast"]
+        overview_data["0"] = temp_dict["latest"]
+        overview_data["version"] = version_key
+        overview_data["first_create"] = overview_version is None
+
+    destination = Path(output_path) if output_path is not None else (
+        overview_file_path_temp if review else overview_file_path
+    )
+    try:
+        _write_json_atomic(destination, overview_data)
+        return str(destination)
+    except (OSError, TypeError, ValueError):
+        logger.error("原子写入概述整理文件失败: %s", destination, exc_info=True)
+        return ""
+
+
+async def prepare_requirement_version_tidy(project_name: str, target_version: str) -> tuple[str, dict]:
+    """生成审批专用候选概述文件，并重新读取验证其内容。"""
+    candidate_path = create_requirement_overview_candidate_path(project_name, target_version)
+    written_path = await requirement_version_tidy(
+        project_name,
+        False,
+        target_version=target_version,
+        output_path=candidate_path,
+    )
+    if not written_path:
+        return "", {}
+    try:
+        with open(written_path, "r", encoding="utf-8") as file_obj:
+            candidate_data = json.load(file_obj)
+    except (OSError, json.JSONDecodeError):
+        logger.error("审批候选概述文件复读校验失败: %s", written_path, exc_info=True)
+        Path(written_path).unlink(missing_ok=True)
+        return "", {}
+    return written_path, candidate_data
 
 
 async def get_overviow_page(project_name, review: bool):

@@ -1,8 +1,10 @@
 # -*- encoding: utf-8 -*-
+import asyncio
 import copy
 import json
 import logging
 import os
+from collections import defaultdict
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -11,17 +13,23 @@ from nicegui import app, ui
 from .. import db_storage
 from ..config import BASE_DIR, IMG_DIR, OVER_DIR, PRESET_AVATARS, REQ_DIR, REQ_REMOVE_DIR
 from ..overview_warning import get_overview_counts, get_overview_warning, sort_overview_pending_items
+from ..requirement_overview_impact import RequirementOverviewImpactConfigError
 from ..utils import (
     delete_file,
     get_cache_busted_path,
     get_overviow_page,
     get_project_engineer_project_list_dic,
+    get_requirement_overview_impacts,
     logout,
     move_file_with_timestamp_pathlib,
+    prepare_requirement_version_tidy,
     project_summary_update,
-    requirement_version_tidy,
+    refresh_overview_pending_labels,
+    restore_file_bytes,
+    restore_overview_active_state,
     set_overview_active_state,
     set_project_custom_labels,
+    snapshot_file_bytes,
     setup_global_activity_tracking,
     validate_search_path,
     validate_svn_url,
@@ -29,6 +37,9 @@ from ..utils import (
 
 # 获取 logger
 logger = logging.getLogger(__name__)
+
+# 同一项目的审批必须串行，避免重复点击或不同客户端同时通过同一版本。
+_requirement_review_locks = defaultdict(asyncio.Lock)
 
 
 # --- UI 辅助组件 ---
@@ -130,35 +141,166 @@ def information_page():
 
     async def set_review_pass(container_row, p_name, v):
         """审核通过逻辑"""
-        overview_success, changed_labels = await set_overview_active_state(p_name, v)
-        if not overview_success:
-            logger.error(f"审核通过前更新概述激活状态失败: project={p_name}, version={v}")
-            ui.notify(
-                "概述状态更新失败，已中止审批通过。",
-                type="negative",
-                position="center",
-                timeout=0,
-                close_button="✖",
-            )
-            return
+        async with _requirement_review_locks[p_name]:
+            current_record = app.storage.general.get("wait_review", {}).get(p_name, {}).get(v, {})
+            if current_record.get("state") != "待审":
+                ui.notify("需求非待审状态，无法通过，已刷新列表", type="warning")
+                refresh_review_row(container_row, p_name, v)
+                return
 
-        app.storage.general["wait_review"][p_name][v]["state"] = "已审"
-        app.storage.general["wait_review"][p_name][v]["pass_time"] = datetime.now().isoformat()
-        app.storage.general["project_req_max_ver"][p_name] = v
+            candidate_path = ""
+            official_path = Path(OVER_DIR) / f"{p_name}_概述整理.json"
+            try:
+                # 先整理成不可见候选文件；正式概述文件此时完全不动。
+                candidate_path, candidate_data = await prepare_requirement_version_tidy(p_name, v)
+                if not candidate_path:
+                    raise RuntimeError("需求概述候选文件整理失败")
 
-        if changed_labels:
-            from ..components import OverviewVersionManager
+                affected_labels, missing_node_ids, change_node_ids = get_requirement_overview_impacts(
+                    candidate_data,
+                    v,
+                    p_name,
+                )
+                logger.info(
+                    "需求审批影响范围已解析: project=%s, version=%s, changes=%s, affected_labels=%s, "
+                    "unmapped_node_ids=%s",
+                    p_name,
+                    v,
+                    {key: sorted(value) for key, value in change_node_ids.items()},
+                    sorted(affected_labels),
+                    sorted(missing_node_ids),
+                )
+            except (RequirementOverviewImpactConfigError, RuntimeError, OSError, ValueError) as exc:
+                if candidate_path:
+                    Path(candidate_path).unlink(missing_ok=True)
+                logger.error("审核通过前整理需求概述或解析影响配置失败: project=%s, version=%s", p_name, v, exc_info=True)
+                ui.notify(
+                    f"需求概述整理失败，已中止审批通过：{exc}",
+                    type="negative",
+                    position="center",
+                    timeout=0,
+                    close_button="✖",
+                )
+                return
 
-            for label in changed_labels:
-                OverviewVersionManager.bump(p_name, label)
+            try:
+                official_existed, official_content = snapshot_file_bytes(official_path)
+            except OSError as exc:
+                Path(candidate_path).unlink(missing_ok=True)
+                logger.error("读取正式概述文件快照失败: %s", official_path, exc_info=True)
+                ui.notify(f"无法建立正式概述文件回滚点，审批已中止：{exc}", type="negative", position="center")
+                return
 
-        delete_file(f"{OVER_DIR}/{p_name}_概述整理_temp.json")
-        await requirement_version_tidy(p_name, False)
-        set_project_custom_labels(p_name)
+            overview_rollback_context = {}
+            try:
+                overview_success, changed_labels = await set_overview_active_state(
+                    p_name,
+                    v,
+                    affected_labels,
+                    rollback_context=overview_rollback_context,
+                )
+            except Exception as exc:
+                Path(candidate_path).unlink(missing_ok=True)
+                logger.error("审核通过前更新概述激活状态异常: project=%s, version=%s", p_name, v, exc_info=True)
+                ui.notify(f"概述状态更新异常，审批未生效：{exc}", type="negative", position="center")
+                return
+            if not overview_success:
+                Path(candidate_path).unlink(missing_ok=True)
+                logger.error("审核通过前更新概述激活状态失败: project=%s, version=%s", p_name, v)
+                ui.notify(
+                    "概述状态更新失败，候选概述文件已丢弃，审批未生效。",
+                    type="negative",
+                    position="center",
+                    timeout=0,
+                    close_button="✖",
+                )
+                return
 
-        # 刷新UI行
-        refresh_review_row(container_row, p_name, v)
-        dialog.close()
+            overview_before = overview_rollback_context.get("before", {})
+            overview_after = overview_rollback_context.get("after", overview_before)
+            review_record_before = copy.deepcopy(current_record)
+            max_versions = app.storage.general.setdefault("project_req_max_ver", {})
+            max_version_existed = p_name in max_versions
+            max_version_before = max_versions.get(p_name)
+            checked_versions = app.storage.general.setdefault("overview_active_state_checked_versions", {})
+            checked_version_existed = p_name in checked_versions
+            checked_version_before = checked_versions.get(p_name)
+
+            try:
+                # 候选文件与正式文件位于同一目录，替换动作在文件系统层面是原子的。
+                os.replace(candidate_path, official_path)
+                app.storage.general["wait_review"][p_name][v]["state"] = "已审"
+                app.storage.general["wait_review"][p_name][v]["pass_time"] = datetime.now().isoformat()
+                max_versions[p_name] = v
+                checked_versions[p_name] = v
+            except Exception as exc:
+                logger.error("发布审批结果失败，开始补偿回滚: project=%s, version=%s", p_name, v, exc_info=True)
+                file_rollback_success = True
+                try:
+                    restore_file_bytes(official_path, official_existed, official_content)
+                except Exception:
+                    file_rollback_success = False
+                    logger.critical("正式概述文件补偿回滚失败: %s", official_path, exc_info=True)
+
+                state_rollback_success = True
+                try:
+                    app.storage.general["wait_review"][p_name][v] = review_record_before
+                    if max_version_existed:
+                        max_versions[p_name] = max_version_before
+                    else:
+                        max_versions.pop(p_name, None)
+                    if checked_version_existed:
+                        checked_versions[p_name] = checked_version_before
+                    else:
+                        checked_versions.pop(p_name, None)
+                except Exception:
+                    state_rollback_success = False
+                    logger.critical(
+                        "需求审批状态补偿回滚失败: project=%s, version=%s",
+                        p_name,
+                        v,
+                        exc_info=True,
+                    )
+
+                overview_rollback_success = await restore_overview_active_state(
+                    p_name,
+                    overview_before,
+                    overview_after,
+                )
+                Path(candidate_path).unlink(missing_ok=True)
+                rollback_message = "审批发布失败，所有已完成步骤均已回滚。"
+                if not file_rollback_success or not state_rollback_success or not overview_rollback_success:
+                    rollback_message = "审批发布失败，且自动回滚不完整，请立即联系管理员检查。"
+                ui.notify(
+                    f"{rollback_message}错误：{exc}",
+                    type="negative",
+                    position="center",
+                    timeout=0,
+                    close_button="✖",
+                )
+                return
+
+            # 下面都是已提交后的派生缓存刷新，不再参与审批事务。
+            try:
+                if changed_labels:
+                    from ..components import OverviewVersionManager
+
+                    for label in changed_labels:
+                        OverviewVersionManager.bump(p_name, label)
+                refresh_overview_pending_labels(p_name, affected_labels)
+                Path(OVER_DIR, f"{p_name}_概述整理_temp.json").unlink(missing_ok=True)
+                set_project_custom_labels(p_name)
+            except Exception:
+                logger.error(
+                    "需求审批已成功，但派生缓存刷新失败: project=%s, version=%s",
+                    p_name,
+                    v,
+                    exc_info=True,
+                )
+
+            # 刷新UI行
+            refresh_review_row(container_row, p_name, v)
+            dialog.close()
 
     async def set_temporary_project_review_pass(container_row, p_name, v, data):
         if data.get("introduction").strip() and data.get("customer").strip():

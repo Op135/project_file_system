@@ -364,6 +364,8 @@ app.storage.general.setdefault("over_change_broadcast", {})
 app.storage.general.setdefault("over_config_data_flat", {})
 # 储存服务器层级 用于扁平化需求配置里的定制标签信息{"node_id": {"option_id":"option_label"}}
 app.storage.general.setdefault("config_service_custom_labels", {})
+# 需求 node_id 与概述 label 的影响关系；启动加载概述配置时会完成校验并覆盖此占位值。
+app.storage.general.setdefault("requirement_overview_impact_config", {})
 # 用于全局更新标记，通知所有监听此项目的客户端，暂时不用
 app.storage.general.setdefault("overview_last_update", {})
 # 储存服务器层级 用于记录概述数据的历史快照，键为日期字符串，值为当日概述数据的快照
