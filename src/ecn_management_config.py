@@ -44,6 +44,39 @@ _DEFAULT_CONFIG = {
     "reminders": {
         "impact_followup_states": [ECNState.ECN_SCHEMING, ECNState.ECN_REVIEWING],
     },
+    "scheme_review": {
+        "require_rejected_item_selection": True,
+        "require_revision_before_reconfirmation": True,
+        "participant_statuses": {
+            "editing": {"label": "编写中", "color": "orange", "icon": "edit", "remind": True},
+            "confirmed": {
+                "label": "确认完成方案",
+                "color": "green",
+                "icon": "check_circle",
+                "remind": False,
+            },
+            "needs_reconfirmation": {
+                "label": "待重新确认",
+                "color": "red",
+                "icon": "published_with_changes",
+                "remind": True,
+            },
+        },
+        "item_statuses": {
+            "normal": {"label": "正常"},
+            "needs_improvement": {"label": "待改进"},
+            "revised_pending_confirmation": {"label": "已改进，待重新确认"},
+            "revised_confirmed": {"label": "已整改并重新确认"},
+        },
+        "transitions": {
+            "participant_after_edit": "editing",
+            "participant_after_confirmation": "confirmed",
+            "participant_after_rejection": "needs_reconfirmation",
+            "item_after_rejection": "needs_improvement",
+            "item_after_revision": "revised_pending_confirmation",
+            "item_after_reconfirmation": "revised_confirmed",
+        },
+    },
     "ui": {
         "overview_conflict_auto_close_seconds": 5.0,
     },
@@ -159,6 +192,49 @@ def _positive_number(value: Any, default: float, field_name: str) -> float:
     return default
 
 
+def _bool_value(value: Any, default: bool, field_name: str) -> bool:
+    if isinstance(value, bool):
+        return value
+    logger.warning("ECN配置 %s 无效，已使用默认值", field_name)
+    return default
+
+
+def _status_config(value: Any, default: dict, field_name: str) -> dict:
+    if not isinstance(value, dict):
+        logger.warning("ECN配置 %s 无效，已使用默认值", field_name)
+        return copy.deepcopy(default)
+    result = copy.deepcopy(default)
+    for status, default_info in default.items():
+        raw_info = value.get(status)
+        if not isinstance(raw_info, dict):
+            logger.warning("ECN配置 %s.%s 无效，已使用默认值", field_name, status)
+            continue
+        for key, default_value in default_info.items():
+            candidate = raw_info.get(key)
+            if isinstance(default_value, bool):
+                if isinstance(candidate, bool):
+                    result[status][key] = candidate
+            elif isinstance(candidate, str) and candidate.strip():
+                result[status][key] = candidate.strip()
+    return result
+
+
+def _transition_config(value: Any, default: dict, participant_statuses: dict, item_statuses: dict) -> dict:
+    if not isinstance(value, dict):
+        logger.warning("ECN配置 scheme_review.transitions 无效，已使用默认值")
+        return copy.deepcopy(default)
+    result = copy.deepcopy(default)
+    for key, default_status in default.items():
+        candidate = value.get(key)
+        allowed_statuses = participant_statuses if key.startswith("participant_") else item_statuses
+        if isinstance(candidate, str) and candidate in allowed_statuses:
+            result[key] = candidate
+        else:
+            logger.warning("ECN配置 scheme_review.transitions.%s 无效，已使用默认值", key)
+            result[key] = default_status
+    return result
+
+
 def load_ecn_config(raw_config: dict | None = None) -> dict:
     """读取并逐字段校验 ECN 配置；无效字段独立回退，不影响其他有效配置。"""
     raw = _read_config_file() if raw_config is None else raw_config
@@ -187,6 +263,31 @@ def load_ecn_config(raw_config: dict | None = None) -> dict:
         raw_reminders.get("impact_followup_states"),
         _DEFAULT_CONFIG["reminders"]["impact_followup_states"],
         "reminders.impact_followup_states",
+    )
+    raw_scheme_review = raw.get("scheme_review", {})
+    if not isinstance(raw_scheme_review, dict):
+        raw_scheme_review = {}
+    result["scheme_review"]["require_rejected_item_selection"] = _bool_value(
+        raw_scheme_review.get("require_rejected_item_selection"),
+        _DEFAULT_CONFIG["scheme_review"]["require_rejected_item_selection"],
+        "scheme_review.require_rejected_item_selection",
+    )
+    result["scheme_review"]["require_revision_before_reconfirmation"] = _bool_value(
+        raw_scheme_review.get("require_revision_before_reconfirmation"),
+        _DEFAULT_CONFIG["scheme_review"]["require_revision_before_reconfirmation"],
+        "scheme_review.require_revision_before_reconfirmation",
+    )
+    for status_group in ["participant_statuses", "item_statuses"]:
+        result["scheme_review"][status_group] = _status_config(
+            raw_scheme_review.get(status_group),
+            _DEFAULT_CONFIG["scheme_review"][status_group],
+            f"scheme_review.{status_group}",
+        )
+    result["scheme_review"]["transitions"] = _transition_config(
+        raw_scheme_review.get("transitions"),
+        _DEFAULT_CONFIG["scheme_review"]["transitions"],
+        result["scheme_review"]["participant_statuses"],
+        result["scheme_review"]["item_statuses"],
     )
 
     raw_ui = raw.get("ui", {})
@@ -229,6 +330,20 @@ ECN_SCHEME_INITIATOR_ROLES = ECN_CONFIG["permissions"]["scheme_initiator_roles"]
 ECN_SCHEME_WRITER_ROLES = ECN_CONFIG["permissions"]["scheme_writer_roles"]
 ECN_IMPACT_INITIAL_REMINDER_ROLES = ECN_CONFIG["permissions"]["impact_initial_reminder_roles"]
 ECN_IMPACT_FOLLOWUP_STATES = ECN_CONFIG["reminders"]["impact_followup_states"]
+ECN_REQUIRE_REJECTED_ITEM_SELECTION = ECN_CONFIG["scheme_review"]["require_rejected_item_selection"]
+ECN_REQUIRE_REVISION_BEFORE_RECONFIRMATION = ECN_CONFIG["scheme_review"][
+    "require_revision_before_reconfirmation"
+]
+ECN_PARTICIPANT_STATUS_CONFIG = ECN_CONFIG["scheme_review"]["participant_statuses"]
+ECN_ITEM_STATUS_CONFIG = ECN_CONFIG["scheme_review"]["item_statuses"]
+ECN_SCHEME_STATUS_TRANSITIONS = ECN_CONFIG["scheme_review"]["transitions"]
+ECN_PARTICIPANT_STATUS_EDITING = ECN_SCHEME_STATUS_TRANSITIONS["participant_after_edit"]
+ECN_PARTICIPANT_STATUS_CONFIRMED = ECN_SCHEME_STATUS_TRANSITIONS["participant_after_confirmation"]
+ECN_PARTICIPANT_STATUS_NEEDS_RECONFIRMATION = ECN_SCHEME_STATUS_TRANSITIONS["participant_after_rejection"]
+ECN_ITEM_STATUS_NORMAL = "normal"
+ECN_ITEM_STATUS_NEEDS_IMPROVEMENT = ECN_SCHEME_STATUS_TRANSITIONS["item_after_rejection"]
+ECN_ITEM_STATUS_REVISED_PENDING_CONFIRMATION = ECN_SCHEME_STATUS_TRANSITIONS["item_after_revision"]
+ECN_ITEM_STATUS_REVISED_CONFIRMED = ECN_SCHEME_STATUS_TRANSITIONS["item_after_reconfirmation"]
 ECN_OVERVIEW_CONFLICT_AUTO_CLOSE_SECONDS = ECN_CONFIG["ui"]["overview_conflict_auto_close_seconds"]
 ECN_WORKFLOW_ROUTES = ECN_CONFIG["workflow_routes"]
 
@@ -355,23 +470,26 @@ def register_ecn_impact_handler(ecn_data: Any, current_user: str, review_info: A
     return True
 
 
-def is_ecn_scheme_ready_for_review(ecn_data: Any) -> bool:
-    """判断方案是否人员已确认且完整覆盖影响区，可由总控角色发起评审。"""
+def get_ecn_scheme_coverage(ecn_data: Any) -> dict[str, set[str]]:
+    """汇总 ECN 要求、资料和物料三类方案关联覆盖情况。"""
     if not isinstance(ecn_data, dict):
-        return False
-    workflow = ecn_data.get("workflow", {})
-    if not isinstance(workflow, dict) or workflow.get("current_state") != ECNState.ECN_SCHEMING:
-        return False
-
-    participants = workflow.get("scheme_participants", {})
-    if not isinstance(participants, dict) or not participants:
-        return False
-    if not all(status == "confirmed" for status in participants.values()):
-        return False
-
+        ecn_data = {}
+    basic_info = ecn_data.get("basic_info", {})
+    if not isinstance(basic_info, dict):
+        basic_info = {}
     review_info = ecn_data.get("review_info", {})
     if not isinstance(review_info, dict):
         review_info = {}
+
+    required_requirements = set()
+    requirements = basic_info.get("requirements", [])
+    if isinstance(requirements, list):
+        for fallback_idx, requirement in enumerate(requirements, start=1):
+            if not isinstance(requirement, dict):
+                continue
+            requirement_idx = requirement.get("idx", fallback_idx)
+            if requirement_idx not in [None, ""]:
+                required_requirements.add(str(requirement_idx).strip())
     required_docs = {
         name for name, selected in review_info.get("involved_docs", {}).items() if selected
     }
@@ -383,6 +501,7 @@ def is_ecn_scheme_ready_for_review(ecn_data: Any) -> bool:
         if selected
     }
 
+    provided_requirements = set()
     provided_docs = set()
     provided_materials = set()
     change_items = ecn_data.get("change_items", [])
@@ -391,14 +510,130 @@ def is_ecn_scheme_ready_for_review(ecn_data: Any) -> bool:
     for item in change_items:
         if not isinstance(item, dict):
             continue
+        linked_requirements = item.get("req_idxs", [])
         linked_docs = item.get("linked_docs", [])
         linked_materials = item.get("linked_materials", [])
+        if isinstance(linked_requirements, list):
+            provided_requirements.update(
+                str(requirement_idx).strip()
+                for requirement_idx in linked_requirements
+                if requirement_idx not in [None, ""]
+            )
         if isinstance(linked_docs, list):
             provided_docs.update(linked_docs)
         if isinstance(linked_materials, list):
             provided_materials.update(linked_materials)
 
-    return required_docs.issubset(provided_docs) and required_materials.issubset(provided_materials)
+    return {
+        "required_requirements": required_requirements,
+        "required_docs": required_docs,
+        "required_materials": required_materials,
+        "provided_requirements": provided_requirements,
+        "provided_docs": provided_docs,
+        "provided_materials": provided_materials,
+        "missing_requirements": required_requirements - provided_requirements,
+        "missing_docs": required_docs - provided_docs,
+        "missing_materials": required_materials - provided_materials,
+    }
+
+
+def is_ecn_scheme_ready_for_review(ecn_data: Any) -> bool:
+    """判断人员已确认且要求、资料、物料均被方案覆盖，可由总控角色发起评审。"""
+    if not isinstance(ecn_data, dict):
+        return False
+    workflow = ecn_data.get("workflow", {})
+    if not isinstance(workflow, dict) or workflow.get("current_state") != ECNState.ECN_SCHEMING:
+        return False
+
+    participants = workflow.get("scheme_participants", {})
+    if not isinstance(participants, dict) or not participants:
+        return False
+    if not all(status == ECN_PARTICIPANT_STATUS_CONFIRMED for status in participants.values()):
+        return False
+
+    coverage = get_ecn_scheme_coverage(ecn_data)
+    return not any(
+        coverage[key]
+        for key in ["missing_requirements", "missing_docs", "missing_materials"]
+    )
+
+
+def reject_ecn_scheme_items(
+    ecn_data: Any,
+    rejected_item_ids: Any,
+    reviewer: str,
+    reviewer_role: str,
+    note: str,
+    rejected_at: str,
+) -> set[str]:
+    """标记被驳回方案并把对应作者切换为待重新确认，返回受影响作者集合。"""
+    if not isinstance(ecn_data, dict) or not isinstance(rejected_item_ids, (list, tuple, set)):
+        return set()
+    normalized_ids = {
+        str(item_id) for item_id in rejected_item_ids if item_id not in [None, ""]
+    }
+    if not normalized_ids:
+        return set()
+
+    rejected_authors = set()
+    change_items = ecn_data.get("change_items", [])
+    if not isinstance(change_items, list):
+        return set()
+    for item in change_items:
+        if not isinstance(item, dict) or str(item.get("item_id", "")) not in normalized_ids:
+            continue
+        item["review_status"] = ECN_ITEM_STATUS_NEEDS_IMPROVEMENT
+        rejection_info = {
+            "reviewer": reviewer,
+            "reviewer_role": reviewer_role,
+            "note": note,
+            "time": rejected_at,
+        }
+        item["rejection_info"] = rejection_info
+        rejection_history = item.setdefault("rejection_history", [])
+        if isinstance(rejection_history, list):
+            rejection_history.append(copy.deepcopy(rejection_info))
+        author = item.get("author")
+        if isinstance(author, str) and author.strip():
+            rejected_authors.add(author.strip())
+
+    participants = ecn_data.setdefault("workflow", {}).setdefault("scheme_participants", {})
+    if isinstance(participants, dict):
+        for author in rejected_authors:
+            participants[author] = ECN_PARTICIPANT_STATUS_NEEDS_RECONFIRMATION
+    return rejected_authors
+
+
+def mark_rejected_scheme_item_revised(item: Any) -> None:
+    """作者修改被驳回方案后，保留驳回记录并标记为等待作者重新确认。"""
+    if not isinstance(item, dict):
+        return
+    if item.get("review_status") == ECN_ITEM_STATUS_NEEDS_IMPROVEMENT:
+        item["review_status"] = ECN_ITEM_STATUS_REVISED_PENDING_CONFIRMATION
+
+
+def confirm_revised_scheme_items(ecn_data: Any, author: str) -> None:
+    """作者重新确认时，把已整改方案同步标记为完成重新确认。"""
+    if not isinstance(ecn_data, dict):
+        return
+    for item in ecn_data.get("change_items", []):
+        if (
+            isinstance(item, dict)
+            and item.get("author") == author
+            and item.get("review_status") == ECN_ITEM_STATUS_REVISED_PENDING_CONFIRMATION
+        ):
+            item["review_status"] = ECN_ITEM_STATUS_REVISED_CONFIRMED
+
+
+def has_unrevised_rejected_scheme_items(ecn_data: Any, author: str) -> bool:
+    if not isinstance(ecn_data, dict):
+        return False
+    return any(
+        isinstance(item, dict)
+        and item.get("author") == author
+        and item.get("review_status") == ECN_ITEM_STATUS_NEEDS_IMPROVEMENT
+        for item in ecn_data.get("change_items", [])
+    )
 
 
 def is_ecn_pending_for_user(ecn_data: Any, current_user: str, current_role: str) -> bool:
@@ -428,17 +663,22 @@ def is_ecn_pending_for_user(ecn_data: Any, current_user: str, current_role: str)
     if current_state not in ECN_IMPACT_FOLLOWUP_STATES:
         return False
 
-    handlers = get_ecn_impact_handlers(ecn_data)
-    if handlers:
-        return current_user in handlers
+    participants = workflow.get("scheme_participants", {})
+    if isinstance(participants, dict) and current_user in participants:
+        participant_status = participants.get(current_user)
+        status_info = ECN_PARTICIPANT_STATUS_CONFIG.get(participant_status, {})
+        return status_info.get("remind") is True
+    if isinstance(participants, dict) and participants:
+        # 已存在明确参与人时，不再把历史单兜底分派给研发助理；已确认参与人也不提醒。
+        return False
 
     if is_ecn_impact_blank(ecn_data):
         return role_matches_keywords(current_role, ECN_IMPACT_INITIAL_REMINDER_ROLES)
 
-    # 兼容升级前已有的方案编写单：没有 impact_handlers 时，优先使用已有方案参与人。
-    participants = workflow.get("scheme_participants", {})
-    if isinstance(participants, dict) and participants:
-        return current_user in participants
+    handlers = get_ecn_impact_handlers(ecn_data)
+    if handlers:
+        # 已经写过影响、但尚未提供方案的人仍需提醒；确认完成的参与人不会再提醒。
+        return current_user in handlers and current_user not in participants
 
     # 非空但历史数据无法追溯操作者时交给研发助理，避免待办无人负责。
     return role_matches_keywords(current_role, ECN_IMPACT_INITIAL_REMINDER_ROLES)

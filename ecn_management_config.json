@@ -5,7 +5,12 @@
         "permissions.scheme_initiator_roles": "可以发起ECN方案评审的角色关键字。",
         "permissions.scheme_writer_roles": "可以维护ECN影响和方案的角色关键字。",
         "permissions.impact_initial_reminder_roles": "ECR通过且ECN影响仍为空、尚无具体处理人时，主页角标提醒的角色关键字。",
-        "reminders.impact_followup_states": "ECN影响具体处理人需要持续收到主页角标的流程状态；方案评审通过进入执行阶段后停止。",
+        "reminders.impact_followup_states": "允许按方案参与状态提醒具体处理人的流程状态。",
+        "scheme_review.require_rejected_item_selection": "审批人驳回ECN方案时是否必须选择至少一个具体方案。",
+        "scheme_review.require_revision_before_reconfirmation": "被驳回方案未实际修改前，是否禁止作者直接重新确认。",
+        "scheme_review.participant_statuses": "方案参与人的状态编码、显示文案、颜色、图标和是否提醒。",
+        "scheme_review.item_statuses": "单条方案的评审整改状态编码及显示文案。",
+        "scheme_review.transitions": "方案编辑、确认、驳回和整改动作分别写入哪个参与人/方案状态。状态值必须存在于对应statuses配置中。",
         "ui.overview_conflict_auto_close_seconds": "概述新增数据与同格已有数据冲突时，警告浮层首次自动弹出的停留秒数。",
         "workflow_routes": "ECR、ECN方案评审和执行确认的角色审批路由。一个内层数组表示同一节点并行会签。",
         "schema": "ECN表单的原因、影响、资料类型和物料选项。"
@@ -33,6 +38,52 @@
             "ECN 方案编写与确认中",
             "ECN 方案评审中"
         ]
+    },
+    "scheme_review": {
+        "require_rejected_item_selection": true,
+        "require_revision_before_reconfirmation": true,
+        "participant_statuses": {
+            "editing": {
+                "label": "编写中",
+                "color": "orange",
+                "icon": "edit",
+                "remind": true
+            },
+            "confirmed": {
+                "label": "确认完成方案",
+                "color": "green",
+                "icon": "check_circle",
+                "remind": false
+            },
+            "needs_reconfirmation": {
+                "label": "待重新确认",
+                "color": "red",
+                "icon": "published_with_changes",
+                "remind": true
+            }
+        },
+        "item_statuses": {
+            "normal": {
+                "label": "正常"
+            },
+            "needs_improvement": {
+                "label": "待改进"
+            },
+            "revised_pending_confirmation": {
+                "label": "已改进，待重新确认"
+            },
+            "revised_confirmed": {
+                "label": "已整改并重新确认"
+            }
+        },
+        "transitions": {
+            "participant_after_edit": "editing",
+            "participant_after_confirmation": "confirmed",
+            "participant_after_rejection": "needs_reconfirmation",
+            "item_after_rejection": "needs_improvement",
+            "item_after_revision": "revised_pending_confirmation",
+            "item_after_reconfirmation": "revised_confirmed"
+        }
     },
     "ui": {
         "overview_conflict_auto_close_seconds": 5

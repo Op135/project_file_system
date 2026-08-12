@@ -6,16 +6,26 @@ from src.ecn_management_config import (
     ECN_SCHEME_GROUP_ORDINARY_DOCUMENT,
     ECN_SCHEME_GROUP_OVERVIEW_DOCUMENT,
     ECN_SCHEME_GROUP_UNKNOWN,
+    ECN_ITEM_STATUS_NEEDS_IMPROVEMENT,
+    ECN_ITEM_STATUS_REVISED_CONFIRMED,
+    ECN_ITEM_STATUS_REVISED_PENDING_CONFIRMATION,
+    ECN_PARTICIPANT_STATUS_CONFIRMED,
+    ECN_PARTICIPANT_STATUS_NEEDS_RECONFIRMATION,
     ECNState,
     build_overview_validation_signature,
     classify_ecn_change_item,
     get_active_overview_row_contents,
+    get_ecn_scheme_coverage,
     get_ecn_dashboard_pending_count,
+    has_unrevised_rejected_scheme_items,
     is_ecn_pending_for_user,
     is_ecn_review_info_blank,
     is_ecn_scheme_ready_for_review,
     load_ecn_config,
     register_ecn_impact_handler,
+    confirm_revised_scheme_items,
+    mark_rejected_scheme_item_revised,
+    reject_ecn_scheme_items,
 )
 
 
@@ -59,6 +69,18 @@ def test_checked_in_config_file_is_valid():
         ECNState.ECN_REVIEWING,
     ]
     assert loaded["ui"]["overview_conflict_auto_close_seconds"] == 5.0
+    assert loaded["scheme_review"]["require_rejected_item_selection"] is True
+    assert loaded["scheme_review"]["require_revision_before_reconfirmation"] is True
+    assert loaded["scheme_review"]["participant_statuses"]["confirmed"]["remind"] is False
+    assert loaded["scheme_review"]["participant_statuses"]["needs_reconfirmation"]["remind"] is True
+    assert loaded["scheme_review"]["transitions"] == {
+        "participant_after_edit": "editing",
+        "participant_after_confirmation": "confirmed",
+        "participant_after_rejection": "needs_reconfirmation",
+        "item_after_rejection": "needs_improvement",
+        "item_after_revision": "revised_pending_confirmation",
+        "item_after_reconfirmation": "revised_confirmed",
+    }
 
 
 def test_empty_impact_only_reminds_rd_assistant():
@@ -94,20 +116,22 @@ def test_registering_impact_handlers_supports_multiple_people_and_does_not_dupli
     assert record["workflow"]["impact_handlers"] == ["工程师A", "工程师B"]
 
 
-def test_handlers_remain_pending_during_scheme_review_and_stop_after_approval():
+def test_confirmed_handler_is_not_reminded_but_rejected_handler_is_reminded():
     reviewing = _ecn_record(
         state=ECNState.ECN_REVIEWING,
         impact_handlers=["工程师A"],
         impact_selected=True,
+        participants={"工程师A": ECN_PARTICIPANT_STATUS_CONFIRMED},
     )
-    executing = _ecn_record(
-        state=ECNState.ECN_EXECUTING,
+    rejected = _ecn_record(
+        state=ECNState.ECN_SCHEMING,
         impact_handlers=["工程师A"],
         impact_selected=True,
+        participants={"工程师A": ECN_PARTICIPANT_STATUS_NEEDS_RECONFIRMATION},
     )
 
-    assert is_ecn_pending_for_user(reviewing, "工程师A", "研发硬件") is True
-    assert is_ecn_pending_for_user(executing, "工程师A", "研发硬件") is False
+    assert is_ecn_pending_for_user(reviewing, "工程师A", "研发硬件") is False
+    assert is_ecn_pending_for_user(rejected, "工程师A", "研发硬件") is True
 
 
 def test_scheme_initiator_is_reminded_when_scheme_is_ready_for_review():
@@ -151,14 +175,100 @@ def test_scheme_initiator_is_not_reminded_until_confirmation_and_coverage_are_co
     assert is_ecn_pending_for_user(missing_coverage, "经理A", "研发经理") is False
 
 
+def test_every_change_requirement_must_be_linked_by_at_least_one_scheme():
+    record = _ecn_record(
+        impact_selected=True,
+        impact_handlers=["工程师A"],
+        participants={"工程师A": ECN_PARTICIPANT_STATUS_CONFIRMED},
+    )
+    record["basic_info"]["requirements"] = [
+        {"idx": 1, "content": "更新电子BOM"},
+        {"idx": 2, "content": "同步修改说明书"},
+    ]
+    record["change_items"] = [{"req_idxs": [1]}]
+
+    coverage = get_ecn_scheme_coverage(record)
+    assert coverage["missing_requirements"] == {"2"}
+    assert is_ecn_scheme_ready_for_review(record) is False
+    assert is_ecn_pending_for_user(record, "经理A", "研发经理") is False
+
+    record["change_items"].append({"req_idxs": ["2"]})
+    assert get_ecn_scheme_coverage(record)["missing_requirements"] == set()
+    assert is_ecn_scheme_ready_for_review(record) is True
+
+
 def test_old_nonblank_record_uses_scheme_participants_as_handler_fallback():
     record = _ecn_record(
         impact_selected=True,
         participants={"历史工程师": "confirmed"},
     )
 
-    assert is_ecn_pending_for_user(record, "历史工程师", "研发硬件") is True
+    assert is_ecn_pending_for_user(record, "历史工程师", "研发硬件") is False
     assert is_ecn_pending_for_user(record, "助理A", "研发助理") is False
+
+
+def test_rejecting_selected_items_only_reopens_their_authors():
+    record = _ecn_record(
+        state=ECNState.ECN_REVIEWING,
+        impact_selected=True,
+        impact_handlers=["工程师A", "工程师B"],
+        participants={
+            "工程师A": ECN_PARTICIPANT_STATUS_CONFIRMED,
+            "工程师B": ECN_PARTICIPANT_STATUS_CONFIRMED,
+        },
+    )
+    record["change_items"] = [
+        {"item_id": "A1", "author": "工程师A", "review_status": "normal"},
+        {"item_id": "B1", "author": "工程师B", "review_status": "normal"},
+    ]
+
+    authors = reject_ecn_scheme_items(
+        record,
+        ["A1"],
+        "经理A",
+        "研发经理",
+        "参数需要修订",
+        "2026-08-12 10:00:00",
+    )
+
+    assert authors == {"工程师A"}
+    assert record["change_items"][0]["review_status"] == ECN_ITEM_STATUS_NEEDS_IMPROVEMENT
+    assert record["change_items"][0]["rejection_info"]["note"] == "参数需要修订"
+    assert record["change_items"][0]["rejection_history"] == [
+        {
+            "reviewer": "经理A",
+            "reviewer_role": "研发经理",
+            "note": "参数需要修订",
+            "time": "2026-08-12 10:00:00",
+        }
+    ]
+    assert record["change_items"][1]["review_status"] == "normal"
+    assert record["workflow"]["scheme_participants"] == {
+        "工程师A": ECN_PARTICIPANT_STATUS_NEEDS_RECONFIRMATION,
+        "工程师B": ECN_PARTICIPANT_STATUS_CONFIRMED,
+    }
+    assert is_ecn_pending_for_user(record, "工程师A", "研发硬件") is True
+    assert is_ecn_pending_for_user(record, "工程师B", "工程") is False
+
+
+def test_rejected_item_must_be_revised_before_reconfirmation():
+    record = _ecn_record(
+        participants={"工程师A": ECN_PARTICIPANT_STATUS_NEEDS_RECONFIRMATION}
+    )
+    item = {
+        "item_id": "A1",
+        "author": "工程师A",
+        "review_status": ECN_ITEM_STATUS_NEEDS_IMPROVEMENT,
+    }
+    record["change_items"] = [item]
+
+    assert has_unrevised_rejected_scheme_items(record, "工程师A") is True
+    mark_rejected_scheme_item_revised(item)
+    assert item["review_status"] == ECN_ITEM_STATUS_REVISED_PENDING_CONFIRMATION
+    assert has_unrevised_rejected_scheme_items(record, "工程师A") is False
+
+    confirm_revised_scheme_items(record, "工程师A")
+    assert item["review_status"] == ECN_ITEM_STATUS_REVISED_CONFIRMED
 
 
 def test_normal_approval_and_applicant_pending_rules_are_preserved():
