@@ -188,6 +188,63 @@ def test_collects_node_ids_from_added_deleted_and_modified_blocks():
     }
 
 
+def _option_requirement_node(answer_type, user_output, options):
+    return {
+        "node_id": "9",
+        "answer_type": answer_type,
+        "user_must_out": user_output,
+        "option_tolerance_out": {},
+        "ref_out": [],
+        "options": options,
+    }
+
+
+def test_compare_ignores_added_or_deleted_unselected_multi_select_options():
+    option_a = {"option_id": "opt_1", "option_out": "A"}
+    option_b = {"option_id": "opt_2", "option_out": "B"}
+    option_c = {"option_id": "opt_3", "option_out": "C"}
+    old_node = _option_requirement_node(
+        "多选",
+        {"A": True, "B": False},
+        [option_a, option_b],
+    )
+    added_unselected_node = _option_requirement_node(
+        "多选",
+        {"A": True, "B": False, "C": False},
+        [option_a, option_b, option_c],
+    )
+    deleted_unselected_node = _option_requirement_node(
+        "多选",
+        {"A": True},
+        [option_a],
+    )
+
+    assert utils.compare_configs_by_id({"1": old_node}, {"1": added_unselected_node})["modified"] == {}
+    assert utils.compare_configs_by_id({"1": old_node}, {"1": deleted_unselected_node})["modified"] == {}
+
+
+def test_compare_still_detects_actual_multi_select_answer_change():
+    options = [
+        {"option_id": "opt_1", "option_out": "A"},
+        {"option_id": "opt_2", "option_out": "B"},
+    ]
+    old_node = _option_requirement_node("多选", {"A": True, "B": False}, options)
+    new_node = _option_requirement_node("多选", {"A": True, "B": True}, options)
+
+    assert "9" in utils.compare_configs_by_id({"1": old_node}, {"1": new_node})["modified"]
+
+
+def test_compare_single_select_depends_only_on_selected_value():
+    option_a = {"option_id": "opt_1", "option_out": "PWM"}
+    option_b = {"option_id": "opt_2", "option_out": "模拟"}
+    old_node = _option_requirement_node("单选", {"value": "PWM"}, [option_a])
+    unselected_option_added = _option_requirement_node("单选", {"value": "PWM"}, [option_a, option_b])
+    selected_value_changed = _option_requirement_node("单选", {"value": "模拟"}, [option_a, option_b])
+
+    assert utils.compare_configs_by_id({"1": old_node}, {"1": unselected_option_added})["modified"] == {}
+    assert "9" in utils.compare_configs_by_id({"1": old_node}, {"1": selected_value_changed})["modified"]
+
+
 def test_selective_active_state_marks_only_affected_labels_pending_and_carries_other_states():
     original = {
         "affected": {
@@ -352,6 +409,9 @@ def load_tests(_loader, _tests, _pattern):
         test_save_config_atomically_updates_file_and_runtime_storage,
         test_save_config_restores_file_and_memory_when_memory_sync_fails,
         test_collects_node_ids_from_added_deleted_and_modified_blocks,
+        test_compare_ignores_added_or_deleted_unselected_multi_select_options,
+        test_compare_still_detects_actual_multi_select_answer_change,
+        test_compare_single_select_depends_only_on_selected_value,
         test_selective_active_state_marks_only_affected_labels_pending_and_carries_other_states,
         test_overview_state_compensation_uses_compare_and_restore,
         test_file_snapshot_can_restore_original_or_remove_new_file,

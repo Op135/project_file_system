@@ -1735,6 +1735,30 @@ def find_files_with_prefix_and_version(directory, prefix):
     return result_dic
 
 
+# 提取需求节点真正参与版本差异判断的业务答案。
+def get_effective_requirement_output(item: dict) -> object:
+    """忽略选项型答案中仅用于 UI 绑定的未选值。
+
+    多选在载入新模板时会为每个选项补 ``False``，这些键的增删不代表用户答案变化；
+    单选则只关心当前选中值。其他题型保持原有完整字典比较口径。
+    """
+    user_output = item.get("user_must_out", {})
+    if not isinstance(user_output, dict):
+        return user_output
+
+    answer_type = item.get("answer_type")
+    if answer_type == "多选":
+        return frozenset(str(key) for key, selected in user_output.items() if selected)
+
+    if answer_type in {"单选", "下拉单选"}:
+        selected_value = user_output.get("value")
+        if selected_value is None or selected_value == "":
+            return None
+        return str(selected_value)
+
+    return user_output
+
+
 # 对比两个需求配置文件的需求确认项的差异
 def compare_configs_by_id(old_data, new_data, add_options: list = []) -> dict:
     """
@@ -1787,7 +1811,13 @@ def compare_configs_by_id(old_data, new_data, add_options: list = []) -> dict:
             keys_to_check = ["user_must_out", "option_tolerance_out", "ref_out"]
             is_modified = False
             for key in keys_to_check:
-                if old_item.get(key) != new_item.get(key):
+                if key == "user_must_out":
+                    old_value = get_effective_requirement_output(old_item)
+                    new_value = get_effective_requirement_output(new_item)
+                else:
+                    old_value = old_item.get(key)
+                    new_value = new_item.get(key)
+                if old_value != new_value:
                     is_modified = True
                     break
 
