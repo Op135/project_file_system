@@ -333,6 +333,16 @@ def _render_bulk_pending_dialog(
     return True
 
 
+def _normalize_related_labels(related_labels: Optional[list]) -> list:
+    """清理影响项配置，并在保持原顺序的前提下去重。"""
+    return list(dict.fromkeys(label for label in (related_labels or []) if label))
+
+
+def _has_real_related_selection(related_select_dic: dict) -> bool:
+    """只有 checkbox 明确返回布尔值 True 时才视为真实勾选。"""
+    return any(value is True for value in related_select_dic.values())
+
+
 def _render_bulk_related_dialog(
     dialog,
     related_labels: list,
@@ -341,6 +351,11 @@ def _render_bulk_related_dialog(
     on_skip: Callable,
 ) -> None:
     """批量状态判断完成后，渲染关联影响范围选择窗口。"""
+    related_labels = _normalize_related_labels(related_labels)
+    if not related_labels:
+        on_skip()
+        return
+
     dialog.clear()
     related_select_dic = {related_label: False for related_label in related_labels}
     is_submitting = False
@@ -352,6 +367,16 @@ def _render_bulk_related_dialog(
     async def submit_related(all_related_bool: bool) -> None:
         nonlocal is_submitting
         if is_submitting:
+            return
+        if not all_related_bool and not _has_real_related_selection(related_select_dic):
+            ui.notify(
+                "请至少勾选一个确实受影响的概述项。",
+                type="warning",
+                position="center",
+                timeout=1000,
+                progress=True,
+                close_button="✖",
+            )
             return
 
         is_submitting = True
@@ -404,12 +429,34 @@ def _render_bulk_related_dialog(
             submit_spinner.set_visibility(False)
             submit_status = ui.label("正在处理关联影响，请稍候...").classes("text-sm text-amber-9")
             submit_status.set_visibility(False)
-            skip_button = ui.button("本次不影响其它项", color="grey", on_click=lambda _=None: on_skip()).props("flat")
+            skip_button = ui.button(
+                "本次不影响其它项",
+                color="grey",
+                on_click=lambda _=None: _show_no_related_impact_confirmation(on_skip),
+            ).props("flat")
             selected_button = ui.button("勾选的受影响", color="green", on_click=lambda _=None: submit_related(False))
             all_button = ui.button("全部受影响", color="blue", on_click=lambda _=None: submit_related(True))
             action_buttons.extend([skip_button, selected_button, all_button])
 
     dialog.open()
+
+
+def _show_no_related_impact_confirmation(on_confirm: Callable) -> None:
+    """二次确认本次操作确实不会影响其它概述项。"""
+    confirm_dialog = ui.dialog().props("persistent")
+
+    def confirm_no_impact() -> None:
+        confirm_dialog.close()
+        on_confirm()
+
+    with confirm_dialog, ui.card().classes("w-full max-w-[520px]"):
+        ui.label("请谨慎确认").classes("text-lg font-bold text-negative")
+        ui.label("请谨慎考虑，遗漏关联影响将导致其它概述内容更新不及时，产生潜在风险！").classes("text-base")
+        with ui.row().classes("w-full justify-end items-center gap-2"):
+            ui.button("返回重新选择", color="green", on_click=confirm_dialog.close)
+            ui.button("确认不影响其它项", color="negative", on_click=confirm_no_impact)
+
+    confirm_dialog.open()
 
 
 async def _archive_pending_record(project: str, label: str, chip_id: str, creator: str) -> None:
@@ -2966,8 +3013,13 @@ class InteractiveButton:
                 OverviewVersionManager.bump(self.project, related_label)
 
     def _show_related_chip_select_dialog(self, chip_text, chip_state, type):
+        related_labels = _normalize_related_labels(self.impact_list)
+        if not related_labels:
+            self.activ_dialog.close()
+            return
+
         self.activ_dialog.clear()
-        related_select_dic = {}
+        related_select_dic = {label: False for label in related_labels}
         is_submitting = False
         action_buttons = []
         related_checkboxes = []
@@ -2977,6 +3029,16 @@ class InteractiveButton:
         async def submit_related(all_related_bool: bool) -> None:
             nonlocal is_submitting
             if is_submitting:
+                return
+            if not all_related_bool and not _has_real_related_selection(related_select_dic):
+                ui.notify(
+                    "请至少勾选一个确实受影响的概述项。",
+                    type="warning",
+                    position="center",
+                    timeout=1000,
+                    progress=True,
+                    close_button="✖",
+                )
                 return
 
             is_submitting = True
@@ -3024,8 +3086,7 @@ class InteractiveButton:
             )
 
             with ui.grid(columns=3).classes("w-full gap-0"):
-                for related_label in self.impact_list:
-                    related_select_dic[related_label] = False
+                for related_label in related_labels:
                     related_checkboxes.append(
                         ui.checkbox(
                             text=app.storage.general["over_config_data_flat"]
@@ -3043,7 +3104,7 @@ class InteractiveButton:
                     skip_button = ui.button(
                         "本次不影响其它项",
                         color="grey",
-                        on_click=lambda _=None: self.activ_dialog.close(),
+                        on_click=lambda _=None: _show_no_related_impact_confirmation(self.activ_dialog.close),
                     ).props("flat")
                     action_buttons.append(skip_button)
                 selected_button = ui.button(
@@ -6109,8 +6170,13 @@ class OverviewTableGroup:
 
     # -------------- 对话框和联动刷新 --------------
     def _show_related_chip_select_dialog(self, chip_text, chip_state, type, config):
+        related_labels = _normalize_related_labels(config.get("impact_list"))
+        if not related_labels:
+            self.activ_dialog.close()
+            return
+
         self.activ_dialog.clear()
-        related_select_dic = {label: False for label in config.get("impact_list", [])}
+        related_select_dic = {label: False for label in related_labels}
         is_submitting = False
         action_buttons = []
         related_checkboxes = []
@@ -6120,6 +6186,16 @@ class OverviewTableGroup:
         async def submit_related(all_related_bool: bool) -> None:
             nonlocal is_submitting
             if is_submitting:
+                return
+            if not all_related_bool and not _has_real_related_selection(related_select_dic):
+                ui.notify(
+                    "请至少勾选一个确实受影响的概述项。",
+                    type="warning",
+                    position="center",
+                    timeout=1000,
+                    progress=True,
+                    close_button="✖",
+                )
                 return
 
             is_submitting = True
@@ -6164,7 +6240,7 @@ class OverviewTableGroup:
         with self.activ_dialog, ui.card().classes("w-full max-w-[800px]"):
             ui.label("选择本次操作可能影响的其它概述项：").classes("text-lg font-bold")
             with ui.grid(columns=3).classes("w-full gap-0"):
-                for related_label in config.get("impact_list", []):
+                for related_label in related_labels:
                     related_checkboxes.append(
                         ui.checkbox(
                             text=app.storage.general["over_config_data_flat"]
@@ -6181,7 +6257,7 @@ class OverviewTableGroup:
                     skip_button = ui.button(
                         "本次不影响其它项",
                         color="grey",
-                        on_click=lambda _=None: self.activ_dialog.close(),
+                        on_click=lambda _=None: _show_no_related_impact_confirmation(self.activ_dialog.close),
                     ).props("flat")
                     action_buttons.append(skip_button)
                 selected_button = ui.button(
