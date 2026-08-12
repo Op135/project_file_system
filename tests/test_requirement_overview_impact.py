@@ -10,10 +10,12 @@ from unittest.mock import patch
 from src import db_storage, utils
 from src.requirement_overview_impact import (
     REQUIREMENT_OVERVIEW_IMPACT_CONFIG_PATH,
+    REQUIREMENT_OVERVIEW_IMPACT_STORAGE_KEY,
     RequirementOverviewImpactConfigError,
     collect_requirement_change_node_ids,
     load_requirement_overview_impact_config,
     resolve_requirement_overview_impacts,
+    save_requirement_overview_impact_config,
 )
 
 
@@ -86,6 +88,89 @@ def test_invalid_overview_label_is_rejected():
         assert "missing_label" in str(exc)
     else:
         raise AssertionError("不存在的概述 label 必须被配置校验拒绝")
+
+
+def test_save_config_atomically_updates_file_and_runtime_storage():
+    with tempfile.TemporaryDirectory() as temp_dir:
+        config_path = Path(temp_dir) / "requirement_overview_impact.json"
+        storage = {}
+        normalized = save_requirement_overview_impact_config(
+            {
+                "schema_version": 1,
+                "unmapped_policy": "block",
+                "node_impacts": {
+                    "10": ["product_bom"],
+                    "9": ["product_bom", "product_bom"],
+                    "2": [],
+                    "8": [],
+                },
+            },
+            valid_overview_labels={"product_bom"},
+            storage=storage,
+            config_path=config_path,
+        )
+
+        persisted = json.loads(config_path.read_text(encoding="utf-8"))
+        assert persisted == {
+            "schema_version": 1,
+            "unmapped_policy": "block",
+            "node_impacts": {
+                "2": [],
+                "8": [],
+                "9": ["product_bom"],
+                "10": ["product_bom"],
+            },
+        }
+        assert list(persisted["node_impacts"]) == ["2", "8", "9", "10"]
+        assert list(normalized["node_impacts"]) == ["2", "8", "9", "10"]
+        assert "valid" not in persisted
+        assert storage[REQUIREMENT_OVERVIEW_IMPACT_STORAGE_KEY] == normalized
+        assert normalized["valid"] is True
+
+
+def test_save_config_restores_file_and_memory_when_memory_sync_fails():
+    class FailOnceStorage(dict):
+        def __init__(self, initial_data):
+            super().__init__(initial_data)
+            self.fail_next_assignment = True
+
+        def __setitem__(self, key, value):
+            if key == REQUIREMENT_OVERVIEW_IMPACT_STORAGE_KEY and self.fail_next_assignment:
+                self.fail_next_assignment = False
+                raise RuntimeError("模拟内存写入失败")
+            super().__setitem__(key, value)
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        config_path = Path(temp_dir) / "requirement_overview_impact.json"
+        original_file = b'{"schema_version": 1, "unmapped_policy": "block", "node_impacts": {}}'
+        config_path.write_bytes(original_file)
+        original_memory = {
+            "schema_version": 1,
+            "unmapped_policy": "block",
+            "node_impacts": {},
+            "valid": True,
+            "error": "",
+        }
+        storage = FailOnceStorage({REQUIREMENT_OVERVIEW_IMPACT_STORAGE_KEY: original_memory})
+
+        try:
+            save_requirement_overview_impact_config(
+                {
+                    "schema_version": 1,
+                    "unmapped_policy": "all_overviews",
+                    "node_impacts": {"9": ["product_bom"]},
+                },
+                valid_overview_labels={"product_bom"},
+                storage=storage,
+                config_path=config_path,
+            )
+        except RequirementOverviewImpactConfigError as exc:
+            assert "模拟内存写入失败" in str(exc)
+        else:
+            raise AssertionError("内存同步失败时保存操作必须失败")
+
+        assert config_path.read_bytes() == original_file
+        assert storage[REQUIREMENT_OVERVIEW_IMPACT_STORAGE_KEY] == original_memory
 
 
 def test_collects_node_ids_from_added_deleted_and_modified_blocks():
@@ -264,6 +349,8 @@ def load_tests(_loader, _tests, _pattern):
         test_load_and_resolve_selective_impact_config,
         test_unmapped_node_falls_back_to_all_overviews_and_block_policy_rejects_it,
         test_invalid_overview_label_is_rejected,
+        test_save_config_atomically_updates_file_and_runtime_storage,
+        test_save_config_restores_file_and_memory_when_memory_sync_fails,
         test_collects_node_ids_from_added_deleted_and_modified_blocks,
         test_selective_active_state_marks_only_affected_labels_pending_and_carries_other_states,
         test_overview_state_compensation_uses_compare_and_restore,

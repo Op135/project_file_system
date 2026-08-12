@@ -2,7 +2,7 @@
 
 > 用途：为后续开发、排查和代码审查保存项目级背景。本文是持续更新的“活文档”，不是用户操作手册。
 >
-> 最近更新：2026-08-11；需求审批新增按 `node_id` 精准影响概述、候选文件发布和失败补偿回滚机制。
+> 最近更新：2026-08-12；需求与概述影响配置保存时按 `node_id` 数值升序整理映射。
 
 ## 1. 项目概览
 
@@ -34,6 +34,13 @@
 - `requirement_overview_impact_config`：从根目录 `requirement_overview_impact.json` 校验加载的
   `node_id -> overview label` 影响映射；审批过程只读取该内存配置。
 - `user_preferences`：头像等用户偏好。
+
+管理员页“配置需求对概述影响”工具以 `app.state.init_config_data` 提供需求节点及说明，
+以 `app.storage.general["over_config_data_flat"]` 提供合法概述项，并优先从当前审批内存载入草稿。
+保存时先校验全部映射，再原子替换 `requirement_overview_impact.json` 并同步
+`requirement_overview_impact_config`；内存写入失败会恢复旧文件和旧内存，因此保存成功后无需重启服务。
+落盘及同步到内存的 `node_impacts` 均按 `node_id` 数值升序排列，避免按字符串顺序把 `10` 排在 `2` 前面。
+显式配置空数组表示该节点不影响任何概述，删除节点映射则按 `unmapped_policy` 执行全概述兜底或阻止审批。
 
 需求审批不会先覆盖正式概述文件：系统按目标版本生成唯一候选文件，从该版本的
 `added` / `deleted` / `modified` 提取 `node_id`，原子更新概述状态后才发布候选文件并标记已审。

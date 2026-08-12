@@ -1,14 +1,20 @@
 # -*- encoding: utf-8 -*-
 """需求节点变动与项目概述项之间的影响关系配置。"""
 
+import copy
 import json
+import os
+import threading
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, MutableMapping
+from uuid import uuid4
 
 
 REQUIREMENT_OVERVIEW_IMPACT_CONFIG_PATH = Path(__file__).parent.parent / "requirement_overview_impact.json"
 REQUIREMENT_OVERVIEW_IMPACT_STORAGE_KEY = "requirement_overview_impact_config"
 SUPPORTED_UNMAPPED_POLICIES = {"all_overviews", "block"}
+_CONFIG_WRITE_LOCK = threading.Lock()
 
 
 class RequirementOverviewImpactConfigError(ValueError):
@@ -20,6 +26,17 @@ def _normalize_node_id(value: Any) -> str:
     if not node_id:
         raise RequirementOverviewImpactConfigError("node_id 不能为空")
     return node_id
+
+
+def _node_id_sort_key(node_id: str) -> tuple[int, Decimal, str]:
+    """按 node_id 数值排序；兼容历史非数字键并将其稳定排在数字键之后。"""
+    try:
+        numeric_value = Decimal(node_id)
+        if numeric_value.is_finite():
+            return 0, numeric_value, node_id
+    except InvalidOperation:
+        pass
+    return 1, Decimal(0), node_id
 
 
 def load_requirement_overview_impact_config(
@@ -85,6 +102,88 @@ def load_requirement_overview_impact_config(
         "valid": True,
         "error": "",
     }
+
+
+def save_requirement_overview_impact_config(
+    raw_config: dict,
+    *,
+    valid_overview_labels: Iterable[str],
+    storage: MutableMapping[str, object],
+    config_path: str | Path = REQUIREMENT_OVERVIEW_IMPACT_CONFIG_PATH,
+) -> dict:
+    """校验并事务式更新影响配置文件与服务端内存。
+
+    配置先完成全量校验，再通过同目录临时文件原子替换正式文件。若内存同步失败，
+    会恢复原文件与原内存值，避免审批进程读取到文件、内存不一致的配置。
+    """
+    normalized_config = load_requirement_overview_impact_config(
+        raw_config,
+        valid_overview_labels=valid_overview_labels,
+    )
+    normalized_config["node_impacts"] = {
+        node_id: normalized_config["node_impacts"][node_id]
+        for node_id in sorted(normalized_config["node_impacts"], key=_node_id_sort_key)
+    }
+    file_config = {
+        "schema_version": normalized_config["schema_version"],
+        "unmapped_policy": normalized_config["unmapped_policy"],
+        "node_impacts": normalized_config["node_impacts"],
+    }
+    target_path = Path(config_path)
+
+    with _CONFIG_WRITE_LOCK:
+        try:
+            file_existed = target_path.exists()
+            previous_file_content = target_path.read_bytes() if file_existed else b""
+        except OSError as exc:
+            raise RequirementOverviewImpactConfigError(f"保存影响配置失败：无法读取原配置：{exc}") from exc
+        storage_had_key = REQUIREMENT_OVERVIEW_IMPACT_STORAGE_KEY in storage
+        previous_storage_value = copy.deepcopy(storage.get(REQUIREMENT_OVERVIEW_IMPACT_STORAGE_KEY))
+
+        try:
+            _write_json_atomic(target_path, file_config)
+            storage[REQUIREMENT_OVERVIEW_IMPACT_STORAGE_KEY] = copy.deepcopy(normalized_config)
+        except Exception as exc:
+            rollback_errors = []
+            try:
+                if file_existed:
+                    _write_bytes_atomic(target_path, previous_file_content)
+                elif target_path.exists():
+                    target_path.unlink()
+            except OSError as rollback_exc:
+                rollback_errors.append(f"文件回滚失败：{rollback_exc}")
+
+            try:
+                if storage_had_key:
+                    storage[REQUIREMENT_OVERVIEW_IMPACT_STORAGE_KEY] = previous_storage_value
+                else:
+                    storage.pop(REQUIREMENT_OVERVIEW_IMPACT_STORAGE_KEY, None)
+            except Exception as rollback_exc:
+                rollback_errors.append(f"内存回滚失败：{rollback_exc}")
+
+            detail = f"；{'；'.join(rollback_errors)}" if rollback_errors else ""
+            raise RequirementOverviewImpactConfigError(f"保存影响配置失败：{exc}{detail}") from exc
+
+    return normalized_config
+
+
+def _write_json_atomic(file_path: Path, data: dict[str, object]) -> None:
+    encoded = json.dumps(data, ensure_ascii=False, indent=4).encode("utf-8")
+    _write_bytes_atomic(file_path, encoded)
+
+
+def _write_bytes_atomic(file_path: Path, content: bytes) -> None:
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = file_path.with_name(f".{file_path.name}.{uuid4().hex}.tmp")
+    try:
+        with temp_path.open("wb") as temp_file:
+            temp_file.write(content)
+            temp_file.flush()
+            os.fsync(temp_file.fileno())
+        os.replace(temp_path, file_path)
+    finally:
+        if temp_path.exists():
+            temp_path.unlink()
 
 
 def collect_requirement_change_node_ids(overview_data: dict, version: str) -> dict[str, set[str]]:

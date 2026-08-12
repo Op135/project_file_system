@@ -1,4 +1,5 @@
 # -*- encoding: utf-8 -*-
+import copy
 import json
 import logging
 import os
@@ -6,6 +7,12 @@ import os
 from nicegui import app, ui
 
 from ..config import BASE_DIR, IMG_DIR, PRESET_AVATARS
+from ..requirement_overview_impact import (
+    REQUIREMENT_OVERVIEW_IMPACT_STORAGE_KEY,
+    RequirementOverviewImpactConfigError,
+    load_requirement_overview_impact_config,
+    save_requirement_overview_impact_config,
+)
 from ..utils import (
     get_cache_busted_path,
     get_temp_config_service,
@@ -319,6 +326,250 @@ def manage_page():
             with ui.row().classes("w-full justify-end mt-4 gap-4"):
                 ui.button("取消", on_click=dialog.close).props("flat color=grey")
                 ui.button("保存并退出", on_click=save_to_file).props("icon=save color=blue")
+
+        dialog.open()
+
+    def open_requirement_overview_impact_editor():
+        """编辑需求 node_id 与概述 label 的影响映射，并同步文件和运行时内存。"""
+        over_config_flat = app.storage.general.get("over_config_data_flat", {})
+        if not isinstance(over_config_flat, dict) or not over_config_flat:
+            ui.notify("概述配置内存尚未加载，请先更新概述配置", type="negative")
+            return
+
+        valid_overview_labels = {str(label) for label in over_config_flat if label}
+        memory_config = app.storage.general.get(REQUIREMENT_OVERVIEW_IMPACT_STORAGE_KEY, {})
+        source_name = "当前审批内存"
+        try:
+            source_config = load_requirement_overview_impact_config(
+                memory_config if isinstance(memory_config, dict) else {},
+                valid_overview_labels=valid_overview_labels,
+            )
+        except RequirementOverviewImpactConfigError as memory_exc:
+            try:
+                source_config = load_requirement_overview_impact_config(
+                    valid_overview_labels=valid_overview_labels,
+                )
+                source_name = "配置文件（当前审批内存无效）"
+            except RequirementOverviewImpactConfigError as file_exc:
+                ui.notify(
+                    f"影响配置无法编辑：内存错误：{memory_exc}；文件错误：{file_exc}",
+                    type="negative",
+                    multi_line=True,
+                )
+                return
+
+        working_impacts = copy.deepcopy(source_config["node_impacts"])
+        runtime_requirement_config = getattr(app.state, "init_config_data", {})
+        raw_requirement_nodes = (
+            runtime_requirement_config.get("data", {}) if isinstance(runtime_requirement_config, dict) else {}
+        )
+        requirement_nodes = raw_requirement_nodes if isinstance(raw_requirement_nodes, dict) else {}
+
+        def node_sort_key(node_id):
+            node_id_text = str(node_id)
+            try:
+                return 0, float(node_id_text), node_id_text
+            except ValueError:
+                return 1, 0.0, node_id_text
+
+        def node_display(node_id):
+            node = requirement_nodes.get(str(node_id), {})
+            guide_content = node.get("guide_content", "") if isinstance(node, dict) else ""
+            guide_text = str(guide_content).strip()
+            if len(guide_text) > 70:
+                guide_text = f"{guide_text[:70]}…"
+            return f"{node_id} ｜ {guide_text or '当前需求内存中无说明'}"
+
+        all_node_ids = {str(node_id) for node_id in requirement_nodes}
+        all_node_ids.update(working_impacts)
+        node_options = {
+            node_id: node_display(node_id)
+            for node_id in sorted(all_node_ids, key=node_sort_key)
+        }
+
+        overview_options = {}
+        for label, item in sorted(
+            over_config_flat.items(),
+            key=lambda entry: (
+                str(entry[1].get("role", "")) if isinstance(entry[1], dict) else "",
+                str(entry[1].get("group_name", "")) if isinstance(entry[1], dict) else "",
+                str(entry[1].get("title", entry[0])) if isinstance(entry[1], dict) else str(entry[0]),
+            ),
+        ):
+            if not label:
+                continue
+            item_data = item if isinstance(item, dict) else {}
+            title = str(item_data.get("title") or label)
+            group_name = str(item_data.get("group_name") or "未分组")
+            role = str(item_data.get("role") or "未分配角色")
+            overview_options[str(label)] = f"{title} ｜ {group_name} ｜ {role} [{label}]"
+
+        selected_node_id = next(iter(node_options), None)
+
+        with ui.dialog() as dialog, ui.card().classes(
+            "w-[95vw] max-w-7xl h-[90vh] p-4 flex flex-col no-wrap"
+        ):
+            with ui.row().classes("w-full items-center justify-between shrink-0"):
+                with ui.column().classes("gap-0"):
+                    ui.label("需求变动 → 概述待定影响配置").classes("text-xl font-bold")
+                    ui.label(f"编辑来源：{source_name}；保存后立即供后续需求审批使用").classes(
+                        "text-xs text-gray-500"
+                    )
+                ui.icon("close", size="sm").classes("cursor-pointer").on("click", dialog.close)
+
+            ui.separator().classes("shrink-0")
+
+            with ui.row().classes("w-full items-center gap-4 shrink-0"):
+                policy_select = ui.radio(
+                    options={
+                        "all_overviews": "未配置 node_id：所有概述转待定（兼容/安全）",
+                        "block": "未配置 node_id：阻止审批通过",
+                    },
+                    value=source_config["unmapped_policy"],
+                ).props("inline")
+                summary_label = ui.label().classes("ml-auto text-sm font-bold text-blue-700")
+
+            with ui.grid(columns=2).classes("w-full flex-grow min-h-0 gap-4"):
+                with ui.card().classes("w-full h-full min-h-0 p-3 flex flex-col no-wrap bg-blue-50"):
+                    ui.label("编辑单个需求节点").classes("font-bold text-blue-900 shrink-0")
+                    node_select = ui.select(
+                        options=node_options,
+                        value=selected_node_id,
+                        label="需求节点（来自 app.state.init_config_data）",
+                        with_input=True,
+                    ).classes("w-full shrink-0")
+                    impact_select = ui.select(
+                        options=overview_options,
+                        value=list(working_impacts.get(selected_node_id, [])) if selected_node_id else [],
+                        label="会被置为待定的概述项",
+                        multiple=True,
+                        with_input=True,
+                    ).props("use-chips options-dense").classes("w-full")
+                    ui.label(
+                        "空列表表示该需求变动不影响任何概述；删除映射则会触发上方的“未配置”策略。"
+                    ).classes("text-xs text-gray-600")
+
+                    with ui.row().classes("w-full gap-2 shrink-0"):
+                        ui.button(
+                            "全选概述",
+                            on_click=lambda: impact_select.set_value(list(overview_options)),
+                        ).props("flat dense icon=done_all")
+                        ui.button(
+                            "清空影响",
+                            on_click=lambda: impact_select.set_value([]),
+                        ).props("flat dense icon=clear_all")
+
+                    with ui.row().classes("w-full gap-2 shrink-0"):
+                        apply_button = ui.button("应用到草稿", icon="playlist_add_check").props("color=primary")
+                        delete_button = ui.button("删除该映射", icon="delete").props("color=negative outline")
+
+                with ui.card().classes("w-full h-full min-h-0 p-3 flex flex-col no-wrap"):
+                    ui.label("当前草稿映射").classes("font-bold shrink-0")
+                    mapping_container = ui.column().classes(
+                        "w-full flex-grow min-h-0 overflow-y-auto gap-2 border rounded p-2 bg-gray-50"
+                    )
+
+            def load_selected_mapping():
+                node_id = str(node_select.value or "").strip()
+                impact_select.set_value(list(working_impacts.get(node_id, [])))
+                delete_button.set_enabled(node_id in working_impacts)
+
+            def edit_mapping(node_id):
+                node_select.set_value(node_id)
+                load_selected_mapping()
+
+            def remove_mapping(node_id=None):
+                target_node_id = str(node_id or node_select.value or "").strip()
+                if not target_node_id or target_node_id not in working_impacts:
+                    ui.notify("该节点当前没有显式映射", type="warning")
+                    return
+                working_impacts.pop(target_node_id)
+                load_selected_mapping()
+                render_mapping_list()
+                ui.notify(f"已从草稿删除 node_id={target_node_id}，尚未保存", type="warning")
+
+            def render_mapping_list():
+                mapping_container.clear()
+                summary_label.set_text(
+                    f"已显式配置 {len(working_impacts)} / {len(node_options)} 个需求节点"
+                )
+                with mapping_container:
+                    if not working_impacts:
+                        ui.label("暂无显式映射").classes("text-gray-400 italic")
+                        return
+                    for node_id in sorted(working_impacts, key=node_sort_key):
+                        labels = working_impacts[node_id]
+                        with ui.expansion(
+                            f"{node_display(node_id)}　（影响 {len(labels)} 项）",
+                            icon="account_tree",
+                        ).classes("w-full bg-white border rounded"):
+                            if labels:
+                                title_list = [overview_options.get(label, label) for label in labels]
+                                ui.label("\n".join(title_list)).classes("text-xs whitespace-pre-line")
+                            else:
+                                ui.label("已显式配置为空：该节点变动不影响概述").classes(
+                                    "text-xs text-green-700"
+                                )
+                            with ui.row().classes("gap-2"):
+                                ui.button(
+                                    "编辑",
+                                    on_click=lambda target=node_id: edit_mapping(target),
+                                ).props("flat dense icon=edit")
+                                ui.button(
+                                    "从草稿删除",
+                                    on_click=lambda target=node_id: remove_mapping(target),
+                                ).props("flat dense color=negative icon=delete")
+
+            def apply_current_mapping():
+                node_id = str(node_select.value or "").strip()
+                if not node_id:
+                    ui.notify("请先选择需求节点", type="warning")
+                    return
+                selected_labels = impact_select.value if isinstance(impact_select.value, list) else []
+                working_impacts[node_id] = [
+                    label for label in overview_options if label in {str(value) for value in selected_labels}
+                ]
+                render_mapping_list()
+                delete_button.enable()
+                ui.notify(f"node_id={node_id} 已应用到草稿", type="positive")
+
+            def save_all_changes(event):
+                event.sender.disable()
+                try:
+                    normalized = save_requirement_overview_impact_config(
+                        {
+                            "schema_version": 1,
+                            "unmapped_policy": policy_select.value,
+                            "node_impacts": working_impacts,
+                        },
+                        valid_overview_labels=valid_overview_labels,
+                        storage=app.storage.general,
+                    )
+                    working_impacts.clear()
+                    working_impacts.update(copy.deepcopy(normalized["node_impacts"]))
+                    logger.info(
+                        "管理员 %s 更新需求与概述影响配置：node_id=%s，未配置策略=%s",
+                        current_user,
+                        len(working_impacts),
+                        normalized["unmapped_policy"],
+                    )
+                    render_mapping_list()
+                    ui.notify("配置文件与审批内存已同步更新，无需重启服务", type="positive")
+                except RequirementOverviewImpactConfigError as exc:
+                    logger.exception("管理员保存需求与概述影响配置失败")
+                    ui.notify(f"保存失败，文件与内存已保持原状态：{exc}", type="negative", multi_line=True)
+                finally:
+                    event.sender.enable()
+
+            node_select.on_value_change(lambda _: load_selected_mapping())
+            apply_button.on_click(apply_current_mapping)
+            delete_button.on_click(lambda: remove_mapping())
+            load_selected_mapping()
+            render_mapping_list()
+
+            with ui.row().classes("w-full justify-end gap-3 shrink-0 pt-2"):
+                ui.button("取消", on_click=dialog.close).props("flat color=grey")
+                ui.button("保存文件并同步内存", on_click=save_all_changes).props("icon=save color=primary")
 
         dialog.open()
 
@@ -679,6 +930,10 @@ def manage_page():
                 ui.button("编辑配置项关联影响(Impact List)", on_click=open_impact_editor).props(
                     "icon=edit_note"
                 ).classes("bg-purple-600 text-white")
+                ui.button(
+                    "配置需求对概述影响",
+                    on_click=open_requirement_overview_impact_editor,
+                ).props("icon=account_tree").classes("bg-indigo-700 text-white")
 
                 ui.separator().props("size=1px")
                 ui.button("更新概述配置(JSON->General)", on_click=lambda: updata_overview_config()).props("").classes(
