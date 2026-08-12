@@ -1,6 +1,11 @@
 import unittest
 
-from src.components import _has_real_related_selection, _normalize_related_labels
+from src.components import (
+    _get_active_chip_icon,
+    _get_image_status_visuals,
+    _has_real_related_selection,
+    _normalize_related_labels,
+)
 
 
 class RelatedImpactSelectionTests(unittest.TestCase):
@@ -14,6 +19,18 @@ class RelatedImpactSelectionTests(unittest.TestCase):
         self.assertFalse(_has_real_related_selection({"light": False, "lens": None}))
         self.assertFalse(_has_real_related_selection({"light": 1, "lens": "true"}))
         self.assertTrue(_has_real_related_selection({"light": False, "lens": True}))
+
+    def test_media_type_icon_is_restored_after_reactivation(self):
+        self.assertEqual(_get_active_chip_icon("image"), "image")
+        self.assertEqual(_get_active_chip_icon("file"), "attachment")
+        self.assertEqual(_get_active_chip_icon("video"), "play_circle")
+        self.assertIsNone(_get_active_chip_icon("text"))
+
+    def test_pending_image_uses_high_contrast_badge_and_border(self):
+        border_classes, badge_classes = _get_image_status_visuals("question_mark")
+        self.assertIn("border-amber-500", border_classes)
+        self.assertIn("bg-amber-8", badge_classes)
+        self.assertIn("text-white", badge_classes)
 
 
 if __name__ == "__main__":

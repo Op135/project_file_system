@@ -99,6 +99,35 @@ def _is_deactivated_chip(chip_info: dict, req_max_ver: str) -> bool:
     return (enabled_state is False) or (str(enabled_state).lower() == "false")
 
 
+def _get_active_chip_icon(chip_type: str) -> Optional[str]:
+    """返回 chip 恢复激活状态后应使用的类型图标。"""
+    return {
+        "file": "attachment",
+        "image": "image",
+        "video": "play_circle",
+    }.get(chip_type)
+
+
+def _get_image_status_visuals(image_icon: Optional[str]) -> Tuple[str, str]:
+    """返回图片状态对应的缩略图边框和高对比徽章样式。"""
+    if image_icon == "question_mark":
+        return "border-2 border-amber-500", "bg-amber-8 text-white"
+    if image_icon == "block":
+        return "border-2 border-red-500", "bg-red-7 text-white"
+    return "border border-gray-200", "bg-blue-7 text-white"
+
+
+def _render_image_status_badge(image_icon: Optional[str]) -> None:
+    """在图片左上角渲染不受图片底色干扰的状态徽章。"""
+    status_icon = image_icon if image_icon in {"image", "block", "question_mark"} else "image"
+    _, badge_classes = _get_image_status_visuals(status_icon)
+    with ui.element("div").classes(
+        f"absolute top-0 left-0 z-30 w-4 h-4 rounded-full border-2 border-white shadow-lg "
+        f"flex items-center justify-center {badge_classes}"
+    ):
+        ui.icon(status_icon).classes("text-[10px]")
+
+
 def _version_sort_key(version: str) -> float:
     """为需求版本字符串生成稳定的数字排序值。"""
     try:
@@ -1803,10 +1832,11 @@ class InteractiveButton:
                 # 可以使用一个 1x1 的透明 base64 作为占位，或者指向一个全局静态的 "文件丢失.png"
                 display_url = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
                 # 或者: display_url = f"{IMG_DIR}/image_missing.png"
+            image_border_classes, _ = _get_image_status_visuals(chip_info.get("icon"))
             thumbnail = (
                 ui.interactive_image(display_url)
                 .props(f"data-chip-id={chip_info.get('id')} enabled-state={chip_info.get('enabled')}")
-                .classes("h-10 cursor-pointer relative-position")
+                .classes(f"h-10 cursor-pointer relative-position rounded shadow-sm {image_border_classes}")
             )
             if file_exists:
                 thumbnail.on("click", lambda u=url_path: self.show_fullscreen(u))
@@ -1814,13 +1844,7 @@ class InteractiveButton:
                 thumbnail.on("click", lambda: ui.notify("原图片文件已丢失！", type="warning"))
 
             with thumbnail:
-                image_icon = chip_info.get("icon")
-                if image_icon == "image":
-                    ui.icon(image_icon).props("flat fab").classes("absolute top-0 left-0 text-xl text-blue-500/50")
-                elif image_icon == "block":
-                    ui.icon(image_icon).props("flat fab").classes("absolute top-0 left-0 text-xl text-red")
-                elif image_icon == "question_mark":
-                    ui.icon(image_icon).props("flat fab").classes("absolute top-0 left-0 text-xl text-amber-5")
+                _render_image_status_badge(chip_info.get("icon"))
 
                 tooltip_text = f"创建节点: 需求V{chip_info.get('req_ver')}后<br>图片名: {image_name}<br>创建者: {chip_info.get('creator')}<br>时间: {next(reversed(chip_info.get('timestamp', {})))}<br>注释: <br>{chip_info.get('notes', '').replace('\n', '<br>')}"
                 with ui.tooltip():
@@ -1861,6 +1885,11 @@ class InteractiveButton:
                     .style("font-size: 8px; display: none;")
                     .on("click", js_handler="(e) => {e.stopPropagation()}")
                 )
+
+            # 图片不是 ui.chip，需单独绑定失活概述开关，否则失活后仍会显示。
+            if _is_deactivated_chip(chip_info, req_max_ver):
+                thumbnail.set_visibility(bool(app.storage.client.get("record_switch")))
+                thumbnail.bind_visibility_from(app.storage.client, "record_switch")
 
             def check_ctrl_and_show(e, btns):
                 if e.args.get("ctrlKey"):
@@ -3393,7 +3422,13 @@ class InteractiveButton:
     async def _update_chip_active_parameter(self, chip_id, chip_text):
         c_type = db_storage.get_deep_item([f"{self.project}_over_data", self.label, chip_id, "type"])
         if c_type == "file":
-            await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "icon"], "attachment")
+            await db_storage.set_deep_item(
+                [f"{self.project}_over_data", self.label, chip_id, "icon"], _get_active_chip_icon(c_type)
+            )
+        elif c_type in {"image", "video"}:
+            await db_storage.set_deep_item(
+                [f"{self.project}_over_data", self.label, chip_id, "icon"], _get_active_chip_icon(c_type)
+            )
         elif c_type == "search":
             # target_path_list = await self._search_file_path(chip_text)
             # if target_path_list and find_files_pathlib(target_path_list[0], chip_text):
@@ -4959,10 +4994,11 @@ class OverviewTableGroup:
                 display_url = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
                 # 或者: display_url = f"{IMG_DIR}/image_missing.png"
             with ui.element("div").classes("relative w-full") as wrapper:
+                image_border_classes, _ = _get_image_status_visuals(chip_info.get("icon"))
                 thumbnail = (
                     ui.interactive_image(display_url)
                     .props(f"data-chip-id={chip_info.get('id')} enabled-state={chip_info.get('enabled')}")
-                    .classes("h-10 cursor-pointer w-full object-cover rounded shadow-sm border border-gray-200")
+                    .classes(f"h-10 cursor-pointer w-full object-cover rounded shadow-sm {image_border_classes}")
                 )
                 if file_exists:
                     thumbnail.on("click", lambda u=url_path: self.show_fullscreen(u))
@@ -4970,9 +5006,7 @@ class OverviewTableGroup:
                     thumbnail.on("click", lambda: ui.notify("原图片文件已丢失！", type="warning"))
 
                 with thumbnail:
-                    ui.icon(chip_info.get("icon", "")).props("flat fab").classes(
-                        "absolute top-0 left-0 text-xl text-blue-500/50"
-                    )
+                    _render_image_status_badge(chip_info.get("icon"))
                     # 缩略图创建日期提示
                     tooltip_text = f"创建节点: 需求V{chip_info.get('req_ver')}后<br>图片名: {image_name}<br>创建者: {chip_info.get('creator')}<br>时间: {next(reversed(chip_info.get('timestamp', {})))}<br>注释: <br>{chip_info.get('notes', '').replace('\n', '<br>')}"
                     with ui.tooltip():
@@ -6934,7 +6968,13 @@ class OverviewTableGroup:
         label = config["label"]
         c_type = db_storage.get_deep_item([f"{self.project}_over_data", label, chip_id, "type"])
         if c_type == "file":
-            await db_storage.set_deep_item([f"{self.project}_over_data", label, chip_id, "icon"], "attachment")
+            await db_storage.set_deep_item(
+                [f"{self.project}_over_data", label, chip_id, "icon"], _get_active_chip_icon(c_type)
+            )
+        elif c_type in {"image", "video"}:
+            await db_storage.set_deep_item(
+                [f"{self.project}_over_data", label, chip_id, "icon"], _get_active_chip_icon(c_type)
+            )
         elif c_type == "search":
             # target_path_list = await self._search_file_path(chip_text, config)
             # if target_path_list and find_files_pathlib(target_path_list[0], chip_text):
