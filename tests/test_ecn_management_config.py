@@ -15,6 +15,8 @@ from src.ecn_management_config import (
     build_overview_validation_signature,
     classify_ecn_change_item,
     get_active_overview_row_contents,
+    get_ecn_material_change_display,
+    get_ecn_material_change_missing_fields,
     get_ecn_scheme_coverage,
     get_ecn_dashboard_pending_count,
     has_unrevised_rejected_scheme_items,
@@ -25,6 +27,7 @@ from src.ecn_management_config import (
     register_ecn_impact_handler,
     confirm_revised_scheme_items,
     mark_rejected_scheme_item_revised,
+    expand_new_material_traceability_selection,
     reject_ecn_scheme_items,
 )
 
@@ -81,6 +84,13 @@ def test_checked_in_config_file_is_valid():
         "item_after_revision": "revised_pending_confirmation",
         "item_after_reconfirmation": "revised_confirmed",
     }
+    assert loaded["scheme_tracking"]["traceability_levels"] == raw_config["scheme_tracking"][
+        "traceability_levels"
+    ]
+    assert loaded["scheme_tracking"]["disposition_measures"] == raw_config["scheme_tracking"][
+        "disposition_measures"
+    ]
+    assert loaded["scheme_options"] == raw_config["scheme_options"]
 
 
 def test_empty_impact_only_reminds_rd_assistant():
@@ -218,7 +228,14 @@ def test_rejecting_selected_items_only_reopens_their_authors():
         },
     )
     record["change_items"] = [
-        {"item_id": "A1", "author": "工程师A", "review_status": "normal"},
+        {
+            "item_id": "A1",
+            "author": "工程师A",
+            "review_status": "normal",
+            "projects": ["RFFM-1009-A"],
+            "old_content": "旧方案",
+            "new_content": "改进前内容",
+        },
         {"item_id": "B1", "author": "工程师B", "review_status": "normal"},
     ]
 
@@ -240,6 +257,13 @@ def test_rejecting_selected_items_only_reopens_their_authors():
             "reviewer_role": "研发经理",
             "note": "参数需要修订",
             "time": "2026-08-12 10:00:00",
+            "before_snapshot": {
+                "item_id": "A1",
+                "author": "工程师A",
+                "projects": ["RFFM-1009-A"],
+                "old_content": "旧方案",
+                "new_content": "改进前内容",
+            },
         }
     ]
     assert record["change_items"][1]["review_status"] == "normal"
@@ -269,6 +293,185 @@ def test_rejected_item_must_be_revised_before_reconfirmation():
 
     confirm_revised_scheme_items(record, "工程师A")
     assert item["review_status"] == ECN_ITEM_STATUS_REVISED_CONFIRMED
+
+
+def test_revising_rejected_item_records_after_snapshot_in_same_history_entry():
+    record = _ecn_record(
+        participants={"工程师A": ECN_PARTICIPANT_STATUS_CONFIRMED}
+    )
+    item = {
+        "item_id": "A1",
+        "author": "工程师A",
+        "projects": ["P1"],
+        "old_content": "旧内容",
+        "new_content": "驳回时方案",
+    }
+    record["change_items"] = [item]
+    reject_ecn_scheme_items(
+        record,
+        ["A1"],
+        "经理A",
+        "研发经理",
+        "请调整",
+        "2026-08-13 09:00:00",
+    )
+
+    item["new_content"] = "整改后方案"
+    mark_rejected_scheme_item_revised(item)
+
+    history_record = item["rejection_history"][0]
+    assert history_record["before_snapshot"]["new_content"] == "驳回时方案"
+    assert history_record["after_snapshot"]["new_content"] == "整改后方案"
+    assert "rejection_history" not in history_record["before_snapshot"]
+    assert "review_status" not in history_record["after_snapshot"]
+
+
+def test_material_traceability_and_disposition_are_kept_in_rejection_snapshots():
+    record = _ecn_record(participants={"工程师A": ECN_PARTICIPANT_STATUS_CONFIRMED})
+    item = {
+        "item_id": "M1",
+        "type": "text_desc",
+        "scheme_category": ECN_SCHEME_GROUP_MATERIAL,
+        "author": "工程师A",
+        "traceability_levels": ["追溯至供应商存量", "追溯至零件/返修/在线"],
+        "disposition_measure": "返工",
+    }
+    record["change_items"] = [item]
+
+    reject_ecn_scheme_items(
+        record,
+        ["M1"],
+        "经理A",
+        "研发经理",
+        "重新确认处置范围",
+        "2026-08-13 10:00:00",
+    )
+
+    snapshot = item["rejection_history"][0]["before_snapshot"]
+    assert snapshot["traceability_levels"] == ["追溯至供应商存量", "追溯至零件/返修/在线"]
+    assert snapshot["disposition_measure"] == "返工"
+
+
+def test_material_scheme_must_have_traceability_and_disposition_before_review():
+    record = _ecn_record(participants={"工程师A": ECN_PARTICIPANT_STATUS_CONFIRMED})
+    record["change_items"] = [
+        {
+            "item_id": "M1",
+            "type": "text_desc",
+            "scheme_category": ECN_SCHEME_GROUP_MATERIAL,
+            "author": "工程师A",
+        }
+    ]
+
+    coverage = get_ecn_scheme_coverage(record)
+    assert coverage["incomplete_material_schemes"] == {"方案 #01"}
+    assert is_ecn_scheme_ready_for_review(record) is False
+
+    record["change_items"][0]["traceability_levels"] = ["无影响", "追溯至文件"]
+    record["change_items"][0]["disposition_measure"] = "返工"
+    assert get_ecn_scheme_coverage(record)["incomplete_material_schemes"] == set()
+    assert is_ecn_scheme_ready_for_review(record) is True
+
+
+def test_new_material_scheme_does_not_require_old_material_disposition():
+    record = _ecn_record(participants={"工程师A": ECN_PARTICIPANT_STATUS_CONFIRMED})
+    record["change_items"] = [
+        {
+            "item_id": "M1",
+            "type": "text_desc",
+            "scheme_category": ECN_SCHEME_GROUP_MATERIAL,
+            "change_type": "新增",
+            "traceability_levels": ["文件"],
+        }
+    ]
+
+    assert get_ecn_scheme_coverage(record)["incomplete_material_schemes"] == set()
+    assert is_ecn_scheme_ready_for_review(record) is True
+
+
+def test_adjust_quantity_material_scheme_does_not_require_old_material_disposition():
+    record = _ecn_record(participants={"工程师A": ECN_PARTICIPANT_STATUS_CONFIRMED})
+    record["change_items"] = [
+        {
+            "item_id": "M1",
+            "type": "text_desc",
+            "scheme_category": ECN_SCHEME_GROUP_MATERIAL,
+            "change_type": "调量",
+            "traceability_levels": ["文件"],
+        }
+    ]
+
+    assert get_ecn_scheme_coverage(record)["incomplete_material_schemes"] == set()
+
+
+def test_discontinued_material_scheme_requires_old_material_disposition():
+    record = _ecn_record(participants={"工程师A": ECN_PARTICIPANT_STATUS_CONFIRMED})
+    record["change_items"] = [
+        {
+            "item_id": "M1",
+            "type": "text_desc",
+            "scheme_category": ECN_SCHEME_GROUP_MATERIAL,
+            "change_type": "弃用",
+            "traceability_levels": ["文件"],
+        }
+    ]
+
+    assert get_ecn_scheme_coverage(record)["incomplete_material_schemes"] == {"方案 #01"}
+
+
+def test_conditional_disposition_requires_specific_condition():
+    record = _ecn_record(participants={"工程师A": ECN_PARTICIPANT_STATUS_CONFIRMED})
+    record["change_items"] = [
+        {
+            "item_id": "M1",
+            "type": "text_desc",
+            "scheme_category": ECN_SCHEME_GROUP_MATERIAL,
+            "change_type": "更换",
+            "traceability_levels": ["文件"],
+            "disposition_measure": "有条件用完止",
+        }
+    ]
+
+    assert get_ecn_scheme_coverage(record)["incomplete_material_schemes"] == {"方案 #01"}
+    record["change_items"][0]["disposition_condition"] = "仅限内部试制批次使用"
+    assert get_ecn_scheme_coverage(record)["incomplete_material_schemes"] == set()
+
+
+def test_legacy_material_traceability_fields_remain_compatible():
+    record = _ecn_record(participants={"工程师A": ECN_PARTICIPANT_STATUS_CONFIRMED})
+    record["change_items"] = [
+        {
+            "item_id": "M-LEGACY",
+            "type": "text_desc",
+            "scheme_category": ECN_SCHEME_GROUP_MATERIAL,
+            "author": "工程师A",
+            "traceability_level": "追溯至文件",
+            "disposition_measures": ["报废"],
+        }
+    ]
+
+    assert get_ecn_scheme_coverage(record)["incomplete_material_schemes"] == set()
+    assert is_ecn_scheme_ready_for_review(record) is True
+
+
+def test_traceability_only_cascades_when_a_new_level_is_selected():
+    configured_levels = load_ecn_config()["scheme_tracking"]["traceability_levels"]
+    assert len(configured_levels) >= 5
+
+    expanded = expand_new_material_traceability_selection(
+        [configured_levels[3]],
+        [],
+    )
+    assert expanded == configured_levels[:4]
+
+    with_gap = [configured_levels[0], configured_levels[2], configured_levels[3]]
+    assert expand_new_material_traceability_selection(with_gap, expanded) == with_gap
+
+    expanded_again = expand_new_material_traceability_selection(
+        [*with_gap, configured_levels[4]],
+        with_gap,
+    )
+    assert expanded_again == configured_levels[:5]
 
 
 def test_normal_approval_and_applicant_pending_rules_are_preserved():
@@ -386,3 +589,54 @@ def test_new_and_legacy_change_items_are_split_into_explicit_document_groups():
         {"type": "text_desc", "scheme_category": ECN_SCHEME_GROUP_MATERIAL}
     ) == ECN_SCHEME_GROUP_MATERIAL
     assert classify_ecn_change_item({"type": "legacy_other"}) == ECN_SCHEME_GROUP_UNKNOWN
+
+
+def test_structured_material_change_display_covers_all_change_types():
+    assert get_ecn_material_change_display(
+        {
+            "change_type": "新增",
+            "material_change": {"material_name": "螺钉", "quantity": 2, "unit": "pcs"},
+        }
+    ) == ("无", "螺钉\n用量：2 pcs")
+    assert get_ecn_material_change_display(
+        {
+            "change_type": "调量",
+            "material_change": {
+                "material_name": "螺钉",
+                "old_quantity": 2,
+                "new_quantity": 3.5,
+                "unit": "pcs",
+            },
+        }
+    ) == ("螺钉\n用量：2 pcs", "螺钉\n用量：3.5 pcs")
+    assert get_ecn_material_change_display(
+        {
+            "change_type": "弃用",
+            "material_change": {"material_name": "旧线材", "quantity": 1, "unit": "m"},
+        }
+    ) == ("旧线材\n用量：1 m", "弃用")
+    assert get_ecn_material_change_display(
+        {
+            "change_type": "更换",
+            "material_change": {
+                "old_material_name": "旧螺钉",
+                "old_quantity": 2,
+                "old_unit": "pcs",
+                "new_material_name": "新螺钉",
+                "new_quantity": 3,
+                "new_unit": "pcs",
+            },
+        }
+    ) == ("旧螺钉\n用量：2 pcs", "新螺钉\n用量：3 pcs")
+
+
+def test_structured_material_change_required_fields_accept_zero_quantity():
+    material_change = {"material_name": "试剂", "quantity": 0, "unit": "pcs"}
+    assert get_ecn_material_change_missing_fields("新增", material_change) == []
+    assert get_ecn_material_change_missing_fields("调量", material_change) == ["改前用量", "改后用量"]
+
+
+def test_legacy_material_change_display_falls_back_to_text_fields():
+    assert get_ecn_material_change_display(
+        {"change_type": "物料变更", "old_content": "旧物料", "new_content": "新物料"}
+    ) == ("旧物料", "新物料")
