@@ -78,7 +78,7 @@ FILTER_DELAYED = "延期"
 FILTER_MANY_DELAYS = "多次延期"
 FILTER_NATURE_PENDING = "待性质标记"
 DEFAULT_SAMPLE_ORDER_FILTER = FILTER_IN_PROGRESS
-SAMPLE_ORDER_CARD_PAGE_SIZE = 30
+SAMPLE_ORDER_GRID_PAGE_SIZE = 50
 FILTER_OPTIONS = list(
     dict.fromkeys(
         [
@@ -1392,6 +1392,95 @@ def build_sample_order_row(
     }
 
 
+def build_sample_order_grid_row(
+    record: object,
+    today: Optional[date] = None,
+    *,
+    calculated_metrics: Optional[dict] = None,
+    can_mark_delay_nature: bool = False,
+) -> dict[str, object]:
+    """把样品单转换为 AG Grid 展示行，并补充组合展示字段和行色标记。"""
+    row = build_sample_order_row(record, today, calculated_metrics=calculated_metrics)
+    planned_delivery = option_text(row.get("planned_delivery_date"))
+    current_target = option_text(row.get("latest_extension_target")) or planned_delivery
+    assessment_days = row.get("assessment_days", "")
+    assessment_score = row.get("assessment_score", "")
+    nature_pending = bool(row.get("nature_pending"))
+    many_delays = normalize_int(row.get("delay_count"), 0) > SAMPLE_ORDER_DELAY_ATTENTION_THRESHOLD
+    level = option_text(row.get("attention_level"), "normal")
+    if nature_pending and can_mark_delay_nature:
+        row_tone = "nature_pending"
+    elif many_delays:
+        row_tone = "many_delays"
+    else:
+        row_tone = level
+    return {
+        **row,
+        "detail_action": "详情",
+        "current_target_date": current_target,
+        "actual_delivery_display": sample_order_delivery_display(row.get("actual_delivery_date")),
+        "assessment_display": (
+            f"{assessment_days}天 / {assessment_score}分" if assessment_days != "" and assessment_score != "" else ""
+        ),
+        "row_tone": row_tone,
+    }
+
+
+def get_sample_order_grid_columns() -> list[dict[str, object]]:
+    """返回样品单总表列定义，列顺序、显示和筛选均直接在此处配置。"""
+    text_filter = "agTextColumnFilter"
+    number_filter = "agNumberColumnFilter"
+    date_filter = "agDateColumnFilter"
+    # 列表中的先后顺序就是页面列顺序；暂不显示的列可直接注释；不需要筛选时把 filter 改为 False。
+    columns: list[dict[str, object]] = [
+        {
+            "headerName": "操作",
+            "field": "detail_action",
+            "filter": False,
+            "pinned": "left",
+            "width": 60,
+            "sortable": False,
+            "lockPosition": "left",
+            "suppressMovable": True,
+            "cellStyle": {
+                "color": "#2563eb",
+                "fontWeight": "bold",
+                "cursor": "pointer",
+                "textAlign": "center",
+            },
+        },
+        {"headerName": "产品型号", "field": "product_model", "filter": text_filter, "pinned": "left", "width": 180},
+        {"headerName": "样品单号", "field": "sample_order_no", "filter": text_filter, "width": 140},
+        {"headerName": "客户编码", "field": "customer_code", "filter": text_filter, "width": 120},
+        {"headerName": "数量", "field": "application_qty", "filter": number_filter, "width": 90},
+        {"headerName": "申请人", "field": "applicant", "filter": text_filter, "width": 90},
+        {"headerName": "申请日期", "field": "application_date", "filter": date_filter, "width": 120},
+        {"headerName": "计划交期", "field": "planned_delivery_date", "filter": date_filter, "width": 120},
+        {"headerName": "当前目标", "field": "current_target_date", "filter": date_filter, "width": 120},
+        {"headerName": "实际交样", "field": "actual_delivery_display", "filter": text_filter, "width": 120},
+        # {"headerName": "制样负责人", "field": "sample_owner", "filter": text_filter, "width": 125},
+        {"headerName": "预期状态", "field": "expected_status", "filter": text_filter, "width": 120},
+        {"headerName": "提示信息", "field": "alert_message", "filter": text_filter, "width": 210},
+        {"headerName": "延期次数", "field": "delay_count", "filter": number_filter, "width": 120},
+        {"headerName": "最新延期原因", "field": "latest_extension_reason", "filter": text_filter, "width": 240},
+        {"headerName": "特殊状态", "field": "special_status", "filter": text_filter, "width": 120},
+        # {"headerName": "状态原因", "field": "special_status_reason", "filter": text_filter, "width": 190},
+        # {"headerName": "延期性质", "field": "delay_nature_tag", "filter": text_filter, "width": 140},
+        # {"headerName": "考核", "field": "assessment_display", "filter": text_filter, "width": 135},
+        # {"headerName": "备注", "field": "remark", "filter": text_filter, "width": 220},
+    ]
+    for column in columns:
+        cell_style = column.setdefault("cellStyle", {})
+        if isinstance(cell_style, dict):
+            cell_style["textAlign"] = "center"
+        if "width" in column:
+            column["minWidth"] = column["width"]
+        column["headerClass"] = "sample-order-grid-header-center"
+        column["wrapHeaderText"] = True
+        column["autoHeaderHeight"] = True
+    return columns
+
+
 def get_sample_order_card_palette(
     attention_level: object,
     *,
@@ -1827,7 +1916,18 @@ async def sample_order_dashboard_page(record_id: str = "") -> None:
         """
         <style>
             html, body { overflow: hidden !important; }
-            .sample-order-card:hover { transform: translateY(-1px); }
+            .sample-order-grid .ag-row.row-overdue { background-color: #fef2f2 !important; }
+            .sample-order-grid .ag-row.row-warning { background-color: #fff7ed !important; }
+            .sample-order-grid .ag-row.row-missing { background-color: #fff7ed !important; }
+            .sample-order-grid .ag-row.row-paused { background-color: #faf5ff !important; }
+            .sample-order-grid .ag-row.row-voided { background-color: #f3f4f6 !important; color: #6b7280; }
+            .sample-order-grid .ag-row.row-completed { background-color: #f0fdf4 !important; }
+            .sample-order-grid .ag-row.row-nature-pending { background-color: #fefce8 !important; }
+            .sample-order-grid .ag-row.row-many-delays { background-color: #faf5ff !important; }
+            .sample-order-grid .ag-row:hover { filter: brightness(0.98); }
+            .sample-order-grid .sample-order-grid-header-center .ag-header-cell-label {
+                justify-content: center;
+            }
         </style>
         """
     )
@@ -1851,7 +1951,6 @@ async def sample_order_dashboard_page(record_id: str = "") -> None:
     page_state: dict[str, object] = {
         "search_keyword": "",
         "filter_state": DEFAULT_SAMPLE_ORDER_FILTER,
-        "page": 1,
         "last_version": db_storage.get_item(SAMPLE_ORDER_VERSION_KEY, 0),
         "kpi_cache_key": None,
     }
@@ -2717,11 +2816,6 @@ async def sample_order_dashboard_page(record_id: str = "") -> None:
             kpi_container = ui.row().classes("w-full gap-3")
 
             def apply_filters() -> None:
-                page_state["page"] = 1
-                refresh_dashboard()
-
-            def change_page(target_page: int) -> None:
-                page_state["page"] = max(1, target_page)
                 refresh_dashboard()
 
             with ui.row().classes("w-full justify-between items-center bg-white p-3 shadow-sm rounded-lg"):
@@ -2745,7 +2839,7 @@ async def sample_order_dashboard_page(record_id: str = "") -> None:
                         on_click=open_delay_reason_statistics_dialog,
                     ).props("flat color=orange")
                 with ui.row().classes("items-center gap-3"):
-                    ui.label("默认仅显示未交样订单，点击卡片查看详情").classes("text-xs text-gray-500")
+                    ui.label("默认仅显示未交样订单；点击“详情”打开详情").classes("text-sm text-gray-500")
                     if can_edit_base:
                         ui.button(
                             "导入Excel",
@@ -2756,9 +2850,55 @@ async def sample_order_dashboard_page(record_id: str = "") -> None:
                             "color=primary"
                         )
 
-            with ui.element("div").classes("w-full flex-grow overflow-y-auto overflow-x-hidden p-1"):
-                list_container = ui.column().classes("w-full gap-3")
-            pagination_container = ui.row().classes("w-full justify-center items-center gap-2")
+            sample_order_grid = ui.aggrid(
+                {
+                    "columnDefs": get_sample_order_grid_columns(),
+                    "rowData": [],
+                    "defaultColDef": {
+                        "sortable": True,
+                        "resizable": True,
+                        "cellStyle": {"textAlign": "center"},
+                        "headerClass": "sample-order-grid-header-center",
+                        "filterParams": {"buttons": ["reset"], "debounceMs": 250},
+                    },
+                    "headerHeight": 42,
+                    "rowHeight": 42,
+                    "enableCellTextSelection": True,
+                    "columnMenu": "new",
+                    "suppressMenuHide": True,
+                    "pagination": True,
+                    "paginationPageSize": SAMPLE_ORDER_GRID_PAGE_SIZE,
+                    "paginationPageSizeSelector": [30, 50, 70, 100],
+                    "animateRows": False,
+                    "rowClassRules": {
+                        "row-overdue": "data.row_tone == 'overdue'",
+                        "row-warning": "data.row_tone == 'warning'",
+                        "row-missing": "data.row_tone == 'missing'",
+                        "row-paused": "data.row_tone == 'paused'",
+                        "row-voided": "data.row_tone == 'voided'",
+                        "row-completed": "data.row_tone == 'completed'",
+                        "row-nature-pending": "data.row_tone == 'nature_pending'",
+                        "row-many-delays": "data.row_tone == 'many_delays'",
+                    },
+                    "overlayNoRowsTemplate": "<span class='text-gray-500'>没有符合当前条件的样品单</span>",
+                },
+                auto_size_columns=False,
+            ).classes("sample-order-grid ag-theme-alpine w-full flex-grow min-h-0")
+
+            async def open_grid_record(event: Any, *, require_action_column: bool = False) -> None:
+                event_args = event.args if isinstance(event.args, dict) else {}
+                if require_action_column and option_text(event_args.get("colId")) != "detail_action":
+                    return
+                row_data = event_args.get("data")
+                record_id_value = option_text(row_data.get("record_id")) if isinstance(row_data, dict) else ""
+                if record_id_value:
+                    await open_detail_dialog(record_id_value)
+
+            async def open_grid_action(event: Any) -> None:
+                await open_grid_record(event, require_action_column=True)
+
+            sample_order_grid.on("cellClicked", open_grid_action)
+            sample_order_grid.on("rowDoubleClicked", open_grid_record)
 
             def refresh_dashboard() -> None:
                 # 主动刷新时同步版本号，避免本客户端在5秒轮询时重复刷新同一版本。
@@ -2816,158 +2956,16 @@ async def sample_order_dashboard_page(record_id: str = "") -> None:
                         entry[0]["basic_info"].get("sample_order_no", ""),
                     )
                 )
-                total_visible = len(visible_entries)
-                total_pages = max(
-                    1,
-                    (total_visible + SAMPLE_ORDER_CARD_PAGE_SIZE - 1) // SAMPLE_ORDER_CARD_PAGE_SIZE,
-                )
-                current_page = min(
-                    max(1, normalize_int(page_state.get("page"), 1)),
-                    total_pages,
-                )
-                page_state["page"] = current_page
-                page_start = (current_page - 1) * SAMPLE_ORDER_CARD_PAGE_SIZE
-                page_entries = visible_entries[page_start : page_start + SAMPLE_ORDER_CARD_PAGE_SIZE]
-
-                list_container.clear()
-                with list_container:
-                    if not page_entries:
-                        empty_text = (
-                            "暂无未交样订单，可通过状态筛选查看已完成或全部订单"
-                            if filter_value == DEFAULT_SAMPLE_ORDER_FILTER and not keyword
-                            else "没有符合当前条件的样品单"
-                        )
-                        ui.label(empty_text).classes("text-gray-500 m-auto mt-10")
-                    for record, metrics in page_entries:
-                        row = build_sample_order_row(record, calculated_metrics=metrics)
-                        level = option_text(row.get("attention_level"), "normal")
-                        nature_pending = bool(row.get("nature_pending"))
-                        many_delays = normalize_int(row.get("delay_count"), 0) > SAMPLE_ORDER_DELAY_ATTENTION_THRESHOLD
-                        card_color_classes, border_color = get_sample_order_card_palette(
-                            level,
-                            nature_pending=nature_pending,
-                            can_mark_delay_nature=can_mark_delay_nature,
-                        )
-                        if many_delays and not (nature_pending and can_mark_delay_nature):
-                            border_color = "#a855f7"
-                        card_classes = (
-                            "sample-order-card w-full border border-l-4 rounded-md p-3 "
-                            "cursor-pointer transition-all " + card_color_classes
-                        )
-                        with ui.element("div").classes(card_classes) as card:
-
-                            async def open_card_detail(
-                                _event: Any,
-                                target_record_id: str = option_text(row.get("record_id")),
-                            ) -> None:
-                                if target_record_id:
-                                    await open_detail_dialog(target_record_id)
-
-                            card.style(f"border-left-color: {border_color}")
-                            card.on("click", open_card_detail)
-                            with ui.element("div").classes(
-                                "grid w-full grid-cols-1 "
-                                "lg:grid-cols-[minmax(230px,1fr)_minmax(0,1fr)_minmax(250px,auto)] "
-                                "items-center gap-x-6 gap-y-2"
-                            ):
-                                with ui.column().classes("gap-1 min-w-0"):
-                                    with ui.row().classes("items-center gap-2 flex-wrap"):
-                                        ui.label(option_text(row.get("sample_order_no"), "未填写单号")).classes(
-                                            "font-mono text-base text-gray-800"
-                                        )
-                                        expected_status = option_text(
-                                            row.get("expected_status"),
-                                            "待定",
-                                        )
-                                        status_color = {
-                                            "按期": "green",
-                                            "按计划": "green",
-                                            "按当前目标": "blue",
-                                            "延期": "red",
-                                            "暂停": "purple",
-                                            "作废": "grey",
-                                        }.get(expected_status, "blue")
-                                        ui.badge(expected_status, color=status_color).props("outline")
-                                        if nature_pending:
-                                            ui.badge("待性质标记", color="red").props("outline")
-                                        if many_delays:
-                                            ui.badge(
-                                                f"已延期{row.get('delay_count', 0)}次",
-                                                color="purple",
-                                            ).props("outline")
-                                    ui.label(option_text(row.get("alert_message"), "暂无提示")).classes(
-                                        "text-base font-bold text-gray-600"
-                                    )
-                                    ui.label(f"申请人：{option_text(row.get('applicant'), '-')}").classes(
-                                        "text-sm text-gray-500"
-                                    )
-
-                                with ui.column().classes("gap-1 min-w-0"):
-                                    with ui.row().classes("w-full items-center gap-x-4 gap-y-1 flex-wrap"):
-                                        ui.label(f"产品型号：{option_text(row.get('product_model'), '-')}").classes(
-                                            "font-bold text-gray-800 text-base"
-                                        )
-                                        ui.label(f"客户编码：{option_text(row.get('customer_code'), '-')}").classes(
-                                            "text-sm text-gray-600 whitespace-nowrap"
-                                        )
-                                        ui.label(f"数量：{row.get('application_qty', '-')}").classes(
-                                            "text-sm text-gray-600 whitespace-nowrap"
-                                        )
-                                    planned_delivery = option_text(
-                                        row.get("planned_delivery_date"),
-                                        "-",
-                                    )
-                                    current_target = option_text(row.get("latest_extension_target")) or planned_delivery
-                                    ui.label(f"计划交期：{planned_delivery} · 当前目标：{current_target}").classes(
-                                        "text-sm text-gray-600"
-                                    )
-                                    latest_reason = option_text(row.get("latest_extension_reason"))
-                                    if latest_reason:
-                                        ui.label(f"最新延期原因：{latest_reason}").classes(
-                                            "text-sm text-orange-700 line-clamp-1"
-                                        )
-                                    elif option_text(row.get("remark")):
-                                        ui.label(f"备注：{option_text(row.get('remark'))}").classes(
-                                            "text-sm text-gray-500 line-clamp-1"
-                                        )
-
-                                with ui.column().classes("gap-1 min-w-0 text-sm"):
-                                    ui.label(f"制样负责人：{option_text(row.get('sample_owner'), '-')}").classes(
-                                        "text-gray-700 whitespace-nowrap"
-                                    )
-                                    ui.label(
-                                        f"申请日期：{option_text(row.get('application_date'), '-')} · "
-                                        f"实际交样：{sample_order_delivery_display(row.get('actual_delivery_date'))}"
-                                    ).classes("text-gray-500 whitespace-nowrap")
-                                    nature_tag = option_text(row.get("delay_nature_tag"))
-                                    if nature_tag:
-                                        ui.label(f"延期性质：{nature_tag}").classes("text-red-700 whitespace-nowrap")
-                                    assessment_score = row.get("assessment_score", "")
-                                    if assessment_score != "":
-                                        ui.label(
-                                            f"考核：{row.get('assessment_days', '-')}天 / {assessment_score}分"
-                                        ).classes("text-gray-500 whitespace-nowrap")
-
-                pagination_container.clear()
-                with pagination_container:
-                    if total_visible > SAMPLE_ORDER_CARD_PAGE_SIZE:
-                        previous_button = ui.button(
-                            "上一页",
-                            icon="chevron_left",
-                            on_click=lambda _=None, target=current_page - 1: change_page(target),
-                        ).props("flat color=primary")
-                        if current_page <= 1:
-                            previous_button.props("disable")
-                        ui.label(f"第 {current_page}/{total_pages} 页 · 共 {total_visible} 条").classes(
-                            "text-sm text-gray-500"
-                        )
-                        next_button = ui.button(
-                            "下一页",
-                            icon="chevron_right",
-                            on_click=lambda _=None, target=current_page + 1: change_page(target),
-                        ).props("flat color=primary icon-right")
-                        if current_page >= total_pages:
-                            next_button.props("disable")
+                grid_rows = [
+                    build_sample_order_grid_row(
+                        record,
+                        calculated_metrics=metrics,
+                        can_mark_delay_nature=can_mark_delay_nature,
+                    )
+                    for record, metrics in visible_entries
+                ]
+                sample_order_grid.options["rowData"] = grid_rows
+                sample_order_grid.update()
 
                 if page_state.get("kpi_cache_key") == calculation_key:
                     return

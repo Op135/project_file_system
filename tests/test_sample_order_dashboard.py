@@ -283,6 +283,37 @@ class SampleOrderCalculationTests(unittest.TestCase):
         self.assertEqual(row["attention_level"], metrics["attention_level"])
         calculator.assert_not_called()
 
+    def test_grid_row_keeps_card_information_and_detail_entry(self):
+        record = make_record()
+        record["execution"]["actual_delivery_date"] = "2026-07-21"
+        record["extensions"] = [
+            dashboard.normalize_extension(
+                {"extension_id": "extension-1", "target_date": "2026-07-22", "reason": "等待物料"}
+            )
+        ]
+        metrics = dashboard.calculate_sample_order_metrics(record, date(2026, 7, 21))
+
+        row = dashboard.build_sample_order_grid_row(record, calculated_metrics=metrics)
+
+        self.assertEqual(row["record_id"], "record-1")
+        self.assertEqual(row["detail_action"], "查看详情")
+        self.assertEqual(row["current_target_date"], "2026-07-22")
+        self.assertEqual(row["actual_delivery_display"], "2026-07-21")
+        self.assertIn("分", str(row["assessment_display"]))
+
+    def test_grid_columns_use_header_filters_and_keep_action_unfiltered(self):
+        columns = dashboard.get_sample_order_grid_columns()
+
+        self.assertGreater(len(columns), 10)
+        self.assertEqual(columns[0]["field"], "detail_action")
+        self.assertEqual(columns[0]["pinned"], "left")
+        self.assertFalse(columns[0]["filter"])
+        self.assertTrue(all(column.get("filter") for column in columns[1:]))
+        self.assertTrue(all(column.get("headerClass") == "sample-order-grid-header-center" for column in columns))
+        self.assertTrue(all(column.get("cellStyle", {}).get("textAlign") == "center" for column in columns))
+        self.assertTrue(all("width" in column for column in columns))
+        self.assertTrue(all("Width" not in column for column in columns))
+
     def test_monthly_statistics_use_planned_month_and_completion_date(self):
         on_time = make_record()
         on_time["basic_info"]["planned_delivery_date"] = "2026-07-20"
