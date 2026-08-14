@@ -415,8 +415,42 @@ def root():
 # 运行程序
 # ======================
 if __name__ in {"__main__", "__mp_main__"}:
+    # ==========================================================
+    # 运行环境开关
+    # ==========================================================
+    # 本地开发时保持为 False；部署到服务器时改为 True。
+    # 只需修改这一行，不需要在 ui.run() 内反复注释/取消注释多个参数。
+    PRODUCTION_MODE = False
+    # PRODUCTION_MODE = True
+
+    if PRODUCTION_MODE:
+        # -------------------- 服务器部署配置 --------------------
+        # 生产环境关闭文件监听和热重载，避免多进程、频繁重启和额外性能开销。
+        run_environment_options = {
+            "reload": False,
+            "reconnect_timeout": 300.0,
+            "uvicorn_logging_level": "warning",
+        }
+    else:
+        # -------------------- 本地开发配置 --------------------
+        # 明确监听 src 目录，避免启动时的工作目录不同导致部分文件未被监听。
+        src_dir = os.path.dirname(os.path.abspath(__file__))
+
+        # Windows 映射盘、网络盘或同步盘偶尔会丢失文件系统通知；
+        # 开发环境改用轮询监听，提高保存代码后触发重载的可靠性。
+        os.environ.setdefault("WATCHFILES_FORCE_POLLING", "true")
+
+        run_environment_options = {
+            "reload": True,
+            "reconnect_timeout": 3.0,
+            "uvicorn_logging_level": "info",
+            "uvicorn_reload_dirs": src_dir,
+            "uvicorn_reload_includes": "*.py",
+            "uvicorn_reload_excludes": "__pycache__,*.py[cod]",
+        }
+
     ui.run(
-        title="研发项目文件管理系统",
+        title="百炼光研发管理系统",
         favicon=f"{IMG_DIR}/RFRF.png",
         # host='0.0.0.0' 允许来自局域网的任何IP访问
         host="0.0.0.0",
@@ -424,17 +458,5 @@ if __name__ in {"__main__", "__mp_main__"}:
         port=8080,
         storage_secret=ST,  # 添加存储密钥
         dark=False,
-        # 在生产环境中，必须禁用热重载功能，以获得更好的性能和稳定性
-        # False 不自动重载，True自动重载
-        reload=True,
-        # reload=False,
-        # 🚀 核心新增配置：增加断线重连宽容期（默认是 3.0 秒）
-        # 设置为 300.0 秒（5分钟），允许前端 WebSocket 断开长达5分钟。
-        reconnect_timeout=300.0,
-        # 【关键修改 1】让父进程闭嘴
-        # 将 Uvicorn 自身的日志级别设为 warning，
-        # 这样它就不会打印 "changes detected" 这种 INFO 级别的废话了
-        uvicorn_logging_level="warning",
-        # 添加排除项：忽略以 .json 结尾的文件，忽略 backups 文件夹，忽略数据库文件
-        uvicorn_reload_excludes="logs,backups,.nicegui,*.json,*.db,*.log,*.txt",
+        **run_environment_options,
     )
