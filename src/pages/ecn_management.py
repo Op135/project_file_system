@@ -262,6 +262,35 @@ async def save_ecn_root_item(key: str, data):
     await db_storage.set_item("ecn_global_version_stamp", time.time())
 
 
+def append_ecn_approval_log_once(approval_log: list, entry: dict) -> bool:
+    """幂等追加相邻的同一条流程日志，避免首次发起时重复落盘。"""
+    if approval_log and approval_log[-1] == entry:
+        return False
+    approval_log.append(copy.deepcopy(entry))
+    return True
+
+
+def deactivate_overview_chip_for_ecn(
+    chip: dict,
+    req_ver: str,
+    ecn_id: str,
+    operation_time: str,
+) -> dict:
+    """生成 ECN 自动失活后的旧 Chip，并同步最近操作人与状态历史。"""
+    result = copy.deepcopy(chip)
+    operator = f"ECN自动执行 ({ecn_id})"
+    result.setdefault("select_activ_dic", {})[req_ver] = False
+    result["enabled"] = False
+    result["bg_color"] = "bg-grey-5"
+    result["icon"] = "block"
+    result["creator"] = operator
+    result.setdefault("timestamp", {})[operation_time] = {
+        "creator": operator,
+        "select_activ_dic": copy.deepcopy(result["select_activ_dic"]),
+    }
+    return result
+
+
 # ==========================================
 # 主路由页面定义
 # ==========================================
@@ -3577,15 +3606,12 @@ async def ecn_management_page():
                                                 new_chip["select_activ_dic"]
                                             )
 
-                                            deactivated_chip = copy.deepcopy(old_chip)
-                                            deactivated_chip.setdefault("select_activ_dic", {})[req_max_ver] = False
-                                            deactivated_chip["enabled"] = False
-                                            deactivated_chip["bg_color"] = "bg-grey-5"
-                                            deactivated_chip["icon"] = "block"
-                                            deactivated_chip.setdefault("timestamp", {})[now_str] = {
-                                                "creator": f"ECN自动执行 ({local_data['ecn_id']})",
-                                                "select_activ_dic": copy.deepcopy(deactivated_chip["select_activ_dic"]),
-                                            }
+                                            deactivated_chip = deactivate_overview_chip_for_ecn(
+                                                old_chip,
+                                                req_max_ver,
+                                                local_data["ecn_id"],
+                                                now_str,
+                                            )
 
                                             # 写入失活旧节点与新生节点
                                             await save_ecn_deep_item(path, deactivated_chip)
@@ -3673,22 +3699,34 @@ async def ecn_management_page():
                         c_wf["current_step_index"] = 0
                         c_wf["pending_roles"] = ECN_WORKFLOW_ROUTES["ECR_PHASE"][c_wf["route_type"]][0]
                         c_wf["step_approvals"] = {}
-                        c_log.append({"user": user, "role": role, "action": "发起申请", "time": time_str})
+                        append_ecn_approval_log_once(
+                            c_log,
+                            {"user": user, "role": role, "action": "发起申请", "time": time_str},
+                        )
 
                     elif act_type == "withdraw":
                         c_wf["current_state"], c_wf["pending_roles"], c_wf["step_approvals"] = ECNState.DRAFT, [], {}
-                        c_log.append({"user": user, "role": role, "action": "撤回修改", "time": time_str})
+                        append_ecn_approval_log_once(
+                            c_log,
+                            {"user": user, "role": role, "action": "撤回修改", "time": time_str},
+                        )
 
                     elif act_type == "cancel":
                         c_wf["current_state"], c_wf["pending_roles"], c_wf["step_approvals"] = ECNState.CANCEL, [], {}
-                        c_log.append({"user": user, "role": role, "action": "作废变更", "time": time_str})
+                        append_ecn_approval_log_once(
+                            c_log,
+                            {"user": user, "role": role, "action": "作废变更", "time": time_str},
+                        )
 
                     elif act_type == "initiate_scheme_review":
                         c_wf["current_state"] = ECNState.ECN_REVIEWING
                         c_wf["current_phase"] = "ECN_SCHEME_REVIEW_PHASE"
                         c_wf["current_step_index"] = 0
                         c_wf["pending_roles"] = ECN_WORKFLOW_ROUTES["ECN_SCHEME_REVIEW_PHASE"][0]
-                        c_log.append({"user": user, "role": role, "action": "发起方案评审", "time": time_str})
+                        append_ecn_approval_log_once(
+                            c_log,
+                            {"user": user, "role": role, "action": "发起方案评审", "time": time_str},
+                        )
 
                     elif act_type in ["approve", "reject"]:
                         act_name = "同意" if act_type == "approve" else "驳回"
@@ -3701,7 +3739,7 @@ async def ecn_management_page():
                         }
                         if act_type == "reject" and rejected_ids:
                             log_entry["rejected_item_ids"] = list(rejected_ids)
-                        c_log.append(log_entry)
+                        append_ecn_approval_log_once(c_log, log_entry)
 
                         if act_type == "reject":
                             if c_wf.get("current_phase") == "ECR_PHASE":
@@ -3754,7 +3792,10 @@ async def ecn_management_page():
 
                     elif act_type == "final_execute":
                         c_wf["current_state"], c_wf["pending_roles"] = ECNState.CLOSED, []
-                        c_log.append({"user": user, "role": role, "action": "执行变更", "time": time_str})
+                        append_ecn_approval_log_once(
+                            c_log,
+                            {"user": user, "role": role, "action": "执行变更", "time": time_str},
+                        )
 
                     return current_ecn
 

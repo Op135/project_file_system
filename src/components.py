@@ -1743,7 +1743,7 @@ class InteractiveButton:
             with chip:
                 # Tooltip 处理
                 if chip_info.get("type") in ["svn"]:
-                    tooltip_text = f"创建节点: 需求V{chip_info.get('req_ver')}后<br>创建者: {chip_info.get('creator')}<br>时间: {next(reversed(chip_info.get('timestamp', {})))}<br>仓库: {chip_info.get('warehouse', '')}<br>注释: <br>●{chip_info.get('notes', '').replace('\n', '<br>')}"
+                    tooltip_text = f"录入节点: 需求V{chip_info.get('req_ver')}后<br>最近操作人: {chip_info.get('creator')}<br>时间: {next(reversed(chip_info.get('timestamp', {})))}<br>仓库: {chip_info.get('warehouse', '')}<br>录入注释: <br>●{chip_info.get('notes', '').replace('\n', '<br>')}"
                 elif chip_info.get("type") in ["test"]:
                     select_str = "测试条件状态与节点工具："
                     select_bool = False
@@ -1753,9 +1753,9 @@ class InteractiveButton:
                             select_str += f"<br>●{select_value}"
                     if not select_bool:
                         select_str = "测试条件状态与节点工具：<br>无"
-                    tooltip_text = f"创建节点: 需求V{chip_info.get('req_ver')}后<br>创建者: {chip_info.get('creator')}<br>时间: {next(reversed(chip_info.get('timestamp', {})))}<br>{select_str}<br>注释: <br>●{chip_info.get('notes', '').replace('\n', '<br>')}"
+                    tooltip_text = f"录入节点: 需求V{chip_info.get('req_ver')}后<br>最近操作人: {chip_info.get('creator')}<br>时间: {next(reversed(chip_info.get('timestamp', {})))}<br>{select_str}<br>录入注释: <br>●{chip_info.get('notes', '').replace('\n', '<br>')}"
                 else:
-                    tooltip_text = f"创建节点: 需求V{chip_info.get('req_ver')}后<br>创建者: {chip_info.get('creator')}<br>时间: {next(reversed(chip_info.get('timestamp', {})))}<br>注释: <br>●{chip_info.get('notes', '').replace('\n', '<br>')}"
+                    tooltip_text = f"录入节点: 需求V{chip_info.get('req_ver')}后<br>最近操作人: {chip_info.get('creator')}<br>时间: {next(reversed(chip_info.get('timestamp', {})))}<br>录入注释: <br>●{chip_info.get('notes', '').replace('\n', '<br>')}"
 
                 with ui.tooltip():
                     ui.html(tooltip_text, sanitize=Sanitizer().sanitize)
@@ -1853,7 +1853,7 @@ class InteractiveButton:
             with thumbnail:
                 _render_image_status_badge(chip_info.get("icon"))
 
-                tooltip_text = f"创建节点: 需求V{chip_info.get('req_ver')}后<br>图片名: {image_name}<br>创建者: {chip_info.get('creator')}<br>时间: {next(reversed(chip_info.get('timestamp', {})))}<br>注释: <br>{chip_info.get('notes', '').replace('\n', '<br>')}"
+                tooltip_text = f"录入节点: 需求V{chip_info.get('req_ver')}后<br>图片名: {image_name}<br>最近操作人: {chip_info.get('creator')}<br>时间: {next(reversed(chip_info.get('timestamp', {})))}<br>录入注释: <br>{chip_info.get('notes', '').replace('\n', '<br>')}"
                 with ui.tooltip():
                     ui.html(tooltip_text, sanitize=Sanitizer().sanitize)
 
@@ -4907,7 +4907,7 @@ class OverviewTableGroup:
                 with chip:
                     # 为 chip 添加 tooltip
                     if chip_info.get("type") in ["svn"]:
-                        tooltip_text = f"创建节点: 需求V{chip_info.get('req_ver')}后<br>创建者: {chip_info.get('creator')}<br>时间: {next(reversed(chip_info.get('timestamp', {})))}<br>仓库: {chip_info.get('warehouse', '')}<br>注释: <br>●{chip_info.get('notes', '').replace('\n', '<br>')}"
+                        tooltip_text = f"录入节点: 需求V{chip_info.get('req_ver')}后<br>最近操作人: {chip_info.get('creator')}<br>时间: {next(reversed(chip_info.get('timestamp', {})))}<br>仓库: {chip_info.get('warehouse', '')}<br>录入注释: <br>●{chip_info.get('notes', '').replace('\n', '<br>')}"
                     elif chip_info.get("type") in ["test"]:
                         select_str = "测试条件状态与节点工具："
                         select_bool = False
@@ -4917,9 +4917,9 @@ class OverviewTableGroup:
                                 select_str = f"{select_str}<br>●{select_value}"
                         if not select_bool:
                             select_str = "测试条件状态与节点工具：<br>无"
-                        tooltip_text = f"创建节点: 需求V{chip_info.get('req_ver')}后<br>创建者: {chip_info.get('creator')}<br>时间: {next(reversed(chip_info.get('timestamp', {})))}<br>{select_str}<br>注释: <br>●{chip_info.get('notes', '').replace('\n', '<br>')}"
+                        tooltip_text = f"录入节点: 需求V{chip_info.get('req_ver')}后<br>最近操作人: {chip_info.get('creator')}<br>时间: {next(reversed(chip_info.get('timestamp', {})))}<br>{select_str}<br>录入注释: <br>●{chip_info.get('notes', '').replace('\n', '<br>')}"
                     else:
-                        tooltip_text = f"创建节点: 需求V{chip_info.get('req_ver')}后<br>创建者: {chip_info.get('creator')}<br>时间: {next(reversed(chip_info.get('timestamp', {})))}<br>注释: <br>●{chip_info.get('notes', '').replace('\n', '<br>')}"
+                        tooltip_text = f"录入节点: 需求V{chip_info.get('req_ver')}后<br>最近操作人: {chip_info.get('creator')}<br>时间: {next(reversed(chip_info.get('timestamp', {})))}<br>录入注释: <br>●{chip_info.get('notes', '').replace('\n', '<br>')}"
                     with ui.tooltip():
                         ui.html(tooltip_text, sanitize=Sanitizer().sanitize)
 
@@ -5022,7 +5022,7 @@ class OverviewTableGroup:
                 with thumbnail:
                     _render_image_status_badge(chip_info.get("icon"))
                     # 缩略图创建日期提示
-                    tooltip_text = f"创建节点: 需求V{chip_info.get('req_ver')}后<br>图片名: {image_name}<br>创建者: {chip_info.get('creator')}<br>时间: {next(reversed(chip_info.get('timestamp', {})))}<br>注释: <br>{chip_info.get('notes', '').replace('\n', '<br>')}"
+                    tooltip_text = f"录入节点: 需求V{chip_info.get('req_ver')}后<br>图片名: {image_name}<br>最近操作人: {chip_info.get('creator')}<br>时间: {next(reversed(chip_info.get('timestamp', {})))}<br>录入注释: <br>{chip_info.get('notes', '').replace('\n', '<br>')}"
                     with ui.tooltip():
                         ui.html(tooltip_text, sanitize=Sanitizer().sanitize)
 
