@@ -29,23 +29,16 @@ OUTLINE_SCROLL_BATCH_SIZE = 2
 STATISTIC_FORMULA_TOOLTIPS = {
     "最小/最大": "最小值 ÷ 最大值；最大值为 0 时结果不可定义。",
     "(最大-最小)/(最大+最小)": "(最大值 - 最小值) ÷ (最大值 + 最小值)；分母为 0 时结果不可定义。",
-    "极值最大偏差/平均值": (
-        "max(|最大值 - 平均值|, |最小值 - 平均值|) ÷ 平均值；平均值为 0 时结果不可定义。"
-    ),
+    "极值最大偏差/平均值": ("max(|最大值 - 平均值|, |最小值 - 平均值|) ÷ 平均值；平均值为 0 时结果不可定义。"),
     "相对总体标准差": "总体标准差 ÷ 平均值；平均值为 0 时结果不可定义。",
     "相对样本标准差": "样本标准差 ÷ 平均值；有效样本少于 2 个或平均值为 0 时结果不可定义。",
     "矩阵最小/最大": "矩阵采样值最小值 ÷ 最大值；最大值为 0 时结果不可定义。",
-    "矩阵(最大-最小)/(最大+最小)": (
-        "(矩阵采样值最大值 - 最小值) ÷ (最大值 + 最小值)；分母为 0 时结果不可定义。"
-    ),
+    "矩阵(最大-最小)/(最大+最小)": ("(矩阵采样值最大值 - 最小值) ÷ (最大值 + 最小值)；分母为 0 时结果不可定义。"),
     "矩阵极值最大偏差/平均值": (
-        "max(|矩阵采样值最大值 - 平均值|, |最小值 - 平均值|) ÷ 平均值；"
-        "平均值为 0 时结果不可定义。"
+        "max(|矩阵采样值最大值 - 平均值|, |最小值 - 平均值|) ÷ 平均值；平均值为 0 时结果不可定义。"
     ),
     "矩阵相对总体标准差": "矩阵采样值的总体标准差 ÷ 平均值；平均值为 0 时结果不可定义。",
-    "矩阵相对样本标准差": (
-        "矩阵采样值的样本标准差 ÷ 平均值；有效样本少于 2 个或平均值为 0 时结果不可定义。"
-    ),
+    "矩阵相对样本标准差": ("矩阵采样值的样本标准差 ÷ 平均值；有效样本少于 2 个或平均值为 0 时结果不可定义。"),
 }
 
 FORMULA_HEADER_SLOT = """
@@ -888,7 +881,7 @@ class PixelStatisticsTool:
                 with ui.row().classes("items-center gap-3"):
                     ui.icon("analytics", size="md").classes("text-blue-600")
                     with ui.column().classes("gap-0"):
-                        ui.label("像素数据统计分析").classes("text-xl font-bold text-gray-800")
+                        ui.label("光斑均匀性计算").classes("text-xl font-bold text-gray-800")
                         ui.label("可选分块平均、自动定位中心、区域统计与 Excel 导出").classes("text-xs text-gray-500")
                 ui.button("退出工具", on_click=parent_dialog.close).props("outline color=negative icon=close size=sm")
 
@@ -1133,9 +1126,9 @@ class PixelStatisticsTool:
             ui.label("尚未上传文件").classes("text-sm text-gray-400")
             return
         total_bytes = sum(len(content) for content in self.uploaded_files.values())
-        ui.label(
-            f"当前 {len(self.uploaded_files)} 个文件，共 {total_bytes / 1024 / 1024:.2f} MB"
-        ).classes("text-xs text-gray-500")
+        ui.label(f"当前 {len(self.uploaded_files)} 个文件，共 {total_bytes / 1024 / 1024:.2f} MB").classes(
+            "text-xs text-gray-500"
+        )
         with ui.row().classes("w-full gap-2 flex-wrap content-start"):
             for filename, content in self.uploaded_files.items():
                 with ui.chip(icon="description").props("outline color=primary"):
@@ -1175,11 +1168,15 @@ class PixelStatisticsTool:
                 ]
                 primary_rows = [{field: row[field] for field in primary_fields} for row in all_rows]
                 primary_columns = _result_table_columns(primary_fields)
-                primary_table = ui.table(
-                    columns=primary_columns,
-                    rows=primary_rows,
-                    pagination={"rowsPerPage": 10},
-                ).classes("w-full").props("dense flat bordered wrap-cells")
+                primary_table = (
+                    ui.table(
+                        columns=primary_columns,
+                        rows=primary_rows,
+                        pagination={"rowsPerPage": 10},
+                    )
+                    .classes("w-full")
+                    .props("dense flat bordered wrap-cells")
+                )
                 _add_formula_header_tooltips(primary_table)
 
                 matrix_rows = [row for result, row in zip(self.batch.results, all_rows) if result.matrix_uniformity]
@@ -1202,11 +1199,15 @@ class PixelStatisticsTool:
                     ]
                     matrix_table_rows = [{field: row[field] for field in matrix_fields} for row in matrix_rows]
                     matrix_columns = _result_table_columns(matrix_fields)
-                    matrix_table = ui.table(
-                        columns=matrix_columns,
-                        rows=matrix_table_rows,
-                        pagination={"rowsPerPage": 10},
-                    ).classes("w-full").props("dense flat bordered wrap-cells")
+                    matrix_table = (
+                        ui.table(
+                            columns=matrix_columns,
+                            rows=matrix_table_rows,
+                            pagination={"rowsPerPage": 10},
+                        )
+                        .classes("w-full")
+                        .props("dense flat bordered wrap-cells")
+                    )
                     _add_formula_header_tooltips(matrix_table)
                 detail_fields = [
                     "文件",
@@ -1252,9 +1253,7 @@ class PixelStatisticsTool:
                 self.outline_results = outline_results
                 self.outline_rendered_count = 0
                 if len(outline_results) <= OUTLINE_EAGER_LIMIT:
-                    self.outline_chart_grid = ui.element("div").classes(
-                        "w-full grid grid-cols-1 xl:grid-cols-2 gap-4"
-                    )
+                    self.outline_chart_grid = ui.element("div").classes("w-full grid grid-cols-1 xl:grid-cols-2 gap-4")
                     self._append_outline_charts(len(outline_results))
                 else:
                     ui.label(
@@ -1284,8 +1283,7 @@ class PixelStatisticsTool:
             ).classes("text-xs text-gray-500")
             with ui.element("div").classes("w-full overflow-x-auto"):
                 with ui.element("div").style(
-                    "width: 640px; height: 640px; min-width: 640px; min-height: 640px; "
-                    "margin: 0 auto; flex: 0 0 640px;"
+                    "width: 640px; height: 640px; min-width: 640px; min-height: 640px; margin: 0 auto; flex: 0 0 640px;"
                 ):
                     ui.echart(_threshold_outline_chart_options(result)).style(
                         "width: 640px; height: 640px; min-width: 640px; min-height: 640px;"
@@ -1417,7 +1415,7 @@ class PixelStatisticsTool:
             return
         try:
             content = await run.io_bound(build_excel_report, self.batch)
-            filename = f"像素数据统计结果_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+            filename = f"光斑均匀性计算结果_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
             ui.download(content, filename=filename)
             ui.notify("统计结果已生成", type="positive")
         except Exception as exc:
