@@ -1533,6 +1533,20 @@ async def copy_overview_data(project_name, version, target_project_name) -> None
 # 请确保头部已经引入了 update_overview_charge_pending_dic 函数
 
 
+def parse_overview_timestamp(value: str) -> datetime:
+    """兼容秒级和带微秒的历史概述时间。"""
+    return datetime.fromisoformat(str(value))
+
+
+def format_overview_timestamp(value: object) -> str:
+    """把概述时间统一显示到秒，无法识别时保留原值。"""
+    text = str(value or "")
+    try:
+        return parse_overview_timestamp(text).strftime("%Y-%m-%d %H:%M:%S")
+    except (TypeError, ValueError):
+        return text
+
+
 def overview_role_update(project_name, input_role="all_update"):
     """
     app.storage.general["overview_role"][project_name]={"光学":{"most_user":"用户名","latest_user":"用户名"},...}
@@ -1542,9 +1556,6 @@ def overview_role_update(project_name, input_role="all_update"):
     """
     # 将服务器概述资料获取到
     OVERVIEW_DATA = db_storage.get_item(f"{project_name}_over_data", {})
-    # 设置时间对象识别格式
-    format_string = "%Y-%m-%d %H:%M:%S"
-
     # ---------------------------------------------------------
     # 核心新增：封装交接逻辑闭包函数，用于处理待办数据的抹除与继承
     # ---------------------------------------------------------
@@ -1603,14 +1614,14 @@ def overview_role_update(project_name, input_role="all_update"):
                             # 统计每个用户出现的频次和最新的时间戳，用于后续判断最多和最近负责人
                             if over_data["creator"] in frequency_user_dic:
                                 frequency_user_dic[over_data["creator"]] += 1
-                                time_obj_new = datetime.strptime(next(reversed(over_data["timestamp"])), format_string)
+                                time_obj_new = parse_overview_timestamp(next(reversed(over_data["timestamp"])))
                                 time_obj_old = time_user_dic[over_data["creator"]]
                                 if time_obj_new > time_obj_old:
                                     time_user_dic[over_data["creator"]] = time_obj_new
                             else:
                                 frequency_user_dic[over_data["creator"]] = 1
-                                time_user_dic[over_data["creator"]] = datetime.strptime(
-                                    next(reversed(over_data["timestamp"])), format_string
+                                time_user_dic[over_data["creator"]] = parse_overview_timestamp(
+                                    next(reversed(over_data["timestamp"]))
                                 )
             if frequency_user_dic != {}:
                 max_value = max(frequency_user_dic.values())
@@ -1630,7 +1641,7 @@ def overview_role_update(project_name, input_role="all_update"):
                         if (
                             "最近指定" in over_role_dic[role]["latest_user"]
                             and latest_des_time
-                            and time_user_dic[user] < datetime.strptime(latest_des_time, format_string)
+                            and time_user_dic[user] < parse_overview_timestamp(latest_des_time)
                         ):
                             continue
                         # 💡 核心修复：在赋值新负责人前，执行交接逻辑
@@ -1649,14 +1660,14 @@ def overview_role_update(project_name, input_role="all_update"):
                     for over_data in OVERVIEW_DATA[over_config["label"]].values():
                         if over_data["creator"] in frequency_user_dic:
                             frequency_user_dic[over_data["creator"]] += 1
-                            time_obj_new = datetime.strptime(next(reversed(over_data["timestamp"])), format_string)
+                            time_obj_new = parse_overview_timestamp(next(reversed(over_data["timestamp"])))
                             time_obj_old = time_user_dic[over_data["creator"]]
                             if time_obj_new > time_obj_old:
                                 time_user_dic[over_data["creator"]] = time_obj_new
                         else:
                             frequency_user_dic[over_data["creator"]] = 1
-                            time_user_dic[over_data["creator"]] = datetime.strptime(
-                                next(reversed(over_data["timestamp"])), format_string
+                            time_user_dic[over_data["creator"]] = parse_overview_timestamp(
+                                next(reversed(over_data["timestamp"]))
                             )
 
         if frequency_user_dic != {}:
@@ -1678,7 +1689,7 @@ def overview_role_update(project_name, input_role="all_update"):
                     if (
                         "最近指定" in over_role_dic[input_role]["latest_user"]
                         and latest_des_time
-                        and time_user_dic[user] < datetime.strptime(latest_des_time, format_string)
+                        and time_user_dic[user] < parse_overview_timestamp(latest_des_time)
                     ):
                         continue
                     # 💡 核心修复：在赋值新负责人前，执行交接逻辑

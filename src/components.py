@@ -43,6 +43,7 @@ from .config import (
 )
 from .utils import (
     async_path_exists,
+    format_overview_timestamp,
     get_time,
     move_element,
     overview_role_update,
@@ -3527,7 +3528,9 @@ class InteractiveButton:
                         "w-full items-start p-2 border-b border-gray-100 hover:bg-gray-50 transition-colors"
                     ):
                         with ui.column().classes("w-1/5 min-w-[120px] gap-0"):
-                            ui.label(item["creation_time"]).classes("text-xs text-gray-500")
+                            ui.label(format_overview_timestamp(item["creation_time"])).classes(
+                                "text-xs text-gray-500"
+                            )
                             ui.label(item["creator"]).classes("text-xs font-bold text-blue-600")
 
                         with ui.column().classes("flex-grow gap-1"):
@@ -3573,7 +3576,9 @@ class InteractiveButton:
                         with ui.row().classes("w-full justify-between items-center mb-1"):
                             with ui.row().classes("gap-2 items-center"):
                                 ui.icon("history", size="xs", color="blue")
-                                ui.label(time_str).classes("text-sm font-mono text-gray-700")
+                                ui.label(format_overview_timestamp(time_str)).classes(
+                                    "text-sm font-mono text-gray-700"
+                                )
                             ui.badge(creator, color="blue-grey").props("outline")
 
                         if activ_dic:
@@ -7031,7 +7036,9 @@ class OverviewTableGroup:
                         with ui.row().classes("w-full justify-between items-center mb-1"):
                             with ui.row().classes("gap-2 items-center"):
                                 ui.icon("history", size="xs", color="blue")
-                                ui.label(time_str).classes("text-sm font-mono text-gray-700")
+                                ui.label(format_overview_timestamp(time_str)).classes(
+                                    "text-sm font-mono text-gray-700"
+                                )
                             ui.badge(creator, color="blue-grey").props("outline")
 
                         if activ_dic:
@@ -7114,7 +7121,9 @@ class OverviewTableGroup:
                     ):
                         # 左侧：时间和创建人
                         with ui.column().classes("w-1/5 min-w-[120px] gap-0"):
-                            ui.label(item["creation_time"]).classes("text-xs text-gray-500")
+                            ui.label(format_overview_timestamp(item["creation_time"])).classes(
+                                "text-xs text-gray-500"
+                            )
                             ui.label(item["creator"]).classes("text-xs font-bold text-blue-600")
 
                         # 中间：内容

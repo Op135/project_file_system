@@ -3,14 +3,17 @@ import ast
 import asyncio
 import copy
 import hashlib
+import html
 import io
 import itertools
 import json
 import logging
 import os
 import re
+import uuid
 from datetime import datetime
 from pathlib import Path
+from typing import Any, Literal
 
 from nicegui import app, events, ui
 from nicegui.events import (
@@ -25,7 +28,10 @@ from .. import db_storage  # 导入我们创建的模块
 from ..components import ButtonUploader, FileThumbnail, InteractiveButton, OverviewTableGroup, OverviewVersionManager
 from ..config import (
     BASE_DIR,
+    FILES_URL_DIR,
     IMG_DIR,
+    NONE_REGULAR,
+    OVER_UPLOADS_FILE_TYPE,
     OVERVIEW_UI_RENDER_REGISTRY,
     PRESET_AVATARS,
     PROJECT_STATE_LIST,
@@ -35,12 +41,31 @@ from ..config import (
     UPLOAD_URL_DIR,
     UPLOADS_DIR,
 )
+from ..overview_batch_operations import (
+    BATCH_OVERVIEW_ALLOWED_PROJECT_STATES,
+    BATCH_OVERVIEW_TOOL_ROLES,
+    apply_related_overview_impacts,
+    archive_related_record,
+    build_batch_result_lines,
+    build_new_overview_chip,
+    build_project_category_map,
+    build_project_model_range_options,
+    cascade_deactivate_table_row,
+    collect_editable_overview_configs,
+    filter_batch_projects,
+    find_projects_without_row_anchors,
+    insert_overview_chip,
+    is_first_column_row_active,
+    update_overview_chip_state,
+    validate_overview_content,
+)
 from ..requirement_overview_impact import RequirementOverviewImpactConfigError
 from ..utils import (
     compare_configs_by_id,
     copy_overview_data,
     find_files_with_prefix_and_version,
     find_key_position,
+    format_overview_timestamp,
     get_cache_busted_path,
     get_max_numeric_key,
     get_requirement_overview_impacts,
@@ -51,7 +76,10 @@ from ..utils import (
     refresh_overview_pending_labels,
     set_overview_active_state,
     setup_global_activity_tracking,
+    update_overview_charge_pending_dic,
     validate_format_regex,
+    validate_search_path,
+    validate_svn_url,
 )
 
 # 获取一个以此模块命名的 logger
@@ -208,6 +236,7 @@ async def requirement_page(type="", json_path="", project_name=""):
 
     # 在全局作用域创建对话框（确保在菜单系统之外）
     general_dialog = ui.dialog()
+    batch_overview_dialog = ui.dialog().props("persistent")
     # 创建项目名修改对话框
     with ui.dialog().props("persistent").classes("") as project_dialog:
         project_card = ui.card().classes("w-1/4")
@@ -3167,6 +3196,934 @@ async def requirement_page(type="", json_path="", project_name=""):
         text_str = color_data[role_text][0] if color_data[role_text] else role_text[0]
         ui.badge(text=text_str, color=color_str).props("rounded").classes("p-1 text-[8px]/[8px]")
 
+    async def batch_overview_maintenance_dialog():
+        """研发结构专用：跨项目批量新增概述或修改当前版本的激活状态。"""
+        if current_role not in BATCH_OVERVIEW_TOOL_ROLES:
+            ui.notify("当前角色无权使用批量概述维护工具。", type="negative")
+            return
+
+        over_config = app.storage.general.get("over_config_data", {})
+        editable_configs = collect_editable_overview_configs(
+            over_config,
+            current_role,
+            OVERVIEW_UI_RENDER_REGISTRY,
+        )
+        if not editable_configs:
+            ui.notify("当前角色没有可编辑的概述配置。", type="warning")
+            return
+
+        config_by_label = {config["label"]: config for config in editable_configs}
+        project_summary = app.storage.general.get("project_summary", {})
+        summary_by_project = {
+            str(summary.get("sub_project") or key): summary for key, summary in project_summary.items()
+        }
+        eligible_items = [
+            (key, summary)
+            for key, summary in project_summary.items()
+            if summary.get("state") in BATCH_OVERVIEW_ALLOWED_PROJECT_STATES
+        ]
+        eligible_projects = sorted(
+            {str(summary.get("sub_project") or key) for key, summary in eligible_items}
+        )
+        eligible_category_projects = [
+            str(summary.get("project") or summary.get("sub_project") or key)
+            for key, summary in eligible_items
+        ]
+        category_map = build_project_category_map(eligible_category_projects)
+        if not eligible_projects:
+            ui.notify("没有处于待定、研发或转产状态的项目。", type="warning")
+            return
+
+        current_category_project = str(summary_by_project.get(project_name, {}).get("project") or project_name)
+        current_major = (
+            current_category_project.split("-", 1)[0] if "-" in current_category_project else "其它"
+        )
+        default_major = current_major if current_major in category_map else "所有"
+        if default_major == "其它":
+            default_sub = (
+                current_category_project if current_category_project in category_map.get("其它", []) else "所有"
+            )
+        elif default_major != "所有" and "-" in current_category_project:
+            candidate_sub = current_category_project.split("-", 1)[1][:2]
+            default_sub = candidate_sub if candidate_sub in category_map.get(default_major, []) else "所有"
+        else:
+            default_sub = "所有"
+        default_model_range_options = build_project_model_range_options(
+            eligible_category_projects,
+            default_major,
+            default_sub,
+        )
+        if default_major not in {"所有", "其它"} and "-" in current_category_project:
+            current_model_part = current_category_project.split("-", 2)[1]
+            candidate_model_range = f"{default_major}-{current_model_part[:4]}"
+            default_model_range = (
+                candidate_model_range if candidate_model_range in default_model_range_options else "所有"
+            )
+        else:
+            default_model_range = "所有"
+
+        roles = sorted({config["role"] for config in editable_configs})
+        default_role = "结构" if "结构" in roles else roles[0]
+        role_groups = sorted({config["group_name"] for config in editable_configs if config["role"] == default_role})
+        default_group = role_groups[0]
+        default_labels = [
+            config["label"]
+            for config in editable_configs
+            if config["role"] == default_role and config["group_name"] == default_group
+        ]
+
+        state: dict[str, Any] = {
+            "states": list(BATCH_OVERVIEW_ALLOWED_PROJECT_STATES),
+            "major": default_major,
+            "sub": default_sub,
+            "model_range": default_model_range,
+            "projects": [],
+            "action": "add",
+            "role": default_role,
+            "group": default_group,
+            "label": default_labels[0],
+            "content": "",
+            "notes": "",
+            "file_data": None,
+            "row_anchors": {},
+            "chip_targets": [],
+            "target_state": "active",
+            "impact_mode": "none",
+            "impact_selected": {},
+            "test_data": {
+                "test_nature_select": None,
+                "test_nature_other_text": "",
+                "state_select": None,
+                "state_other_text": "",
+                "node_select": None,
+                "node_other_text": "",
+                "instrument_select": None,
+                "instrument_other_text": "",
+            },
+        }
+        project_select: Any = None
+        sub_select: Any = None
+        model_range_select: Any = None
+        group_select: Any = None
+        label_select: Any = None
+        editor_container: Any = None
+        selected_count_label: Any = None
+        submit_button: Any = None
+        submit_spinner: Any = None
+
+        def notify_batch_lines(
+            lines: list[str],
+            *,
+            notification_type: Literal["positive", "negative", "warning", "info", "ongoing"] = "warning",
+            timeout: int = 0,
+        ):
+            """通过安全 HTML 换行显示完整的批量操作通知。"""
+            message = "<br>".join(html.escape(str(line)) for line in lines)
+            ui.notify(
+                message,
+                type=notification_type,
+                html=True,
+                multi_line=True,
+                timeout=timeout,
+                close_button="✖",
+            )
+
+        def get_config():
+            return config_by_label.get(state["label"])
+
+        def group_options(role):
+            return sorted({config["group_name"] for config in editable_configs if config["role"] == role})
+
+        def label_options(role, group):
+            return {
+                config["label"]: f"{config.get('title', '未命名')}（{config.get('processing_type', 'text')}）"
+                for config in editable_configs
+                if config["role"] == role and config["group_name"] == group
+            }
+
+        def current_filtered_projects():
+            return filter_batch_projects(
+                project_summary,
+                state["states"],
+                state["major"],
+                state["sub"],
+                state["model_range"],
+            )
+
+        def refresh_project_options(reset_sub=False, reset_model_range=False):
+            if reset_sub:
+                sub_options = category_map.get(state["major"], ["所有"])
+                state["sub"] = sub_options[0]
+                sub_select.set_options(sub_options, value=state["sub"])
+            if reset_sub or reset_model_range:
+                model_range_options = build_project_model_range_options(
+                    eligible_category_projects,
+                    state["major"],
+                    state["sub"],
+                )
+                state["model_range"] = model_range_options[0]
+                model_range_select.set_options(model_range_options, value=state["model_range"])
+            visible_projects = current_filtered_projects()
+            options = {
+                project: f"{project}（{summary_by_project.get(project, {}).get('state', '')}）"
+                for project in visible_projects
+            }
+            state["projects"] = [project for project in state["projects"] if project in options]
+            project_select.set_options(options, value=state["projects"])
+            selected_count_label.text = f"当前筛选 {len(options)} 个项目，已选择 {len(state['projects'])} 个"
+            render_editor()
+
+        def select_all_visible_projects():
+            state["projects"] = current_filtered_projects()
+            project_select.set_value(state["projects"])
+            selected_count_label.text = f"当前筛选 {len(state['projects'])} 个项目，已选择 {len(state['projects'])} 个"
+            render_editor()
+
+        def on_role_change(e):
+            state["role"] = e.value
+            groups = group_options(e.value)
+            state["group"] = groups[0]
+            group_select.set_options(groups, value=state["group"])
+            labels = label_options(state["role"], state["group"])
+            state["label"] = next(iter(labels))
+            label_select.set_options(labels, value=state["label"])
+            reset_operation_selection(clear_inputs=True)
+
+        def on_group_change(e):
+            state["group"] = e.value
+            labels = label_options(state["role"], state["group"])
+            state["label"] = next(iter(labels))
+            label_select.set_options(labels, value=state["label"])
+            reset_operation_selection(clear_inputs=True)
+
+        def reset_operation_selection(clear_inputs=False):
+            state["row_anchors"] = {}
+            state["chip_targets"] = []
+            state["impact_selected"] = {}
+            state["file_data"] = None
+            if clear_inputs:
+                state["impact_mode"] = "none"
+                state["content"] = ""
+                state["notes"] = ""
+                state["test_data"] = {
+                    "test_nature_select": None,
+                    "test_nature_other_text": "",
+                    "state_select": None,
+                    "state_other_text": "",
+                    "node_select": None,
+                    "node_other_text": "",
+                    "instrument_select": None,
+                    "instrument_other_text": "",
+                }
+            render_editor()
+
+        def on_label_change(e):
+            state["label"] = e.value
+            reset_operation_selection(clear_inputs=True)
+
+        def render_test_inputs(config):
+            test_groups = (
+                ("测试性质", "test_nature", config.get("test_nature_options", [])),
+                ("条件/状态", "state", config.get("state_options", [])),
+                ("节点/位置", "node", config.get("node_options", [])),
+                ("工具/仪器", "instrument", config.get("instrument_options", [])),
+            )
+            with ui.card().classes("w-full p-2 bg-purple-50/50 border border-purple-100 shadow-none"):
+                ui.label("测试项参数").classes("text-sm font-bold text-purple-900")
+                for title, prefix, options in test_groups:
+                    if not options:
+                        continue
+                    with ui.row().classes("w-full items-start gap-2"):
+                        select = (
+                            ui.select(options, label=title)
+                            .bind_value(state["test_data"], f"{prefix}_select")
+                            .props("outlined dense options-dense")
+                            .classes("w-1/3")
+                        )
+                        other_input = (
+                            ui.input(label=f"{title}特殊要求")
+                            .bind_value(state["test_data"], f"{prefix}_other_text")
+                            .props("outlined dense")
+                            .classes("flex-grow")
+                        )
+                        other_input.set_visibility(state["test_data"].get(f"{prefix}_select") == "其它")
+
+                        def toggle_other(event, element=other_input, key=f"{prefix}_other_text"):
+                            element.set_visibility(event.value == "其它")
+                            if event.value != "其它":
+                                state["test_data"][key] = ""
+
+                        select.on_value_change(toggle_other)
+
+        def render_table_anchor_selectors(config):
+            if not config.get("is_table_group") or config["label"] == config.get("first_col_label"):
+                return
+            with ui.card().classes("w-full p-2 border border-blue-100 bg-blue-50/40 shadow-none"):
+                ui.label("逐项目选择新增内容所在的表格行（必选）").classes("text-sm font-bold text-blue-900")
+                for project in state["projects"]:
+                    req_max_ver = app.storage.general.get("project_req_max_ver", {}).get(project, "0.0")
+                    first_chips = db_storage.get_deep_item([f"{project}_over_data", config["first_col_label"]], {})
+                    options = {
+                        chip.get("row_id"): str(chip.get("content", "未命名"))
+                        for chip in first_chips.values()
+                        if chip.get("row_id")
+                        and chip.get("select_activ_dic", {}).get(req_max_ver, chip.get("enabled")) is True
+                    }
+                    state["row_anchors"].setdefault(project, None)
+                    ui.select(options, label=project).bind_value(state["row_anchors"], project).props(
+                        "outlined dense options-dense"
+                    ).classes("w-full")
+                    if not options:
+                        ui.label(f"{project} 没有可用的激活基准行").classes("text-xs text-red-600 -mt-2")
+
+        def render_state_targets(config):
+            state_labels = {True: "激活", False: "失活", None: "待定"}
+            options = {}
+            for project in state["projects"]:
+                req_max_ver = app.storage.general.get("project_req_max_ver", {}).get(project, "0.0")
+                chips = db_storage.get_deep_item([f"{project}_over_data", config["label"]], {})
+                for chip_id, chip in chips.items():
+                    chip_state = chip.get("select_activ_dic", {}).get(req_max_ver, chip.get("enabled"))
+                    key = json.dumps([project, chip_id], ensure_ascii=False)
+                    content = str(chip.get("content", "未命名"))
+                    if len(content) > 45:
+                        content = f"{content[:45]}…"
+                    options[key] = f"{project}｜{state_labels.get(chip_state, '未知')}｜{content}"
+            state["chip_targets"] = [target for target in state["chip_targets"] if target in options]
+            ui.select(options, label="选择需要修改状态的概述条目", multiple=True).bind_value(
+                state, "chip_targets"
+            ).props("outlined use-chips options-dense").classes("w-full")
+            ui.radio({"active": "设为激活", "pending": "设为待定", "inactive": "设为失活"}).bind_value(
+                state, "target_state"
+            ).props("inline")
+            ui.label(f"当前可选 {len(options)} 条；状态修改作用于各项目当前最高需求版本。\n").classes(
+                "text-xs text-gray-500"
+            )
+
+        def render_impact_options(config):
+            related_labels = list(dict.fromkeys(label for label in config.get("impact_list", []) if label))
+            if not related_labels:
+                ui.label("该概述未配置关联影响项，提交时将直接跳过关联影响步骤。\n").classes("text-xs text-gray-500")
+                return
+            ui.separator()
+            ui.label("关联影响范围").classes("text-sm font-bold text-gray-700")
+            ui.radio(
+                {
+                    "none": "本次不影响其它项",
+                    "selected": "勾选的受影响",
+                    "all": "全部受影响",
+                }
+            ).bind_value(state, "impact_mode").props("inline")
+            impact_checks = ui.grid(columns=3).classes("w-full gap-0")
+            impact_checks.bind_visibility_from(state, "impact_mode", backward=lambda value: value == "selected")
+            with impact_checks:
+                for related_label in related_labels:
+                    state["impact_selected"].setdefault(related_label, False)
+                    title = (
+                        app.storage.general.get("over_config_data_flat", {})
+                        .get(related_label, {})
+                        .get("title", related_label)
+                    )
+                    ui.checkbox(title).bind_value(state["impact_selected"], related_label)
+
+        async def handle_batch_file_upload(event, status_label):
+            try:
+                state["file_data"] = {
+                    "name": Path(event.file.name).name,
+                    "content_type": event.file.content_type,
+                    "content": await event.file.read(),
+                }
+                status_label.text = f"已选择：{state['file_data']['name']}"
+                status_label.classes(remove="text-gray-500", add="text-green-700")
+            except Exception as ex:
+                logger.error("读取批量概述上传文件失败", exc_info=True)
+                ui.notify(f"读取上传文件失败：{ex}", type="negative")
+
+        def render_editor():
+            if editor_container is None:
+                return
+            editor_container.clear()
+            config = get_config()
+            with editor_container:
+                if not config:
+                    ui.label("请选择具体概述项。\n").classes("text-gray-500")
+                    return
+                if not state["projects"]:
+                    ui.label("请先在上方勾选至少一个目标项目。\n").classes("text-amber-800 font-bold")
+                ptype = config.get("processing_type", "text")
+                ui.label(
+                    f"处理类型：{ptype}；配置允许状态：{', '.join(config.get('allowed_state', [])) or '未限制'}"
+                ).classes("text-xs text-blue-grey-7")
+                if state["action"] == "add":
+                    if ptype in {"file", "image", "video"}:
+                        ui.input(
+                            label="不需要提交文件时填写（选填）",
+                            placeholder="无",
+                        ).bind_value(state, "content").props("outlined dense").classes("w-full")
+                        upload_status = ui.label(
+                            f"已选择：{state['file_data']['name']}" if state["file_data"] else "尚未选择文件"
+                        ).classes("text-xs text-gray-500")
+                        ui.upload(
+                            on_upload=lambda e, label=upload_status: handle_batch_file_upload(e, label),
+                            auto_upload=True,
+                            max_files=1,
+                            label="选择要批量添加的文件",
+                        ).classes("w-full")
+                        ui.label("服务器存在同名文件时将复用现有文件，不会覆盖。\n").classes("text-xs text-orange-700")
+                    else:
+                        ui.input(
+                            label=config.get("dialog_label", "概述内容"),
+                            placeholder=config.get("dialog_placeholder", ""),
+                        ).bind_value(state, "content").props("outlined").classes("w-full")
+                    ui.textarea(label="注释（必填）").bind_value(state, "notes").props("outlined auto-grow").classes(
+                        "w-full"
+                    )
+                    if ptype == "test":
+                        render_test_inputs(config)
+                    render_table_anchor_selectors(config)
+                else:
+                    render_state_targets(config)
+                render_impact_options(config)
+
+        def selected_related_labels(config):
+            related_labels = list(dict.fromkeys(label for label in config.get("impact_list", []) if label))
+            if state["impact_mode"] == "all":
+                return related_labels
+            if state["impact_mode"] == "selected":
+                return [label for label in related_labels if state["impact_selected"].get(label) is True]
+            return []
+
+        def validate_test_data(config):
+            for prefix, option_key in (
+                ("test_nature", "test_nature_options"),
+                ("state", "state_options"),
+                ("node", "node_options"),
+                ("instrument", "instrument_options"),
+            ):
+                if config.get(option_key) and not state["test_data"].get(f"{prefix}_select"):
+                    return False, "测试项参数必须全部选择。"
+                if (
+                    state["test_data"].get(f"{prefix}_select") == "其它"
+                    and not str(state["test_data"].get(f"{prefix}_other_text", "")).strip()
+                ):
+                    return False, "选择“其它”时必须填写对应特殊要求。"
+            return True, ""
+
+        async def prepare_media_file(config):
+            file_data = state["file_data"]
+            if not file_data:
+                return False, "请先选择文件。", None
+            filename = Path(file_data["name"]).name
+            file_type = str(file_data.get("content_type") or "application/octet-stream")
+            extension = Path(filename).suffix.lower()
+            ptype = config.get("processing_type")
+            if ptype == "file" and extension not in OVER_UPLOADS_FILE_TYPE:
+                return False, f"{filename} 不是允许上传的文件类型。", None
+            if ptype == "image" and "image" not in file_type:
+                return False, f"{filename} 不是图片类型。", None
+            if ptype == "video" and "video" not in file_type:
+                return False, f"{filename} 不是视频类型。", None
+            upload_path_value = str(config.get("upload_path", "")).strip()
+            if not upload_path_value:
+                return False, "该概述项未配置上传目录。", None
+            upload_path = Path(upload_path_value)
+            if not upload_path.is_dir():
+                return False, f"上传目录不存在：{upload_path}", None
+            target_path = upload_path / filename
+            if not target_path.exists():
+                try:
+                    target_path.write_bytes(file_data["content"])
+                except Exception as ex:
+                    return False, f"文件保存失败：{ex}", None
+            return (
+                True,
+                "",
+                {
+                    "content": filename,
+                    "file_type": file_type,
+                    "url_path": f"{FILES_URL_DIR}/{filename}",
+                },
+            )
+
+        def refresh_pending_for_label(project, label):
+            flat_config = app.storage.general.get("over_config_data_flat", {}).get(label, {})
+            role = flat_config.get("role", "")
+            latest_user = (
+                app.storage.general.get("overview_role", {}).get(project, {}).get(role, {}).get("latest_user", "")
+            )
+            des_user = latest_user.split("：", 1)[1] if "：" in latest_user else latest_user
+            if des_user and des_user != "——":
+                update_overview_charge_pending_dic(
+                    scope="local",
+                    des_user=des_user,
+                    project_name=project,
+                    des_label=label,
+                )
+
+        def ensure_complete_table_row_bindings(config, projects):
+            """在任何批量写入前确认所有表格子项均已绑定有效基准行。"""
+            if (
+                state["action"] != "add"
+                or not config.get("is_table_group")
+                or config["label"] == config.get("first_col_label")
+            ):
+                return True
+
+            missing_projects = find_projects_without_row_anchors(projects, state["row_anchors"])
+            invalid_projects = []
+            for project in projects:
+                if project in missing_projects:
+                    continue
+                row_id = state["row_anchors"].get(project)
+                req_max_ver = app.storage.general.get("project_req_max_ver", {}).get(project, "0.0")
+                first_chips = db_storage.get_deep_item(
+                    [f"{project}_over_data", config["first_col_label"]],
+                    {},
+                )
+                anchor_is_active = any(
+                    chip.get("row_id") == row_id
+                    and chip.get("select_activ_dic", {}).get(req_max_ver, chip.get("enabled")) is True
+                    for chip in first_chips.values()
+                )
+                if not anchor_is_active:
+                    invalid_projects.append(project)
+                    state["row_anchors"][project] = None
+
+            if not missing_projects and not invalid_projects:
+                return True
+
+            render_editor()
+            details = []
+            if missing_projects:
+                details.append(f"尚未选择绑定行：{', '.join(missing_projects)}")
+            if invalid_projects:
+                details.append(f"原绑定行已失效或失活，请重新选择：{', '.join(invalid_projects)}")
+            notify_batch_lines(
+                ["请先为全部目标项目选择有效的表格绑定行，完成后才能批量处理。", *details],
+            )
+            return False
+
+        async def execute_batch():
+            if current_role not in BATCH_OVERVIEW_TOOL_ROLES:
+                ui.notify("当前角色无权执行此操作。", type="negative")
+                return
+            config = get_config()
+            if not config:
+                ui.notify("请选择具体概述项。", type="warning")
+                return
+            live_summary_by_project = {
+                str(summary.get("sub_project") or key): summary
+                for key, summary in app.storage.general.get("project_summary", {}).items()
+            }
+            selected_projects = [
+                project
+                for project in state["projects"]
+                if live_summary_by_project.get(project, {}).get("state") in BATCH_OVERVIEW_ALLOWED_PROJECT_STATES
+            ]
+            if not selected_projects:
+                ui.notify("请至少选择一个符合状态限制的项目。", type="warning")
+                return
+            if current_role not in config.get("permission", {}).get("edit_role", []):
+                ui.notify("当前角色没有该概述项的编辑权限。", type="negative")
+                return
+            if not ensure_complete_table_row_bindings(config, selected_projects):
+                return
+            related_config = list(dict.fromkeys(label for label in config.get("impact_list", []) if label))
+            if state["impact_mode"] == "selected" and related_config and not selected_related_labels(config):
+                ui.notify("请至少勾选一个确实受影响的概述项。", type="warning")
+                return
+
+            submit_button.disable()
+            submit_spinner.set_visibility(True)
+            successes = []
+            skipped = []
+            failed = []
+            changed_pairs = set()
+            creator = app.storage.user.get("current_user", "匿名用户")
+            content = str(state["content"] or "").strip()
+            notes = str(state["notes"] or "").strip()
+            ptype = config.get("processing_type", "text")
+            common_extra = {}
+
+            try:
+                if state["action"] == "add":
+                    if not notes:
+                        ui.notify("注释不能为空。", type="warning")
+                        return
+                    media_as_text = ptype in {"file", "image", "video"} and any(
+                        re.search(pattern, content) for pattern in NONE_REGULAR
+                    )
+                    if ptype in {"file", "image", "video"} and not media_as_text:
+                        valid, message, media = await prepare_media_file(config)
+                        if not valid or media is None:
+                            ui.notify(message, type="warning")
+                            return
+                        media_data = dict(media)
+                        content = str(media_data.pop("content"))
+                        common_extra.update(media_data)
+                    else:
+                        if not validate_overview_content(content, config):
+                            ui.notify("概述内容为空或不符合该项填写格式。", type="warning")
+                            return
+                    actual_type = "text" if media_as_text else ptype
+                    if ptype in {"test", "search", "svn"} and any(
+                        re.search(pattern, content) for pattern in NONE_REGULAR
+                    ):
+                        actual_type = "text"
+                    if actual_type == "test":
+                        valid, message = validate_test_data(config)
+                        if not valid:
+                            ui.notify(message, type="warning")
+                            return
+                        common_extra["test_select_data"] = copy.deepcopy(state["test_data"])
+
+                    for project in selected_projects:
+                        try:
+                            req_max_ver = app.storage.general.get("project_req_max_ver", {}).get(project, "0.0")
+                            extra = copy.deepcopy(common_extra)
+                            if actual_type == "search":
+                                valid, url_path, file_type, _, message = await validate_search_path(
+                                    content, config, [project]
+                                )
+                                if not valid:
+                                    failed.append(f"{project}：{message}")
+                                    continue
+                                extra.update({"url_path": url_path, "file_type": file_type})
+                            elif actual_type == "svn":
+                                valid, url_path, file_type, message = await validate_svn_url(content, config, [project])
+                                if not valid:
+                                    failed.append(f"{project}：{message}")
+                                    continue
+                                extra.update(
+                                    {
+                                        "url_path": url_path,
+                                        "file_type": file_type,
+                                        "warehouse": config.get("state_path", {}).get(
+                                            live_summary_by_project.get(project, {}).get("state")
+                                        ),
+                                    }
+                                )
+                            row_id = None
+                            if config.get("is_table_group"):
+                                if config["label"] == config.get("first_col_label"):
+                                    row_id = str(uuid.uuid4())
+                                else:
+                                    row_id = state["row_anchors"].get(project)
+                                    if not row_id:
+                                        failed.append(f"{project}：未选择表格同行基准项")
+                                        continue
+                            chip = build_new_overview_chip(
+                                project=project,
+                                config=config,
+                                content=content,
+                                notes=notes,
+                                creator=creator,
+                                req_max_ver=req_max_ver,
+                                row_id=row_id,
+                                processing_type=actual_type,
+                                extra_data=extra,
+                            )
+                            inserted, message = await insert_overview_chip(project, config["label"], chip)
+                            if not inserted:
+                                skipped.append(f"{project}：{message}")
+                                continue
+                            successes.append(
+                                {
+                                    "project": project,
+                                    "label": config["label"],
+                                    "chip_id": chip["id"],
+                                    "content": content,
+                                    "state": True,
+                                    "operation_type": "add_chip",
+                                }
+                            )
+                            changed_pairs.add((project, config["label"]))
+                        except Exception as ex:
+                            logger.error("批量新增概述单项目处理失败", exc_info=True)
+                            failed.append(f"{project}：{ex}")
+                else:
+                    if not state["chip_targets"]:
+                        ui.notify("请至少选择一条需要修改状态的概述。", type="warning")
+                        return
+                    target_state = {"active": True, "pending": None, "inactive": False}[state["target_state"]]
+                    group_labels = [
+                        item.get("label") for item in over_config.get(config["role"], {}).get(config["group_name"], [])
+                    ]
+                    for encoded_target in state["chip_targets"]:
+                        try:
+                            project, chip_id = json.loads(encoded_target)
+                            if project not in selected_projects:
+                                skipped.append(f"{project}：项目已不在当前选择范围")
+                                continue
+                            req_max_ver = app.storage.general.get("project_req_max_ver", {}).get(project, "0.0")
+                            current_chip = db_storage.get_deep_item(
+                                [f"{project}_over_data", config["label"], chip_id], {}
+                            )
+                            if not current_chip:
+                                skipped.append(f"{project}：概述条目已不存在")
+                                continue
+                            row_id = current_chip.get("row_id")
+                            if (
+                                target_state is True
+                                and config.get("is_table_group")
+                                and config["label"] != config.get("first_col_label")
+                                and not is_first_column_row_active(
+                                    project,
+                                    config["first_col_label"],
+                                    row_id,
+                                    req_max_ver,
+                                )
+                            ):
+                                failed.append(f"{project}：同行基准项未激活，不能激活当前项")
+                                continue
+                            if target_state is True and current_chip.get("type") == "search":
+                                valid, _, _, _, message = await validate_search_path(
+                                    current_chip.get("content", ""), config, [project]
+                                )
+                                if not valid:
+                                    failed.append(f"{project}：{message}")
+                                    continue
+                            if target_state is True and current_chip.get("type") == "svn":
+                                valid, _, _, message = await validate_svn_url(
+                                    current_chip.get("content", ""), config, [project]
+                                )
+                                if not valid:
+                                    failed.append(f"{project}：{message}")
+                                    continue
+                            changed, message, updated_chip = await update_overview_chip_state(
+                                project,
+                                config["label"],
+                                chip_id,
+                                req_max_ver,
+                                target_state,
+                                creator,
+                            )
+                            if not changed or updated_chip is None:
+                                skipped.append(f"{project}：{message}")
+                                continue
+                            await archive_related_record(project, config["label"], chip_id, creator)
+                            successes.append(
+                                {
+                                    "project": project,
+                                    "label": config["label"],
+                                    "chip_id": chip_id,
+                                    "content": updated_chip.get("content", ""),
+                                    "state": target_state,
+                                    "operation_type": "activ_change",
+                                }
+                            )
+                            changed_pairs.add((project, config["label"]))
+                            if (
+                                target_state is False
+                                and config.get("is_table_group")
+                                and config["label"] == config.get("first_col_label")
+                                and row_id
+                            ):
+                                cascaded_labels = await cascade_deactivate_table_row(
+                                    project,
+                                    group_labels,
+                                    config["label"],
+                                    row_id,
+                                    req_max_ver,
+                                    creator,
+                                )
+                                changed_pairs.update((project, label) for label in cascaded_labels)
+                        except Exception as ex:
+                            logger.error("批量修改概述状态单条处理失败", exc_info=True)
+                            failed.append(f"状态修改失败：{ex}")
+
+                related_labels = selected_related_labels(config)
+                if related_labels:
+                    flat_config = app.storage.general.get("over_config_data_flat", {})
+                    overview_role = app.storage.general.get("overview_role", {})
+                    for operation in successes:
+                        changed_related = await apply_related_overview_impacts(
+                            project=operation["project"],
+                            related_labels=related_labels,
+                            source_content=operation["content"],
+                            source_state=operation["state"],
+                            operation_type=operation["operation_type"],
+                            creator=creator,
+                            config_flat=flat_config,
+                            overview_role=overview_role,
+                        )
+                        changed_pairs.update((operation["project"], label) for label in changed_related)
+
+                for changed_project, changed_label in changed_pairs:
+                    OverviewVersionManager.bump(changed_project, changed_label)
+                    refresh_pending_for_label(changed_project, changed_label)
+                flat_config = app.storage.general.get("over_config_data_flat", {})
+                changed_project_roles = {
+                    (changed_project, flat_config.get(changed_label, {}).get("role", config["role"]))
+                    for changed_project, changed_label in changed_pairs
+                }
+                for changed_project, changed_role in changed_project_roles:
+                    overview_role_update(changed_project, changed_role)
+
+                result_lines = build_batch_result_lines(len(successes), skipped, failed)
+                notify_batch_lines(
+                    result_lines,
+                    notification_type="positive" if successes and not failed else "warning",
+                    timeout=0 if skipped or failed else 6000,
+                )
+                if successes:
+                    batch_overview_dialog.close()
+            except Exception as ex:
+                logger.error("批量维护概述失败", exc_info=True)
+                ui.notify(
+                    f"批量处理异常：{ex}。已完成的单项不会被覆盖，请根据结果重新检查。",
+                    type="negative",
+                    timeout=0,
+                    close_button="✖",
+                )
+            finally:
+                if not submit_button.is_deleted:
+                    submit_button.enable()
+                if not submit_spinner.is_deleted:
+                    submit_spinner.set_visibility(False)
+
+        async def request_execute_batch():
+            config = get_config()
+            if not config:
+                ui.notify("请选择具体概述项。", type="warning")
+                return
+            if not ensure_complete_table_row_bindings(config, state["projects"]):
+                return
+            related_labels = list(dict.fromkeys(label for label in config.get("impact_list", []) if label))
+            if not related_labels or state["impact_mode"] != "none":
+                await execute_batch()
+                return
+
+            confirm_dialog = ui.dialog().props("persistent")
+
+            async def confirm_no_impact():
+                confirm_dialog.close()
+                await execute_batch()
+
+            with confirm_dialog, ui.card().classes("w-full max-w-[520px]"):
+                ui.label("请谨慎确认").classes("text-lg font-bold text-negative")
+                ui.label(
+                    f"本次将批量处理 {len(state['projects'])} 个项目，并明确选择不影响其它概述项。"
+                    "确认后不会生成关联影响记录；如有疑虑，请返回重新选择。"
+                )
+                with ui.row().classes("w-full justify-end gap-2"):
+                    ui.button("返回重新选择", on_click=confirm_dialog.close).props("flat color=grey")
+                    ui.button("确认不影响其它项", on_click=confirm_no_impact).props("color=negative")
+            confirm_dialog.open()
+
+        batch_overview_dialog.clear()
+        with batch_overview_dialog, ui.card().classes("w-[1100px] max-w-[96vw] h-[90vh] p-4"):
+            with ui.row().classes("w-full items-center justify-between"):
+                ui.label("批量维护概述").classes("text-xl font-bold text-blue-900")
+                ui.button(icon="close", on_click=batch_overview_dialog.close).props("flat round dense")
+            ui.label("仅处理待定、研发、转产项目；所有写入记录操作人、当前需求版本和操作时间。").classes(
+                "text-xs text-red-600 -mt-2"
+            )
+
+            with ui.scroll_area().classes("w-full flex-grow"):
+                with ui.column().classes("w-full gap-3 pr-2"):
+                    with ui.card().classes("w-full p-3 border border-blue-100 bg-blue-50/30 shadow-none"):
+                        ui.label("一、选择批量处理项目").classes("text-base font-bold text-blue-900")
+                        status_select = (
+                            ui.select(
+                                list(BATCH_OVERVIEW_ALLOWED_PROJECT_STATES),
+                                label="项目状态",
+                                multiple=True,
+                            )
+                            .bind_value(state, "states")
+                            .props("outlined dense use-chips")
+                            .classes("w-full")
+                        )
+                        with ui.grid(columns=3).classes("w-full gap-2"):
+                            major_select = (
+                                ui.select(list(category_map), label="项目大类")
+                                .bind_value(state, "major")
+                                .props("outlined dense")
+                            )
+                            sub_select = (
+                                ui.select(category_map[default_major], label="项目小类")
+                                .bind_value(state, "sub")
+                                .props("outlined dense")
+                            )
+                            model_range_select = (
+                                ui.select(default_model_range_options, label="型号范围")
+                                .bind_value(state, "model_range")
+                                .props("outlined dense")
+                            )
+                        project_select = (
+                            ui.select({}, label="勾选目标项目", multiple=True)
+                            .bind_value(state, "projects")
+                            .props("outlined dense use-chips options-dense")
+                            .classes("w-full")
+                        )
+                        with ui.row().classes("w-full items-center justify-between"):
+                            selected_count_label = ui.label("").classes("text-xs text-gray-600")
+                            with ui.row().classes("gap-1"):
+                                ui.button("全选当前筛选", on_click=select_all_visible_projects).props(
+                                    "flat dense color=primary"
+                                )
+                                ui.button(
+                                    "清空",
+                                    on_click=lambda: (
+                                        state.update(projects=[]),
+                                        project_select.set_value([]),
+                                        render_editor(),
+                                    ),
+                                ).props("flat dense color=grey")
+
+                    with ui.card().classes("w-full p-3 border border-gray-200 shadow-none"):
+                        ui.label("二、选择操作与概述项").classes("text-base font-bold text-gray-800")
+                        action_select = (
+                            ui.radio({"add": "批量新增概述", "state": "批量修改激活状态"})
+                            .bind_value(state, "action")
+                            .props("inline")
+                        )
+                        with ui.grid(columns=3).classes("w-full gap-2"):
+                            role_select = (
+                                ui.select(roles, label="技术维度").bind_value(state, "role").props("outlined dense")
+                            )
+                            group_select = (
+                                ui.select(role_groups, label="概述分组")
+                                .bind_value(state, "group")
+                                .props("outlined dense")
+                            )
+                            label_select = (
+                                ui.select(label_options(default_role, default_group), label="具体概述项")
+                                .bind_value(state, "label")
+                                .props("outlined dense options-dense")
+                            )
+
+                    with ui.card().classes("w-full p-3 border border-amber-100 bg-amber-50/20 shadow-none"):
+                        ui.label("三、填写处理内容").classes("text-base font-bold text-amber-900")
+                        editor_container = ui.column().classes("w-full gap-2")
+
+            with ui.row().classes("w-full items-center justify-end gap-2 pt-2 border-t"):
+                submit_spinner = ui.spinner("hourglass", size="sm", color="amber-8")
+                submit_spinner.set_visibility(False)
+                ui.button("取消", on_click=batch_overview_dialog.close).props("flat color=grey")
+                submit_button = ui.button(
+                    "确认批量处理", icon="playlist_add_check", on_click=request_execute_batch
+                ).props("color=primary")
+
+        status_select.on_value_change(lambda _=None: refresh_project_options())
+        major_select.on_value_change(lambda _=None: refresh_project_options(reset_sub=True))
+        sub_select.on_value_change(lambda _=None: refresh_project_options(reset_model_range=True))
+        model_range_select.on_value_change(lambda _=None: refresh_project_options())
+        project_select.on_value_change(
+            lambda _=None: (
+                selected_count_label.set_text(
+                    f"当前筛选 {len(current_filtered_projects())} 个项目，已选择 {len(state['projects'])} 个"
+                ),
+                render_editor(),
+            )
+        )
+        action_select.on_value_change(lambda _=None: reset_operation_selection())
+        role_select.on_value_change(on_role_change)
+        group_select.on_value_change(on_group_change)
+        label_select.on_value_change(on_label_change)
+        refresh_project_options()
+        batch_overview_dialog.open()
+
     # --- 更新 requirement.py 中的 modify_overview_content_dialog 函数 ---
 
     async def modify_overview_content_dialog(project_name):
@@ -3555,7 +4512,9 @@ async def requirement_page(type="", json_path="", project_name=""):
                         ):
                             # 时间与作者
                             with ui.column().classes("w-32 gap-0"):
-                                ui.label(item["creation_time"]).classes("text-xs text-gray-500")
+                                ui.label(format_overview_timestamp(item["creation_time"])).classes(
+                                    "text-xs text-gray-500"
+                                )
                                 ui.label(item["creator"]).classes("text-xs font-bold text-blue-600")
 
                             # 所属标签 (特有)
@@ -3597,6 +4556,9 @@ async def requirement_page(type="", json_path="", project_name=""):
                     if current_role == "研发经理":
                         ui.separator().props("size=1px")
                         ui.menu_item("修改概述内容", on_click=lambda: modify_overview_content_dialog(project_name))
+                    if current_role in BATCH_OVERVIEW_TOOL_ROLES:
+                        ui.separator().props("size=1px")
+                        ui.menu_item("批量维护概述", on_click=batch_overview_maintenance_dialog)
 
             with ui.row().classes("font-sans h-[calc(100vh-9rem)] items-stretch flex-nowrap w-full mt-3 text-black"):
                 # 需求内容列
@@ -4143,7 +5105,7 @@ async def requirement_page(type="", json_path="", project_name=""):
 
                             if (
                                 "研发" in app.storage.user.get("current_role", "")
-                                or app.storage.user.get("current_role", "") == "工程"
+                                or app.storage.user.get("current_role", "") == "NPI工程"
                                 or app.storage.user.get("current_role", "") == "admin"
                             ):
                                 app.storage.client.setdefault("record_switch", False)
