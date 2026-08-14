@@ -983,13 +983,13 @@ def get_sample_issue_grid_columns() -> list[dict[str, object]]:
         {"headerName": "产品型号", "field": "product_model", "filter": text_filter, "width": 160},
         {"headerName": "样品单号", "field": "sample_order_no", "filter": text_filter, "width": 140},
         {"headerName": "组装日期", "field": "assembly_date", "filter": date_filter, "width": 120},
-        {"headerName": "问题样机/组装数", "field": "issue_quantity", "filter": text_filter, "width": 100},
+        {"headerName": "问题样机占比", "field": "issue_quantity", "filter": text_filter, "width": 140},
         {"headerName": "问题描述", "field": "issue_description", "filter": text_filter, "width": 260},
         {"headerName": "记录人", "field": "recorder_name", "filter": text_filter, "width": 90},
         {"headerName": "记录日期", "field": "record_date", "filter": date_filter, "width": 120},
         {"headerName": "当前负责人", "field": "owner", "filter": text_filter, "width": 120},
         {"headerName": "预计完成", "field": "due_date", "filter": text_filter, "width": 120},
-        {"headerName": "特殊准备进度", "field": "preparation_progress", "filter": text_filter, "width": 60},
+        {"headerName": "特殊准备进度", "field": "preparation_progress", "filter": text_filter, "width": 140},
     ]
     for column in columns:
         cell_style = column.setdefault("cellStyle", {})

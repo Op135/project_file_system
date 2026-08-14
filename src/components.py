@@ -372,6 +372,11 @@ def _has_real_related_selection(related_select_dic: dict) -> bool:
     return any(value is True for value in related_select_dic.values())
 
 
+def _can_skip_related_impact(operation_type: str) -> bool:
+    """新增概述和修改激活状态均允许明确选择不影响其它项。"""
+    return operation_type in {"activ_change", "add_chip"}
+
+
 def _render_bulk_related_dialog(
     dialog,
     related_labels: list,
@@ -3129,7 +3134,7 @@ class InteractiveButton:
                 submit_spinner.set_visibility(False)
                 submit_status = ui.label("正在处理关联影响，请稍候...").classes("text-sm text-amber-9")
                 submit_status.set_visibility(False)
-                if type == "activ_change":
+                if _can_skip_related_impact(type):
                     skip_button = ui.button(
                         "本次不影响其它项",
                         color="grey",
@@ -6287,7 +6292,7 @@ class OverviewTableGroup:
                 submit_spinner.set_visibility(False)
                 submit_status = ui.label("正在处理关联影响，请稍候...").classes("text-sm text-amber-9")
                 submit_status.set_visibility(False)
-                if type == "activ_change":
+                if _can_skip_related_impact(type):
                     skip_button = ui.button(
                         "本次不影响其它项",
                         color="grey",

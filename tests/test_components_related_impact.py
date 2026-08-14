@@ -1,6 +1,7 @@
 import unittest
 
 from src.components import (
+    _can_skip_related_impact,
     _get_active_chip_icon,
     _get_image_status_visuals,
     _has_real_related_selection,
@@ -31,6 +32,11 @@ class RelatedImpactSelectionTests(unittest.TestCase):
         self.assertIn("border-amber-500", border_classes)
         self.assertIn("bg-amber-8", badge_classes)
         self.assertIn("text-white", badge_classes)
+
+    def test_add_chip_can_use_no_related_impact_confirmation_in_both_overview_classes(self):
+        self.assertTrue(_can_skip_related_impact("add_chip"))
+        self.assertTrue(_can_skip_related_impact("activ_change"))
+        self.assertFalse(_can_skip_related_impact("unknown"))
 
 
 if __name__ == "__main__":

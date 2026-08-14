@@ -646,10 +646,10 @@ def get_error_grid_columns() -> list[dict[str, object]]:
         {"headerName": "料号", "field": "material_no", "filter": text_filter, "width": 120},
         {"headerName": "订单号", "field": "order_no", "filter": text_filter, "width": 160},
         {"headerName": "产品状态", "field": "product_state", "filter": text_filter, "width": 120},
-        {"headerName": "异常描述", "field": "description", "filter": text_filter, "width": 300},
+        {"headerName": "异常描述", "field": "description", "filter": text_filter, "width": 340},
         {"headerName": "发文日期", "field": "publish_date", "filter": date_filter, "width": 120},
         {"headerName": "预计完成", "field": "next_due_date", "filter": text_filter, "width": 120},
-        {"headerName": "纠正预防进度", "field": "preventive_progress", "filter": text_filter, "width": 90},
+        {"headerName": "纠正预防进度", "field": "preventive_progress", "filter": text_filter, "width": 140},
         {"headerName": "负责人", "field": "owners", "filter": text_filter, "width": 90},
         {"headerName": "负责人延期", "field": "owner_extensions", "filter": text_filter, "width": 150},
     ]
