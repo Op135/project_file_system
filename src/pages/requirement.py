@@ -55,7 +55,7 @@ from ..overview_batch_operations import (
     filter_batch_projects,
     find_projects_without_row_anchors,
     insert_overview_chip,
-    is_first_column_row_active,
+    is_table_child_state_allowed,
     update_overview_chip_state,
     validate_overview_content,
 )
@@ -3864,17 +3864,17 @@ async def requirement_page(type="", json_path="", project_name=""):
                                 continue
                             row_id = current_chip.get("row_id")
                             if (
-                                target_state is True
-                                and config.get("is_table_group")
+                                config.get("is_table_group")
                                 and config["label"] != config.get("first_col_label")
-                                and not is_first_column_row_active(
+                                and not is_table_child_state_allowed(
                                     project,
                                     config["first_col_label"],
                                     row_id,
                                     req_max_ver,
+                                    target_state,
                                 )
                             ):
-                                failed.append(f"{project}：同行基准项未激活，不能激活当前项")
+                                failed.append(f"{project}：目标状态等级不能高于同行首列概述状态")
                                 continue
                             if target_state is True and current_chip.get("type") == "search":
                                 valid, _, _, _, message = await validate_search_path(

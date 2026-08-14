@@ -29,6 +29,7 @@ from nicegui import app, events, ui
 from nicegui.events import GenericEventArguments, MouseEventArguments, ValueChangeEventArguments
 
 from . import db_storage  # 导入我们创建的模块
+from .overview_batch_operations import is_table_child_state_allowed
 from .config import (
     FILES_URL_DIR,
     IMG_DIR,
@@ -4529,9 +4530,12 @@ class OverviewTableGroup:
                 if version not in select_activ_dic or select_activ_dic.get(version) is not None:
                     skipped_states += 1
                     continue
-                # 非第一列只有在设为激活时才依赖同行第一列；设为失活必须允许直接提交。
-                if state is True and not self._get_first_col_any_activ_bool(
-                    chip_data.get("row_id"), label, chip_id, version
+                if label != first_col_label and not is_table_child_state_allowed(
+                    self.project,
+                    first_col_label,
+                    chip_data.get("row_id"),
+                    version,
+                    state,
                 ):
                     blocked_states += 1
                     continue
@@ -4591,7 +4595,7 @@ class OverviewTableGroup:
             message += f"{skipped_states} 项因状态已被他人更新而跳过。"
         if blocked_states:
             message += (
-                f"{blocked_states} 项计划激活，但同行第一列在对应版本尚未激活，请先处理第一列；这些项继续保持待定。"
+                f"{blocked_states} 项的目标状态等级高于同行首列状态，已阻止修改；这些项继续保持待定。"
             )
         ui.notify(message, type="positive" if applied_chips else "warning", position="bottom", timeout=4000)
 
@@ -6849,17 +6853,13 @@ class OverviewTableGroup:
         first_col_label = self.configs[0]["label"]
         if label == first_col_label:
             return True
-        FIRST_COL_CHIPS = db_storage.get_deep_item([f"{self.project}_over_data", first_col_label], {})
-        if not any(
-            [
-                chip_dic.get("select_activ_dic", {}).get(req_max_ver, False)
-                for chip_dic in FIRST_COL_CHIPS.values()
-                if chip_dic.get("row_id", "") == row_id
-            ]
-        ):
-            return False
-        else:
-            return True
+        return is_table_child_state_allowed(
+            self.project,
+            first_col_label,
+            row_id,
+            req_max_ver,
+            True,
+        )
 
     async def handle_checkbox_change(self, ui_spinner, chip_id, chip_text, config):
         label = config["label"]
@@ -6876,20 +6876,35 @@ class OverviewTableGroup:
             )
 
             if new_select_activ_dic != OLD_CHIP_SELECT_DIC:
-                req_max_ver = f"{str(max([int(float(v)) for v in new_select_activ_dic.keys()]))}.0"
-                if not self._get_first_col_any_activ_bool(None, label, chip_id, req_max_ver):
-                    ui.notify(
-                        "该行的第一列必须存在激活的概述，才能修改当前概述激活状态！",
-                        type="warning",
-                        position="bottom",
-                        timeout=3000,
-                        progress=True,
-                        # multi_line=True,
-                        close_button="✖",
-                    )
-                    self.cancel_checkbox_change(chip_id)
-                    return
+                first_col_label = self.configs[0]["label"]
+                if label != first_col_label:
+                    row_id = db_storage.get_deep_item([f"{self.project}_over_data", label, chip_id, "row_id"])
+                    blocked_versions = [
+                        str(version)
+                        for version, target_state in new_select_activ_dic.items()
+                        if target_state is not OLD_CHIP_SELECT_DIC.get(version)
+                        and not is_table_child_state_allowed(
+                            self.project,
+                            first_col_label,
+                            row_id,
+                            str(version),
+                            target_state,
+                        )
+                    ]
+                    if blocked_versions:
+                        ui.notify(
+                            "非首列概述的修改后状态不能高于同行首列状态！"
+                            f"受限需求版本：{', '.join(blocked_versions)}",
+                            type="warning",
+                            position="bottom",
+                            timeout=4000,
+                            progress=True,
+                            close_button="✖",
+                        )
+                        self.cancel_checkbox_change(chip_id)
+                        return
 
+                req_max_ver = f"{str(max([int(float(v)) for v in new_select_activ_dic.keys()]))}.0"
                 ui_spinner.set_visibility(True)
                 await db_storage.set_deep_item(
                     [f"{self.project}_over_data", label, chip_id, "select_activ_dic"], new_select_activ_dic

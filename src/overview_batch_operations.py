@@ -176,6 +176,53 @@ def get_chip_state_visuals(processing_type: str, state: Optional[bool]) -> tuple
     return active_icons.get(processing_type), True, "bg-light-blue-1"
 
 
+def overview_state_rank(state: Optional[bool]) -> int:
+    """概述状态等级：激活 2、待定 1、失活 0。"""
+    if state is True:
+        return 2
+    if state is None:
+        return 1
+    return 0
+
+
+def is_overview_state_at_or_below(
+    target_state: Optional[bool],
+    reference_state: Optional[bool],
+) -> bool:
+    """目标状态等级是否低于或等于参照状态。"""
+    return overview_state_rank(target_state) <= overview_state_rank(reference_state)
+
+
+def get_first_column_row_state(
+    project: str,
+    first_col_label: str,
+    row_id: Optional[str],
+    req_ver: str,
+) -> tuple[bool, Optional[bool]]:
+    """读取同行首列在指定版本的最高状态；没有同行首列时返回 found=False。"""
+    chips = db_storage.get_deep_item([f"{project}_over_data", first_col_label], {})
+    states = [
+        chip.get("select_activ_dic", {}).get(req_ver, chip.get("enabled"))
+        for chip in chips.values()
+        if chip.get("row_id") == row_id
+    ]
+    if not states:
+        return False, None
+    return True, max(states, key=overview_state_rank)
+
+
+def is_table_child_state_allowed(
+    project: str,
+    first_col_label: str,
+    row_id: Optional[str],
+    req_ver: str,
+    target_state: Optional[bool],
+) -> bool:
+    """非首列目标状态不得高于同行首列状态。"""
+    found, first_col_state = get_first_column_row_state(project, first_col_label, row_id, req_ver)
+    return found and is_overview_state_at_or_below(target_state, first_col_state)
+
+
 def validate_overview_content(content: str, config: dict) -> bool:
     patterns = config.get("content_regular", [])
     return bool(content) and (not patterns or any(re.search(pattern, content) for pattern in patterns))
@@ -299,11 +346,8 @@ async def update_overview_chip_state(
 
 
 def is_first_column_row_active(project: str, first_col_label: str, row_id: str, req_max_ver: str) -> bool:
-    chips = db_storage.get_deep_item([f"{project}_over_data", first_col_label], {})
-    return any(
-        chip.get("row_id") == row_id and chip.get("select_activ_dic", {}).get(req_max_ver, chip.get("enabled")) is True
-        for chip in chips.values()
-    )
+    """兼容旧调用：判断同行首列是否允许子项设为激活。"""
+    return is_table_child_state_allowed(project, first_col_label, row_id, req_max_ver, True)
 
 
 async def cascade_deactivate_table_row(

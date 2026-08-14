@@ -14,14 +14,40 @@ from src.overview_batch_operations import (
     collect_editable_overview_configs,
     filter_batch_projects,
     find_projects_without_row_anchors,
+    get_first_column_row_state,
     get_chip_state_visuals,
     insert_overview_chip,
+    is_overview_state_at_or_below,
+    is_table_child_state_allowed,
     update_overview_chip_state,
 )
 from src.utils import format_overview_timestamp, parse_overview_timestamp
 
 
 class OverviewBatchOperationTests(unittest.TestCase):
+    def test_table_child_state_cannot_exceed_first_column_state(self):
+        self.assertTrue(is_overview_state_at_or_below(True, True))
+        self.assertTrue(is_overview_state_at_or_below(None, True))
+        self.assertTrue(is_overview_state_at_or_below(False, True))
+        self.assertFalse(is_overview_state_at_or_below(True, None))
+        self.assertTrue(is_overview_state_at_or_below(None, None))
+        self.assertTrue(is_overview_state_at_or_below(False, None))
+        self.assertFalse(is_overview_state_at_or_below(True, False))
+        self.assertFalse(is_overview_state_at_or_below(None, False))
+        self.assertTrue(is_overview_state_at_or_below(False, False))
+
+    def test_table_child_rule_reads_matching_first_column_row_and_version(self):
+        first_column = {
+            "other-row": {"row_id": "row-2", "select_activ_dic": {"2.0": True}},
+            "pending": {"row_id": "row-1", "select_activ_dic": {"2.0": None}},
+        }
+        with patch("src.overview_batch_operations.db_storage.get_deep_item", return_value=first_column):
+            self.assertEqual(get_first_column_row_state("P1", "first", "row-1", "2.0"), (True, None))
+            self.assertFalse(is_table_child_state_allowed("P1", "first", "row-1", "2.0", True))
+            self.assertTrue(is_table_child_state_allowed("P1", "first", "row-1", "2.0", None))
+            self.assertTrue(is_table_child_state_allowed("P1", "first", "row-1", "2.0", False))
+            self.assertFalse(is_table_child_state_allowed("P1", "first", "missing", "2.0", False))
+
     def test_batch_result_lines_include_every_skipped_and_failed_item(self):
         skipped = [f"P{index}：相同概述内容已存在" for index in range(1, 6)]
         failed = ["P6：校验失败", "P7：写入失败"]
