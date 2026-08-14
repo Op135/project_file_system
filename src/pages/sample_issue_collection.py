@@ -77,6 +77,7 @@ SAMPLE_CLOSURE_NATURE_CATALOG_KEY = "sample_issue_closure_nature_catalog"
 SAMPLE_ISSUE_ID_PREFIX = "SPI"
 SAMPLE_ISSUE_ID_SEQUENCE_WIDTH = 3
 SAMPLE_ISSUE_ID_SEQUENCE_MAX = 999
+SAMPLE_ISSUE_GRID_PAGE_SIZE = 30
 SAMPLE_ATTACHMENT_DIR_NAME = "sample_issue"
 SAMPLE_ATTACHMENT_ACCEPT = ",".join(["image/*", *sorted(REQ_UPLOADS_FILE_TYPE)])
 SAMPLE_ATTACHMENT_PARENTS_H = 12
@@ -869,11 +870,7 @@ def is_sample_issue_missing_due_date_for_reviewer(issue_data: dict, current_role
     countermeasure = normalized_issue["countermeasure"]
     owner = countermeasure.get("owner", "")
     due_date = countermeasure.get("due_date", "")
-    return bool(
-        isinstance(owner, str)
-        and owner.strip()
-        and (not isinstance(due_date, str) or not due_date.strip())
-    )
+    return bool(isinstance(owner, str) and owner.strip() and (not isinstance(due_date, str) or not due_date.strip()))
 
 
 def get_sample_issue_card_sort_key(
@@ -893,6 +890,117 @@ def get_sample_issue_card_sort_key(
     else:
         priority = 0
     return priority, str(updated_at)
+
+
+def build_sample_issue_grid_row(issue_data: dict, current_user: str, current_role: str) -> dict[str, object]:
+    """把样品问题记录整理为首页 AG Grid 行数据。"""
+    data = merge_with_sample_issue_template(issue_data)
+    basic = data["basic_info"]
+    countermeasure = data["countermeasure"]
+    special_preparation = data["special_preparation"]
+    status = calculate_sample_issue_status(data)
+    pending_extension = bool(get_pending_extension_request(countermeasure))
+    pending_close = bool(get_pending_close_request(countermeasure))
+    is_my_pending = is_sample_issue_pending_for_user(data, current_user, current_role)
+    is_reviewer_overdue = is_sample_issue_overdue_without_request_for_reviewer(data, current_role)
+    is_reviewer_missing_due_date = is_sample_issue_missing_due_date_for_reviewer(data, current_role)
+    attention_labels = []
+    if pending_extension:
+        attention_labels.append(SAMPLE_FILTER_PENDING_EXTENSION_STATE)
+    if pending_close and status != SAMPLE_FILTER_PENDING_CLOSE_STATE:
+        attention_labels.append(SAMPLE_FILTER_PENDING_CLOSE_STATE)
+    if is_my_pending:
+        attention_labels.append("待我处理")
+    if is_reviewer_overdue:
+        attention_labels.append("逾期未申请")
+    if is_reviewer_missing_due_date:
+        attention_labels.append("未填预计日期")
+
+    if is_sample_special_preparation_active(data):
+        special_actions = [action for action in special_preparation.get("actions", []) if isinstance(action, dict)]
+        completed_action_count = sum(1 for action in special_actions if action.get("completed"))
+        owner = special_preparation.get("owner_name", "")
+        due_date = ""
+        progress = f"{completed_action_count}/{len(special_actions)}"
+    else:
+        owner = countermeasure.get("owner", "")
+        due_date = get_sample_due_text(data)
+        progress = ""
+
+    if is_my_pending:
+        row_tone = "pending"
+    elif is_reviewer_overdue or is_reviewer_missing_due_date:
+        row_tone = "warning"
+    elif status == SAMPLE_FILTER_CLOSED_STATE:
+        row_tone = "completed"
+    elif status == SAMPLE_FILTER_PENDING_CLOSE_STATE:
+        row_tone = "pending_close"
+    elif status == SAMPLE_STATUS_SPECIAL_PREPARATION:
+        row_tone = "special"
+    else:
+        row_tone = "normal"
+    return {
+        "record_id": data["issue_id"],
+        "detail_action": "详情",
+        "issue_id": data["issue_id"],
+        "status": status,
+        "attention": "、".join(attention_labels),
+        "product_model": basic.get("product_model", ""),
+        "sample_order_no": basic.get("sample_order_no", ""),
+        "assembly_date": basic.get("assembly_date", ""),
+        "issue_quantity": f"{basic.get('issue_qty', '') or '-'}/{basic.get('assembled_qty', '') or '-'}",
+        "issue_description": basic.get("issue_description", ""),
+        "recorder_name": basic.get("recorder_name", ""),
+        "record_date": basic.get("record_date", ""),
+        "owner": owner,
+        "due_date": due_date,
+        "preparation_progress": progress,
+        "updated_at": data.get("updated_at", ""),
+        "row_tone": row_tone,
+    }
+
+
+def get_sample_issue_grid_columns() -> list[dict[str, object]]:
+    """返回样品问题首页列定义；顺序、显隐和筛选直接在此处配置。"""
+    text_filter = "agTextColumnFilter"
+    date_filter = "agDateColumnFilter"
+    # 列表顺序就是页面列顺序；不显示可注释对应行；不需要筛选可把 filter 改为 False。
+    columns: list[dict[str, object]] = [
+        {
+            "headerName": "操作",
+            "field": "detail_action",
+            "filter": False,
+            "pinned": "left",
+            "width": 60,
+            "sortable": False,
+            "lockPosition": "left",
+            "suppressMovable": True,
+            "cellStyle": {"color": "#2563eb", "fontWeight": "bold", "cursor": "pointer"},
+        },
+        {"headerName": "问题编号", "field": "issue_id", "filter": text_filter, "width": 150},
+        {"headerName": "当前状态", "field": "status", "filter": text_filter, "width": 150},
+        {"headerName": "关注事项", "field": "attention", "filter": text_filter, "width": 140},
+        {"headerName": "产品型号", "field": "product_model", "filter": text_filter, "width": 160},
+        {"headerName": "样品单号", "field": "sample_order_no", "filter": text_filter, "width": 140},
+        {"headerName": "组装日期", "field": "assembly_date", "filter": date_filter, "width": 120},
+        {"headerName": "问题样机/组装数", "field": "issue_quantity", "filter": text_filter, "width": 100},
+        {"headerName": "问题描述", "field": "issue_description", "filter": text_filter, "width": 260},
+        {"headerName": "记录人", "field": "recorder_name", "filter": text_filter, "width": 90},
+        {"headerName": "记录日期", "field": "record_date", "filter": date_filter, "width": 120},
+        {"headerName": "当前负责人", "field": "owner", "filter": text_filter, "width": 120},
+        {"headerName": "预计完成", "field": "due_date", "filter": text_filter, "width": 120},
+        {"headerName": "特殊准备进度", "field": "preparation_progress", "filter": text_filter, "width": 60},
+    ]
+    for column in columns:
+        cell_style = column.setdefault("cellStyle", {})
+        if isinstance(cell_style, dict):
+            cell_style["textAlign"] = "center"
+        if "width" in column:
+            column["minWidth"] = column["width"]
+        column["headerClass"] = "sample-issue-grid-header-center"
+        column["wrapHeaderText"] = True
+        column["autoHeaderHeight"] = True
+    return columns
 
 
 def get_sample_dashboard_pending_count(all_issues: Any, current_user: str, current_role: str) -> int:
@@ -1655,6 +1763,13 @@ async def sample_issue_collection_page(issue_id: str = ""):
         <style>
             .q-dialog__inner--minimized>div { max-width: 4000px; }
             html, body { overflow: hidden !important; }
+            .sample-issue-grid .sample-issue-grid-header-center .ag-header-cell-label { justify-content: center; }
+            .sample-issue-grid .ag-row.row-pending { background-color: #fff1f2 !important; }
+            .sample-issue-grid .ag-row.row-warning { background-color: #fff7ed !important; }
+            .sample-issue-grid .ag-row.row-pending-close { background-color: #faf5ff !important; }
+            .sample-issue-grid .ag-row.row-special { background-color: #eff6ff !important; }
+            .sample-issue-grid .ag-row.row-completed { background-color: #f0fdf4 !important; }
+            .sample-issue-grid .ag-row:hover { filter: brightness(0.98); }
         </style>
     """)
 
@@ -3042,30 +3157,9 @@ async def sample_issue_collection_page(issue_id: str = ""):
                 ui.separator().props("size=1px")
                 ui.menu_item("注销登录", on_click=lambda: logout())
 
-    def status_color(status: str) -> str:
-        if status in {SAMPLE_FILTER_CLOSED_STATE, SAMPLE_STATUS_CORRECTIVE_ACTION_DONE}:
-            return "green"
-        if status == SAMPLE_FILTER_PENDING_CLOSE_STATE:
-            return "purple"
-        if status == SAMPLE_STATUS_SPECIAL_PREPARATION:
-            return "blue"
-        if status == SAMPLE_STATUS_TEMPORARY_ACTION_DONE:
-            return "orange"
-        return "grey"
-
-    def status_border_color(status: str) -> str:
-        return {
-            SAMPLE_FILTER_CLOSED_STATE: "#22c55e",
-            SAMPLE_FILTER_PENDING_CLOSE_STATE: "#a855f7",
-            SAMPLE_STATUS_SPECIAL_PREPARATION: "#2563eb",
-            SAMPLE_STATUS_CORRECTIVE_ACTION_DONE: "#22c55e",
-            SAMPLE_STATUS_TEMPORARY_ACTION_DONE: "#f97316",
-            SAMPLE_STATUS_ISSUE_RECORDED: "#64748b",
-        }.get(status, "#64748b")
-
-    with ui.element("div").classes("fixed top-12 bottom-0 left-0 right-0 overflow-hidden bg-gray-50"):
-        with ui.column().classes("w-full h-full p-4 gap-4"):
-            with ui.row().classes("w-full justify-between items-center bg-white p-4 shadow-sm rounded-md"):
+    with ui.element("div").classes("fixed top-12 bottom-0 left-0 right-0 overflow-hidden bg-slate-50"):
+        with ui.column().classes("w-full h-full p-4 gap-3"):
+            with ui.row().classes("w-full justify-between items-center bg-white p-3 shadow-sm rounded-lg"):
                 with ui.row().classes("gap-3 items-center"):
                     ui.input("搜索型号/样品单号/问题/责任人").props("dense outlined").bind_value(
                         page_state, "search_keyword"
@@ -3074,7 +3168,9 @@ async def sample_issue_collection_page(issue_id: str = ""):
                         page_state, "filter_state"
                     ).classes("w-44")
                     ui.button("查询", icon="search", on_click=lambda: refresh_list()).props("outline color=primary")
+                    ui.button("刷新", icon="refresh", on_click=lambda: refresh_list()).props("flat color=primary")
                 with ui.row().classes("gap-2 items-center"):
+                    ui.label("点击“详情”或双击行打开详情").classes("text-xs text-gray-500")
                     if is_sample_extension_approver(current_role):
                         ui.button(
                             "检查提醒",
@@ -3083,183 +3179,106 @@ async def sample_issue_collection_page(issue_id: str = ""):
                         ).props("outline color=orange")
                     ui.button("录入样品问题", icon="add_box", on_click=handle_new_sample_issue).props("color=red-7")
 
-            with ui.element("div").classes("w-full flex-grow overflow-y-auto overflow-x-hidden p-1"):
-                list_container = ui.column().classes("w-full gap-3")
+            sample_issue_grid = ui.aggrid(
+                {
+                    "columnDefs": get_sample_issue_grid_columns(),
+                    "rowData": [],
+                    "defaultColDef": {
+                        "sortable": True,
+                        "resizable": True,
+                        "cellStyle": {"textAlign": "center"},
+                        "headerClass": "sample-issue-grid-header-center",
+                        "filterParams": {"buttons": ["reset"], "debounceMs": 250},
+                    },
+                    "headerHeight": 42,
+                    "rowHeight": 42,
+                    "enableCellTextSelection": True,
+                    "columnMenu": "new",
+                    "suppressMenuHide": True,
+                    "pagination": True,
+                    "paginationPageSize": SAMPLE_ISSUE_GRID_PAGE_SIZE,
+                    "paginationPageSizeSelector": [20, 30, 50, 100],
+                    "animateRows": False,
+                    "rowClassRules": {
+                        "row-pending": "data.row_tone == 'pending'",
+                        "row-warning": "data.row_tone == 'warning'",
+                        "row-pending-close": "data.row_tone == 'pending_close'",
+                        "row-special": "data.row_tone == 'special'",
+                        "row-completed": "data.row_tone == 'completed'",
+                    },
+                    "overlayNoRowsTemplate": "<span class='text-gray-500'>没有符合当前条件的样品问题</span>",
+                },
+                auto_size_columns=False,
+            ).classes("sample-issue-grid ag-theme-alpine w-full flex-grow min-h-0")
 
-                def refresh_list():
-                    """从数据库读取、筛选并绘制样品问题列表。"""
-                    list_container.clear()
-                    all_issues = db_storage.get_item(SAMPLE_ISSUE_DATA_KEY, {})
-                    keyword = page_state["search_keyword"].lower().strip()
-                    filter_state = page_state["filter_state"]
+            async def open_sample_issue_grid_record(event: Any, *, require_action_column: bool = False) -> None:
+                event_args = event.args if isinstance(event.args, dict) else {}
+                if require_action_column and str(event_args.get("colId", "")) != "detail_action":
+                    return
+                row_data = event_args.get("data")
+                target_issue_id = str(row_data.get("record_id", "")).strip() if isinstance(row_data, dict) else ""
+                if target_issue_id:
+                    await open_sample_issue_detail_dialog(target_issue_id)
 
-                    valid_issues = [
-                        merge_with_sample_issue_template(issue)
-                        for issue in all_issues.values()
-                        if issue and isinstance(issue, dict)
-                    ]
-                    valid_issues = sorted(
-                        valid_issues,
-                        key=lambda item: get_sample_issue_card_sort_key(item, current_user, current_role),
-                        reverse=True,
-                    )
+            async def open_sample_issue_grid_action(event: Any) -> None:
+                await open_sample_issue_grid_record(event, require_action_column=True)
 
-                    with list_container:
-                        if not valid_issues:
-                            ui.label("暂无样品问题记录").classes("text-gray-500 m-auto mt-10")
-                            return
+            sample_issue_grid.on("cellClicked", open_sample_issue_grid_action)
+            sample_issue_grid.on("rowDoubleClicked", open_sample_issue_grid_record)
 
-                        rendered_count = 0
-                        for issue_data in valid_issues:
-                            basic = issue_data.get("basic_info", {})
-                            countermeasure = issue_data.get("countermeasure", {})
-                            special_preparation = issue_data.get("special_preparation", {})
-                            status = calculate_sample_issue_status(issue_data)
-                            searchable = " ".join(
-                                [
-                                    issue_data.get("issue_id", ""),
-                                    basic.get("product_model", ""),
-                                    basic.get("issue_description", ""),
-                                    basic.get("sample_order_no", ""),
-                                    basic.get("assembly_date", ""),
-                                    basic.get("recorder_name", ""),
-                                    countermeasure.get("owner", ""),
-                                    special_preparation.get("owner_name", ""),
-                                    special_preparation.get("owner_role", ""),
-                                    " ".join(
-                                        str(action.get("content", ""))
-                                        for action in special_preparation.get("actions", [])
-                                        if isinstance(action, dict)
-                                    ),
-                                ]
-                            ).lower()
-                            if keyword and keyword not in searchable:
-                                continue
-                            if not sample_issue_matches_filter(issue_data, filter_state):
-                                continue
+            def refresh_list():
+                """从数据库读取、筛选并更新样品问题总表。"""
+                all_issues = db_storage.get_item(SAMPLE_ISSUE_DATA_KEY, {})
+                keyword = str(page_state.get("search_keyword", "")).lower().strip()
+                filter_state = str(page_state.get("filter_state", SAMPLE_FILTER_OPEN_STATE))
+                raw_issues = all_issues.values() if isinstance(all_issues, dict) else []
+                valid_issues = sorted(
+                    (merge_with_sample_issue_template(issue) for issue in raw_issues if isinstance(issue, dict)),
+                    key=lambda item: get_sample_issue_card_sort_key(item, current_user, current_role),
+                    reverse=True,
+                )
+                rows = []
+                for issue_data in valid_issues:
+                    basic = issue_data.get("basic_info", {})
+                    countermeasure = issue_data.get("countermeasure", {})
+                    special_preparation = issue_data.get("special_preparation", {})
+                    searchable = " ".join(
+                        [
+                            str(issue_data.get("issue_id", "")),
+                            str(basic.get("product_model", "")),
+                            str(basic.get("issue_description", "")),
+                            str(basic.get("sample_order_no", "")),
+                            str(basic.get("assembly_date", "")),
+                            str(basic.get("recorder_name", "")),
+                            str(countermeasure.get("owner", "")),
+                            str(special_preparation.get("owner_name", "")),
+                            str(special_preparation.get("owner_role", "")),
+                            " ".join(
+                                str(action.get("content", ""))
+                                for action in special_preparation.get("actions", [])
+                                if isinstance(action, dict)
+                            ),
+                        ]
+                    ).lower()
+                    if keyword and keyword not in searchable:
+                        continue
+                    if not sample_issue_matches_filter(issue_data, filter_state):
+                        continue
+                    rows.append(build_sample_issue_grid_row(issue_data, current_user, current_role))
+                sample_issue_grid.options["rowData"] = rows
+                sample_issue_grid.update()
 
-                            rendered_count += 1
-                            pending_extension = get_pending_extension_request(countermeasure)
-                            pending_close = get_pending_close_request(countermeasure)
-                            is_my_pending = is_sample_issue_pending_for_user(issue_data, current_user, current_role)
-                            is_reviewer_overdue = is_sample_issue_overdue_without_request_for_reviewer(
-                                issue_data, current_role
-                            )
-                            is_reviewer_missing_due_date = is_sample_issue_missing_due_date_for_reviewer(
-                                issue_data, current_role
-                            )
-                            is_reviewer_attention = is_reviewer_overdue or is_reviewer_missing_due_date
+            def check_and_refresh_list():
+                """检测后台或其他用户写入的版本时间戳，必要时自动刷新总表。"""
+                current_stamp = db_storage.get_item(SAMPLE_ISSUE_VERSION_KEY, 0.0)
+                if page_state.get("version_stamp", 0.0) != 0.0 and current_stamp != page_state["version_stamp"]:
+                    page_state["version_stamp"] = current_stamp
+                    refresh_list()
+                elif page_state.get("version_stamp", 0.0) == 0.0:
+                    page_state["version_stamp"] = current_stamp
 
-                            card_classes = (
-                                "w-full border border-l-4 rounded-md p-3 cursor-pointer transition-colors "
-                                + (
-                                    "bg-rose-50 border-rose-300 shadow-md hover:bg-rose-100"
-                                    if is_my_pending
-                                    else (
-                                        "bg-orange-50 border-orange-300 shadow-md hover:bg-orange-100"
-                                        if is_reviewer_attention
-                                        else "bg-white border-gray-200 shadow-sm hover:bg-amber-50"
-                                    )
-                                )
-                            )
-                            with ui.element("div").classes(card_classes) as card:
-
-                                async def open_card_detail(_, i_id=issue_data["issue_id"]):
-                                    await open_sample_issue_detail_dialog(i_id)
-
-                                card.style(f"border-left-color: {status_border_color(status)}")
-                                card.on("click", open_card_detail)
-                                with ui.element("div").classes(
-                                    "grid w-full grid-cols-1 lg:grid-cols-[minmax(250px,auto)_minmax(0,1fr)_minmax(220px,auto)] "
-                                    "items-center justify-items-center gap-x-6 gap-y-2"
-                                ):
-                                    with ui.column().classes("gap-1 min-w-0"):
-                                        with ui.row().classes("items-center gap-2 flex-wrap"):
-                                            ui.label(issue_data["issue_id"]).classes(
-                                                "font-mono font-bold text-base text-gray-800"
-                                            )
-                                            ui.badge(status, color=status_color(status)).props("outline")
-                                            if pending_extension:
-                                                ui.badge("延期申请中", color="orange").props("outline")
-                                            if pending_close and status != SAMPLE_FILTER_PENDING_CLOSE_STATE:
-                                                ui.badge("关闭申请中", color="purple").props("outline")
-                                            if is_my_pending:
-                                                ui.chip("待我处理", icon="notifications_active", color="red-4").props(
-                                                    "dense size=sm"
-                                                )
-                                            if is_reviewer_overdue:
-                                                ui.chip("逾期未申请", icon="event_busy", color="orange-5").props(
-                                                    "dense size=sm"
-                                                )
-                                            if is_reviewer_missing_due_date:
-                                                ui.chip("未填预计日期", icon="edit_calendar", color="orange-5").props(
-                                                    "dense size=sm"
-                                                )
-                                    with ui.column().classes("gap-1 min-w-0"):
-                                        with ui.row().classes("w-full items-center gap-x-4 gap-y-1 flex-wrap"):
-                                            ui.label(f"产品型号：{basic.get('product_model', '未填写')}").classes(
-                                                "font-bold text-gray-800 text-sm"
-                                            )
-                                            ui.label(f"样品单号：{basic.get('sample_order_no', '') or '-'}").classes(
-                                                "text-sm text-gray-600 whitespace-nowrap"
-                                            )
-                                            ui.label(f"组装日期：{basic.get('assembly_date', '') or '-'}").classes(
-                                                "text-sm text-gray-600 whitespace-nowrap"
-                                            )
-                                            ui.label(
-                                                f"问题样机：{basic.get('issue_qty', '') or '-'}/{basic.get('assembled_qty', '') or '-'}"
-                                            ).classes("text-sm text-gray-600 whitespace-nowrap")
-                                        if basic.get("issue_description"):
-                                            ui.label(basic.get("issue_description", "")[:160]).classes(
-                                                "text-sm text-gray-500 line-clamp-1"
-                                            )
-                                        else:
-                                            ui.label("暂无问题描述").classes("text-sm text-gray-400 line-clamp-1")
-                                    with ui.row().classes("gap-5 min-w-0 lg:items-end text-sm"):
-                                        with ui.column().classes("gap-1"):
-                                            ui.label(f"记录人：{basic.get('recorder_name', '') or '-'}").classes(
-                                                "text-gray-500 whitespace-nowrap"
-                                            )
-                                            ui.label(f"记录日期：{basic.get('record_date', '') or '-'}").classes(
-                                                "text-gray-500 whitespace-nowrap"
-                                            )
-                                        with ui.column().classes("gap-1"):
-                                            if is_sample_special_preparation_active(issue_data):
-                                                special_preparation = issue_data.get("special_preparation", {})
-                                                special_actions = special_preparation.get("actions", [])
-                                                completed_action_count = sum(
-                                                    1
-                                                    for action in special_actions
-                                                    if isinstance(action, dict) and action.get("completed")
-                                                )
-                                                ui.label(
-                                                    f"特殊准备负责人：{special_preparation.get('owner_name', '') or '-'}"
-                                                ).classes("text-blue-700 whitespace-nowrap")
-                                                ui.label(
-                                                    f"准备进度：{completed_action_count}/{len(special_actions)}"
-                                                ).classes("text-gray-500 whitespace-nowrap")
-                                            else:
-                                                ui.label(
-                                                    f"对策责任人：{countermeasure.get('owner', '') or '-'}"
-                                                ).classes("text-orange-700 whitespace-nowrap")
-                                                ui.label(f"预计完成：{get_sample_due_text(issue_data)}").classes(
-                                                    "text-gray-500 whitespace-nowrap"
-                                                )
-
-                        if rendered_count == 0:
-                            ui.label("没有符合筛选条件的样品问题").classes("text-gray-500 m-auto mt-10")
-
-                def check_and_refresh_list():
-                    """检测后台或其他用户写入的版本时间戳，必要时自动刷新列表。"""
-                    current_stamp = db_storage.get_item(SAMPLE_ISSUE_VERSION_KEY, 0.0)
-                    if page_state.get("version_stamp", 0.0) != 0.0 and current_stamp != page_state["version_stamp"]:
-                        page_state["version_stamp"] = current_stamp
-                        refresh_list()
-                    elif page_state.get("version_stamp", 0.0) == 0.0:
-                        page_state["version_stamp"] = current_stamp
-
-                refresh_list()
-                ui.timer(5.0, check_and_refresh_list)
+            refresh_list()
+            ui.timer(5.0, check_and_refresh_list)
 
     if issue_id:
         await open_sample_issue_detail_dialog(issue_id)

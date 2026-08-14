@@ -31,6 +31,32 @@ def load_isolated_db_storage(module_name: str, db_path: Path) -> Any:
 
 
 class SampleIssueCollectionDataTests(unittest.TestCase):
+    def test_grid_row_and_columns_keep_dashboard_information(self):
+        from src.pages import sample_issue_collection as sample_issue
+
+        issue = sample_issue.generate_initial_sample_issue_data("张三", "测试工程师")
+        issue["issue_id"] = "SPI20260814001"
+        issue["basic_info"].update(
+            {
+                "product_model": "MODEL-A",
+                "sample_order_no": "Y26081401",
+                "issue_description": "测试问题描述",
+            }
+        )
+        issue["countermeasure"]["owner"] = "张三"
+
+        row = sample_issue.build_sample_issue_grid_row(issue, "张三", "测试工程师")
+        columns = sample_issue.get_sample_issue_grid_columns()
+
+        self.assertEqual(row["record_id"], "SPI20260814001")
+        self.assertEqual(row["detail_action"], "详情")
+        self.assertEqual(row["issue_description"], "测试问题描述")
+        self.assertEqual(row["row_tone"], "pending")
+        self.assertEqual(columns[0]["field"], "detail_action")
+        self.assertFalse(columns[0]["filter"])
+        self.assertTrue(all("width" in column for column in columns))
+        self.assertTrue(all(column.get("cellStyle", {}).get("textAlign") == "center" for column in columns))
+
     def test_status_and_pending_extension_filter(self):
         """状态由对策区块填写进度推导，延期申请中作为跨状态筛选项。"""
         from src.pages import sample_issue_collection as sample_issue

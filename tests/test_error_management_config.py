@@ -200,6 +200,29 @@ class ErrorManagementDashboardPendingTests(unittest.TestCase):
         )
         self.assertEqual(records[0]["error_id"], "ERR-001")
 
+    def test_grid_row_and_columns_keep_dashboard_information(self):
+        record = error_management.merge_with_error_template(self.all_errors["ERR-001"])
+        record["basic_info"].update(
+            {
+                "product_name": "测试产品",
+                "material_no": "MAT-001",
+                "order_no": "ORDER-001",
+            }
+        )
+        record["descriptions"] = [{"content": "测试异常描述"}]
+
+        row = error_management.build_error_grid_row(record, "张三", "QE工程师")
+        columns = error_management.get_error_grid_columns()
+
+        self.assertEqual(row["record_id"], "ERR-001")
+        self.assertEqual(row["detail_action"], "详情")
+        self.assertEqual(row["description"], "测试异常描述")
+        self.assertEqual(row["row_tone"], "pending")
+        self.assertEqual(columns[0]["field"], "detail_action")
+        self.assertFalse(columns[0]["filter"])
+        self.assertTrue(all("width" in column for column in columns))
+        self.assertTrue(all(column.get("cellStyle", {}).get("textAlign") == "center" for column in columns))
+
     def test_reviewer_sees_overdue_without_request_as_second_priority(self):
         """评审角色应凸显逾期未申请措施，但仍排在本人待审批事项之后。"""
         reference_date = datetime(2026, 7, 17).date()
