@@ -29,7 +29,6 @@ from nicegui import app, events, ui
 from nicegui.events import GenericEventArguments, MouseEventArguments, ValueChangeEventArguments
 
 from . import db_storage  # 导入我们创建的模块
-from .overview_batch_operations import is_table_child_state_allowed
 from .config import (
     FILES_URL_DIR,
     IMG_DIR,
@@ -42,6 +41,7 @@ from .config import (
     UPLOAD_URL_DIR,
     UPLOADS_DIR,
 )
+from .overview_batch_operations import is_table_child_state_allowed
 from .utils import (
     async_path_exists,
     format_overview_timestamp,
@@ -1813,7 +1813,8 @@ class InteractiveButton:
             def check_shift_and_show(e, btn):
                 btn.style("display: block;" if e.args.get("shiftKey") else "display: none;")
 
-            control_btns = [delete_button, move_up_button, move_down_button, history_button, request_change_button]
+            control_btns = [delete_button, move_up_button, move_down_button, history_button]
+            # control_btns = [delete_button, move_up_button, move_down_button, history_button, request_change_button]
             chip.on("mouseenter", lambda e: check_ctrl_and_show(e, control_btns), ["ctrlKey"])
             chip.on("mousemove", lambda e: check_ctrl_and_show(e, control_btns), ["ctrlKey"])
             chip.on("mouseleave", lambda: [b.style("display: none;") for b in control_btns])
@@ -1909,7 +1910,8 @@ class InteractiveButton:
             def check_shift_and_show(e, btn):
                 btn.style("display: block;" if e.args.get("shiftKey") else "display: none;")
 
-            control_btns = [delete_button, move_up_button, move_down_button, history_button, request_change_button]
+            control_btns = [delete_button, move_up_button, move_down_button, history_button]
+            # control_btns = [delete_button, move_up_button, move_down_button, history_button, request_change_button]
             thumbnail.on("mouseover", lambda e: check_ctrl_and_show(e, control_btns), ["ctrlKey"])
             thumbnail.on("mousemove", lambda e: check_ctrl_and_show(e, control_btns), ["ctrlKey"])
             thumbnail.on("mouseout", lambda: [b.style("display: none;") for b in control_btns])
@@ -3529,9 +3531,7 @@ class InteractiveButton:
                         "w-full items-start p-2 border-b border-gray-100 hover:bg-gray-50 transition-colors"
                     ):
                         with ui.column().classes("w-1/5 min-w-[120px] gap-0"):
-                            ui.label(format_overview_timestamp(item["creation_time"])).classes(
-                                "text-xs text-gray-500"
-                            )
+                            ui.label(format_overview_timestamp(item["creation_time"])).classes("text-xs text-gray-500")
                             ui.label(item["creator"]).classes("text-xs font-bold text-blue-600")
 
                         with ui.column().classes("flex-grow gap-1"):
@@ -3577,9 +3577,7 @@ class InteractiveButton:
                         with ui.row().classes("w-full justify-between items-center mb-1"):
                             with ui.row().classes("gap-2 items-center"):
                                 ui.icon("history", size="xs", color="blue")
-                                ui.label(format_overview_timestamp(time_str)).classes(
-                                    "text-sm font-mono text-gray-700"
-                                )
+                                ui.label(format_overview_timestamp(time_str)).classes("text-sm font-mono text-gray-700")
                             ui.badge(creator, color="blue-grey").props("outline")
 
                         if activ_dic:
@@ -4594,9 +4592,7 @@ class OverviewTableGroup:
         if skipped_states:
             message += f"{skipped_states} 项因状态已被他人更新而跳过。"
         if blocked_states:
-            message += (
-                f"{blocked_states} 项的目标状态等级高于同行首列状态，已阻止修改；这些项继续保持待定。"
-            )
+            message += f"{blocked_states} 项的目标状态等级高于同行首列状态，已阻止修改；这些项继续保持待定。"
         ui.notify(message, type="positive" if applied_chips else "warning", position="bottom", timeout=4000)
 
         if impact_operations and config.get("impact_list", []):
@@ -4981,7 +4977,8 @@ class OverviewTableGroup:
             def check_shift_and_show(e, btn):
                 btn.style("display: flex;" if e.args.get("shiftKey") else "display: none;")
 
-            control_btns = [delete_button, move_up_button, move_down_button, history_button, request_change_button]
+            control_btns = [delete_button, move_up_button, move_down_button, history_button]
+            # control_btns = [delete_button, move_up_button, move_down_button, history_button, request_change_button]
             wrapper.on("mouseenter", lambda e: check_ctrl_and_show(e, control_btns), ["ctrlKey"])
             wrapper.on("mousemove", lambda e: check_ctrl_and_show(e, control_btns), ["ctrlKey"])
             wrapper.on("mouseleave", lambda: [b.style("display: none;") for b in control_btns])
@@ -5078,7 +5075,8 @@ class OverviewTableGroup:
             def check_shift_and_show(e, btn):
                 btn.style("display: flex;" if e.args.get("shiftKey") else "display: none;")
 
-            control_btns = [delete_button, move_up_button, move_down_button, history_button, request_change_button]
+            control_btns = [delete_button, move_up_button, move_down_button, history_button]
+            # control_btns = [delete_button, move_up_button, move_down_button, history_button, request_change_button]
             wrapper.on("mouseenter", lambda e: check_ctrl_and_show(e, control_btns), ["ctrlKey"])
             wrapper.on("mousemove", lambda e: check_ctrl_and_show(e, control_btns), ["ctrlKey"])
             wrapper.on("mouseleave", lambda: [b.style("display: none;") for b in control_btns])
@@ -6893,8 +6891,7 @@ class OverviewTableGroup:
                     ]
                     if blocked_versions:
                         ui.notify(
-                            "非首列概述的修改后状态不能高于同行首列状态！"
-                            f"受限需求版本：{', '.join(blocked_versions)}",
+                            f"非首列概述的修改后状态不能高于同行首列状态！受限需求版本：{', '.join(blocked_versions)}",
                             type="warning",
                             position="bottom",
                             timeout=4000,
@@ -7051,9 +7048,7 @@ class OverviewTableGroup:
                         with ui.row().classes("w-full justify-between items-center mb-1"):
                             with ui.row().classes("gap-2 items-center"):
                                 ui.icon("history", size="xs", color="blue")
-                                ui.label(format_overview_timestamp(time_str)).classes(
-                                    "text-sm font-mono text-gray-700"
-                                )
+                                ui.label(format_overview_timestamp(time_str)).classes("text-sm font-mono text-gray-700")
                             ui.badge(creator, color="blue-grey").props("outline")
 
                         if activ_dic:
@@ -7136,9 +7131,7 @@ class OverviewTableGroup:
                     ):
                         # 左侧：时间和创建人
                         with ui.column().classes("w-1/5 min-w-[120px] gap-0"):
-                            ui.label(format_overview_timestamp(item["creation_time"])).classes(
-                                "text-xs text-gray-500"
-                            )
+                            ui.label(format_overview_timestamp(item["creation_time"])).classes("text-xs text-gray-500")
                             ui.label(item["creator"]).classes("text-xs font-bold text-blue-600")
 
                         # 中间：内容
