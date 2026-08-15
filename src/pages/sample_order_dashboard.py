@@ -26,6 +26,7 @@ from openpyxl.utils.datetime import from_excel
 
 from .. import db_storage
 from ..config import IMG_DIR, PRESET_AVATARS
+from ..custom_ui import custom_upload
 from ..issue_workflow_utils import merge_wecom_recipients, schedule_background_task
 from ..sample_order_dashboard_config import (
     SAMPLE_ORDER_ADMIN_ROLES,
@@ -2287,12 +2288,16 @@ async def sample_order_dashboard_page(record_id: str = "") -> None:
                 else:
                     ui.notify("文件中没有可导入的有效记录", type="warning", position="bottom")
 
-            ui.upload(
+            def handle_excel_removed() -> None:
+                import_state["preview"] = None
+                preview_container.clear()
+
+            custom_upload(
                 label="选择样品单Excel文件",
                 on_upload=handle_excel_upload,
-                auto_upload=True,
-                max_files=1,
-            ).props('accept=".xlsx" max-file-size=20971520').classes("w-full")
+                on_removed=handle_excel_removed,
+                max_file_size=20971520,
+            ).props('accept=".xlsx"').classes("w-full")
 
             async def confirm_excel_import() -> None:
                 preview = import_state.get("preview")

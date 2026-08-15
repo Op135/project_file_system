@@ -21,6 +21,7 @@ from ..config import (
     UPLOADS_DIR,
     ECNState,
 )
+from ..custom_ui import custom_upload
 from ..ecn_management_config import (
     ECN_DISPOSITION_MEASURES,
     ECN_DOCUMENT_CHANGE_TYPES,
@@ -1052,9 +1053,14 @@ async def ecn_management_page():
                                                 sel_state["is_valid"] = False
                                                 ui.notify(f"上传失败: {ex}", type="negative")
 
-                                        ui.upload(on_upload=handle_upload, auto_upload=True, max_files=1).props(
-                                            "accept=*/*"
-                                        )
+                                        def handle_upload_removed():
+                                            sel_state["new_data"]["content"] = ""
+                                            invalidate_path_validation()
+
+                                        custom_upload(
+                                            on_upload=handle_upload,
+                                            on_removed=handle_upload_removed,
+                                        ).props("accept=*/*")
                                         ui.label().bind_text_from(
                                             sel_state["new_data"],
                                             "content",

@@ -14,6 +14,7 @@ from ..config import (  # 用于获取 IMG_DIR
     IMG_DIR,
     PRESET_AVATARS,
 )
+from ..custom_ui import custom_upload
 from ..utils import get_cache_busted_path, logout, setup_global_activity_tracking
 
 # 步骤 1: 从我们重构的 login.py 中导入可重用的函数
@@ -144,12 +145,12 @@ def user_profile_page():
         ui.label("选择新头像").classes("text-xl font-semibold")
         # --- 上传组件 ---
         uploader = (
-            ui.upload(
+            custom_upload(
                 label="上传自定义头像",
                 on_upload=handle_upload,
-                auto_upload=True,  # 选择文件后立即上传
+                max_file_size=5242880,
             )
-            .props('max-file-size=5242880 accept="image/*"')
+            .props('accept="image/*"')
             .classes("w-full")
         )
         uploader.set_visibility(False)

@@ -41,6 +41,7 @@ from ..config import (
     UPLOAD_URL_DIR,
     UPLOADS_DIR,
 )
+from ..custom_ui import custom_upload
 from ..overview_batch_operations import (
     BATCH_OVERVIEW_ALLOWED_PROJECT_STATES,
     BATCH_OVERVIEW_TOOL_ROLES,
@@ -3222,12 +3223,9 @@ async def requirement_page(type="", json_path="", project_name=""):
             for key, summary in project_summary.items()
             if summary.get("state") in BATCH_OVERVIEW_ALLOWED_PROJECT_STATES
         ]
-        eligible_projects = sorted(
-            {str(summary.get("sub_project") or key) for key, summary in eligible_items}
-        )
+        eligible_projects = sorted({str(summary.get("sub_project") or key) for key, summary in eligible_items})
         eligible_category_projects = [
-            str(summary.get("project") or summary.get("sub_project") or key)
-            for key, summary in eligible_items
+            str(summary.get("project") or summary.get("sub_project") or key) for key, summary in eligible_items
         ]
         category_map = build_project_category_map(eligible_category_projects)
         if not eligible_projects:
@@ -3235,9 +3233,7 @@ async def requirement_page(type="", json_path="", project_name=""):
             return
 
         current_category_project = str(summary_by_project.get(project_name, {}).get("project") or project_name)
-        current_major = (
-            current_category_project.split("-", 1)[0] if "-" in current_category_project else "其它"
-        )
+        current_major = current_category_project.split("-", 1)[0] if "-" in current_category_project else "其它"
         default_major = current_major if current_major in category_map else "所有"
         if default_major == "其它":
             default_sub = (
@@ -3539,6 +3535,12 @@ async def requirement_page(type="", json_path="", project_name=""):
                 logger.error("读取批量概述上传文件失败", exc_info=True)
                 ui.notify(f"读取上传文件失败：{ex}", type="negative")
 
+        def handle_batch_file_removed(status_label):
+            """同步清除待提交文件和状态提示。"""
+            state["file_data"] = None
+            status_label.text = "尚未选择文件"
+            status_label.classes(remove="text-green-700", add="text-gray-500")
+
         def render_editor():
             if editor_container is None:
                 return
@@ -3563,13 +3565,16 @@ async def requirement_page(type="", json_path="", project_name=""):
                         upload_status = ui.label(
                             f"已选择：{state['file_data']['name']}" if state["file_data"] else "尚未选择文件"
                         ).classes("text-xs text-gray-500")
-                        ui.upload(
+                        custom_upload(
+                            multiple=True,
+                            max_files=5,
                             on_upload=lambda e, label=upload_status: handle_batch_file_upload(e, label),
-                            auto_upload=True,
-                            max_files=1,
-                            label="选择要批量添加的文件",
+                            on_removed=lambda: handle_batch_file_removed(upload_status),
+                            label="选择要添加的文件",
                         ).classes("w-full")
-                        ui.label("服务器存在同名文件时将复用现有文件，不会覆盖。\n").classes("text-xs text-orange-700")
+                        ui.label("服务器存在同名文件时将复用服务器已有文件，不会覆盖。\n").classes(
+                            "text-xs text-orange-700"
+                        )
                     else:
                         ui.input(
                             label=config.get("dialog_label", "概述内容"),
@@ -4016,9 +4021,7 @@ async def requirement_page(type="", json_path="", project_name=""):
             with ui.row().classes("w-full items-center justify-between"):
                 ui.label("批量维护概述").classes("text-xl font-bold text-blue-900")
                 ui.button(icon="close", on_click=batch_overview_dialog.close).props("flat round dense")
-            ui.label("仅处理待定、研发、转产项目；所有写入记录操作人、当前需求版本和操作时间。").classes(
-                "text-xs text-red-600 -mt-2"
-            )
+            ui.label("仅处理项目状态为：待定、研发、转产的项目").classes("text-xs text-red-600 -mt-2")
 
             with ui.scroll_area().classes("w-full flex-grow"):
                 with ui.column().classes("w-full gap-3 pr-2"):
