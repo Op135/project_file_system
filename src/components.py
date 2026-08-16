@@ -857,9 +857,10 @@ class FileThumbnail:
         delet_lab: bool = True,
         on_add_ref_click=lambda *args, **kwargs: None,
         on_question_display_click=lambda *args, **kwargs: None,
+        local_file_path: str | None = None,
     ):
         self.file_url = file_url
-        self.local_file_path = get_upload_local_path(self.file_url)
+        self.local_file_path = local_file_path or get_upload_local_path(self.file_url)
         self.file_type = file_type
         self.file_neme_suffix = file_name_suffix
         self.file_neme_hash = self.file_url.split("/")[-1]

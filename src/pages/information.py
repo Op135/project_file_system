@@ -3,7 +3,9 @@ import asyncio
 import copy
 import json
 import logging
+import mimetypes
 import os
+import re
 from collections import defaultdict
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -11,6 +13,7 @@ from pathlib import Path
 from nicegui import app, ui
 
 from .. import db_storage
+from ..components import FileThumbnail
 from ..config import BASE_DIR, IMG_DIR, OVER_DIR, PRESET_AVATARS, REQ_DIR, REQ_REMOVE_DIR
 from ..overview_batch_operations import (
     BATCH_OVERVIEW_REQUESTS_KEY,
@@ -29,6 +32,7 @@ from ..overview_corrections import (
     execute_correction_request,
     get_correction_pending_count,
     update_correction_request,
+    validate_staged_path,
 )
 from ..overview_warning import get_overview_counts, get_overview_warning, sort_overview_pending_items
 from ..requirement_overview_impact import RequirementOverviewImpactConfigError
@@ -60,6 +64,101 @@ logger = logging.getLogger(__name__)
 _requirement_review_locks = defaultdict(asyncio.Lock)
 _batch_overview_review_locks = defaultdict(asyncio.Lock)
 _overview_correction_review_locks = defaultdict(asyncio.Lock)
+_correction_preview_routes: set[str] = set()
+
+
+def _reload_after_dialog_transition(delay: float = 0.4) -> None:
+    """给弹窗关闭动画留出时间，再刷新待办页。"""
+    ui.timer(delay, ui.navigate.reload, once=True)
+
+
+def _get_correction_media_preview(
+    request_id: str,
+    payload: dict,
+    snapshot: dict,
+    side: str,
+) -> tuple[str, str, str] | None:
+    """解析并注册纠错审批媒体预览，返回 URL、MIME 和真实本地路径。"""
+    filename = Path(str(snapshot.get("content") or "")).name
+    if not filename:
+        return None
+
+    staged_path: Path | None = None
+    if side == "after" and payload.get("staged_file_path"):
+        staged_ok, staged_path = validate_staged_path(str(payload.get("staged_file_path") or ""))
+        if not staged_ok or staged_path is None:
+            return None
+
+    if staged_path is not None:
+        local_path = staged_path
+        audit_token = str(payload.get("staged_file_sha256") or "")
+    else:
+        config = payload.get("config") or {}
+        upload_path_value = str(config.get("upload_path") or "").strip()
+        if not upload_path_value:
+            return None
+        local_path = Path(upload_path_value) / filename
+        audit_token = str(payload.get("original_file_sha256") or "") if side == "before" else ""
+
+    if not local_path.is_file():
+        return None
+    if not audit_token:
+        stat = local_path.stat()
+        audit_token = f"{stat.st_mtime_ns:x}-{stat.st_size:x}"
+
+    safe_request_id = re.sub(r"[^0-9A-Za-z_-]", "_", request_id)
+    safe_token = re.sub(r"[^0-9A-Za-z_-]", "_", audit_token[:20])
+    preview_url = f"/correction-preview/{safe_request_id}/{side}-{safe_token}{local_path.suffix.lower()}"
+    if preview_url not in _correction_preview_routes:
+        try:
+            app.add_static_file(local_file=str(local_path), url_path=preview_url)
+        except Exception:
+            # 热重载或其它客户端可能已经注册了相同路径；此时继续复用既有路由。
+            logger.debug("注册纠错文件预览路由失败或路由已存在: %s", preview_url, exc_info=True)
+        _correction_preview_routes.add(preview_url)
+
+    mime_type = str(
+        (
+            payload.get("uploaded_file_type")
+            if side == "after" and staged_path is not None
+            else snapshot.get("file_type")
+        )
+        or mimetypes.guess_type(filename)[0]
+        or "application/octet-stream"
+    )
+    return preview_url, mime_type, str(local_path)
+
+
+def _render_correction_media_previews(request_id: str, request: dict, payload: dict) -> None:
+    """使用概述/需求共用的 FileThumbnail 呈现纠错前后的真实文件。"""
+    before = payload.get("before_snapshot") or {}
+    after = payload.get("after_snapshot") or {}
+    preview_items = [("原文件", "before", before)]
+    if request.get("action") == "correct" and after:
+        preview_items.append(("纠错后文件", "after", after))
+
+    ui.label("文件预览与下载").classes("font-bold text-gray-800")
+    with ui.row().classes("w-full items-stretch gap-3 flex-wrap"):
+        for title, side, snapshot in preview_items:
+            with ui.card().classes("min-w-[260px] flex-1 p-3 shadow-sm border border-blue-100"):
+                ui.label(title).classes("font-bold text-blue-900")
+                preview = _get_correction_media_preview(request_id, payload, snapshot, side)
+                if preview is None:
+                    ui.label(f"{snapshot.get('content', '文件')} 不存在或暂存路径已失效").classes(
+                        "text-sm text-red-700"
+                    )
+                    continue
+                preview_url, mime_type, local_path = preview
+                FileThumbnail(
+                    file_url=preview_url,
+                    file_type=mime_type,
+                    file_name_suffix=str(snapshot.get("content") or Path(local_path).name),
+                    file_lab="原" if side == "before" else "新",
+                    display_lab="原" if side == "before" else "新",
+                    parents_h=12,
+                    delet_lab=False,
+                    local_file_path=local_path,
+                )
 
 
 # --- UI 辅助组件 ---
@@ -803,6 +902,9 @@ def information_page():
         ui.navigate.reload()
 
     async def approve_correction_request(request_id: str) -> None:
+        # 先让详情弹窗完成关闭动画；审批中的文件、数据库和归档操作随后继续执行。
+        correction_request_dialog.close()
+        await asyncio.sleep(0.1)
         async with _overview_correction_review_locks[request_id]:
             claimed: dict[str, object] = {"value": False, "request": None}
 
@@ -823,9 +925,9 @@ def information_page():
             request = claimed["request"]
             if claimed["value"] is not True or not isinstance(request, dict):
                 ui.notify("申请已被处理或当前账号无审批权限。", type="warning")
-                correction_request_dialog.close()
-                ui.navigate.reload()
+                _reload_after_dialog_transition()
                 return
+            processing_notice = ui.notification("正在执行单项概述纠错审批…", timeout=None, spinner=True)
             try:
                 result = await execute_correction_request(request)
                 if not result.get("ok"):
@@ -837,8 +939,7 @@ def information_page():
                         },
                     )
                     ui.notify(f"纠错执行失败：{result.get('message', '未知原因')}", type="negative", timeout=0)
-                    correction_request_dialog.close()
-                    ui.navigate.reload()
+                    _reload_after_dialog_transition()
                     return
                 reviewed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 review_log = list(request.get("review_log") or [])
@@ -882,8 +983,9 @@ def information_page():
                     {"status": "failed", "result": {"ok": False, "message": str(exc)}},
                 )
                 ui.notify(f"纠错审批异常：{exc}", type="negative", timeout=0)
-            correction_request_dialog.close()
-            ui.navigate.reload()
+            finally:
+                processing_notice.dismiss()
+            _reload_after_dialog_transition()
 
     def reject_correction_request(request_id: str) -> None:
         reject_dialog = ui.dialog().props("persistent")
@@ -995,6 +1097,8 @@ def information_page():
                                 ui.label("未上传替换文件；审批时将引用正式目录中的目标文件名。").classes(
                                     "text-xs text-gray-600"
                                 )
+                    if request.get("chip_type") in {"file", "image", "video"}:
+                        _render_correction_media_previews(request_id, request, payload)
                     for change in changes:
                         changed = change.get("changed") is True
                         with ui.card().classes(
@@ -1102,6 +1206,9 @@ def information_page():
         ui.navigate.reload()
 
     async def approve_batch_request(request_id: str) -> None:
+        # 批量执行可能包含多个项目和文件操作，先收起弹窗避免界面等待执行完成。
+        batch_request_dialog.close()
+        await asyncio.sleep(0.1)
         async with _batch_overview_review_locks[request_id]:
             claimed = {"value": False, "request": None}
 
@@ -1122,10 +1229,10 @@ def information_page():
             request = claimed["request"]
             if claimed["value"] is not True or not isinstance(request, dict):
                 ui.notify("申请已被处理或当前账号无审核权限。", type="warning")
-                batch_request_dialog.close()
-                ui.navigate.reload()
+                _reload_after_dialog_transition()
                 return
 
+            processing_notice = ui.notification("正在执行批量概述审批…", timeout=None, spinner=True)
             try:
                 result = await execute_batch_overview_request(request)
                 success_count = len(result.get("successes", []))
@@ -1168,8 +1275,9 @@ def information_page():
                     },
                 )
                 ui.notify(f"审批执行失败：{exc}", type="negative", timeout=0)
-            batch_request_dialog.close()
-            ui.navigate.reload()
+            finally:
+                processing_notice.dismiss()
+            _reload_after_dialog_transition()
 
     def reject_batch_request(request_id: str) -> None:
         reject_dialog = ui.dialog().props("persistent")
