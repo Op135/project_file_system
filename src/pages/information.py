@@ -12,6 +12,14 @@ from nicegui import app, ui
 
 from .. import db_storage
 from ..config import BASE_DIR, IMG_DIR, OVER_DIR, PRESET_AVATARS, REQ_DIR, REQ_REMOVE_DIR
+from ..overview_batch_operations import (
+    BATCH_OVERVIEW_REQUESTS_KEY,
+    BATCH_OVERVIEW_STAGING_DIR,
+    can_review_batch_overview_request,
+    execute_batch_overview_request,
+    get_batch_overview_pending_count,
+    update_batch_overview_request,
+)
 from ..overview_warning import get_overview_counts, get_overview_warning, sort_overview_pending_items
 from ..requirement_overview_impact import RequirementOverviewImpactConfigError
 from ..utils import (
@@ -29,8 +37,8 @@ from ..utils import (
     restore_overview_active_state,
     set_overview_active_state,
     set_project_custom_labels,
-    snapshot_file_bytes,
     setup_global_activity_tracking,
+    snapshot_file_bytes,
     validate_search_path,
     validate_svn_url,
 )
@@ -40,6 +48,7 @@ logger = logging.getLogger(__name__)
 
 # 同一项目的审批必须串行，避免重复点击或不同客户端同时通过同一版本。
 _requirement_review_locks = defaultdict(asyncio.Lock)
+_batch_overview_review_locks = defaultdict(asyncio.Lock)
 
 
 # --- UI 辅助组件 ---
@@ -50,17 +59,34 @@ def ui_card_header(title, icon="assignment", color="blue-500"):
         ui.label(title).classes("text-lg font-bold text-gray-800")
 
 
-def status_badge(text, color_name="gray"):
+def status_badge(text: str | None, color_name: str = "gray"):
     """状态小标签"""
+    normalized_text = str(text or "")
     # 简单的颜色映射
     colors = {
         "待审": ("orange-100", "orange-800"),
         "已审": ("green-100", "green-800"),
         "待修改": ("red-100", "red-800"),
         "研发": ("blue-100", "blue-800"),
+        "pending": ("orange-100", "orange-800"),
+        "rejected": ("red-100", "red-800"),
+        "withdrawn": ("gray-100", "gray-800"),
+        "approved": ("green-100", "green-800"),
+        "approved_with_warnings": ("amber-100", "amber-800"),
+        "processing": ("blue-100", "blue-800"),
+        "failed": ("red-100", "red-800"),
     }
-    bg, fg = colors.get(text, (f"{color_name}-100", f"{color_name}-800"))
-    ui.label(text).classes(f"text-xs px-2 py-0.5 rounded bg-{bg} text-{fg} font-medium")
+    display_text = {
+        "pending": "待审批",
+        "rejected": "已驳回",
+        "withdrawn": "已撤回",
+        "approved": "已通过",
+        "approved_with_warnings": "已通过（部分异常）",
+        "processing": "审批执行中",
+        "failed": "执行失败",
+    }.get(normalized_text, normalized_text)
+    bg, fg = colors.get(normalized_text, (f"{color_name}-100", f"{color_name}-800"))
+    ui.label(display_text).classes(f"text-xs px-2 py-0.5 rounded bg-{bg} text-{fg} font-medium")
 
 
 @ui.page("/information")
@@ -75,8 +101,8 @@ def information_page():
     ui.add_css("""
         @keyframes overview-warning-shake {
             0%, 100% { transform: translateX(0); }
-            15%, 45%, 75% { transform: translateX(-4px); }
-            30%, 60%, 90% { transform: translateX(4px); }
+            5%, 35%, 55%, 85% { transform: translateX(-2px); }
+            15%, 45%, 65%, 95% { transform: translateX(2px); }
         }
 
         @keyframes overview-warning-flash {
@@ -173,7 +199,9 @@ def information_page():
             except (RequirementOverviewImpactConfigError, RuntimeError, OSError, ValueError) as exc:
                 if candidate_path:
                     Path(candidate_path).unlink(missing_ok=True)
-                logger.error("审核通过前整理需求概述或解析影响配置失败: project=%s, version=%s", p_name, v, exc_info=True)
+                logger.error(
+                    "审核通过前整理需求概述或解析影响配置失败: project=%s, version=%s", p_name, v, exc_info=True
+                )
                 ui.notify(
                     f"需求概述整理失败，已中止审批通过：{exc}",
                     type="negative",
@@ -742,6 +770,365 @@ def information_page():
         # 延迟 1.5 秒后，利用现有的 utils 函数跳转到该项目的概述页面
         ui.timer(1.5, lambda: get_overviow_page(project_name, False), once=True)
 
+    batch_request_dialog = ui.dialog().props("persistent")
+
+    def batch_status_text(status: str) -> str:
+        return {
+            "pending": "待审批",
+            "processing": "审批执行中",
+            "rejected": "已驳回",
+            "withdrawn": "已撤回",
+            "approved": "已通过",
+            "approved_with_warnings": "已通过（部分异常）",
+            "failed": "执行失败",
+        }.get(status, status or "未知")
+
+    async def withdraw_batch_request(request_id: str) -> None:
+        request = db_storage.get_deep_item([BATCH_OVERVIEW_REQUESTS_KEY, request_id], {})
+        if request.get("submitter") != current_user or request.get("status") not in {
+            "pending",
+            "rejected",
+            "failed",
+            "withdrawn",
+        }:
+            ui.notify("申请状态已变化，当前无法撤销删除。", type="warning")
+            return
+        payload = request.get("payload") or {}
+        staged_path = Path(str(payload.get("staged_file_path") or ""))
+        deleted = await db_storage.del_deep_item([BATCH_OVERVIEW_REQUESTS_KEY, request_id])
+        if not deleted:
+            ui.notify("申请删除失败，请刷新后重试。", type="negative")
+            return
+        staged_path_is_safe = bool(
+            str(payload.get("staged_file_path") or "").strip()
+            and staged_path.resolve().is_relative_to(BATCH_OVERVIEW_STAGING_DIR.resolve())
+        )
+        if staged_path_is_safe and staged_path.is_file():
+            staged_path.unlink(missing_ok=True)
+            try:
+                staged_path.parent.rmdir()
+            except OSError:
+                pass
+        batch_request_dialog.close()
+        ui.notify("批量概述申请已撤销删除。", type="positive")
+        ui.navigate.reload()
+
+    async def approve_batch_request(request_id: str) -> None:
+        async with _batch_overview_review_locks[request_id]:
+            claimed = {"value": False, "request": None}
+
+            def claim(request):
+                if (
+                    not request
+                    or request.get("status") != "pending"
+                    or not can_review_batch_overview_request(request, current_user, str(current_role or ""))
+                ):
+                    return db_storage.ATOMIC_NO_UPDATE
+                request["status"] = "processing"
+                request["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                claimed["value"] = True
+                claimed["request"] = copy.deepcopy(request)
+                return request
+
+            await db_storage.atomic_deep_update([BATCH_OVERVIEW_REQUESTS_KEY, request_id], claim)
+            request = claimed["request"]
+            if claimed["value"] is not True or not isinstance(request, dict):
+                ui.notify("申请已被处理或当前账号无审核权限。", type="warning")
+                batch_request_dialog.close()
+                ui.navigate.reload()
+                return
+
+            try:
+                result = await execute_batch_overview_request(request)
+                success_count = len(result.get("successes", []))
+                failed_items = result.get("failed", [])
+                if success_count and failed_items:
+                    final_status = "approved_with_warnings"
+                elif success_count:
+                    final_status = "approved"
+                else:
+                    final_status = "failed"
+                review_log = list(request.get("review_log") or [])
+                review_log.append(
+                    {
+                        "action": "approve",
+                        "user": current_user,
+                        "role": current_role,
+                        "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    }
+                )
+                await update_batch_overview_request(
+                    request_id,
+                    {
+                        "status": final_status,
+                        "reviewer": current_user,
+                        "reviewer_role": current_role,
+                        "finished_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        "result": result,
+                        "review_log": review_log,
+                    },
+                )
+                notification_type = "positive" if final_status == "approved" else "warning"
+                ui.notify(result.get("message", "批量申请已处理。"), type=notification_type, timeout=0)
+            except Exception as exc:
+                logger.error("执行批量概述审批申请失败: request_id=%s", request_id, exc_info=True)
+                await update_batch_overview_request(
+                    request_id,
+                    {
+                        "status": "failed",
+                        "result": {"message": str(exc), "successes": [], "skipped": [], "failed": [str(exc)]},
+                    },
+                )
+                ui.notify(f"审批执行失败：{exc}", type="negative", timeout=0)
+            batch_request_dialog.close()
+            ui.navigate.reload()
+
+    def reject_batch_request(request_id: str) -> None:
+        reject_dialog = ui.dialog().props("persistent")
+        with reject_dialog, ui.card().classes("w-[440px] max-w-[94vw]"):
+            ui.label("驳回批量概述申请").classes("text-lg font-bold text-red-700")
+            reason_input = ui.textarea("驳回理由（必填）").props("outlined autofocus auto-grow").classes("w-full")
+
+            async def confirm_reject_batch():
+                reason = str(reason_input.value or "").strip()
+                if not reason:
+                    ui.notify("请填写驳回理由。", type="warning")
+                    return
+                rejected = {"value": False}
+
+                def reject(request):
+                    if (
+                        not request
+                        or request.get("status") != "pending"
+                        or not can_review_batch_overview_request(request, current_user, str(current_role or ""))
+                    ):
+                        return db_storage.ATOMIC_NO_UPDATE
+                    request["status"] = "rejected"
+                    request["reject_reason"] = reason
+                    request["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    request.setdefault("review_log", []).append(
+                        {
+                            "action": "reject",
+                            "user": current_user,
+                            "role": current_role,
+                            "note": reason,
+                            "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        }
+                    )
+                    rejected["value"] = True
+                    return request
+
+                await db_storage.atomic_deep_update([BATCH_OVERVIEW_REQUESTS_KEY, request_id], reject)
+                if rejected["value"] is not True:
+                    ui.notify("申请已被处理或当前账号无审核权限。", type="warning")
+                    return
+                reject_dialog.close()
+                batch_request_dialog.close()
+                ui.notify("批量概述申请已驳回，申请人将在待办中收到提示。", type="positive")
+                ui.navigate.reload()
+
+            with ui.row().classes("w-full justify-end gap-2"):
+                ui.button("取消", on_click=reject_dialog.close).props("flat color=grey")
+                ui.button("确认驳回", on_click=confirm_reject_batch).props("color=negative")
+        reject_dialog.open()
+
+    def open_batch_request_detail(request_id: str) -> None:
+        request = db_storage.get_deep_item([BATCH_OVERVIEW_REQUESTS_KEY, request_id], {})
+        if not request:
+            ui.notify("申请已不存在。", type="warning")
+            return
+        is_mine = request.get("submitter") == current_user
+        can_review = can_review_batch_overview_request(request, current_user, str(current_role or ""))
+        if not is_mine and not can_review:
+            ui.notify("当前账号无权查阅该申请。", type="negative")
+            return
+        payload = copy.deepcopy(request.get("payload") or {})
+        action = payload.get("action")
+        editable = is_mine and request.get("status") in {"rejected", "failed"}
+        editor = {
+            "projects": list(payload.get("projects") or []),
+            "content": str(payload.get("content") or ""),
+            "notes": str(payload.get("notes") or ""),
+            "target_state": {True: "active", None: "pending", False: "inactive"}.get(
+                payload.get("target_state"), "pending"
+            ),
+            "impact_mode": payload.get("impact_mode", "none"),
+            "impact_selected": {
+                label: label in payload.get("related_labels", [])
+                for label in payload.get("config", {}).get("impact_list", [])
+                if label
+            },
+        }
+
+        batch_request_dialog.clear()
+        with batch_request_dialog, ui.card().classes("w-[900px] max-w-[96vw] h-[80vh] max-h-[92vh] p-4"):
+            with ui.row().classes("w-full items-center justify-between"):
+                ui.label("批量概述变更申请详情").classes("text-xl font-bold text-blue-900")
+                ui.button(icon="close", on_click=batch_request_dialog.close).props("flat round dense")
+            with ui.scroll_area().classes("w-full flex-grow"):
+                with ui.column().classes("w-full gap-3 pr-2"):
+                    with ui.grid(columns=2).classes("w-full gap-2 text-sm"):
+                        ui.label(f"申请人：{request.get('submitter')}（{request.get('submitter_role')}）")
+                        ui.label(f"状态：{batch_status_text(str(request.get('status') or ''))}")
+                        ui.label(f"申请时间：{request.get('created_at', '')}")
+                        ui.label(f"最近更新：{request.get('updated_at', '')}")
+                    ui.label(
+                        f"操作：{'批量新增概述' if action == 'add' else '批量修改激活状态'} ｜ "
+                        f"{payload.get('role', '')} / {payload.get('group_name', '')} / {payload.get('title', payload.get('label', ''))}"
+                    ).classes("font-bold text-gray-800")
+                    if request.get("reject_reason"):
+                        ui.label(f"驳回理由：{request['reject_reason']}").classes(
+                            "w-full p-2 rounded bg-red-50 text-red-700 font-bold"
+                        )
+
+                    project_names = [str(project) for project in payload.get("projects", [])]
+                    project_options = {project: project for project in project_names}
+                    if editable:
+                        ui.select(project_options, label="目标项目", multiple=True).bind_value(
+                            editor, "projects"
+                        ).props("outlined use-chips options-dense").classes("w-full")
+                    else:
+                        with ui.column().classes("w-full gap-1"):
+                            ui.label(f"目标项目（{len(project_names)}）").classes("text-sm font-medium text-gray-700")
+                            with ui.row().classes("w-full gap-2 flex-wrap"):
+                                for target_project in project_names:
+                                    ui.chip(target_project).props("dense color=blue-1 text-color=blue-9")
+
+                    if action == "add":
+                        is_staged_media = bool(payload.get("staged_file_path"))
+                        content_input = (
+                            ui.input("新增内容").bind_value(editor, "content").props("outlined").classes("w-full")
+                        )
+                        if is_staged_media:
+                            content_input.disable()
+                            content_input.tooltip("已上传文件名不能在审批单中修改；可撤回后重新发起。")
+                        ui.textarea("录入注释").bind_value(editor, "notes").props("outlined auto-grow").classes(
+                            "w-full"
+                        )
+                        if not editable:
+                            content_input.disable()
+                    else:
+                        ui.label(f"已选概述条目：{len(payload.get('chip_targets', []))} 条").classes("text-sm")
+                        target_radio = (
+                            ui.radio({"active": "设为激活", "pending": "设为待定", "inactive": "设为失活"})
+                            .bind_value(editor, "target_state")
+                            .props("inline")
+                        )
+                        if not editable:
+                            target_radio.disable()
+
+                    configured_related = list(
+                        dict.fromkeys(label for label in payload.get("config", {}).get("impact_list", []) if label)
+                    )
+                    if configured_related:
+                        ui.separator()
+                        impact_radio = (
+                            ui.radio({"none": "本次不影响其它项", "selected": "勾选的受影响", "all": "全部受影响"})
+                            .bind_value(editor, "impact_mode")
+                            .props("inline")
+                        )
+                        if not editable:
+                            impact_radio.disable()
+                        for related_label in configured_related:
+                            title = (
+                                app.storage.general.get("over_config_data_flat", {})
+                                .get(related_label, {})
+                                .get("title", related_label)
+                            )
+                            checkbox = ui.checkbox(title).bind_value(editor["impact_selected"], related_label)
+                            checkbox.bind_visibility_from(
+                                editor, "impact_mode", backward=lambda value: value == "selected"
+                            )
+                            if not editable:
+                                checkbox.disable()
+
+                    result = request.get("result") or {}
+                    if result:
+                        ui.separator()
+                        ui.label("执行结果").classes("font-bold")
+                        ui.label(str(result.get("message") or "")).classes("text-sm")
+                        for item in result.get("skipped", []):
+                            ui.label(f"跳过｜{item}").classes("text-xs text-amber-700")
+                        for item in result.get("failed", []):
+                            ui.label(f"失败｜{item}").classes("text-xs text-red-700")
+
+            async def resubmit_batch_request():
+                projects = list(editor["projects"] or [])
+                if not projects:
+                    ui.notify("请至少保留一个目标项目。", type="warning")
+                    return
+                new_payload = copy.deepcopy(payload)
+                new_payload["projects"] = projects
+                new_payload["content"] = str(editor["content"] or "").strip()
+                new_payload["notes"] = str(editor["notes"] or "").strip()
+                if action == "add" and not new_payload["notes"]:
+                    ui.notify("录入注释不能为空。", type="warning")
+                    return
+                if action == "state":
+                    new_payload["target_state"] = {"active": True, "pending": None, "inactive": False}[
+                        editor["target_state"]
+                    ]
+                    new_payload["chip_targets"] = [
+                        target for target in new_payload.get("chip_targets", []) if target.get("project") in projects
+                    ]
+                    if not new_payload["chip_targets"]:
+                        ui.notify("所选项目中没有可处理的目标概述条目。", type="warning")
+                        return
+                configured = list(
+                    dict.fromkeys(label for label in new_payload.get("config", {}).get("impact_list", []) if label)
+                )
+                if editor["impact_mode"] == "all":
+                    related = configured
+                elif editor["impact_mode"] == "selected":
+                    related = [label for label in configured if editor["impact_selected"].get(label) is True]
+                    if not related:
+                        ui.notify("请至少勾选一个确实受影响的概述项。", type="warning")
+                        return
+                else:
+                    related = []
+                new_payload["impact_mode"] = editor["impact_mode"]
+                new_payload["related_labels"] = related
+                review_log = list(request.get("review_log") or [])
+                review_log.append(
+                    {
+                        "action": "resubmit",
+                        "user": current_user,
+                        "role": current_role,
+                        "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    }
+                )
+                await update_batch_overview_request(
+                    request_id,
+                    {
+                        "status": "pending",
+                        "reject_reason": "",
+                        "payload": new_payload,
+                        "review_log": review_log,
+                    },
+                )
+                batch_request_dialog.close()
+                ui.notify("申请已修改并重新提交审批。", type="positive")
+                ui.navigate.reload()
+
+            with ui.row().classes("w-full justify-end gap-2 pt-2 border-t"):
+                if can_review and request.get("status") == "pending":
+                    ui.button("驳回", on_click=lambda: reject_batch_request(request_id)).props("outline color=negative")
+                    ui.button("审批通过并执行", on_click=lambda: approve_batch_request(request_id)).props(
+                        "color=positive"
+                    )
+                if is_mine and request.get("status") in {"pending", "rejected", "failed"}:
+                    ui.button("撤回并删除", on_click=lambda: withdraw_batch_request(request_id)).props(
+                        "outline color=orange"
+                    )
+                if is_mine and request.get("status") == "withdrawn":
+                    ui.button("删除记录", on_click=lambda: withdraw_batch_request(request_id)).props(
+                        "outline color=negative"
+                    )
+                if editable:
+                    ui.button("修改并重新提交", on_click=resubmit_batch_request).props("color=primary")
+                ui.button("关闭", on_click=batch_request_dialog.close).props("flat color=grey")
+        batch_request_dialog.open()
+
     # -------------------------------------------------------------------------
     # 页面整体布局
     # -------------------------------------------------------------------------
@@ -785,7 +1172,9 @@ def information_page():
                         if my_pending:
                             with ui.card().classes("w-full rounded-xl shadow-sm border border-red-100 bg-white"):
                                 ui_card_header("待处理：项目概述", "edit_document", "red-600")
-                                with ui.column().classes("w-full gap-2 px-1"):
+                                with ui.column().classes(
+                                    "w-full gap-2 px-1 pr-2 max-h-[60vh] overflow-y-auto overflow-x-hidden"
+                                ):
                                     over_flat = app.storage.general.get("over_config_data_flat", {})
                                     project_summary = app.storage.general.get("project_summary", {})
 
@@ -912,7 +1301,9 @@ def information_page():
                                             title_html = f'<span class="font-medium text-gray-800">{project_name}（{"，".join(parts_html)}）</span>'
 
                                             # ui.element: 创建基础 DOM 元素作为包裹层，避开 v-html 的内部覆盖效应
-                                            title_wrapper = ui.element("div").classes("cursor-help flex items-center gap-2")
+                                            title_wrapper = ui.element("div").classes(
+                                                "cursor-help flex items-center gap-2"
+                                            )
 
                                             with title_wrapper:
                                                 ui.html(title_html, sanitize=False)
@@ -1025,44 +1416,80 @@ def information_page():
 
                             if not has_drafts:
                                 ui.label("暂无草稿记录").classes("text-sm text-gray-400 p-2")
-                    # 概述修改申请审批
-                    if current_role in module_show_data.get("overview_change_requests", []):
-                        with ui.card().classes("w-full rounded-xl shadow-sm border border-gray-100 bg-white mt-4"):
+                    # 概述修改申请审批（单项目内容修改 + 跨项目批量变更）
+                    all_requests = app.storage.general.get("overview_change_requests", {})
+                    batch_requests = db_storage.get_item(BATCH_OVERVIEW_REQUESTS_KEY, {}) or {}
+                    visible_batch_requests = {
+                        rid: request
+                        for rid, request in batch_requests.items()
+                        if (
+                            request.get("submitter") == current_user
+                            and request.get("status") in {"pending", "rejected", "failed", "withdrawn"}
+                        )
+                        or (
+                            request.get("status") == "pending"
+                            and can_review_batch_overview_request(request, current_user, str(current_role or ""))
+                        )
+                    }
+                    can_show_single_requests = current_role in module_show_data.get("overview_change_requests", [])
+                    visible_single_requests = {
+                        rid: request
+                        for rid, request in all_requests.items()
+                        if (
+                            current_role == "研发经理"
+                            and request.get("status") == "pending"
+                        )
+                        or request.get("submitter") == current_user
+                    }
+                    if can_show_single_requests or visible_batch_requests:
+                        with ui.card().classes("w-full rounded-xl shadow-sm border border-gray-100 bg-white"):
                             ui_card_header("概述变更审批", "fact_check", "orange-600")
-
-                            all_requests = app.storage.general.get("overview_change_requests", {})
+                            batch_todo_count = get_batch_overview_pending_count(
+                                batch_requests,
+                                current_user,
+                                str(current_role or ""),
+                            )
+                            if batch_todo_count:
+                                ui.badge(f"批量申请待办 {batch_todo_count}", color="red").classes("mb-2")
                             with ui.column().classes("w-full gap-2"):
-                                for rid, req in all_requests.items():
-                                    is_manager = current_role == "研发经理"
-                                    is_mine = req["submitter"] == current_user
+                                if not visible_single_requests and not visible_batch_requests:
+                                    with ui.column().classes("w-full items-center py-8 text-gray-400"):
+                                        ui.icon("task_alt", size="4em").classes("mb-2 opacity-50")
+                                        ui.label("当前没有待处理的概述变更申请").classes("text-sm")
 
-                                    if (is_manager and req["status"] == "pending") or is_mine:
+                                if visible_single_requests:
+                                    ui.label("单项目概述变更申请").classes("font-bold text-gray-800")
+                                    for rid, req in visible_single_requests.items():
+                                        is_manager = current_role == "研发经理"
+                                        is_mine = req.get("submitter") == current_user
+
                                         with ui.row().classes(
                                             "w-full items-center justify-between p-3 bg-gray-50 rounded border"
                                         ):
                                             with ui.column().classes("gap-1"):
-                                                ui.label(f"{req['project_name']} | {req['action']}").classes(
-                                                    "font-bold"
-                                                )
-                                                ui.label(f"{req['old_content']} → {req['new_content']}").classes(
-                                                    "text-sm text-gray-600"
-                                                )
-                                                status_badge(req["status"])  # 需在 information.py 定义该组件
+                                                ui.label(
+                                                    f"{req.get('project_name', '')} | {req.get('action', '')}"
+                                                ).classes("font-bold")
+                                                ui.label(
+                                                    f"{req.get('old_content', '')} → {req.get('new_content', '')}"
+                                                ).classes("text-sm text-gray-600")
+                                                status_badge(req.get("status", ""))
 
                                             with ui.row().classes("gap-2"):
-                                                if is_manager and req["status"] == "pending":
+                                                if is_manager and req.get("status") == "pending":
                                                     ui.button(
                                                         "通过",
                                                         color="green",
                                                         on_click=lambda r=rid, d=req: handle_approve(r, d),
                                                     ).props("dense size=sm")
                                                     ui.button(
-                                                        "驳回", color="red", on_click=lambda r=rid: open_reject_modal(r)
+                                                        "驳回",
+                                                        color="red",
+                                                        on_click=lambda r=rid: open_reject_modal(r),
                                                     ).props("dense size=sm")
 
                                                 if is_mine:
-                                                    if req["status"] in ["rejected", "withdrawn"]:
-                                                        # 触发 components.py 中的对话框重新编辑
+                                                    if req.get("status") in ["rejected", "withdrawn"]:
                                                         ui.button(
                                                             "修改再提",
                                                             color="blue",
@@ -1073,9 +1500,49 @@ def information_page():
                                                             color="grey",
                                                             on_click=lambda r=rid: handle_archive(r, "cancelled"),
                                                         ).props("dense size=sm")
-                                                    if req["status"] == "pending":
+                                                    if req.get("status") == "pending":
                                                         ui.button(
-                                                            "撤回",
+                                                            "撤销",
                                                             color="orange",
                                                             on_click=lambda r=rid: handle_withdraw(r),
                                                         ).props("dense size=sm")
+
+                                if visible_batch_requests:
+                                    ui.separator().classes("my-1")
+                                    ui.label("跨项目批量概述申请").classes("font-bold text-blue-900")
+                                    for rid, request in sorted(
+                                        visible_batch_requests.items(),
+                                        key=lambda item: item[1].get("updated_at", ""),
+                                        reverse=True,
+                                    ):
+                                        payload = request.get("payload") or {}
+                                        with ui.row().classes(
+                                            "w-full items-center justify-between p-3 bg-blue-50/40 rounded border border-blue-100"
+                                        ):
+                                            with ui.column().classes("gap-1 min-w-0"):
+                                                ui.label(
+                                                    f"{payload.get('title', payload.get('label', '未命名'))} ｜ "
+                                                    f"{'批量新增' if payload.get('action') == 'add' else '批量改状态'}"
+                                                ).classes("font-bold")
+                                                ui.label(
+                                                    f"申请人：{request.get('submitter', '')} ｜ "
+                                                    f"目标项目：{len(payload.get('projects', []))} 个 ｜ "
+                                                    f"{request.get('updated_at', '')}"
+                                                ).classes("text-xs text-gray-600")
+                                                status_badge(str(request.get("status") or ""))
+                                                if (
+                                                    request.get("status") == "rejected"
+                                                    and request.get("submitter") == current_user
+                                                ):
+                                                    ui.label(f"驳回理由：{request.get('reject_reason', '')}").classes(
+                                                        "text-xs font-bold text-red-700"
+                                                    )
+                                            ui.button(
+                                                "查看详情",
+                                                icon="open_in_new",
+                                                on_click=lambda _=None, request_id=rid: open_batch_request_detail(
+                                                    request_id
+                                                ),
+                                            ).props("flat dense color=primary size=sm")
+                    else:
+                        ui.label("暂无概述变更申请").classes("text-sm text-gray-400 p-2")

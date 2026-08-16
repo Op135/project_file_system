@@ -13,7 +13,7 @@ import re
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, Optional
 
 from nicegui import app, events, ui
 from nicegui.events import (
@@ -44,6 +44,7 @@ from ..config import (
 from ..custom_ui import custom_upload
 from ..overview_batch_operations import (
     BATCH_OVERVIEW_ALLOWED_PROJECT_STATES,
+    BATCH_OVERVIEW_STAGING_DIR,
     BATCH_OVERVIEW_TOOL_ROLES,
     apply_related_overview_impacts,
     archive_related_record,
@@ -53,8 +54,10 @@ from ..overview_batch_operations import (
     build_project_model_range_options,
     cascade_deactivate_table_row,
     collect_editable_overview_configs,
+    create_batch_overview_request,
     filter_batch_projects,
     find_projects_without_row_anchors,
+    get_batch_overview_reviewer_roles,
     insert_overview_chip,
     is_table_child_state_allowed,
     update_overview_chip_state,
@@ -3708,6 +3711,228 @@ async def requirement_page(type="", json_path="", project_name=""):
             )
             return False
 
+        async def submit_batch_request():
+            """完成全部前置校验后提交审批，审批通过前不改动任何概述数据。"""
+            if current_role not in BATCH_OVERVIEW_TOOL_ROLES:
+                ui.notify("当前角色无权提交批量概述申请。", type="negative")
+                return
+            reviewer_roles = get_batch_overview_reviewer_roles(str(current_role or ""))
+            if not reviewer_roles:
+                ui.notify("当前角色尚未配置批量概述审批角色，无法提交申请。", type="negative")
+                return
+            config = get_config()
+            if not config:
+                ui.notify("请选择具体概述项。", type="warning")
+                return
+            live_summary_by_project = {
+                str(summary.get("sub_project") or key): summary
+                for key, summary in app.storage.general.get("project_summary", {}).items()
+            }
+            selected_projects = [
+                project
+                for project in state["projects"]
+                if live_summary_by_project.get(project, {}).get("state") in BATCH_OVERVIEW_ALLOWED_PROJECT_STATES
+            ]
+            if not selected_projects:
+                ui.notify("请至少选择一个符合状态限制的项目。", type="warning")
+                return
+            if current_role not in config.get("permission", {}).get("edit_role", []):
+                ui.notify("当前角色没有该概述项的编辑权限。", type="negative")
+                return
+            if not ensure_complete_table_row_bindings(config, selected_projects):
+                return
+            related_config = list(dict.fromkeys(label for label in config.get("impact_list", []) if label))
+            related_labels = selected_related_labels(config)
+            if state["impact_mode"] == "selected" and related_config and not related_labels:
+                ui.notify("请至少勾选一个确实受影响的概述项。", type="warning")
+                return
+
+            submit_button.disable()
+            submit_spinner.set_visibility(True)
+            request_id = str(uuid.uuid4())
+            staged_file_path = ""
+            request_saved = False
+            try:
+                content = str(state["content"] or "").strip()
+                notes = str(state["notes"] or "").strip()
+                ptype = str(config.get("processing_type", "text"))
+                actual_type = ptype
+                extra_data: dict[str, Any] = {}
+                chip_targets: list[dict[str, str]] = []
+                target_state: Optional[bool] = None
+
+                if state["action"] == "add":
+                    if not notes:
+                        ui.notify("注释不能为空。", type="warning")
+                        return
+                    media_as_text = ptype in {"file", "image", "video"} and any(
+                        re.search(pattern, content) for pattern in NONE_REGULAR
+                    )
+                    if ptype in {"file", "image", "video"} and not media_as_text:
+                        file_data = state.get("file_data")
+                        if not file_data:
+                            ui.notify("请先选择文件。", type="warning")
+                            return
+                        filename = Path(str(file_data.get("name") or "")).name
+                        file_type = str(file_data.get("content_type") or "application/octet-stream")
+                        extension = Path(filename).suffix.lower()
+                        if ptype == "file" and extension not in OVER_UPLOADS_FILE_TYPE:
+                            ui.notify(f"{filename} 不是允许上传的文件类型。", type="warning")
+                            return
+                        if ptype == "image" and "image" not in file_type:
+                            ui.notify(f"{filename} 不是图片类型。", type="warning")
+                            return
+                        if ptype == "video" and "video" not in file_type:
+                            ui.notify(f"{filename} 不是视频类型。", type="warning")
+                            return
+                        upload_path = Path(str(config.get("upload_path") or ""))
+                        if not upload_path.is_dir():
+                            ui.notify(f"上传目录不存在：{upload_path}", type="warning")
+                            return
+                        staging_dir = BATCH_OVERVIEW_STAGING_DIR / request_id
+                        staging_dir.mkdir(parents=True, exist_ok=True)
+                        staging_path = staging_dir / filename
+                        staging_path.write_bytes(file_data["content"])
+                        staged_file_path = str(staging_path)
+                        content = filename
+                        extra_data.update({"file_type": file_type, "url_path": f"{FILES_URL_DIR}/{filename}"})
+                    elif not validate_overview_content(content, config):
+                        ui.notify("概述内容为空或不符合该项填写格式。", type="warning")
+                        return
+
+                    actual_type = "text" if media_as_text else ptype
+                    if ptype in {"test", "search", "svn"} and any(
+                        re.search(pattern, content) for pattern in NONE_REGULAR
+                    ):
+                        actual_type = "text"
+                    if actual_type == "test":
+                        valid, message = validate_test_data(config)
+                        if not valid:
+                            ui.notify(message, type="warning")
+                            return
+                        extra_data["test_select_data"] = copy.deepcopy(state["test_data"])
+                    validation_errors = []
+                    if actual_type == "search":
+                        for project in selected_projects:
+                            valid, _, _, _, message = await validate_search_path(content, config, [project])
+                            if not valid:
+                                validation_errors.append(f"{project}：{message}")
+                    elif actual_type == "svn":
+                        for project in selected_projects:
+                            valid, _, _, message = await validate_svn_url(content, config, [project])
+                            if not valid:
+                                validation_errors.append(f"{project}：{message}")
+                    if validation_errors:
+                        notify_batch_lines(["以下项目校验未通过，申请尚未提交：", *validation_errors])
+                        return
+                else:
+                    if not state["chip_targets"]:
+                        ui.notify("请至少选择一条需要修改状态的概述。", type="warning")
+                        return
+                    target_state = {"active": True, "pending": None, "inactive": False}[state["target_state"]]
+                    validation_errors = []
+                    for encoded_target in state["chip_targets"]:
+                        project, chip_id = json.loads(encoded_target)
+                        if project not in selected_projects:
+                            validation_errors.append(f"{project}：项目已不在当前选择范围")
+                            continue
+                        req_max_ver = app.storage.general.get("project_req_max_ver", {}).get(project, "0.0")
+                        chip = db_storage.get_deep_item([f"{project}_over_data", config["label"], chip_id], {})
+                        if not chip:
+                            validation_errors.append(f"{project}：概述条目已不存在")
+                            continue
+                        if (
+                            config.get("is_table_group")
+                            and config["label"] != config.get("first_col_label")
+                            and not is_table_child_state_allowed(
+                                project,
+                                config["first_col_label"],
+                                chip.get("row_id"),
+                                req_max_ver,
+                                target_state,
+                            )
+                        ):
+                            validation_errors.append(f"{project}：目标状态等级不能高于同行首列概述状态")
+                            continue
+                        if target_state is True and chip.get("type") == "search":
+                            valid, _, _, _, message = await validate_search_path(chip.get("content", ""), config, [project])
+                            if not valid:
+                                validation_errors.append(f"{project}：{message}")
+                                continue
+                        if target_state is True and chip.get("type") == "svn":
+                            valid, _, _, message = await validate_svn_url(chip.get("content", ""), config, [project])
+                            if not valid:
+                                validation_errors.append(f"{project}：{message}")
+                                continue
+                        chip_targets.append({"project": project, "chip_id": chip_id})
+                    if validation_errors:
+                        notify_batch_lines(["以下目标校验未通过，申请尚未提交：", *validation_errors])
+                        return
+
+                group_labels = [
+                    item.get("label")
+                    for item in over_config.get(config["role"], {}).get(config["group_name"], [])
+                    if item.get("label")
+                ]
+                now_text = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                request_record = {
+                    "id": request_id,
+                    "submitter": current_user,
+                    "submitter_role": current_role,
+                    "reviewer_roles": reviewer_roles,
+                    "status": "pending",
+                    "created_at": now_text,
+                    "updated_at": now_text,
+                    "reject_reason": "",
+                    "review_log": [],
+                    "payload": {
+                        "action": state["action"],
+                        "projects": list(selected_projects),
+                        "role": config.get("role", ""),
+                        "group_name": config.get("group_name", ""),
+                        "label": config.get("label", ""),
+                        "title": config.get("title", config.get("label", "")),
+                        "config": copy.deepcopy(config),
+                        "content": content,
+                        "notes": notes,
+                        "actual_type": actual_type,
+                        "extra_data": extra_data,
+                        "staged_file_path": staged_file_path,
+                        "row_anchors": copy.deepcopy(state["row_anchors"]),
+                        "chip_targets": chip_targets,
+                        "target_state": target_state,
+                        "group_labels": group_labels,
+                        "impact_mode": state["impact_mode"],
+                        "related_labels": related_labels,
+                    },
+                }
+                saved, _ = await create_batch_overview_request(request_record)
+                if not saved:
+                    ui.notify("批量概述申请保存失败，请稍后重试。", type="negative")
+                    return
+                request_saved = True
+                batch_overview_dialog.close()
+                ui.notify(
+                    f"批量概述申请已提交，等待{'、'.join(reviewer_roles)}审批。",
+                    type="positive",
+                    position="center",
+                )
+            except Exception as ex:
+                logger.error("提交批量概述申请失败", exc_info=True)
+                ui.notify(f"提交申请失败：{ex}", type="negative", timeout=0, close_button="✖")
+            finally:
+                if staged_file_path and not request_saved:
+                    staging_path = Path(staged_file_path)
+                    staging_path.unlink(missing_ok=True)
+                    try:
+                        staging_path.parent.rmdir()
+                    except OSError:
+                        pass
+                if not submit_button.is_deleted:
+                    submit_button.enable()
+                if not submit_spinner.is_deleted:
+                    submit_spinner.set_visibility(False)
+
         async def execute_batch():
             if current_role not in BATCH_OVERVIEW_TOOL_ROLES:
                 ui.notify("当前角色无权执行此操作。", type="negative")
@@ -3996,14 +4221,14 @@ async def requirement_page(type="", json_path="", project_name=""):
                 return
             related_labels = list(dict.fromkeys(label for label in config.get("impact_list", []) if label))
             if not related_labels or state["impact_mode"] != "none":
-                await execute_batch()
+                await submit_batch_request()
                 return
 
             confirm_dialog = ui.dialog().props("persistent")
 
             async def confirm_no_impact():
                 confirm_dialog.close()
-                await execute_batch()
+                await submit_batch_request()
 
             with confirm_dialog, ui.card().classes("w-full max-w-[520px]"):
                 ui.label("请谨慎确认").classes("text-lg font-bold text-negative")
@@ -4105,7 +4330,7 @@ async def requirement_page(type="", json_path="", project_name=""):
                 submit_spinner.set_visibility(False)
                 ui.button("取消", on_click=batch_overview_dialog.close).props("flat color=grey")
                 submit_button = ui.button(
-                    "确认批量处理", icon="playlist_add_check", on_click=request_execute_batch
+                    "提交审批申请", icon="approval", on_click=request_execute_batch
                 ).props("color=primary")
 
         status_select.on_value_change(lambda _=None: refresh_project_options())

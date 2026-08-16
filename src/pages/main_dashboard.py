@@ -9,6 +9,10 @@ from nicegui import app, ui
 from .. import db_storage  # 导入我们创建的模块
 from ..config import IMG_DIR, PRESET_AVATARS
 from ..ecn_management_config import ECN_DATA_KEY, get_ecn_dashboard_pending_count
+from ..overview_batch_operations import (
+    BATCH_OVERVIEW_REQUESTS_KEY,
+    get_batch_overview_pending_count,
+)
 from ..overview_warning import get_urgent_overview_projects
 from ..utils import (
     get_cache_busted_path,
@@ -380,6 +384,11 @@ def main_page():
             )
 
             change_reqs = app.storage.general.get("overview_change_requests", {})
+            batch_change_task_count = get_batch_overview_pending_count(
+                db_storage.get_item(BATCH_OVERVIEW_REQUESTS_KEY, {}) or {},
+                current_user,
+                str(current_role or ""),
+            )
 
             if current_role == "研发经理":
                 # 经理统计所有待审批(pending)
@@ -399,14 +408,20 @@ def main_page():
                 if target == "/information":
                     # 根据当前用户角色判断统计口径
                     if current_role in ["研发经理"]:
-                        # 经理看到的是所有待审项目数量 + 自己负责的概述
-                        pending_count = pending_num_sum + over_charge_num + change_task_count
+                        # 经理看到的是所有待审项目数量 + 自己负责的概述（紧急的）
+                        # pending_count = pending_num_sum + over_charge_num + change_task_count + batch_change_task_count
+                        pending_count = (
+                            pending_num_sum + overview_urgent_count + change_task_count + batch_change_task_count
+                        )
                     elif current_role in ["销售", "销售总监"]:
                         # 销售看到的是自己提交的待修改项目数量
                         pending_count = revise_num_user
                     else:
-                        # 其他人看到的是自己负责审核的待审项目数量（项目工程师才有） + 自己负责的概述
-                        pending_count = pending_num_user + over_charge_num + change_task_count
+                        # 其他人看到的是自己负责审核的待审项目数量（项目工程师才有） + 自己负责的概述（紧急的）
+                        # pending_count = pending_num_user + over_charge_num + change_task_count + batch_change_task_count
+                        pending_count = (
+                            pending_num_user + overview_urgent_count + change_task_count + batch_change_task_count
+                        )
                 elif target == "/ecn_management":
                     # 将算出的 ECN 待办数量赋给这个卡片
                     pending_count = ecn_pending_num_user

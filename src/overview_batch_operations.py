@@ -3,9 +3,13 @@
 
 import copy
 import re
+import shutil
 import uuid
 from datetime import datetime
+from pathlib import Path
 from typing import Iterable, Optional
+
+from nicegui import app
 
 from . import db_storage
 
@@ -20,6 +24,88 @@ BATCH_OVERVIEW_TOOL_ROLES = {
     "NPI工程",
 }
 BATCH_OVERVIEW_ALLOWED_PROJECT_STATES = ("待定", "研发", "转产")
+BATCH_OVERVIEW_REQUESTS_KEY = "overview_batch_change_requests"
+BATCH_OVERVIEW_STAGING_DIR = Path(__file__).resolve().parents[1] / ".overview_batch_staging"
+
+# 单独维护“审核角色 -> 被审核的申请人角色”，避免把工具使用权限误当成审批权限。
+BATCH_OVERVIEW_APPROVAL_ROLE_TARGETS = {
+    "boss": {"admin"},
+    "admin": {"研发经理"},
+    "研发经理": {
+        "研发电子主管",
+        "研发结构",
+        "研发软件",
+        "研发光学",
+        "研发硬件",
+        "NPI工程",
+    },
+}
+
+
+def get_batch_overview_reviewer_roles(applicant_role: str) -> list[str]:
+    """返回负责审核指定申请人角色的角色列表。"""
+    return sorted(
+        reviewer_role
+        for reviewer_role, target_roles in BATCH_OVERVIEW_APPROVAL_ROLE_TARGETS.items()
+        if applicant_role in target_roles
+    )
+
+
+def can_review_batch_overview_request(request: dict, reviewer: str, reviewer_role: str) -> bool:
+    """判断当前用户能否审核申请；同一用户不能自审。"""
+    configured_roles = get_batch_overview_reviewer_roles(str(request.get("submitter_role") or ""))
+    return bool(
+        reviewer
+        and reviewer != request.get("submitter")
+        and reviewer_role in configured_roles
+        and reviewer_role in request.get("reviewer_roles", [])
+    )
+
+
+def get_batch_overview_pending_count(
+    requests: dict,
+    current_user: str,
+    current_role: str,
+) -> int:
+    """计算待办角标：审核人的待审批 + 申请人被驳回/执行失败后待处理。"""
+    count = 0
+    for request in requests.values():
+        status = request.get("status")
+        if status == "pending" and can_review_batch_overview_request(request, current_user, current_role):
+            count += 1
+        elif status in {"rejected", "failed"} and request.get("submitter") == current_user:
+            count += 1
+    return count
+
+
+async def create_batch_overview_request(request: dict) -> tuple[bool, str]:
+    """持久化一条批量概述申请。"""
+    request_id = str(request.get("id") or uuid.uuid4())
+    record = copy.deepcopy(request)
+    record["id"] = request_id
+
+    def insert(records):
+        records = records or {}
+        if request_id in records:
+            return db_storage.ATOMIC_NO_UPDATE
+        records[request_id] = record
+        return records
+
+    success = await db_storage.atomic_deep_update([BATCH_OVERVIEW_REQUESTS_KEY], insert)
+    return success, request_id
+
+
+async def update_batch_overview_request(request_id: str, changes: dict) -> bool:
+    """原子更新申请，申请不存在时不创建。"""
+
+    def update(request):
+        if not request:
+            return db_storage.ATOMIC_NO_UPDATE
+        request.update(copy.deepcopy(changes))
+        request["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        return request
+
+    return await db_storage.atomic_deep_update([BATCH_OVERVIEW_REQUESTS_KEY, request_id], update)
 
 
 def build_batch_result_lines(
@@ -464,3 +550,297 @@ async def apply_related_overview_impacts(
         if label_changed:
             changed_labels.add(related_label)
     return changed_labels
+
+
+def _refresh_batch_pending_label(project: str, label: str) -> None:
+    """按现有单项维护口径刷新概述负责人待办。"""
+    from .utils import update_overview_charge_pending_dic
+
+    flat_config = app.storage.general.get("over_config_data_flat", {}).get(label, {})
+    role = flat_config.get("role", "")
+    latest_user = app.storage.general.get("overview_role", {}).get(project, {}).get(role, {}).get("latest_user", "")
+    target_user = latest_user.split("：", 1)[1] if "：" in latest_user else latest_user
+    if target_user and target_user != "——":
+        update_overview_charge_pending_dic(
+            scope="local",
+            des_user=target_user,
+            project_name=project,
+            des_label=label,
+        )
+
+
+def _publish_batch_overview_changes(changed_pairs: set[tuple[str, str]], fallback_role: str) -> None:
+    """刷新版本号、待办与负责人最近操作信息。"""
+    from .components import OverviewVersionManager
+    from .utils import overview_role_update
+
+    for project, label in changed_pairs:
+        OverviewVersionManager.bump(project, label)
+        _refresh_batch_pending_label(project, label)
+    flat_config = app.storage.general.get("over_config_data_flat", {})
+    changed_roles = {
+        (project, flat_config.get(label, {}).get("role", fallback_role)) for project, label in changed_pairs
+    }
+    for project, role in changed_roles:
+        overview_role_update(project, role)
+
+
+def _install_staged_media(payload: dict, config: dict) -> tuple[bool, str]:
+    staged_path_value = str(payload.get("staged_file_path") or "").strip()
+    if not staged_path_value:
+        return True, ""
+    staged_path = Path(staged_path_value).resolve()
+    if not staged_path.is_relative_to(BATCH_OVERVIEW_STAGING_DIR.resolve()):
+        return False, "申请暂存文件路径无效"
+    upload_path_value = str(config.get("upload_path") or "").strip()
+    if not upload_path_value:
+        return False, "概述项未配置正式上传目录"
+    upload_path = Path(upload_path_value)
+    if not upload_path.is_dir():
+        return False, f"正式上传目录不存在：{upload_path}"
+    target_path = upload_path / Path(str(payload.get("content") or staged_path.name)).name
+    if target_path.exists():
+        staged_path.unlink(missing_ok=True)
+        try:
+            staged_path.parent.rmdir()
+        except OSError:
+            pass
+        return True, ""
+    if not staged_path.is_file():
+        return False, "申请暂存文件已不存在"
+    try:
+        shutil.move(str(staged_path), str(target_path))
+        try:
+            staged_path.parent.rmdir()
+        except OSError:
+            pass
+    except Exception as exc:
+        return False, f"暂存文件转入正式目录失败：{exc}"
+    return True, ""
+
+
+async def execute_batch_overview_request(request: dict) -> dict:
+    """审批通过后执行申请，并返回可归档的完整结果。"""
+    from .utils import validate_search_path, validate_svn_url
+
+    payload = copy.deepcopy(request.get("payload") or {})
+    config_snapshot = copy.deepcopy(payload.get("config") or {})
+    label = str(config_snapshot.get("label") or payload.get("label") or "")
+    live_config = copy.deepcopy(app.storage.general.get("over_config_data_flat", {}).get(label, {}))
+    config = live_config or config_snapshot
+    for metadata_key in ("role", "group_name", "first_col_label", "is_table_group"):
+        if metadata_key not in config and metadata_key in config_snapshot:
+            config[metadata_key] = config_snapshot[metadata_key]
+    action = payload.get("action")
+    submitter = str(request.get("submitter") or "匿名用户")
+    submitter_role = str(request.get("submitter_role") or "")
+    selected_projects = [str(project) for project in payload.get("projects", [])]
+    live_summary = {
+        str(summary.get("sub_project") or key): summary
+        for key, summary in app.storage.general.get("project_summary", {}).items()
+    }
+    selected_projects = [
+        project
+        for project in selected_projects
+        if live_summary.get(project, {}).get("state") in BATCH_OVERVIEW_ALLOWED_PROJECT_STATES
+    ]
+    if not config or action not in {"add", "state"}:
+        return {"ok": False, "message": "申请数据不完整，无法执行", "successes": [], "skipped": [], "failed": []}
+    if submitter_role not in config.get("permission", {}).get("edit_role", []):
+        return {
+            "ok": False,
+            "message": "申请人已不再具有该概述项的编辑权限",
+            "successes": [],
+            "skipped": [],
+            "failed": [],
+        }
+    if not selected_projects:
+        return {
+            "ok": False,
+            "message": "目标项目均已不在允许批量处理的状态范围内",
+            "successes": [],
+            "skipped": [],
+            "failed": [],
+        }
+
+    media_ok, media_message = _install_staged_media(payload, config)
+    if not media_ok:
+        return {"ok": False, "message": media_message, "successes": [], "skipped": [], "failed": []}
+
+    successes: list[dict] = []
+    skipped: list[str] = []
+    failed: list[str] = []
+    changed_pairs: set[tuple[str, str]] = set()
+    configured_related = {str(item) for item in config.get("impact_list", []) if item}
+    related_labels = [
+        str(item) for item in payload.get("related_labels", []) if item and str(item) in configured_related
+    ]
+
+    if action == "add":
+        content = str(payload.get("content") or "")
+        notes = str(payload.get("notes") or "")
+        actual_type = str(payload.get("actual_type") or config.get("processing_type") or "text")
+        common_extra = copy.deepcopy(payload.get("extra_data") or {})
+        row_anchors = payload.get("row_anchors") or {}
+        for project in selected_projects:
+            try:
+                req_max_ver = app.storage.general.get("project_req_max_ver", {}).get(project, "0.0")
+                extra = copy.deepcopy(common_extra)
+                if actual_type == "search":
+                    valid, url_path, file_type, _, message = await validate_search_path(content, config, [project])
+                    if not valid:
+                        failed.append(f"{project}：{message}")
+                        continue
+                    extra.update({"url_path": url_path, "file_type": file_type})
+                elif actual_type == "svn":
+                    valid, url_path, file_type, message = await validate_svn_url(content, config, [project])
+                    if not valid:
+                        failed.append(f"{project}：{message}")
+                        continue
+                    extra.update(
+                        {
+                            "url_path": url_path,
+                            "file_type": file_type,
+                            "warehouse": config.get("state_path", {}).get(live_summary.get(project, {}).get("state")),
+                        }
+                    )
+                row_id = None
+                if config.get("is_table_group"):
+                    if label == config.get("first_col_label"):
+                        row_id = str(uuid.uuid4())
+                    else:
+                        row_id = row_anchors.get(project)
+                        first_chips = db_storage.get_deep_item(
+                            [f"{project}_over_data", config.get("first_col_label", "")], {}
+                        )
+                        anchor_active = any(
+                            chip.get("row_id") == row_id
+                            and chip.get("select_activ_dic", {}).get(req_max_ver, chip.get("enabled")) is True
+                            for chip in first_chips.values()
+                        )
+                        if not anchor_active:
+                            failed.append(f"{project}：表格绑定行已不存在或不再激活")
+                            continue
+                chip = build_new_overview_chip(
+                    project=project,
+                    config=config,
+                    content=content,
+                    notes=notes,
+                    creator=submitter,
+                    req_max_ver=req_max_ver,
+                    row_id=row_id,
+                    processing_type=actual_type,
+                    extra_data=extra,
+                )
+                inserted, message = await insert_overview_chip(project, label, chip)
+                if not inserted:
+                    skipped.append(f"{project}：{message}")
+                    continue
+                successes.append(
+                    {
+                        "project": project,
+                        "label": label,
+                        "chip_id": chip["id"],
+                        "content": content,
+                        "state": True,
+                        "operation_type": "add_chip",
+                    }
+                )
+                changed_pairs.add((project, label))
+            except Exception as exc:
+                failed.append(f"{project}：{exc}")
+    else:
+        target_state = payload.get("target_state")
+        live_groups = app.storage.general.get("over_config_data", {}).get(config.get("role", ""), {})
+        live_group_items = live_groups.get(config.get("group_name", ""), [])
+        group_labels = [str(item.get("label")) for item in live_group_items if item.get("label")]
+        if not group_labels:
+            group_labels = [str(item) for item in payload.get("group_labels", []) if item]
+        for target in payload.get("chip_targets", []):
+            project = str(target.get("project") or "")
+            chip_id = str(target.get("chip_id") or "")
+            if project not in selected_projects:
+                skipped.append(f"{project}：项目已不在当前允许范围")
+                continue
+            try:
+                req_max_ver = app.storage.general.get("project_req_max_ver", {}).get(project, "0.0")
+                current_chip = db_storage.get_deep_item([f"{project}_over_data", label, chip_id], {})
+                if not current_chip:
+                    skipped.append(f"{project}：概述条目已不存在")
+                    continue
+                row_id = current_chip.get("row_id")
+                if (
+                    config.get("is_table_group")
+                    and label != config.get("first_col_label")
+                    and not is_table_child_state_allowed(
+                        project,
+                        str(config.get("first_col_label") or ""),
+                        row_id,
+                        req_max_ver,
+                        target_state,
+                    )
+                ):
+                    failed.append(f"{project}：目标状态等级不能高于同行首列概述状态")
+                    continue
+                if target_state is True and current_chip.get("type") == "search":
+                    valid, _, _, _, message = await validate_search_path(current_chip.get("content", ""), config, [project])
+                    if not valid:
+                        failed.append(f"{project}：{message}")
+                        continue
+                if target_state is True and current_chip.get("type") == "svn":
+                    valid, _, _, message = await validate_svn_url(current_chip.get("content", ""), config, [project])
+                    if not valid:
+                        failed.append(f"{project}：{message}")
+                        continue
+                changed, message, updated_chip = await update_overview_chip_state(
+                    project, label, chip_id, req_max_ver, target_state, submitter
+                )
+                if not changed or updated_chip is None:
+                    skipped.append(f"{project}：{message}")
+                    continue
+                await archive_related_record(project, label, chip_id, submitter)
+                successes.append(
+                    {
+                        "project": project,
+                        "label": label,
+                        "chip_id": chip_id,
+                        "content": updated_chip.get("content", ""),
+                        "state": target_state,
+                        "operation_type": "activ_change",
+                    }
+                )
+                changed_pairs.add((project, label))
+                if target_state is False and config.get("is_table_group") and label == config.get("first_col_label") and row_id:
+                    cascaded = await cascade_deactivate_table_row(
+                        project, group_labels, label, row_id, req_max_ver, submitter
+                    )
+                    changed_pairs.update((project, changed_label) for changed_label in cascaded)
+            except Exception as exc:
+                failed.append(f"{project}：{exc}")
+
+    if related_labels:
+        flat_config = app.storage.general.get("over_config_data_flat", {})
+        overview_role = app.storage.general.get("overview_role", {})
+        for operation in successes:
+            changed_related = await apply_related_overview_impacts(
+                project=operation["project"],
+                related_labels=related_labels,
+                source_content=operation["content"],
+                source_state=operation["state"],
+                operation_type=operation["operation_type"],
+                creator=submitter,
+                config_flat=flat_config,
+                overview_role=overview_role,
+            )
+            changed_pairs.update((operation["project"], changed_label) for changed_label in changed_related)
+
+    if changed_pairs:
+        _publish_batch_overview_changes(changed_pairs, str(config.get("role") or ""))
+    message = build_batch_result_lines(len(successes), skipped, failed)[0]
+    return {
+        "ok": bool(successes) and not failed,
+        "message": message,
+        "successes": successes,
+        "skipped": skipped,
+        "failed": failed,
+    }

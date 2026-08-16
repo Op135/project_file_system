@@ -12,9 +12,12 @@ from src.overview_batch_operations import (
     build_project_category_map,
     build_project_model_range_options,
     collect_editable_overview_configs,
+    can_review_batch_overview_request,
     filter_batch_projects,
     find_projects_without_row_anchors,
     get_first_column_row_state,
+    get_batch_overview_pending_count,
+    get_batch_overview_reviewer_roles,
     get_chip_state_visuals,
     insert_overview_chip,
     is_overview_state_at_or_below,
@@ -25,6 +28,38 @@ from src.utils import format_overview_timestamp, parse_overview_timestamp
 
 
 class OverviewBatchOperationTests(unittest.TestCase):
+    def test_batch_approval_roles_are_separate_from_tool_roles(self):
+        self.assertEqual(get_batch_overview_reviewer_roles("研发结构"), ["研发经理"])
+        self.assertEqual(get_batch_overview_reviewer_roles("研发经理"), ["admin"])
+        self.assertEqual(get_batch_overview_reviewer_roles("admin"), ["boss"])
+
+    def test_batch_approval_disallows_self_review_and_counts_each_users_tasks(self):
+        requests = {
+            "pending-tech": {
+                "submitter": "结构甲",
+                "submitter_role": "研发结构",
+                "reviewer_roles": ["研发经理"],
+                "status": "pending",
+            },
+            "pending-manager": {
+                "submitter": "经理甲",
+                "submitter_role": "研发经理",
+                "reviewer_roles": ["admin"],
+                "status": "pending",
+            },
+            "rejected-tech": {
+                "submitter": "结构甲",
+                "submitter_role": "研发结构",
+                "reviewer_roles": ["研发经理"],
+                "status": "rejected",
+            },
+        }
+        self.assertTrue(can_review_batch_overview_request(requests["pending-tech"], "经理乙", "研发经理"))
+        self.assertFalse(can_review_batch_overview_request(requests["pending-tech"], "结构甲", "研发经理"))
+        self.assertEqual(get_batch_overview_pending_count(requests, "经理乙", "研发经理"), 1)
+        self.assertEqual(get_batch_overview_pending_count(requests, "结构甲", "研发结构"), 1)
+        self.assertEqual(get_batch_overview_pending_count(requests, "admin", "admin"), 1)
+
     def test_table_child_state_cannot_exceed_first_column_state(self):
         self.assertTrue(is_overview_state_at_or_below(True, True))
         self.assertTrue(is_overview_state_at_or_below(None, True))
