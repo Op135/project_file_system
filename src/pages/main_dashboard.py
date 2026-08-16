@@ -13,6 +13,7 @@ from ..overview_batch_operations import (
     BATCH_OVERVIEW_REQUESTS_KEY,
     get_batch_overview_pending_count,
 )
+from ..overview_corrections import OVERVIEW_CORRECTION_REQUESTS_KEY, get_correction_pending_count
 from ..overview_warning import get_urgent_overview_projects
 from ..utils import (
     get_cache_busted_path,
@@ -304,8 +305,6 @@ def main_page():
             pending_num_sum = 0
             # 所有登录用户负责审核的待审核项目数量
             pending_num_user = 0
-            # 所有登录用户负责的概述维护项目数量
-            over_charge_num = 0
             # 当前用户负责且达到3级以上的概述项目
             overview_urgent_projects: list[tuple[str, int]] = []
             # 所有登录用户负责的概述变更任务数量
@@ -359,11 +358,6 @@ def main_page():
             current_overview_pending = overview_pending_by_user.get(current_user, {})
             if current_overview_pending:
                 # 仅统计状态非“作废”且非“待定”的项目，确保与 information.py 逻辑一致
-                over_charge_num = sum(
-                    1
-                    for p_name in current_overview_pending
-                    if project_summary.get(p_name, {}).get("state", "未知") not in ["作废", "待定"]
-                )
                 overview_project_states = {
                     project_name: project_summary.get(project_name, {}).get("state", "未知")
                     for project_name in current_overview_pending
@@ -389,6 +383,11 @@ def main_page():
                 current_user,
                 str(current_role or ""),
             )
+            correction_task_count = get_correction_pending_count(
+                db_storage.get_item(OVERVIEW_CORRECTION_REQUESTS_KEY, {}) or {},
+                current_user,
+                str(current_role or ""),
+            )
 
             if current_role == "研发经理":
                 # 经理统计所有待审批(pending)
@@ -411,7 +410,11 @@ def main_page():
                         # 经理看到的是所有待审项目数量 + 自己负责的概述（紧急的）
                         # pending_count = pending_num_sum + over_charge_num + change_task_count + batch_change_task_count
                         pending_count = (
-                            pending_num_sum + overview_urgent_count + change_task_count + batch_change_task_count
+                            pending_num_sum
+                            + overview_urgent_count
+                            + change_task_count
+                            + batch_change_task_count
+                            + correction_task_count
                         )
                     elif current_role in ["销售", "销售总监"]:
                         # 销售看到的是自己提交的待修改项目数量
@@ -420,7 +423,11 @@ def main_page():
                         # 其他人看到的是自己负责审核的待审项目数量（项目工程师才有） + 自己负责的概述（紧急的）
                         # pending_count = pending_num_user + over_charge_num + change_task_count + batch_change_task_count
                         pending_count = (
-                            pending_num_user + overview_urgent_count + change_task_count + batch_change_task_count
+                            pending_num_user
+                            + overview_urgent_count
+                            + change_task_count
+                            + batch_change_task_count
+                            + correction_task_count
                         )
                 elif target == "/ecn_management":
                     # 将算出的 ECN 待办数量赋给这个卡片
@@ -464,9 +471,7 @@ def main_page():
                         ui.icon(icon).classes(f"text-5xl {icon_color_class}")
 
                     # 【修改】标题文字加粗，颜色加深，使其更锐利
-                    ui.label(title).classes("text-xl font-bold text-gray-800")
-                    ui.label(subtitle).classes("text-center text-gray-500 text-sm mt-2")
-
+                    ui_title = ui.label(title).classes("text-xl font-bold text-gray-800")
                     if target == "/information" and overview_urgent_count > 0:
                         if overview_max_warning_level >= 4:
                             urgent_text = f"重要警示 · {overview_urgent_count}个待办"
@@ -475,7 +480,7 @@ def main_page():
                             urgent_text = f"尽快处理 · {overview_urgent_count}个待办"
                             urgent_classes = "bg-red-100/40 text-red-800 border-red-300/50"
 
-                        with ui.element("div").classes("absolute bottom-10 left-1/2 z-10 w-max -translate-x-1/2"):
+                        with ui.element("div").classes("w-max"):
                             with ui.element("div").classes(
                                 f"dashboard-urgent-flash inline-flex items-center gap-1.5 whitespace-nowrap "
                                 f"px-3 py-1 rounded-full border shadow-sm backdrop-blur-xs "
@@ -483,13 +488,8 @@ def main_page():
                             ):
                                 ui.icon("notification_important").classes("text-base")
                                 ui.label(urgent_text)
-                                # with ui.tooltip().classes("bg-gray-800 text-white p-2"):
-                                #     ui.label(f"最高警示级别：{overview_max_warning_level}级").classes("font-bold")
-                                #     for project_name, warning_level in overview_urgent_projects[:3]:
-                                #         ui.label(f"{warning_level}级 · {project_name}")
-                                #     remaining_count = overview_urgent_count - 3
-                                #     if remaining_count > 0:
-                                #         ui.label(f"另有{remaining_count}个紧急项目")
+                        ui_title.visible = False  # 隐藏原本的标题，避免视觉冲突
+                    ui.label(subtitle).classes("text-center text-gray-500 text-sm mt-2")
 
                     # 4. 渲染增强后的 Badge (红点)
                     if pending_count > 0:

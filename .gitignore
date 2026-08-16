@@ -8,6 +8,8 @@ data/*
 !data/zemax_operands.json
 .nicegui/
 uploads/
+.overview_batch_staging/
+.overview_correction_staging/
 *.pyc
 # 忽略 Python 字节码缓存
 __pycache__/

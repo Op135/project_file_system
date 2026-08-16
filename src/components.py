@@ -41,7 +41,22 @@ from .config import (
     UPLOAD_URL_DIR,
     UPLOADS_DIR,
 )
-from .overview_batch_operations import is_table_child_state_allowed
+from .custom_ui import custom_upload
+from .overview_batch_operations import is_table_child_state_allowed, validate_overview_content
+from .overview_corrections import (
+    OVERVIEW_CORRECTION_REQUESTS_KEY,
+    OVERVIEW_CORRECTION_STAGING_DIR,
+    build_correction_changes,
+    build_media_file_audit,
+    chip_snapshot_fingerprint,
+    cleanup_correction_staged_files,
+    create_correction_request,
+    find_active_correction_for_chip,
+    get_correction_archives_for_chip,
+    get_correction_reviewer_roles,
+    update_correction_request,
+    validate_test_correction,
+)
 from .utils import (
     async_path_exists,
     format_overview_timestamp,
@@ -58,6 +73,80 @@ from .utils import (
 # 获取一个以此模块命名的 logger
 # 比如：如果你的文件是 src/components.py，这个 logger 的名字就会是 "src.components"
 logger = logging.getLogger(__name__)
+
+
+def _render_correction_content_format_hint(config: dict) -> None:
+    """纠错输入沿用原概述配置中的人类可读格式提示。"""
+    if not config.get("content_regular"):
+        return
+    hint = str(config.get("dialog_placeholder") or config.get("dialog_label") or "").strip()
+    if not hint:
+        hint = "该概述项已配置填写格式校验，请按原有录入规范填写。"
+    ui.label(f"格式提示：{hint}").classes("w-full px-2 py-1 rounded bg-amber-50 text-xs font-medium text-amber-800")
+
+
+def _clear_correction_navigation_query() -> None:
+    """清除一次性纠错定位参数，避免刷新项目页时重复打开弹窗。"""
+    app.storage.client.pop("overview_correction_auto_open", None)
+    ui.run_javascript("""
+        const url = new URL(window.location.href);
+        url.searchParams.delete('correction_label');
+        url.searchParams.delete('correction_chip_id');
+        window.history.replaceState({}, '', url.toString());
+    """)
+
+
+def _render_chip_correction_history(project: str, label: str, chip_id: str) -> None:
+    """在现有 chip 历史弹窗中追加独立纠错历史。"""
+    records = get_correction_archives_for_chip(project, label, chip_id)
+    ui.separator().classes("my-2")
+    with ui.row().classes("w-full items-center justify-between"):
+        ui.label("原记录纠错历史").classes("font-bold text-purple-900")
+        ui.badge(f"{len(records)} 次", color="purple").props("outline")
+    if not records:
+        ui.label("该记录没有已通过的纠错历史").classes("text-sm text-gray-400")
+        return
+    for record in records:
+        result = record.get("result") or {}
+        changes = result.get("changes") or []
+        with ui.card().classes("w-full p-3 shadow-base border border-purple-100 bg-purple-50/30"):
+            with ui.row().classes("w-full items-center justify-between"):
+                ui.label(str(record.get("reviewed_at") or record.get("updated_at") or "")).classes(
+                    "text-sm font-mono text-gray-700"
+                )
+                ui.badge(str(record.get("submitter") or "未知申请人"), color="purple").props("outline")
+            ui.label(f"纠错理由：{record.get('reason', '')}").classes("text-sm font-medium")
+            ui.label(
+                f"审批人：{record.get('reviewer', '')} ｜ 方式："
+                f"{'纠正原记录' if record.get('action') == 'correct' else '删除错误记录'}"
+            ).classes("text-xs text-gray-500")
+            file_change = result.get("file_change") or {}
+            if file_change:
+                ui.label(f"文件：{file_change.get('before_name', '')} → {file_change.get('after_name', '')}").classes(
+                    "text-xs font-medium text-blue-800"
+                )
+                ui.label(
+                    f"SHA256：{file_change.get('before_sha256', '') or '无'} → "
+                    f"{file_change.get('after_sha256', '') or '无'}"
+                ).classes("text-[11px] font-mono break-all text-gray-500")
+            for change in changes:
+                changed = change.get("changed") is True
+                with ui.row().classes("w-full items-start gap-2 py-1 border-t border-purple-100"):
+                    ui.badge("已变化" if changed else "未变化", color="orange" if changed else "grey").props("outline")
+                    with ui.column().classes("gap-0 flex-grow"):
+                        ui.label(str(change.get("title") or change.get("key") or "字段")).classes("text-xs font-bold")
+                        if "before_select" in change:
+                            before_text = str(change.get("before_select") or "未选择")
+                            after_text = str(change.get("after_select") or "未选择")
+                            if change.get("before_other"):
+                                before_text += f"；{change['before_other']}"
+                            if change.get("after_other"):
+                                after_text += f"；{change['after_other']}"
+                            ui.label(f"{before_text} → {after_text}").classes("text-xs text-gray-600")
+                        else:
+                            ui.label(f"{change.get('before', '')} → {change.get('after', '')}").classes(
+                                "text-xs text-gray-600"
+                            )
 
 
 def get_upload_local_path(file_url: str) -> str:
@@ -124,7 +213,7 @@ def _render_image_status_badge(image_icon: Optional[str]) -> None:
     status_icon = image_icon if image_icon in {"image", "block", "question_mark"} else "image"
     _, badge_classes = _get_image_status_visuals(status_icon)
     with ui.element("div").classes(
-        f"absolute top-0 left-0 z-30 w-4 h-4 rounded-full border-2 border-white shadow-lg "
+        f"absolute top-0 left-0 z-15 w-4 h-4 rounded-full border-2 border-white shadow-lg "
         f"flex items-center justify-center {badge_classes}"
     ):
         ui.icon(status_icon).classes("text-[10px]")
@@ -1168,6 +1257,7 @@ class InteractiveButton:
         node_options: list = [],
         instrument_options: list = [],
         temp_bool: bool = False,
+        auto_open_correction_chip_id: str = "",
     ):
         if processing_type not in ["text", "file", "image", "test", "search", "svn", "video"]:
             raise ValueError("processing_type 必须是 'text','file','image','test','search','svn','video'")
@@ -1195,9 +1285,18 @@ class InteractiveButton:
         self.node_options = node_options
         self.instrument_options = instrument_options
         self.temp_bool = temp_bool
+        auto_open_target = app.storage.client.get("overview_correction_auto_open", {})
+        self.auto_open_correction_chip_id = auto_open_correction_chip_id or (
+            str(auto_open_target.get("chip_id") or "")
+            if str(auto_open_target.get("label") or "") == self.label
+            else ""
+        )
         self.new_filename_input = None
         self.new_content_input = None
         self.last_temp_upload_path = None
+        self.last_temp_upload_type = None
+        self.last_temp_upload_name = None
+        self.change_upload_fallback_filename = ""
 
         self.offset = (0, 0)
         self.is_dragging = False
@@ -1281,10 +1380,23 @@ class InteractiveButton:
 
         # 设置定时器，监控并更新数据
         ui.timer(1.0, self._update_chip_display)
+        if self.auto_open_correction_chip_id:
+            ui.timer(0.25, self._open_requested_correction, once=True)
 
     # ==========================================================
     # 1. 核心状态同步与 UI 刷新逻辑
     # ==========================================================
+
+    def _open_requested_correction(self) -> None:
+        chip_info = db_storage.get_deep_item(
+            [f"{self.project}_over_data", self.label, self.auto_open_correction_chip_id],
+            {},
+        )
+        if chip_info:
+            self.show_change_request_dialog(chip_info)
+        else:
+            ui.notify("未找到需要继续修改的概述记录，可能已被删除或更新。", type="warning")
+        _clear_correction_navigation_query()
 
     def _generate_signature(self, filtered_dict: dict) -> int:
         """生成数据源状态的轻量级签名，避免高频深度遍历比对"""
@@ -1411,151 +1523,335 @@ class InteractiveButton:
 
     async def handle_change_upload(self, e: events.UploadEventArguments):
         """处理申请时的临时文件上传"""
-        temp_dir = Path(UPLOADS_DIR) / "change_temp"
+        cleanup_correction_staged_files([str(self.last_temp_upload_path or "")])
+        temp_dir = OVERVIEW_CORRECTION_STAGING_DIR / uuid.uuid4().hex
         temp_dir.mkdir(parents=True, exist_ok=True)
-        file_path = temp_dir / f"{uuid.uuid4().hex}_{e.file.name}"
+        file_path = temp_dir / Path(e.file.name).name
         with open(file_path, "wb") as f:
             f.write(await e.file.read())
         self.last_temp_upload_path = str(file_path)
+        self.last_temp_upload_type = str(e.file.content_type or "application/octet-stream")
+        self.last_temp_upload_name = e.file.name
         if self.new_filename_input is not None:
             self.new_filename_input.value = e.file.name
             ui.notify(f"临时文件已上传：{e.file.name}", type="info")
 
+    def handle_change_upload_removed(self, _event=None) -> None:
+        """上传控件移除文件时同步清理本次新建的纠错暂存。"""
+        cleanup_correction_staged_files([str(self.last_temp_upload_path or "")])
+        self.last_temp_upload_path = None
+        self.last_temp_upload_type = None
+        self.last_temp_upload_name = None
+        if self.new_filename_input is not None:
+            self.new_filename_input.value = self.change_upload_fallback_filename
+
     def show_change_request_dialog(self, chip_info):
-        """弹出概述修改/删除申请对话框"""
+        """提交普通概述的原记录纠错/错误记录删除申请。"""
         self.chip_dialog.clear()
-        chip_type = chip_info.get("type", "text")
-        current_user = app.storage.user.get("current_user", "匿名用户")
-
-        # 拦截：检查是否已有该项的活跃申请
-        active_reqs = app.storage.general.get("overview_change_requests", {})
-        existing_rid = next((rid for rid, r in active_reqs.items() if r["chip_id"] == chip_info["id"]), None)
-        existing_req = active_reqs.get(existing_rid)
-
-        if existing_req and existing_req["status"] == "pending":
-            ui.notify("该项已有申请正在审批中，请勿重复操作", type="warning")
+        current_user = str(app.storage.user.get("current_user") or "匿名用户")
+        current_role = str(app.storage.user.get("current_role") or "")
+        if current_role not in self.permission.get("edit_role", []):
+            ui.notify("当前角色没有该概述项的纠错申请权限。", type="negative")
+            return
+        reviewer_roles = get_correction_reviewer_roles(current_role)
+        if not reviewer_roles:
+            ui.notify("当前角色尚未配置纠错审批角色。", type="negative")
             return
 
-        action_mode = {"val": existing_req["action"] if existing_req else "modify"}
-        # 深拷贝测试数据，防止污染原数据
+        requests = db_storage.get_item(OVERVIEW_CORRECTION_REQUESTS_KEY, {}) or {}
+        existing = find_active_correction_for_chip(requests, self.project, self.label, str(chip_info.get("id") or ""))
+        existing_rid, existing_req = existing if existing else (None, None)
+        if existing_req and existing_req.get("submitter") != current_user:
+            ui.notify("该记录已有其他用户发起的纠错申请。", type="warning")
+            return
+        if existing_req and existing_req.get("status") in {"pending", "processing"}:
+            ui.notify("该记录已有申请正在审批中，请勿重复提交。", type="warning")
+            return
+
+        payload = copy.deepcopy(existing_req.get("payload") or {}) if existing_req else {}
+        before_snapshot = copy.deepcopy(chip_info)
+        requested_after = copy.deepcopy(payload.get("after_snapshot") or {})
+        existing_after = copy.deepcopy(before_snapshot)
+        for correction_key in ("content", "test_select_data", "url_path", "file_type", "warehouse"):
+            if correction_key in requested_after:
+                existing_after[correction_key] = copy.deepcopy(requested_after[correction_key])
+        chip_type = str(before_snapshot.get("type") or self.processing_type)
+        action_mode = {"val": str(existing_req.get("action") or "correct") if existing_req else "correct"}
         req_test_data = copy.deepcopy(
-            existing_req["new_test_data"]
-            if existing_req and chip_type == "test"
-            else chip_info.get("test_select_data", {})
+            existing_after.get("test_select_data") or before_snapshot.get("test_select_data") or {}
+        )
+        stored_staged_path = str(payload.get("staged_file_path") or "")
+        stored_uploaded_type = str(payload.get("uploaded_file_type") or "")
+        self.last_temp_upload_path = None
+        self.last_temp_upload_type = None
+        self.last_temp_upload_name = None
+        self.change_upload_fallback_filename = str(
+            existing_after.get("content") or before_snapshot.get("content") or ""
         )
 
-        with self.chip_dialog, ui.card().classes("w-[500px]"):
-            ui.label(f"{'编辑' if existing_req else '提交'}变更申请 - {self.title}").classes(
+        config_snapshot = {
+            "label": self.label,
+            "title": self.title,
+            "role": self.role,
+            "processing_type": self.processing_type,
+            "permission": copy.deepcopy(self.permission),
+            "upload_path": self.upload_path,
+            "state_path": copy.deepcopy(self.state_path),
+            "search_scope_regular": self.search_scope_regular,
+            "search_folder_according": copy.deepcopy(self.search_folder_according),
+            "search_folder_according_li": copy.deepcopy(self.search_folder_according_li),
+            "search_hierarchy": copy.deepcopy(self.search_hierarchy),
+            "content_regular": copy.deepcopy(self.content_regular),
+            "dialog_label": self.dialog_label,
+            "dialog_placeholder": self.dialog_placeholder,
+            "test_nature_options": copy.deepcopy(self.test_nature_options),
+            "state_options": copy.deepcopy(self.state_options),
+            "node_options": copy.deepcopy(self.node_options),
+            "instrument_options": copy.deepcopy(self.instrument_options),
+            "is_table_group": False,
+        }
+
+        with self.chip_dialog, ui.card().classes("w-[560px] max-w-[95vw]"):
+            ui.label(f"{'修改并重提' if existing_req else '申请纠正原记录'} - {self.title}").classes(
                 "text-lg font-bold text-blue-900"
             )
-
-            if existing_req and existing_req["status"] in ["rejected", "withdrawn"]:
-                with ui.row().classes("w-full bg-red-50 p-2 rounded items-center"):
-                    ui.icon("warning", color="red").classes("text-sm")
-                    ui.label(
-                        f"状态：{existing_req['status']} | 理由：{existing_req.get('reject_reason', '无')}"
-                    ).classes("text-xs text-red-700")
-
-            ui.radio({"modify": "修改内容", "delete": "删除该项"}, value=action_mode["val"]).bind_value(
-                action_mode, "val"
-            ).props("inline")
-
-            dynamic_area = ui.column().classes("w-full gap-2 mt-2")
-            reason_box = (
-                ui.textarea(label="变更理由 (必填)", value=existing_req["reason"] if existing_req else "")
-                .props("outlined")
-                .classes("w-full mt-2")
+            ui.label("仅用于纠正原始录入错误；技术事实发生变化时请使用批量概述业务变更。").classes(
+                "text-xs text-orange-700"
             )
+            if existing_req:
+                ui.label(f"上次驳回理由：{existing_req.get('reject_reason') or '无'}").classes(
+                    "w-full p-2 rounded bg-red-50 text-xs text-red-700"
+                )
 
-            # 清理上次的临时路径残留
-            self.last_temp_upload_path = existing_req.get("temp_file_path") if existing_req else None
+            action_radio = (
+                ui.radio({"correct": "纠正原记录", "delete": "删除错误记录"}, value=action_mode["val"])
+                .bind_value(action_mode, "val")
+                .props("inline")
+            )
+            dynamic_area = ui.column().classes("w-full gap-2")
+            reason_box = (
+                ui.textarea("纠错理由（必填）", value=str(existing_req.get("reason") or "") if existing_req else "")
+                .props("outlined auto-grow")
+                .classes("w-full")
+            )
 
             def render_dynamic_fields():
                 dynamic_area.clear()
                 with dynamic_area:
-                    ui.label(f"当前内容: {chip_info.get('content')}").classes(
-                        "text-sm text-gray-600 bg-gray-100 p-2 rounded w-full border"
+                    ui.label(f"原内容：{before_snapshot.get('content', '')}").classes(
+                        "w-full p-2 rounded border bg-gray-50 text-sm text-gray-700"
                     )
-                    if action_mode["val"] == "modify":
-                        if chip_type == "test":
-                            ui.label("测试参数配置:").classes("text-xs font-bold text-gray-500 mt-2")
-                            with ui.card().classes("w-full bg-gray-50 shadow-none border"):
-                                self._render_test_fields_for_change(req_test_data)
-                        elif chip_type in ["file", "image", "video"]:
-                            ui.label("上传新文件:").classes("text-sm font-bold mt-2")
-                            ui.upload(on_upload=self.handle_change_upload, auto_upload=True).classes("w-full")
-                            self.new_filename_input = (
-                                ui.input(label="确认文件名", value=existing_req["new_content"] if existing_req else "")
-                                .props("outlined")
-                                .classes("w-full")
+                    if action_mode["val"] == "delete":
+                        ui.label("审批通过后仅删除这条错误记录；不会改变其它概述的激活状态。").classes(
+                            "text-xs font-bold text-red-700"
+                        )
+                    elif chip_type == "test":
+                        ui.label("请逐项检查测试参数；未修改字段也会在审批详情中标记为“未变化”。").classes(
+                            "text-xs text-purple-700"
+                        )
+                        self.new_content_input = (
+                            ui.input(
+                                "纠正后的检测内容与标准",
+                                value=str(existing_after.get("content") or before_snapshot.get("content") or ""),
+                                placeholder=str(config_snapshot.get("dialog_placeholder") or ""),
                             )
-                        else:
-                            self.new_content_input = (
-                                ui.input(label="新内容", value=existing_req["new_content"] if existing_req else "")
-                                .props("outlined")
-                                .classes("w-full mt-2")
+                            .props("outlined")
+                            .classes("w-full")
+                        )
+                        _render_correction_content_format_hint(config_snapshot)
+                        with ui.card().classes("w-full bg-purple-50/40 shadow-none border"):
+                            self._render_test_fields_for_change(req_test_data)
+                    elif chip_type in {"file", "image", "video"}:
+                        custom_upload(
+                            multiple=False,
+                            max_files=1,
+                            on_upload=self.handle_change_upload,
+                            on_removed=self.handle_change_upload_removed,
+                            label="选择纠错文件",
+                        )
+                        self.new_filename_input = (
+                            ui.input(
+                                "纠正后的文件名",
+                                value=str(self.last_temp_upload_name or self.change_upload_fallback_filename),
                             )
+                            .props("outlined")
+                            .classes("w-full")
+                        )
+                        ui.label("未上传新文件时，正式目录中必须已存在该文件名。").classes("text-xs text-gray-500")
+                    else:
+                        self.new_content_input = (
+                            ui.input(
+                                "纠正后的内容",
+                                value=str(existing_after.get("content") or before_snapshot.get("content") or ""),
+                                placeholder=str(config_snapshot.get("dialog_placeholder") or ""),
+                            )
+                            .props("outlined")
+                            .classes("w-full")
+                        )
+                        _render_correction_content_format_hint(config_snapshot)
 
-            # 利用定时器确保 UI 渲染
-            ui.timer(0.1, render_dynamic_fields, once=True)
+            action_radio.on_value_change(lambda _=None: render_dynamic_fields())
+            render_dynamic_fields()
 
             async def submit_req():
-                if not reason_box.value.strip():
-                    ui.notify("请填写申请理由！", type="warning")
+                reason = str(reason_box.value or "").strip()
+                if not reason:
+                    ui.notify("请填写纠错理由。", type="warning")
                     return
-
-                final_new_content = ""
-                if action_mode["val"] == "modify":
+                after_snapshot = copy.deepcopy(before_snapshot)
+                if action_mode["val"] == "correct":
                     if chip_type == "test":
-                        final_new_content = "测试项变更"
-                    elif chip_type in ["file", "image", "video"]:
-                        # 👇 明确判断它不是 None，且它的 value 有内容 👇
-                        if self.new_filename_input is None or not self.new_filename_input.value:
-                            ui.notify("请上传文件或确认文件名", type="warning")
+                        if self.new_content_input is None or not str(self.new_content_input.value or "").strip():
+                            ui.notify("请填写纠正后的检测内容与标准。", type="warning")
                             return
-                        final_new_content = self.new_filename_input.value.strip()
+                        after_snapshot["content"] = str(self.new_content_input.value).strip()
+                        after_snapshot["test_select_data"] = copy.deepcopy(req_test_data)
+                    elif chip_type in {"file", "image", "video"}:
+                        if self.new_filename_input is None or not str(self.new_filename_input.value or "").strip():
+                            ui.notify("请填写纠正后的文件名。", type="warning")
+                            return
+                        after_snapshot["content"] = Path(str(self.new_filename_input.value)).name
+                        after_snapshot["url_path"] = f"{FILES_URL_DIR}/{after_snapshot['content']}"
                     else:
-                        # 👇 明确判断它不是 None，且它的 value 有内容 👇
-                        if self.new_content_input is None or not self.new_content_input.value:
-                            ui.notify("请填写新内容", type="warning")
+                        if self.new_content_input is None or not str(self.new_content_input.value or "").strip():
+                            ui.notify("请填写纠正后的内容。", type="warning")
                             return
-                        final_new_content = self.new_content_input.value.strip()
+                        after_snapshot["content"] = str(self.new_content_input.value).strip()
 
-                # 提取 config 数据，InteractiveButton 自身包含了所需的属性
-                config_snapshot = {
+                if action_mode["val"] == "correct":
+                    if not validate_overview_content(str(after_snapshot.get("content") or ""), config_snapshot):
+                        ui.notify("纠错后的内容为空或不符合填写格式。", type="warning")
+                        return
+                    if chip_type == "test":
+                        valid, message = validate_test_correction(
+                            after_snapshot.get("test_select_data", {}) or {}, config_snapshot
+                        )
+                        if not valid:
+                            ui.notify(message, type="warning")
+                            return
+                    elif chip_type == "search":
+                        valid, _, _, _, message = await validate_search_path(
+                            str(after_snapshot.get("content") or ""), config_snapshot, [self.project]
+                        )
+                        if not valid:
+                            ui.notify(message, type="warning")
+                            return
+                    elif chip_type == "svn":
+                        valid, _, _, message = await validate_svn_url(
+                            str(after_snapshot.get("content") or ""), config_snapshot, [self.project]
+                        )
+                        if not valid:
+                            ui.notify(message, type="warning")
+                            return
+                    elif chip_type in {"file", "image", "video"}:
+                        extension = Path(str(after_snapshot.get("content") or "")).suffix.lower()
+                        media_type = str(
+                            self.last_temp_upload_type or stored_uploaded_type or after_snapshot.get("file_type") or ""
+                        )
+                        if chip_type == "file" and extension not in OVER_UPLOADS_FILE_TYPE:
+                            ui.notify(f"{extension or '无扩展名'}不是允许的文件类型。", type="warning")
+                            return
+                        if chip_type == "image" and "image" not in media_type:
+                            ui.notify("纠错文件不是有效图片类型。", type="warning")
+                            return
+                        if chip_type == "video" and "video" not in media_type:
+                            ui.notify("纠错文件不是有效视频类型。", type="warning")
+                            return
+                        if (
+                            not (self.last_temp_upload_path or stored_staged_path)
+                            and not (
+                                Path(str(config_snapshot.get("upload_path") or ""))
+                                / Path(str(after_snapshot.get("content") or "")).name
+                            ).is_file()
+                        ):
+                            ui.notify("未上传新文件，且正式目录中不存在纠正后的文件名。", type="warning")
+                            return
+                now_text = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                request_staged_path = (
+                    "" if action_mode["val"] == "delete" else str(self.last_temp_upload_path or stored_staged_path)
+                )
+                media_audit = {}
+                if action_mode["val"] == "correct" and chip_type in {"file", "image", "video"}:
+                    audit_ok, audit_message, media_audit = build_media_file_audit(
+                        before_snapshot,
+                        config_snapshot,
+                        request_staged_path,
+                    )
+                    if not audit_ok:
+                        ui.notify(audit_message, type="warning")
+                        return
+                request_payload = {
+                    "before_snapshot": before_snapshot,
+                    "before_fingerprint": chip_snapshot_fingerprint(before_snapshot),
+                    "after_snapshot": after_snapshot if action_mode["val"] == "correct" else None,
+                    "config": config_snapshot,
+                    "staged_file_path": request_staged_path,
+                    "uploaded_file_type": ""
+                    if action_mode["val"] == "delete"
+                    else str(self.last_temp_upload_type or stored_uploaded_type),
+                    "target_url_path": after_snapshot.get("url_path", ""),
+                    "delete_targets": [
+                        {"label": self.label, "chip_id": str(chip_info["id"]), "snapshot": before_snapshot}
+                    ],
+                    **media_audit,
+                }
+                if (
+                    action_mode["val"] == "correct"
+                    and not any(
+                        change.get("changed") is True
+                        for change in build_correction_changes(
+                            before_snapshot,
+                            after_snapshot,
+                            config_snapshot,
+                            "correct",
+                        )
+                    )
+                    and not (
+                        chip_type in {"file", "image", "video"} and (self.last_temp_upload_path or stored_staged_path)
+                    )
+                ):
+                    ui.notify("纠错内容与原记录完全相同，请先修改至少一个字段。", type="warning")
+                    return
+                record = {
+                    "id": existing_rid or str(uuid.uuid4()),
+                    "project": self.project,
                     "label": self.label,
                     "title": self.title,
-                    "upload_path": getattr(self, "upload_path", ""),
-                    "search_scope_regular": getattr(self, "search_scope_regular", ""),
-                    "search_folder_according_li": getattr(self, "search_folder_according_li", []),
-                    "search_hierarchy": getattr(self, "search_hierarchy", []),
-                    "state_path": getattr(self, "state_path", {}),
-                }
-
-                rid = existing_rid or str(uuid.uuid4())
-                app.storage.general.setdefault("overview_change_requests", {})[rid] = {
-                    "id": rid,
-                    "project_name": self.project,
-                    "label": self.label,
-                    "chip_id": chip_info["id"],
+                    "chip_id": str(chip_info["id"]),
                     "chip_type": chip_type,
                     "action": action_mode["val"],
-                    "old_content": chip_info["content"],
-                    "new_content": final_new_content,
-                    "new_test_data": req_test_data if chip_type == "test" else None,
-                    "temp_file_path": getattr(self, "last_temp_upload_path", None),
-                    "reason": reason_box.value.strip(),
+                    "reason": reason,
                     "submitter": current_user,
+                    "submitter_role": current_role,
+                    "reviewer_roles": reviewer_roles,
                     "status": "pending",
-                    "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    "config": config_snapshot,
+                    "reject_reason": "",
+                    "created_at": str(existing_req.get("created_at") or now_text) if existing_req else now_text,
+                    "updated_at": now_text,
+                    "review_log": list(existing_req.get("review_log") or []) if existing_req else [],
+                    "payload": request_payload,
                 }
-                ui.notify("申请已提交至研发经理处", type="positive")
+                if existing_rid:
+                    saved = await update_correction_request(existing_rid, record)
+                else:
+                    saved, _ = await create_correction_request(record)
+                if not saved:
+                    ui.notify("纠错申请保存失败，可能已有其他活动申请。", type="negative")
+                    return
+                if action_mode["val"] == "delete":
+                    cleanup_correction_staged_files([str(self.last_temp_upload_path or ""), stored_staged_path])
+                elif self.last_temp_upload_path and stored_staged_path != self.last_temp_upload_path:
+                    cleanup_correction_staged_files([stored_staged_path])
+                ui.notify(f"纠错申请已提交，等待{'、'.join(reviewer_roles)}审批。", type="positive")
                 self.chip_dialog.close()
 
-            with ui.row().classes("w-full justify-end mt-4 gap-2"):
-                ui.button("取消", on_click=self.chip_dialog.close).props("flat color=grey")
-                ui.button("提交申请", color="primary", on_click=submit_req)
+            def cancel_request_dialog():
+                cleanup_correction_staged_files([str(self.last_temp_upload_path or "")])
+                self.chip_dialog.close()
+
+            with ui.row().classes("w-full justify-end gap-2"):
+                ui.button("取消", on_click=cancel_request_dialog).props("flat color=grey")
+                ui.button("提交纠错申请", on_click=submit_req).props("color=primary icon=fact_check")
 
         self.chip_dialog.open()
 
@@ -1792,8 +2088,8 @@ class InteractiveButton:
                 # 创建申请变更按钮
                 request_change_button = (
                     ui.button(on_click=lambda _=None, d=chip_info: self.show_change_request_dialog(d))
-                    .classes("absolute -top-1 right-10 m-0 p-0 q-py-0 bg-white text-orange-500 shadow-md")
-                    .props('round padding="0px 0px" icon="rate_review"')
+                    .classes("absolute -top-1 right-10 m-0 p-0 q-py-0 bg-white text-orange shadow-md")
+                    .props('round padding="0px 0px" icon="imagesearch_roller"')
                     .style("font-size: 8px; display: none;")
                     .on("click", js_handler="(e) => {e.stopPropagation()}")
                 )
@@ -1813,8 +2109,7 @@ class InteractiveButton:
             def check_shift_and_show(e, btn):
                 btn.style("display: block;" if e.args.get("shiftKey") else "display: none;")
 
-            control_btns = [delete_button, move_up_button, move_down_button, history_button]
-            # control_btns = [delete_button, move_up_button, move_down_button, history_button, request_change_button]
+            control_btns = [delete_button, move_up_button, move_down_button, history_button, request_change_button]
             chip.on("mouseenter", lambda e: check_ctrl_and_show(e, control_btns), ["ctrlKey"])
             chip.on("mousemove", lambda e: check_ctrl_and_show(e, control_btns), ["ctrlKey"])
             chip.on("mouseleave", lambda: [b.style("display: none;") for b in control_btns])
@@ -1888,8 +2183,8 @@ class InteractiveButton:
                 )
                 request_change_button = (
                     ui.button(on_click=lambda _=None, d=chip_info: self.show_change_request_dialog(d))
-                    .classes("absolute bottom-3 right-3 m-0 p-0 q-py-0 bg-white text-orange-500 shadow-md")
-                    .props('round padding="0px 0px" icon="rate_review"')
+                    .classes("absolute bottom-3 right-3 m-0 p-0 q-py-0 bg-white text-orange shadow-md")
+                    .props('round padding="0px 0px" icon="imagesearch_roller"')
                     .style("font-size: 8px; display: none;")
                     .on("click", js_handler="(e) => {e.stopPropagation()}")
                 )
@@ -1910,8 +2205,7 @@ class InteractiveButton:
             def check_shift_and_show(e, btn):
                 btn.style("display: block;" if e.args.get("shiftKey") else "display: none;")
 
-            control_btns = [delete_button, move_up_button, move_down_button, history_button]
-            # control_btns = [delete_button, move_up_button, move_down_button, history_button, request_change_button]
+            control_btns = [delete_button, move_up_button, move_down_button, history_button, request_change_button]
             thumbnail.on("mouseover", lambda e: check_ctrl_and_show(e, control_btns), ["ctrlKey"])
             thumbnail.on("mousemove", lambda e: check_ctrl_and_show(e, control_btns), ["ctrlKey"])
             thumbnail.on("mouseout", lambda: [b.style("display: none;") for b in control_btns])
@@ -3557,7 +3851,7 @@ class InteractiveButton:
         sorted_times = sorted(timestamp_data.keys(), reverse=True)
         chip_content = chip_data.get("content", "未知内容")
 
-        with self.history_dialog, ui.card().classes("w-[600px] max-w-full -space-y-2"):
+        with self.history_dialog, ui.card().classes("w-[600px] max-w-full max-h-[88vh] overflow-y-auto -space-y-2"):
             with ui.row().classes("w-full justify-between items-center"):
                 ui.label(f"变更历史: {chip_content}").classes("text-lg font-bold")
                 ui.button(icon="close", on_click=self.history_dialog.close).props("flat round dense")
@@ -3597,6 +3891,12 @@ class InteractiveButton:
                                     ui.chip(text=f"V{ver}", color=color, text_color=text_col).props(
                                         "dense square size=sm"
                                     )
+
+            _render_chip_correction_history(
+                self.project,
+                self.label,
+                str(chip_data.get("id") or ""),
+            )
 
         self.history_dialog.open()
 
@@ -4183,12 +4483,24 @@ class OverviewTableGroup:
         group_name: str,
         configs: list,
         temp_bool: bool = False,
+        auto_open_correction_label: str = "",
+        auto_open_correction_chip_id: str = "",
     ):
         self.project = project
         self.role = role
         self.group_name = group_name
         self.configs = configs  # 传入整个分组的配置字典，例如 "光源" 下的所有配置
         self.temp_bool = temp_bool
+        auto_open_target = app.storage.client.get("overview_correction_auto_open", {})
+        inferred_label = str(auto_open_target.get("label") or "")
+        inferred_chip_id = str(auto_open_target.get("chip_id") or "")
+        config_labels = {str(item.get("label") or "") for item in self.configs}
+        self.auto_open_correction_label = auto_open_correction_label or (
+            inferred_label if inferred_label in config_labels else ""
+        )
+        self.auto_open_correction_chip_id = auto_open_correction_chip_id or (
+            inferred_chip_id if self.auto_open_correction_label else ""
+        )
         # --- 💡 细化权限管控到列层级 ---
         self.current_config = {}  # 当前正在操作的列配置（非常关键，用于让弹窗知道在处理哪个字段）
         self.current_target_row_id = None  # 当前正在操作的单元格所在行id
@@ -4204,6 +4516,9 @@ class OverviewTableGroup:
         self.new_filename_input = None
         self.new_content_input = None
         self.last_temp_upload_path = None
+        self.last_temp_upload_type = None
+        self.last_temp_upload_name = None
+        self.change_upload_fallback_filename = ""
 
         user_role = app.storage.user.get("current_role", "")
         for config in self.configs:
@@ -4261,6 +4576,31 @@ class OverviewTableGroup:
 
         # 初始渲染 & 开启定时器
         ui.timer(1.0, self._update_display)
+        if self.auto_open_correction_label and self.auto_open_correction_chip_id:
+            ui.timer(0.25, self._open_requested_correction, once=True)
+
+    def _open_requested_correction(self) -> None:
+        config = next(
+            (
+                item
+                for item in self.configs
+                if str(item.get("label") or "") == self.auto_open_correction_label
+            ),
+            None,
+        )
+        chip_info = db_storage.get_deep_item(
+            [
+                f"{self.project}_over_data",
+                self.auto_open_correction_label,
+                self.auto_open_correction_chip_id,
+            ],
+            {},
+        )
+        if config and chip_info:
+            self.show_change_request_dialog(chip_info, config)
+        else:
+            ui.notify("未找到需要继续修改的表格概述记录，可能已被删除或更新。", type="warning")
+        _clear_correction_navigation_query()
 
     def _compute_row_hash(self, row_data: dict) -> int:
         """为单行数据生成轻量级指纹，用于判断该行是否需要重绘"""
@@ -4956,9 +5296,9 @@ class OverviewTableGroup:
                 request_change_button = (
                     ui.button(on_click=lambda _=None, d=chip_info, cfg=config: self.show_change_request_dialog(d, cfg))
                     .classes(
-                        "absolute -top-1 right-10 m-0 p-0 q-py-0 z-20 bg-white text-orange-500 shadow-md border border-gray-200"
+                        "absolute -top-1 right-10 m-0 p-0 q-py-0 z-20 bg-white text-orange shadow-md border border-gray-200"
                     )
-                    .props('round padding="0px 0px" icon="rate_review"')
+                    .props('round padding="0px 0px" icon="imagesearch_roller"')
                     .style("font-size: 8px; display: none;")
                     .on("click", js_handler="(e) => {e.stopPropagation()}")
                 )
@@ -4977,8 +5317,7 @@ class OverviewTableGroup:
             def check_shift_and_show(e, btn):
                 btn.style("display: flex;" if e.args.get("shiftKey") else "display: none;")
 
-            control_btns = [delete_button, move_up_button, move_down_button, history_button]
-            # control_btns = [delete_button, move_up_button, move_down_button, history_button, request_change_button]
+            control_btns = [delete_button, move_up_button, move_down_button, history_button, request_change_button]
             wrapper.on("mouseenter", lambda e: check_ctrl_and_show(e, control_btns), ["ctrlKey"])
             wrapper.on("mousemove", lambda e: check_ctrl_and_show(e, control_btns), ["ctrlKey"])
             wrapper.on("mouseleave", lambda: [b.style("display: none;") for b in control_btns])
@@ -5054,9 +5393,9 @@ class OverviewTableGroup:
                 request_change_button = (
                     ui.button(on_click=lambda _=None, d=chip_info, cfg=config: self.show_change_request_dialog(d, cfg))
                     .classes(
-                        "absolute -top-1 right-10 m-0 p-0 q-py-0 z-20 bg-white text-orange-500 shadow-md border border-gray-200"
+                        "absolute -top-1 right-10 m-0 p-0 q-py-0 z-20 bg-white text-orange shadow-md border border-gray-200"
                     )
-                    .props('round padding="0px 0px" icon="rate_review"')
+                    .props('round padding="0px 0px" icon="imagesearch_roller"')
                     .style("font-size: 8px; display: none;")
                     .on("click", js_handler="(e) => {e.stopPropagation()}")
                 )
@@ -5075,8 +5414,7 @@ class OverviewTableGroup:
             def check_shift_and_show(e, btn):
                 btn.style("display: flex;" if e.args.get("shiftKey") else "display: none;")
 
-            control_btns = [delete_button, move_up_button, move_down_button, history_button]
-            # control_btns = [delete_button, move_up_button, move_down_button, history_button, request_change_button]
+            control_btns = [delete_button, move_up_button, move_down_button, history_button, request_change_button]
             wrapper.on("mouseenter", lambda e: check_ctrl_and_show(e, control_btns), ["ctrlKey"])
             wrapper.on("mousemove", lambda e: check_ctrl_and_show(e, control_btns), ["ctrlKey"])
             wrapper.on("mouseleave", lambda: [b.style("display: none;") for b in control_btns])
@@ -7028,7 +7366,7 @@ class OverviewTableGroup:
         sorted_times = sorted(timestamp_data.keys(), reverse=True)
         chip_content = chip_data.get("content", "未知内容")
 
-        with self.history_dialog, ui.card().classes("w-[600px] max-w-full -space-y-2"):
+        with self.history_dialog, ui.card().classes("w-[600px] max-w-full max-h-[88vh] overflow-y-auto -space-y-2"):
             with ui.row().classes("w-full justify-between items-center"):
                 ui.label(f"变更历史: {chip_content}").classes("text-lg font-bold")
                 ui.button(icon="close", on_click=self.history_dialog.close).props("flat round dense")
@@ -7068,6 +7406,12 @@ class OverviewTableGroup:
                                     ui.chip(text=f"V{ver}", color=color, text_color=text_col).props(
                                         "dense square size=sm"
                                     )
+
+            _render_chip_correction_history(
+                self.project,
+                str(config.get("label") or ""),
+                str(chip_data.get("id") or ""),
+            )
 
         self.history_dialog.open()
 
@@ -7615,135 +7959,343 @@ class OverviewTableGroup:
         build_options(config.get("instrument_options", []), "instrument", "工具/仪器/治具")
 
     async def handle_change_upload(self, e: events.UploadEventArguments):
-        temp_dir = Path(UPLOADS_DIR) / "change_temp"
+        cleanup_correction_staged_files([str(self.last_temp_upload_path or "")])
+        temp_dir = OVERVIEW_CORRECTION_STAGING_DIR / uuid.uuid4().hex
         temp_dir.mkdir(parents=True, exist_ok=True)
-        file_path = temp_dir / f"{uuid.uuid4().hex}_{e.file.name}"
+        file_path = temp_dir / Path(e.file.name).name
         with open(file_path, "wb") as f:
             f.write(await e.file.read())
         self.last_temp_upload_path = str(file_path)
+        self.last_temp_upload_type = str(e.file.content_type or "application/octet-stream")
+        self.last_temp_upload_name = e.file.name
         if self.new_filename_input is not None:
             self.new_filename_input.value = e.file.name
             ui.notify(f"临时文件已上传：{e.file.name}", type="info")
 
+    def handle_change_upload_removed(self, _event=None) -> None:
+        """上传控件移除文件时同步清理本次新建的纠错暂存。"""
+        cleanup_correction_staged_files([str(self.last_temp_upload_path or "")])
+        self.last_temp_upload_path = None
+        self.last_temp_upload_type = None
+        self.last_temp_upload_name = None
+        if self.new_filename_input is not None:
+            self.new_filename_input.value = self.change_upload_fallback_filename
+
     def show_change_request_dialog(self, chip_info, config):
-        """弹出概述修改/删除申请对话框"""
+        """提交表格概述的原记录纠错/错误记录删除申请。"""
         self.chip_dialog.clear()
-        chip_type = chip_info.get("type", "text")
-        current_user = app.storage.user.get("current_user", "匿名用户")
-
-        active_reqs = app.storage.general.get("overview_change_requests", {})
-        existing_rid = next((rid for rid, r in active_reqs.items() if r["chip_id"] == chip_info["id"]), None)
-        existing_req = active_reqs.get(existing_rid)
-
-        if existing_req and existing_req["status"] == "pending":
-            ui.notify("该项已有申请正在审批中，请勿重复操作", type="warning")
+        current_user = str(app.storage.user.get("current_user") or "匿名用户")
+        current_role = str(app.storage.user.get("current_role") or "")
+        if current_role not in config.get("permission", {}).get("edit_role", []):
+            ui.notify("当前角色没有该概述项的纠错申请权限。", type="negative")
+            return
+        reviewer_roles = get_correction_reviewer_roles(current_role)
+        if not reviewer_roles:
+            ui.notify("当前角色尚未配置纠错审批角色。", type="negative")
             return
 
-        action_mode = {"val": existing_req["action"] if existing_req else "modify"}
+        label = str(config.get("label") or "")
+        chip_id = str(chip_info.get("id") or "")
+        requests = db_storage.get_item(OVERVIEW_CORRECTION_REQUESTS_KEY, {}) or {}
+        existing = find_active_correction_for_chip(requests, self.project, label, chip_id)
+        existing_rid, existing_req = existing if existing else (None, None)
+        if existing_req and existing_req.get("submitter") != current_user:
+            ui.notify("该记录已有其他用户发起的纠错申请。", type="warning")
+            return
+        if existing_req and existing_req.get("status") in {"pending", "processing"}:
+            ui.notify("该记录已有申请正在审批中，请勿重复提交。", type="warning")
+            return
+
+        payload = copy.deepcopy(existing_req.get("payload") or {}) if existing_req else {}
+        before_snapshot = copy.deepcopy(chip_info)
+        requested_after = copy.deepcopy(payload.get("after_snapshot") or {})
+        existing_after = copy.deepcopy(before_snapshot)
+        for correction_key in ("content", "test_select_data", "url_path", "file_type", "warehouse"):
+            if correction_key in requested_after:
+                existing_after[correction_key] = copy.deepcopy(requested_after[correction_key])
+        chip_type = str(before_snapshot.get("type") or config.get("processing_type") or "text")
+        action_mode = {"val": str(existing_req.get("action") or "correct") if existing_req else "correct"}
         req_test_data = copy.deepcopy(
-            existing_req["new_test_data"]
-            if existing_req and chip_type == "test"
-            else chip_info.get("test_select_data", {})
+            existing_after.get("test_select_data") or before_snapshot.get("test_select_data") or {}
+        )
+        stored_staged_path = str(payload.get("staged_file_path") or "")
+        stored_uploaded_type = str(payload.get("uploaded_file_type") or "")
+        self.last_temp_upload_path = None
+        self.last_temp_upload_type = None
+        self.last_temp_upload_name = None
+        self.change_upload_fallback_filename = str(
+            existing_after.get("content") or before_snapshot.get("content") or ""
+        )
+        first_col_label = str(self.configs[0].get("label") or "") if self.configs else ""
+        config_snapshot = copy.deepcopy(config)
+        config_snapshot.update(
+            {
+                "role": self.role,
+                "group_name": self.group_name,
+                "is_table_group": True,
+                "first_col_label": first_col_label,
+                "group_labels": [item.get("label") for item in self.configs if item.get("label")],
+            }
         )
 
-        with self.chip_dialog, ui.card().classes("w-[500px]"):
-            ui.label(f"{'编辑' if existing_req else '提交'}变更申请 - {config['title']}").classes(
+        def collect_delete_targets() -> list[dict]:
+            if label != first_col_label or not before_snapshot.get("row_id"):
+                return [{"label": label, "chip_id": chip_id, "snapshot": before_snapshot}]
+            row_id = before_snapshot.get("row_id")
+            targets = []
+            for group_config in self.configs:
+                target_label = str(group_config.get("label") or "")
+                chips = db_storage.get_deep_item([f"{self.project}_over_data", target_label], {})
+                for target_id, target_chip in chips.items():
+                    if target_chip.get("row_id") == row_id:
+                        targets.append(
+                            {"label": target_label, "chip_id": str(target_id), "snapshot": copy.deepcopy(target_chip)}
+                        )
+            return targets
+
+        with self.chip_dialog, ui.card().classes("w-[580px] max-w-[95vw]"):
+            ui.label(f"{'修改并重提' if existing_req else '申请纠正原记录'} - {config.get('title', label)}").classes(
                 "text-lg font-bold text-blue-900"
             )
-
-            if existing_req and existing_req["status"] in ["rejected", "withdrawn"]:
-                with ui.row().classes("w-full bg-red-50 p-2 rounded items-center"):
-                    ui.icon("warning", color="red").classes("text-sm")
-                    ui.label(
-                        f"状态：{existing_req['status']} | 理由：{existing_req.get('reject_reason', '无')}"
-                    ).classes("text-xs text-red-700")
-
-            ui.radio({"modify": "修改内容", "delete": "删除该项"}, value=action_mode["val"]).bind_value(
-                action_mode, "val"
-            ).props("inline")
-
-            dynamic_area = ui.column().classes("w-full gap-2 mt-2")
-            reason_box = (
-                ui.textarea(label="变更理由 (必填)", value=existing_req["reason"] if existing_req else "")
-                .props("outlined")
-                .classes("w-full mt-2")
+            ui.label("仅用于纠正原始录入错误；技术事实发生变化时请使用批量概述业务变更。").classes(
+                "text-xs text-orange-700"
             )
-            self.last_temp_upload_path = existing_req.get("temp_file_path") if existing_req else None
+            if existing_req:
+                ui.label(f"上次驳回理由：{existing_req.get('reject_reason') or '无'}").classes(
+                    "w-full p-2 rounded bg-red-50 text-xs text-red-700"
+                )
+            action_radio = (
+                ui.radio({"correct": "纠正原记录", "delete": "删除错误记录"}, value=action_mode["val"])
+                .bind_value(action_mode, "val")
+                .props("inline")
+            )
+            dynamic_area = ui.column().classes("w-full gap-2")
+            reason_box = (
+                ui.textarea("纠错理由（必填）", value=str(existing_req.get("reason") or "") if existing_req else "")
+                .props("outlined auto-grow")
+                .classes("w-full")
+            )
 
             def render_dynamic_fields():
                 dynamic_area.clear()
                 with dynamic_area:
-                    ui.label(f"当前内容: {chip_info.get('content')}").classes(
-                        "text-sm text-gray-600 bg-gray-100 p-2 rounded w-full border"
+                    ui.label(f"原内容：{before_snapshot.get('content', '')}").classes(
+                        "w-full p-2 rounded border bg-gray-50 text-sm text-gray-700"
                     )
-                    if action_mode["val"] == "modify":
-                        if chip_type == "test":
-                            ui.label("测试参数配置:").classes("text-xs font-bold text-gray-500 mt-2")
-                            with ui.card().classes("w-full bg-gray-50 shadow-none border"):
-                                self._render_test_fields_for_change(req_test_data, config)
-                        elif chip_type in ["file", "image", "video"]:
-                            ui.label("上传新文件:").classes("text-sm font-bold mt-2")
-                            ui.upload(on_upload=self.handle_change_upload, auto_upload=True).classes("w-full")
-                            self.new_filename_input = (
-                                ui.input(label="确认文件名", value=existing_req["new_content"] if existing_req else "")
-                                .props("outlined")
-                                .classes("w-full")
+                    if action_mode["val"] == "delete":
+                        if label == first_col_label:
+                            ui.label("这是同行首列，审批通过后将删除整行错误概述。").classes(
+                                "text-xs font-bold text-red-700"
                             )
                         else:
-                            self.new_content_input = (
-                                ui.input(label="新内容", value=existing_req["new_content"] if existing_req else "")
-                                .props("outlined")
-                                .classes("w-full mt-2")
+                            ui.label("审批通过后只删除当前单元格，不改变同行其它列。").classes(
+                                "text-xs font-bold text-red-700"
                             )
+                    elif chip_type == "test":
+                        ui.label("请逐项检查测试参数；未修改字段也会在审批详情中标记为“未变化”。").classes(
+                            "text-xs text-purple-700"
+                        )
+                        self.new_content_input = (
+                            ui.input(
+                                "纠正后的检测内容与标准",
+                                value=str(existing_after.get("content") or before_snapshot.get("content") or ""),
+                                placeholder=str(config_snapshot.get("dialog_placeholder") or ""),
+                            )
+                            .props("outlined")
+                            .classes("w-full")
+                        )
+                        _render_correction_content_format_hint(config_snapshot)
+                        with ui.card().classes("w-full bg-purple-50/40 shadow-none border"):
+                            self._render_test_fields_for_change(req_test_data, config_snapshot)
+                    elif chip_type in {"file", "image", "video"}:
+                        custom_upload(
+                            multiple=False,
+                            max_files=1,
+                            on_upload=self.handle_change_upload,
+                            on_removed=self.handle_change_upload_removed,
+                            label="选择纠错文件",
+                        )
+                        self.new_filename_input = (
+                            ui.input(
+                                "纠正后的文件名",
+                                value=str(self.last_temp_upload_name or self.change_upload_fallback_filename),
+                            )
+                            .props("outlined")
+                            .classes("w-full")
+                        )
+                        ui.label("未上传新文件时，正式目录中必须已存在该文件名。").classes("text-xs text-gray-500")
+                    else:
+                        self.new_content_input = (
+                            ui.input(
+                                "纠正后的内容",
+                                value=str(existing_after.get("content") or before_snapshot.get("content") or ""),
+                                placeholder=str(config_snapshot.get("dialog_placeholder") or ""),
+                            )
+                            .props("outlined")
+                            .classes("w-full")
+                        )
+                        _render_correction_content_format_hint(config_snapshot)
 
-            ui.timer(0.1, render_dynamic_fields, once=True)
+            action_radio.on_value_change(lambda _=None: render_dynamic_fields())
+            render_dynamic_fields()
 
             async def submit_req():
-                if not reason_box.value.strip():
-                    ui.notify("请填写申请理由！", type="warning")
+                reason = str(reason_box.value or "").strip()
+                if not reason:
+                    ui.notify("请填写纠错理由。", type="warning")
                     return
-
-                final_new_content = ""
-                if action_mode["val"] == "modify":
+                after_snapshot = copy.deepcopy(before_snapshot)
+                if action_mode["val"] == "correct":
                     if chip_type == "test":
-                        final_new_content = "测试项变更"
-                    elif chip_type in ["file", "image", "video"]:
-                        # 👇 明确判断它不是 None，且它的 value 有内容 👇
-                        if self.new_filename_input is None or not self.new_filename_input.value:
-                            ui.notify("请上传文件或确认文件名", type="warning")
+                        if self.new_content_input is None or not str(self.new_content_input.value or "").strip():
+                            ui.notify("请填写纠正后的检测内容与标准。", type="warning")
                             return
-                        final_new_content = self.new_filename_input.value.strip()
+                        after_snapshot["content"] = str(self.new_content_input.value).strip()
+                        after_snapshot["test_select_data"] = copy.deepcopy(req_test_data)
+                    elif chip_type in {"file", "image", "video"}:
+                        if self.new_filename_input is None or not str(self.new_filename_input.value or "").strip():
+                            ui.notify("请填写纠正后的文件名。", type="warning")
+                            return
+                        after_snapshot["content"] = Path(str(self.new_filename_input.value)).name
+                        after_snapshot["url_path"] = f"{FILES_URL_DIR}/{after_snapshot['content']}"
                     else:
-                        # 👇 明确判断它不是 None，且它的 value 有内容 👇
-                        if self.new_content_input is None or not self.new_content_input.value:
-                            ui.notify("请填写新内容", type="warning")
+                        if self.new_content_input is None or not str(self.new_content_input.value or "").strip():
+                            ui.notify("请填写纠正后的内容。", type="warning")
                             return
-                        final_new_content = self.new_content_input.value.strip()
+                        after_snapshot["content"] = str(self.new_content_input.value).strip()
 
-                rid = existing_rid or str(uuid.uuid4())
-                app.storage.general.setdefault("overview_change_requests", {})[rid] = {
-                    "id": rid,
-                    "project_name": self.project,
-                    "label": config["label"],
-                    "chip_id": chip_info["id"],
+                if action_mode["val"] == "correct":
+                    if not validate_overview_content(str(after_snapshot.get("content") or ""), config_snapshot):
+                        ui.notify("纠错后的内容为空或不符合填写格式。", type="warning")
+                        return
+                    if chip_type == "test":
+                        valid, message = validate_test_correction(
+                            after_snapshot.get("test_select_data", {}) or {}, config_snapshot
+                        )
+                        if not valid:
+                            ui.notify(message, type="warning")
+                            return
+                    elif chip_type == "search":
+                        valid, _, _, _, message = await validate_search_path(
+                            str(after_snapshot.get("content") or ""), config_snapshot, [self.project]
+                        )
+                        if not valid:
+                            ui.notify(message, type="warning")
+                            return
+                    elif chip_type == "svn":
+                        valid, _, _, message = await validate_svn_url(
+                            str(after_snapshot.get("content") or ""), config_snapshot, [self.project]
+                        )
+                        if not valid:
+                            ui.notify(message, type="warning")
+                            return
+                    elif chip_type in {"file", "image", "video"}:
+                        extension = Path(str(after_snapshot.get("content") or "")).suffix.lower()
+                        media_type = str(
+                            self.last_temp_upload_type or stored_uploaded_type or after_snapshot.get("file_type") or ""
+                        )
+                        if chip_type == "file" and extension not in OVER_UPLOADS_FILE_TYPE:
+                            ui.notify(f"{extension or '无扩展名'}不是允许的文件类型。", type="warning")
+                            return
+                        if chip_type == "image" and "image" not in media_type:
+                            ui.notify("纠错文件不是有效图片类型。", type="warning")
+                            return
+                        if chip_type == "video" and "video" not in media_type:
+                            ui.notify("纠错文件不是有效视频类型。", type="warning")
+                            return
+                        if (
+                            not (self.last_temp_upload_path or stored_staged_path)
+                            and not (
+                                Path(str(config_snapshot.get("upload_path") or ""))
+                                / Path(str(after_snapshot.get("content") or "")).name
+                            ).is_file()
+                        ):
+                            ui.notify("未上传新文件，且正式目录中不存在纠正后的文件名。", type="warning")
+                            return
+                now_text = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                request_staged_path = (
+                    "" if action_mode["val"] == "delete" else str(self.last_temp_upload_path or stored_staged_path)
+                )
+                media_audit = {}
+                if action_mode["val"] == "correct" and chip_type in {"file", "image", "video"}:
+                    audit_ok, audit_message, media_audit = build_media_file_audit(
+                        before_snapshot,
+                        config_snapshot,
+                        request_staged_path,
+                    )
+                    if not audit_ok:
+                        ui.notify(audit_message, type="warning")
+                        return
+                request_payload = {
+                    "before_snapshot": before_snapshot,
+                    "before_fingerprint": chip_snapshot_fingerprint(before_snapshot),
+                    "after_snapshot": after_snapshot if action_mode["val"] == "correct" else None,
+                    "config": config_snapshot,
+                    "staged_file_path": request_staged_path,
+                    "uploaded_file_type": ""
+                    if action_mode["val"] == "delete"
+                    else str(self.last_temp_upload_type or stored_uploaded_type),
+                    "target_url_path": after_snapshot.get("url_path", ""),
+                    "delete_targets": collect_delete_targets(),
+                    **media_audit,
+                }
+                if (
+                    action_mode["val"] == "correct"
+                    and not any(
+                        change.get("changed") is True
+                        for change in build_correction_changes(
+                            before_snapshot,
+                            after_snapshot,
+                            config_snapshot,
+                            "correct",
+                        )
+                    )
+                    and not (
+                        chip_type in {"file", "image", "video"} and (self.last_temp_upload_path or stored_staged_path)
+                    )
+                ):
+                    ui.notify("纠错内容与原记录完全相同，请先修改至少一个字段。", type="warning")
+                    return
+                record = {
+                    "id": existing_rid or str(uuid.uuid4()),
+                    "project": self.project,
+                    "label": label,
+                    "title": str(config.get("title") or label),
+                    "chip_id": chip_id,
                     "chip_type": chip_type,
                     "action": action_mode["val"],
-                    "old_content": chip_info["content"],
-                    "new_content": final_new_content,
-                    "new_test_data": req_test_data if chip_type == "test" else None,
-                    "temp_file_path": getattr(self, "last_temp_upload_path", None),
-                    "reason": reason_box.value.strip(),
+                    "reason": reason,
                     "submitter": current_user,
+                    "submitter_role": current_role,
+                    "reviewer_roles": reviewer_roles,
                     "status": "pending",
-                    "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                    "config": config,  # TableGroup 直接把整列配置压进去即可
+                    "reject_reason": "",
+                    "created_at": str(existing_req.get("created_at") or now_text) if existing_req else now_text,
+                    "updated_at": now_text,
+                    "review_log": list(existing_req.get("review_log") or []) if existing_req else [],
+                    "payload": request_payload,
                 }
-                ui.notify("申请已提交至研发经理处", type="positive")
+                if existing_rid:
+                    saved = await update_correction_request(existing_rid, record)
+                else:
+                    saved, _ = await create_correction_request(record)
+                if not saved:
+                    ui.notify("纠错申请保存失败，可能已有其他活动申请。", type="negative")
+                    return
+                if action_mode["val"] == "delete":
+                    cleanup_correction_staged_files([str(self.last_temp_upload_path or ""), stored_staged_path])
+                elif self.last_temp_upload_path and stored_staged_path != self.last_temp_upload_path:
+                    cleanup_correction_staged_files([stored_staged_path])
+                ui.notify(f"纠错申请已提交，等待{'、'.join(reviewer_roles)}审批。", type="positive")
                 self.chip_dialog.close()
 
-            with ui.row().classes("w-full justify-end mt-4 gap-2"):
-                ui.button("取消", on_click=self.chip_dialog.close).props("flat color=grey")
-                ui.button("提交申请", color="primary", on_click=submit_req)
+            def cancel_request_dialog():
+                cleanup_correction_staged_files([str(self.last_temp_upload_path or "")])
+                self.chip_dialog.close()
+
+            with ui.row().classes("w-full justify-end gap-2"):
+                ui.button("取消", on_click=cancel_request_dialog).props("flat color=grey")
+                ui.button("提交纠错申请", on_click=submit_req).props("color=primary icon=fact_check")
 
         self.chip_dialog.open()
 

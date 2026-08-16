@@ -422,6 +422,14 @@ if __name__ in {"__main__", "__mp_main__"}:
     # 只需修改这一行，不需要在 ui.run() 内反复注释/取消注释多个参数。
     PRODUCTION_MODE = False
     # PRODUCTION_MODE = True
+    # VS Code debugpy 与 NiceGUI/watchfiles 在 Windows + Python 3.13 下热重载时可能冲突。
+    # 调试启动配置通过 NICEGUI_RELOAD=false 关闭监听；普通命令行启动仍默认保留热重载。
+    DEVELOPMENT_RELOAD = os.environ.get("NICEGUI_RELOAD", "true").strip().lower() not in {
+        "0",
+        "false",
+        "no",
+        "off",
+    }
 
     if PRODUCTION_MODE:
         # -------------------- 服务器部署配置 --------------------
@@ -431,7 +439,7 @@ if __name__ in {"__main__", "__mp_main__"}:
             "reconnect_timeout": 300.0,
             "uvicorn_logging_level": "warning",
         }
-    else:
+    elif DEVELOPMENT_RELOAD:
         # -------------------- 本地开发配置 --------------------
         # 明确监听 src 目录，避免启动时的工作目录不同导致部分文件未被监听。
         src_dir = os.path.dirname(os.path.abspath(__file__))
@@ -447,6 +455,13 @@ if __name__ in {"__main__", "__mp_main__"}:
             "uvicorn_reload_dirs": src_dir,
             "uvicorn_reload_includes": "*.py",
             "uvicorn_reload_excludes": "__pycache__,*.py[cod]",
+        }
+    else:
+        # VS Code 调试模式：避免 watchfiles 重启进程时触发 debugpy/pydevd 线程补丁异常。
+        run_environment_options = {
+            "reload": False,
+            "reconnect_timeout": 3.0,
+            "uvicorn_logging_level": "info",
         }
 
     ui.run(

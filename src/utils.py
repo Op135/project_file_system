@@ -14,6 +14,7 @@ import time
 import uuid
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urlencode
 
 import httpx
 from httpx import BasicAuth
@@ -2497,7 +2498,35 @@ async def prepare_requirement_version_tidy(project_name: str, target_version: st
     return written_path, candidate_data
 
 
-async def get_overviow_page(project_name, review: bool):
+def build_overview_page_url(
+    *,
+    review: bool,
+    overview_file_path: str = "",
+    project_name: str = "",
+    correction_label: str = "",
+    correction_chip_id: str = "",
+) -> str:
+    """构造概述页地址，并可携带一次性的纠错弹窗定位参数。"""
+    query = {
+        "type": "temp_overview" if review else "overview",
+    }
+    if overview_file_path:
+        query["json_path"] = overview_file_path
+    elif project_name:
+        query["project_name"] = project_name
+    if correction_label and correction_chip_id:
+        query["correction_label"] = correction_label
+        query["correction_chip_id"] = correction_chip_id
+    return f"/main/requirement?{urlencode(query)}"
+
+
+async def get_overviow_page(
+    project_name,
+    review: bool,
+    *,
+    correction_label: str = "",
+    correction_chip_id: str = "",
+):
     """
     project_name： 项目名。
     review：是否为了审核需求，True为了审核，False普通浏览概述
@@ -2505,12 +2534,23 @@ async def get_overviow_page(project_name, review: bool):
     # 核对检查是否有新需求配置未更新到概述文件里，并做相应整理
     overview_file_path = await requirement_version_tidy(project_name, review)
     if overview_file_path:
-        if review:
-            ui.navigate.to(f"/main/requirement?type=temp_overview&json_path={overview_file_path}")
-        else:
-            ui.navigate.to(f"/main/requirement?type=overview&json_path={overview_file_path}")
+        ui.navigate.to(
+            build_overview_page_url(
+                review=review,
+                overview_file_path=overview_file_path,
+                correction_label=correction_label,
+                correction_chip_id=correction_chip_id,
+            )
+        )
     else:
-        ui.navigate.to(f"/main/requirement?type=overview&project_name={project_name}")
+        ui.navigate.to(
+            build_overview_page_url(
+                review=False,
+                project_name=project_name,
+                correction_label=correction_label,
+                correction_chip_id=correction_chip_id,
+            )
+        )
 
 
 def get_project_engineer_project_list_dic():

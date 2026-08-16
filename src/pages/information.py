@@ -20,6 +20,16 @@ from ..overview_batch_operations import (
     get_batch_overview_pending_count,
     update_batch_overview_request,
 )
+from ..overview_corrections import (
+    OVERVIEW_CORRECTION_REQUESTS_KEY,
+    archive_correction_request,
+    build_correction_changes,
+    can_review_correction_request,
+    cleanup_correction_staged_files,
+    execute_correction_request,
+    get_correction_pending_count,
+    update_correction_request,
+)
 from ..overview_warning import get_overview_counts, get_overview_warning, sort_overview_pending_items
 from ..requirement_overview_impact import RequirementOverviewImpactConfigError
 from ..utils import (
@@ -49,6 +59,7 @@ logger = logging.getLogger(__name__)
 # 同一项目的审批必须串行，避免重复点击或不同客户端同时通过同一版本。
 _requirement_review_locks = defaultdict(asyncio.Lock)
 _batch_overview_review_locks = defaultdict(asyncio.Lock)
+_overview_correction_review_locks = defaultdict(asyncio.Lock)
 
 
 # --- UI 辅助组件 ---
@@ -770,6 +781,283 @@ def information_page():
         # 延迟 1.5 秒后，利用现有的 utils 函数跳转到该项目的概述页面
         ui.timer(1.5, lambda: get_overviow_page(project_name, False), once=True)
 
+    correction_request_dialog = ui.dialog().props("persistent")
+
+    async def delete_correction_request(request_id: str) -> None:
+        request = db_storage.get_deep_item([OVERVIEW_CORRECTION_REQUESTS_KEY, request_id], {})
+        if request.get("submitter") != current_user or request.get("status") not in {
+            "pending",
+            "rejected",
+            "failed",
+        }:
+            ui.notify("申请状态已变化，当前无法撤销删除。", type="warning")
+            return
+        deleted = await db_storage.del_deep_item([OVERVIEW_CORRECTION_REQUESTS_KEY, request_id])
+        if not deleted:
+            ui.notify("纠错申请删除失败，请刷新后重试。", type="negative")
+            return
+        payload = request.get("payload") or {}
+        cleanup_correction_staged_files([str(payload.get("staged_file_path") or "")])
+        correction_request_dialog.close()
+        ui.notify("纠错申请已撤销删除。", type="positive")
+        ui.navigate.reload()
+
+    async def approve_correction_request(request_id: str) -> None:
+        async with _overview_correction_review_locks[request_id]:
+            claimed: dict[str, object] = {"value": False, "request": None}
+
+            def claim(request):
+                if (
+                    not request
+                    or request.get("status") != "pending"
+                    or not can_review_correction_request(request, current_user, str(current_role or ""))
+                ):
+                    return db_storage.ATOMIC_NO_UPDATE
+                request["status"] = "processing"
+                request["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                claimed["value"] = True
+                claimed["request"] = copy.deepcopy(request)
+                return request
+
+            await db_storage.atomic_deep_update([OVERVIEW_CORRECTION_REQUESTS_KEY, request_id], claim)
+            request = claimed["request"]
+            if claimed["value"] is not True or not isinstance(request, dict):
+                ui.notify("申请已被处理或当前账号无审批权限。", type="warning")
+                correction_request_dialog.close()
+                ui.navigate.reload()
+                return
+            try:
+                result = await execute_correction_request(request)
+                if not result.get("ok"):
+                    await update_correction_request(
+                        request_id,
+                        {
+                            "status": "failed",
+                            "result": result,
+                        },
+                    )
+                    ui.notify(f"纠错执行失败：{result.get('message', '未知原因')}", type="negative", timeout=0)
+                    correction_request_dialog.close()
+                    ui.navigate.reload()
+                    return
+                reviewed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                review_log = list(request.get("review_log") or [])
+                review_log.append(
+                    {
+                        "action": "approve",
+                        "user": current_user,
+                        "role": current_role,
+                        "time": reviewed_at,
+                    }
+                )
+                archived = await archive_correction_request(
+                    request_id,
+                    request,
+                    "approved",
+                    {
+                        "reviewer": current_user,
+                        "reviewer_role": current_role,
+                        "reviewed_at": reviewed_at,
+                        "review_log": review_log,
+                        "result": result,
+                    },
+                )
+                if not archived:
+                    await update_correction_request(
+                        request_id,
+                        {
+                            "status": "approved",
+                            "reviewer": current_user,
+                            "reviewed_at": reviewed_at,
+                            "result": result,
+                        },
+                    )
+                    ui.notify("纠错已执行，但活动申请清理失败，请联系管理员检查归档。", type="warning", timeout=0)
+                else:
+                    ui.notify(result.get("message", "纠错审批已通过。"), type="positive")
+            except Exception as exc:
+                logger.error("执行单项概述纠错失败: request_id=%s", request_id, exc_info=True)
+                await update_correction_request(
+                    request_id,
+                    {"status": "failed", "result": {"ok": False, "message": str(exc)}},
+                )
+                ui.notify(f"纠错审批异常：{exc}", type="negative", timeout=0)
+            correction_request_dialog.close()
+            ui.navigate.reload()
+
+    def reject_correction_request(request_id: str) -> None:
+        reject_dialog = ui.dialog().props("persistent")
+        with reject_dialog, ui.card().classes("w-[440px] max-w-[94vw]"):
+            ui.label("驳回原记录纠错申请").classes("text-lg font-bold text-red-700")
+            reason_input = ui.textarea("驳回理由（必填）").props("outlined autofocus auto-grow").classes("w-full")
+
+            async def confirm_reject():
+                reason = str(reason_input.value or "").strip()
+                if not reason:
+                    ui.notify("请填写驳回理由。", type="warning")
+                    return
+                rejected = {"value": False}
+
+                def reject(request):
+                    if (
+                        not request
+                        or request.get("status") != "pending"
+                        or not can_review_correction_request(request, current_user, str(current_role or ""))
+                    ):
+                        return db_storage.ATOMIC_NO_UPDATE
+                    request["status"] = "rejected"
+                    request["reject_reason"] = reason
+                    request["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    request.setdefault("review_log", []).append(
+                        {
+                            "action": "reject",
+                            "user": current_user,
+                            "role": current_role,
+                            "note": reason,
+                            "time": request["updated_at"],
+                        }
+                    )
+                    rejected["value"] = True
+                    return request
+
+                await db_storage.atomic_deep_update([OVERVIEW_CORRECTION_REQUESTS_KEY, request_id], reject)
+                if rejected["value"] is not True:
+                    ui.notify("申请已被处理或当前账号无审批权限。", type="warning")
+                    return
+                reject_dialog.close()
+                correction_request_dialog.close()
+                ui.notify("纠错申请已驳回。", type="positive")
+                ui.navigate.reload()
+
+            with ui.row().classes("w-full justify-end gap-2"):
+                ui.button("取消", on_click=reject_dialog.close).props("flat color=grey")
+                ui.button("确认驳回", on_click=confirm_reject).props("color=negative")
+        reject_dialog.open()
+
+    def open_correction_request_detail(request_id: str) -> None:
+        request = db_storage.get_deep_item([OVERVIEW_CORRECTION_REQUESTS_KEY, request_id], {})
+        if not request:
+            ui.notify("纠错申请已不存在。", type="warning")
+            return
+        is_mine = request.get("submitter") == current_user
+        can_review = can_review_correction_request(request, current_user, str(current_role or ""))
+        if not is_mine and not can_review:
+            ui.notify("当前账号无权查阅该纠错申请。", type="negative")
+            return
+        payload = request.get("payload") or {}
+        before = payload.get("before_snapshot") or {}
+        after = payload.get("after_snapshot") or None
+        config = payload.get("config") or {}
+        changes = build_correction_changes(before, after, config, str(request.get("action") or "correct"))
+
+        correction_request_dialog.clear()
+        with correction_request_dialog, ui.card().classes("w-[900px] max-w-[96vw] h-[88vh] max-h-[92vh] p-4"):
+            with ui.row().classes("w-full items-center justify-between"):
+                ui.label("原记录纠错申请详情").classes("text-xl font-bold text-blue-900")
+                ui.button(icon="close", on_click=correction_request_dialog.close).props("flat round dense")
+            with ui.scroll_area().classes("w-full flex-grow"):
+                with ui.column().classes("w-full gap-3 pr-2"):
+                    with ui.grid(columns=2).classes("w-full gap-2 text-sm"):
+                        ui.label(f"项目：{request.get('project', '')}")
+                        ui.label(f"概述项：{request.get('title', request.get('label', ''))}")
+                        ui.label(f"申请人：{request.get('submitter', '')}（{request.get('submitter_role', '')}）")
+                        ui.label(f"申请时间：{request.get('created_at', '')}")
+                    ui.label(f"纠错理由：{request.get('reason', '')}").classes(
+                        "w-full p-2 rounded bg-blue-50 text-blue-900 font-medium"
+                    )
+                    if request.get("reject_reason"):
+                        ui.label(f"驳回理由：{request.get('reject_reason')}").classes(
+                            "w-full p-2 rounded bg-red-50 text-red-700 font-bold"
+                        )
+                    ui.label(
+                        "处理方式：纠正原记录"
+                        if request.get("action") == "correct"
+                        else "处理方式：删除错误记录"
+                    ).classes("font-bold")
+                    ui.separator()
+                    ui.label("修改内容对照").classes("font-bold text-gray-800")
+                    if request.get("action") == "correct" and request.get("chip_type") in {
+                        "file",
+                        "image",
+                        "video",
+                    }:
+                        with ui.card().classes("w-full p-3 shadow-none border border-blue-200 bg-blue-50/40"):
+                            ui.label("文件校验信息").classes("font-bold text-blue-900")
+                            ui.label(
+                                f"原文件 SHA256：{payload.get('original_file_sha256') or '提交时未找到原文件'}"
+                            ).classes("text-xs font-mono break-all text-gray-600")
+                            if payload.get("staged_file_path"):
+                                ui.badge("已上传替换文件", color="blue").props("outline")
+                                ui.label(
+                                    f"送审文件 SHA256：{payload.get('staged_file_sha256') or '旧申请未记录'}"
+                                ).classes("text-xs font-mono break-all text-gray-700")
+                            else:
+                                ui.label("未上传替换文件；审批时将引用正式目录中的目标文件名。").classes(
+                                    "text-xs text-gray-600"
+                                )
+                    for change in changes:
+                        changed = change.get("changed") is True
+                        with ui.card().classes(
+                            "w-full p-3 shadow-none border "
+                            + ("border-amber-300 bg-amber-50/40" if changed else "border-gray-200 bg-gray-50")
+                        ):
+                            with ui.row().classes("w-full items-center justify-between"):
+                                ui.label(str(change.get("title") or change.get("key") or "字段")).classes("font-bold")
+                                ui.badge("已变化" if changed else "未变化", color="orange" if changed else "grey")
+                            if "before_select" in change:
+                                ui.label(
+                                    f"原选择：{change.get('before_select') or '未选择'}"
+                                    + (f"；补充：{change.get('before_other')}" if change.get("before_other") else "")
+                                ).classes("text-sm text-gray-600")
+                                ui.label(
+                                    f"纠正后：{change.get('after_select') or '未选择'}"
+                                    + (f"；补充：{change.get('after_other')}" if change.get("after_other") else "")
+                                ).classes("text-sm text-gray-800")
+                            else:
+                                ui.label(f"原值：{change.get('before', '')}").classes("text-sm text-gray-600")
+                                ui.label(f"纠正后：{change.get('after', '')}").classes("text-sm text-gray-800")
+                    delete_targets = payload.get("delete_targets") or []
+                    if request.get("action") == "delete" and len(delete_targets) > 1:
+                        ui.label(f"表格整行删除范围（{len(delete_targets)} 个单元格）").classes(
+                            "font-bold text-red-700"
+                        )
+                        with ui.row().classes("w-full gap-2 flex-wrap"):
+                            for target in delete_targets:
+                                snapshot = target.get("snapshot") or {}
+                                ui.chip(
+                                    f"{target.get('label', '')}｜{snapshot.get('content', '')}",
+                                    icon="delete",
+                                ).props("outline color=negative")
+                    if request.get("result"):
+                        ui.label(f"执行信息：{request.get('result', {}).get('message', '')}").classes(
+                            "text-sm text-red-700"
+                        )
+
+            with ui.row().classes("w-full justify-end gap-2 pt-2 border-t"):
+                if can_review and request.get("status") == "pending":
+                    ui.button("驳回", on_click=lambda: reject_correction_request(request_id)).props(
+                        "outline color=negative"
+                    )
+                    ui.button("审批通过并纠错", on_click=lambda: approve_correction_request(request_id)).props(
+                        "color=positive"
+                    )
+                if is_mine and request.get("status") in {"pending", "rejected", "failed"}:
+                    ui.button("撤回并删除", on_click=lambda: delete_correction_request(request_id)).props(
+                        "outline color=orange"
+                    )
+                if is_mine and request.get("status") in {"rejected", "failed"}:
+                    ui.button(
+                        "返回项目修改",
+                        on_click=lambda: get_overviow_page(
+                            str(request.get("project") or ""),
+                            False,
+                            correction_label=str(request.get("label") or ""),
+                            correction_chip_id=str(request.get("chip_id") or ""),
+                        ),
+                    ).props("color=primary")
+                ui.button("关闭", on_click=correction_request_dialog.close).props("flat color=grey")
+        correction_request_dialog.open()
+
     batch_request_dialog = ui.dialog().props("persistent")
 
     def batch_status_text(status: str) -> str:
@@ -1418,6 +1706,19 @@ def information_page():
                                 ui.label("暂无草稿记录").classes("text-sm text-gray-400 p-2")
                     # 概述修改申请审批（单项目内容修改 + 跨项目批量变更）
                     all_requests = app.storage.general.get("overview_change_requests", {})
+                    correction_requests = db_storage.get_item(OVERVIEW_CORRECTION_REQUESTS_KEY, {}) or {}
+                    visible_correction_requests = {
+                        rid: request
+                        for rid, request in correction_requests.items()
+                        if (
+                            request.get("submitter") == current_user
+                            and request.get("status") in {"pending", "rejected", "failed"}
+                        )
+                        or (
+                            request.get("status") == "pending"
+                            and can_review_correction_request(request, current_user, str(current_role or ""))
+                        )
+                    }
                     batch_requests = db_storage.get_item(BATCH_OVERVIEW_REQUESTS_KEY, {}) or {}
                     visible_batch_requests = {
                         rid: request
@@ -1441,7 +1742,7 @@ def information_page():
                         )
                         or request.get("submitter") == current_user
                     }
-                    if can_show_single_requests or visible_batch_requests:
+                    if can_show_single_requests or visible_correction_requests or visible_batch_requests:
                         with ui.card().classes("w-full rounded-xl shadow-sm border border-gray-100 bg-white"):
                             ui_card_header("概述变更审批", "fact_check", "orange-600")
                             batch_todo_count = get_batch_overview_pending_count(
@@ -1451,14 +1752,25 @@ def information_page():
                             )
                             if batch_todo_count:
                                 ui.badge(f"批量申请待办 {batch_todo_count}", color="red").classes("mb-2")
+                            correction_todo_count = get_correction_pending_count(
+                                correction_requests,
+                                current_user,
+                                str(current_role or ""),
+                            )
+                            if correction_todo_count:
+                                ui.badge(f"原记录纠错待办 {correction_todo_count}", color="red").classes("mb-2")
                             with ui.column().classes("w-full gap-2"):
-                                if not visible_single_requests and not visible_batch_requests:
+                                if (
+                                    not visible_single_requests
+                                    and not visible_correction_requests
+                                    and not visible_batch_requests
+                                ):
                                     with ui.column().classes("w-full items-center py-8 text-gray-400"):
                                         ui.icon("task_alt", size="4em").classes("mb-2 opacity-50")
                                         ui.label("当前没有待处理的概述变更申请").classes("text-sm")
 
                                 if visible_single_requests:
-                                    ui.label("单项目概述变更申请").classes("font-bold text-gray-800")
+                                    ui.label("旧版单项目概述变更申请").classes("font-bold text-gray-800")
                                     for rid, req in visible_single_requests.items():
                                         is_manager = current_role == "研发经理"
                                         is_mine = req.get("submitter") == current_user
@@ -1506,6 +1818,41 @@ def information_page():
                                                             color="orange",
                                                             on_click=lambda r=rid: handle_withdraw(r),
                                                         ).props("dense size=sm")
+
+                                if visible_correction_requests:
+                                    ui.separator().classes("my-1")
+                                    ui.label("原记录纠错申请").classes("font-bold text-purple-900")
+                                    for rid, request in sorted(
+                                        visible_correction_requests.items(),
+                                        key=lambda item: item[1].get("updated_at", ""),
+                                        reverse=True,
+                                    ):
+                                        with ui.row().classes(
+                                            "w-full items-center justify-between p-3 bg-purple-50/40 "
+                                            "rounded border border-purple-100"
+                                        ):
+                                            with ui.column().classes("gap-1 min-w-0"):
+                                                ui.label(
+                                                    f"{request.get('project', '')} ｜ "
+                                                    f"{request.get('title', request.get('label', '未命名'))} ｜ "
+                                                    f"{'纠正原记录' if request.get('action') == 'correct' else '删除错误记录'}"
+                                                ).classes("font-bold")
+                                                ui.label(
+                                                    f"申请人：{request.get('submitter', '')} ｜ "
+                                                    f"{request.get('updated_at', '')}"
+                                                ).classes("text-xs text-gray-600")
+                                                status_badge(str(request.get("status") or ""))
+                                                if request.get("status") in {"rejected", "failed"}:
+                                                    ui.label(
+                                                        f"处理信息：{request.get('reject_reason') or request.get('result', {}).get('message', '')}"
+                                                    ).classes("text-xs font-bold text-red-700")
+                                            ui.button(
+                                                "查看详情",
+                                                icon="open_in_new",
+                                                on_click=lambda _=None, request_id=rid: open_correction_request_detail(
+                                                    request_id
+                                                ),
+                                            ).props("flat dense color=purple size=sm")
 
                                 if visible_batch_requests:
                                     ui.separator().classes("my-1")

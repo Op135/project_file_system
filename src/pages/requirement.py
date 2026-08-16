@@ -63,6 +63,7 @@ from ..overview_batch_operations import (
     update_overview_chip_state,
     validate_overview_content,
 )
+from ..overview_corrections import get_project_correction_archives
 from ..requirement_overview_impact import RequirementOverviewImpactConfigError
 from ..utils import (
     compare_configs_by_id,
@@ -92,7 +93,13 @@ logger = logging.getLogger(__name__)
 
 
 @ui.page("/main/requirement")
-async def requirement_page(type="", json_path="", project_name=""):
+async def requirement_page(
+    type="",
+    json_path="",
+    project_name="",
+    correction_label="",
+    correction_chip_id="",
+):
     ui.add_head_html("""
         <style>
             .multiline-chip .q-chip__content {
@@ -203,6 +210,13 @@ async def requirement_page(type="", json_path="", project_name=""):
     # 存储用户层级需求相关数据的变量初始化
     # 用于记录键盘按键状态
     app.storage.client.setdefault("key_state", {})
+    if type == "overview" and correction_label and correction_chip_id:
+        app.storage.client["overview_correction_auto_open"] = {
+            "label": str(correction_label),
+            "chip_id": str(correction_chip_id),
+        }
+    else:
+        app.storage.client.pop("overview_correction_auto_open", None)
     # 需求配置数据字典初始化
     app.storage.client.setdefault("config_data", app.state.init_config_data)
     # 一个空列表，用于存储当前管理的文件列表。可以在这个列表中添加文件路径、文件名或其他文件相关信息
@@ -241,6 +255,7 @@ async def requirement_page(type="", json_path="", project_name=""):
     # 在全局作用域创建对话框（确保在菜单系统之外）
     general_dialog = ui.dialog()
     batch_overview_dialog = ui.dialog().props("persistent")
+    correction_archive_dialog = ui.dialog().props("persistent")
     # 创建项目名修改对话框
     with ui.dialog().props("persistent").classes("") as project_dialog:
         project_card = ui.card().classes("w-1/4")
@@ -3855,7 +3870,9 @@ async def requirement_page(type="", json_path="", project_name=""):
                             validation_errors.append(f"{project}：目标状态等级不能高于同行首列概述状态")
                             continue
                         if target_state is True and chip.get("type") == "search":
-                            valid, _, _, _, message = await validate_search_path(chip.get("content", ""), config, [project])
+                            valid, _, _, _, message = await validate_search_path(
+                                chip.get("content", ""), config, [project]
+                            )
                             if not valid:
                                 validation_errors.append(f"{project}：{message}")
                                 continue
@@ -4329,9 +4346,9 @@ async def requirement_page(type="", json_path="", project_name=""):
                 submit_spinner = ui.spinner("hourglass", size="sm", color="amber-8")
                 submit_spinner.set_visibility(False)
                 ui.button("取消", on_click=batch_overview_dialog.close).props("flat color=grey")
-                submit_button = ui.button(
-                    "提交审批申请", icon="approval", on_click=request_execute_batch
-                ).props("color=primary")
+                submit_button = ui.button("提交审批申请", icon="approval", on_click=request_execute_batch).props(
+                    "color=primary"
+                )
 
         status_select.on_value_change(lambda _=None: refresh_project_options())
         major_select.on_value_change(lambda _=None: refresh_project_options(reset_sub=True))
@@ -4351,6 +4368,77 @@ async def requirement_page(type="", json_path="", project_name=""):
         label_select.on_value_change(on_label_change)
         refresh_project_options()
         batch_overview_dialog.open()
+
+    def show_project_correction_archives(target_project: str) -> None:
+        """查看当前项目的纠错历史，包含已经被删除而无法从 chip 进入的记录。"""
+        records = get_project_correction_archives(target_project)
+        correction_archive_dialog.clear()
+        with correction_archive_dialog, ui.card().classes("w-[960px] max-w-[96vw] h-[88vh] p-4"):
+            with ui.row().classes("w-full items-center justify-between"):
+                ui.label(f"{target_project}｜概述纠错历史").classes("text-xl font-bold text-purple-900")
+                ui.button(icon="close", on_click=correction_archive_dialog.close).props("flat round dense")
+            with ui.scroll_area().classes("w-full flex-grow"):
+                with ui.column().classes("w-full gap-3 pr-2"):
+                    if not records:
+                        with ui.column().classes("w-full items-center py-12 text-gray-400"):
+                            ui.icon("history", size="4em").classes("opacity-50")
+                            ui.label("当前项目没有纠错历史")
+                    for record in records:
+                        result = record.get("result") or {}
+                        with ui.card().classes("w-full p-3 shadow-base border border-purple-100 bg-purple-50/20"):
+                            with ui.row().classes("w-full items-center justify-between"):
+                                ui.label(
+                                    f"{record.get('title', record.get('label', '未命名'))} ｜ "
+                                    f"{'纠正原记录' if record.get('action') == 'correct' else '删除错误记录'}"
+                                ).classes("font-bold")
+                                ui.badge(str(record.get("status") or "未知"), color="purple").props("outline")
+                            ui.label(
+                                f"申请人：{record.get('submitter', '')} ｜ 审批人：{record.get('reviewer', '')} ｜ "
+                                f"时间：{record.get('reviewed_at', record.get('updated_at', ''))}"
+                            ).classes("text-xs text-gray-600")
+                            ui.label(f"理由：{record.get('reason', '')}").classes("text-sm")
+                            file_change = result.get("file_change") or {}
+                            if file_change:
+                                ui.label(
+                                    f"文件：{file_change.get('before_name', '')} → {file_change.get('after_name', '')}"
+                                ).classes("text-xs font-medium text-blue-800")
+                                ui.label(
+                                    f"SHA256：{file_change.get('before_sha256', '') or '无'} → "
+                                    f"{file_change.get('after_sha256', '') or '无'}"
+                                ).classes("text-[11px] font-mono break-all text-gray-500")
+                            for change in result.get("changes", []):
+                                changed = change.get("changed") is True
+                                with ui.row().classes("w-full items-start gap-2 border-t border-purple-100 pt-1"):
+                                    ui.badge(
+                                        "已变化" if changed else "未变化",
+                                        color="orange" if changed else "grey",
+                                    ).props("outline")
+                                    if "before_select" in change:
+                                        before_text = str(change.get("before_select") or "未选择")
+                                        after_text = str(change.get("after_select") or "未选择")
+                                        if change.get("before_other"):
+                                            before_text += f"；{change['before_other']}"
+                                        if change.get("after_other"):
+                                            after_text += f"；{change['after_other']}"
+                                        ui.label(f"{change.get('title', '')}：{before_text} → {after_text}").classes(
+                                            "text-xs text-gray-700"
+                                        )
+                                    else:
+                                        ui.label(
+                                            f"{change.get('title', '')}：{change.get('before', '')} → "
+                                            f"{change.get('after', '')}"
+                                        ).classes("text-xs text-gray-700")
+                            deleted_snapshots = result.get("deleted_snapshots", [])
+                            if deleted_snapshots:
+                                ui.label(f"已归档删除快照（{len(deleted_snapshots)} 条）").classes(
+                                    "text-xs font-bold text-red-700"
+                                )
+                                with ui.row().classes("w-full gap-2 flex-wrap"):
+                                    for snapshot in deleted_snapshots:
+                                        ui.chip(str(snapshot.get("content") or "无内容"), icon="delete").props(
+                                            "outline color=negative dense"
+                                        )
+        correction_archive_dialog.open()
 
     # --- 更新 requirement.py 中的 modify_overview_content_dialog 函数 ---
 
@@ -4781,6 +4869,8 @@ async def requirement_page(type="", json_path="", project_name=""):
                     ui.menu_item("注销登录", on_click=lambda: logout())
                     ui.separator().props("size=1px")
                     ui.menu_item("对比需求", on_click=show_comparison_dialog)
+                    ui.separator().props("size=1px")
+                    ui.menu_item("概述纠错历史", on_click=lambda: show_project_correction_archives(project_name))
                     if current_role == "研发经理":
                         ui.separator().props("size=1px")
                         ui.menu_item("修改概述内容", on_click=lambda: modify_overview_content_dialog(project_name))
@@ -5548,10 +5638,14 @@ async def requirement_page(type="", json_path="", project_name=""):
                                     if render_type == "OverviewTableGroup":
                                         if has_permission:
                                             exp.set_visibility(True)
+                                            target_in_table = bool(correction_label) and any(
+                                                str(item.get("label") or "") == str(correction_label)
+                                                for item in chip_data_li
+                                            )
 
                                             # 方案1：懒加载闭包函数（类型安全版）
                                             def init_lazy_table(
-                                                e,
+                                                e=None,
                                                 proj=project_name,
                                                 r=role,
                                                 g_name=group_name,
@@ -5562,7 +5656,8 @@ async def requirement_page(type="", json_path="", project_name=""):
                                                 unique_key = f"{r}_{g_name}"
 
                                                 # 如果面板展开，且该表格尚未初始化过
-                                                if e.value and unique_key not in initialized_tables:
+                                                should_initialize = e is None or bool(getattr(e, "value", False))
+                                                if should_initialize and unique_key not in initialized_tables:
                                                     initialized_tables.add(unique_key)  # 记录为已初始化
                                                     with exp_ref:
                                                         OverviewTableGroup(
@@ -5575,6 +5670,9 @@ async def requirement_page(type="", json_path="", project_name=""):
 
                                             # 绑定到展开状态变化事件上
                                             exp.on_value_change(init_lazy_table)
+                                            if target_in_table:
+                                                exp.set_value(True)
+                                                init_lazy_table()
                                     else:
                                         with exp:
                                             for data in chip_data_li:
@@ -5679,6 +5777,11 @@ async def requirement_page(type="", json_path="", project_name=""):
                                                             allowed_state=data["allowed_state"],
                                                             # delete_bool=False,
                                                         )
+                                        if correction_label and any(
+                                            str(item.get("label") or "") == str(correction_label)
+                                            for item in chip_data_li
+                                        ):
+                                            exp.set_value(True)
                             ui.timer(2.0, _update_num_chip_text)
             with ui.row().classes("fixed bottom-0 left-0 right-0 bg-sky-50 p-3 items-center shadow-inner"):
                 ui.label(text="参考文件：").classes("text-lg text-black m-0")

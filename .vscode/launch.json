@@ -38,6 +38,11 @@
             "module": "src.main",
             "console": "integratedTerminal",
             "justMyCode": true,
+            // Windows + Python 3.13 下，NiceGUI 热重载进程会与 debugpy 的线程补丁冲突。
+            // 普通命令行启动不受影响，仍默认启用热重载。
+            "env": {
+                "NICEGUI_RELOAD": "false"
+            },
             // 确保工作目录是项目根目录
             "cwd": "${workspaceFolder}"
         },
