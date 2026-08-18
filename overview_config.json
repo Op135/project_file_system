@@ -1501,7 +1501,7 @@
                 "title": "产品外观颜色",
                 "processing_type": "text",
                 "content_regular": [],
-                "dialog_placeholder": "公司常规金色/黑色/具体色号",
+                "dialog_placeholder": "金色/黑色/银色（公司默认颜色），或定制XX颜色名/xx色号",
                 "allowed_state": [
                     "研发",
                     "转产",
