@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "batch_overview": {
+    "tool_roles": [
+      "admin",
+      "研发经理",
+      "研发电子主管",
+      "研发结构",
+      "研发软件",
+      "研发光学",
+      "研发硬件",
+      "NPI工程"
+    ],
+    "allowed_project_states": [
+      "待定",
+      "研发",
+      "转产"
+    ],
+    "prevent_self_approval": true,
+    "approval_role_targets": {
+      "boss": [
+        "admin"
+      ],
+      "admin": [
+        "研发经理"
+      ],
+      "研发经理": [
+        "研发电子主管",
+        "研发结构",
+        "研发光学",
+        "NPI工程"
+      ],
+      "研发电子主管": [
+        "研发软件",
+        "研发硬件"
+      ]
+    }
+  },
+  "single_correction": {
+    "prevent_self_approval": true,
+    "approval_role_targets": {
+      "boss": [
+        "admin"
+      ],
+      "admin": [
+        "研发经理"
+      ],
+      "研发经理": [
+        "研发电子主管",
+        "研发结构",
+        "研发软件",
+        "研发光学",
+        "研发硬件",
+        "NPI工程"
+      ]
+    }
+  }
+}

@@ -55,7 +55,13 @@ class SampleIssueCollectionDataTests(unittest.TestCase):
         self.assertEqual(columns[0]["field"], "detail_action")
         self.assertFalse(columns[0]["filter"])
         self.assertTrue(all("width" in column for column in columns))
-        self.assertTrue(all(column.get("cellStyle", {}).get("textAlign") == "center" for column in columns))
+        self.assertTrue(
+            all(
+                isinstance(cell_style := column.get("cellStyle"), dict)
+                and cell_style.get("textAlign") == "center"
+                for column in columns
+            )
+        )
 
     def test_status_and_pending_extension_filter(self):
         """状态由对策区块填写进度推导，延期申请中作为跨状态筛选项。"""

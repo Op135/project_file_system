@@ -220,6 +220,8 @@ class OverviewBatchOperationTests(unittest.TestCase):
                 update_overview_chip_state("P1", "label", "chip-1", "2.0", None, "张三")
             )
         self.assertTrue(changed)
+        self.assertIsNotNone(updated)
+        assert updated is not None
         self.assertEqual(updated["select_activ_dic"], {"1.0": True, "2.0": None})
         self.assertEqual(updated["icon"], "question_mark")
         self.assertIsNone(updated["enabled"])

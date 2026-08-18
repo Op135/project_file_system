@@ -305,7 +305,7 @@ def test_selective_active_state_marks_only_affected_labels_pending_and_carries_o
 def test_overview_state_compensation_uses_compare_and_restore():
     before = {"label": {"chip": {"select_activ_dic": {"1.0": True}}}}
     expected = {"label": {"chip": {"select_activ_dic": {"1.0": True, "2.0": None}}}}
-    stored = {"value": copy.deepcopy(expected)}
+    stored: dict[str, object] = {"value": copy.deepcopy(expected)}
 
     async def fake_atomic_update(_path, update_function, *args, **kwargs):
         result = update_function(copy.deepcopy(stored["value"]), *args, **kwargs)

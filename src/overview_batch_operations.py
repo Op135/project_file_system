@@ -12,34 +12,17 @@ from typing import Iterable, Optional
 from nicegui import app
 
 from . import db_storage
+from .overview_change_workflow_config import OVERVIEW_CHANGE_WORKFLOW_CONFIG
 
-BATCH_OVERVIEW_TOOL_ROLES = {
-    "admin",
-    "研发经理",
-    "研发电子主管",
-    "研发结构",
-    "研发软件",
-    "研发光学",
-    "研发硬件",
-    "NPI工程",
-}
-BATCH_OVERVIEW_ALLOWED_PROJECT_STATES = ("待定", "研发", "转产")
+BATCH_OVERVIEW_CONFIG = OVERVIEW_CHANGE_WORKFLOW_CONFIG["batch_overview"]
+BATCH_OVERVIEW_TOOL_ROLES = BATCH_OVERVIEW_CONFIG["tool_roles"]
+BATCH_OVERVIEW_ALLOWED_PROJECT_STATES = BATCH_OVERVIEW_CONFIG["allowed_project_states"]
+BATCH_OVERVIEW_PREVENT_SELF_APPROVAL = BATCH_OVERVIEW_CONFIG["prevent_self_approval"]
 BATCH_OVERVIEW_REQUESTS_KEY = "overview_batch_change_requests"
 BATCH_OVERVIEW_STAGING_DIR = Path(__file__).resolve().parents[1] / ".overview_batch_staging"
 
 # 单独维护“审核角色 -> 被审核的申请人角色”，避免把工具使用权限误当成审批权限。
-BATCH_OVERVIEW_APPROVAL_ROLE_TARGETS = {
-    "boss": {"admin"},
-    "admin": {"研发经理"},
-    "研发经理": {
-        "研发电子主管",
-        "研发结构",
-        "研发软件",
-        "研发光学",
-        "研发硬件",
-        "NPI工程",
-    },
-}
+BATCH_OVERVIEW_APPROVAL_ROLE_TARGETS = BATCH_OVERVIEW_CONFIG["approval_role_targets"]
 
 
 def get_batch_overview_reviewer_roles(applicant_role: str) -> list[str]:
@@ -56,7 +39,7 @@ def can_review_batch_overview_request(request: dict, reviewer: str, reviewer_rol
     configured_roles = get_batch_overview_reviewer_roles(str(request.get("submitter_role") or ""))
     return bool(
         reviewer
-        and reviewer != request.get("submitter")
+        and (not BATCH_OVERVIEW_PREVENT_SELF_APPROVAL or reviewer != request.get("submitter"))
         and reviewer_role in configured_roles
         and reviewer_role in request.get("reviewer_roles", [])
     )

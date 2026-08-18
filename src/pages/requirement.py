@@ -3224,7 +3224,7 @@ async def requirement_page(
         over_config = app.storage.general.get("over_config_data", {})
         editable_configs = collect_editable_overview_configs(
             over_config,
-            current_role,
+            str(current_role or ""),
             OVERVIEW_UI_RENDER_REGISTRY,
         )
         if not editable_configs:

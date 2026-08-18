@@ -16,23 +16,15 @@ from nicegui import app
 from . import db_storage
 from .config import OVER_UPLOADS_FILE_TYPE
 from .overview_batch_operations import validate_overview_content
+from .overview_change_workflow_config import OVERVIEW_CHANGE_WORKFLOW_CONFIG
 
 OVERVIEW_CORRECTION_REQUESTS_KEY = "overview_correction_requests"
 OVERVIEW_CORRECTION_ARCHIVES_KEY = "overview_correction_archives"
 OVERVIEW_CORRECTION_STAGING_DIR = Path(__file__).resolve().parents[1] / ".overview_correction_staging"
 
-CORRECTION_APPROVAL_ROLE_TARGETS = {
-    "boss": {"admin"},
-    "admin": {"研发经理"},
-    "研发经理": {
-        "研发电子主管",
-        "研发结构",
-        "研发软件",
-        "研发光学",
-        "研发硬件",
-        "NPI工程",
-    },
-}
+CORRECTION_CONFIG = OVERVIEW_CHANGE_WORKFLOW_CONFIG["single_correction"]
+CORRECTION_PREVENT_SELF_APPROVAL = CORRECTION_CONFIG["prevent_self_approval"]
+CORRECTION_APPROVAL_ROLE_TARGETS = CORRECTION_CONFIG["approval_role_targets"]
 
 TEST_FIELD_DEFINITIONS = (
     ("test_nature", "测试性质", "test_nature_options"),
@@ -58,7 +50,7 @@ def can_review_correction_request(request: dict, reviewer: str, reviewer_role: s
     configured_roles = get_correction_reviewer_roles(str(request.get("submitter_role") or ""))
     return bool(
         reviewer
-        and reviewer != request.get("submitter")
+        and (not CORRECTION_PREVENT_SELF_APPROVAL or reviewer != request.get("submitter"))
         and reviewer_role in configured_roles
         and reviewer_role in request.get("reviewer_roles", [])
     )

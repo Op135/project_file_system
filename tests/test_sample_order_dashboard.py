@@ -296,7 +296,7 @@ class SampleOrderCalculationTests(unittest.TestCase):
         row = dashboard.build_sample_order_grid_row(record, calculated_metrics=metrics)
 
         self.assertEqual(row["record_id"], "record-1")
-        self.assertEqual(row["detail_action"], "查看详情")
+        self.assertEqual(row["detail_action"], "详情")
         self.assertEqual(row["current_target_date"], "2026-07-22")
         self.assertEqual(row["actual_delivery_display"], "2026-07-21")
         self.assertIn("分", str(row["assessment_display"]))
@@ -310,7 +310,13 @@ class SampleOrderCalculationTests(unittest.TestCase):
         self.assertFalse(columns[0]["filter"])
         self.assertTrue(all(column.get("filter") for column in columns[1:]))
         self.assertTrue(all(column.get("headerClass") == "sample-order-grid-header-center" for column in columns))
-        self.assertTrue(all(column.get("cellStyle", {}).get("textAlign") == "center" for column in columns))
+        self.assertTrue(
+            all(
+                isinstance(cell_style := column.get("cellStyle"), dict)
+                and cell_style.get("textAlign") == "center"
+                for column in columns
+            )
+        )
         self.assertTrue(all("width" in column for column in columns))
         self.assertTrue(all("Width" not in column for column in columns))
 

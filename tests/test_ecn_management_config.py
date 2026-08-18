@@ -1,4 +1,5 @@
 import json
+from typing import Any
 
 from src.ecn_management_config import (
     ECN_CONFIG_PATH,
@@ -40,7 +41,7 @@ def _ecn_record(
     participants=None,
     pending_roles=None,
     applicant="申请人",
-):
+) -> dict[str, Any]:
     return {
         "basic_info": {"applicant": applicant},
         "review_info": {
@@ -195,14 +196,15 @@ def test_every_change_requirement_must_be_linked_by_at_least_one_scheme():
         {"idx": 1, "content": "更新电子BOM"},
         {"idx": 2, "content": "同步修改说明书"},
     ]
-    record["change_items"] = [{"req_idxs": [1]}]
+    change_items: list[dict[str, Any]] = [{"req_idxs": [1]}]
+    record["change_items"] = change_items
 
     coverage = get_ecn_scheme_coverage(record)
     assert coverage["missing_requirements"] == {"2"}
     assert is_ecn_scheme_ready_for_review(record) is False
     assert is_ecn_pending_for_user(record, "经理A", "研发经理") is False
 
-    record["change_items"].append({"req_idxs": ["2"]})
+    change_items.append({"req_idxs": ["2"]})
     assert get_ecn_scheme_coverage(record)["missing_requirements"] == set()
     assert is_ecn_scheme_ready_for_review(record) is True
 
@@ -354,7 +356,7 @@ def test_material_traceability_and_disposition_are_kept_in_rejection_snapshots()
 
 def test_material_scheme_must_have_traceability_and_disposition_before_review():
     record = _ecn_record(participants={"工程师A": ECN_PARTICIPANT_STATUS_CONFIRMED})
-    record["change_items"] = [
+    change_items: list[dict[str, Any]] = [
         {
             "item_id": "M1",
             "type": "text_desc",
@@ -362,13 +364,14 @@ def test_material_scheme_must_have_traceability_and_disposition_before_review():
             "author": "工程师A",
         }
     ]
+    record["change_items"] = change_items
 
     coverage = get_ecn_scheme_coverage(record)
     assert coverage["incomplete_material_schemes"] == {"方案 #01"}
     assert is_ecn_scheme_ready_for_review(record) is False
 
-    record["change_items"][0]["traceability_levels"] = ["无影响", "追溯至文件"]
-    record["change_items"][0]["disposition_measure"] = "返工"
+    change_items[0]["traceability_levels"] = ["无影响", "追溯至文件"]
+    change_items[0]["disposition_measure"] = "返工"
     assert get_ecn_scheme_coverage(record)["incomplete_material_schemes"] == set()
     assert is_ecn_scheme_ready_for_review(record) is True
 
