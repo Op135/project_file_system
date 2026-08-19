@@ -15,7 +15,9 @@ from src.ecn_management_config import (
     ECNState,
     build_overview_validation_signature,
     classify_ecn_change_item,
+    collect_ecn_pending_overview_overrides,
     get_active_overview_row_contents,
+    get_ecn_scheme_target_projects,
     get_ecn_material_change_display,
     get_ecn_material_change_missing_fields,
     get_ecn_scheme_coverage,
@@ -25,10 +27,13 @@ from src.ecn_management_config import (
     is_ecn_review_info_blank,
     is_ecn_scheme_ready_for_review,
     load_ecn_config,
+    merge_ecn_impact_audit_log,
     register_ecn_impact_handler,
+    resolve_ecn_overview_parameter_config,
     confirm_revised_scheme_items,
     mark_rejected_scheme_item_revised,
     expand_new_material_traceability_selection,
+    ecn_overview_requires_new_content,
     reject_ecn_scheme_items,
 )
 
@@ -91,7 +96,106 @@ def test_checked_in_config_file_is_valid():
     assert loaded["scheme_tracking"]["disposition_measures"] == raw_config["scheme_tracking"][
         "disposition_measures"
     ]
+    assert loaded["scheme_options"]["overview_actions"] == {
+        "add": "新增",
+        "update": "更换",
+        "deactivate": "失效",
+    }
     assert loaded["scheme_options"] == raw_config["scheme_options"]
+
+
+def test_all_scheme_dialogs_share_ecr_and_expanded_target_projects():
+    record = _ecn_record()
+    record["target_projects"] = ["P-ECR-1", "P-SHARED"]
+    record["review_info"]["expanded_projects_mass"] = ["P-MASS", "P-SHARED"]
+    record["review_info"]["expanded_projects_non_mass"] = ["P-RD"]
+
+    assert get_ecn_scheme_target_projects(record) == [
+        "P-ECR-1",
+        "P-SHARED",
+        "P-MASS",
+        "P-RD",
+    ]
+
+
+def test_overview_deactivate_only_scheme_does_not_require_new_content():
+    assert ecn_overview_requires_new_content({"P1": {"action": "deactivate"}}) is False
+    assert ecn_overview_requires_new_content(
+        {
+            "P1": {"action": "deactivate"},
+            "P2": {"action": "update"},
+        }
+    ) is True
+
+
+def test_pending_overview_overrides_exclude_the_item_being_edited():
+    change_items = [
+        {
+            "item_id": "CURRENT",
+            "type": "overview_update",
+            "label": "folder_key",
+            "project_states": {"P1": {"action": "update"}},
+            "new_data": {"content": "被编辑项的旧值"},
+        },
+        {
+            "item_id": "OTHER",
+            "type": "overview_update",
+            "label": "other_key",
+            "project_states": {"P1": {"action": "add"}},
+            "new_data": {"content": "其它暂存值"},
+        },
+        {
+            "item_id": "DEACTIVATED",
+            "type": "overview_update",
+            "label": "inactive_key",
+            "project_states": {"P1": {"action": "deactivate"}},
+            "new_data": {"content": "不应作为覆盖值"},
+        },
+    ]
+
+    assert collect_ecn_pending_overview_overrides(change_items, "P1", "CURRENT") == {
+        "other_key": "其它暂存值"
+    }
+
+
+def test_overview_parameter_config_is_resolved_before_edit_control_events():
+    flat_configs = {
+        "file_label": {
+            "processing_type": "search",
+            "upload_path": "X:/engineering",
+            "search_folder_according": ["folder_label"],
+        }
+    }
+
+    config, processing_type = resolve_ecn_overview_parameter_config(flat_configs, "file_label")
+
+    assert processing_type == "search"
+    assert config["upload_path"] == "X:/engineering"
+    assert config["search_folder_according"] == ["folder_label"]
+    config["upload_path"] = "changed"
+    assert flat_configs["file_label"]["upload_path"] == "X:/engineering"
+
+
+def test_impact_audit_log_merges_by_unique_event_id_without_overwrite():
+    review_info = {
+        "impact_change_log": [
+            {"event_id": "E1", "user": "工程师A", "field": "impacts", "target": "光学部件"}
+        ]
+    }
+    incoming = [
+        {"event_id": "E1", "user": "工程师A"},
+        {
+            "event_id": "E2",
+            "user": "工程师B",
+            "field": "expanded_projects_mass",
+            "target": "RFFM-1009-A",
+            "action": "add",
+        },
+    ]
+
+    assert merge_ecn_impact_audit_log(review_info, incoming) == 1
+    assert [event["event_id"] for event in review_info["impact_change_log"]] == ["E1", "E2"]
+    assert merge_ecn_impact_audit_log(review_info, incoming) == 0
 
 
 def test_empty_impact_only_reminds_rd_assistant():
@@ -209,16 +313,6 @@ def test_every_change_requirement_must_be_linked_by_at_least_one_scheme():
     assert is_ecn_scheme_ready_for_review(record) is True
 
 
-def test_old_nonblank_record_uses_scheme_participants_as_handler_fallback():
-    record = _ecn_record(
-        impact_selected=True,
-        participants={"历史工程师": "confirmed"},
-    )
-
-    assert is_ecn_pending_for_user(record, "历史工程师", "研发硬件") is False
-    assert is_ecn_pending_for_user(record, "助理A", "研发助理") is False
-
-
 def test_rejecting_selected_items_only_reopens_their_authors():
     record = _ecn_record(
         state=ECNState.ECN_REVIEWING,
@@ -252,7 +346,6 @@ def test_rejecting_selected_items_only_reopens_their_authors():
 
     assert authors == {"工程师A"}
     assert record["change_items"][0]["review_status"] == ECN_ITEM_STATUS_NEEDS_IMPROVEMENT
-    assert record["change_items"][0]["rejection_info"]["note"] == "参数需要修订"
     assert record["change_items"][0]["rejection_history"] == [
         {
             "reviewer": "经理A",
@@ -440,23 +533,6 @@ def test_conditional_disposition_requires_specific_condition():
     assert get_ecn_scheme_coverage(record)["incomplete_material_schemes"] == set()
 
 
-def test_legacy_material_traceability_fields_remain_compatible():
-    record = _ecn_record(participants={"工程师A": ECN_PARTICIPANT_STATUS_CONFIRMED})
-    record["change_items"] = [
-        {
-            "item_id": "M-LEGACY",
-            "type": "text_desc",
-            "scheme_category": ECN_SCHEME_GROUP_MATERIAL,
-            "author": "工程师A",
-            "traceability_level": "追溯至文件",
-            "disposition_measures": ["报废"],
-        }
-    ]
-
-    assert get_ecn_scheme_coverage(record)["incomplete_material_schemes"] == set()
-    assert is_ecn_scheme_ready_for_review(record) is True
-
-
 def test_traceability_only_cascades_when_a_new_level_is_selected():
     configured_levels = load_ecn_config()["scheme_tracking"]["traceability_levels"]
     assert len(configured_levels) >= 5
@@ -575,23 +651,17 @@ def test_overview_validation_signature_changes_with_content_or_context():
     )
 
 
-def test_new_and_legacy_change_items_are_split_into_explicit_document_groups():
-    assert classify_ecn_change_item(
-        {"type": "overview_update", "scheme_category": "document"}
-    ) == ECN_SCHEME_GROUP_OVERVIEW_DOCUMENT
+def test_current_change_items_are_split_into_explicit_document_groups():
     assert classify_ecn_change_item(
         {"type": "overview_update", "scheme_category": ECN_SCHEME_GROUP_OVERVIEW_DOCUMENT}
     ) == ECN_SCHEME_GROUP_OVERVIEW_DOCUMENT
-    assert classify_ecn_change_item(
-        {"type": "text_desc", "scheme_category": "document"}
-    ) == ECN_SCHEME_GROUP_ORDINARY_DOCUMENT
     assert classify_ecn_change_item(
         {"type": "text_desc", "scheme_category": ECN_SCHEME_GROUP_ORDINARY_DOCUMENT}
     ) == ECN_SCHEME_GROUP_ORDINARY_DOCUMENT
     assert classify_ecn_change_item(
         {"type": "text_desc", "scheme_category": ECN_SCHEME_GROUP_MATERIAL}
     ) == ECN_SCHEME_GROUP_MATERIAL
-    assert classify_ecn_change_item({"type": "legacy_other"}) == ECN_SCHEME_GROUP_UNKNOWN
+    assert classify_ecn_change_item({"type": "unknown"}) == ECN_SCHEME_GROUP_UNKNOWN
 
 
 def test_structured_material_change_display_covers_all_change_types():
@@ -639,7 +709,7 @@ def test_structured_material_change_required_fields_accept_zero_quantity():
     assert get_ecn_material_change_missing_fields("调量", material_change) == ["改前用量", "改后用量"]
 
 
-def test_legacy_material_change_display_falls_back_to_text_fields():
+def test_invalid_material_change_does_not_use_unstructured_text_fields():
     assert get_ecn_material_change_display(
         {"change_type": "物料变更", "old_content": "旧物料", "new_content": "新物料"}
-    ) == ("旧物料", "新物料")
+    ) == ("", "")

@@ -25,18 +25,22 @@ from ..custom_ui import custom_upload
 from ..ecn_management_config import (
     ECN_DISPOSITION_MEASURES,
     ECN_DOCUMENT_CHANGE_TYPES,
-    ECN_MATERIAL_DEFAULT_UNIT,
     ECN_ITEM_STATUS_CONFIG,
     ECN_ITEM_STATUS_NEEDS_IMPROVEMENT,
     ECN_ITEM_STATUS_NORMAL,
     ECN_ITEM_STATUS_REVISED_CONFIRMED,
     ECN_ITEM_STATUS_REVISED_PENDING_CONFIRMATION,
-    ECN_MATERIAL_CHANGE_TYPES,
     ECN_MATERIAL_CHANGE_TYPE_ADD,
     ECN_MATERIAL_CHANGE_TYPE_ADJUST_QUANTITY,
     ECN_MATERIAL_CHANGE_TYPE_DISCONTINUE,
     ECN_MATERIAL_CHANGE_TYPE_REPLACE,
+    ECN_MATERIAL_CHANGE_TYPES,
+    ECN_MATERIAL_DEFAULT_UNIT,
     ECN_OVERVIEW_CONFLICT_AUTO_CLOSE_SECONDS,
+    ECN_OVERVIEW_ACTION_ADD,
+    ECN_OVERVIEW_ACTION_DEACTIVATE,
+    ECN_OVERVIEW_ACTION_LABELS,
+    ECN_OVERVIEW_ACTION_UPDATE,
     ECN_PARTICIPANT_STATUS_CONFIG,
     ECN_PARTICIPANT_STATUS_CONFIRMED,
     ECN_PARTICIPANT_STATUS_EDITING,
@@ -50,20 +54,25 @@ from ..ecn_management_config import (
     ECN_TRACEABILITY_LEVELS,
     build_overview_validation_signature,
     classify_ecn_change_item,
+    collect_ecn_pending_overview_overrides,
     confirm_revised_scheme_items,
     expand_new_material_traceability_selection,
+    ecn_overview_requires_new_content,
     get_active_overview_row_contents,
+    get_ecn_scheme_target_projects,
     get_ecn_material_change_display,
     get_ecn_material_change_missing_fields,
     get_ecn_scheme_coverage,
     has_unrevised_rejected_scheme_items,
-    is_ecn_pending_for_user,
     is_ecn_disposition_condition_required,
     is_ecn_material_disposition_required,
+    is_ecn_pending_for_user,
     is_ecn_review_info_blank,
+    merge_ecn_impact_audit_log,
     mark_rejected_scheme_item_revised,
     register_ecn_impact_handler,
     reject_ecn_scheme_items,
+    resolve_ecn_overview_parameter_config,
 )
 from ..utils import get_cache_busted_path, logout, setup_global_activity_tracking
 
@@ -101,6 +110,7 @@ def get_ecn_template() -> dict:
         "review_info": {
             "expanded_projects_mass": [],  # 扩展的转产后项目型号
             "expanded_projects_non_mass": [],  # 扩展的转产前项目型号
+            "impact_change_log": [],  # ECN影响字段级审计：项目增删、影响项勾选/取消
             "impacts": {
                 dim: False for dim in ECN_SCHEMA_CONFIG["impact_dimensions"]
             },  # 变更影响维度，按照常量生成未勾选选项
@@ -117,9 +127,7 @@ def get_ecn_template() -> dict:
         # 执行信息
         "execution_info": {
             "traceability_level": "无影响",
-            "handling_measures": {
-                measure: False for measure in ECN_SCHEMA_CONFIG["execution_handling_measures"]
-            },
+            "handling_measures": {measure: False for measure in ECN_SCHEMA_CONFIG["execution_handling_measures"]},
             "trial_conclusion": "",
         },
         "change_items": [],
@@ -137,33 +145,6 @@ def get_ecn_template() -> dict:
         "approval_log": [],  # 审批日志，记录每一步的审批人、时间、意见等信息
         "timestamp": {},  # 时间戳记录，记录每次重要操作的时间和描述，用于前端 O(1) 轮询刷新机制
     }
-
-
-def merge_with_template(db_data: dict, template: dict) -> dict:
-    """
-    将数据库读取的旧数据与最新模板进行深度合并。
-    合并逻辑：
-    1. 递归合并：对于嵌套的字典结构，进行递归合并，确保所有层级都得到更新。
-    2. 类型安全覆盖：仅当旧数据的类型与模板一致时才覆盖；类型不一致时，保留模本默认值。
-    防止旧版单据缺少新字段引发报错，同时修正被污染的旧数据类型。
-    """
-    # copy.deepcopy: 创建深层隔离的副本，避免污染全局模板字典
-    merged = copy.deepcopy(template)
-
-    if not isinstance(db_data, dict):
-        return merged
-
-    for key, value in db_data.items():
-        if key in merged:
-            if isinstance(merged[key], dict) and isinstance(value, dict):
-                merged[key] = merge_with_template(value, merged[key])
-            elif type(merged[key]) is type(value) or merged[key] is None or value is None:
-                # 严格类型校验：仅当旧数据类型与模板一致时才覆盖。
-                # 这直接解决了以前旧版本中 '电子料' 可能是 bool 类型从而冲掉 dict 类型的问题
-                merged[key] = copy.deepcopy(value)
-        else:
-            merged[key] = copy.deepcopy(value)
-    return merged
 
 
 # ==========================================
@@ -252,7 +233,7 @@ async def del_ecn_deep_item(path: list):
 
 
 async def save_ecn_deep_item(path: list, data):
-    """保留兼容旧逻辑：仅用于少数非并发核心场景"""
+    """保存ECN执行阶段关联的数据节点，并更新全局版本戳。"""
     await db_storage.set_deep_item(path, data)
     await db_storage.set_item("ecn_global_version_stamp", time.time())
 
@@ -372,31 +353,28 @@ async def ecn_management_page():
     # ==========================================
     def open_overview_change_dialog(ecn_data, current_user, on_save_callback, edit_item=None):
         is_edit = edit_item is not None
-        edit_data = edit_item or {}
+        # 编辑过程必须使用隔离草稿，避免输入框通过双向绑定提前污染已保存方案。
+        edit_data = copy.deepcopy(edit_item) if is_edit else {}
 
         traceability_levels = copy.deepcopy(edit_data.get("traceability_levels", []))
-        if not traceability_levels and edit_data.get("traceability_level"):
-            traceability_levels = [edit_data.get("traceability_level")]
-        disposition_measure = edit_data.get("disposition_measure")
-        if not disposition_measure:
-            legacy_disposition_measures = edit_data.get("disposition_measures", [])
-            if isinstance(legacy_disposition_measures, list) and legacy_disposition_measures:
-                disposition_measure = legacy_disposition_measures[0]
-        # 统一转为 project_states 结构
-        initial_projects = edit_data.get("projects") or ([edit_data.get("project")] if edit_data.get("project") else [])
-        initial_project_states = edit_data.get("project_states", {})
+        initial_projects = copy.deepcopy(edit_data.get("projects", []))
+        initial_project_states = copy.deepcopy(edit_data.get("project_states", {}))
+        initial_config, initial_processing_type = resolve_ecn_overview_parameter_config(
+            app.storage.general.get("over_config_data_flat", {}),
+            edit_data.get("label"),
+        )
 
         sel_state = {
             "projects": initial_projects,
             "role": edit_data.get("role"),
             "label": edit_data.get("label"),
             "project_states": initial_project_states,
-            "new_data": edit_data.get("new_data", {}) if is_edit else {},
-            "req_idxs": edit_data.get("req_idxs", []),
-            "linked_docs": edit_data.get("linked_docs", []),
+            "new_data": copy.deepcopy(edit_data.get("new_data", {})) if is_edit else {},
+            "req_idxs": copy.deepcopy(edit_data.get("req_idxs", [])),
+            "linked_docs": copy.deepcopy(edit_data.get("linked_docs", [])),
             # 彻底废弃 linked_materials
-            "config": edit_data.get("config", {}),
-            "processing_type": edit_data.get("config_processing_type", "text"),
+            "config": initial_config,
+            "processing_type": initial_processing_type,
             "is_valid": is_edit,
             "validated_url": edit_data.get("new_data", {}).get("url_path", ""),
             "validated_file_type": edit_data.get("new_data", {}).get("file_type", ""),
@@ -406,7 +384,6 @@ async def ecn_management_page():
             "auto_shown_warning_keys": set(),
             "validated_signature": None,
             "traceability_levels": traceability_levels,
-            "disposition_measure": disposition_measure,
         }
 
         path_validation_types = {"search", "svn"}
@@ -441,13 +418,7 @@ async def ecn_management_page():
             else:
                 sel_state["is_valid"] = False
 
-        target_projects = list(
-            set(
-                ecn_data.get("target_projects", [])
-                + ecn_data.get("review_info", {}).get("expanded_projects_mass", [])
-                + ecn_data.get("review_info", {}).get("expanded_projects_non_mass", [])
-            )
-        )
+        target_projects = get_ecn_scheme_target_projects(ecn_data)
         roles = list(app.storage.general.get("over_config_data", {}).keys())
         req_options = {req["idx"]: f"[{req['idx']}] {req['content']}" for req in ecn_data["basic_info"]["requirements"]}
         req_docs = [k for k, v in ecn_data["review_info"]["involved_docs"].items() if v]
@@ -477,14 +448,21 @@ async def ecn_management_page():
                     chips[c_id] = c.get("content", "")
             return chips
 
-        def get_existing_cell_contents(project, label, anchor_row_id):
-            """返回所选基准行的当前内容及本单已暂存内容，用于新增数据风险提醒。"""
+        def get_existing_cell_contents(project, label, anchor_row_id, include_all_active=False):
+            """返回新增位置的当前内容及本单已暂存内容。"""
             result = []
-            if anchor_row_id and not str(anchor_row_id).startswith("PENDING_NEW_"):
+            if include_all_active:
+                for content in get_chips_for_project(project, label).values():
+                    entry = ("当前已有", content)
+                    if entry not in result:
+                        result.append(entry)
+            elif anchor_row_id and not str(anchor_row_id).startswith("PENDING_NEW_"):
                 req_max_ver = app.storage.general.get("project_req_max_ver", {}).get(project, "1.0")
                 raw_data = db_storage.get_deep_item([f"{project}_over_data", label], {})
                 for content in get_active_overview_row_contents(raw_data, anchor_row_id, req_max_ver):
-                    result.append(("当前已有", content))
+                    entry = ("当前已有", content)
+                    if entry not in result:
+                        result.append(entry)
 
             editing_item_id = edit_data.get("item_id")
             for change_item in ecn_data.get("change_items", []):
@@ -493,7 +471,7 @@ async def ecn_management_page():
                 if change_item.get("type") != "overview_update" or change_item.get("label") != label:
                     continue
                 project_state = change_item.get("project_states", {}).get(project, {})
-                if project_state.get("action") != "add":
+                if project_state.get("action") != ECN_OVERVIEW_ACTION_ADD:
                     continue
                 if project_state.get("anchor_row_id") != anchor_row_id:
                     continue
@@ -610,32 +588,74 @@ async def ecn_management_page():
                                 "w-full grid-cols-[120px_1fr_1fr] bg-blue-50 p-1 rounded font-bold text-xs text-gray-600 mb-1 items-center"
                             ):
                                 ui.label("目标项目")
-                                ui.label("处理方式 (选择旧数据或新增)")
+                                ui.label("处理方式（新增 / 更换 / 失效）")
                                 ui.label("绑定基准行" if not is_first_col else "")
 
                             for p in projects:
                                 p_state = sel_state["project_states"].setdefault(
-                                    p, {"action": "add", "chip_id": "NEW", "anchor_row_id": None, "old_data": {}}
+                                    p,
+                                    {
+                                        "action": ECN_OVERVIEW_ACTION_ADD,
+                                        "chip_id": "NEW",
+                                        "anchor_row_id": None,
+                                        "old_data": {},
+                                    },
                                 )
                                 chips_options = get_chips_for_project(p, label)
 
-                                display_options = {"NEW": "[➕ 不覆盖，作为新数据添加]"}
-                                display_options.update(chips_options)
+                                display_options = {
+                                    ECN_OVERVIEW_ACTION_ADD: f"[{ECN_OVERVIEW_ACTION_LABELS['add']}] 不覆盖原数据"
+                                }
+                                for chip_id, content in chips_options.items():
+                                    display_options[f"{ECN_OVERVIEW_ACTION_UPDATE}::{chip_id}"] = (
+                                        f"[{ECN_OVERVIEW_ACTION_LABELS['update']}] {content}"
+                                    )
+                                    display_options[f"{ECN_OVERVIEW_ACTION_DEACTIVATE}::{chip_id}"] = (
+                                        f"[{ECN_OVERVIEW_ACTION_LABELS['deactivate']}] {content}"
+                                    )
 
-                                if p_state["chip_id"] not in display_options:
+                                selected_action = p_state.get("action")
+                                selected_chip_id = p_state.get("chip_id")
+                                current_selection = (
+                                    ECN_OVERVIEW_ACTION_ADD
+                                    if selected_action == ECN_OVERVIEW_ACTION_ADD
+                                    else f"{selected_action}::{selected_chip_id}"
+                                )
+                                if current_selection not in display_options:
                                     if chips_options:
                                         p_state["chip_id"] = list(chips_options.keys())[-1]
-                                        p_state["action"] = "update"
+                                        p_state["action"] = ECN_OVERVIEW_ACTION_UPDATE
                                     else:
                                         p_state["chip_id"] = "NEW"
-                                        p_state["action"] = "add"
+                                        p_state["action"] = ECN_OVERVIEW_ACTION_ADD
+                                    current_selection = (
+                                        ECN_OVERVIEW_ACTION_ADD
+                                        if p_state["action"] == ECN_OVERVIEW_ACTION_ADD
+                                        else f"{p_state['action']}::{p_state['chip_id']}"
+                                    )
 
-                                if p_state["chip_id"] != "NEW":
+                                if p_state["action"] != ECN_OVERVIEW_ACTION_ADD:
                                     p_state["old_data"] = db_storage.get_deep_item(
                                         [f"{p}_over_data", label, p_state["chip_id"]], {}
                                     )
                                 else:
                                     p_state["old_data"] = {}
+
+                                if p_state["action"] == ECN_OVERVIEW_ACTION_ADD and (
+                                    is_first_col or p_state.get("anchor_row_id")
+                                ):
+                                    existing_contents = get_existing_cell_contents(
+                                        p,
+                                        label,
+                                        p_state.get("anchor_row_id"),
+                                        include_all_active=is_first_col,
+                                    )
+                                    p_state["existing_contents"] = [
+                                        {"source": source, "content": content}
+                                        for source, content in existing_contents
+                                    ]
+                                else:
+                                    p_state["existing_contents"] = []
 
                                 with ui.grid().classes(
                                     "w-full grid-cols-[120px_1fr_1fr] items-center border-b border-dashed border-gray-200 pb-1 gap-2"
@@ -645,16 +665,20 @@ async def ecn_management_page():
                                     def on_chip_select(e, current_p=p):
                                         val = e.value
                                         state = sel_state["project_states"][current_p]
-                                        state["chip_id"] = val
-                                        if val == "NEW":
-                                            state["action"] = "add"
+                                        if val == ECN_OVERVIEW_ACTION_ADD:
+                                            state["chip_id"] = "NEW"
+                                            state["action"] = ECN_OVERVIEW_ACTION_ADD
                                             state["old_data"] = {}
                                         else:
-                                            state["action"] = "update"
+                                            action, chip_id = str(val).split("::", 1)
+                                            state["chip_id"] = chip_id
+                                            state["action"] = action
                                             state["old_data"] = db_storage.get_deep_item(
-                                                [f"{current_p}_over_data", sel_state["label"], val], {}
+                                                [f"{current_p}_over_data", sel_state["label"], chip_id], {}
                                             )
-                                        if state["action"] == "add" and not is_first_col:
+                                        if state["action"] == ECN_OVERVIEW_ACTION_ADD and not is_first_col:
+                                            state["anchor_row_id"] = None
+                                        elif state["action"] != ECN_OVERVIEW_ACTION_ADD:
                                             state["anchor_row_id"] = None
                                         if sel_state["processing_type"] in path_validation_types:
                                             invalidate_path_validation()
@@ -665,12 +689,14 @@ async def ecn_management_page():
                                         build_matrix_and_sync_state()
 
                                     ui.select(
-                                        options=display_options, value=p_state["chip_id"], on_change=on_chip_select
+                                        options=display_options,
+                                        value=current_selection,
+                                        on_change=on_chip_select,
                                     ).props("dense outlined bg-white").classes("w-full")
 
                                     anchor_container = ui.element("div").classes("w-full")
                                     with anchor_container:
-                                        if p_state["action"] == "add" and not is_first_col:
+                                        if p_state["action"] == ECN_OVERVIEW_ACTION_ADD and not is_first_col:
 
                                             def get_chips_for_project_with_pending(proj, label_str):
                                                 c_opts = get_chips_for_project(proj, label_str)
@@ -689,15 +715,17 @@ async def ecn_management_page():
                                                             if len(display_content) > 50:
                                                                 display_content = display_content[:50] + "..."
 
-                                                            if action == "add":
+                                                            if action == ECN_OVERVIEW_ACTION_ADD:
                                                                 virtual_id = f"PENDING_NEW_{c_item['item_id']}"
                                                                 c_opts[virtual_id] = f"[本单暂存新增] {display_content}"
-                                                            elif action == "update":
+                                                            elif action == ECN_OVERVIEW_ACTION_UPDATE:
                                                                 old_chip_id = sub_states[proj].get("chip_id")
                                                                 if old_chip_id and old_chip_id in c_opts:
                                                                     c_opts[old_chip_id] = (
                                                                         f"[本单暂存变更] {display_content}"
                                                                     )
+                                                            elif action == ECN_OVERVIEW_ACTION_DEACTIVATE:
+                                                                c_opts.pop(sub_states[proj].get("chip_id"), None)
                                                 return c_opts
 
                                             first_col_chips = get_chips_for_project_with_pending(
@@ -748,9 +776,13 @@ async def ecn_management_page():
                                                 )
                                                 sel_state["has_enabled_bool"] = False
                                             else:
-                                                existing_contents = get_existing_cell_contents(
-                                                    p, label, p_state.get("anchor_row_id")
-                                                )
+                                                existing_contents = [
+                                                    (
+                                                        entry.get("source", "当前已有"),
+                                                        entry.get("content", ""),
+                                                    )
+                                                    for entry in p_state.get("existing_contents", [])
+                                                ]
                                                 with ui.row().classes("w-full items-center gap-1 flex-nowrap"):
                                                     anchor_select = (
                                                         ui.select(
@@ -841,8 +873,12 @@ async def ecn_management_page():
 
                     def on_label_change(e):
                         sel_state["label"] = e.value
-                        sel_state["config"] = app.storage.general.get("over_config_data_flat", {}).get(e.value, {})
-                        sel_state["processing_type"] = sel_state["config"].get("processing_type", "text")
+                        sel_state["config"], sel_state["processing_type"] = (
+                            resolve_ecn_overview_parameter_config(
+                                app.storage.general.get("over_config_data_flat", {}),
+                                e.value,
+                            )
+                        )
                         if (
                             sel_state["processing_type"] in path_validation_types
                             and sel_state.get("validated_signature") is None
@@ -865,6 +901,17 @@ async def ecn_management_page():
 
                         ptype = sel_state["processing_type"]
                         config = sel_state["config"]
+                        requires_new_content = ecn_overview_requires_new_content(sel_state["project_states"])
+                        dialog_placeholder = str(config.get("dialog_placeholder") or "")
+                        if (
+                            requires_new_content
+                            and
+                            ptype in {"text", "test"}
+                            and dialog_placeholder
+                            and not str(sel_state["new_data"].get("content") or "").strip()
+                        ):
+                            # 与项目概述的新增控件保持一致：空内容时带入配置的格式示例。
+                            sel_state["new_data"]["content"] = dialog_placeholder
 
                         with dynamic_form_container:
                             ui.label(f"检测到对应的业务数据类型为: {ptype.upper()}").classes(
@@ -888,7 +935,7 @@ async def ecn_management_page():
                                                 "text-xs font-bold text-blue-800 w-24 shrink-0 break-all"
                                             )
 
-                                            if p_state.get("action") == "add":
+                                            if p_state.get("action") == ECN_OVERVIEW_ACTION_ADD:
                                                 ui.label("将作为全新节点添加").classes(
                                                     "text-xs font-bold text-orange-500 bg-orange-50 px-1 rounded"
                                                 )
@@ -898,22 +945,44 @@ async def ecn_management_page():
                                                     ui.label(old_d.get("content", "无")).classes(
                                                         "text-sm text-gray-700 break-all"
                                                     )
+                                                    action_label = ECN_OVERVIEW_ACTION_LABELS.get(
+                                                        p_state.get("action"),
+                                                        p_state.get("action", ""),
+                                                    )
+                                                    ui.label(action_label).classes(
+                                                        "text-[10px] font-semibold text-slate-500"
+                                                    )
                                                     if ptype == "test":
                                                         old_test = old_d.get("test_select_data", {})
                                                         text_str = f"性质: {old_test.get('test_nature_select', '')} | 状态: {old_test.get('state_select', '')} | 节点: {old_test.get('node_select', '')} | 工具: {old_test.get('instrument_select', '')}"
                                                         ui.label(text_str).classes("text-[10px] text-gray-500")
 
                                 with ui.card().classes("w-full bg-blue-50 shadow-inner p-3 border border-blue-100"):
-                                    ui.label("统一方案 / 新内容 (必填)").classes("text-xs text-blue-700 font-bold mb-2")
+                                    ui.label(
+                                        "统一方案 / 新内容 (必填)"
+                                        if requires_new_content
+                                        else "失效说明"
+                                    ).classes("text-xs text-blue-700 font-bold mb-2")
 
-                                    if ptype == "text":
-                                        ui.textarea("新文本内容").bind_value(sel_state["new_data"], "content").classes(
-                                            "w-full"
-                                        ).props("outlined auto-grow rows=2 bg-white")
+                                    if not requires_new_content:
+                                        sel_state["is_valid"] = True
+                                        ui.label("所选项目均只失效原概述，不会添加对应的新概述。").classes(
+                                            "text-sm text-slate-600"
+                                        )
+                                    elif ptype == "text":
+                                        ui.textarea(
+                                            label=str(config.get("dialog_label") or "新文本内容"),
+                                            placeholder=dialog_placeholder,
+                                        ).bind_value(sel_state["new_data"], "content").classes("w-full").props(
+                                            "outlined auto-grow rows=2 bg-white"
+                                        )
                                         sel_state["is_valid"] = True
 
                                     elif ptype == "test":
-                                        ui.textarea("新检测内容与标准").bind_value(
+                                        ui.textarea(
+                                            label="新检测内容与标准",
+                                            placeholder=dialog_placeholder,
+                                        ).bind_value(
                                             sel_state["new_data"], "content"
                                         ).classes("w-full").props("outlined auto-grow rows=2 bg-white")
                                         test_data = sel_state["new_data"].setdefault("test_select_data", {})
@@ -949,16 +1018,21 @@ async def ecn_management_page():
                                     elif ptype in ["search", "svn"]:
                                         with ui.row().classes("w-full items-center gap-2"):
                                             file_name_input = (
-                                                ui.input("新引用文件名")
+                                                ui.input(
+                                                    label=str(config.get("dialog_label") or "新引用文件名"),
+                                                    placeholder=dialog_placeholder or "填入包括后缀的完整文件名",
+                                                )
                                                 .bind_value(sel_state["new_data"], "content")
                                                 .props("outlined dense bg-white")
                                                 .classes("flex-grow")
                                             )
 
                                             def on_file_name_change(e):
+                                                # 不依赖双向绑定与回调的执行先后，显式记录输入框最新值。
+                                                sel_state["new_data"]["content"] = e.value or ""
                                                 candidate_signature = build_overview_validation_signature(
                                                     ptype,
-                                                    e.value,
+                                                    sel_state["new_data"]["content"],
                                                     sel_state["projects"],
                                                     sel_state["role"],
                                                     sel_state["label"],
@@ -968,7 +1042,9 @@ async def ecn_management_page():
                                             file_name_input.on_value_change(on_file_name_change)
 
                                             async def validate_path():
-                                                val = sel_state["new_data"].get("content", "").strip()
+                                                # 以当前控件值为唯一依据，避免编辑态重绘后的绑定字典滞后。
+                                                val = str(file_name_input.value or "").strip()
+                                                sel_state["new_data"]["content"] = val
                                                 if not val:
                                                     return ui.notify("请先填写文件名", type="warning")
                                                 requested_signature = build_overview_validation_signature(
@@ -980,21 +1056,12 @@ async def ecn_management_page():
                                                 )
                                                 from ..utils import validate_search_path, validate_svn_url
 
-                                                pending_overrides = {}
                                                 primary_proj = sel_state["projects"][0] if sel_state["projects"] else ""
-                                                if primary_proj:
-                                                    for c_item in ecn_data.get("change_items", []):
-                                                        if c_item.get("type") == "overview_update":
-                                                            lbl = c_item.get("label")
-                                                            proj_states = c_item.get("project_states", {})
-                                                            if primary_proj in proj_states:
-                                                                action = proj_states[primary_proj].get("action")
-                                                                if action in ["add", "update"]:
-                                                                    new_val = c_item.get("new_data", {}).get(
-                                                                        "content", ""
-                                                                    )
-                                                                    if new_val:
-                                                                        pending_overrides[lbl] = new_val
+                                                pending_overrides = collect_ecn_pending_overview_overrides(
+                                                    ecn_data.get("change_items", []),
+                                                    primary_proj,
+                                                    edit_data.get("item_id"),
+                                                )
 
                                                 if ptype == "search":
                                                     is_valid, url, ftype, _, msg = await validate_search_path(
@@ -1079,24 +1146,37 @@ async def ecn_management_page():
                     return ui.notify("请至少选择一个目标项目", type="warning")
                 if not sel_state["has_enabled_bool"]:
                     return ui.notify("缺少第一列的基准数据，请先为基准列添加方案！", type="warning")
+                requires_new_content = ecn_overview_requires_new_content(sel_state["project_states"])
                 if (
+                    requires_new_content
+                    and
                     sel_state["processing_type"] in path_validation_types
                     and sel_state.get("validated_signature") != get_current_validation_signature()
                 ):
                     invalidate_path_validation()
                     return ui.notify("文件名或校验上下文已变化，请重新校验有效性。", type="warning")
-                if not sel_state["is_valid"]:
+                if requires_new_content and not sel_state["is_valid"]:
                     return ui.notify("未完成文件/路径校验，或数据不合法，请先点击校验有效性。", type="warning")
-                if not sel_state["new_data"].get("content", "").strip():
+                if requires_new_content and not sel_state["new_data"].get("content", "").strip():
                     return ui.notify("请完善新内容", type="warning")
                 has_traceability = bool(sel_state["traceability_levels"])
 
                 is_first_col = sel_state["label"] == sel_state["first_col_label"]
                 for p, p_state in sel_state["project_states"].items():
-                    if p_state["action"] == "add" and not is_first_col and not p_state["anchor_row_id"]:
+                    if (
+                        p_state["action"] == ECN_OVERVIEW_ACTION_ADD
+                        and not is_first_col
+                        and not p_state["anchor_row_id"]
+                    ):
                         return ui.notify(f"项目 [{p}] 作为新增项，必须绑定第一列基准行！", type="warning")
 
-                if sel_state["processing_type"] in ["search", "svn", "file", "image", "video"]:
+                if requires_new_content and sel_state["processing_type"] in [
+                    "search",
+                    "svn",
+                    "file",
+                    "image",
+                    "video",
+                ]:
                     sel_state["new_data"]["url_path"] = sel_state["validated_url"]
                     sel_state["new_data"]["file_type"] = sel_state["validated_file_type"]
 
@@ -1115,7 +1195,7 @@ async def ecn_management_page():
                     "label": sel_state["label"],
                     "first_col_label": sel_state["first_col_label"],
                     "project_states": copy.deepcopy(sel_state["project_states"]),
-                    "new_data": copy.deepcopy(sel_state["new_data"]),
+                    "new_data": copy.deepcopy(sel_state["new_data"]) if requires_new_content else {},
                     "config_processing_type": sel_state["processing_type"],
                     "execute_status": "pending",
                 }
@@ -1143,23 +1223,12 @@ async def ecn_management_page():
         is_edit = edit_item is not None
         edit_data = edit_item or {}
 
-        # 兼容编辑模式下的类别获取
         if is_edit:
             scheme_category = edit_data.get("scheme_category", scheme_category)
-        if scheme_category == "document":
-            scheme_category = ECN_SCHEME_GROUP_ORDINARY_DOCUMENT
         is_document_scheme = scheme_category == ECN_SCHEME_GROUP_ORDINARY_DOCUMENT
         is_material_scheme = scheme_category == ECN_SCHEME_GROUP_MATERIAL
         is_optional_tracking_scheme = is_document_scheme
-        legacy_traceability_level = edit_data.get("traceability_level")
         traceability_levels = copy.deepcopy(edit_data.get("traceability_levels", []))
-        if not traceability_levels and legacy_traceability_level:
-            traceability_levels = [legacy_traceability_level]
-        disposition_measure = edit_data.get("disposition_measure")
-        if not disposition_measure:
-            legacy_disposition_measures = edit_data.get("disposition_measures", [])
-            if isinstance(legacy_disposition_measures, list) and legacy_disposition_measures:
-                disposition_measure = legacy_disposition_measures[0]
         material_change = copy.deepcopy(edit_data.get("material_change", {}))
         if not isinstance(material_change, dict):
             material_change = {}
@@ -1173,9 +1242,7 @@ async def ecn_management_page():
             initial_change_type = ECN_MATERIAL_CHANGE_TYPE_ADD
 
         sel_state = {
-            "projects": copy.deepcopy(
-                edit_data.get("projects") or ([edit_data.get("project")] if edit_data.get("project") else [])
-            ),
+            "projects": copy.deepcopy(edit_data.get("projects", [])),
             "req_idxs": edit_data.get("req_idxs", []),
             "linked_docs": edit_data.get("linked_docs", []) if is_document_scheme else [],
             "linked_materials": (
@@ -1184,12 +1251,13 @@ async def ecn_management_page():
             "change_type": initial_change_type,
             "material_change": material_change,
             "traceability_levels": traceability_levels,
-            "disposition_measure": disposition_measure,
+            "disposition_measure": edit_data.get("disposition_measure") if is_material_scheme else None,
             "disposition_condition": edit_data.get("disposition_condition", ""),
         }
 
         req_options = {req["idx"]: f"[{req['idx']}] {req['content']}" for req in ecn_data["basic_info"]["requirements"]}
         req_docs = [k for k, v in ecn_data["review_info"]["involved_docs"].items() if v]
+        target_projects = get_ecn_scheme_target_projects(ecn_data)
         req_mats = [
             f"{mat}-{act}"
             for mat, actions in ecn_data["review_info"]["involved_materials"].items()
@@ -1209,7 +1277,7 @@ async def ecn_management_page():
                 ui.label("对应关联 (必填)").classes("text-xs font-bold text-indigo-700")
                 render_association_checkboxes(
                     "目标项目（必选）",
-                    ecn_data.get("target_projects", []),
+                    target_projects,
                     sel_state,
                     "projects",
                 )
@@ -1231,11 +1299,7 @@ async def ecn_management_page():
                     )
 
             # 根据类别控制可用分类
-            type_options = (
-                ECN_DOCUMENT_CHANGE_TYPES
-                if is_document_scheme
-                else list(ECN_MATERIAL_CHANGE_TYPES)
-            )
+            type_options = ECN_DOCUMENT_CHANGE_TYPES if is_document_scheme else list(ECN_MATERIAL_CHANGE_TYPES)
             type_select = (
                 ui.select(type_options, label="方案分类（必选）")
                 .classes("w-56 mt-4")
@@ -1364,15 +1428,16 @@ async def ecn_management_page():
                     return
                 disposition_container.set_visibility(True)
                 with disposition_container:
-                    with ui.card().classes(
-                        "w-full p-3 bg-amber-50/60 border border-amber-200 shadow-none gap-1"
-                    ):
+                    with ui.card().classes("w-full p-3 bg-amber-50/60 border border-amber-200 shadow-none gap-1"):
                         ui.label("旧料处置措施（必填）").classes("text-xs font-bold text-amber-900")
-                        disposition_select = ui.select(
-                            options=ECN_DISPOSITION_MEASURES,
-                            label="旧料处置措施",
-                        ).classes("w-full").bind_value(sel_state, "disposition_measure").props(
-                            "outlined dense clearable bg-white"
+                        disposition_select = (
+                            ui.select(
+                                options=ECN_DISPOSITION_MEASURES,
+                                label="旧料处置措施",
+                            )
+                            .classes("w-full")
+                            .bind_value(sel_state, "disposition_measure")
+                            .props("outlined dense clearable bg-white")
                         )
                         condition_container = ui.column().classes("w-full gap-0")
 
@@ -1413,6 +1478,8 @@ async def ecn_management_page():
                     )
 
             async def save_item():
+                old_content = ""
+                new_content = ""
                 if not sel_state["projects"]:
                     return ui.notify("请至少选择一个目标项目", type="warning")
                 if is_material_scheme and not sel_state["traceability_levels"]:
@@ -1436,12 +1503,6 @@ async def ecn_management_page():
                     )
                     if missing_fields:
                         return ui.notify("请填写：" + "、".join(missing_fields), type="warning")
-                    old_content, new_content = get_ecn_material_change_display(
-                        {
-                            "change_type": sel_state["change_type"],
-                            "material_change": sel_state["material_change"],
-                        }
-                    )
                 else:
                     assert old_content_ui is not None and new_content_ui is not None
                     if not old_content_ui.value.strip() or not new_content_ui.value.strip():
@@ -1458,8 +1519,6 @@ async def ecn_management_page():
                     "linked_docs": sel_state["linked_docs"],
                     "linked_materials": sel_state["linked_materials"],
                     "change_type": sel_state["change_type"],
-                    "old_content": old_content,
-                    "new_content": new_content,
                     "execute_status": "manual_record",
                 }
                 if is_material_scheme or sel_state["traceability_levels"]:
@@ -1470,6 +1529,9 @@ async def ecn_management_page():
                         payload["disposition_condition"] = sel_state["disposition_condition"].strip()
                 if is_material_scheme:
                     payload["material_change"] = copy.deepcopy(sel_state["material_change"])
+                else:
+                    payload["old_content"] = old_content
+                    payload["new_content"] = new_content
                 await on_save_callback(payload, is_edit)
                 dialog.close()
 
@@ -1500,18 +1562,12 @@ async def ecn_management_page():
         if not proj_dict_non["其它"]["其它"]:
             del proj_dict_non["其它"]
 
-        # 生成最新模板
-        latest_template = get_ecn_template()
-
         if is_new:
             if not proj_dict_mass and not proj_dict_non:
                 return ui.notify("当前没有可供变更的转产项目。", type="warning")
-            raw_data = generate_initial_ecn_data(current_user, current_role, all_ecns)
-            ecn_data = merge_with_template(raw_data, latest_template)
+            ecn_data = generate_initial_ecn_data(current_user, current_role, all_ecns)
         else:
-            raw_data = all_ecns.get(ecn_id, {})
-            # 此处动态自动补齐新字段，剥离废弃字段，这里有问题，似乎会在以后模板更新后，可能删除旧ECN的数据
-            ecn_data = merge_with_template(raw_data, latest_template)
+            ecn_data = all_ecns[ecn_id]
 
         local_data = copy.deepcopy(ecn_data)
 
@@ -1528,6 +1584,23 @@ async def ecn_management_page():
 
         # === 建立一个跨 Tab 刷新的引用桥梁 ===
         dashboard_updater = {"refresh": lambda: None}  # 初始值为一个空函数，后续会被覆盖为真正的刷新函数
+
+        def record_impact_change(field, target, action, before, after):
+            if not is_scheme_writer:
+                return
+            review.setdefault("impact_change_log", []).append(
+                {
+                    "event_id": str(uuid.uuid4()),
+                    "user": current_user,
+                    "role": current_role,
+                    "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "field": field,
+                    "target": str(target),
+                    "action": action,
+                    "before": copy.deepcopy(before),
+                    "after": copy.deepcopy(after),
+                }
+            )
 
         async def auto_save_review(e=None):
             if ecn_id and is_scheme_writer:
@@ -1551,6 +1624,10 @@ async def ecn_management_page():
                             current_review.setdefault("involved_materials", {}).setdefault(mat, {}).update(acts)
 
                     current_review["other_docs_desc"] = local_review.get("other_docs_desc", "")
+                    merge_ecn_impact_audit_log(
+                        current_review,
+                        local_review.get("impact_change_log", []),
+                    )
                     # 只有影响区已有有效内容时才认领处理人；已认领者不会因后续取消勾选而丢失。
                     register_ecn_impact_handler(current_ecn, handler, local_review)
                     return current_ecn
@@ -1635,9 +1712,10 @@ async def ecn_management_page():
                                 ui.radio(ECN_SCHEMA_CONFIG["change_natures"]).bind_value(basic, "nature").props(
                                     f"inline {'disable' if not is_ecr_editable else ''}"
                                 )
-                                if len(ECN_SCHEMA_CONFIG["change_natures"]) > 1 and basic.get(
-                                    "nature"
-                                ) == ECN_SCHEMA_CONFIG["change_natures"][1]:
+                                if (
+                                    len(ECN_SCHEMA_CONFIG["change_natures"]) > 1
+                                    and basic.get("nature") == ECN_SCHEMA_CONFIG["change_natures"][1]
+                                ):
                                     ui.input("涉及ERP系统单号为:").bind_value(basic, "erp_no").props(
                                         f"outlined dense {'readonly' if not is_ecr_editable else ''}"
                                     ).classes("flex-1 max-w-[300px]")
@@ -1761,7 +1839,7 @@ async def ecn_management_page():
                                 if is_ecr_editable:
                                     with ui.row().classes("w-full gap-2 mb-2 items-center"):
                                         req_input = (
-                                            ui.input("输入具体的变更要求...")
+                                            ui.input("输入具体的变更要求", placeholder="单行输入，不用加序号。")
                                             .props(
                                                 f"dense outlined bg-white {'readonly' if not is_ecr_editable else ''}"
                                             )
@@ -1862,7 +1940,11 @@ async def ecn_management_page():
 
                                     # 方案编写阶段，才显示扩大影响的选项，且只有方案编写者角色才有权限修改，任何变更都会自动保存评审信息
                                     def render_expanded_proj(
-                                        target_list, label_text, proj_dict_source, color="primary"
+                                        target_list,
+                                        field_name,
+                                        label_text,
+                                        proj_dict_source,
+                                        color="primary",
                                     ):
                                         """
                                         target_list: 扩大影响选择的项目
@@ -1927,6 +2009,13 @@ async def ecn_management_page():
                                                                 and ps["l3"] not in local_data["target_projects"]
                                                             ):
                                                                 target_list.append(ps["l3"])
+                                                                record_impact_change(
+                                                                    field_name,
+                                                                    ps["l3"],
+                                                                    "add",
+                                                                    False,
+                                                                    True,
+                                                                )
                                                                 render_chips()
                                                                 # 方案编写阶段，任何扩大影响的变更都需要自动保存评审信息，确保数据一致性和实时更新看板监控
                                                                 if is_scheming_phase:
@@ -1950,27 +2039,46 @@ async def ecn_management_page():
                                                                 "dense"
                                                             ):
                                                                 if is_scheme_writer:
+                                                                    def remove_expanded_project(
+                                                                        _=None,
+                                                                        project=p,
+                                                                    ):
+                                                                        if project not in target_list:
+                                                                            return
+                                                                        target_list.remove(project)
+                                                                        record_impact_change(
+                                                                            field_name,
+                                                                            project,
+                                                                            "remove",
+                                                                            True,
+                                                                            False,
+                                                                        )
+                                                                        render_chips()
+                                                                        ui.timer(
+                                                                            0.1,
+                                                                            auto_save_review,
+                                                                            once=True,
+                                                                        )
+
                                                                     ui.icon("close", size="xs").classes(
                                                                         "cursor-pointer ml-1"
                                                                     ).on(
                                                                         "click",
-                                                                        lambda e, proj=p: [
-                                                                            target_list.remove(proj),
-                                                                            render_chips(),
-                                                                            ui.timer(0.1, auto_save_review, once=True),
-                                                                        ],
+                                                                        remove_expanded_project,
                                                                     )
 
                                                 render_chips()
 
                                     render_expanded_proj(
                                         review["expanded_projects_mass"],
+                                        "expanded_projects_mass",
                                         "扩大影响 (试产/量产):",
                                         proj_dict_mass,
                                         color="blue",
                                     )
                                     render_expanded_proj(
                                         review["expanded_projects_non_mass"],
+                                        "expanded_projects_non_mass",
                                         "扩大影响 (非试产/量产):",
                                         proj_dict_non,
                                         color="teal",
@@ -1983,9 +2091,20 @@ async def ecn_management_page():
                                 ):
                                     # 动态读取配置遍历
                                     for imp_key in ECN_SCHEMA_CONFIG["impact_dimensions"]:
+                                        async def on_impact_change(e, impact_key=imp_key):
+                                            selected = bool(e.value)
+                                            record_impact_change(
+                                                "impacts",
+                                                impact_key,
+                                                "check" if selected else "uncheck",
+                                                not selected,
+                                                selected,
+                                            )
+                                            await auto_save_review(e)
+
                                         ui.checkbox(imp_key).bind_value(review["impacts"], imp_key).props(
                                             f"{'disable' if not is_scheme_writer else ''} dense"
-                                        ).on_value_change(auto_save_review)
+                                        ).on_value_change(on_impact_change)
 
                             with ui.column().classes("w-full p-2 pdf-border-b gap-2 hover:bg-gray-50"):
                                 ui.label("变更涉及资料 (必出方案):").classes("font-bold text-gray-700")
@@ -2325,11 +2444,8 @@ async def ecn_management_page():
                                         if edit_mode:
                                             for idx, e_item in enumerate(items):
                                                 if e_item["item_id"] == new_item["item_id"]:
-                                                    if e_item.get("rejection_info"):
+                                                    if e_item.get("rejection_history"):
                                                         new_item["review_status"] = ECN_ITEM_STATUS_NEEDS_IMPROVEMENT
-                                                        new_item["rejection_info"] = copy.deepcopy(
-                                                            e_item.get("rejection_info", {})
-                                                        )
                                                         new_item["rejection_history"] = copy.deepcopy(
                                                             e_item.get("rejection_history", [])
                                                         )
@@ -2367,11 +2483,8 @@ async def ecn_management_page():
                                         if is_edit:
                                             for idx, e_item in enumerate(local_data["change_items"]):
                                                 if e_item["item_id"] == item_data["item_id"]:
-                                                    if e_item.get("rejection_info"):
+                                                    if e_item.get("rejection_history"):
                                                         item_data["review_status"] = ECN_ITEM_STATUS_NEEDS_IMPROVEMENT
-                                                        item_data["rejection_info"] = copy.deepcopy(
-                                                            e_item.get("rejection_info", {})
-                                                        )
                                                         item_data["rejection_history"] = copy.deepcopy(
                                                             e_item.get("rejection_history", [])
                                                         )
@@ -2397,11 +2510,7 @@ async def ecn_management_page():
                                         ui.notify("方案保存失败，请重试。", type="negative")
 
                                 def get_item_projects(item):
-                                    projects = item.get("projects")
-                                    if projects:
-                                        return [p for p in projects if p]
-                                    # 兼容老数据：如果没有 projects 字段，则尝试从 label 字段解析项目名称（假设格式为 "【项目1 - 角色 - 标题】"）
-                                    return [item.get("project")] if item.get("project") else []
+                                    return [project for project in item.get("projects", []) if project]
 
                                 # --- 替换列表渲染分组部分 ---
                                 def render_items():
@@ -2438,15 +2547,15 @@ async def ecn_management_page():
                                                 "inventory",
                                             ),
                                             ECN_SCHEME_GROUP_UNKNOWN: (
-                                                "其它/遗留变更方案",
+                                                "未识别方案",
                                                 "list",
                                             ),
                                         }
                                         table_grid_style = (
                                             "display:grid;"
-                                            "grid-template-columns:64px minmax(120px,.45fr) "
-                                            "minmax(210px,.9fr) "
-                                            "minmax(220px,1fr) minmax(220px,1fr) "
+                                            "grid-template-columns:64px minmax(190px,.72fr) "
+                                            "minmax(120px,.42fr) 72px "
+                                            "minmax(210px,.9fr) minmax(230px,1fr) "
                                             "minmax(90px,.35fr) minmax(90px,.35fr) "
                                             "minmax(110px,.4fr) minmax(200px,.8fr) "
                                             "80px 120px 80px;"
@@ -2505,6 +2614,19 @@ async def ecn_management_page():
                                             return item.get("change_type") or "资料变更"
 
                                         def render_table_projects(item):
+                                            project_states = item.get("project_states", {})
+                                            if item.get("type") == "overview_update" and project_states:
+                                                with ui.column().classes("w-full gap-0 self-stretch"):
+                                                    for project in project_states:
+                                                        with ui.element("div").classes(
+                                                            "w-full min-h-[64px] px-1 flex items-center "
+                                                            "justify-center border-b border-slate-100 last:border-b-0"
+                                                        ):
+                                                            ui.label(project).classes(
+                                                                "text-sm font-semibold text-blue-950 text-center "
+                                                                "break-all leading-tight"
+                                                            )
+                                                return
                                             projects = get_item_projects(item)
                                             if projects:
                                                 for project in projects:
@@ -2517,13 +2639,7 @@ async def ecn_management_page():
 
                                         def get_scheme_tracking_values(item):
                                             traceability_levels = item.get("traceability_levels", [])
-                                            if not traceability_levels and item.get("traceability_level"):
-                                                traceability_levels = [item.get("traceability_level")]
                                             disposition_measure = item.get("disposition_measure")
-                                            if not disposition_measure:
-                                                legacy_measures = item.get("disposition_measures", [])
-                                                if isinstance(legacy_measures, list) and legacy_measures:
-                                                    disposition_measure = legacy_measures[0]
                                             return traceability_levels, disposition_measure
 
                                         def render_table_traceability(item):
@@ -2586,6 +2702,158 @@ async def ecn_management_page():
                                             if not linked_docs and not linked_materials:
                                                 ui.label("—").classes("text-sm text-amber-500")
 
+                                        overview_existing_data_dialog = ui.dialog()
+
+                                        def open_overview_existing_data_dialog(project, item, entries):
+                                            overview_existing_data_dialog.clear()
+                                            with overview_existing_data_dialog, ui.card().classes(
+                                                "w-[720px] max-w-full max-h-[80vh] p-0 gap-0"
+                                            ):
+                                                with ui.row().classes(
+                                                    "w-full px-4 py-3 items-center justify-between "
+                                                    "border-b border-slate-200 bg-slate-50"
+                                                ):
+                                                    with ui.column().classes("gap-0 min-w-0"):
+                                                        ui.label(f"{project} · 当前及本单暂存数据").classes(
+                                                            "text-base font-bold text-slate-800"
+                                                        )
+                                                        ui.label(table_item_title(item)).classes(
+                                                            "text-xs text-slate-500 break-all"
+                                                        )
+                                                    ui.button(
+                                                        icon="close",
+                                                        on_click=overview_existing_data_dialog.close,
+                                                    ).props("flat round dense color=blue-grey-7")
+                                                with ui.column().classes(
+                                                    "w-full gap-2 p-4 overflow-y-auto"
+                                                ):
+                                                    for index, entry in enumerate(entries, start=1):
+                                                        with ui.card().classes(
+                                                            "w-full p-3 gap-1 shadow-none border border-slate-200"
+                                                        ):
+                                                            ui.label(
+                                                                f"{index}. {entry.get('source', '当前已有')}"
+                                                            ).classes("text-xs font-bold text-slate-500")
+                                                            ui.label(str(entry.get("content") or "（空内容）")).classes(
+                                                                "text-sm text-slate-800 break-all whitespace-pre-line"
+                                                            )
+                                                with ui.row().classes(
+                                                    "w-full px-4 py-3 border-t border-slate-200 justify-end"
+                                                ):
+                                                    ui.button(
+                                                        "关闭",
+                                                        on_click=overview_existing_data_dialog.close,
+                                                    ).props("flat color=blue-grey-7")
+                                            overview_existing_data_dialog.open()
+
+                                        def render_overview_subrow():
+                                            return ui.element("div").classes(
+                                                "w-full min-h-[64px] px-1 flex flex-col justify-center "
+                                                "border-b border-slate-100 last:border-b-0 min-w-0"
+                                            )
+
+                                        def render_table_action(item):
+                                            project_states = item.get("project_states", {})
+                                            if item.get("type") == "overview_update" and project_states:
+                                                with ui.column().classes("w-full gap-0 self-stretch"):
+                                                    for project_state in project_states.values():
+                                                        with render_overview_subrow():
+                                                            action = project_state.get("action")
+                                                            action_label = ECN_OVERVIEW_ACTION_LABELS.get(
+                                                                action,
+                                                                str(action or "—"),
+                                                            )
+                                                            action_class = {
+                                                                ECN_OVERVIEW_ACTION_ADD: "text-blue-700 bg-blue-50",
+                                                                ECN_OVERVIEW_ACTION_DEACTIVATE: "text-red-700 bg-red-50",
+                                                            }.get(action, "text-amber-700 bg-amber-50")
+                                                            ui.label(action_label).classes(
+                                                                f"text-xs font-bold rounded px-2 py-0.5 "
+                                                                f"self-center {action_class}"
+                                                            )
+                                                return
+                                            action_label = (
+                                                item.get("change_type")
+                                                if classify_ecn_change_item(item) == ECN_SCHEME_GROUP_MATERIAL
+                                                else "变更"
+                                            )
+                                            ui.label(action_label or "—").classes(
+                                                "text-xs font-semibold text-slate-600 text-center break-all"
+                                            )
+
+                                        def render_overview_current_content(item, project, project_state):
+                                            action = project_state.get("action")
+                                            if action != ECN_OVERVIEW_ACTION_ADD:
+                                                old_text = str(
+                                                    project_state.get("old_data", {}).get("content") or "无"
+                                                )
+                                                ui.label(old_text).classes(
+                                                    "w-full text-sm font-semibold text-slate-700 truncate"
+                                                ).tooltip(old_text)
+                                                return
+
+                                            entries = [
+                                                entry
+                                                for entry in project_state.get("existing_contents", [])
+                                                if isinstance(entry, dict)
+                                            ]
+                                            current_entries = [
+                                                entry for entry in entries if entry.get("source") == "当前已有"
+                                            ]
+                                            pending_entries = [
+                                                entry for entry in entries if entry.get("source") != "当前已有"
+                                            ]
+                                            if not entries:
+                                                ui.label("当前无内容").classes("text-sm text-slate-400")
+                                                return
+                                            if not current_entries:
+                                                ui.label("当前无内容").classes("text-sm text-slate-400")
+                                                ui.button(
+                                                    f"本单另有 {len(pending_entries)} 条待新增 · 查看",
+                                                    on_click=lambda _=None,
+                                                    p=project,
+                                                    current_item=item,
+                                                    all_entries=copy.deepcopy(entries): (
+                                                        open_overview_existing_data_dialog(
+                                                            p,
+                                                            current_item,
+                                                            all_entries,
+                                                        )
+                                                    ),
+                                                ).props("flat dense no-caps color=primary").classes(
+                                                    "text-[11px] self-start -ml-2"
+                                                )
+                                                return
+                                            if len(entries) == 1:
+                                                content = str(entries[0].get("content") or "（空内容）")
+                                                ui.label(content).classes(
+                                                    "w-full text-sm font-semibold text-slate-700 truncate"
+                                                ).tooltip(content)
+                                                return
+                                            summaries = []
+                                            if current_entries:
+                                                summaries.append(f"当前已有 {len(current_entries)} 条")
+                                            if pending_entries:
+                                                summaries.append(f"本单待新增 {len(pending_entries)} 条")
+                                            ui.label(" · ".join(summaries)).classes(
+                                                "w-full text-xs font-semibold text-slate-600 truncate"
+                                            )
+                                            ui.button(
+                                                f"查看全部 {len(entries)} 条",
+                                                on_click=lambda _=None,
+                                                p=project,
+                                                current_item=item,
+                                                all_entries=copy.deepcopy(entries): (
+                                                    open_overview_existing_data_dialog(
+                                                        p,
+                                                        current_item,
+                                                        all_entries,
+                                                    )
+                                                ),
+                                            ).props("flat dense no-caps color=primary").classes(
+                                                "text-[11px] self-start -ml-2"
+                                            )
+
                                         def render_table_old_value(item):
                                             if classify_ecn_change_item(item) == ECN_SCHEME_GROUP_MATERIAL:
                                                 old_value, _ = get_ecn_material_change_display(item)
@@ -2601,18 +2869,14 @@ async def ecn_management_page():
 
                                             project_states = item.get("project_states", {})
                                             if project_states:
-                                                with ui.column().classes("w-full gap-1"):
+                                                with ui.column().classes("w-full gap-0 self-stretch"):
                                                     for project, project_state in project_states.items():
-                                                        is_add = project_state.get("action") == "add"
-                                                        old_text = (
-                                                            "无数据"
-                                                            if is_add
-                                                            else project_state.get("old_data", {}).get("content", "无")
-                                                        )
-                                                        prefix = f"{project}：" if len(project_states) > 1 else ""
-                                                        ui.label(f"{prefix}{old_text}").classes(
-                                                            "text-sm font-bold text-slate-600 break-all"
-                                                        )
+                                                        with render_overview_subrow():
+                                                            render_overview_current_content(
+                                                                item,
+                                                                project,
+                                                                project_state,
+                                                            )
                                             else:
                                                 ui.label(item.get("old_data", {}).get("content", "无")).classes(
                                                     "text-sm font-bold text-slate-600 break-all"
@@ -2632,26 +2896,54 @@ async def ecn_management_page():
                                                 return
 
                                             new_data = item.get("new_data", {})
-                                            ui.label(new_data.get("content", "")).classes(
+                                            project_states = item.get("project_states", {})
+                                            new_content = str(new_data.get("content") or "（未填写）")
+                                            if project_states:
+                                                with ui.column().classes("w-full gap-0 self-stretch"):
+                                                    for project_state in project_states.values():
+                                                        with render_overview_subrow():
+                                                            action = project_state.get("action")
+                                                            if action == ECN_OVERVIEW_ACTION_DEACTIVATE:
+                                                                ui.label("原内容失效").classes(
+                                                                    "text-sm font-semibold text-red-700"
+                                                                )
+                                                                ui.label("不生成新内容").classes(
+                                                                    "text-xs text-slate-500"
+                                                                )
+                                                            else:
+                                                                prefix = (
+                                                                    "新增："
+                                                                    if action == ECN_OVERVIEW_ACTION_ADD
+                                                                    else "更换为："
+                                                                )
+                                                                ui.label(f"{prefix}{new_content}").classes(
+                                                                    "w-full text-sm font-semibold text-slate-900 truncate"
+                                                                ).tooltip(new_content)
+                                                                ui.label(
+                                                                    (
+                                                                        "现有内容保留"
+                                                                        if any(
+                                                                            isinstance(entry, dict)
+                                                                            and entry.get("source") == "当前已有"
+                                                                            for entry in project_state.get(
+                                                                                "existing_contents", []
+                                                                            )
+                                                                        )
+                                                                        else "当前无内容，将生成新内容"
+                                                                    )
+                                                                    if action == ECN_OVERVIEW_ACTION_ADD
+                                                                    else "原内容失效"
+                                                                ).classes("text-xs text-slate-500")
+                                                return
+                                            ui.label(new_content).classes(
                                                 "text-sm font-semibold text-slate-900 break-all"
                                             )
-                                            if item.get("old_data", {}).get("type") == "test":
-                                                test_data = new_data.get("test_select_data", {})
-                                                details = [
-                                                    test_data.get("test_nature_select"),
-                                                    test_data.get("state_select"),
-                                                    test_data.get("node_select"),
-                                                    test_data.get("instrument_select"),
-                                                ]
-                                                ui.label(" · ".join(value for value in details if value)).classes(
-                                                    "text-[10px] text-slate-500 mt-1"
-                                                )
 
                                         rejection_history_dialog = ui.dialog()
 
                                         def get_rejection_history(item):
                                             history = item.get("rejection_history", [])
-                                            records = (
+                                            return (
                                                 [
                                                     copy.deepcopy(record)
                                                     for record in history
@@ -2660,15 +2952,9 @@ async def ecn_management_page():
                                                 if isinstance(history, list)
                                                 else []
                                             )
-                                            latest = item.get("rejection_info", {})
-                                            if isinstance(latest, dict) and latest and latest not in records:
-                                                records.append(copy.deepcopy(latest))
-                                            return records
 
                                         def snapshot_projects(snapshot):
-                                            projects = snapshot.get("projects") or (
-                                                [snapshot.get("project")] if snapshot.get("project") else []
-                                            )
+                                            projects = snapshot.get("projects", [])
                                             return ", ".join(str(project) for project in projects) or "未指定"
 
                                         def snapshot_old_content(snapshot):
@@ -2682,12 +2968,35 @@ async def ecn_management_page():
                                                 for project, state in project_states.items():
                                                     if not isinstance(state, dict):
                                                         continue
-                                                    content = (
-                                                        "无数据"
-                                                        if state.get("action") == "add"
-                                                        else state.get("old_data", {}).get("content", "无")
-                                                    )
-                                                    values.append(f"{project}：{content}")
+                                                    action = state.get("action")
+                                                    if action == ECN_OVERVIEW_ACTION_ADD:
+                                                        entries = state.get("existing_contents", [])
+                                                        current_count = sum(
+                                                            1
+                                                            for entry in entries
+                                                            if entry.get("source") == "当前已有"
+                                                        )
+                                                        summary = (
+                                                            f"{project}："
+                                                            + (
+                                                                f"当前已有 {current_count} 条"
+                                                                if current_count
+                                                                else "当前无内容"
+                                                            )
+                                                        )
+                                                        preview = [
+                                                            f"{entry.get('source', '当前已有')}："
+                                                            f"{entry.get('content') or '（空内容）'}"
+                                                            for entry in entries[:2]
+                                                        ]
+                                                        if preview:
+                                                            summary += "：" + "；".join(preview)
+                                                        if len(entries) > 2:
+                                                            summary += f"；另有 {len(entries) - 2} 条"
+                                                        values.append(summary)
+                                                    else:
+                                                        content = state.get("old_data", {}).get("content", "无")
+                                                        values.append(f"{project}：{content}")
                                                 if values:
                                                     return "\n".join(values)
                                             return str(snapshot.get("old_data", {}).get("content", "无"))
@@ -2696,7 +3005,41 @@ async def ecn_management_page():
                                             if classify_ecn_change_item(snapshot) == ECN_SCHEME_GROUP_MATERIAL:
                                                 return get_ecn_material_change_display(snapshot)[1] or "无"
                                             if snapshot.get("type") == "overview_update":
-                                                return str(snapshot.get("new_data", {}).get("content", "无"))
+                                                project_states = snapshot.get("project_states", {})
+                                                if isinstance(project_states, dict) and project_states:
+                                                    new_content = str(
+                                                        snapshot.get("new_data", {}).get("content") or "（未填写）"
+                                                    )
+                                                    results = []
+                                                    for project, state in project_states.items():
+                                                        if not isinstance(state, dict):
+                                                            continue
+                                                        action = state.get("action")
+                                                        if action == ECN_OVERVIEW_ACTION_ADD:
+                                                            has_current_content = any(
+                                                                isinstance(entry, dict)
+                                                                and entry.get("source") == "当前已有"
+                                                                for entry in state.get("existing_contents", [])
+                                                            )
+                                                            results.append(
+                                                                f"{project}：新增 {new_content}；"
+                                                                + (
+                                                                    "现有内容保留"
+                                                                    if has_current_content
+                                                                    else "当前无内容，将生成新内容"
+                                                                )
+                                                            )
+                                                        elif action == ECN_OVERVIEW_ACTION_DEACTIVATE:
+                                                            results.append(
+                                                                f"{project}：原内容失效；不生成新内容"
+                                                            )
+                                                        else:
+                                                            results.append(
+                                                                f"{project}：更换为 {new_content}；原内容失效"
+                                                            )
+                                                    if results:
+                                                        return "\n".join(results)
+                                                return "未记录执行结果"
                                             return str(snapshot.get("new_content") or "无")
 
                                         def snapshot_requirements(snapshot):
@@ -2734,36 +3077,20 @@ async def ecn_management_page():
                                                     ("变更对象", table_item_title(snapshot)),
                                                     ("对应变更要求", snapshot_requirements(snapshot)),
                                                     ("对应影响勾选", snapshot_impacts(snapshot)),
-                                                    ("变更前", snapshot_old_content(snapshot)),
-                                                    ("变更后", snapshot_new_content(snapshot)),
+                                                    ("当前内容", snapshot_old_content(snapshot)),
+                                                    ("执行后结果", snapshot_new_content(snapshot)),
                                                 ]
                                                 snapshot_is_material = (
                                                     classify_ecn_change_item(snapshot) == ECN_SCHEME_GROUP_MATERIAL
                                                 )
                                                 snapshot_has_tracking = bool(
                                                     snapshot.get("traceability_levels")
-                                                    or snapshot.get("traceability_level")
                                                 )
                                                 if snapshot_is_material or snapshot_has_tracking:
                                                     snapshot_traceability_levels = snapshot.get(
                                                         "traceability_levels", []
                                                     )
-                                                    if not snapshot_traceability_levels and snapshot.get(
-                                                        "traceability_level"
-                                                    ):
-                                                        snapshot_traceability_levels = [
-                                                            snapshot.get("traceability_level")
-                                                        ]
                                                     snapshot_disposition_measure = snapshot.get("disposition_measure")
-                                                    if not snapshot_disposition_measure:
-                                                        legacy_snapshot_measures = snapshot.get(
-                                                            "disposition_measures", []
-                                                        )
-                                                        if (
-                                                            isinstance(legacy_snapshot_measures, list)
-                                                            and legacy_snapshot_measures
-                                                        ):
-                                                            snapshot_disposition_measure = legacy_snapshot_measures[0]
                                                     snapshot_fields.append(
                                                         (
                                                             "追溯处置范围（多选）",
@@ -2919,19 +3246,23 @@ async def ecn_management_page():
                                                             "text-sm font-bold text-slate-500"
                                                         )
                                                     with ui.element("div").classes(
-                                                        "px-2 py-1 border-l border-slate-200 flex flex-col items-center justify-center"
-                                                    ):
-                                                        render_table_projects(item)
-                                                    with ui.element("div").classes(
                                                         "px-2 py-1 border-l border-slate-200 flex flex-col items-center justify-center min-w-0"
                                                     ):
                                                         render_table_parameter(item)
                                                     with ui.element("div").classes(
-                                                        "px-2 py-1 border-l border-slate-200 flex flex-col justify-center min-w-0"
+                                                        "px-1 py-0 border-l border-slate-200 flex flex-col items-center justify-center"
+                                                    ):
+                                                        render_table_projects(item)
+                                                    with ui.element("div").classes(
+                                                        "px-1 py-0 border-l border-slate-200 flex flex-col items-center justify-center min-w-0"
+                                                    ):
+                                                        render_table_action(item)
+                                                    with ui.element("div").classes(
+                                                        "px-1 py-0 border-l border-slate-200 flex flex-col justify-center min-w-0"
                                                     ):
                                                         render_table_old_value(item)
                                                     with ui.element("div").classes(
-                                                        "px-2 py-1 border-l border-slate-200 flex flex-col justify-center min-w-0"
+                                                        "px-1 py-0 border-l border-slate-200 flex flex-col justify-center min-w-0"
                                                     ):
                                                         render_table_new_value(item)
                                                     with ui.element("div").classes(
@@ -3065,10 +3396,11 @@ async def ecn_management_page():
                                                             # 控制表头内容及顺序
                                                             for header, extra_classes in [
                                                                 ("编号", "justify-center"),
-                                                                ("项目", "justify-center"),
                                                                 ("变更对象/类别", "justify-center"),
-                                                                ("变更前", ""),
-                                                                ("变更后", ""),
+                                                                ("项目", "justify-center"),
+                                                                ("动作", "justify-center"),
+                                                                ("当前内容", ""),
+                                                                ("执行后结果", ""),
                                                                 ("追溯处置范围", "justify-center"),
                                                                 ("旧料处置措施", "justify-center"),
                                                                 ("对应变更要求", "justify-center"),
@@ -3171,17 +3503,15 @@ async def ecn_management_page():
                                 with ui.row().classes("gap-6 flex-1"):
                                     for measure in ECN_SCHEMA_CONFIG["execution_handling_measures"]:
                                         exec_info["handling_measures"].setdefault(measure, False)
-                                        ui.checkbox(measure).bind_value(
-                                            exec_info["handling_measures"], measure
-                                        ).props(f"{'disable' if not is_exec_phase else ''}")
+                                        ui.checkbox(measure).bind_value(exec_info["handling_measures"], measure).props(
+                                            f"{'disable' if not is_exec_phase else ''}"
+                                        )
                             with ui.row().classes("w-full p-3 items-center gap-6 hover:bg-gray-50"):
                                 ui.label("试产结论:").classes("font-bold text-gray-700 w-20")
                                 with ui.row().classes("gap-6 flex-1"):
                                     ui.radio(ECN_SCHEMA_CONFIG["trial_conclusions"]).bind_value(
                                         exec_info, "trial_conclusion"
-                                    ).props(
-                                        f"{'disable' if not is_exec_phase else ''} inline"
-                                    )
+                                    ).props(f"{'disable' if not is_exec_phase else ''} inline")
 
                 # --- [TAB 4] 审批流转记录 ---
                 with ui.tab_panel(tab_workflow).classes("gap-4 p-4 max-w-[1000px] mx-auto bg-white rounded border"):
@@ -3255,10 +3585,17 @@ async def ecn_management_page():
                         ECN_SCHEME_GROUP_ORDINARY_DOCUMENT: "其它特定事项/资料",
                         ECN_SCHEME_GROUP_OVERVIEW_DOCUMENT: "系统内资料",
                         ECN_SCHEME_GROUP_MATERIAL: "物料",
-                        ECN_SCHEME_GROUP_UNKNOWN: "其它",
+                        ECN_SCHEME_GROUP_UNKNOWN: "未识别",
                     }[item_group]
                     if item.get("type") == "overview_update":
                         content = item.get("new_data", {}).get("content", "")
+                        if not content and any(
+                            state.get("action") == ECN_OVERVIEW_ACTION_DEACTIVATE
+                            for state in item.get("project_states", {}).values()
+                        ):
+                            content = "仅失效原概述"
+                    elif item_group == ECN_SCHEME_GROUP_MATERIAL:
+                        content = get_ecn_material_change_display(item)[1]
                     else:
                         content = item.get("new_content", "")
                     item_options[item_id] = (
@@ -3535,13 +3872,6 @@ async def ecn_management_page():
                                 new_icon = icon_map.get(processing_type, None)
 
                                 project_states = item.get("project_states", {})
-                                if not project_states:
-                                    target_projects = item.get("projects") or [item.get("project")]
-                                    project_states = {
-                                        p: {"action": "update", "chip_id": item.get("chip_id")}
-                                        for p in target_projects
-                                        if p
-                                    }
 
                                 updated = False
 
@@ -3588,7 +3918,24 @@ async def ecn_management_page():
                                     chip_id = p_state.get("chip_id")
                                     anchor_row_id = p_state.get("anchor_row_id")
 
-                                    if action == "update" and chip_id:
+                                    if action == ECN_OVERVIEW_ACTION_DEACTIVATE and chip_id:
+                                        path = [f"{project}_over_data", item["label"], chip_id]
+                                        old_chip = db_storage.get_deep_item(path)
+                                        if old_chip:
+                                            req_max_ver = app.storage.general.get("project_req_max_ver", {}).get(
+                                                project,
+                                                "1.0",
+                                            )
+                                            deactivated_chip = deactivate_overview_chip_for_ecn(
+                                                old_chip,
+                                                req_max_ver,
+                                                local_data["ecn_id"],
+                                                now_str,
+                                            )
+                                            await save_ecn_deep_item(path, deactivated_chip)
+                                            updated = True
+
+                                    elif action == ECN_OVERVIEW_ACTION_UPDATE and chip_id:
                                         path = [f"{project}_over_data", item["label"], chip_id]
                                         old_chip = db_storage.get_deep_item(path)
 
@@ -3603,7 +3950,7 @@ async def ecn_management_page():
                                             )
                                             new_chip["row_id"] = old_chip.get("row_id")  # 严格继承旧 row_id
 
-                                            # 处理旧数据的部分继承与失活
+                                            # 继承原节点的版本激活矩阵，并将原节点失活
                                             new_chip["select_activ_dic"] = copy.deepcopy(
                                                 old_chip.get("select_activ_dic", {})
                                             )
@@ -3626,7 +3973,7 @@ async def ecn_management_page():
                                             )
                                             updated = True
 
-                                    elif action == "add":
+                                    elif action == ECN_OVERVIEW_ACTION_ADD:
                                         new_chip, _ = create_new_chip_template(
                                             project,
                                             item.get("author", current_user),

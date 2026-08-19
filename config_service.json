@@ -1317,7 +1317,7 @@
             ]
         },
         "38": {
-            "condition": "7any['硬件'] and 36any['悬臂','接近开关']",
+            "condition": "7any['硬件'] and 36any['悬臂','接近开关','红外对射','定制检测']",
             "node_id": "38",
             "guide_content": "导光束插拔影响的光源与处理逻辑",
             "answer_type": "单选",
@@ -1410,8 +1410,8 @@
                     "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
-                    "option_bold": "",
-                    "option_show": "",
+                    "option_bold": "不指定",
+                    "option_show": "{V}导光束做光参数测试",
                     "option_label": ""
                 }
             ]
@@ -1439,7 +1439,7 @@
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
-                    "option_show": "导光束限定要求：{V}",
+                    "option_show": "使用指定导光束测的光参数：{V}",
                     "option_label": ""
                 }
             ]
@@ -7633,7 +7633,7 @@
             ]
         }
     },
-    "config_timestamp": "2026-08-18T14:58:56.610442",
-    "excel_version_hash": "f242a50b",
+    "config_timestamp": "2026-08-19T16:25:18.385681",
+    "excel_version_hash": "5f930b80",
     "entry_status": false
 }

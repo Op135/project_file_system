@@ -439,15 +439,11 @@ if __name__ in {"__main__", "__mp_main__"}:
             "reconnect_timeout": 300.0,
             "uvicorn_logging_level": "warning",
         }
-    elif DEVELOPMENT_RELOAD:
+    else:
         # -------------------- 本地开发配置 --------------------
         # 明确监听 src 目录，避免启动时的工作目录不同导致部分文件未被监听。
         src_dir = os.path.dirname(os.path.abspath(__file__))
-
-        # Windows 映射盘、网络盘或同步盘偶尔会丢失文件系统通知；
-        # 开发环境改用轮询监听，提高保存代码后触发重载的可靠性。
-        os.environ.setdefault("WATCHFILES_FORCE_POLLING", "true")
-
+        # VS Code 调试模式：避免 watchfiles 重启进程时触发 debugpy/pydevd 线程补丁异常。
         run_environment_options = {
             "reload": True,
             "reconnect_timeout": 3.0,
@@ -455,13 +451,6 @@ if __name__ in {"__main__", "__mp_main__"}:
             "uvicorn_reload_dirs": src_dir,
             "uvicorn_reload_includes": "*.py",
             "uvicorn_reload_excludes": "__pycache__,*.py[cod]",
-        }
-    else:
-        # VS Code 调试模式：避免 watchfiles 重启进程时触发 debugpy/pydevd 线程补丁异常。
-        run_environment_options = {
-            "reload": False,
-            "reconnect_timeout": 3.0,
-            "uvicorn_logging_level": "info",
         }
 
     ui.run(

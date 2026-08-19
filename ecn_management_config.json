@@ -14,6 +14,7 @@
         "scheme_tracking.traceability_levels": "各类ECN方案可选择的追溯范围；物料方案必填，其它方案选填。",
         "scheme_tracking.disposition_measures": "旧料处置措施的可选项。",
         "scheme_options.document_change_types": "其它特定事项/资料变更方案的分类选项。",
+        "scheme_options.overview_actions": "系统内资料方案的动作显示文案；add、update、deactivate为固定语义键。",
         "scheme_options.material_change_types": "物料变更方案的分类文案映射；add、adjust_quantity、discontinue、replace为固定语义键。",
         "scheme_options.material_default_unit": "新建物料方案时预填的单位。",
         "scheme_options.material_disposition_required_types": "需要选择旧料处置措施的物料方案语义键。",
@@ -117,11 +118,16 @@
             "测试报告内容格式",
             "其它"
         ],
+        "overview_actions": {
+            "add": "新增",
+            "update": "更换",
+            "deactivate": "失效"
+        },
         "material_change_types": {
             "add": "新增",
             "adjust_quantity": "调量",
-            "discontinue": "弃用",
-            "replace": "更换"
+            "discontinue": "仅删除",
+            "replace": "更改"
         },
         "material_default_unit": "pcs",
         "material_disposition_required_types": [
@@ -198,9 +204,8 @@
         "material_actions": [
             "新增",
             "调量",
-            "弃用",
-            "返工使用",
-            "弃用更换"
+            "仅删除",
+            "更改"
         ],
         "impact_dimensions": [
             "光学部件",

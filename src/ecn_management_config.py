@@ -23,31 +23,27 @@ ECN_SCHEME_GROUP_UNKNOWN = "unknown"
 
 
 def get_ecn_material_change_display(item: Any) -> tuple[str, str]:
-    """返回物料方案用于表格/快照展示的“变更前、变更后”文本，并兼容旧文本方案。"""
+    """返回结构化物料方案用于表格/快照展示的“变更前、变更后”文本。"""
     if not isinstance(item, dict):
         return "", ""
     change_type = item.get("change_type")
     material_change = item.get("material_change", {})
     if change_type not in ECN_MATERIAL_CHANGE_TYPES or not isinstance(material_change, dict):
-        return str(item.get("old_content") or ""), str(item.get("new_content") or "")
+        return "", ""
 
     def material_text(name_key: str, quantity_key: str, unit_key: str) -> str:
         name = str(material_change.get(name_key) or "").strip()
         quantity = material_change.get(quantity_key)
         unit = str(material_change.get(unit_key) or ECN_MATERIAL_DEFAULT_UNIT).strip()
         quantity_text = (
-            ""
-            if quantity in [None, ""]
-            else f"{quantity:g}"
-            if isinstance(quantity, (int, float))
-            else str(quantity)
+            "" if quantity in [None, ""] else f"{quantity:g}" if isinstance(quantity, (int, float)) else str(quantity)
         )
         return f"{name}\n用量：{quantity_text} {unit}".strip()
 
     if change_type == ECN_MATERIAL_CHANGE_TYPE_ADD:
         return "无", material_text("material_name", "quantity", "unit")
     if change_type == ECN_MATERIAL_CHANGE_TYPE_DISCONTINUE:
-        return material_text("material_name", "quantity", "unit"), "弃用"
+        return material_text("material_name", "quantity", "unit"), "仅删除"
     if change_type == ECN_MATERIAL_CHANGE_TYPE_ADJUST_QUANTITY:
         name = str(material_change.get("material_name") or "").strip()
         unit = str(material_change.get("unit") or ECN_MATERIAL_DEFAULT_UNIT).strip()
@@ -168,11 +164,16 @@ _DEFAULT_CONFIG = {
     },
     "scheme_options": {
         "document_change_types": ["图纸更新", "SOP修改", "测试报告内容格式", "其它"],
+        "overview_actions": {
+            "add": "新增",
+            "update": "更换",
+            "deactivate": "失效",
+        },
         "material_change_types": {
             "add": "新增",
             "adjust_quantity": "调量",
-            "discontinue": "弃用",
-            "replace": "更换",
+            "discontinue": "仅删除",
+            "replace": "更改",
         },
         "material_default_unit": "pcs",
         "material_disposition_required_types": ["discontinue", "replace"],
@@ -205,7 +206,7 @@ _DEFAULT_CONFIG = {
             "固件",
             "辅料",
         ],
-        "material_actions": ["新增", "调量", "弃用", "返工使用", "弃用更换"],
+        "material_actions": ["新增", "调量", "仅删除", "更改"],
         "impact_dimensions": [
             "光学部件",
             "内部结构",
@@ -397,13 +398,11 @@ def load_ecn_config(raw_config: dict | None = None) -> dict:
         result["scheme_review"]["item_statuses"],
     )
 
-    raw_scheme_tracking = raw.get("scheme_tracking", raw.get("material_scheme", {}))
+    raw_scheme_tracking = raw.get("scheme_tracking", {})
     if not isinstance(raw_scheme_tracking, dict):
         raw_scheme_tracking = {}
     for key, default in _DEFAULT_CONFIG["scheme_tracking"].items():
-        result["scheme_tracking"][key] = _string_list(
-            raw_scheme_tracking.get(key), default, f"scheme_tracking.{key}"
-        )
+        result["scheme_tracking"][key] = _string_list(raw_scheme_tracking.get(key), default, f"scheme_tracking.{key}")
 
     raw_scheme_options = raw.get("scheme_options", {})
     if not isinstance(raw_scheme_options, dict):
@@ -414,25 +413,22 @@ def load_ecn_config(raw_config: dict | None = None) -> dict:
         "disposition_condition_required_measures",
     ]:
         default = _DEFAULT_CONFIG["scheme_options"][key]
-        result["scheme_options"][key] = _string_list(
-            raw_scheme_options.get(key), default, f"scheme_options.{key}"
-        )
-    default_material_change_types = _DEFAULT_CONFIG["scheme_options"]["material_change_types"]
-    raw_material_change_types = raw_scheme_options.get("material_change_types", {})
-    if not isinstance(raw_material_change_types, dict):
-        raw_material_change_types = {}
-    result["scheme_options"]["material_change_types"] = {}
-    for semantic_key, default_label in default_material_change_types.items():
-        label = raw_material_change_types.get(semantic_key)
-        result["scheme_options"]["material_change_types"][semantic_key] = (
-            label.strip() if isinstance(label, str) and label.strip() else default_label
-        )
+        result["scheme_options"][key] = _string_list(raw_scheme_options.get(key), default, f"scheme_options.{key}")
+    for option_key in ["overview_actions", "material_change_types"]:
+        default_labels = _DEFAULT_CONFIG["scheme_options"][option_key]
+        raw_labels = raw_scheme_options.get(option_key, {})
+        if not isinstance(raw_labels, dict):
+            raw_labels = {}
+        result["scheme_options"][option_key] = {}
+        for semantic_key, default_label in default_labels.items():
+            label = raw_labels.get(semantic_key)
+            result["scheme_options"][option_key][semantic_key] = (
+                label.strip() if isinstance(label, str) and label.strip() else default_label
+            )
     default_unit = _DEFAULT_CONFIG["scheme_options"]["material_default_unit"]
     raw_default_unit = raw_scheme_options.get("material_default_unit")
     result["scheme_options"]["material_default_unit"] = (
-        raw_default_unit.strip()
-        if isinstance(raw_default_unit, str) and raw_default_unit.strip()
-        else default_unit
+        raw_default_unit.strip() if isinstance(raw_default_unit, str) and raw_default_unit.strip() else default_unit
     )
 
     raw_ui = raw.get("ui", {})
@@ -490,12 +486,14 @@ ECN_ITEM_STATUS_REVISED_CONFIRMED = ECN_SCHEME_STATUS_TRANSITIONS["item_after_re
 ECN_TRACEABILITY_LEVELS = ECN_CONFIG["scheme_tracking"]["traceability_levels"]
 ECN_DISPOSITION_MEASURES = ECN_CONFIG["scheme_tracking"]["disposition_measures"]
 ECN_DOCUMENT_CHANGE_TYPES = ECN_CONFIG["scheme_options"]["document_change_types"]
+ECN_OVERVIEW_ACTION_LABELS = ECN_CONFIG["scheme_options"]["overview_actions"]
+ECN_OVERVIEW_ACTION_ADD = "add"
+ECN_OVERVIEW_ACTION_UPDATE = "update"
+ECN_OVERVIEW_ACTION_DEACTIVATE = "deactivate"
 ECN_MATERIAL_CHANGE_TYPE_LABELS = ECN_CONFIG["scheme_options"]["material_change_types"]
 ECN_MATERIAL_CHANGE_TYPES = list(ECN_MATERIAL_CHANGE_TYPE_LABELS.values())
 ECN_MATERIAL_DEFAULT_UNIT = ECN_CONFIG["scheme_options"]["material_default_unit"]
-ECN_MATERIAL_DISPOSITION_REQUIRED_TYPES = set(
-    ECN_CONFIG["scheme_options"]["material_disposition_required_types"]
-)
+ECN_MATERIAL_DISPOSITION_REQUIRED_TYPES = set(ECN_CONFIG["scheme_options"]["material_disposition_required_types"])
 ECN_DISPOSITION_CONDITION_REQUIRED_MEASURES = set(
     ECN_CONFIG["scheme_options"]["disposition_condition_required_measures"]
 )
@@ -507,15 +505,61 @@ ECN_OVERVIEW_CONFLICT_AUTO_CLOSE_SECONDS = ECN_CONFIG["ui"]["overview_conflict_a
 ECN_WORKFLOW_ROUTES = ECN_CONFIG["workflow_routes"]
 
 
+def ecn_overview_requires_new_content(project_states: Any) -> bool:
+    """只要有项目不是纯失效动作，系统内资料方案就必须提供新内容。"""
+    if not isinstance(project_states, dict):
+        return False
+    return any(
+        isinstance(state, dict) and state.get("action") != ECN_OVERVIEW_ACTION_DEACTIVATE
+        for state in project_states.values()
+    )
+
+
+def collect_ecn_pending_overview_overrides(
+    change_items: Any,
+    primary_project: Any,
+    excluded_item_id: Any = None,
+) -> dict[str, str]:
+    """收集其它未执行概述方案；编辑当前方案时不得把自身草稿当成依赖覆盖。"""
+    if not isinstance(change_items, list) or not primary_project:
+        return {}
+    overrides = {}
+    for item in change_items:
+        if not isinstance(item, dict) or item.get("type") != "overview_update":
+            continue
+        if excluded_item_id and item.get("item_id") == excluded_item_id:
+            continue
+        project_state = item.get("project_states", {}).get(primary_project, {})
+        if project_state.get("action") not in {
+            ECN_OVERVIEW_ACTION_ADD,
+            ECN_OVERVIEW_ACTION_UPDATE,
+        }:
+            continue
+        label = item.get("label")
+        content = str(item.get("new_data", {}).get("content") or "").strip()
+        if label and content:
+            overrides[str(label)] = content
+    return overrides
+
+
+def resolve_ecn_overview_parameter_config(
+    flat_configs: Any,
+    label: Any,
+) -> tuple[dict[str, Any], str]:
+    """按具体参数取得当前配置；编辑弹窗初始化不能依赖选择控件补发变化事件。"""
+    if not isinstance(flat_configs, dict) or not label:
+        return {}, "text"
+    raw_config = flat_configs.get(label, {})
+    config = copy.deepcopy(raw_config) if isinstance(raw_config, dict) else {}
+    processing_type = str(config.get("processing_type") or "text")
+    return config, processing_type
+
+
 def is_ecn_material_disposition_required(change_type: Any) -> bool:
     if change_type not in ECN_MATERIAL_CHANGE_TYPES:
         return True
     semantic_key = next(
-        (
-            key
-            for key, label in ECN_MATERIAL_CHANGE_TYPE_LABELS.items()
-            if label == change_type
-        ),
+        (key for key, label in ECN_MATERIAL_CHANGE_TYPE_LABELS.items() if label == change_type),
         None,
     )
     return semantic_key in ECN_MATERIAL_DISPOSITION_REQUIRED_TYPES
@@ -530,27 +574,21 @@ def expand_new_material_traceability_selection(
     previous_levels: Any,
 ) -> list[str]:
     """仅在新勾选等级时向上扩选；取消已有等级时原样保留断层。"""
-    selected = {
-        str(level)
-        for level in selected_levels
-        if level not in [None, ""]
-    } if isinstance(selected_levels, (list, tuple, set)) else set()
-    previous = {
-        str(level)
-        for level in previous_levels
-        if level not in [None, ""]
-    } if isinstance(previous_levels, (list, tuple, set)) else set()
+    selected = (
+        {str(level) for level in selected_levels if level not in [None, ""]}
+        if isinstance(selected_levels, (list, tuple, set))
+        else set()
+    )
+    previous = (
+        {str(level) for level in previous_levels if level not in [None, ""]}
+        if isinstance(previous_levels, (list, tuple, set))
+        else set()
+    )
 
     newly_selected = selected - previous
-    newly_selected_indexes = [
-        index
-        for index, level in enumerate(ECN_TRACEABILITY_LEVELS)
-        if level in newly_selected
-    ]
+    newly_selected_indexes = [index for index, level in enumerate(ECN_TRACEABILITY_LEVELS) if level in newly_selected]
     if newly_selected_indexes:
-        selected.update(
-            ECN_TRACEABILITY_LEVELS[: max(newly_selected_indexes) + 1]
-        )
+        selected.update(ECN_TRACEABILITY_LEVELS[: max(newly_selected_indexes) + 1])
     return [level for level in ECN_TRACEABILITY_LEVELS if level in selected]
 
 
@@ -575,6 +613,28 @@ def is_ecn_review_info_blank(review_info: Any) -> bool:
     if str(review_info.get("other_docs_desc", "")).strip():
         return False
     return True
+
+
+def get_ecn_scheme_target_projects(ecn_data: Any) -> list[str]:
+    """返回方案可关联的完整项目范围：ECR申请项目加影响评审扩大项目。"""
+    if not isinstance(ecn_data, dict):
+        return []
+    review_info = ecn_data.get("review_info", {})
+    if not isinstance(review_info, dict):
+        review_info = {}
+    projects = []
+    for values in (
+        ecn_data.get("target_projects", []),
+        review_info.get("expanded_projects_mass", []),
+        review_info.get("expanded_projects_non_mass", []),
+    ):
+        if not isinstance(values, (list, tuple)):
+            continue
+        for project in values:
+            project_name = str(project or "").strip()
+            if project_name and project_name not in projects:
+                projects.append(project_name)
+    return projects
 
 
 def is_ecn_impact_blank(ecn_data: Any) -> bool:
@@ -620,18 +680,15 @@ def build_overview_validation_signature(
 
 
 def classify_ecn_change_item(item: Any) -> str:
-    """把新旧方案条目统一归入普通资料、概述资料、物料或未知分组。"""
+    """按当前方案分类字段归入普通资料、概述资料、物料或未知分组。"""
     if not isinstance(item, dict):
         return ECN_SCHEME_GROUP_UNKNOWN
-    if item.get("type") == "overview_update":
-        return ECN_SCHEME_GROUP_OVERVIEW_DOCUMENT
-
     scheme_category = item.get("scheme_category")
+    if scheme_category == ECN_SCHEME_GROUP_OVERVIEW_DOCUMENT:
+        return ECN_SCHEME_GROUP_OVERVIEW_DOCUMENT
     if scheme_category == ECN_SCHEME_GROUP_MATERIAL:
         return ECN_SCHEME_GROUP_MATERIAL
-    if scheme_category in {"document", ECN_SCHEME_GROUP_ORDINARY_DOCUMENT}:
-        return ECN_SCHEME_GROUP_ORDINARY_DOCUMENT
-    if item.get("type") == "text_desc" and not scheme_category:
+    if scheme_category == ECN_SCHEME_GROUP_ORDINARY_DOCUMENT:
         return ECN_SCHEME_GROUP_ORDINARY_DOCUMENT
     return ECN_SCHEME_GROUP_UNKNOWN
 
@@ -672,6 +729,28 @@ def register_ecn_impact_handler(ecn_data: Any, current_user: str, review_info: A
     return True
 
 
+def merge_ecn_impact_audit_log(review_info: Any, incoming_events: Any) -> int:
+    """按 event_id 将影响区审计事件追加合并；返回实际新增条数。"""
+    if not isinstance(review_info, dict) or not isinstance(incoming_events, list):
+        return 0
+    audit_log = review_info.setdefault("impact_change_log", [])
+    if not isinstance(audit_log, list):
+        audit_log = []
+        review_info["impact_change_log"] = audit_log
+    existing_ids = {event.get("event_id") for event in audit_log if isinstance(event, dict) and event.get("event_id")}
+    added = 0
+    for event in incoming_events:
+        if not isinstance(event, dict):
+            continue
+        event_id = event.get("event_id")
+        if not isinstance(event_id, str) or not event_id.strip() or event_id in existing_ids:
+            continue
+        audit_log.append(copy.deepcopy(event))
+        existing_ids.add(event_id)
+        added += 1
+    return added
+
+
 def get_ecn_scheme_coverage(ecn_data: Any) -> dict[str, set[str]]:
     """汇总 ECN 要求、资料和物料三类方案关联覆盖情况。"""
     if not isinstance(ecn_data, dict):
@@ -686,10 +765,10 @@ def get_ecn_scheme_coverage(ecn_data: Any) -> dict[str, set[str]]:
     required_requirements = set()
     requirements = basic_info.get("requirements", [])
     if isinstance(requirements, list):
-        for fallback_idx, requirement in enumerate(requirements, start=1):
+        for requirement in requirements:
             if not isinstance(requirement, dict):
                 continue
-            requirement_idx = requirement.get("idx", fallback_idx)
+            requirement_idx = requirement.get("idx")
             if requirement_idx not in [None, ""]:
                 required_requirements.add(str(requirement_idx).strip())
     required_docs = {name for name, selected in review_info.get("involved_docs", {}).items() if selected}
@@ -713,21 +792,17 @@ def get_ecn_scheme_coverage(ecn_data: Any) -> dict[str, set[str]]:
             continue
         if classify_ecn_change_item(item) == ECN_SCHEME_GROUP_MATERIAL:
             traceability_levels = item.get("traceability_levels", [])
-            if not traceability_levels and item.get("traceability_level"):
-                traceability_levels = [item.get("traceability_level")]
             disposition_measure = item.get("disposition_measure")
-            if not disposition_measure:
-                legacy_measures = item.get("disposition_measures", [])
-                if isinstance(legacy_measures, list) and legacy_measures:
-                    disposition_measure = legacy_measures[0]
             requires_disposition = is_ecn_material_disposition_required(item.get("change_type"))
             disposition_condition = str(item.get("disposition_condition") or "").strip()
-            if not (isinstance(traceability_levels, list) and traceability_levels) or (
-                requires_disposition and not disposition_measure
-            ) or (
-                requires_disposition
-                and is_ecn_disposition_condition_required(disposition_measure)
-                and not disposition_condition
+            if (
+                not (isinstance(traceability_levels, list) and traceability_levels)
+                or (requires_disposition and not disposition_measure)
+                or (
+                    requires_disposition
+                    and is_ecn_disposition_condition_required(disposition_measure)
+                    and not disposition_condition
+                )
             ):
                 incomplete_material_schemes.add(f"方案 #{scheme_index:02d}")
         linked_requirements = item.get("req_idxs", [])
@@ -785,7 +860,6 @@ def is_ecn_scheme_ready_for_review(ecn_data: Any) -> bool:
 
 
 _ECN_SCHEME_SNAPSHOT_EXCLUDED_FIELDS = {
-    "rejection_info",
     "rejection_history",
     "review_status",
     "execute_status",
@@ -823,17 +897,16 @@ def reject_ecn_scheme_items(
             continue
         before_snapshot = build_ecn_scheme_snapshot(item)
         item["review_status"] = ECN_ITEM_STATUS_NEEDS_IMPROVEMENT
-        rejection_info = {
+        rejection_record = {
             "reviewer": reviewer,
             "reviewer_role": reviewer_role,
             "note": note,
             "time": rejected_at,
             "before_snapshot": before_snapshot,
         }
-        item["rejection_info"] = copy.deepcopy(rejection_info)
         rejection_history = item.setdefault("rejection_history", [])
         if isinstance(rejection_history, list):
-            rejection_history.append(copy.deepcopy(rejection_info))
+            rejection_history.append(copy.deepcopy(rejection_record))
         author = item.get("author")
         if isinstance(author, str) and author.strip():
             rejected_authors.add(author.strip())
@@ -856,9 +929,6 @@ def mark_rejected_scheme_item_revised(item: Any) -> None:
             latest_record = rejection_history[-1]
             if isinstance(latest_record, dict):
                 latest_record["after_snapshot"] = copy.deepcopy(after_snapshot)
-        rejection_info = item.get("rejection_info", {})
-        if isinstance(rejection_info, dict):
-            rejection_info["after_snapshot"] = copy.deepcopy(after_snapshot)
         item["review_status"] = ECN_ITEM_STATUS_REVISED_PENDING_CONFIRMATION
 
 
@@ -916,19 +986,14 @@ def is_ecn_pending_for_user(ecn_data: Any, current_user: str, current_role: str)
         status_info = ECN_PARTICIPANT_STATUS_CONFIG.get(participant_status, {})
         return status_info.get("remind") is True
     if isinstance(participants, dict) and participants:
-        # 已存在明确参与人时，不再把历史单兜底分派给研发助理；已确认参与人也不提醒。
         return False
 
     if is_ecn_impact_blank(ecn_data):
         return role_matches_keywords(current_role, ECN_IMPACT_INITIAL_REMINDER_ROLES)
 
     handlers = get_ecn_impact_handlers(ecn_data)
-    if handlers:
-        # 已经写过影响、但尚未提供方案的人仍需提醒；确认完成的参与人不会再提醒。
-        return current_user in handlers and current_user not in participants
-
-    # 非空但历史数据无法追溯操作者时交给研发助理，避免待办无人负责。
-    return role_matches_keywords(current_role, ECN_IMPACT_INITIAL_REMINDER_ROLES)
+    # 已经写过影响、但尚未提供方案的人仍需提醒；确认完成的参与人不会再提醒。
+    return current_user in handlers and current_user not in participants
 
 
 def get_ecn_dashboard_pending_count(all_ecns: Any, current_user: str, current_role: str) -> int:
