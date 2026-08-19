@@ -43,6 +43,11 @@ SVN_USERNAME = "temp_t1"
 SVN_PASSWORD = "123456"
 
 # ECN 业务配置已迁移到根目录 ecn_management_config.json；上方导入保留兼容导出。
+
+# 项目从转产切为试产时，豁免检查的概述label
+OVERVIEW_EXEMPTION_CHECK_LIST = [
+    "specifications",
+]
 # 如果某个分组没在这里配置，代码里默认它使用 InteractiveButton。
 OVERVIEW_UI_RENDER_REGISTRY = {
     "光源": "OverviewTableGroup",

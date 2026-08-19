@@ -32,6 +32,7 @@ from ..config import (
     IMG_DIR,
     NONE_REGULAR,
     OVER_UPLOADS_FILE_TYPE,
+    OVERVIEW_EXEMPTION_CHECK_LIST,
     OVERVIEW_UI_RENDER_REGISTRY,
     PRESET_AVATARS,
     PROJECT_STATE_LIST,
@@ -456,7 +457,13 @@ async def requirement_page(
                     and pending_dic
                     and any([v in ["缺必填", "有待定"] for v in pending_dic.values()])
                 ):
-                    pending_out_dic[charge_user] = [k for k, v in pending_dic.items() if v in ["缺必填", "有待定"]]
+                    pending_out_dic[charge_user] = [
+                        k
+                        for k, v in pending_dic.items()
+                        if v in ["缺必填", "有待定"] and k not in OVERVIEW_EXEMPTION_CHECK_LIST
+                    ]
+            if pending_out_dic.get(charge_user) == []:
+                del pending_out_dic[charge_user]
         over_flat = app.storage.general.get("over_config_data_flat", {})
         over_card.clear()
         with over_card:
