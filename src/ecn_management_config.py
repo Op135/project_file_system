@@ -113,6 +113,10 @@ _DEFAULT_CONFIG = {
         "scheme_initiator_roles": ["研发经理", "admin"],
         "scheme_writer_roles": ["研发", "工程", "质量"],
         "impact_initial_reminder_roles": ["研发助理"],
+        "ordinary_document_file_view_roles_by_type": {
+            change_type: ["admin", "研发", "工程", "质量", "销售", "生产", "PMC"]
+            for change_type in ["图纸更新", "SOP修改", "测试报告内容格式", "其它"]
+        },
     },
     "reminders": {
         "impact_followup_states": [ECNState.ECN_SCHEMING, ECNState.ECN_REVIEWING],
@@ -283,6 +287,33 @@ def _string_list(value: Any, default: list[str], field_name: str) -> list[str]:
     return copy.deepcopy(default)
 
 
+def _role_map(value: Any, default: dict[str, list[str]], field_name: str) -> dict[str, list[str]]:
+    if not isinstance(value, dict):
+        logger.warning("ECN配置 %s 无效，已使用默认值", field_name)
+        return copy.deepcopy(default)
+
+    result: dict[str, list[str]] = {}
+    for change_type, default_roles in default.items():
+        roles = value.get(change_type)
+        if isinstance(roles, list) and all(isinstance(role, str) and role.strip() for role in roles):
+            result[change_type] = list(dict.fromkeys(role.strip() for role in roles))
+        else:
+            logger.warning(
+                "ECN配置 %s.%s 无效，已使用默认值",
+                field_name,
+                change_type,
+            )
+            result[change_type] = copy.deepcopy(default_roles)
+    for change_type, roles in value.items():
+        if change_type in result or not isinstance(change_type, str) or not change_type.strip():
+            continue
+        if isinstance(roles, list) and all(isinstance(role, str) and role.strip() for role in roles):
+            result[change_type.strip()] = list(dict.fromkeys(role.strip() for role in roles))
+        else:
+            logger.warning("ECN配置 %s.%s 无效，已忽略", field_name, change_type)
+    return result
+
+
 def _approval_steps(value: Any, default: list[list[str]], field_name: str) -> list[list[str]]:
     if (
         isinstance(value, list)
@@ -362,7 +393,14 @@ def load_ecn_config(raw_config: dict | None = None) -> dict:
     if not isinstance(raw_permissions, dict):
         raw_permissions = {}
     for key, default in _DEFAULT_CONFIG["permissions"].items():
+        if key == "ordinary_document_file_view_roles_by_type":
+            continue
         result["permissions"][key] = _string_list(raw_permissions.get(key), default, f"permissions.{key}")
+    result["permissions"]["ordinary_document_file_view_roles_by_type"] = _role_map(
+        raw_permissions.get("ordinary_document_file_view_roles_by_type"),
+        _DEFAULT_CONFIG["permissions"]["ordinary_document_file_view_roles_by_type"],
+        "permissions.ordinary_document_file_view_roles_by_type",
+    )
 
     raw_reminders = raw.get("reminders", {})
     if not isinstance(raw_reminders, dict):
@@ -470,6 +508,9 @@ ECN_ALLOWED_PROJECT_STATES = ECN_CONFIG["allowed_project_states"]
 ECN_SCHEME_INITIATOR_ROLES = ECN_CONFIG["permissions"]["scheme_initiator_roles"]
 ECN_SCHEME_WRITER_ROLES = ECN_CONFIG["permissions"]["scheme_writer_roles"]
 ECN_IMPACT_INITIAL_REMINDER_ROLES = ECN_CONFIG["permissions"]["impact_initial_reminder_roles"]
+ECN_ORDINARY_DOCUMENT_FILE_VIEW_ROLES_BY_TYPE = ECN_CONFIG["permissions"][
+    "ordinary_document_file_view_roles_by_type"
+]
 ECN_IMPACT_FOLLOWUP_STATES = ECN_CONFIG["reminders"]["impact_followup_states"]
 ECN_REQUIRE_REJECTED_ITEM_SELECTION = ECN_CONFIG["scheme_review"]["require_rejected_item_selection"]
 ECN_REQUIRE_REVISION_BEFORE_RECONFIRMATION = ECN_CONFIG["scheme_review"]["require_revision_before_reconfirmation"]
@@ -704,6 +745,46 @@ def classify_ecn_change_item(item: Any) -> str:
     if scheme_category == ECN_SCHEME_GROUP_ORDINARY_DOCUMENT:
         return ECN_SCHEME_GROUP_ORDINARY_DOCUMENT
     return ECN_SCHEME_GROUP_UNKNOWN
+
+
+def can_view_ecn_scheme_non_image_file(
+    item: Any,
+    current_role: Any,
+    overview_config_flat: Any = None,
+    ordinary_document_roles_by_type: Any = None,
+) -> bool:
+    """判断当前角色能否从ECN方案表格查看或下载非图片文件。"""
+    role = str(current_role or "")
+    category = classify_ecn_change_item(item)
+    if category == ECN_SCHEME_GROUP_OVERVIEW_DOCUMENT:
+        configs = overview_config_flat if isinstance(overview_config_flat, dict) else {}
+        config = configs.get(item.get("label"), {}) if isinstance(item, dict) else {}
+        permission = config.get("permission", {}) if isinstance(config, dict) else {}
+        if not isinstance(permission, dict):
+            return False
+        read_roles = permission.get("read_role", [])
+        edit_roles = permission.get("edit_role", [])
+        allowed_roles = [
+            *(read_roles if isinstance(read_roles, list) else []),
+            *(edit_roles if isinstance(edit_roles, list) else []),
+        ]
+        return role in allowed_roles
+
+    if category == ECN_SCHEME_GROUP_ORDINARY_DOCUMENT:
+        role_map = (
+            ordinary_document_roles_by_type
+            if isinstance(ordinary_document_roles_by_type, dict)
+            else ECN_ORDINARY_DOCUMENT_FILE_VIEW_ROLES_BY_TYPE
+        )
+        change_type = str(item.get("change_type") or "") if isinstance(item, dict) else ""
+        allowed_keywords = (
+            role_map.get(change_type, [])
+            if isinstance(role_map.get(change_type, []), list)
+            else []
+        )
+        return role_matches_keywords(role, allowed_keywords)
+
+    return False
 
 
 def get_ecn_impact_handlers(ecn_data: Any) -> list[str]:

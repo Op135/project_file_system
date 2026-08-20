@@ -14,6 +14,7 @@ from src.ecn_management_config import (
     ECN_PARTICIPANT_STATUS_NEEDS_RECONFIRMATION,
     ECNState,
     build_overview_validation_signature,
+    can_view_ecn_scheme_non_image_file,
     classify_ecn_change_item,
     collect_ecn_pending_overview_overrides,
     get_active_overview_row_contents,
@@ -74,6 +75,9 @@ def test_checked_in_config_file_is_valid():
     loaded = load_ecn_config(raw_config)
 
     assert loaded["permissions"]["impact_initial_reminder_roles"] == ["研发助理"]
+    assert loaded["permissions"]["ordinary_document_file_view_roles_by_type"] == raw_config[
+        "permissions"
+    ]["ordinary_document_file_view_roles_by_type"]
     assert loaded["reminders"]["impact_followup_states"] == [
         ECNState.ECN_SCHEMING,
         ECNState.ECN_REVIEWING,
@@ -153,6 +157,79 @@ def test_overview_project_new_data_uses_each_projects_validated_svn_path():
         "https://svn/Product/"
     )
     assert "url_path" not in shared_data
+
+
+def test_non_image_file_view_permission_uses_the_correct_configuration_source():
+    overview_item = {
+        "type": "overview_update",
+        "scheme_category": ECN_SCHEME_GROUP_OVERVIEW_DOCUMENT,
+        "label": "software_manual",
+    }
+    overview_configs = {
+        "software_manual": {
+            "permission": {
+                "read_role": ["质量"],
+                "edit_role": ["研发软件"],
+            }
+        }
+    }
+    assert can_view_ecn_scheme_non_image_file(
+        overview_item,
+        "质量",
+        overview_configs,
+        {"图纸更新": ["销售"]},
+    ) is True
+    assert can_view_ecn_scheme_non_image_file(
+        overview_item,
+        "研发软件",
+        overview_configs,
+        {"图纸更新": ["销售"]},
+    ) is True
+    assert can_view_ecn_scheme_non_image_file(
+        overview_item,
+        "质量主管",
+        overview_configs,
+        {"图纸更新": ["质量"]},
+    ) is False
+
+    ordinary_item = {
+        "type": "text_desc",
+        "scheme_category": ECN_SCHEME_GROUP_ORDINARY_DOCUMENT,
+        "change_type": "图纸更新",
+    }
+    assert can_view_ecn_scheme_non_image_file(
+        ordinary_item,
+        "质量主管",
+        overview_configs,
+        {"图纸更新": ["质量", "admin"], "SOP修改": ["工程"]},
+    ) is True
+    assert can_view_ecn_scheme_non_image_file(
+        ordinary_item,
+        "采购",
+        overview_configs,
+        {"图纸更新": ["质量", "admin"], "SOP修改": ["工程"]},
+    ) is False
+    ordinary_item["change_type"] = "SOP修改"
+    assert can_view_ecn_scheme_non_image_file(
+        ordinary_item,
+        "质量主管",
+        overview_configs,
+        {"图纸更新": ["质量"], "SOP修改": ["工程"]},
+    ) is False
+    assert can_view_ecn_scheme_non_image_file(
+        ordinary_item,
+        "工程主管",
+        overview_configs,
+        {"图纸更新": ["质量"], "SOP修改": ["工程"]},
+    ) is True
+
+    with ECN_CONFIG_PATH.open("r", encoding="utf-8") as config_file:
+        empty_role_config = json.load(config_file)
+    empty_role_config["permissions"]["ordinary_document_file_view_roles_by_type"]["其它"] = []
+    empty_other_roles = load_ecn_config(empty_role_config)["permissions"][
+        "ordinary_document_file_view_roles_by_type"
+    ]
+    assert empty_other_roles["其它"] == []
 
 
 def test_pending_overview_overrides_exclude_the_item_being_edited():

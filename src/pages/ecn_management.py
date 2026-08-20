@@ -3,10 +3,13 @@ import copy  # copy: Python标准库，用于创建对象的副本
 import logging
 import mimetypes
 import os
+import ssl
 import time
 import uuid  # uuid: Python标准库，用于生成全局唯一的标识符
 from datetime import datetime
 
+import httpx
+from httpx import BasicAuth
 from nicegui import app, ui  # nicegui: 第三方轻量级Python Web框架，用于纯Python编写前端UI
 
 from .. import db_storage
@@ -19,7 +22,10 @@ from ..config import (
     ECN_WORKFLOW_ROUTES,
     FILES_URL_DIR,
     IMG_DIR,
+    PDF_PREVIEW_CACHE,
     PRESET_AVATARS,
+    SVN_PASSWORD,
+    SVN_USERNAME,
     UPLOADS_DIR,
     ECNState,
 )
@@ -38,6 +44,7 @@ from ..ecn_management_config import (
     ECN_MATERIAL_CHANGE_TYPE_REPLACE,
     ECN_MATERIAL_CHANGE_TYPES,
     ECN_MATERIAL_DEFAULT_UNIT,
+    ECN_ORDINARY_DOCUMENT_FILE_VIEW_ROLES_BY_TYPE,
     ECN_OVERVIEW_ACTION_ADD,
     ECN_OVERVIEW_ACTION_DEACTIVATE,
     ECN_OVERVIEW_ACTION_LABELS,
@@ -55,6 +62,7 @@ from ..ecn_management_config import (
     ECN_SCHEME_GROUP_UNKNOWN,
     ECN_TRACEABILITY_LEVELS,
     build_overview_validation_signature,
+    can_view_ecn_scheme_non_image_file,
     classify_ecn_change_item,
     collect_ecn_pending_overview_overrides,
     confirm_revised_scheme_items,
@@ -381,6 +389,7 @@ async def ecn_management_page():
             "is_valid": is_edit,
             "validated_url": edit_data.get("new_data", {}).get("url_path", ""),
             "validated_file_type": edit_data.get("new_data", {}).get("file_type", ""),
+            "validated_local_file_path": edit_data.get("new_data", {}).get("local_file_path", ""),
             "first_col_label": edit_data.get("first_col_label", ""),
             "has_enabled_bool": True,
             "auto_open_warning_key": None,
@@ -409,6 +418,7 @@ async def ecn_management_page():
             sel_state["is_valid"] = False
             sel_state["validated_url"] = ""
             sel_state["validated_file_type"] = ""
+            sel_state["validated_local_file_path"] = ""
             sel_state["validated_signature"] = None
             sel_state["validated_project_files"] = {}
             for project_state in sel_state["project_states"].values():
@@ -1076,6 +1086,7 @@ async def ecn_management_page():
                                                 from ..utils import validate_search_path, validate_svn_url
 
                                                 project_results = {}
+                                                local_file_path = ""
                                                 if ptype == "search":
                                                     primary_proj = (
                                                         sel_state["projects"][0] if sel_state["projects"] else ""
@@ -1085,7 +1096,13 @@ async def ecn_management_page():
                                                         primary_proj,
                                                         edit_data.get("item_id"),
                                                     )
-                                                    is_valid, url, ftype, _, msg = await validate_search_path(
+                                                    (
+                                                        is_valid,
+                                                        url,
+                                                        ftype,
+                                                        local_file_path,
+                                                        msg,
+                                                    ) = await validate_search_path(
                                                         val, config, sel_state["projects"], pending_overrides
                                                     )
                                                 else:
@@ -1168,6 +1185,9 @@ async def ecn_management_page():
                                                     sel_state["is_valid"] = True
                                                     sel_state["validated_url"] = url
                                                     sel_state["validated_file_type"] = ftype
+                                                    sel_state["validated_local_file_path"] = (
+                                                        local_file_path if ptype == "search" else ""
+                                                    )
                                                     sel_state["validated_project_files"] = (
                                                         project_results if ptype == "svn" else {}
                                                     )
@@ -1284,6 +1304,10 @@ async def ecn_management_page():
                     else:
                         sel_state["new_data"]["url_path"] = sel_state["validated_url"]
                         sel_state["new_data"]["file_type"] = sel_state["validated_file_type"]
+                        if sel_state["processing_type"] == "search" and sel_state["validated_local_file_path"]:
+                            sel_state["new_data"]["local_file_path"] = sel_state["validated_local_file_path"]
+                        else:
+                            sel_state["new_data"].pop("local_file_path", None)
 
                 sel_state["new_data"].pop("notes", None)
 
@@ -2660,11 +2684,11 @@ async def ecn_management_page():
                                         }
                                         table_grid_style = (
                                             "display:grid;"
-                                            "grid-template-columns:64px minmax(190px,.72fr) "
+                                            "grid-template-columns:60px minmax(190px,.72fr) "
                                             "minmax(120px,.42fr) 72px "
-                                            "minmax(210px,.9fr) minmax(230px,1fr) "
+                                            "minmax(210px,1.1fr) minmax(230px,1.1fr) "
                                             "minmax(90px,.35fr) minmax(90px,.35fr) "
-                                            "minmax(110px,.4fr) minmax(200px,.8fr) "
+                                            "minmax(110px,.35fr) minmax(200px,.6fr) "
                                             "80px 120px 80px;"
                                         )
 
@@ -2890,16 +2914,100 @@ async def ecn_management_page():
                                                 "text-xs font-semibold text-slate-600 text-center break-all"
                                             )
 
-                                        def render_overview_media_thumbnail(item, media_data, display_label):
-                                            if not isinstance(media_data, dict):
+                                        async def fetch_ecn_svn_file(file_url, file_name):
+                                            """使用系统配置的 SVN 账号读取文件，供ECN审核查看或下载。"""
+                                            ui.notify(
+                                                f"正在从 SVN 读取 {file_name}...",
+                                                type="info",
+                                                timeout=2000,
+                                            )
+                                            ssl_context = ssl.create_default_context()
+                                            ssl_context.check_hostname = False
+                                            ssl_context.verify_mode = ssl.CERT_NONE
+                                            auth = (
+                                                BasicAuth(SVN_USERNAME, SVN_PASSWORD)
+                                                if SVN_USERNAME and SVN_PASSWORD
+                                                else None
+                                            )
+                                            try:
+                                                async with httpx.AsyncClient(
+                                                    follow_redirects=True,
+                                                    verify=ssl_context,
+                                                    auth=auth,
+                                                    trust_env=False,
+                                                ) as client:
+                                                    response = await client.get(file_url, timeout=60)
+                                                if response.status_code >= 400:
+                                                    ui.notify(
+                                                        f"SVN 文件读取失败：HTTP {response.status_code}",
+                                                        type="negative",
+                                                    )
+                                                    return None
+                                                return response.content
+                                            except Exception as exc:
+                                                logger.error(
+                                                    "ECN读取SVN文件失败：%s",
+                                                    file_url,
+                                                    exc_info=True,
+                                                )
+                                                ui.notify(f"SVN 文件读取失败：{exc}", type="negative")
+                                                return None
+
+                                        async def open_or_download_overview_file(
+                                            file_url,
+                                            file_name,
+                                            file_type,
+                                            local_file_path,
+                                            is_remote_svn,
+                                        ):
+                                            normalized_type = str(file_type or "").split(";", 1)[0].lower()
+                                            is_pdf = normalized_type == "application/pdf" or file_name.lower().endswith(
+                                                ".pdf"
+                                            )
+                                            if is_remote_svn:
+                                                file_content = await fetch_ecn_svn_file(file_url, file_name)
+                                                if file_content is None:
+                                                    return
+                                                if is_pdf:
+                                                    client = ui.context.client
+                                                    cache_key = f"{client.id}-{uuid.uuid4()}"
+                                                    PDF_PREVIEW_CACHE[cache_key] = file_content
+
+                                                    def cleanup_pdf_cache(key=cache_key):
+                                                        PDF_PREVIEW_CACHE.pop(key, None)
+
+                                                    client.on_disconnect(cleanup_pdf_cache)
+                                                    ui.run_javascript(
+                                                        f'window.open("/view/svn_pdf?id={cache_key}&v={int(time.time())}", "_blank");'
+                                                    )
+                                                else:
+                                                    ui.download(file_content, file_name)
+                                                return
+
+                                            if is_pdf:
+                                                ui.navigate.to(file_url, new_tab=True)
+                                            elif os.path.isfile(local_file_path):
+                                                ui.download(local_file_path, file_name)
+                                            else:
+                                                ui.download(file_url, file_name)
+
+                                        def render_overview_file_content(
+                                            item,
+                                            file_data,
+                                            display_label,
+                                            result_note="",
+                                            project="",
+                                        ):
+                                            """图片用缩略图，其它文件用可点击文件名展示。"""
+                                            if not isinstance(file_data, dict):
                                                 return False
                                             processing_type = str(
-                                                media_data.get("type") or item.get("config_processing_type") or ""
+                                                file_data.get("type") or item.get("config_processing_type") or ""
                                             )
-                                            if processing_type not in {"file", "image"}:
+                                            if processing_type not in {"file", "image", "video", "search", "svn"}:
                                                 return False
 
-                                            file_name = str(media_data.get("content") or "").strip()
+                                            file_name = str(file_data.get("content") or "").strip()
                                             if not file_name:
                                                 return False
                                             config, _ = resolve_ecn_overview_parameter_config(
@@ -2907,10 +3015,14 @@ async def ecn_management_page():
                                                 item.get("label"),
                                             )
                                             upload_path = str(config.get("upload_path") or UPLOADS_DIR)
-                                            local_file_path = os.path.join(upload_path, file_name)
-                                            file_url = str(media_data.get("url_path") or f"{FILES_URL_DIR}/{file_name}")
+                                            file_url = str(file_data.get("url_path") or f"{FILES_URL_DIR}/{file_name}")
+                                            stored_local_file_path = str(file_data.get("local_file_path") or "")
+                                            local_file_path = stored_local_file_path or os.path.join(
+                                                upload_path,
+                                                file_name,
+                                            )
                                             file_type = str(
-                                                media_data.get("file_type")
+                                                file_data.get("file_type")
                                                 or mimetypes.guess_type(file_name)[0]
                                                 or (
                                                     "image/*"
@@ -2918,54 +3030,207 @@ async def ecn_management_page():
                                                     else "application/octet-stream"
                                                 )
                                             )
-                                            if not os.path.isfile(local_file_path):
-                                                with ui.row().classes("w-full items-center gap-1 text-slate-400"):
+                                            is_remote_svn = processing_type == "svn" and file_url.startswith(
+                                                ("http://", "https://")
+                                            )
+
+                                            def file_tooltip(*parts):
+                                                return "\n".join(str(part) for part in parts if str(part or "").strip())
+
+                                            file_text_color = (
+                                                "text-slate-700"
+                                                if display_label == "旧"
+                                                else "text-slate-900"
+                                            )
+                                            is_uploaded_image = processing_type in {"file", "image"} and (
+                                                processing_type == "image" or file_type.startswith("image/")
+                                            )
+                                            if not is_uploaded_image:
+                                                can_view_file = can_view_ecn_scheme_non_image_file(
+                                                    item,
+                                                    current_role,
+                                                    app.storage.general.get("over_config_data_flat", {}),
+                                                    ECN_ORDINARY_DOCUMENT_FILE_VIEW_ROLES_BY_TYPE,
+                                                )
+                                                if not can_view_file:
+                                                    with (
+                                                        ui.row()
+                                                        .classes(
+                                                            "w-full items-center gap-1 flex-nowrap min-w-0 "
+                                                            "text-slate-400 cursor-not-allowed"
+                                                        )
+                                                        .tooltip(
+                                                            file_tooltip(
+                                                                "当前角色无文件查看或下载权限",
+                                                                result_note,
+                                                            )
+                                                        )
+                                                    ):
+                                                        ui.icon("lock", size="xs").classes("shrink-0")
+                                                        ui.label(file_name).classes(
+                                                            "text-sm font-semibold break-all min-w-0"
+                                                        )
+                                                    return True
+
+                                            if processing_type == "search" and (
+                                                not stored_local_file_path or not os.path.isfile(stored_local_file_path)
+                                            ):
+                                                search_result_container = ui.row().classes(
+                                                    "w-full items-center gap-1 text-slate-400"
+                                                )
+                                                with search_result_container:
+                                                    ui.spinner(size="xs")
+                                                    ui.label(f"正在检查 {file_name}").classes("text-xs min-w-0")
+
+                                                async def resolve_search_file():
+                                                    from ..utils import validate_search_path
+
+                                                    (
+                                                        is_valid,
+                                                        resolved_url,
+                                                        resolved_file_type,
+                                                        resolved_local_path,
+                                                        message,
+                                                    ) = await validate_search_path(
+                                                        file_name,
+                                                        config,
+                                                        [project] if project else [],
+                                                    )
+                                                    search_result_container.clear()
+                                                    with search_result_container:
+                                                        if is_valid and os.path.isfile(resolved_local_path):
+                                                            resolved_data = copy.deepcopy(file_data)
+                                                            resolved_data.update(
+                                                                {
+                                                                    "url_path": resolved_url,
+                                                                    "file_type": resolved_file_type,
+                                                                    "local_file_path": resolved_local_path,
+                                                                }
+                                                            )
+                                                            render_overview_file_content(
+                                                                item,
+                                                                resolved_data,
+                                                                display_label,
+                                                                result_note,
+                                                                project,
+                                                            )
+                                                        else:
+                                                            with (
+                                                                ui.row()
+                                                                .classes("w-full items-center gap-1 text-slate-400")
+                                                                .tooltip(
+                                                                    file_tooltip(
+                                                                        file_name,
+                                                                        message or "文件不存在",
+                                                                        result_note,
+                                                                    )
+                                                                )
+                                                            ):
+                                                                ui.icon("link_off", size="xs")
+                                                                ui.label(f"{file_name}（文件不存在）").classes(
+                                                                    "text-xs min-w-0"
+                                                                )
+
+                                                ui.timer(0.01, resolve_search_file, once=True)
+                                                return True
+
+                                            if not is_remote_svn and not os.path.isfile(local_file_path):
+                                                with (
+                                                    ui.row()
+                                                    .classes("w-full items-center gap-1 text-slate-400")
+                                                    .tooltip(
+                                                        file_tooltip(
+                                                            file_name,
+                                                            "文件不存在",
+                                                            result_note,
+                                                        )
+                                                    )
+                                                ):
                                                     ui.icon(
                                                         "image_not_supported"
                                                         if processing_type == "image"
                                                         else "link_off",
                                                         size="xs",
                                                     )
-                                                    ui.label(f"{file_name}（文件不存在）").classes(
-                                                        "text-xs  min-w-0"
-                                                    ).tooltip(file_name)
+                                                    ui.label(f"{file_name}（文件不存在）").classes("text-xs  min-w-0")
                                                 return True
-                                            try:
-                                                app.add_static_file(
-                                                    local_file=local_file_path,
-                                                    url_path=file_url,
-                                                )
-                                            except Exception:
-                                                logger.debug(
-                                                    "ECN方案文件静态路由可能已注册：%s",
+                                            if not is_remote_svn:
+                                                try:
+                                                    app.add_static_file(
+                                                        local_file=local_file_path,
+                                                        url_path=file_url,
+                                                    )
+                                                except Exception:
+                                                    logger.debug(
+                                                        "ECN方案文件静态路由可能已注册：%s",
+                                                        file_url,
+                                                        exc_info=True,
+                                                    )
+
+                                            if is_uploaded_image:
+                                                with ui.row().classes("w-full items-center gap-2 flex-nowrap min-w-0"):
+                                                    FileThumbnail(
+                                                        file_url=file_url,
+                                                        file_type=file_type,
+                                                        file_name_suffix=file_name,
+                                                        file_lab=(
+                                                            f"ecn-{item.get('item_id', '')}-{display_label}-{file_name}"
+                                                        ),
+                                                        display_lab=display_label,
+                                                        parents_h=8,
+                                                        delet_lab=False,
+                                                        local_file_path=local_file_path,
+                                                    )
+                                                    ui.label(file_name).classes(
+                                                        f"text-sm font-semibold {file_text_color} "
+                                                        "break-all min-w-0 flex-1"
+                                                    ).tooltip(file_tooltip(file_name, result_note))
+                                                return True
+
+                                            is_pdf = file_type.split(";", 1)[0].lower() == "application/pdf" or (
+                                                file_name.lower().endswith(".pdf")
+                                            )
+
+                                            async def handle_file_click():
+                                                await open_or_download_overview_file(
                                                     file_url,
-                                                    exc_info=True,
+                                                    file_name,
+                                                    file_type,
+                                                    local_file_path,
+                                                    is_remote_svn,
                                                 )
 
-                                            with ui.row().classes("w-full items-center gap-2 flex-nowrap min-w-0"):
-                                                FileThumbnail(
-                                                    file_url=file_url,
-                                                    file_type=file_type,
-                                                    file_name_suffix=file_name,
-                                                    file_lab=(
-                                                        f"ecn-{item.get('item_id', '')}-{display_label}-{file_name}"
-                                                    ),
-                                                    display_lab=display_label,
-                                                    parents_h=8,
-                                                    delet_lab=False,
-                                                    local_file_path=local_file_path,
+                                            file_link = (
+                                                ui.row()
+                                                .classes(
+                                                    "w-full items-center gap-1 flex-nowrap min-w-0 "
+                                                    f"cursor-pointer {file_text_color}"
                                                 )
-                                                if processing_type == "image":
-                                                    ui.label(file_name).classes(
-                                                        "text-xs text-slate-600  min-w-0 flex-1"
-                                                    ).tooltip(file_name)
+                                                .on("click", handle_file_click)
+                                            )
+                                            if result_note:
+                                                file_link.tooltip(result_note)
+                                            with file_link:
+                                                ui.icon(
+                                                    "picture_as_pdf" if is_pdf else "attach_file",
+                                                    size="xs",
+                                                ).classes("shrink-0")
+                                                ui.label(file_name).classes(
+                                                    "text-sm font-semibold break-all underline-offset-2 "
+                                                    "hover:underline min-w-0"
+                                                )
                                             return True
 
                                         def render_overview_current_content(item, project, project_state):
                                             action = project_state.get("action")
                                             if action != ECN_OVERVIEW_ACTION_ADD:
                                                 old_data = project_state.get("old_data", {})
-                                                if render_overview_media_thumbnail(item, old_data, "旧"):
+                                                if render_overview_file_content(
+                                                    item,
+                                                    old_data,
+                                                    "旧",
+                                                    project=project,
+                                                ):
                                                     return
                                                 old_text = str(old_data.get("content") or "无")
                                                 ui.label(old_text).classes(
@@ -3067,39 +3332,11 @@ async def ecn_management_page():
                                                                 project_state,
                                                             )
                                                             if action == ECN_OVERVIEW_ACTION_DEACTIVATE:
-                                                                ui.label("原内容失效").classes(
-                                                                    "text-sm font-semibold text-red-700"
-                                                                )
-                                                                ui.label("不生成新内容").classes(
-                                                                    "text-xs text-slate-500"
-                                                                )
+                                                                ui.label("—").classes(
+                                                                    "text-sm font-semibold text-slate-400 cursor-help"
+                                                                ).tooltip("原内容失效；不生成新内容")
                                                             else:
-                                                                prefix = (
-                                                                    "新增："
-                                                                    if action == ECN_OVERVIEW_ACTION_ADD
-                                                                    else "更换为："
-                                                                )
-                                                                is_media_content = str(
-                                                                    new_data.get("type")
-                                                                    or item.get("config_processing_type")
-                                                                    or ""
-                                                                ) in {"file", "image"} and bool(
-                                                                    str(new_data.get("content") or "").strip()
-                                                                )
-                                                                if is_media_content:
-                                                                    ui.label(prefix.rstrip("：")).classes(
-                                                                        "text-[11px] font-semibold text-slate-500"
-                                                                    )
-                                                                    render_overview_media_thumbnail(
-                                                                        item,
-                                                                        project_new_data,
-                                                                        "新",
-                                                                    )
-                                                                else:
-                                                                    ui.label(f"{prefix}{new_content}").classes(
-                                                                        "w-full text-sm font-semibold text-slate-900 "
-                                                                    ).tooltip(new_content)
-                                                                ui.label(
+                                                                result_note = (
                                                                     (
                                                                         "现有内容保留"
                                                                         if any(
@@ -3113,7 +3350,31 @@ async def ecn_management_page():
                                                                     )
                                                                     if action == ECN_OVERVIEW_ACTION_ADD
                                                                     else "原内容失效"
-                                                                ).classes("text-xs text-slate-500")
+                                                                )
+                                                                is_file_content = str(
+                                                                    new_data.get("type")
+                                                                    or item.get("config_processing_type")
+                                                                    or ""
+                                                                ) in {
+                                                                    "file",
+                                                                    "image",
+                                                                    "video",
+                                                                    "search",
+                                                                    "svn",
+                                                                } and bool(str(new_data.get("content") or "").strip())
+                                                                if is_file_content:
+                                                                    render_overview_file_content(
+                                                                        item,
+                                                                        project_new_data,
+                                                                        "新",
+                                                                        result_note,
+                                                                        project,
+                                                                    )
+                                                                else:
+                                                                    ui.label(new_content).classes(
+                                                                        "w-full text-sm font-semibold text-slate-900 "
+                                                                        "cursor-help"
+                                                                    ).tooltip(result_note)
                                                 return
                                             ui.label(new_content).classes(
                                                 "text-sm font-semibold text-slate-900 break-all"
@@ -3390,9 +3651,12 @@ async def ecn_management_page():
                                                     )
                                             rejection_history_dialog.open()
 
-                                        def render_table_item(global_idx, item):
+                                        def render_table_item(global_idx, item, display_row_idx):
                                             status_label, status_icon, status_class, _ = table_status_view(item)
                                             review_status = item.get("review_status", ECN_ITEM_STATUS_NORMAL)
+                                            row_background = (
+                                                "bg-amber-50/50" if display_row_idx % 2 == 0 else "bg-blue-50/50"
+                                            )
                                             row_accent = (
                                                 "border-l-red-500"
                                                 if review_status == ECN_ITEM_STATUS_NEEDS_IMPROVEMENT
@@ -3401,12 +3665,13 @@ async def ecn_management_page():
                                                 else "border-l-transparent"
                                             )
                                             # 控制每行内容与顺序
-                                            with ui.column().classes(f"w-full gap-0 border-l {row_accent} bg-white"):
+                                            with ui.column().classes(f"w-full gap-0 border-l {row_accent}"):
                                                 with (
                                                     ui.element("div")
                                                     .classes(
                                                         "w-full min-h-[50px] border-b border-slate-300 "
-                                                        "hover:bg-slate-100 items-stretch"
+                                                        f"{row_background} hover:bg-slate-100 "
+                                                        "items-stretch transition-colors duration-100"
                                                     )
                                                     .style(table_grid_style)
                                                 ):
@@ -3587,8 +3852,14 @@ async def ecn_management_page():
                                                                     ui.label(header).classes(
                                                                         "text-sm font-bold text-slate-600"
                                                                     )
-                                                        for global_idx, item in items_in_group:
-                                                            render_table_item(global_idx, item)
+                                                        for display_row_idx, (global_idx, item) in enumerate(
+                                                            items_in_group
+                                                        ):
+                                                            render_table_item(
+                                                                global_idx,
+                                                                item,
+                                                                display_row_idx,
+                                                            )
 
                                 async def remove_item(item_to_remove):
                                     """删除方案 (原子化重构)"""
@@ -4080,6 +4351,8 @@ async def ecn_management_page():
                                         new_chip["file_type"] = new_data["file_type"]
                                     if "url_path" in new_data:
                                         new_chip["url_path"] = new_data["url_path"]
+                                    if "local_file_path" in new_data:
+                                        new_chip["local_file_path"] = new_data["local_file_path"]
                                     if "warehouse" in new_data:
                                         new_chip["warehouse"] = new_data["warehouse"]
                                     return new_chip, req_max_ver

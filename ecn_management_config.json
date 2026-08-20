@@ -5,6 +5,7 @@
         "permissions.scheme_initiator_roles": "可以发起ECN方案评审的角色关键字。",
         "permissions.scheme_writer_roles": "可以维护ECN影响和方案的角色关键字。",
         "permissions.impact_initial_reminder_roles": "ECR通过且ECN影响仍为空、尚无具体处理人时，主页角标提醒的角色关键字。",
+        "permissions.ordinary_document_file_view_roles_by_type": "其它特定事项/资料变更方案按change_type分别配置非图片文件查看或下载角色关键字。系统内资料方案不使用此项，而是读取对应概述参数的permission.read_role/edit_role。",
         "reminders.impact_followup_states": "允许按方案参与状态提醒具体处理人的流程状态。",
         "scheme_review.require_rejected_item_selection": "审批人驳回ECN方案时是否必须选择至少一个具体方案。",
         "scheme_review.require_revision_before_reconfirmation": "被驳回方案未实际修改前，是否禁止作者直接重新确认。",
@@ -39,7 +40,40 @@
         ],
         "impact_initial_reminder_roles": [
             "研发助理"
-        ]
+        ],
+        "ordinary_document_file_view_roles_by_type": {
+            "图纸更新": [
+                "admin",
+                "研发",
+                "工程",
+                "质量",
+                "销售"
+            ],
+            "SOP修改": [
+                "admin",
+                "研发",
+                "工程",
+                "质量"
+            ],
+            "测试报告内容格式": [
+                "admin",
+                "研发",
+                "工程",
+                "质量",
+                "销售",
+                "生产",
+                "PMC"
+            ],
+            "其它": [
+                "admin",
+                "研发",
+                "工程",
+                "质量",
+                "销售",
+                "生产",
+                "PMC"
+            ]
+        }
     },
     "reminders": {
         "impact_followup_states": [
