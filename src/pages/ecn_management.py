@@ -299,12 +299,6 @@ async def ecn_management_page():
             .pdf-border { border: 1px solid #cbd5e1; }
             .pdf-border-b { border-bottom: 1px solid #cbd5e1; }
             .pdf-border-r { border-right: 1px solid #cbd5e1; }
-            .ecn-traceability-select .q-field__native {
-                flex-wrap: nowrap !important;
-                overflow: hidden !important;
-                white-space: nowrap !important;
-            }
-            
             /*::-webkit-scrollbar {
                 width: 3px; /* 极细滚动条 */
                 background-color: transparent; /* 轨道透明，不占视觉空间 */
@@ -358,6 +352,54 @@ async def ecn_management_page():
                     value=option_value in selected_values,
                     on_change=update_selection,
                 ).props("dense color=primary").classes("w-full text-sm items-start")
+
+    def render_traceability_checkboxes(state, state_key="traceability_levels"):
+        """平铺追溯范围复选框；新勾选后级时只在该次操作中自动补选前级。"""
+        selected_values = state.setdefault(state_key, [])
+        selection_state = {"previous": copy.deepcopy(selected_values), "syncing": False}
+        checkbox_controls = {}
+
+        def sync_checkbox_values(values):
+            selection_state["syncing"] = True
+            try:
+                selected_set = set(values)
+                for level, checkbox in checkbox_controls.items():
+                    should_select = level in selected_set
+                    if bool(checkbox.value) != should_select:
+                        checkbox.set_value(should_select)
+            finally:
+                selection_state["syncing"] = False
+
+        with ui.element("div").classes(
+            "w-full grid grid-cols-4 md:grid-cols-8 gap-x-4 gap-y-1 rounded border border-slate-200 bg-white px-2 py-1"
+        ):
+            for level in ECN_TRACEABILITY_LEVELS:
+
+                def update_traceability(e, selected_level=level):
+                    if selection_state["syncing"]:
+                        return
+                    current_values = list(state.setdefault(state_key, []))
+                    if e.value and selected_level not in current_values:
+                        current_values.append(selected_level)
+                    elif not e.value and selected_level in current_values:
+                        current_values.remove(selected_level)
+                    expanded_values = expand_new_material_traceability_selection(
+                        current_values,
+                        selection_state["previous"],
+                    )
+                    state[state_key] = expanded_values
+                    selection_state["previous"] = copy.deepcopy(expanded_values)
+                    sync_checkbox_values(expanded_values)
+
+                checkbox_controls[level] = (
+                    ui.checkbox(
+                        level,
+                        value=level in selected_values,
+                        on_change=update_traceability,
+                    )
+                    .props("dense color=primary")
+                    .classes("w-full text-sm items-start")
+                )
 
     # ==========================================
     # 独立解耦弹窗 1：系统内资料变更方案设计
@@ -558,35 +600,7 @@ async def ecn_management_page():
 
                     with ui.card().classes("w-full p-3 mt-2 bg-slate-50 border border-slate-200 shadow-none gap-2"):
                         ui.label("追溯处置范围（选填）").classes("text-xs font-bold text-slate-700")
-                        with ui.element("div").classes("w-full"):
-                            traceability_select = (
-                                ui.select(
-                                    options=ECN_TRACEABILITY_LEVELS,
-                                    multiple=True,
-                                    label="追溯处置范围（选填）",
-                                )
-                                .classes("w-full ecn-traceability-select")
-                                .bind_value(sel_state, "traceability_levels")
-                                .props(
-                                    "outlined dense clearable bg-white options-dense "
-                                    f'display-value="已选择 {len(traceability_levels)} 项"'
-                                )
-                            )
-                            traceability_selection_state = {"previous": copy.deepcopy(traceability_levels)}
-
-                            def cascade_traceability_levels(e):
-                                current_levels = list(e.value or [])
-                                expanded_levels = expand_new_material_traceability_selection(
-                                    current_levels,
-                                    traceability_selection_state["previous"],
-                                )
-                                traceability_selection_state["previous"] = copy.deepcopy(expanded_levels)
-                                traceability_select.props(f'display-value="已选择 {len(expanded_levels)} 项"')
-                                if expanded_levels != current_levels:
-                                    sel_state["traceability_levels"] = expanded_levels
-                                    traceability_select.set_value(expanded_levels)
-
-                            traceability_select.on_value_change(cascade_traceability_levels)
+                        render_traceability_checkboxes(sel_state)
 
                     # === 区域 3：多项目配置矩阵 ===
                     matrix_container = (
@@ -1367,8 +1381,12 @@ async def ecn_management_page():
             "change_type",
             ECN_DOCUMENT_CHANGE_TYPES[-1] if is_document_scheme else ECN_MATERIAL_CHANGE_TYPE_ADD,
         )
+        if is_document_scheme and initial_change_type not in ECN_DOCUMENT_CHANGE_TYPES:
+            initial_change_type = ECN_DOCUMENT_CHANGE_TYPES[-1]
         if is_material_scheme and initial_change_type not in ECN_MATERIAL_CHANGE_TYPES:
             initial_change_type = ECN_MATERIAL_CHANGE_TYPE_ADD
+
+        initial_file_server_path = str(edit_data.get("file_server_path") or "").strip()
 
         sel_state = {
             "projects": copy.deepcopy(edit_data.get("projects", [])),
@@ -1382,6 +1400,8 @@ async def ecn_management_page():
             "traceability_levels": traceability_levels,
             "disposition_measure": edit_data.get("disposition_measure") if is_material_scheme else None,
             "disposition_condition": edit_data.get("disposition_condition", ""),
+            "provide_file_server_path": bool(initial_file_server_path),
+            "file_server_path": initial_file_server_path,
         }
 
         req_options = {req["idx"]: f"[{req['idx']}] {req['content']}" for req in ecn_data["basic_info"]["requirements"]}
@@ -1429,11 +1449,21 @@ async def ecn_management_page():
 
             # 根据类别控制可用分类
             type_options = ECN_DOCUMENT_CHANGE_TYPES if is_document_scheme else list(ECN_MATERIAL_CHANGE_TYPES)
-            type_select = (
-                ui.select(type_options, label="方案分类（必选）")
-                .classes("w-56 mt-4")
-                .bind_value(sel_state, "change_type")
-            )
+            if is_document_scheme:
+                with ui.card().classes("w-full p-3 mt-4 bg-slate-50 border border-slate-200 shadow-none gap-1"):
+                    ui.label("方案分类（必选）").classes("text-xs font-bold text-slate-700")
+                    type_select = (
+                        ui.radio(type_options)
+                        .classes("w-full")
+                        .props("inline dense color=primary")
+                        .bind_value(sel_state, "change_type")
+                    )
+            else:
+                type_select = (
+                    ui.select(type_options, label="方案分类（必选）")
+                    .classes("w-56 mt-4")
+                    .bind_value(sel_state, "change_type")
+                )
 
             material_form_container = ui.column().classes("w-full gap-2")
             disposition_container = ui.column().classes("w-full gap-1")
@@ -1520,35 +1550,7 @@ async def ecn_management_page():
                     ui.label(tracking_title).classes(
                         "text-xs font-bold " + ("text-amber-900" if is_material_scheme else "text-slate-700")
                     )
-                    with ui.element("div").classes("w-full"):
-                        traceability_select = (
-                            ui.select(
-                                options=ECN_TRACEABILITY_LEVELS,
-                                multiple=True,
-                                label="追溯处置范围" + ("" if is_material_scheme else "（选填）"),
-                            )
-                            .classes("w-full ecn-traceability-select")
-                            .bind_value(sel_state, "traceability_levels")
-                            .props(
-                                "outlined dense clearable bg-white options-dense "
-                                f'display-value="已选择 {len(traceability_levels)} 项"'
-                            )
-                        )
-                        traceability_selection_state = {"previous": copy.deepcopy(traceability_levels)}
-
-                        def cascade_traceability_levels(e):
-                            current_levels = list(e.value or [])
-                            expanded_levels = expand_new_material_traceability_selection(
-                                current_levels,
-                                traceability_selection_state["previous"],
-                            )
-                            traceability_selection_state["previous"] = copy.deepcopy(expanded_levels)
-                            traceability_select.props(f'display-value="已选择 {len(expanded_levels)} 项"')
-                            if expanded_levels != current_levels:
-                                sel_state["traceability_levels"] = expanded_levels
-                                traceability_select.set_value(expanded_levels)
-
-                        traceability_select.on_value_change(cascade_traceability_levels)
+                    render_traceability_checkboxes(sel_state)
 
             def render_disposition_field():
                 disposition_container.clear()
@@ -1560,13 +1562,10 @@ async def ecn_management_page():
                     with ui.card().classes("w-full p-3 bg-amber-50/60 border border-amber-200 shadow-none gap-1"):
                         ui.label("旧料处置措施（必填）").classes("text-xs font-bold text-amber-900")
                         disposition_select = (
-                            ui.select(
-                                options=ECN_DISPOSITION_MEASURES,
-                                label="旧料处置措施",
-                            )
+                            ui.radio(ECN_DISPOSITION_MEASURES)
                             .classes("w-full")
                             .bind_value(sel_state, "disposition_measure")
-                            .props("outlined dense clearable bg-white")
+                            .props("inline dense color=primary")
                         )
                         condition_container = ui.column().classes("w-full gap-0")
 
@@ -1606,6 +1605,33 @@ async def ecn_management_page():
                         .props("outlined auto-grow rows=4 bg-blue-50")
                     )
 
+                with ui.card().classes("w-full p-3 bg-slate-50 border border-slate-200 shadow-none gap-1"):
+                    provide_server_path_checkbox = (
+                        ui.checkbox("提供文件服务器存放路径说明（可选）")
+                        .classes("text-sm text-slate-700")
+                        .bind_value(sel_state, "provide_file_server_path")
+                    )
+                    server_path_container = ui.column().classes("w-full gap-1")
+
+                    def render_server_path_input():
+                        server_path_container.clear()
+                        if not sel_state["provide_file_server_path"]:
+                            server_path_container.set_visibility(False)
+                            return
+                        server_path_container.set_visibility(True)
+                        with server_path_container:
+                            ui.input("文件服务器存放路径（必填）").classes("w-full").bind_value(
+                                sel_state,
+                                "file_server_path",
+                            ).props("outlined dense bg-white")
+
+                    def on_provide_server_path_change(e):
+                        sel_state["provide_file_server_path"] = bool(e.value)
+                        render_server_path_input()
+
+                    provide_server_path_checkbox.on_value_change(on_provide_server_path_change)
+                    render_server_path_input()
+
             async def save_item():
                 old_content = ""
                 new_content = ""
@@ -1636,6 +1662,8 @@ async def ecn_management_page():
                     assert old_content_ui is not None and new_content_ui is not None
                     if not old_content_ui.value.strip() or not new_content_ui.value.strip():
                         return ui.notify("原内容与新内容均不能为空", type="warning")
+                    if sel_state["provide_file_server_path"] and not sel_state["file_server_path"].strip():
+                        return ui.notify("请填写文件服务器存放路径", type="warning")
                     old_content = old_content_ui.value.strip()
                     new_content = new_content_ui.value.strip()
                 payload = {
@@ -1661,6 +1689,8 @@ async def ecn_management_page():
                 else:
                     payload["old_content"] = old_content
                     payload["new_content"] = new_content
+                    if sel_state["provide_file_server_path"]:
+                        payload["file_server_path"] = sel_state["file_server_path"].strip()
                 await on_save_callback(payload, is_edit)
                 dialog.close()
 
@@ -2552,6 +2582,12 @@ async def ecn_management_page():
 
                                 # 方案内容显示列
                                 item_container = ui.column().classes("w-full gap-3")
+                                scheme_group_expansion_state = {
+                                    ECN_SCHEME_GROUP_OVERVIEW_DOCUMENT: True,
+                                    ECN_SCHEME_GROUP_ORDINARY_DOCUMENT: True,
+                                    ECN_SCHEME_GROUP_MATERIAL: True,
+                                    ECN_SCHEME_GROUP_UNKNOWN: True,
+                                }
 
                                 async def handle_save_item(item_data, is_edit=False):
                                     """保存方案 (原子化重构)"""
@@ -3038,9 +3074,7 @@ async def ecn_management_page():
                                                 return "\n".join(str(part) for part in parts if str(part or "").strip())
 
                                             file_text_color = (
-                                                "text-slate-700"
-                                                if display_label == "旧"
-                                                else "text-slate-900"
+                                                "text-slate-700" if display_label == "旧" else "text-slate-900"
                                             )
                                             is_uploaded_image = processing_type in {"file", "image"} and (
                                                 processing_type == "image" or file_type.startswith("image/")
@@ -3314,9 +3348,15 @@ async def ecn_management_page():
                                                 )
                                                 return
                                             if item.get("type") != "overview_update":
-                                                ui.label(item.get("new_content", "")).classes(
-                                                    "text-sm font-semibold text-slate-900 break-all"
-                                                )
+                                                with ui.row().classes("w-full items-center gap-1 flex-nowrap min-w-0"):
+                                                    ui.label(item.get("new_content", "")).classes(
+                                                        "text-sm font-semibold text-slate-900 break-all min-w-0 flex-1"
+                                                    )
+                                                    file_server_path = str(item.get("file_server_path") or "").strip()
+                                                    if file_server_path:
+                                                        ui.icon("folder_open", size="xs").classes(
+                                                            "shrink-0 text-slate-400 cursor-help"
+                                                        ).tooltip(f"文件服务器存放路径：\n{file_server_path}")
                                                 return
 
                                             new_data = item.get("new_data", {})
@@ -3806,19 +3846,26 @@ async def ecn_management_page():
                                                 1 for _, item in items_in_group if table_status_view(item)[3]
                                             )
                                             pending = len(items_in_group) - completed
-                                            with (
+                                            group_expansion = (
                                                 ui.expansion(
                                                     f"{group_title}  {len(items_in_group)} 项",
                                                     caption=f"{completed} 已完成 · {pending} 待处理",
                                                     icon=group_icon,
-                                                    value=True,
+                                                    value=scheme_group_expansion_state[group_type],
                                                 )
                                                 .classes(
                                                     "w-full bg-white border border-slate-200 "
                                                     "rounded-lg mb-2 overflow-hidden"
                                                 )
                                                 .props('header-class="text-blue-950 text-base font-bold bg-slate-300"')
-                                            ):
+                                            )
+                                            group_expansion.on_value_change(
+                                                lambda e, group=group_type: scheme_group_expansion_state.__setitem__(
+                                                    group,
+                                                    bool(e.value),
+                                                )
+                                            )
+                                            with group_expansion:
                                                 with ui.element("div").classes("w-full overflow-x-auto"):
                                                     with ui.column().classes("w-full gap-0"):
                                                         with (

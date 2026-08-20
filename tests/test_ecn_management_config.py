@@ -435,6 +435,7 @@ def test_rejecting_selected_items_only_reopens_their_authors():
             "projects": ["RFFM-1009-A"],
             "old_content": "旧方案",
             "new_content": "改进前内容",
+            "file_server_path": r"\\file-server\ecn\RFFM-1009-A",
         },
         {"item_id": "B1", "author": "工程师B", "review_status": "normal"},
     ]
@@ -462,6 +463,7 @@ def test_rejecting_selected_items_only_reopens_their_authors():
                 "projects": ["RFFM-1009-A"],
                 "old_content": "旧方案",
                 "new_content": "改进前内容",
+                "file_server_path": r"\\file-server\ecn\RFFM-1009-A",
             },
         }
     ]
