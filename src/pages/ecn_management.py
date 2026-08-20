@@ -1,6 +1,7 @@
 # -*- encoding: utf-8 -*-
 import copy  # copy: Python标准库，用于创建对象的副本
 import logging
+import mimetypes
 import os
 import time
 import uuid  # uuid: Python标准库，用于生成全局唯一的标识符
@@ -22,6 +23,7 @@ from ..config import (
     ECNState,
 )
 from ..custom_ui import custom_upload
+from ..components import FileThumbnail
 from ..ecn_management_config import (
     ECN_DISPOSITION_MEASURES,
     ECN_DOCUMENT_CHANGE_TYPES,
@@ -36,11 +38,11 @@ from ..ecn_management_config import (
     ECN_MATERIAL_CHANGE_TYPE_REPLACE,
     ECN_MATERIAL_CHANGE_TYPES,
     ECN_MATERIAL_DEFAULT_UNIT,
-    ECN_OVERVIEW_CONFLICT_AUTO_CLOSE_SECONDS,
     ECN_OVERVIEW_ACTION_ADD,
     ECN_OVERVIEW_ACTION_DEACTIVATE,
     ECN_OVERVIEW_ACTION_LABELS,
     ECN_OVERVIEW_ACTION_UPDATE,
+    ECN_OVERVIEW_CONFLICT_AUTO_CLOSE_SECONDS,
     ECN_PARTICIPANT_STATUS_CONFIG,
     ECN_PARTICIPANT_STATUS_CONFIRMED,
     ECN_PARTICIPANT_STATUS_EDITING,
@@ -56,20 +58,20 @@ from ..ecn_management_config import (
     classify_ecn_change_item,
     collect_ecn_pending_overview_overrides,
     confirm_revised_scheme_items,
-    expand_new_material_traceability_selection,
     ecn_overview_requires_new_content,
+    expand_new_material_traceability_selection,
     get_active_overview_row_contents,
-    get_ecn_scheme_target_projects,
     get_ecn_material_change_display,
     get_ecn_material_change_missing_fields,
     get_ecn_scheme_coverage,
+    get_ecn_scheme_target_projects,
     has_unrevised_rejected_scheme_items,
     is_ecn_disposition_condition_required,
     is_ecn_material_disposition_required,
     is_ecn_pending_for_user,
     is_ecn_review_info_blank,
-    merge_ecn_impact_audit_log,
     mark_rejected_scheme_item_revised,
+    merge_ecn_impact_audit_log,
     register_ecn_impact_handler,
     reject_ecn_scheme_items,
     resolve_ecn_overview_parameter_config,
@@ -651,8 +653,7 @@ async def ecn_management_page():
                                         include_all_active=is_first_col,
                                     )
                                     p_state["existing_contents"] = [
-                                        {"source": source, "content": content}
-                                        for source, content in existing_contents
+                                        {"source": source, "content": content} for source, content in existing_contents
                                     ]
                                 else:
                                     p_state["existing_contents"] = []
@@ -873,11 +874,9 @@ async def ecn_management_page():
 
                     def on_label_change(e):
                         sel_state["label"] = e.value
-                        sel_state["config"], sel_state["processing_type"] = (
-                            resolve_ecn_overview_parameter_config(
-                                app.storage.general.get("over_config_data_flat", {}),
-                                e.value,
-                            )
+                        sel_state["config"], sel_state["processing_type"] = resolve_ecn_overview_parameter_config(
+                            app.storage.general.get("over_config_data_flat", {}),
+                            e.value,
                         )
                         if (
                             sel_state["processing_type"] in path_validation_types
@@ -905,8 +904,7 @@ async def ecn_management_page():
                         dialog_placeholder = str(config.get("dialog_placeholder") or "")
                         if (
                             requires_new_content
-                            and
-                            ptype in {"text", "test"}
+                            and ptype in {"text", "test"}
                             and dialog_placeholder
                             and not str(sel_state["new_data"].get("content") or "").strip()
                         ):
@@ -959,9 +957,7 @@ async def ecn_management_page():
 
                                 with ui.card().classes("w-full bg-blue-50 shadow-inner p-3 border border-blue-100"):
                                     ui.label(
-                                        "统一方案 / 新内容 (必填)"
-                                        if requires_new_content
-                                        else "失效说明"
+                                        "统一方案 / 新内容 (必填)" if requires_new_content else "失效说明"
                                     ).classes("text-xs text-blue-700 font-bold mb-2")
 
                                     if not requires_new_content:
@@ -982,9 +978,9 @@ async def ecn_management_page():
                                         ui.textarea(
                                             label="新检测内容与标准",
                                             placeholder=dialog_placeholder,
-                                        ).bind_value(
-                                            sel_state["new_data"], "content"
-                                        ).classes("w-full").props("outlined auto-grow rows=2 bg-white")
+                                        ).bind_value(sel_state["new_data"], "content").classes("w-full").props(
+                                            "outlined auto-grow rows=2 bg-white"
+                                        )
                                         test_data = sel_state["new_data"].setdefault("test_select_data", {})
 
                                         def build_test_options(options_list, key_prefix, label_str):
@@ -1149,8 +1145,7 @@ async def ecn_management_page():
                 requires_new_content = ecn_overview_requires_new_content(sel_state["project_states"])
                 if (
                     requires_new_content
-                    and
-                    sel_state["processing_type"] in path_validation_types
+                    and sel_state["processing_type"] in path_validation_types
                     and sel_state.get("validated_signature") != get_current_validation_signature()
                 ):
                     invalidate_path_validation()
@@ -2039,6 +2034,7 @@ async def ecn_management_page():
                                                                 "dense"
                                                             ):
                                                                 if is_scheme_writer:
+
                                                                     def remove_expanded_project(
                                                                         _=None,
                                                                         project=p,
@@ -2091,6 +2087,7 @@ async def ecn_management_page():
                                 ):
                                     # 动态读取配置遍历
                                     for imp_key in ECN_SCHEMA_CONFIG["impact_dimensions"]:
+
                                         async def on_impact_change(e, impact_key=imp_key):
                                             selected = bool(e.value)
                                             record_impact_change(
@@ -2597,7 +2594,7 @@ async def ecn_management_page():
                                                 )
                                             return (
                                                 status_info.get("label", "编写中"),
-                                                "edit",
+                                                "more_horiz",
                                                 "text-slate-500",
                                                 False,
                                             )
@@ -2657,26 +2654,29 @@ async def ecn_management_page():
                                                 ui.label("—").classes("text-sm text-slate-400")
                                                 return
                                             if not is_ecn_material_disposition_required(item.get("change_type")):
-                                                ui.label("不适用").classes("text-xs text-slate-400")
+                                                ui.label("—").classes("text-sm text-slate-400")
                                                 return
                                             _, disposition_measure = get_scheme_tracking_values(item)
                                             if disposition_measure:
+                                                disposition_color = {
+                                                    "报废": "text-red-700",
+                                                    "返工": "text-orange-600",
+                                                    "有条件用完止": "text-amber-600",
+                                                }.get(disposition_measure, "text-slate-700")
                                                 ui.label(disposition_measure).classes(
-                                                    "text-xs text-slate-700 break-all"
+                                                    f"text-sm font-semibold {disposition_color} break-all"
                                                 )
                                                 disposition_condition = str(
                                                     item.get("disposition_condition") or ""
                                                 ).strip()
                                                 if disposition_condition:
                                                     ui.label(f"条件：{disposition_condition}").classes(
-                                                        "text-[11px] text-slate-500 break-all"
+                                                        "text-xs text-slate-500 break-all"
                                                     )
                                                 elif is_ecn_disposition_condition_required(disposition_measure):
-                                                    ui.label("条件：未填写").classes(
-                                                        "text-[11px] text-red-500 break-all"
-                                                    )
+                                                    ui.label("条件：未填写").classes("text-xs text-red-500 break-all")
                                             elif classify_ecn_change_item(item) == ECN_SCHEME_GROUP_MATERIAL:
-                                                ui.label("未配置").classes("text-xs text-red-500")
+                                                ui.label("未配置").classes("text-sm text-red-500")
                                             else:
                                                 ui.label("—").classes("text-sm text-slate-400")
 
@@ -2706,8 +2706,9 @@ async def ecn_management_page():
 
                                         def open_overview_existing_data_dialog(project, item, entries):
                                             overview_existing_data_dialog.clear()
-                                            with overview_existing_data_dialog, ui.card().classes(
-                                                "w-[720px] max-w-full max-h-[80vh] p-0 gap-0"
+                                            with (
+                                                overview_existing_data_dialog,
+                                                ui.card().classes("w-[720px] max-w-full max-h-[80vh] p-0 gap-0"),
                                             ):
                                                 with ui.row().classes(
                                                     "w-full px-4 py-3 items-center justify-between "
@@ -2724,9 +2725,7 @@ async def ecn_management_page():
                                                         icon="close",
                                                         on_click=overview_existing_data_dialog.close,
                                                     ).props("flat round dense color=blue-grey-7")
-                                                with ui.column().classes(
-                                                    "w-full gap-2 p-4 overflow-y-auto"
-                                                ):
+                                                with ui.column().classes("w-full gap-2 p-4 overflow-y-auto"):
                                                     for index, entry in enumerate(entries, start=1):
                                                         with ui.card().classes(
                                                             "w-full p-3 gap-1 shadow-none border border-slate-200"
@@ -2781,12 +2780,92 @@ async def ecn_management_page():
                                                 "text-xs font-semibold text-slate-600 text-center break-all"
                                             )
 
+                                        def render_overview_media_thumbnail(item, media_data, display_label):
+                                            if not isinstance(media_data, dict):
+                                                return False
+                                            processing_type = str(
+                                                media_data.get("type")
+                                                or item.get("config_processing_type")
+                                                or ""
+                                            )
+                                            if processing_type not in {"file", "image"}:
+                                                return False
+
+                                            file_name = str(media_data.get("content") or "").strip()
+                                            if not file_name:
+                                                return False
+                                            config, _ = resolve_ecn_overview_parameter_config(
+                                                app.storage.general.get("over_config_data_flat", {}),
+                                                item.get("label"),
+                                            )
+                                            upload_path = str(config.get("upload_path") or UPLOADS_DIR)
+                                            local_file_path = os.path.join(upload_path, file_name)
+                                            file_url = str(
+                                                media_data.get("url_path")
+                                                or f"{FILES_URL_DIR}/{file_name}"
+                                            )
+                                            file_type = str(
+                                                media_data.get("file_type")
+                                                or mimetypes.guess_type(file_name)[0]
+                                                or (
+                                                    "image/*"
+                                                    if processing_type == "image"
+                                                    else "application/octet-stream"
+                                                )
+                                            )
+                                            if not os.path.isfile(local_file_path):
+                                                with ui.row().classes("w-full items-center gap-1 text-slate-400"):
+                                                    ui.icon(
+                                                        "image_not_supported"
+                                                        if processing_type == "image"
+                                                        else "link_off",
+                                                        size="xs",
+                                                    )
+                                                    ui.label(f"{file_name}（文件不存在）").classes(
+                                                        "text-xs truncate min-w-0"
+                                                    ).tooltip(file_name)
+                                                return True
+                                            try:
+                                                app.add_static_file(
+                                                    local_file=local_file_path,
+                                                    url_path=file_url,
+                                                )
+                                            except Exception:
+                                                logger.debug(
+                                                    "ECN方案文件静态路由可能已注册：%s",
+                                                    file_url,
+                                                    exc_info=True,
+                                                )
+
+                                            with ui.row().classes(
+                                                "w-full items-center gap-2 flex-nowrap min-w-0"
+                                            ):
+                                                FileThumbnail(
+                                                    file_url=file_url,
+                                                    file_type=file_type,
+                                                    file_name_suffix=file_name,
+                                                    file_lab=(
+                                                        f"ecn-{item.get('item_id', '')}-"
+                                                        f"{display_label}-{file_name}"
+                                                    ),
+                                                    display_lab=display_label,
+                                                    parents_h=8,
+                                                    delet_lab=False,
+                                                    local_file_path=local_file_path,
+                                                )
+                                                if processing_type == "image":
+                                                    ui.label(file_name).classes(
+                                                        "text-xs text-slate-600 truncate min-w-0 flex-1"
+                                                    ).tooltip(file_name)
+                                            return True
+
                                         def render_overview_current_content(item, project, project_state):
                                             action = project_state.get("action")
                                             if action != ECN_OVERVIEW_ACTION_ADD:
-                                                old_text = str(
-                                                    project_state.get("old_data", {}).get("content") or "无"
-                                                )
+                                                old_data = project_state.get("old_data", {})
+                                                if render_overview_media_thumbnail(item, old_data, "旧"):
+                                                    return
+                                                old_text = str(old_data.get("content") or "无")
                                                 ui.label(old_text).classes(
                                                     "w-full text-sm font-semibold text-slate-700 truncate"
                                                 ).tooltip(old_text)
@@ -2810,10 +2889,7 @@ async def ecn_management_page():
                                                 ui.label("当前无内容").classes("text-sm text-slate-400")
                                                 ui.button(
                                                     f"本单另有 {len(pending_entries)} 条待新增 · 查看",
-                                                    on_click=lambda _=None,
-                                                    p=project,
-                                                    current_item=item,
-                                                    all_entries=copy.deepcopy(entries): (
+                                                    on_click=lambda _=None, p=project, current_item=item, all_entries=copy.deepcopy(entries): (
                                                         open_overview_existing_data_dialog(
                                                             p,
                                                             current_item,
@@ -2824,35 +2900,16 @@ async def ecn_management_page():
                                                     "text-[11px] self-start -ml-2"
                                                 )
                                                 return
-                                            if len(entries) == 1:
-                                                content = str(entries[0].get("content") or "（空内容）")
-                                                ui.label(content).classes(
-                                                    "w-full text-sm font-semibold text-slate-700 truncate"
-                                                ).tooltip(content)
-                                                return
-                                            summaries = []
-                                            if current_entries:
-                                                summaries.append(f"当前已有 {len(current_entries)} 条")
-                                            if pending_entries:
-                                                summaries.append(f"本单待新增 {len(pending_entries)} 条")
-                                            ui.label(" · ".join(summaries)).classes(
-                                                "w-full text-xs font-semibold text-slate-600 truncate"
+                                            current_contents = [
+                                                str(entry.get("content") or "（空内容）") for entry in current_entries
+                                            ]
+                                            tooltip_text = "\n".join(
+                                                f"{index}. {content}"
+                                                for index, content in enumerate(current_contents, start=1)
                                             )
-                                            ui.button(
-                                                f"查看全部 {len(entries)} 条",
-                                                on_click=lambda _=None,
-                                                p=project,
-                                                current_item=item,
-                                                all_entries=copy.deepcopy(entries): (
-                                                    open_overview_existing_data_dialog(
-                                                        p,
-                                                        current_item,
-                                                        all_entries,
-                                                    )
-                                                ),
-                                            ).props("flat dense no-caps color=primary").classes(
-                                                "text-[11px] self-start -ml-2"
-                                            )
+                                            ui.label("存在现有内容").classes(
+                                                "w-full text-sm font-normal text-slate-400 cursor-help"
+                                            ).tooltip(tooltip_text)
 
                                         def render_table_old_value(item):
                                             if classify_ecn_change_item(item) == ECN_SCHEME_GROUP_MATERIAL:
@@ -2916,9 +2973,29 @@ async def ecn_management_page():
                                                                     if action == ECN_OVERVIEW_ACTION_ADD
                                                                     else "更换为："
                                                                 )
-                                                                ui.label(f"{prefix}{new_content}").classes(
-                                                                    "w-full text-sm font-semibold text-slate-900 truncate"
-                                                                ).tooltip(new_content)
+                                                                is_media_content = (
+                                                                    str(
+                                                                        new_data.get("type")
+                                                                        or item.get("config_processing_type")
+                                                                        or ""
+                                                                    )
+                                                                    in {"file", "image"}
+                                                                    and bool(str(new_data.get("content") or "").strip())
+                                                                )
+                                                                if is_media_content:
+                                                                    ui.label(prefix.rstrip("：")).classes(
+                                                                        "text-[11px] font-semibold text-slate-500"
+                                                                    )
+                                                                    render_overview_media_thumbnail(
+                                                                        item,
+                                                                        new_data,
+                                                                        "新",
+                                                                    )
+                                                                else:
+                                                                    ui.label(f"{prefix}{new_content}").classes(
+                                                                        "w-full text-sm font-semibold "
+                                                                        "text-slate-900 truncate"
+                                                                    ).tooltip(new_content)
                                                                 ui.label(
                                                                     (
                                                                         "现有内容保留"
@@ -2972,17 +3049,12 @@ async def ecn_management_page():
                                                     if action == ECN_OVERVIEW_ACTION_ADD:
                                                         entries = state.get("existing_contents", [])
                                                         current_count = sum(
-                                                            1
-                                                            for entry in entries
-                                                            if entry.get("source") == "当前已有"
+                                                            1 for entry in entries if entry.get("source") == "当前已有"
                                                         )
-                                                        summary = (
-                                                            f"{project}："
-                                                            + (
-                                                                f"当前已有 {current_count} 条"
-                                                                if current_count
-                                                                else "当前无内容"
-                                                            )
+                                                        summary = f"{project}：" + (
+                                                            f"当前已有 {current_count} 条"
+                                                            if current_count
+                                                            else "当前无内容"
                                                         )
                                                         preview = [
                                                             f"{entry.get('source', '当前已有')}："
@@ -3030,9 +3102,7 @@ async def ecn_management_page():
                                                                 )
                                                             )
                                                         elif action == ECN_OVERVIEW_ACTION_DEACTIVATE:
-                                                            results.append(
-                                                                f"{project}：原内容失效；不生成新内容"
-                                                            )
+                                                            results.append(f"{project}：原内容失效；不生成新内容")
                                                         else:
                                                             results.append(
                                                                 f"{project}：更换为 {new_content}；原内容失效"
@@ -3083,9 +3153,7 @@ async def ecn_management_page():
                                                 snapshot_is_material = (
                                                     classify_ecn_change_item(snapshot) == ECN_SCHEME_GROUP_MATERIAL
                                                 )
-                                                snapshot_has_tracking = bool(
-                                                    snapshot.get("traceability_levels")
-                                                )
+                                                snapshot_has_tracking = bool(snapshot.get("traceability_levels"))
                                                 if snapshot_is_material or snapshot_has_tracking:
                                                     snapshot_traceability_levels = snapshot.get(
                                                         "traceability_levels", []
