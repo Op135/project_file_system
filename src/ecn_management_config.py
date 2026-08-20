@@ -515,6 +515,19 @@ def ecn_overview_requires_new_content(project_states: Any) -> bool:
     )
 
 
+def get_ecn_overview_project_new_data(new_data: Any, project_state: Any) -> dict[str, Any]:
+    """把统一方案内容与单项目校验结果合并，供展示及最终写入概述节点使用。"""
+    merged = copy.deepcopy(new_data) if isinstance(new_data, dict) else {}
+    project_file_data = (
+        project_state.get("new_file_data", {})
+        if isinstance(project_state, dict)
+        else {}
+    )
+    if isinstance(project_file_data, dict):
+        merged.update(copy.deepcopy(project_file_data))
+    return merged
+
+
 def collect_ecn_pending_overview_overrides(
     change_items: Any,
     primary_project: Any,

@@ -10,6 +10,7 @@ from datetime import datetime
 from nicegui import app, ui  # nicegui: 第三方轻量级Python Web框架，用于纯Python编写前端UI
 
 from .. import db_storage
+from ..components import FileThumbnail
 from ..config import (
     ECN_ALLOWED_PROJECT_STATES,
     ECN_SCHEMA_CONFIG,
@@ -23,7 +24,6 @@ from ..config import (
     ECNState,
 )
 from ..custom_ui import custom_upload
-from ..components import FileThumbnail
 from ..ecn_management_config import (
     ECN_DISPOSITION_MEASURES,
     ECN_DOCUMENT_CHANGE_TYPES,
@@ -63,6 +63,7 @@ from ..ecn_management_config import (
     get_active_overview_row_contents,
     get_ecn_material_change_display,
     get_ecn_material_change_missing_fields,
+    get_ecn_overview_project_new_data,
     get_ecn_scheme_coverage,
     get_ecn_scheme_target_projects,
     has_unrevised_rejected_scheme_items,
@@ -385,6 +386,11 @@ async def ecn_management_page():
             "auto_open_warning_key": None,
             "auto_shown_warning_keys": set(),
             "validated_signature": None,
+            "validated_project_files": {
+                project: copy.deepcopy(project_state.get("new_file_data", {}))
+                for project, project_state in initial_project_states.items()
+                if isinstance(project_state, dict) and isinstance(project_state.get("new_file_data"), dict)
+            },
             "traceability_levels": traceability_levels,
         }
 
@@ -404,6 +410,10 @@ async def ecn_management_page():
             sel_state["validated_url"] = ""
             sel_state["validated_file_type"] = ""
             sel_state["validated_signature"] = None
+            sel_state["validated_project_files"] = {}
+            for project_state in sel_state["project_states"].values():
+                if isinstance(project_state, dict):
+                    project_state.pop("new_file_data", None)
 
         def invalidate_path_validation_if_changed(candidate_signature=None):
             """忽略 NiceGUI 对相同值的补发事件，只在已校验内容确实变化时作废。"""
@@ -415,7 +425,20 @@ async def ecn_management_page():
                 invalidate_path_validation()
 
         if is_edit and sel_state["processing_type"] in path_validation_types:
-            if sel_state["validated_url"]:
+            projects_requiring_new_content = [
+                project
+                for project in sel_state["projects"]
+                if sel_state["project_states"].get(project, {}).get("action") != ECN_OVERVIEW_ACTION_DEACTIVATE
+            ]
+            has_all_svn_results = (
+                sel_state["processing_type"] == "svn"
+                and bool(projects_requiring_new_content)
+                and all(
+                    sel_state["validated_project_files"].get(project, {}).get("url_path")
+                    for project in projects_requiring_new_content
+                )
+            )
+            if sel_state["validated_url"] or has_all_svn_results:
                 sel_state["validated_signature"] = get_current_validation_signature()
             else:
                 sel_state["is_valid"] = False
@@ -1052,21 +1075,87 @@ async def ecn_management_page():
                                                 )
                                                 from ..utils import validate_search_path, validate_svn_url
 
-                                                primary_proj = sel_state["projects"][0] if sel_state["projects"] else ""
-                                                pending_overrides = collect_ecn_pending_overview_overrides(
-                                                    ecn_data.get("change_items", []),
-                                                    primary_proj,
-                                                    edit_data.get("item_id"),
-                                                )
-
+                                                project_results = {}
                                                 if ptype == "search":
+                                                    primary_proj = (
+                                                        sel_state["projects"][0] if sel_state["projects"] else ""
+                                                    )
+                                                    pending_overrides = collect_ecn_pending_overview_overrides(
+                                                        ecn_data.get("change_items", []),
+                                                        primary_proj,
+                                                        edit_data.get("item_id"),
+                                                    )
                                                     is_valid, url, ftype, _, msg = await validate_search_path(
                                                         val, config, sel_state["projects"], pending_overrides
                                                     )
                                                 else:
-                                                    is_valid, url, ftype, msg = await validate_svn_url(
-                                                        val, config, sel_state["projects"], pending_overrides
-                                                    )
+                                                    project_errors = []
+                                                    projects_to_validate = [
+                                                        project
+                                                        for project in sel_state["projects"]
+                                                        if sel_state["project_states"].get(project, {}).get("action")
+                                                        != ECN_OVERVIEW_ACTION_DEACTIVATE
+                                                    ]
+                                                    exempt_projects = [
+                                                        project
+                                                        for project in sel_state["projects"]
+                                                        if sel_state["project_states"].get(project, {}).get("action")
+                                                        == ECN_OVERVIEW_ACTION_DEACTIVATE
+                                                    ]
+                                                    for project in projects_to_validate:
+                                                        pending_overrides = collect_ecn_pending_overview_overrides(
+                                                            ecn_data.get("change_items", []),
+                                                            project,
+                                                            edit_data.get("item_id"),
+                                                        )
+                                                        (
+                                                            project_is_valid,
+                                                            project_url,
+                                                            project_file_type,
+                                                            project_message,
+                                                        ) = await validate_svn_url(
+                                                            val,
+                                                            config,
+                                                            [project],
+                                                            pending_overrides,
+                                                        )
+                                                        if project_is_valid:
+                                                            project_state = (
+                                                                app.storage.general.get("project_summary", {})
+                                                                .get(project, {})
+                                                                .get("state", "")
+                                                            )
+                                                            project_results[project] = {
+                                                                "url_path": project_url,
+                                                                "file_type": project_file_type,
+                                                                "warehouse": config.get("state_path", {}).get(
+                                                                    project_state
+                                                                ),
+                                                            }
+                                                        else:
+                                                            project_errors.append(f"{project}：{project_message}")
+                                                    is_valid = bool(projects_to_validate) and not project_errors
+                                                    if is_valid:
+                                                        first_result = project_results[projects_to_validate[0]]
+                                                        url = first_result.get("url_path", "")
+                                                        ftype = first_result.get("file_type", "")
+                                                        msg = (
+                                                            f"全部 {len(projects_to_validate)} 个项目的 "
+                                                            "SVN 文件均校验通过！"
+                                                        )
+                                                        if exempt_projects:
+                                                            msg += (
+                                                                f"\n另有 {len(exempt_projects)} 个项目选择失效、不产生新内容，"
+                                                                "无需校验：" + "、".join(exempt_projects)
+                                                            )
+                                                    else:
+                                                        url, ftype = "", ""
+                                                        msg = "SVN逐项目校验未通过：\n" + "\n".join(project_errors)
+                                                        if exempt_projects:
+                                                            msg += (
+                                                                f"\n以下 {len(exempt_projects)} 个项目选择失效、"
+                                                                "不产生新内容，已免检：" + "、".join(exempt_projects)
+                                                            )
 
                                                 if requested_signature != get_current_validation_signature():
                                                     invalidate_path_validation()
@@ -1079,11 +1168,22 @@ async def ecn_management_page():
                                                     sel_state["is_valid"] = True
                                                     sel_state["validated_url"] = url
                                                     sel_state["validated_file_type"] = ftype
+                                                    sel_state["validated_project_files"] = (
+                                                        project_results if ptype == "svn" else {}
+                                                    )
                                                     sel_state["validated_signature"] = requested_signature
-                                                    ui.notify(msg, type="positive")
+                                                    ui.notify(
+                                                        msg,
+                                                        type="positive",
+                                                        multi_line=True,
+                                                    )
                                                 else:
                                                     invalidate_path_validation()
-                                                    ui.notify(msg, type="negative")
+                                                    ui.notify(
+                                                        msg,
+                                                        type="negative",
+                                                        multi_line=True,
+                                                    )
 
                                             ui.button("校验有效性", on_click=validate_path).props(
                                                 "color=primary outline dense"
@@ -1172,8 +1272,18 @@ async def ecn_management_page():
                     "image",
                     "video",
                 ]:
-                    sel_state["new_data"]["url_path"] = sel_state["validated_url"]
-                    sel_state["new_data"]["file_type"] = sel_state["validated_file_type"]
+                    if sel_state["processing_type"] == "svn":
+                        sel_state["new_data"].pop("url_path", None)
+                        sel_state["new_data"].pop("file_type", None)
+                        sel_state["new_data"].pop("warehouse", None)
+                        for project, project_state in sel_state["project_states"].items():
+                            project_state.pop("new_file_data", None)
+                            project_file_data = sel_state["validated_project_files"].get(project)
+                            if project_file_data:
+                                project_state["new_file_data"] = copy.deepcopy(project_file_data)
+                    else:
+                        sel_state["new_data"]["url_path"] = sel_state["validated_url"]
+                        sel_state["new_data"]["file_type"] = sel_state["validated_file_type"]
 
                 sel_state["new_data"].pop("notes", None)
 
@@ -2784,9 +2894,7 @@ async def ecn_management_page():
                                             if not isinstance(media_data, dict):
                                                 return False
                                             processing_type = str(
-                                                media_data.get("type")
-                                                or item.get("config_processing_type")
-                                                or ""
+                                                media_data.get("type") or item.get("config_processing_type") or ""
                                             )
                                             if processing_type not in {"file", "image"}:
                                                 return False
@@ -2800,10 +2908,7 @@ async def ecn_management_page():
                                             )
                                             upload_path = str(config.get("upload_path") or UPLOADS_DIR)
                                             local_file_path = os.path.join(upload_path, file_name)
-                                            file_url = str(
-                                                media_data.get("url_path")
-                                                or f"{FILES_URL_DIR}/{file_name}"
-                                            )
+                                            file_url = str(media_data.get("url_path") or f"{FILES_URL_DIR}/{file_name}")
                                             file_type = str(
                                                 media_data.get("file_type")
                                                 or mimetypes.guess_type(file_name)[0]
@@ -2822,7 +2927,7 @@ async def ecn_management_page():
                                                         size="xs",
                                                     )
                                                     ui.label(f"{file_name}（文件不存在）").classes(
-                                                        "text-xs truncate min-w-0"
+                                                        "text-xs  min-w-0"
                                                     ).tooltip(file_name)
                                                 return True
                                             try:
@@ -2837,16 +2942,13 @@ async def ecn_management_page():
                                                     exc_info=True,
                                                 )
 
-                                            with ui.row().classes(
-                                                "w-full items-center gap-2 flex-nowrap min-w-0"
-                                            ):
+                                            with ui.row().classes("w-full items-center gap-2 flex-nowrap min-w-0"):
                                                 FileThumbnail(
                                                     file_url=file_url,
                                                     file_type=file_type,
                                                     file_name_suffix=file_name,
                                                     file_lab=(
-                                                        f"ecn-{item.get('item_id', '')}-"
-                                                        f"{display_label}-{file_name}"
+                                                        f"ecn-{item.get('item_id', '')}-{display_label}-{file_name}"
                                                     ),
                                                     display_lab=display_label,
                                                     parents_h=8,
@@ -2855,7 +2957,7 @@ async def ecn_management_page():
                                                 )
                                                 if processing_type == "image":
                                                     ui.label(file_name).classes(
-                                                        "text-xs text-slate-600 truncate min-w-0 flex-1"
+                                                        "text-xs text-slate-600  min-w-0 flex-1"
                                                     ).tooltip(file_name)
                                             return True
 
@@ -2867,7 +2969,7 @@ async def ecn_management_page():
                                                     return
                                                 old_text = str(old_data.get("content") or "无")
                                                 ui.label(old_text).classes(
-                                                    "w-full text-sm font-semibold text-slate-700 truncate"
+                                                    "w-full text-sm font-semibold text-slate-700 "
                                                 ).tooltip(old_text)
                                                 return
 
@@ -2957,9 +3059,13 @@ async def ecn_management_page():
                                             new_content = str(new_data.get("content") or "（未填写）")
                                             if project_states:
                                                 with ui.column().classes("w-full gap-0 self-stretch"):
-                                                    for project_state in project_states.values():
+                                                    for project, project_state in project_states.items():
                                                         with render_overview_subrow():
                                                             action = project_state.get("action")
+                                                            project_new_data = get_ecn_overview_project_new_data(
+                                                                new_data,
+                                                                project_state,
+                                                            )
                                                             if action == ECN_OVERVIEW_ACTION_DEACTIVATE:
                                                                 ui.label("原内容失效").classes(
                                                                     "text-sm font-semibold text-red-700"
@@ -2973,14 +3079,12 @@ async def ecn_management_page():
                                                                     if action == ECN_OVERVIEW_ACTION_ADD
                                                                     else "更换为："
                                                                 )
-                                                                is_media_content = (
-                                                                    str(
-                                                                        new_data.get("type")
-                                                                        or item.get("config_processing_type")
-                                                                        or ""
-                                                                    )
-                                                                    in {"file", "image"}
-                                                                    and bool(str(new_data.get("content") or "").strip())
+                                                                is_media_content = str(
+                                                                    new_data.get("type")
+                                                                    or item.get("config_processing_type")
+                                                                    or ""
+                                                                ) in {"file", "image"} and bool(
+                                                                    str(new_data.get("content") or "").strip()
                                                                 )
                                                                 if is_media_content:
                                                                     ui.label(prefix.rstrip("：")).classes(
@@ -2988,13 +3092,12 @@ async def ecn_management_page():
                                                                     )
                                                                     render_overview_media_thumbnail(
                                                                         item,
-                                                                        new_data,
+                                                                        project_new_data,
                                                                         "新",
                                                                     )
                                                                 else:
                                                                     ui.label(f"{prefix}{new_content}").classes(
-                                                                        "w-full text-sm font-semibold "
-                                                                        "text-slate-900 truncate"
+                                                                        "w-full text-sm font-semibold text-slate-900 "
                                                                     ).tooltip(new_content)
                                                                 ui.label(
                                                                     (
@@ -3985,6 +4088,10 @@ async def ecn_management_page():
                                     action = p_state.get("action")
                                     chip_id = p_state.get("chip_id")
                                     anchor_row_id = p_state.get("anchor_row_id")
+                                    project_new_data = get_ecn_overview_project_new_data(
+                                        item.get("new_data", {}),
+                                        p_state,
+                                    )
 
                                     if action == ECN_OVERVIEW_ACTION_DEACTIVATE and chip_id:
                                         path = [f"{project}_over_data", item["label"], chip_id]
@@ -4014,7 +4121,7 @@ async def ecn_management_page():
                                                 item.get("author", current_user),
                                                 processing_type,
                                                 new_icon,
-                                                item.get("new_data", {}),
+                                                project_new_data,
                                             )
                                             new_chip["row_id"] = old_chip.get("row_id")  # 严格继承旧 row_id
 
@@ -4047,7 +4154,7 @@ async def ecn_management_page():
                                             item.get("author", current_user),
                                             processing_type,
                                             new_icon,
-                                            item.get("new_data", {}),
+                                            project_new_data,
                                         )
 
                                         is_first_col = item["label"] == item.get("first_col_label", "")

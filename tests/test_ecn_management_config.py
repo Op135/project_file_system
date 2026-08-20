@@ -17,6 +17,7 @@ from src.ecn_management_config import (
     classify_ecn_change_item,
     collect_ecn_pending_overview_overrides,
     get_active_overview_row_contents,
+    get_ecn_overview_project_new_data,
     get_ecn_scheme_target_projects,
     get_ecn_material_change_display,
     get_ecn_material_change_missing_fields,
@@ -126,6 +127,32 @@ def test_overview_deactivate_only_scheme_does_not_require_new_content():
             "P2": {"action": "update"},
         }
     ) is True
+
+
+def test_overview_project_new_data_uses_each_projects_validated_svn_path():
+    shared_data = {"content": "RFFM-1009-app.zip"}
+    rd_state = {
+        "new_file_data": {
+            "url_path": "https://svn/Control/Controlled/RFFM-1009/src/RFFM-1009-app.zip",
+            "file_type": "application/zip",
+            "warehouse": "Control/Controlled",
+        }
+    }
+    mass_state = {
+        "new_file_data": {
+            "url_path": "https://svn/Product/RFFM-1009/src/RFFM-1009-app.zip",
+            "file_type": "application/zip",
+            "warehouse": "Product",
+        }
+    }
+
+    assert get_ecn_overview_project_new_data(shared_data, rd_state)["url_path"].startswith(
+        "https://svn/Control/Controlled/"
+    )
+    assert get_ecn_overview_project_new_data(shared_data, mass_state)["url_path"].startswith(
+        "https://svn/Product/"
+    )
+    assert "url_path" not in shared_data
 
 
 def test_pending_overview_overrides_exclude_the_item_being_edited():
