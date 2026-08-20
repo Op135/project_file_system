@@ -191,8 +191,8 @@ _DEFAULT_CONFIG = {
             "SALES_INITIATED": [["销售总监"], ["研发经理"]],
             "RD_INITIATED": [["研发经理"], ["销售总监"]],
         },
-        "ECN_SCHEME_REVIEW_PHASE": [["研发经理"], ["销售总监"], ["工程", "质量", "PMC"]],
-        "ECN_EXECUTION_PHASE": [["工程", "生产", "PMC", "质量"], ["研发经理_EXECUTE"]],
+        "ECN_SCHEME_REVIEW_PHASE": [["研发经理"], ["销售总监"], ["工程NPI", "质量经理", "PMC"]],
+        "ECN_EXECUTION_PHASE": [["工程NPI", "生产经理", "PMC", "质量经理"], ["研发经理_EXECUTE"]],
     },
     "schema": {
         "material_categories": [
@@ -508,9 +508,7 @@ ECN_ALLOWED_PROJECT_STATES = ECN_CONFIG["allowed_project_states"]
 ECN_SCHEME_INITIATOR_ROLES = ECN_CONFIG["permissions"]["scheme_initiator_roles"]
 ECN_SCHEME_WRITER_ROLES = ECN_CONFIG["permissions"]["scheme_writer_roles"]
 ECN_IMPACT_INITIAL_REMINDER_ROLES = ECN_CONFIG["permissions"]["impact_initial_reminder_roles"]
-ECN_ORDINARY_DOCUMENT_FILE_VIEW_ROLES_BY_TYPE = ECN_CONFIG["permissions"][
-    "ordinary_document_file_view_roles_by_type"
-]
+ECN_ORDINARY_DOCUMENT_FILE_VIEW_ROLES_BY_TYPE = ECN_CONFIG["permissions"]["ordinary_document_file_view_roles_by_type"]
 ECN_IMPACT_FOLLOWUP_STATES = ECN_CONFIG["reminders"]["impact_followup_states"]
 ECN_REQUIRE_REJECTED_ITEM_SELECTION = ECN_CONFIG["scheme_review"]["require_rejected_item_selection"]
 ECN_REQUIRE_REVISION_BEFORE_RECONFIRMATION = ECN_CONFIG["scheme_review"]["require_revision_before_reconfirmation"]
@@ -559,11 +557,7 @@ def ecn_overview_requires_new_content(project_states: Any) -> bool:
 def get_ecn_overview_project_new_data(new_data: Any, project_state: Any) -> dict[str, Any]:
     """把统一方案内容与单项目校验结果合并，供展示及最终写入概述节点使用。"""
     merged = copy.deepcopy(new_data) if isinstance(new_data, dict) else {}
-    project_file_data = (
-        project_state.get("new_file_data", {})
-        if isinstance(project_state, dict)
-        else {}
-    )
+    project_file_data = project_state.get("new_file_data", {}) if isinstance(project_state, dict) else {}
     if isinstance(project_file_data, dict):
         merged.update(copy.deepcopy(project_file_data))
     return merged
@@ -777,11 +771,7 @@ def can_view_ecn_scheme_non_image_file(
             else ECN_ORDINARY_DOCUMENT_FILE_VIEW_ROLES_BY_TYPE
         )
         change_type = str(item.get("change_type") or "") if isinstance(item, dict) else ""
-        allowed_keywords = (
-            role_map.get(change_type, [])
-            if isinstance(role_map.get(change_type, []), list)
-            else []
-        )
+        allowed_keywords = role_map.get(change_type, []) if isinstance(role_map.get(change_type, []), list) else []
         return role_matches_keywords(role, allowed_keywords)
 
     return False
@@ -1050,6 +1040,23 @@ def has_unrevised_rejected_scheme_items(ecn_data: Any, author: str) -> bool:
     )
 
 
+def get_ecn_pending_approval_roles(workflow: Any) -> list[str]:
+    """返回当前节点尚未完成审批的角色，保留节点配置顺序。"""
+    if not isinstance(workflow, dict):
+        return []
+    pending_roles = workflow.get("pending_roles", [])
+    step_approvals = workflow.get("step_approvals", {})
+    if not isinstance(pending_roles, list):
+        return []
+    if not isinstance(step_approvals, dict):
+        step_approvals = {}
+    return [
+        str(role)
+        for role in pending_roles
+        if role not in [None, ""] and not bool(step_approvals.get(str(role), False))
+    ]
+
+
 def is_ecn_pending_for_user(ecn_data: Any, current_user: str, current_role: str) -> bool:
     """返回一张 ECN 是否应计入指定用户的主页/列表待办。"""
     if not isinstance(ecn_data, dict):
@@ -1061,8 +1068,7 @@ def is_ecn_pending_for_user(ecn_data: Any, current_user: str, current_role: str)
         return False
 
     current_state = workflow.get("current_state")
-    pending_roles = workflow.get("pending_roles", [])
-    if isinstance(pending_roles, list) and current_role in pending_roles:
+    if current_role in get_ecn_pending_approval_roles(workflow):
         return True
 
     if current_state in [ECNState.REJECTED, ECNState.DRAFT] and basic_info.get("applicant") == current_user:

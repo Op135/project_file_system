@@ -19,6 +19,7 @@ from src.ecn_management_config import (
     collect_ecn_pending_overview_overrides,
     get_active_overview_row_contents,
     get_ecn_overview_project_new_data,
+    get_ecn_pending_approval_roles,
     get_ecn_scheme_target_projects,
     get_ecn_material_change_display,
     get_ecn_material_change_missing_fields,
@@ -668,6 +669,33 @@ def test_normal_approval_and_applicant_pending_rules_are_preserved():
 
     assert is_ecn_pending_for_user(approval_record, "经理A", "研发经理") is True
     assert is_ecn_pending_for_user(draft_record, "申请人A", "销售") is True
+
+
+def test_parallel_approval_removes_completed_role_from_pending_work():
+    approval_record = _ecn_record(
+        state=ECNState.ECN_REVIEWING,
+        pending_roles=["工程NPI", "质量经理", "PMC"],
+    )
+    approval_record["workflow"]["step_approvals"] = {"工程NPI": True}
+
+    assert get_ecn_pending_approval_roles(approval_record["workflow"]) == ["质量经理", "PMC"]
+    assert is_ecn_pending_for_user(approval_record, "工程师A", "工程NPI") is False
+    assert is_ecn_pending_for_user(approval_record, "质量A", "质量经理") is True
+    assert is_ecn_pending_for_user(approval_record, "计划A", "PMC") is True
+    assert get_ecn_dashboard_pending_count(
+        {"ECN-并行审批": approval_record},
+        "工程师A",
+        "工程NPI",
+    ) == 0
+
+
+def test_invalid_step_approval_data_does_not_hide_pending_roles():
+    workflow = {
+        "pending_roles": ["工程NPI", "质量经理"],
+        "step_approvals": ["工程NPI"],
+    }
+
+    assert get_ecn_pending_approval_roles(workflow) == ["工程NPI", "质量经理"]
 
 
 def test_dashboard_count_counts_each_ecn_once():

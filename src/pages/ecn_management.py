@@ -72,6 +72,7 @@ from ..ecn_management_config import (
     get_ecn_material_change_display,
     get_ecn_material_change_missing_fields,
     get_ecn_overview_project_new_data,
+    get_ecn_pending_approval_roles,
     get_ecn_scheme_coverage,
     get_ecn_scheme_target_projects,
     has_unrevised_rejected_scheme_items,
@@ -148,8 +149,8 @@ def get_ecn_template() -> dict:
             "current_phase": "ECR_PHASE",  # 当前流程阶段
             "current_step_index": 0,  # 当前步骤索引
             "route_type": "",  # 路由类型
-            "pending_roles": [],  # 待处理角色
-            "step_approvals": {},  # 步骤审批信息
+            "pending_roles": [],  # 当前节点角色集合；实际待审批角色需排除 step_approvals 已通过项
+            "step_approvals": {},  # 当前并行节点各角色的审批结果
             "scheme_participants": {},  # 方案参与者
             "impact_handlers": [],  # 实际维护过ECN影响区的具体人员，用于精准待办提醒
         },
@@ -4015,8 +4016,10 @@ async def ecn_management_page():
                                 )
                             else:
                                 if wf["pending_roles"]:
-                                    pending_list = [r for r in wf["pending_roles"] if not wf["step_approvals"].get(r)]
-                                    approved_list = [r for r in wf["pending_roles"] if wf["step_approvals"].get(r)]
+                                    pending_list = get_ecn_pending_approval_roles(wf)
+                                    approved_list = [
+                                        role for role in wf["pending_roles"] if role not in pending_list
+                                    ]
                                     with ui.card().classes(
                                         "w-full bg-blue-50/50 shadow-sm mb-4 border border-blue-100 p-3"
                                     ):
@@ -4103,7 +4106,11 @@ async def ecn_management_page():
                         options=item_options,
                         multiple=True,
                         label="被驳回方案（必选）",
-                    ).bind_value(selected_state, "item_ids").props("outlined use-chips").classes("w-full")
+                    ).bind_value(selected_state, "item_ids").props(
+                        'outlined use-chips options-dense behavior="menu" '
+                        'menu-anchor="bottom left" menu-self="top left" '
+                        'popup-content-style="max-height: 280px"'
+                    ).classes("w-full")
                     reject_note = (
                         ui.textarea(
                             "驳回意见",
@@ -4142,7 +4149,7 @@ async def ecn_management_page():
                             "color=primary"
                         )
                 else:
-                    is_pending_user = current_role in wf["pending_roles"]
+                    is_pending_user = current_role in get_ecn_pending_approval_roles(wf)
                     if wf["current_state"] == ECNState.ECR_REVIEWING and basic["applicant"] == current_user:
                         ui.button("撤回修改", icon="undo", on_click=lambda: execute_db_action("withdraw")).props(
                             "color=orange"
@@ -4172,22 +4179,40 @@ async def ecn_management_page():
                         ECNState.REJECTED,
                         ECNState.ECN_SCHEMING,
                     ]:
-                        note_input = ui.input("审批意见 (选填)").props("dense outlined").classes("w-64")
-                        if wf.get("current_phase") == "ECR_PHASE":
+                        if wf["current_state"] == ECNState.ECN_REVIEWING:
                             ui.button(
                                 "驳回",
                                 color="red",
-                                on_click=lambda: execute_db_action("reject", note=note_input.value),
+                                on_click=open_scheme_reject_dialog,
+                            )
+                            ui.button(
+                                "同意",
+                                color="green",
+                                on_click=lambda: execute_db_action("approve"),
                             )
                         else:
-                            ui.button(
-                                "驳回",
-                                color="red",
-                                on_click=lambda: open_scheme_reject_dialog(note_input.value),
+                            note_input = (
+                                ui.input("审批意见 (选填)")
+                                .props("dense outlined")
+                                .classes("w-64")
                             )
-                        ui.button(
-                            "同意", color="green", on_click=lambda: execute_db_action("approve", note=note_input.value)
-                        )
+                            if wf.get("current_phase") == "ECR_PHASE":
+                                ui.button(
+                                    "驳回",
+                                    color="red",
+                                    on_click=lambda: execute_db_action("reject", note=note_input.value),
+                                )
+                            else:
+                                ui.button(
+                                    "驳回",
+                                    color="red",
+                                    on_click=lambda: open_scheme_reject_dialog(note_input.value),
+                                )
+                            ui.button(
+                                "同意",
+                                color="green",
+                                on_click=lambda: execute_db_action("approve", note=note_input.value),
+                            )
 
             # ------------------------------------------
             # 提取的数据库与流转控制逻辑中心
@@ -4195,6 +4220,12 @@ async def ecn_management_page():
             async def execute_db_action(action_type, note="", rejected_item_ids=None):
                 now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 rejected_item_ids = list(rejected_item_ids or [])
+
+                if (
+                    action_type in ["approve", "reject"]
+                    and current_role not in get_ecn_pending_approval_roles(wf)
+                ):
+                    return ui.notify("当前角色已完成审批或不属于当前待审批角色，请刷新后查看。", type="warning")
 
                 if (
                     action_type == "reject"
@@ -4272,6 +4303,7 @@ async def ecn_management_page():
                         0,
                     )
                     wf["pending_roles"] = ECN_WORKFLOW_ROUTES["ECN_SCHEME_REVIEW_PHASE"][0]
+                    wf["step_approvals"] = {}
                     local_data["approval_log"].append(
                         {"user": current_user, "role": current_role, "action": "发起方案评审", "time": now_str}
                     )
@@ -4571,12 +4603,17 @@ async def ecn_management_page():
                         c_wf["current_phase"] = "ECN_SCHEME_REVIEW_PHASE"
                         c_wf["current_step_index"] = 0
                         c_wf["pending_roles"] = ECN_WORKFLOW_ROUTES["ECN_SCHEME_REVIEW_PHASE"][0]
+                        c_wf["step_approvals"] = {}
                         append_ecn_approval_log_once(
                             c_log,
                             {"user": user, "role": role, "action": "发起方案评审", "time": time_str},
                         )
 
                     elif act_type in ["approve", "reject"]:
+                        if role not in get_ecn_pending_approval_roles(c_wf):
+                            transition_blocked["reason"] = "当前角色已完成审批或不属于当前待审批角色。"
+                            return db_storage.ATOMIC_NO_UPDATE
+
                         act_name = "同意" if act_type == "approve" else "驳回"
                         log_entry: dict[str, object] = {
                             "user": user,
@@ -4594,7 +4631,7 @@ async def ecn_management_page():
                                 c_wf["current_state"], c_wf["pending_roles"] = ECNState.REJECTED, []
                             else:
                                 if ECN_REQUIRE_REJECTED_ITEM_SELECTION and not rejected_ids:
-                                    transition_blocked["value"] = True
+                                    transition_blocked["reason"] = "所选方案已发生变化，请刷新后重新选择。"
                                     return db_storage.ATOMIC_NO_UPDATE
                                 c_wf["current_phase"] = "ECN_SCHEME_PHASE"
                                 c_wf["current_state"] = ECNState.ECN_SCHEMING
@@ -4609,7 +4646,7 @@ async def ecn_management_page():
                                     time_str,
                                 )
                                 if ECN_REQUIRE_REJECTED_ITEM_SELECTION and not rejected_authors:
-                                    transition_blocked["value"] = True
+                                    transition_blocked["reason"] = "所选方案已发生变化，请刷新后重新选择。"
                                     return db_storage.ATOMIC_NO_UPDATE
                         else:
                             c_wf.setdefault("step_approvals", {})[role] = True
@@ -4648,7 +4685,7 @@ async def ecn_management_page():
                     return current_ecn
 
                 # 执行代理包裹了时间戳的原子更新
-                transition_blocked = {"value": False}
+                transition_blocked = {"reason": ""}
                 success = await atomic_ecn_deep_update(
                     ["ecn_management_data", local_data["ecn_id"]],
                     state_machine_transition,
@@ -4661,12 +4698,12 @@ async def ecn_management_page():
                     copy.deepcopy(local_data),  # 【核心修复】：传入完整的本地数据副本供初始化兜底
                 )
 
-                if success and not transition_blocked["value"]:
+                if success and not transition_blocked["reason"]:
                     ui.notify("操作成功！", type="positive")
                     root_dialog.close()
                     refresh_list()
-                elif transition_blocked["value"]:
-                    ui.notify("所选方案已发生变化，请刷新后重新选择。", type="warning")
+                elif transition_blocked["reason"]:
+                    ui.notify(transition_blocked["reason"], type="warning")
                     root_dialog.close()
                     refresh_list()
                 else:
@@ -4685,15 +4722,29 @@ async def ecn_management_page():
 
                     # 1. 同步工作流状态
                     fresh_wf = fresh.get("workflow", {})
+                    was_current_role_pending = current_role in get_ecn_pending_approval_roles(wf)
                     if (
                         fresh_wf.get("current_state") != wf["current_state"]
                         or fresh_wf.get("pending_roles") != wf["pending_roles"]
+                        or fresh_wf.get("current_phase") != wf.get("current_phase")
+                        or fresh_wf.get("current_step_index") != wf.get("current_step_index")
+                        or fresh_wf.get("step_approvals", {}) != wf.get("step_approvals", {})
                     ):
                         wf["current_state"] = fresh_wf.get("current_state")
-                        wf["pending_roles"] = fresh_wf.get("pending_roles")
-                        wf["step_approvals"] = fresh_wf.get("step_approvals", {})
+                        wf["current_phase"] = fresh_wf.get("current_phase")
+                        wf["current_step_index"] = fresh_wf.get("current_step_index", 0)
+                        wf["pending_roles"] = copy.deepcopy(fresh_wf.get("pending_roles", []))
+                        wf["step_approvals"] = copy.deepcopy(fresh_wf.get("step_approvals", {}))
                         local_data["approval_log"] = copy.deepcopy(fresh.get("approval_log", []))
                         render_workflow_tab()  # 触发刷新流转页面
+                        if (
+                            was_current_role_pending
+                            and current_role not in get_ecn_pending_approval_roles(wf)
+                        ):
+                            root_dialog.close()
+                            refresh_list()
+                            ui.notify("当前角色的审批已完成，待办状态已同步。", type="info")
+                            return
                         ui.notify("后台流转状态已更新，已为您同步。", type="info")
 
                     # 2. 同步方案内容 (仅在方案编写阶段需要动态重绘卡片)
@@ -4883,7 +4934,7 @@ async def ecn_management_page():
                                         else "grey",
                                     ).props("outline")
 
-                                    pending_roles = ecn["workflow"].get("pending_roles", [])
+                                    pending_roles = get_ecn_pending_approval_roles(ecn.get("workflow", {}))
 
                                     # 对于审批状态的ECN，增加显示相应信息标签
                                     if pending_roles and current_state not in [

@@ -5430,7 +5430,7 @@ async def requirement_page(
 
                             if (
                                 "研发" in app.storage.user.get("current_role", "")
-                                or app.storage.user.get("current_role", "") == "NPI工程"
+                                or app.storage.user.get("current_role", "") == "工程NPI"
                                 or app.storage.user.get("current_role", "") == "admin"
                             ):
                                 app.storage.client.setdefault("record_switch", False)
