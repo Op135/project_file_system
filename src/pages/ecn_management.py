@@ -4004,8 +4004,14 @@ async def ecn_management_page():
                                     ).props(f"{'disable' if not is_exec_phase else ''} inline")
 
                 # --- [TAB 4] 审批流转记录 ---
-                with ui.tab_panel(tab_workflow).classes("gap-4 p-4 max-w-[1000px] mx-auto bg-white rounded border"):
-                    workflow_container = ui.column().classes("w-full")
+                with ui.tab_panel(tab_workflow).classes(
+                    "p-2 md:p-3 bg-transparent h-full min-h-0 overflow-hidden"
+                ):
+                    with ui.card().classes(
+                        "w-full h-full min-h-0 max-w-[1100px] mx-auto p-3 gap-2 "
+                        "bg-white border border-slate-200 shadow-sm overflow-hidden"
+                    ):
+                        workflow_container = ui.column().classes("w-full h-full min-h-0 gap-2 overflow-hidden")
 
                     def render_workflow_tab():
                         workflow_container.clear()
@@ -4021,44 +4027,93 @@ async def ecn_management_page():
                                         role for role in wf["pending_roles"] if role not in pending_list
                                     ]
                                     with ui.card().classes(
-                                        "w-full bg-blue-50/50 shadow-sm mb-4 border border-blue-100 p-3"
+                                        "w-full shrink-0 bg-blue-50/50 shadow-none border border-blue-100 "
+                                        "px-3 py-2 gap-0.5"
                                     ):
                                         if pending_list:
-                                            ui.label(f"▶ 当前节点等待审批: {', '.join(pending_list)}").classes(
-                                                "text-orange-600 font-bold text-sm"
-                                            )
+                                            with ui.row().classes("w-full items-center gap-2 flex-wrap"):
+                                                ui.icon("schedule", size="xs").classes("text-orange-500")
+                                                ui.label("当前节点等待审批").classes(
+                                                    "text-xs font-bold text-slate-600"
+                                                )
+                                                ui.label("、".join(pending_list)).classes(
+                                                    "text-sm font-semibold text-orange-700"
+                                                )
                                         if approved_list:
-                                            ui.label(f"▶ 当前节点已同意: {', '.join(approved_list)}").classes(
-                                                "text-green-600 text-sm mt-1"
-                                            )
+                                            with ui.row().classes("w-full items-center gap-2 flex-wrap"):
+                                                ui.icon("check_circle", size="xs").classes("text-green-600")
+                                                ui.label("当前节点已同意").classes(
+                                                    "text-xs font-bold text-slate-600"
+                                                )
+                                                ui.label("、".join(approved_list)).classes(
+                                                    "text-sm font-medium text-green-700"
+                                                )
 
-                                # ui.timeline: NiceGUI框架用于展示时间线或流转步骤的类
-                                with ui.timeline(color="secondary"):
-                                    for log in local_data.get("approval_log", []):
-                                        icon_map = {
-                                            "同意": "check_circle",
-                                            "驳回": "cancel",
-                                            "执行变更": "play_circle",
-                                            "发起申请": "send",
-                                            "发起方案评审": "fact_check",
-                                        }
-                                        color_map = {
-                                            "同意": "green",
-                                            "驳回": "red",
-                                            "执行变更": "blue",
-                                            "发起申请": "orange",
-                                            "发起方案评审": "purple",
-                                        }
-                                        ui.timeline_entry(
-                                            f"{log['user']} ({log['role']}) - {log['action']}",
-                                            subtitle=log["time"],
-                                            icon=icon_map.get(log["action"], "info"),
-                                            color=color_map.get(log["action"], "grey"),
-                                        ).classes("text-sm")
-                                        if log.get("note"):
-                                            ui.label(f"批注: {log['note']}").classes(
-                                                "text-xs text-gray-500 ml-8 -mt-2 mb-2"
-                                            )
+                                approval_logs = local_data.get("approval_log", [])
+                                if not approval_logs:
+                                    with ui.column().classes(
+                                        "w-full flex-1 min-h-0 items-center justify-center "
+                                        "rounded border border-dashed border-slate-200"
+                                    ):
+                                        ui.icon("history", size="md").classes("text-slate-300")
+                                        ui.label("暂无审批记录").classes("text-sm text-slate-400")
+                                    return
+
+                                icon_map = {
+                                    "同意": "check",
+                                    "驳回": "close",
+                                    "执行变更": "play_arrow",
+                                    "发起申请": "send",
+                                    "发起方案评审": "fact_check",
+                                }
+                                action_classes = {
+                                    "同意": "text-green-700 bg-green-50 border-green-200",
+                                    "驳回": "text-red-700 bg-red-50 border-red-200",
+                                    "执行变更": "text-blue-700 bg-blue-50 border-blue-200",
+                                    "发起申请": "text-orange-700 bg-orange-50 border-orange-200",
+                                    "发起方案评审": "text-purple-700 bg-purple-50 border-purple-200",
+                                }
+                                with ui.column().classes(
+                                    "w-full flex-1 min-h-0 gap-0 overflow-y-auto overscroll-contain "
+                                    "rounded border border-slate-200 bg-white"
+                                ):
+                                    for log_index, log in enumerate(approval_logs):
+                                        action = str(log.get("action") or "流程记录")
+                                        action_class = action_classes.get(
+                                            action,
+                                            "text-slate-700 bg-slate-50 border-slate-200",
+                                        )
+                                        row_background = "bg-white" if log_index % 2 == 0 else "bg-slate-50/60"
+                                        with ui.row().classes(
+                                            f"w-full items-start gap-2 px-3 py-2 flex-nowrap border-b "
+                                            f"border-slate-100 last:border-b-0 {row_background}"
+                                        ):
+                                            with ui.element("div").classes(
+                                                f"w-7 h-7 shrink-0 rounded-full border flex items-center "
+                                                f"justify-center {action_class}"
+                                            ):
+                                                ui.icon(icon_map.get(action, "info"), size="xs")
+                                            with ui.column().classes("flex-1 min-w-0 gap-0.5"):
+                                                with ui.row().classes(
+                                                    "w-full items-center justify-between gap-x-3 gap-y-0 flex-wrap"
+                                                ):
+                                                    with ui.row().classes("items-center gap-2 min-w-0 flex-wrap"):
+                                                        ui.label(action).classes(
+                                                            f"text-xs font-bold rounded border px-1.5 py-0.5 "
+                                                            f"{action_class}"
+                                                        )
+                                                        ui.label(
+                                                            f"{log.get('user') or '未知用户'}"
+                                                            f"（{log.get('role') or '未知角色'}）"
+                                                        ).classes("text-sm font-medium text-slate-800 break-all")
+                                                    ui.label(str(log.get("time") or "时间未记录")).classes(
+                                                        "text-xs font-mono text-slate-500 shrink-0"
+                                                    )
+                                                note = str(log.get("note") or "").strip()
+                                                if note:
+                                                    ui.label(f"意见：{note}").classes(
+                                                        "text-xs text-slate-600 break-all whitespace-pre-wrap"
+                                                    )
 
                     render_workflow_tab()
 
