@@ -1398,7 +1398,7 @@ def information_page():
                         if is_staged_media:
                             content_input.disable()
                             content_input.tooltip("已上传文件名不能在审批单中修改；可撤回后重新发起。")
-                        ui.textarea("录入注释").bind_value(editor, "notes").props("outlined auto-grow").classes(
+                        ui.textarea("注释").bind_value(editor, "notes").props("outlined auto-grow").classes(
                             "w-full"
                         )
                         if not editable:
@@ -1458,7 +1458,7 @@ def information_page():
                 new_payload["content"] = str(editor["content"] or "").strip()
                 new_payload["notes"] = str(editor["notes"] or "").strip()
                 if action == "add" and not new_payload["notes"]:
-                    ui.notify("录入注释不能为空。", type="warning")
+                    ui.notify("注释不能为空。", type="warning")
                     return
                 if action == "state":
                     new_payload["target_state"] = {"active": True, "pending": None, "inactive": False}[

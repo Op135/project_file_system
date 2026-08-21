@@ -43,7 +43,7 @@ def get_ecn_material_change_display(item: Any) -> tuple[str, str]:
     if change_type == ECN_MATERIAL_CHANGE_TYPE_ADD:
         return "无", material_text("material_name", "quantity", "unit")
     if change_type == ECN_MATERIAL_CHANGE_TYPE_DISCONTINUE:
-        return material_text("material_name", "quantity", "unit"), "仅删除"
+        return material_text("material_name", "quantity", "unit"), str(change_type)
     if change_type == ECN_MATERIAL_CHANGE_TYPE_ADJUST_QUANTITY:
         name = str(material_change.get("material_name") or "").strip()
         unit = str(material_change.get("unit") or ECN_MATERIAL_DEFAULT_UNIT).strip()
@@ -100,8 +100,7 @@ class ECNState:
     ECR_REVIEWING = "ECR 审批中"
     ECN_SCHEMING = "ECN 方案编写与确认中"
     ECN_REVIEWING = "ECN 方案评审中"
-    ECN_EXECUTING = "ECN 等待各部执行确认"
-    PENDING_FINAL_EXECUTE = "等待最终数据变更"
+    ECN_EXECUTING = "ECN 执行确认中"
     CLOSED = "变更已完成"
     CANCEL = "变更已作废"
     REJECTED = "已被驳回"
@@ -156,15 +155,35 @@ _DEFAULT_CONFIG = {
     },
     "scheme_tracking": {
         "traceability_levels": [
-            "无影响",
-            "追溯至文件",
-            "追溯至供应商存量",
-            "追溯至零件/返修/在线",
-            "追溯至半成品/返修/在线",
-            "追溯至成品/返修/在线",
-            "追溯至在途/客户",
+            "文件",
+            "供应商",
+            "零件仓",
+            "生产在线",
+            "半成品仓",
+            "成品仓",
+            "客户/在途",
         ],
-        "disposition_measures": ["报废", "返工"],
+        "disposition_measures": ["不适用", "无条件用完止", "有条件用完止", "返工", "暂存移用", "报废"],
+    },
+    "execution_workflow": {
+        "assistant_roles": ["研发助理", "admin"],
+        "traceability_responsible_roles": {
+            "文件": ["研发助理", "工程NPI", "admin"],
+            "供应商": ["采购", "PMC", "admin"],
+            "零件仓": ["仓库", "PMC", "admin"],
+            "生产在线": ["生产经理", "工程NPI", "质量经理", "admin"],
+            "半成品仓": ["仓库", "生产经理", "PMC", "admin"],
+            "成品仓": ["仓库", "PMC", "质量经理", "admin"],
+            "客户/在途": ["销售", "PMC", "admin"],
+        },
+        "disposition_responsible_roles": {
+            "不适用": ["研发助理", "admin"],
+            "无条件用完止": ["生产经理", "PMC", "质量经理", "admin"],
+            "有条件用完止": ["工程NPI", "生产经理", "PMC", "质量经理", "admin"],
+            "返工": ["工程NPI", "生产经理", "质量经理", "admin"],
+            "暂存移用": ["仓库", "PMC", "质量经理", "admin"],
+            "报废": ["生产经理", "PMC", "质量经理", "admin"],
+        },
     },
     "scheme_options": {
         "document_change_types": ["图纸更新", "SOP修改", "测试报告内容格式", "其它"],
@@ -192,7 +211,6 @@ _DEFAULT_CONFIG = {
             "RD_INITIATED": [["研发经理"], ["销售总监"]],
         },
         "ECN_SCHEME_REVIEW_PHASE": [["研发经理"], ["销售总监"], ["工程NPI", "质量经理", "PMC"]],
-        "ECN_EXECUTION_PHASE": [["工程NPI", "生产经理", "PMC", "质量经理"], ["研发经理_EXECUTE"]],
     },
     "schema": {
         "material_categories": [
@@ -253,13 +271,6 @@ _DEFAULT_CONFIG = {
         ],
         "reasons": ["需求更改", "设计改善", "工艺调整", "物料替换", "资料修正", "产品定标", "其他"],
         "change_natures": ["永久变更", "临时变更"],
-        "execution_handling_measures": ["报废", "返工"],
-        "trial_conclusions": [
-            "无需试产,变更完成",
-            "试产通过,变更完成",
-            "试产条件通过,变更内容再完善",
-            "试产不通过,重新试产",
-        ],
     },
 }
 
@@ -442,6 +453,21 @@ def load_ecn_config(raw_config: dict | None = None) -> dict:
     for key, default in _DEFAULT_CONFIG["scheme_tracking"].items():
         result["scheme_tracking"][key] = _string_list(raw_scheme_tracking.get(key), default, f"scheme_tracking.{key}")
 
+    raw_execution_workflow = raw.get("execution_workflow", {})
+    if not isinstance(raw_execution_workflow, dict):
+        raw_execution_workflow = {}
+    result["execution_workflow"]["assistant_roles"] = _string_list(
+        raw_execution_workflow.get("assistant_roles"),
+        _DEFAULT_CONFIG["execution_workflow"]["assistant_roles"],
+        "execution_workflow.assistant_roles",
+    )
+    for role_map_key in ["traceability_responsible_roles", "disposition_responsible_roles"]:
+        result["execution_workflow"][role_map_key] = _role_map(
+            raw_execution_workflow.get(role_map_key),
+            _DEFAULT_CONFIG["execution_workflow"][role_map_key],
+            f"execution_workflow.{role_map_key}",
+        )
+
     raw_scheme_options = raw.get("scheme_options", {})
     if not isinstance(raw_scheme_options, dict):
         raw_scheme_options = {}
@@ -488,7 +514,7 @@ def load_ecn_config(raw_config: dict | None = None) -> dict:
         result["workflow_routes"]["ECR_PHASE"][route_type] = _approval_steps(
             raw_ecr_routes.get(route_type), default, f"workflow_routes.ECR_PHASE.{route_type}"
         )
-    for phase in ["ECN_SCHEME_REVIEW_PHASE", "ECN_EXECUTION_PHASE"]:
+    for phase in ["ECN_SCHEME_REVIEW_PHASE"]:
         result["workflow_routes"][phase] = _approval_steps(
             raw_routes.get(phase), _DEFAULT_CONFIG["workflow_routes"][phase], f"workflow_routes.{phase}"
         )
@@ -524,6 +550,9 @@ ECN_ITEM_STATUS_REVISED_PENDING_CONFIRMATION = ECN_SCHEME_STATUS_TRANSITIONS["it
 ECN_ITEM_STATUS_REVISED_CONFIRMED = ECN_SCHEME_STATUS_TRANSITIONS["item_after_reconfirmation"]
 ECN_TRACEABILITY_LEVELS = ECN_CONFIG["scheme_tracking"]["traceability_levels"]
 ECN_DISPOSITION_MEASURES = ECN_CONFIG["scheme_tracking"]["disposition_measures"]
+ECN_EXECUTION_ASSISTANT_ROLES = ECN_CONFIG["execution_workflow"]["assistant_roles"]
+ECN_TRACEABILITY_RESPONSIBLE_ROLES = ECN_CONFIG["execution_workflow"]["traceability_responsible_roles"]
+ECN_DISPOSITION_RESPONSIBLE_ROLES = ECN_CONFIG["execution_workflow"]["disposition_responsible_roles"]
 ECN_DOCUMENT_CHANGE_TYPES = ECN_CONFIG["scheme_options"]["document_change_types"]
 ECN_OVERVIEW_ACTION_LABELS = ECN_CONFIG["scheme_options"]["overview_actions"]
 ECN_OVERVIEW_ACTION_ADD = "add"
@@ -536,6 +565,15 @@ ECN_MATERIAL_DISPOSITION_REQUIRED_TYPES = set(ECN_CONFIG["scheme_options"]["mate
 ECN_DISPOSITION_CONDITION_REQUIRED_MEASURES = set(
     ECN_CONFIG["scheme_options"]["disposition_condition_required_measures"]
 )
+ECN_EXECUTION_STAGE_ASSISTANT = "assistant_confirmation"
+ECN_EXECUTION_STAGE_OVERVIEW_RUNNING = "overview_execution"
+ECN_EXECUTION_STAGE_OVERVIEW_FAILED = "overview_failed"
+ECN_EXECUTION_STAGE_MATERIAL = "material_confirmation"
+ECN_EXECUTION_STAGE_COMPLETED = "completed"
+ECN_EXECUTION_RESULT_PENDING = "pending"
+ECN_EXECUTION_RESULT_RUNNING = "running"
+ECN_EXECUTION_RESULT_SUCCESS = "success"
+ECN_EXECUTION_RESULT_FAILED = "failed"
 ECN_MATERIAL_CHANGE_TYPE_ADD = ECN_MATERIAL_CHANGE_TYPE_LABELS["add"]
 ECN_MATERIAL_CHANGE_TYPE_ADJUST_QUANTITY = ECN_MATERIAL_CHANGE_TYPE_LABELS["adjust_quantity"]
 ECN_MATERIAL_CHANGE_TYPE_DISCONTINUE = ECN_MATERIAL_CHANGE_TYPE_LABELS["discontinue"]
@@ -739,6 +777,175 @@ def classify_ecn_change_item(item: Any) -> str:
     if scheme_category == ECN_SCHEME_GROUP_ORDINARY_DOCUMENT:
         return ECN_SCHEME_GROUP_ORDINARY_DOCUMENT
     return ECN_SCHEME_GROUP_UNKNOWN
+
+
+def build_ecn_execution_info(change_items: Any) -> dict:
+    """根据已审批方案生成两阶段执行清单的初始结构。"""
+    ordinary_confirmations: dict[str, dict] = {}
+    overview_results: dict[str, dict] = {}
+    material_confirmations: dict[str, dict] = {}
+    if not isinstance(change_items, list):
+        change_items = []
+
+    for item in change_items:
+        if not isinstance(item, dict):
+            continue
+        item_id = str(item.get("item_id") or "").strip()
+        if not item_id:
+            continue
+        scheme_group = classify_ecn_change_item(item)
+        if scheme_group == ECN_SCHEME_GROUP_ORDINARY_DOCUMENT:
+            ordinary_confirmations[item_id] = {"confirmed": False, "history": []}
+        elif scheme_group == ECN_SCHEME_GROUP_OVERVIEW_DOCUMENT:
+            overview_results[item_id] = {
+                "status": ECN_EXECUTION_RESULT_PENDING,
+                "message": "等待研发助理确认第一阶段后执行",
+                "projects": {},
+            }
+        elif scheme_group == ECN_SCHEME_GROUP_MATERIAL:
+            traceability = {
+                str(level): {"confirmed": False, "history": []}
+                for level in item.get("traceability_levels", [])
+                if str(level).strip()
+            }
+            disposition_measure = str(item.get("disposition_measure") or "").strip()
+            material_entry = {
+                "traceability": traceability,
+                "status": "open",
+            }
+            if disposition_measure:
+                material_entry["disposition"] = {
+                    "measure": disposition_measure,
+                    "confirmed": False,
+                    "history": [],
+                }
+            material_confirmations[item_id] = material_entry
+
+    return {
+        "stage": ECN_EXECUTION_STAGE_ASSISTANT,
+        "ordinary_confirmations": ordinary_confirmations,
+        "erp_confirmation": {"confirmed": False, "history": []},
+        "overview_results": overview_results,
+        "material_confirmations": material_confirmations,
+    }
+
+
+def is_ecn_assistant_execution_ready(execution_info: Any) -> bool:
+    """普通资料事项与ERP均确认后，第一阶段才允许触发系统内资料落盘。"""
+    if not isinstance(execution_info, dict):
+        return False
+    ordinary_confirmations = execution_info.get("ordinary_confirmations", {})
+    erp_confirmation = execution_info.get("erp_confirmation", {})
+    return (
+        isinstance(ordinary_confirmations, dict)
+        and all(
+            isinstance(confirmation, dict) and confirmation.get("confirmed") is True
+            for confirmation in ordinary_confirmations.values()
+        )
+        and isinstance(erp_confirmation, dict)
+        and erp_confirmation.get("confirmed") is True
+    )
+
+
+def get_ecn_material_execution_specs(item: Any) -> list[dict[str, object]]:
+    """返回一条物料方案需要确认的追溯范围及旧料处置责任项。"""
+    if not isinstance(item, dict) or classify_ecn_change_item(item) != ECN_SCHEME_GROUP_MATERIAL:
+        return []
+    specs: list[dict[str, object]] = []
+    for level in item.get("traceability_levels", []):
+        normalized_level = str(level).strip()
+        if normalized_level:
+            specs.append(
+                {
+                    "kind": "traceability",
+                    "key": normalized_level,
+                    "label": f"追溯范围：{normalized_level}",
+                    "roles": copy.deepcopy(ECN_TRACEABILITY_RESPONSIBLE_ROLES.get(normalized_level, [])),
+                }
+            )
+    disposition_measure = str(item.get("disposition_measure") or "").strip()
+    if disposition_measure:
+        disposition_condition = str(item.get("disposition_condition") or "").strip()
+        disposition_label = f"旧料处置：{disposition_measure}"
+        if disposition_condition:
+            disposition_label += f"（条件：{disposition_condition}）"
+        specs.append(
+            {
+                "kind": "disposition",
+                "key": disposition_measure,
+                "label": disposition_label,
+                "roles": copy.deepcopy(ECN_DISPOSITION_RESPONSIBLE_ROLES.get(disposition_measure, [])),
+            }
+        )
+    return specs
+
+
+def is_ecn_material_execution_closed(material_entry: Any) -> bool:
+    """判断一条物料方案的全部责任项是否均已确认。"""
+    if not isinstance(material_entry, dict):
+        return False
+    traceability = material_entry.get("traceability", {})
+    if not isinstance(traceability, dict) or not traceability:
+        return False
+    if not all(
+        isinstance(confirmation, dict) and confirmation.get("confirmed") is True
+        for confirmation in traceability.values()
+    ):
+        return False
+    disposition = material_entry.get("disposition")
+    return disposition is None or (isinstance(disposition, dict) and disposition.get("confirmed") is True)
+
+
+def get_ecn_execution_pending_role_keywords(ecn_data: Any) -> list[str]:
+    """返回当前执行阶段仍有确认任务的角色关键字。"""
+    if not isinstance(ecn_data, dict):
+        return []
+    workflow = ecn_data.get("workflow", {})
+    execution_info = ecn_data.get("execution_info", {})
+    if (
+        not isinstance(workflow, dict)
+        or workflow.get("current_state") != ECNState.ECN_EXECUTING
+        or not isinstance(execution_info, dict)
+    ):
+        return []
+    stage = execution_info.get("stage")
+    if stage in [
+        ECN_EXECUTION_STAGE_ASSISTANT,
+        ECN_EXECUTION_STAGE_OVERVIEW_RUNNING,
+        ECN_EXECUTION_STAGE_OVERVIEW_FAILED,
+    ]:
+        return copy.deepcopy(ECN_EXECUTION_ASSISTANT_ROLES)
+    if stage != ECN_EXECUTION_STAGE_MATERIAL:
+        return []
+
+    change_items = {
+        str(item.get("item_id")): item
+        for item in ecn_data.get("change_items", [])
+        if isinstance(item, dict) and item.get("item_id")
+    }
+    pending_roles: list[str] = []
+    material_confirmations = execution_info.get("material_confirmations", {})
+    if not isinstance(material_confirmations, dict):
+        return []
+    for item_id, material_entry in material_confirmations.items():
+        if not isinstance(material_entry, dict) or material_entry.get("status") == "closed":
+            continue
+        item = change_items.get(str(item_id), {})
+        for spec in get_ecn_material_execution_specs(item):
+            kind = str(spec["kind"])
+            key = str(spec["key"])
+            if kind == "traceability":
+                traceability = material_entry.get("traceability", {})
+                confirmation = traceability.get(key, {}) if isinstance(traceability, dict) else {}
+            else:
+                confirmation = material_entry.get("disposition", {})
+            if isinstance(confirmation, dict) and confirmation.get("confirmed") is True:
+                continue
+            for role in spec.get("roles", []):
+                normalized_role = str(role).strip()
+                if normalized_role and normalized_role not in pending_roles:
+                    pending_roles.append(normalized_role)
+    return pending_roles
 
 
 def can_view_ecn_scheme_non_image_file(
@@ -1070,6 +1277,9 @@ def is_ecn_pending_for_user(ecn_data: Any, current_user: str, current_role: str)
     current_state = workflow.get("current_state")
     if current_role in get_ecn_pending_approval_roles(workflow):
         return True
+
+    if current_state == ECNState.ECN_EXECUTING:
+        return role_matches_keywords(current_role, get_ecn_execution_pending_role_keywords(ecn_data))
 
     if current_state in [ECNState.REJECTED, ECNState.DRAFT] and basic_info.get("applicant") == current_user:
         return True

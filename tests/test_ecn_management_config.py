@@ -3,6 +3,8 @@ from typing import Any
 
 from src.ecn_management_config import (
     ECN_CONFIG_PATH,
+    ECN_EXECUTION_STAGE_MATERIAL,
+    ECN_EXECUTION_STAGE_OVERVIEW_RUNNING,
     ECN_SCHEME_GROUP_MATERIAL,
     ECN_SCHEME_GROUP_ORDINARY_DOCUMENT,
     ECN_SCHEME_GROUP_OVERVIEW_DOCUMENT,
@@ -10,9 +12,12 @@ from src.ecn_management_config import (
     ECN_ITEM_STATUS_NEEDS_IMPROVEMENT,
     ECN_ITEM_STATUS_REVISED_CONFIRMED,
     ECN_ITEM_STATUS_REVISED_PENDING_CONFIRMATION,
+    ECN_MATERIAL_CHANGE_TYPE_DISCONTINUE,
+    ECN_MATERIAL_CHANGE_TYPE_REPLACE,
     ECN_PARTICIPANT_STATUS_CONFIRMED,
     ECN_PARTICIPANT_STATUS_NEEDS_RECONFIRMATION,
     ECNState,
+    build_ecn_execution_info,
     build_overview_validation_signature,
     can_view_ecn_scheme_non_image_file,
     classify_ecn_change_item,
@@ -25,8 +30,12 @@ from src.ecn_management_config import (
     get_ecn_material_change_missing_fields,
     get_ecn_scheme_coverage,
     get_ecn_dashboard_pending_count,
+    get_ecn_execution_pending_role_keywords,
+    get_ecn_material_execution_specs,
     has_unrevised_rejected_scheme_items,
     is_ecn_pending_for_user,
+    is_ecn_assistant_execution_ready,
+    is_ecn_material_execution_closed,
     is_ecn_review_info_blank,
     is_ecn_scheme_ready_for_review,
     load_ecn_config,
@@ -102,6 +111,8 @@ def test_checked_in_config_file_is_valid():
     assert loaded["scheme_tracking"]["disposition_measures"] == raw_config["scheme_tracking"][
         "disposition_measures"
     ]
+    assert loaded["execution_workflow"] == raw_config["execution_workflow"]
+    assert "ECN_EXECUTION_PHASE" not in loaded["workflow_routes"]
     assert loaded["scheme_options"]["overview_actions"] == {
         "add": "新增",
         "update": "更换",
@@ -614,7 +625,7 @@ def test_discontinued_material_scheme_requires_old_material_disposition():
             "item_id": "M1",
             "type": "text_desc",
             "scheme_category": ECN_SCHEME_GROUP_MATERIAL,
-            "change_type": "弃用",
+            "change_type": ECN_MATERIAL_CHANGE_TYPE_DISCONTINUE,
             "traceability_levels": ["文件"],
         }
     ]
@@ -687,6 +698,87 @@ def test_parallel_approval_removes_completed_role_from_pending_work():
         "工程师A",
         "工程NPI",
     ) == 0
+
+
+def test_execution_checklists_are_built_from_the_three_scheme_groups():
+    change_items = [
+        {
+            "item_id": "D1",
+            "scheme_category": ECN_SCHEME_GROUP_ORDINARY_DOCUMENT,
+        },
+        {
+            "item_id": "O1",
+            "scheme_category": ECN_SCHEME_GROUP_OVERVIEW_DOCUMENT,
+        },
+        {
+            "item_id": "M1",
+            "scheme_category": ECN_SCHEME_GROUP_MATERIAL,
+            "change_type": "更换",
+            "traceability_levels": ["文件", "供应商"],
+            "disposition_measure": "报废",
+        },
+    ]
+
+    execution_info = build_ecn_execution_info(change_items)
+
+    assert set(execution_info["ordinary_confirmations"]) == {"D1"}
+    assert set(execution_info["overview_results"]) == {"O1"}
+    assert set(execution_info["material_confirmations"]) == {"M1"}
+    assert set(execution_info["material_confirmations"]["M1"]["traceability"]) == {
+        "文件",
+        "供应商",
+    }
+    assert execution_info["material_confirmations"]["M1"]["disposition"]["measure"] == "报废"
+    assert is_ecn_assistant_execution_ready(execution_info) is False
+
+    execution_info["ordinary_confirmations"]["D1"]["confirmed"] = True
+    execution_info["erp_confirmation"]["confirmed"] = True
+    assert is_ecn_assistant_execution_ready(execution_info) is True
+
+    record = _ecn_record(state=ECNState.ECN_EXECUTING)
+    record["change_items"] = change_items
+    record["execution_info"] = execution_info
+    assert is_ecn_pending_for_user(record, "助理A", "研发助理") is True
+    assert is_ecn_pending_for_user(record, "工程师A", "工程NPI") is False
+
+    execution_info["stage"] = ECN_EXECUTION_STAGE_OVERVIEW_RUNNING
+    assert is_ecn_pending_for_user(record, "助理A", "研发助理") is True
+
+
+def test_material_execution_specs_and_pending_roles_follow_json_responsibilities():
+    item = {
+        "item_id": "M1",
+        "scheme_category": ECN_SCHEME_GROUP_MATERIAL,
+        "change_type": "更换",
+        "traceability_levels": ["文件", "供应商"],
+        "disposition_measure": "报废",
+    }
+    execution_info = build_ecn_execution_info([item])
+    execution_info["stage"] = ECN_EXECUTION_STAGE_MATERIAL
+    record = _ecn_record(state=ECNState.ECN_EXECUTING)
+    record["change_items"] = [item]
+    record["execution_info"] = execution_info
+
+    specs = get_ecn_material_execution_specs(item)
+    assert [(spec["kind"], spec["key"]) for spec in specs] == [
+        ("traceability", "文件"),
+        ("traceability", "供应商"),
+        ("disposition", "报废"),
+    ]
+    pending_roles = get_ecn_execution_pending_role_keywords(record)
+    assert "研发助理" in pending_roles
+    assert "采购" in pending_roles
+    assert "生产经理" in pending_roles
+    assert is_ecn_pending_for_user(record, "采购A", "采购") is True
+
+    material_entry = execution_info["material_confirmations"]["M1"]
+    assert is_ecn_material_execution_closed(material_entry) is False
+    material_entry["traceability"]["文件"]["confirmed"] = True
+    assert is_ecn_pending_for_user(record, "助理A", "研发助理") is False
+    for confirmation in material_entry["traceability"].values():
+        confirmation["confirmed"] = True
+    material_entry["disposition"]["confirmed"] = True
+    assert is_ecn_material_execution_closed(material_entry) is True
 
 
 def test_invalid_step_approval_data_does_not_hide_pending_roles():
@@ -818,13 +910,13 @@ def test_structured_material_change_display_covers_all_change_types():
     ) == ("螺钉\n用量：2 pcs", "螺钉\n用量：3.5 pcs")
     assert get_ecn_material_change_display(
         {
-            "change_type": "弃用",
+            "change_type": ECN_MATERIAL_CHANGE_TYPE_DISCONTINUE,
             "material_change": {"material_name": "旧线材", "quantity": 1, "unit": "m"},
         }
-    ) == ("旧线材\n用量：1 m", "弃用")
+    ) == ("旧线材\n用量：1 m", ECN_MATERIAL_CHANGE_TYPE_DISCONTINUE)
     assert get_ecn_material_change_display(
         {
-            "change_type": "更换",
+            "change_type": ECN_MATERIAL_CHANGE_TYPE_REPLACE,
             "material_change": {
                 "old_material_name": "旧螺钉",
                 "old_quantity": 2,

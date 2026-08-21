@@ -14,6 +14,9 @@
         "scheme_review.transitions": "方案编辑、确认、驳回和整改动作分别写入哪个参与人/方案状态。状态值必须存在于对应statuses配置中。",
         "scheme_tracking.traceability_levels": "各类ECN方案可选择的追溯范围；物料方案必填，其它方案选填。",
         "scheme_tracking.disposition_measures": "旧料处置措施的可选项。",
+        "execution_workflow.assistant_roles": "第一阶段核对普通资料事项、ERP状态并触发系统内资料落盘的研发助理角色关键字。",
+        "execution_workflow.traceability_responsible_roles": "物料执行阶段按追溯范围配置可确认完成的角色关键字。",
+        "execution_workflow.disposition_responsible_roles": "物料执行阶段按旧料处置措施配置可确认完成的角色关键字。",
         "scheme_options.document_change_types": "其它特定事项/资料变更方案的分类选项。",
         "scheme_options.overview_actions": "系统内资料方案的动作显示文案；add、update、deactivate为固定语义键。",
         "scheme_options.material_change_types": "物料变更方案的分类文案映射；add、adjust_quantity、discontinue、replace为固定语义键。",
@@ -21,8 +24,8 @@
         "scheme_options.material_disposition_required_types": "需要选择旧料处置措施的物料方案语义键。",
         "scheme_options.disposition_condition_required_measures": "选择后必须填写具体处置条件的旧料处置措施。",
         "ui.overview_conflict_auto_close_seconds": "概述新增数据与同格已有数据冲突时，警告浮层首次自动弹出的停留秒数。",
-        "workflow_routes": "ECR、ECN方案评审和执行确认的角色审批路由。一个内层数组表示同一节点并行会签。",
-        "schema": "ECN表单的原因、影响、资料类型、物料选项以及执行阶段选项。"
+        "workflow_routes": "ECR和ECN方案评审的角色审批路由。一个内层数组表示同一节点并行会签。执行阶段责任角色由execution_workflow配置。",
+        "schema": "ECN申请与影响表单使用的原因、影响、资料类型和物料选项。"
     },
     "allowed_project_states": [
         "试产",
@@ -146,6 +149,70 @@
             "报废"
         ]
     },
+    "execution_workflow": {
+        "assistant_roles": [
+            "研发助理"
+        ],
+        "traceability_responsible_roles": {
+            "文件": [
+                "研发助理"
+            ],
+            "供应商": [
+                "采购",
+                "PMC"
+            ],
+            "零件仓": [
+                "仓库",
+                "PMC"
+            ],
+            "生产在线": [
+                "生产经理"
+            ],
+            "半成品仓": [
+                "仓库",
+                "PMC"
+            ],
+            "成品仓": [
+                "仓库",
+                "PMC"
+            ],
+            "客户/在途": [
+                "销售",
+                "PMC"
+            ]
+        },
+        "disposition_responsible_roles": {
+            "不适用": [
+                "研发助理"
+            ],
+            "无条件用完止": [
+                "生产经理",
+                "PMC",
+                "质量经理"
+            ],
+            "有条件用完止": [
+                "工程NPI",
+                "生产经理",
+                "PMC",
+                "质量经理"
+            ],
+            "返工": [
+                "工程NPI",
+                "生产经理",
+                "质量经理"
+            ],
+            "暂存移用": [
+                "仓库",
+                "PMC",
+                "质量经理"
+            ],
+            "报废": [
+                "生产经理",
+                "PMC",
+                "质量经理"
+            ]
+        }
+    },
     "scheme_options": {
         "document_change_types": [
             "图纸更新",
@@ -206,17 +273,6 @@
                 "工程NPI",
                 "质量经理",
                 "PMC"
-            ]
-        ],
-        "ECN_EXECUTION_PHASE": [
-            [
-                "工程NPI",
-                "生产经理",
-                "PMC",
-                "质量经理"
-            ],
-            [
-                "研发经理_EXECUTE"
             ]
         ]
     },
@@ -294,16 +350,6 @@
         "change_natures": [
             "永久变更",
             "临时变更"
-        ],
-        "execution_handling_measures": [
-            "报废",
-            "返工"
-        ],
-        "trial_conclusions": [
-            "无需试产,变更完成",
-            "试产通过,变更完成",
-            "试产条件通过,变更内容再完善",
-            "试产不通过,重新试产"
         ]
     }
 }
