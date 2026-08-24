@@ -1,0 +1,59 @@
+{
+  "reason_options": {
+    "create": [
+      {
+        "code": "first_entry",
+        "label": "首次录入"
+      },
+      {
+        "code": "requirement_change",
+        "label": "需求变更"
+      },
+      {
+        "code": "design_optimization",
+        "label": "设计优化"
+      },
+      {
+        "code": "data_supplement",
+        "label": "资料补充"
+      },
+      {
+        "code": "other",
+        "label": "其他"
+      }
+    ],
+    "state_change": [
+      {
+        "code": "status_confirmation",
+        "label": "待定状态判断"
+      },
+      {
+        "code": "version_adjustment",
+        "label": "需求版本调整"
+      },
+      {
+        "code": "content_replaced",
+        "label": "因替代失效"
+      },
+      {
+        "code": "no_longer_applicable",
+        "label": "不再适用"
+      },
+      {
+        "code": "other",
+        "label": "其他"
+      }
+    ]
+  },
+  "automatic_reasons": {
+    "requirement_pending": "需求影响待确认",
+    "conversion_pending": "转产待确认",
+    "related_pending": "关联影响待确认",
+    "row_auto_fill": "随首列自动填充",
+    "row_cascade_inactive": "随首列失活",
+    "ecn_add": "ECN新增",
+    "ecn_replace_old": "ECN替换失效",
+    "ecn_replace_new": "ECN替换新增",
+    "ecn_deactivate": "ECN失效"
+  }
+}

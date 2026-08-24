@@ -9,6 +9,7 @@ from ..config import (
     BASE_DIR,
     IMG_DIR,
 )
+from ..overview_operation import get_latest_overview_reason
 from ..utils import (
     generate_watermark_css,
     setup_global_activity_tracking,
@@ -213,7 +214,7 @@ def test_summary_report(project_name: str):
                             "condition": fmt_option(test_data, "state"),
                             "node": fmt_option(test_data, "node"),
                             "instrument": fmt_option(test_data, "instrument"),
-                            "notes": data.get("notes", ""),
+                            "notes": get_latest_overview_reason(data),
                         }
                     )
 

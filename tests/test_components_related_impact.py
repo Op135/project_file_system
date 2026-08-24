@@ -1,6 +1,7 @@
 import unittest
 
 from src.components import (
+    OverviewReasonSelector,
     _can_skip_related_impact,
     _get_active_chip_icon,
     _get_image_status_visuals,
@@ -10,6 +11,23 @@ from src.components import (
 
 
 class RelatedImpactSelectionTests(unittest.TestCase):
+    def test_overview_reason_selector_starts_empty_and_preserves_legacy_free_text(self):
+        selector = OverviewReasonSelector("state_change")
+        self.assertIsNone(selector.radio.value)
+        self.assertEqual(selector.value, "")
+
+        configured_label = selector.options[0]
+        selector.value = configured_label
+        self.assertEqual(selector.value, configured_label)
+
+        selector.value = "历史自由填写原因"
+        self.assertEqual(selector.radio.value, "其他")
+        self.assertEqual(selector.value, "其他：历史自由填写原因")
+
+        selector.value = ""
+        self.assertIsNone(selector.radio.value)
+        self.assertEqual(selector.value, "")
+
     def test_normalize_related_labels_handles_empty_values_and_duplicates(self):
         self.assertEqual(_normalize_related_labels(None), [])
         self.assertEqual(_normalize_related_labels([]), [])

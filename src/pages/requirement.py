@@ -25,7 +25,15 @@ from nicegui.events import (
 )
 
 from .. import db_storage  # 导入我们创建的模块
-from ..components import ButtonUploader, FileThumbnail, InteractiveButton, OverviewTableGroup, OverviewVersionManager
+from ..components import (
+    ButtonUploader,
+    FileThumbnail,
+    InteractiveButton,
+    OverviewReasonSelector,
+    OverviewTableGroup,
+    OverviewVersionManager,
+    show_overview_collection_history,
+)
 from ..config import (
     BASE_DIR,
     FILES_URL_DIR,
@@ -65,6 +73,7 @@ from ..overview_batch_operations import (
     validate_overview_content,
 )
 from ..overview_corrections import get_project_correction_archives
+from ..overview_operation import append_overview_timestamp, get_automatic_overview_reason
 from ..requirement_overview_impact import RequirementOverviewImpactConfigError
 from ..utils import (
     compare_configs_by_id,
@@ -75,6 +84,7 @@ from ..utils import (
     get_cache_busted_path,
     get_max_numeric_key,
     get_requirement_overview_impacts,
+    get_overview_latest_responsible,
     handle_key,
     logout,
     merge_data_with_template,
@@ -343,8 +353,7 @@ async def requirement_page(
             for id, chip_dic in label_dic.items():
                 req_max_ver = app.storage.general["project_req_max_ver"][project_name]
                 select_activ_state = chip_dic.get("select_activ_dic", {}).get(req_max_ver)
-                old_notes = chip_dic.get("notes", "")
-                creator = chip_dic.get("creator", "系统修改")
+                responsible = get_overview_latest_responsible(project_name, label, chip_dic)
                 # 只处理svn类型 且 非放在产品仓库的 chip
                 if chip_dic.get("type") == "svn" and chip_dic.get("warehouse") != "Product":
                     # 最高激活状态不是False
@@ -362,13 +371,12 @@ async def requirement_page(
                         over_data[label][id]["enabled"] = None
                         over_data[label][id]["bg_color"] = "bg-amber-5"
                         over_data[label][id]["warehouse"] = "Product"
-                        over_data[label][id]["notes"] = old_notes + "转产迁移（自动修改）"
-                        over_data[label][id]["timestamp"] = {
-                            datetime.now().strftime("%Y-%m-%d %H:%M:%S"): {
-                                "creator": creator,
-                                "select_activ_dic": over_data[label][id]["select_activ_dic"],
-                            }
-                        }
+                        if select_activ_state is True:
+                            append_overview_timestamp(
+                                over_data[label][id],
+                                creator=responsible,
+                                reason=get_automatic_overview_reason("conversion_pending"),
+                            )
                 # 其它类型的chip
                 elif chip_dic.get("type") != "svn":
                     # 最高激活状态是True
@@ -378,6 +386,11 @@ async def requirement_page(
                         over_data[label][id]["icon"] = "question_mark"
                         over_data[label][id]["enabled"] = None
                         over_data[label][id]["bg_color"] = "bg-amber-5"
+                        append_overview_timestamp(
+                            over_data[label][id],
+                            creator=responsible,
+                            reason=get_automatic_overview_reason("conversion_pending"),
+                        )
             if label_updtae_bool:
                 changed_labels.add(label)
 
@@ -3304,7 +3317,7 @@ async def requirement_page(
             "group": default_group,
             "label": default_labels[0],
             "content": "",
-            "notes": "",
+            "reason": "",
             "file_data": None,
             "row_anchors": {},
             "chip_targets": [],
@@ -3425,7 +3438,7 @@ async def requirement_page(
             if clear_inputs:
                 state["impact_mode"] = "none"
                 state["content"] = ""
-                state["notes"] = ""
+                state["reason"] = ""
                 state["test_data"] = {
                     "test_nature_select": None,
                     "test_nature_other_text": "",
@@ -3605,14 +3618,24 @@ async def requirement_page(
                             label=config.get("dialog_label", "概述内容"),
                             placeholder=config.get("dialog_placeholder", ""),
                         ).bind_value(state, "content").props("outlined").classes("w-full")
-                    ui.textarea(label="注释（必填）").bind_value(state, "notes").props("outlined auto-grow").classes(
-                        "w-full"
-                    )
                     if ptype == "test":
                         render_test_inputs(config)
                     render_table_anchor_selectors(config)
                 else:
                     render_state_targets(config)
+                reason_selector = OverviewReasonSelector(
+                    "create" if state["action"] == "add" else "state_change",
+                    "本次操作原因（必选）",
+                )
+                if state.get("reason"):
+                    reason_selector.value = state["reason"]
+
+                def sync_reason(_=None, selector=reason_selector):
+                    state["reason"] = selector.value
+
+                reason_selector.radio.on_value_change(sync_reason)
+                reason_selector.other_input.on_value_change(sync_reason)
+                sync_reason()
                 render_impact_options(config)
 
         def selected_related_labels(config):
@@ -3776,7 +3799,10 @@ async def requirement_page(
             request_saved = False
             try:
                 content = str(state["content"] or "").strip()
-                notes = str(state["notes"] or "").strip()
+                reason = str(state["reason"] or "").strip()
+                if not reason:
+                    ui.notify("请选择操作原因；选择“其他”时需填写具体原因。", type="warning")
+                    return
                 ptype = str(config.get("processing_type", "text"))
                 actual_type = ptype
                 extra_data: dict[str, Any] = {}
@@ -3784,8 +3810,8 @@ async def requirement_page(
                 target_state: Optional[bool] = None
 
                 if state["action"] == "add":
-                    if not notes:
-                        ui.notify("注释不能为空。", type="warning")
+                    if not reason:
+                        ui.notify("请选择操作原因；选择“其他”时需填写具体原因。", type="warning")
                         return
                     media_as_text = ptype in {"file", "image", "video"} and any(
                         re.search(pattern, content) for pattern in NONE_REGULAR
@@ -3918,7 +3944,7 @@ async def requirement_page(
                         "title": config.get("title", config.get("label", "")),
                         "config": copy.deepcopy(config),
                         "content": content,
-                        "notes": notes,
+                        "reason": reason,
                         "actual_type": actual_type,
                         "extra_data": extra_data,
                         "staged_file_path": staged_file_path,
@@ -3995,14 +4021,17 @@ async def requirement_page(
             changed_pairs = set()
             creator = app.storage.user.get("current_user", "匿名用户")
             content = str(state["content"] or "").strip()
-            notes = str(state["notes"] or "").strip()
+            reason = str(state["reason"] or "").strip()
+            if not reason:
+                ui.notify("请选择操作原因；选择“其他”时需填写具体原因。", type="warning")
+                return
             ptype = config.get("processing_type", "text")
             common_extra = {}
 
             try:
                 if state["action"] == "add":
-                    if not notes:
-                        ui.notify("注释不能为空。", type="warning")
+                    if not reason:
+                        ui.notify("请选择操作原因；选择“其他”时需填写具体原因。", type="warning")
                         return
                     media_as_text = ptype in {"file", "image", "video"} and any(
                         re.search(pattern, content) for pattern in NONE_REGULAR
@@ -4070,7 +4099,7 @@ async def requirement_page(
                                 project=project,
                                 config=config,
                                 content=content,
-                                notes=notes,
+                                reason=reason,
                                 creator=creator,
                                 req_max_ver=req_max_ver,
                                 row_id=row_id,
@@ -4151,6 +4180,7 @@ async def requirement_page(
                                 req_max_ver,
                                 target_state,
                                 creator,
+                                reason,
                             )
                             if not changed or updated_chip is None:
                                 skipped.append(f"{project}：{message}")
@@ -4452,7 +4482,7 @@ async def requirement_page(
     async def modify_overview_content_dialog(project_name):
         """
         研发经理专用的修改概述内容弹窗（增强版）
-        - 支持 text/file/image/svn/search/video 的 content/notes 修改
+        - 支持 text/file/image/svn/search/video 的 content 修改并记录操作原因
         - 特别支持 test 类型的 test_select_data 修改
         - 修改不覆盖原 creator，但记录修改历史
         """
@@ -4532,7 +4562,6 @@ async def requirement_page(
 
                     # --- 1. 基础内容填充 ---
                     content_input.value = CHIP_DATA.get("content", "")
-                    notes_input.value = CHIP_DATA.get("notes", "")
 
                     # --- 2. 类型特殊处理 ---
                     test_ui_container.clear()
@@ -4646,8 +4675,7 @@ async def requirement_page(
                 ui.label("概述内容 (Content):").classes("text-sm font-bold text-gray-600")
                 content_input = ui.textarea(placeholder="修改内容").classes("w-full").props("outlined auto-grow")
 
-                ui.label("注释 (Notes):").classes("text-sm font-bold text-gray-600")
-                notes_input = ui.textarea(placeholder="修改注释").classes("w-full").props("outlined auto-grow")
+                modification_reason = OverviewReasonSelector("create", "修改原因（必选）")
 
                 async def save_modification():
                     # [修复 3] 增加对 current_chip_data 的非空检查，消除 None 类型访问属性的报错
@@ -4655,10 +4683,13 @@ async def requirement_page(
                         return
 
                     new_content = content_input.value.strip()
-                    new_notes = notes_input.value.strip()
+                    reason = modification_reason.value.strip()
 
                     if not new_content:
                         ui.notify("内容不能为空", type="warning")
+                        return
+                    if not reason:
+                        ui.notify("请选择修改原因；选择“其他”时需填写具体原因。", type="warning")
                         return
 
                     try:
@@ -4669,7 +4700,6 @@ async def requirement_page(
 
                         # 1. 更新基础字段
                         await db_storage.set_deep_item(base_path + ["content"], new_content)
-                        await db_storage.set_deep_item(base_path + ["notes"], new_notes)
 
                         # 2. 如果是 Test 类型，收集并保存 test_select_data
                         if state["current_chip_data"].get("type") == "test":
@@ -4682,6 +4712,14 @@ async def requirement_page(
                             final_test_data.update(new_test_data)
 
                             await db_storage.set_deep_item(base_path + ["test_select_data"], final_test_data)
+
+                        fresh_chip = db_storage.get_deep_item(base_path, {})
+                        append_overview_timestamp(
+                            fresh_chip,
+                            creator=app.storage.user.get("current_user", "匿名用户"),
+                            reason=reason,
+                        )
+                        await db_storage.set_deep_item(base_path, fresh_chip)
 
                         ui.notify("修改已保存！", type="positive")
 
@@ -4773,89 +4811,22 @@ async def requirement_page(
 
         # --- 新增辅助函数：展示 Role 维度的历史记录 (Feature 1) ---
         def show_role_history_dialog(project_name, role):
-            # 1. 收集该 Role 下所有 Label 的数据
-            # 我们遍历数据库中该项目的所有 label，如果该 label 属于当前 role，则收集
-            # 注意：这里需要知道 label -> role 的映射。
-            # 我们可以遍历 app.storage.general["over_config_data"] 来找到该 role 下的所有 label key
             target_labels = []
             if role in app.storage.general.get("over_config_data", {}):
                 for group_li in app.storage.general["over_config_data"][role].values():
                     for item in group_li:
                         target_labels.append((item["label"], item.get("title", "无标题")))
 
-            all_history = []
+            entries = []
             for label, title in target_labels:
-                # 获取该 label 下的所有 chip
-                CHIPS = db_storage.get_deep_item([f"{project_name}_over_data", label], {})
-                for CHIP_INFO in CHIPS.values():
-                    TIMESTAMPS = CHIP_INFO.get("timestamp", {})
-                    creation_time = min(TIMESTAMPS.keys()) if TIMESTAMPS else "N/A"
-                    all_history.append(
-                        {
-                            "label": label,  # 额外记录所属标签
-                            "title": title,
-                            "content": CHIP_INFO.get("content", "N/A"),
-                            "req_ver": CHIP_INFO.get("req_ver", "0.0"),
-                            "creation_time": creation_time,
-                            "creator": CHIP_INFO.get("creator", "未知"),
-                            "type": CHIP_INFO.get("type", ""),
-                            "enabled": CHIP_INFO.get("enabled", True),
-                        }
-                    )
+                chips = db_storage.get_deep_item([f"{project_name}_over_data", label], {})
+                entries.extend(
+                    {"title": title, "chip": chip_info}
+                    for chip_info in chips.values()
+                    if isinstance(chip_info, dict)
+                )
 
-            # 2. 排序
-            try:
-                all_history.sort(key=lambda x: (float(x["req_ver"]), x["creation_time"]))
-            except ValueError:
-                all_history.sort(key=lambda x: (x["req_ver"], x["creation_time"]))
-
-            # 3. 构建 UI
-            general_dialog.clear()
-            with general_dialog, ui.card().classes("w-[900px] max-w-full h-[80vh]"):
-                with ui.row().classes("w-full justify-between items-center"):
-                    ui.label(f"全项历史记录: {role}").classes("text-xl font-bold text-gray-800")
-                    ui.button(icon="close", on_click=general_dialog.close).props("flat round dense")
-                ui.label("概述文字颜色效果代表当前激活状态").classes("text-sm text-gray-500 mt-0 mb-1")
-                ui.separator()
-
-                with ui.scroll_area().classes("w-full flex-grow"):
-                    if not all_history:
-                        ui.label("暂无记录").classes("w-full text-center text-gray-500 mt-4")
-
-                    current_ver = None
-                    for item in all_history:
-                        if item["req_ver"] != current_ver:
-                            current_ver = item["req_ver"]
-                            ui.label(f"需求版本V{current_ver}生效后提交的概述：").classes(
-                                "text-base font-bold text-amber-900 mt-3 mb-1 bg-amber-50 px-2 py-1 rounded"
-                            )
-
-                        with ui.row().classes(
-                            "w-full items-center p-2 border-b border-gray-100 hover:bg-gray-50 text-sm"
-                        ):
-                            # 时间与作者
-                            with ui.column().classes("w-32 gap-0"):
-                                ui.label(format_overview_timestamp(item["creation_time"])).classes(
-                                    "text-xs text-gray-500"
-                                )
-                                ui.label(item["creator"]).classes("text-xs font-bold text-blue-600")
-
-                            # 所属标签 (特有)
-                            ui.label(f"在[{item['title']}]添加：").classes("text-xs font-bold text-amber-600 truncate")
-
-                            # 内容
-                            with ui.row().classes("flex-grow items-center gap-2"):
-                                if item["type"] in ["file", "image", "svn", "search"]:
-                                    ui.icon("attachment", size="xs", color="grey")
-                                if item["enabled"]:
-                                    color = "text-blue-400"
-                                elif item["enabled"] == "null":
-                                    color = "text-orange-400 italic"
-                                else:
-                                    color = "text-gray-400 line-through"
-                                ui.label(item["content"]).classes(f"font-medium {color}")
-
-            general_dialog.open()
+            show_overview_collection_history(general_dialog, f"全项历史记录: {role}", entries)
 
         # 需求界面内容
         header.clear()
@@ -5523,11 +5494,14 @@ async def requirement_page(
                                     "pending_group_li": pending_group_li,
                                 }
 
-                        def _chip_onclick(role_expansions, group_li):
-                            for ex in role_expansions:
-                                for group_name in group_li:
-                                    if ex.text == group_name:
-                                        ex.set_value(True)
+                        def _chip_onclick(role_expansions, role, group_list_key):
+                            group_names = set(group_li_dic.get(role, {}).get(group_list_key, []))
+                            target_expansions = [ex for ex in role_expansions if ex.text in group_names]
+                            if not target_expansions:
+                                return
+                            target_value = not all(bool(ex.value) for ex in target_expansions)
+                            for ex in target_expansions:
+                                ex.set_value(target_value)
 
                         await _update_num_chip_text()
                         for role, over_data in app.storage.general["over_config_data"].items():
@@ -5566,18 +5540,18 @@ async def requirement_page(
                                         .bind_visibility_from(num_chip_dic[role], "none_chip_visibility")
                                     )
                                     need_num_chip.on_click(
-                                        lambda exps=current_role_expansions, group_li=group_li_dic[role]["need_group_li"]: (
-                                            _chip_onclick(exps, group_li)
+                                        lambda exps=current_role_expansions, current_role=role: _chip_onclick(
+                                            exps, current_role, "need_group_li"
                                         )
                                     )
                                     pending_num_chip.on_click(
-                                        lambda exps=current_role_expansions, group_li=group_li_dic[role]["pending_group_li"]: (
-                                            _chip_onclick(exps, group_li)
+                                        lambda exps=current_role_expansions, current_role=role: _chip_onclick(
+                                            exps, current_role, "pending_group_li"
                                         )
                                     )
                                     none_num_chip.on_click(
-                                        lambda exps=current_role_expansions, group_li=group_li_dic[role]["none_group_li"]: (
-                                            _chip_onclick(exps, group_li)
+                                        lambda exps=current_role_expansions, current_role=role: _chip_onclick(
+                                            exps, current_role, "none_group_li"
                                         )
                                     )
                                     # --- 修改点：在 switch 左边增加历史记录按钮 (Feature 1) ---

@@ -44,10 +44,28 @@ from .requirement_overview_impact import (
     load_requirement_overview_impact_config,
     resolve_requirement_overview_impacts,
 )
+from .overview_operation import (
+    append_overview_timestamp,
+    get_automatic_overview_reason,
+    get_latest_overview_operator,
+    get_latest_overview_record,
+)
 
 # 获取一个以此模块命名的 logger
 # 比如：如果你的文件是 src/components.py，这个 logger 的名字就会是 "src.components"
 logger = logging.getLogger(__name__)
+
+
+def get_overview_latest_responsible(project_name: str, label: str, chip_data: dict | None = None) -> str:
+    """获取概述类别已有最近负责人，不把自动操作归给“系统”。"""
+    role = app.storage.general.get("over_config_data_flat", {}).get(label, {}).get("role", "")
+    latest_user_raw = (
+        app.storage.general.get("overview_role", {}).get(project_name, {}).get(role, {}).get("latest_user", "")
+    )
+    latest_user = latest_user_raw.split("：", 1)[1] if "：" in latest_user_raw else latest_user_raw
+    if latest_user and latest_user != "——":
+        return latest_user
+    return str((chip_data or {}).get("creator") or "待定负责人")
 
 # 内存中的全局字典：{ client.id : { 'username': str, 'login_time': str, 'ip': str } }
 online_users = {}
@@ -1358,6 +1376,7 @@ async def set_overview_active_state(
             label_is_affected = affected_label_set is None or label in affected_label_set
             # 遍历各个chip数据
             for chip_data in chip_dic.values():
+                became_pending = False
                 # 将chip数据里的选项激活设置字典的键，也就是版本整理成列表
                 select_activ_dic = chip_data.get("select_activ_dic", {})
                 over_chip_versions = []
@@ -1388,6 +1407,7 @@ async def set_overview_active_state(
                             # 只有本次目标版本、且命中影响配置时，才把原激活状态降为待定。
                             if key == req_ver and label_is_affected and previous_state is not False:
                                 new_state = None
+                                became_pending = previous_state is True
                             select_activ_dic[f"{key}.0"] = new_state
                             previous_state = new_state
                             label_changed = True
@@ -1404,6 +1424,12 @@ async def set_overview_active_state(
                             chip_data["icon"] = "question_mark"
                             chip_data["bg_color"] = "bg-amber-5"
                             label_changed = True
+                    if became_pending:
+                        append_overview_timestamp(
+                            chip_data,
+                            creator=get_overview_latest_responsible(project_name, label, chip_data),
+                            reason=get_automatic_overview_reason("requirement_pending"),
+                        )
             if label_changed:
                 changed_labels.add(label)
         if not changed_labels:
@@ -1593,6 +1619,53 @@ def overview_role_update(project_name, input_role="all_update"):
 
     # ---------------------------------------------------------
 
+    def _collect_role_statistics(over_data_dic: dict) -> tuple[dict, dict, str, datetime | None]:
+        frequency_user_dic: dict[str, int] = {}
+        original_user_time_dic: dict[str, datetime] = {}
+        latest_operator = ""
+        latest_operation_time: datetime | None = None
+        for over_config_li in over_data_dic.values():
+            for over_config in over_config_li:
+                for over_data in OVERVIEW_DATA.get(over_config.get("label"), {}).values():
+                    latest_time_text, latest_record = get_latest_overview_record(over_data)
+                    if not latest_time_text:
+                        continue
+                    try:
+                        operation_time = parse_overview_timestamp(latest_time_text)
+                    except (TypeError, ValueError):
+                        continue
+                    original_creator = str(over_data.get("creator") or latest_record.get("creator") or "未知")
+                    frequency_user_dic[original_creator] = frequency_user_dic.get(original_creator, 0) + 1
+                    if operation_time > original_user_time_dic.get(original_creator, datetime.min):
+                        original_user_time_dic[original_creator] = operation_time
+                    operator = str(latest_record.get("creator") or original_creator)
+                    if latest_operation_time is None or operation_time > latest_operation_time:
+                        latest_operator = operator
+                        latest_operation_time = operation_time
+        return frequency_user_dic, original_user_time_dic, latest_operator, latest_operation_time
+
+    def _apply_role_statistics(role_name: str, over_data_dic: dict) -> None:
+        frequency_user_dic, original_time_dic, latest_user, latest_time = _collect_role_statistics(over_data_dic)
+        if not frequency_user_dic:
+            return
+        over_role_dic = app.storage.general["overview_role"][project_name]
+        max_value = max(frequency_user_dic.values())
+        most_users = [user for user, count in frequency_user_dic.items() if count == max_value]
+        most_user = max(most_users, key=lambda user: original_time_dic.get(user, datetime.min))
+        over_role_dic[role_name]["most_user"] = f"最多：{most_user}"
+
+        if not latest_user or latest_time is None:
+            return
+        latest_des_time = over_role_dic[role_name].get("latest_designation_time", "")
+        if (
+            "最近指定" in over_role_dic[role_name].get("latest_user", "")
+            and latest_des_time
+            and latest_time < parse_overview_timestamp(latest_des_time)
+        ):
+            return
+        _execute_role_handover(role_name, latest_user)
+        over_role_dic[role_name]["latest_user"] = f"最近：{latest_user}"
+
     # 如果项目名不存在服务器概述数据的键里
     if project_name not in app.storage.general["overview_role"]:
         temp_dic = {}
@@ -1602,100 +1675,11 @@ def overview_role_update(project_name, input_role="all_update"):
 
     # 兼容 "all" 或 "all_update" 的传参
     elif input_role != "initialize" and input_role in ["all", "all_update"]:
-        # 初始化概述角色字典
-        over_role_dic = app.storage.general["overview_role"][project_name]
-        # 遍历概述配置字典，主要用里面的角色分类，如光学、结构等等，和概述配置里的label
         for role, over_data_dic in app.storage.general["over_config_data"].items():
-            frequency_user_dic = {}
-            time_user_dic = {}
-            for over_config_li in over_data_dic.values():
-                for over_config in over_config_li:
-                    if over_config["label"] in OVERVIEW_DATA and OVERVIEW_DATA[over_config["label"]] != {}:
-                        for over_data in OVERVIEW_DATA[over_config["label"]].values():
-                            # 统计每个用户出现的频次和最新的时间戳，用于后续判断最多和最近负责人
-                            if over_data["creator"] in frequency_user_dic:
-                                frequency_user_dic[over_data["creator"]] += 1
-                                time_obj_new = parse_overview_timestamp(next(reversed(over_data["timestamp"])))
-                                time_obj_old = time_user_dic[over_data["creator"]]
-                                if time_obj_new > time_obj_old:
-                                    time_user_dic[over_data["creator"]] = time_obj_new
-                            else:
-                                frequency_user_dic[over_data["creator"]] = 1
-                                time_user_dic[over_data["creator"]] = parse_overview_timestamp(
-                                    next(reversed(over_data["timestamp"]))
-                                )
-            if frequency_user_dic != {}:
-                max_value = max(frequency_user_dic.values())
-                most_user_li = [key for key, value in frequency_user_dic.items() if value == max_value]
-                if len(most_user_li) > 1:
-                    lat_time = max([time_user_dic[user] for user in most_user_li])
-                    for user in most_user_li:
-                        if time_user_dic[user] == lat_time:
-                            over_role_dic[role]["most_user"] = f"最多：{user}"
-                else:
-                    over_role_dic[role]["most_user"] = f"最多：{most_user_li[0]}"
-
-                latest_time = max(list(time_user_dic.values()))
-                for user in time_user_dic.keys():
-                    if time_user_dic[user] == latest_time:
-                        latest_des_time = over_role_dic[role].get("latest_designation_time", "")
-                        if (
-                            "最近指定" in over_role_dic[role]["latest_user"]
-                            and latest_des_time
-                            and time_user_dic[user] < parse_overview_timestamp(latest_des_time)
-                        ):
-                            continue
-                        # 💡 核心修复：在赋值新负责人前，执行交接逻辑
-                        _execute_role_handover(role, user)
-                        over_role_dic[role]["latest_user"] = f"最近：{user}"
+            _apply_role_statistics(role, over_data_dic)
 
     elif input_role != "initialize" and input_role:
-        # 初始化概述角色字典
-        over_role_dic = app.storage.general["overview_role"][project_name]
-        frequency_user_dic = {}
-        time_user_dic = {}
-        # 遍历概述配置字典指定角色的配置数据
-        for over_config_li in app.storage.general["over_config_data"].get(input_role, {}).values():
-            for over_config in over_config_li:
-                if over_config["label"] in OVERVIEW_DATA and OVERVIEW_DATA[over_config["label"]] != {}:
-                    for over_data in OVERVIEW_DATA[over_config["label"]].values():
-                        if over_data["creator"] in frequency_user_dic:
-                            frequency_user_dic[over_data["creator"]] += 1
-                            time_obj_new = parse_overview_timestamp(next(reversed(over_data["timestamp"])))
-                            time_obj_old = time_user_dic[over_data["creator"]]
-                            if time_obj_new > time_obj_old:
-                                time_user_dic[over_data["creator"]] = time_obj_new
-                        else:
-                            frequency_user_dic[over_data["creator"]] = 1
-                            time_user_dic[over_data["creator"]] = parse_overview_timestamp(
-                                next(reversed(over_data["timestamp"]))
-                            )
-
-        if frequency_user_dic != {}:
-            max_value = max(frequency_user_dic.values())
-            most_user_li = [key for key, value in frequency_user_dic.items() if value == max_value]
-            if len(most_user_li) > 1:
-                lat_time = max([time_user_dic[user] for user in most_user_li])
-                for user in most_user_li:
-                    if time_user_dic[user] == lat_time:
-                        over_role_dic[input_role]["most_user"] = f"最多：{user}"
-            else:
-                over_role_dic[input_role]["most_user"] = f"最多：{most_user_li[0]}"
-
-            latest_time = max(list(time_user_dic.values()))
-            for user in time_user_dic.keys():
-                # 💡 核心修复：补上了之前遗漏的 "最近指定" 防覆盖校验
-                if time_user_dic[user] == latest_time:
-                    latest_des_time = over_role_dic[input_role].get("latest_designation_time", "")
-                    if (
-                        "最近指定" in over_role_dic[input_role]["latest_user"]
-                        and latest_des_time
-                        and time_user_dic[user] < parse_overview_timestamp(latest_des_time)
-                    ):
-                        continue
-                    # 💡 核心修复：在赋值新负责人前，执行交接逻辑
-                    _execute_role_handover(input_role, user)
-                    over_role_dic[input_role]["latest_user"] = f"最近：{user}"
+        _apply_role_statistics(input_role, app.storage.general["over_config_data"].get(input_role, {}))
 
 
 # 在指定目录中查找包含特定前缀的文件名，并提取版本号

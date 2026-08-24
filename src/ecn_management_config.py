@@ -941,7 +941,10 @@ def get_ecn_execution_pending_role_keywords(ecn_data: Any) -> list[str]:
                 confirmation = material_entry.get("disposition", {})
             if isinstance(confirmation, dict) and confirmation.get("confirmed") is True:
                 continue
-            for role in spec.get("roles", []):
+            roles = spec.get("roles", [])
+            if not isinstance(roles, (list, tuple, set)):
+                continue
+            for role in roles:
                 normalized_role = str(role).strip()
                 if normalized_role and normalized_role not in pending_roles:
                     pending_roles.append(normalized_role)

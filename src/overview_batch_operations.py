@@ -13,6 +13,7 @@ from nicegui import app
 
 from . import db_storage
 from .overview_change_workflow_config import OVERVIEW_CHANGE_WORKFLOW_CONFIG
+from .overview_operation import append_overview_timestamp, get_automatic_overview_reason
 
 BATCH_OVERVIEW_CONFIG = OVERVIEW_CHANGE_WORKFLOW_CONFIG["batch_overview"]
 BATCH_OVERVIEW_TOOL_ROLES = BATCH_OVERVIEW_CONFIG["tool_roles"]
@@ -302,7 +303,7 @@ def build_new_overview_chip(
     project: str,
     config: dict,
     content: str,
-    notes: str,
+    reason: str,
     creator: str,
     req_max_ver: str,
     row_id: Optional[str] = None,
@@ -322,11 +323,16 @@ def build_new_overview_chip(
         "bg_color": bg_color,
         "type": actual_type,
         "content": content,
-        "notes": notes,
         "creator": creator,
         "req_ver": req_max_ver,
         "select_activ_dic": select_activ_dic,
-        "timestamp": {"%s" % now_str: {"creator": creator, "select_activ_dic": copy.deepcopy(select_activ_dic)}},
+        "timestamp": {
+            "%s" % now_str: {
+                "creator": creator,
+                "reason": reason,
+                "select_activ_dic": copy.deepcopy(select_activ_dic),
+            }
+        },
     }
     if config.get("is_table_group"):
         chip["row_id"] = row_id or str(uuid.uuid4())
@@ -377,6 +383,7 @@ async def update_overview_chip_state(
     req_max_ver: str,
     target_state: Optional[bool],
     creator: str,
+    reason: str = "状态确认",
 ) -> tuple[bool, str, Optional[dict]]:
     """原子更新一个 chip 当前版本的激活状态。"""
     outcome: dict[str, object] = {"changed": False, "chip": None}
@@ -394,9 +401,9 @@ async def update_overview_chip_state(
         chip["icon"] = icon
         chip["enabled"] = enabled
         chip["bg_color"] = bg_color
-        chip["creator"] = creator
         chip.setdefault("timestamp", {})[now_str] = {
             "creator": creator,
+            "reason": reason,
             "select_activ_dic": copy.deepcopy(chip["select_activ_dic"]),
         }
         outcome["changed"] = True
@@ -436,7 +443,15 @@ async def cascade_deactivate_table_row(
         for chip_id, chip in chips.items():
             if chip.get("row_id") != row_id:
                 continue
-            changed, _, _ = await update_overview_chip_state(project, label, chip_id, req_max_ver, False, creator)
+            changed, _, _ = await update_overview_chip_state(
+                project,
+                label,
+                chip_id,
+                req_max_ver,
+                False,
+                creator,
+                get_automatic_overview_reason("row_cascade_inactive"),
+            )
             if changed:
                 changed_labels.add(label)
     return changed_labels
@@ -490,6 +505,11 @@ async def apply_related_overview_impacts(
                 key=lambda value: float(value) if str(value).replace(".", "", 1).isdigit() else -1,
             )
             pending_result = {"eligible": False, "changed": False}
+            related_role = config_flat.get(related_label, {}).get("role", "")
+            related_user_raw = overview_role.get(project, {}).get(related_role, {}).get("latest_user", "")
+            related_user = (
+                related_user_raw.split("：", 1)[1] if "：" in related_user_raw else related_user_raw
+            ) or str(snapshot.get("creator") or "待定负责人")
 
             def mark_pending(chip):
                 if not chip:
@@ -503,6 +523,12 @@ async def apply_related_overview_impacts(
                     chip["enabled"] = None
                     chip["icon"] = "question_mark"
                     chip["bg_color"] = "bg-amber-5"
+                    append_overview_timestamp(
+                        chip,
+                        creator=related_user,
+                        reason=get_automatic_overview_reason("related_pending"),
+                        operation_time=now_str,
+                    )
                     pending_result["changed"] = True
                     return chip
                 return db_storage.ATOMIC_NO_UPDATE
@@ -510,9 +536,6 @@ async def apply_related_overview_impacts(
             await db_storage.atomic_deep_update([f"{project}_over_data", related_label, chip_id], mark_pending)
             if not pending_result["eligible"]:
                 continue
-
-            related_role = config_flat.get(related_label, {}).get("role", "")
-            related_user = overview_role.get(project, {}).get(related_role, {}).get("latest_user", "匿名用户")
 
             def append_record(open_record):
                 if not open_record:
@@ -661,7 +684,7 @@ async def execute_batch_overview_request(request: dict) -> dict:
 
     if action == "add":
         content = str(payload.get("content") or "")
-        notes = str(payload.get("notes") or "")
+        reason = str(payload.get("reason") or payload.get("notes") or "")
         actual_type = str(payload.get("actual_type") or config.get("processing_type") or "text")
         common_extra = copy.deepcopy(payload.get("extra_data") or {})
         row_anchors = payload.get("row_anchors") or {}
@@ -708,7 +731,7 @@ async def execute_batch_overview_request(request: dict) -> dict:
                     project=project,
                     config=config,
                     content=content,
-                    notes=notes,
+                    reason=reason,
                     creator=submitter,
                     req_max_ver=req_max_ver,
                     row_id=row_id,
@@ -776,7 +799,13 @@ async def execute_batch_overview_request(request: dict) -> dict:
                         failed.append(f"{project}：{message}")
                         continue
                 changed, message, updated_chip = await update_overview_chip_state(
-                    project, label, chip_id, req_max_ver, target_state, submitter
+                    project,
+                    label,
+                    chip_id,
+                    req_max_ver,
+                    target_state,
+                    submitter,
+                    str(payload.get("reason") or payload.get("notes") or "状态确认"),
                 )
                 if not changed or updated_chip is None:
                     skipped.append(f"{project}：{message}")

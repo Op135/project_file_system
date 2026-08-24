@@ -13,7 +13,7 @@ from pathlib import Path
 from nicegui import app, ui
 
 from .. import db_storage
-from ..components import FileThumbnail
+from ..components import FileThumbnail, OverviewReasonSelector
 from ..config import BASE_DIR, IMG_DIR, OVER_DIR, PRESET_AVATARS, REQ_DIR, REQ_REMOVE_DIR
 from ..overview_batch_operations import (
     BATCH_OVERVIEW_REQUESTS_KEY,
@@ -1344,7 +1344,7 @@ def information_page():
         editor = {
             "projects": list(payload.get("projects") or []),
             "content": str(payload.get("content") or ""),
-            "notes": str(payload.get("notes") or ""),
+            "reason": str(payload.get("reason") or payload.get("notes") or ""),
             "target_state": {True: "active", None: "pending", False: "inactive"}.get(
                 payload.get("target_state"), "pending"
             ),
@@ -1390,6 +1390,7 @@ def information_page():
                                 for target_project in project_names:
                                     ui.chip(target_project).props("dense color=blue-1 text-color=blue-9")
 
+                    reason_selector = None
                     if action == "add":
                         is_staged_media = bool(payload.get("staged_file_path"))
                         content_input = (
@@ -1398,9 +1399,6 @@ def information_page():
                         if is_staged_media:
                             content_input.disable()
                             content_input.tooltip("已上传文件名不能在审批单中修改；可撤回后重新发起。")
-                        ui.textarea("注释").bind_value(editor, "notes").props("outlined auto-grow").classes(
-                            "w-full"
-                        )
                         if not editable:
                             content_input.disable()
                     else:
@@ -1412,6 +1410,16 @@ def information_page():
                         )
                         if not editable:
                             target_radio.disable()
+
+                    if editable:
+                        reason_selector = OverviewReasonSelector(
+                            "create" if action == "add" else "state_change",
+                            "操作原因（必选）",
+                        )
+                        if editor["reason"]:
+                            reason_selector.value = editor["reason"]
+                    else:
+                        ui.label(f"操作原因：{editor['reason'] or '旧申请未记录'}").classes("text-sm text-gray-600")
 
                     configured_related = list(
                         dict.fromkeys(label for label in payload.get("config", {}).get("impact_list", []) if label)
@@ -1456,9 +1464,10 @@ def information_page():
                 new_payload = copy.deepcopy(payload)
                 new_payload["projects"] = projects
                 new_payload["content"] = str(editor["content"] or "").strip()
-                new_payload["notes"] = str(editor["notes"] or "").strip()
-                if action == "add" and not new_payload["notes"]:
-                    ui.notify("注释不能为空。", type="warning")
+                new_payload["reason"] = reason_selector.value.strip() if reason_selector else editor["reason"]
+                new_payload.pop("notes", None)
+                if not new_payload["reason"]:
+                    ui.notify("请选择操作原因；选择“其他”时需填写具体原因。", type="warning")
                     return
                 if action == "state":
                     new_payload["target_state"] = {"active": True, "pending": None, "inactive": False}[

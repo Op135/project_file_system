@@ -2,7 +2,6 @@ import unittest
 
 from src.pages.ecn_management import (
     append_ecn_approval_log_once,
-    build_ecn_operation_note,
     build_overview_activation_state,
     deactivate_overview_chip_for_ecn,
 )
@@ -25,7 +24,7 @@ class ECNManagementRecordTests(unittest.TestCase):
         self.assertTrue(append_ecn_approval_log_once(approval_log, next_entry))
         self.assertEqual(len(approval_log), 2)
 
-    def test_ecn_deactivation_updates_recent_operator_and_matching_history(self):
+    def test_ecn_deactivation_preserves_recorder_and_adds_auditable_history(self):
         original = {
             "creator": "原操作人",
             "req_ver": "1.0",
@@ -47,13 +46,16 @@ class ECNManagementRecordTests(unittest.TestCase):
             "ECN26081401",
             operation_time,
             "方案提供人",
+            "ECN失效",
         )
 
-        self.assertEqual(result["creator"], "方案提供人")
-        self.assertEqual(result["timestamp"][operation_time]["creator"], result["creator"])
+        self.assertEqual(result["creator"], "原操作人")
+        self.assertEqual(result["timestamp"][operation_time]["creator"], "方案提供人")
+        self.assertEqual(result["timestamp"][operation_time]["reason"], "ECN失效")
+        self.assertEqual(result["timestamp"][operation_time]["source_id"], "ECN26081401")
         self.assertEqual(result["select_activ_dic"], {"1.0": True, "2.0": False})
         self.assertEqual(result["req_ver"], "1.0")
-        self.assertEqual(result["notes"], "原录入注释\nECN操作：依据 ECN26081401 执行")
+        self.assertEqual(result["notes"], "原录入注释")
         self.assertEqual(original["creator"], "原操作人")
         self.assertNotIn("2.0", original["select_activ_dic"])
 
@@ -62,13 +64,6 @@ class ECNManagementRecordTests(unittest.TestCase):
 
         self.assertEqual(req_ver, "0.0")
         self.assertEqual(activations, {"0.0": True})
-
-    def test_ecn_operation_note_is_not_repeated(self):
-        first = build_ecn_operation_note("人工注释", "ECN26081401")
-        second = build_ecn_operation_note(first, "ECN26081401")
-
-        self.assertEqual(first, second)
-
 
 if __name__ == "__main__":
     unittest.main()

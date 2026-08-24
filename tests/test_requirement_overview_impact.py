@@ -295,6 +295,11 @@ def test_selective_active_state_marks_only_affected_labels_pending_and_carries_o
     assert changed_labels == {"affected", "unaffected", "disabled"}
     assert written["value"]["affected"]["a"]["select_activ_dic"]["2.0"] is None
     assert written["value"]["affected"]["a"]["enabled"] is None
+    affected_history = written["value"]["affected"]["a"]["timestamp"]
+    latest_record = affected_history[next(reversed(affected_history))]
+    assert latest_record["creator"] == "待定负责人"
+    assert latest_record["reason"] == "需求影响待确认"
+    assert latest_record["select_activ_dic"] == {"1.0": True, "2.0": None}
     assert written["value"]["unaffected"]["b"]["select_activ_dic"]["2.0"] is True
     assert written["value"]["unaffected"]["b"]["enabled"] is True
     assert written["value"]["disabled"]["c"]["select_activ_dic"]["2.0"] is False

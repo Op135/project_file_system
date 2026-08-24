@@ -32,6 +32,7 @@ from ..config import (
     ECNState,
 )
 from ..custom_ui import custom_upload
+from ..overview_operation import append_overview_timestamp, get_automatic_overview_reason
 from ..ecn_management_config import (
     ECN_DISPOSITION_MEASURES,
     ECN_DOCUMENT_CHANGE_TYPES,
@@ -281,17 +282,6 @@ def append_ecn_approval_log_once(approval_log: list, entry: dict) -> bool:
     return True
 
 
-def build_ecn_operation_note(existing_notes: object, ecn_id: str) -> str:
-    """保留原注释，并以统一格式补充 ECN 自动落盘来源。"""
-    note = f"ECN操作：依据 {ecn_id} 执行"
-    original = str(existing_notes or "").strip()
-    if not original:
-        return note
-    if note in original.splitlines():
-        return original
-    return f"{original}\n{note}"
-
-
 def build_overview_activation_state(req_max_ver: object) -> tuple[str, dict[str, bool]]:
     """与正常概述录入一致：无项目需求时从需求 V0.0 节点录入。"""
     version_index = int(float(str(req_max_ver or "0.0")))
@@ -308,6 +298,7 @@ def deactivate_overview_chip_for_ecn(
     ecn_id: str,
     operation_time: str,
     scheme_author: str,
+    reason: str,
 ) -> dict:
     """生成 ECN 失活后的旧 Chip；保留录入节点并记录方案提供人的本次操作。"""
     scheme_author = str(scheme_author or "").strip()
@@ -318,12 +309,13 @@ def deactivate_overview_chip_for_ecn(
     result["enabled"] = False
     result["bg_color"] = "bg-grey-5"
     result["icon"] = "block"
-    result["creator"] = scheme_author
-    result["notes"] = build_ecn_operation_note(result.get("notes"), ecn_id)
-    result.setdefault("timestamp", {})[operation_time] = {
-        "creator": scheme_author,
-        "select_activ_dic": copy.deepcopy(result["select_activ_dic"]),
-    }
+    append_overview_timestamp(
+        result,
+        creator=scheme_author,
+        reason=reason,
+        operation_time=operation_time,
+        source_id=ecn_id,
+    )
     return result
 
 
@@ -353,7 +345,9 @@ async def execute_ecn_overview_schemes(ecn_data: dict, operation_time: str) -> d
                     "row",
                 )
 
-    def create_new_chip_template(item: dict, project: str, new_data: dict) -> tuple[dict, str]:
+    def create_new_chip_template(
+        item: dict, project: str, new_data: dict, reason: str
+    ) -> tuple[dict, str]:
         item_id = str(item.get("item_id") or "")
         scheme_author = str(item.get("author") or "").strip()
         if not scheme_author:
@@ -377,13 +371,14 @@ async def execute_ecn_overview_schemes(ecn_data: dict, operation_time: str) -> d
             "enabled": True,
             "bg_color": "bg-light-blue-1",
             "content": new_data.get("content", ""),
-            "notes": build_ecn_operation_note("", ecn_id),
             "creator": scheme_author,
             "req_ver": req_max_ver,
             "select_activ_dic": new_activ_dic,
             "timestamp": {
                 operation_time: {
                     "creator": scheme_author,
+                    "reason": reason,
+                    "source_id": ecn_id,
                     "select_activ_dic": copy.deepcopy(new_activ_dic),
                 }
             },
@@ -458,6 +453,7 @@ async def execute_ecn_overview_schemes(ecn_data: dict, operation_time: str) -> d
                             ecn_id,
                             operation_time,
                             scheme_author,
+                            get_automatic_overview_reason("ecn_deactivate"),
                         ),
                     )
                 elif action == ECN_OVERVIEW_ACTION_UPDATE:
@@ -467,7 +463,12 @@ async def execute_ecn_overview_schemes(ecn_data: dict, operation_time: str) -> d
                     old_chip = db_storage.get_deep_item(path)
                     if not old_chip:
                         raise ValueError("需要更换的原数据不存在")
-                    new_chip, req_max_ver = create_new_chip_template(item, project, project_new_data)
+                    new_chip, req_max_ver = create_new_chip_template(
+                        item,
+                        project,
+                        project_new_data,
+                        get_automatic_overview_reason("ecn_replace_new"),
+                    )
                     new_chip["row_id"] = old_chip.get("row_id")
                     new_chip["select_activ_dic"] = copy.deepcopy(old_chip.get("select_activ_dic", {}))
                     new_chip["select_activ_dic"][req_max_ver] = True
@@ -482,6 +483,7 @@ async def execute_ecn_overview_schemes(ecn_data: dict, operation_time: str) -> d
                             ecn_id,
                             operation_time,
                             str(item.get("author") or "").strip(),
+                            get_automatic_overview_reason("ecn_replace_old"),
                         ),
                     )
                     await save_ecn_deep_item(
@@ -489,7 +491,12 @@ async def execute_ecn_overview_schemes(ecn_data: dict, operation_time: str) -> d
                         new_chip,
                     )
                 elif action == ECN_OVERVIEW_ACTION_ADD:
-                    new_chip, _ = create_new_chip_template(item, project, project_new_data)
+                    new_chip, _ = create_new_chip_template(
+                        item,
+                        project,
+                        project_new_data,
+                        get_automatic_overview_reason("ecn_add"),
+                    )
                     if label == item.get("first_col_label", ""):
                         new_chip["row_id"] = generated_row_ids[(item_id, project)]
                     elif anchor_row_id and str(anchor_row_id).startswith("PENDING_NEW_"):
@@ -4254,11 +4261,10 @@ async def ecn_management_page():
                         """通知不应因执行表格重绘或客户端离线而中断后台落盘。"""
                         try:
                             with event_client:
-                                ui.notify(
-                                    message,
-                                    type=notification_type,
-                                    **({"timeout": timeout_ms} if timeout_ms is not None else {}),
-                                )
+                                if timeout_ms is None:
+                                    ui.notify(message, type=notification_type)
+                                else:
+                                    ui.notify(message, type=notification_type, timeout=timeout_ms)
                         except Exception:
                             logger.warning("ECN执行通知发送失败，后台流程继续：%s", message)
 

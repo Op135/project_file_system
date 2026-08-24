@@ -150,7 +150,7 @@ class OverviewBatchOperationTests(unittest.TestCase):
             project="P1",
             config=config,
             content="a.png",
-            notes="批量添加",
+            reason="批量添加",
             creator="张三",
             req_max_ver="2.0",
             row_id="row-1",
@@ -159,7 +159,10 @@ class OverviewBatchOperationTests(unittest.TestCase):
         self.assertEqual(chip["icon"], "image")
         self.assertEqual(chip["row_id"], "row-1")
         self.assertEqual(chip["select_activ_dic"], {"0.0": False, "1.0": False, "2.0": True})
-        datetime.strptime(next(iter(chip["timestamp"])), "%Y-%m-%d %H:%M:%S")
+        timestamp = next(iter(chip["timestamp"]))
+        datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S")
+        self.assertNotIn("notes", chip)
+        self.assertEqual(chip["timestamp"][timestamp]["reason"], "批量添加")
         self.assertEqual(get_chip_state_visuals("image", None), ("question_mark", None, "bg-amber-5"))
         self.assertEqual(get_chip_state_visuals("image", False), ("block", False, "bg-grey-5"))
 
@@ -225,7 +228,9 @@ class OverviewBatchOperationTests(unittest.TestCase):
         self.assertEqual(updated["select_activ_dic"], {"1.0": True, "2.0": None})
         self.assertEqual(updated["icon"], "question_mark")
         self.assertIsNone(updated["enabled"])
-        datetime.strptime(next(reversed(updated["timestamp"])), "%Y-%m-%d %H:%M:%S")
+        timestamp = next(reversed(updated["timestamp"]))
+        datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S")
+        self.assertEqual(updated["timestamp"][timestamp]["reason"], "状态确认")
 
     def test_related_impact_records_active_and_already_pending_targets(self):
         overview = {

@@ -57,6 +57,17 @@ from .overview_corrections import (
     update_correction_request,
     validate_test_correction,
 )
+from .overview_operation import (
+    append_overview_timestamp,
+    get_automatic_overview_reason,
+    get_first_overview_record,
+    get_latest_overview_operator,
+    get_latest_overview_reason,
+    get_latest_overview_record,
+    get_overview_reason_labels,
+    get_overview_timestamp_items,
+    resolve_overview_reason,
+)
 from .utils import (
     async_path_exists,
     format_overview_timestamp,
@@ -73,6 +84,173 @@ from .utils import (
 # 获取一个以此模块命名的 logger
 # 比如：如果你的文件是 src/components.py，这个 logger 的名字就会是 "src.components"
 logger = logging.getLogger(__name__)
+
+
+class OverviewReasonSelector:
+    """配置驱动的概述操作原因单选控件。"""
+
+    def __init__(self, operation: str = "create", title: str = "原因（必选）"):
+        options = get_overview_reason_labels(operation)
+        if not options:
+            raise ValueError(f"概述操作原因未配置：{operation}")
+        self.options = options
+        ui.label(title).classes("text-sm font-medium text-blue-grey-8 -mb-2")
+        self.radio = ui.radio(options, value=None).props("inline dense").classes("w-full")
+        self.other_input = ui.input("其他原因", placeholder="请填写具体原因").props("outlined dense").classes("w-full")
+        self.other_input.set_visibility(self.radio.value == "其他")
+        self.radio.on_value_change(lambda e: self.other_input.set_visibility(e.value == "其他"))
+
+    @property
+    def value(self) -> str:
+        return resolve_overview_reason(self.radio.value, self.other_input.value)
+
+    @value.setter
+    def value(self, new_value: object) -> None:
+        value = str(new_value or "").strip()
+        if not value:
+            self.radio.set_value(None)
+            self.other_input.set_value("")
+        elif value.startswith("其他："):
+            self.radio.set_value("其他")
+            self.other_input.set_value(value.split("：", 1)[1])
+        elif value in self.options:
+            self.radio.set_value(value)
+            self.other_input.set_value("")
+        else:
+            self.radio.set_value("其他")
+            self.other_input.set_value(value)
+
+
+def _overview_tooltip_audit_html(chip_info: dict, extra_html: str = "") -> str:
+    """统一生成概述 tooltip 的审计信息；注释只取最近一次操作原因。"""
+    latest_time, _record = get_latest_overview_record(chip_info)
+    reason = get_latest_overview_reason(chip_info).replace("\n", "<br>")
+    extra = f"<br>{extra_html}" if extra_html else ""
+    reason_html = f"<br>最近操作注释:<br>●{reason}" if reason else ""
+    return (
+        f"录入节点: 需求V{chip_info.get('req_ver')}后"
+        f"<br>最近操作人: {get_latest_overview_operator(chip_info)}"
+        f"<br>最近操作时间: {latest_time}{extra}{reason_html}"
+    )
+
+
+def _overview_state_text(state: object) -> tuple[str, str]:
+    if state is True:
+        return "生效", "green"
+    if state is None or str(state).lower() == "null":
+        return "待定", "orange"
+    return "失活", "grey"
+
+
+def _render_overview_state_snapshot(activations: object) -> None:
+    if not isinstance(activations, dict) or not activations:
+        return
+    with ui.row().classes("w-full flex-wrap gap-1 mt-1"):
+        for version, state in sorted(
+            activations.items(),
+            key=lambda item: float(item[0]) if str(item[0]).replace(".", "", 1).isdigit() else 0,
+        ):
+            state_text, color = _overview_state_text(state)
+            ui.badge(f"V{version} {state_text}", color=color).props("outline")
+
+
+def show_overview_collection_history(dialog, title: str, entries: list[dict]) -> None:
+    """统一展示标签级、技术维度级的概述录入记录和状态变更动态。"""
+    creation_records = []
+    change_records = []
+    for entry in entries:
+        chip = entry.get("chip") if isinstance(entry, dict) else None
+        if not isinstance(chip, dict):
+            continue
+        context_title = str(entry.get("title") or "").strip()
+        timestamp_items = get_overview_timestamp_items(chip)
+        first_time, first_record = get_first_overview_record(chip)
+        creation_records.append(
+            {
+                "title": context_title,
+                "content": chip.get("content", "N/A"),
+                "req_ver": str(chip.get("req_ver", "0.0")),
+                "time": first_time or "N/A",
+                "creator": first_record.get("creator") or chip.get("creator", "未知"),
+                "reason": first_record.get("reason") or chip.get("notes", ""),
+                "enabled": chip.get("enabled", True),
+                "type": chip.get("type", ""),
+            }
+        )
+        for operation_time, record in timestamp_items[1:]:
+            change_records.append(
+                {
+                    "title": context_title,
+                    "content": chip.get("content", "N/A"),
+                    "time": operation_time,
+                    "creator": record.get("creator") or chip.get("creator", "未知"),
+                    "reason": record.get("reason", ""),
+                    "source_id": record.get("source_id", ""),
+                    "select_activ_dic": record.get("select_activ_dic", {}),
+                }
+            )
+
+    def creation_sort_key(item: dict):
+        version = str(item["req_ver"])
+        version_key = float(version) if version.replace(".", "", 1).isdigit() else float("inf")
+        return version_key, str(item["time"])
+
+    creation_records.sort(key=creation_sort_key)
+    change_records.sort(key=lambda item: str(item["time"]), reverse=True)
+
+    dialog.clear()
+    with dialog, ui.card().classes("w-[920px] max-w-full h-[82vh]"):
+        with ui.row().classes("w-full justify-between items-center"):
+            ui.label(title).classes("text-xl font-bold text-gray-800")
+            ui.button(icon="close", on_click=dialog.close).props("flat round dense")
+        with ui.tabs().classes("w-full text-blue-grey-8") as tabs:
+            creation_tab = ui.tab("录入记录")
+            change_tab = ui.tab("变更动态")
+        with ui.tab_panels(tabs, value=creation_tab).classes("w-full flex-grow min-h-0 p-0"):
+            with ui.tab_panel(creation_tab).classes("p-0"):
+                with ui.scroll_area().classes("w-full h-full px-2"):
+                    if not creation_records:
+                        ui.label("暂无录入记录").classes("w-full text-center text-gray-500 mt-4")
+                    current_ver = None
+                    for item in creation_records:
+                        if item["req_ver"] != current_ver:
+                            current_ver = item["req_ver"]
+                            ui.label(f"需求版本 V{current_ver}").classes(
+                                "text-sm font-bold text-amber-900 mt-3 bg-amber-50 px-2 py-1 rounded"
+                            )
+                        with ui.row().classes("w-full items-start p-2 border-b border-gray-100 gap-3"):
+                            with ui.column().classes("w-36 gap-0 shrink-0"):
+                                ui.label(format_overview_timestamp(item["time"])).classes("text-xs text-gray-500")
+                                ui.label(str(item["creator"])).classes("text-xs font-medium text-gray-700")
+                            with ui.column().classes("flex-grow min-w-0 gap-1"):
+                                if item["title"]:
+                                    ui.label(item["title"]).classes("text-xs font-medium text-amber-700")
+                                with ui.row().classes("items-center gap-1"):
+                                    if item["type"] in {"file", "image", "svn", "search", "video"}:
+                                        ui.icon("attachment", size="xs", color="grey")
+                                    state_text, state_color = _overview_state_text(item["enabled"])
+                                    ui.label(str(item["content"])).classes(f"text-sm font-medium text-{state_color}-7")
+                                    ui.badge(f"当前{state_text}", color=state_color).props("outline")
+                                if item["reason"]:
+                                    ui.label(f"原因：{item['reason']}").classes("text-xs text-gray-500")
+            with ui.tab_panel(change_tab).classes("p-0"):
+                with ui.scroll_area().classes("w-full h-full px-2"):
+                    if not change_records:
+                        ui.label("暂无状态变更记录").classes("w-full text-center text-gray-500 mt-4")
+                    for item in change_records:
+                        with ui.row().classes("w-full items-start p-2 border-b border-gray-100 gap-3"):
+                            with ui.column().classes("w-36 gap-0 shrink-0"):
+                                ui.label(format_overview_timestamp(item["time"])).classes("text-xs text-gray-500")
+                                ui.label(str(item["creator"])).classes("text-xs font-medium text-gray-700")
+                            with ui.column().classes("flex-grow min-w-0 gap-0"):
+                                context = f"[{item['title']}] " if item["title"] else ""
+                                ui.label(f"{context}{item['content']}").classes("text-sm font-medium text-gray-800")
+                                if item["reason"]:
+                                    ui.label(f"原因：{item['reason']}").classes("text-xs text-gray-600")
+                                if item["source_id"]:
+                                    ui.label(f"来源：{item['source_id']}").classes("text-xs text-blue-700")
+                                _render_overview_state_snapshot(item["select_activ_dic"])
+    dialog.open()
 
 
 def _render_correction_content_format_hint(config: dict) -> None:
@@ -291,6 +469,7 @@ def _render_bulk_pending_dialog(
     submit_button = None
     cancel_button = None
     submit_spinner = None
+    reason_selector = None
 
     def set_version_state(version: str, state: Optional[bool]) -> None:
         for chip_id, checkbox in checkbox_by_version.get(version, {}).items():
@@ -316,6 +495,10 @@ def _render_bulk_pending_dialog(
         if not operations:
             ui.notify("请至少把一个 chip 判断为激活或失活。", type="warning", position="bottom", timeout=2500)
             return
+        reason = reason_selector.value.strip() if reason_selector else ""
+        if not reason:
+            ui.notify("请选择操作原因；选择“其他”时需填写具体原因。", type="warning")
+            return
 
         is_submitting = True
         if submit_button and not submit_button.is_deleted:
@@ -328,7 +511,7 @@ def _render_bulk_pending_dialog(
         await asyncio.sleep(0)
 
         try:
-            await on_submit(operations)
+            await on_submit(operations, reason)
         except Exception as ex:
             logger.error("批量判断待定状态失败", exc_info=True)
             is_submitting = False
@@ -442,6 +625,8 @@ def _render_bulk_pending_dialog(
                                 ui.label(str(chip["creator"])).classes(
                                     f"w-full h-full px-2 py-2 {row_bg} border-b border-grey-2"
                                 )
+
+        reason_selector = OverviewReasonSelector("state_change", "本次批量判断原因（必选）")
 
         with ui.row().classes("w-full justify-end items-center gap-2"):
             submit_spinner = ui.spinner(type="hourglass", size="sm", color="amber-8", thickness=8.0)
@@ -1288,9 +1473,7 @@ class InteractiveButton:
         self.temp_bool = temp_bool
         auto_open_target = app.storage.client.get("overview_correction_auto_open", {})
         self.auto_open_correction_chip_id = auto_open_correction_chip_id or (
-            str(auto_open_target.get("chip_id") or "")
-            if str(auto_open_target.get("label") or "") == self.label
-            else ""
+            str(auto_open_target.get("chip_id") or "") if str(auto_open_target.get("label") or "") == self.label else ""
         )
         self.new_filename_input = None
         self.new_content_input = None
@@ -2040,7 +2223,7 @@ class InteractiveButton:
             with chip:
                 # Tooltip 处理
                 if chip_info.get("type") in ["svn"]:
-                    tooltip_text = f"录入节点: 需求V{chip_info.get('req_ver')}后<br>最近操作人: {chip_info.get('creator')}<br>时间: {next(reversed(chip_info.get('timestamp', {})))}<br>仓库: {chip_info.get('warehouse', '')}<br>注释: <br>●{chip_info.get('notes', '').replace('\n', '<br>')}"
+                    tooltip_text = _overview_tooltip_audit_html(chip_info, f"仓库: {chip_info.get('warehouse', '')}")
                 elif chip_info.get("type") in ["test"]:
                     select_str = "测试条件状态与节点工具："
                     select_bool = False
@@ -2050,9 +2233,9 @@ class InteractiveButton:
                             select_str += f"<br>●{select_value}"
                     if not select_bool:
                         select_str = "测试条件状态与节点工具：<br>无"
-                    tooltip_text = f"录入节点: 需求V{chip_info.get('req_ver')}后<br>最近操作人: {chip_info.get('creator')}<br>时间: {next(reversed(chip_info.get('timestamp', {})))}<br>{select_str}<br>注释: <br>●{chip_info.get('notes', '').replace('\n', '<br>')}"
+                    tooltip_text = _overview_tooltip_audit_html(chip_info, select_str)
                 else:
-                    tooltip_text = f"录入节点: 需求V{chip_info.get('req_ver')}后<br>最近操作人: {chip_info.get('creator')}<br>时间: {next(reversed(chip_info.get('timestamp', {})))}<br>注释: <br>●{chip_info.get('notes', '').replace('\n', '<br>')}"
+                    tooltip_text = _overview_tooltip_audit_html(chip_info)
 
                 with ui.tooltip():
                     ui.html(tooltip_text, sanitize=Sanitizer().sanitize)
@@ -2150,7 +2333,7 @@ class InteractiveButton:
             with thumbnail:
                 _render_image_status_badge(chip_info.get("icon"))
 
-                tooltip_text = f"录入节点: 需求V{chip_info.get('req_ver')}后<br>图片名: {image_name}<br>最近操作人: {chip_info.get('creator')}<br>时间: {next(reversed(chip_info.get('timestamp', {})))}<br>注释: <br>{chip_info.get('notes', '').replace('\n', '<br>')}"
+                tooltip_text = _overview_tooltip_audit_html(chip_info, f"图片名: {image_name}")
                 with ui.tooltip():
                     ui.html(tooltip_text, sanitize=Sanitizer().sanitize)
 
@@ -2250,15 +2433,7 @@ class InteractiveButton:
                 .props("outlined")
                 .classes("w-full")
             )
-            self.chip_notes = (
-                ui.textarea(
-                    label="针对该技术概述的注释（必填）",
-                    placeholder="首填/变更原因",
-                    validation={"不能空白": lambda v: v.strip() != ""},
-                )
-                .props("outlined")
-                .classes("w-full")
-            )
+            self.chip_notes = OverviewReasonSelector("create")
             with ui.row().classes("w-full justify-end items-center"):
                 ui_spinner = ui.spinner(type="hourglass", size="md", color="amber-8", thickness=8.0)
                 ui_spinner.set_visibility(False)
@@ -2275,15 +2450,7 @@ class InteractiveButton:
                 .props("outlined")
                 .classes("w-full")
             )
-            self.chip_notes = (
-                ui.textarea(
-                    label="针对该技术概述的注释（必填）",
-                    placeholder="首填/变更原因",
-                    validation={"不能空白": lambda v: v.strip() != ""},
-                )
-                .props("outlined")
-                .classes("w-full")
-            )
+            self.chip_notes = OverviewReasonSelector("create")
             with ui.row().classes("w-full justify-end items-center"):
                 ui_spinner = ui.spinner(type="hourglass", size="md", color="amber-8", thickness=8.0)
                 ui_spinner.set_visibility(False)
@@ -2299,15 +2466,7 @@ class InteractiveButton:
                 .props("outlined")
                 .classes("w-full")
             )
-            self.chip_notes = (
-                ui.textarea(
-                    label="针对该技术概述的注释（必填）",
-                    placeholder="首填/变更原因",
-                    validation={"不能空白": lambda v: v.strip() != ""},
-                )
-                .props("outlined")
-                .classes("w-full")
-            )
+            self.chip_notes = OverviewReasonSelector("create")
             with ui.row().classes("w-full justify-end items-center"):
                 ui_spinner = ui.spinner(type="hourglass", size="md", color="amber-8", thickness=8.0)
                 ui_spinner.set_visibility(False)
@@ -2327,15 +2486,7 @@ class InteractiveButton:
                 .props("outlined")
                 .classes("w-full")
             )
-            self.chip_notes = (
-                ui.textarea(
-                    label="针对该文件的注释（必填）",
-                    placeholder="首次提交/变更原因",
-                    validation={"不能空白": lambda v: v.strip() != ""},
-                )
-                .props("outlined")
-                .classes("w-full")
-            )
+            self.chip_notes = OverviewReasonSelector("create")
             with ui.row().classes("w-full justify-end items-center"):
                 self.spinner = ui.spinner(type="hourglass", size="md", color="amber-8", thickness=8.0)
                 self.spinner.set_visibility(False)
@@ -2395,15 +2546,7 @@ class InteractiveButton:
             build_options(self.node_options, "node", "节点/位置")
             build_options(self.instrument_options, "instrument", "工具/仪器/治具")
 
-            self.chip_notes = (
-                ui.textarea(
-                    label="针对该检测内容与标准的注释（必填）",
-                    placeholder="首填/变更原因",
-                    validation={"不能空白": lambda v: v.strip() != ""},
-                )
-                .props("outlined")
-                .classes("w-full")
-            )
+            self.chip_notes = OverviewReasonSelector("create")
             with ui.row().classes("w-full justify-end items-center"):
                 ui_spinner = ui.spinner(type="hourglass", size="md", color="amber-8", thickness=8.0)
                 ui_spinner.set_visibility(False)
@@ -2447,7 +2590,7 @@ class InteractiveButton:
                 return
             if not text or not notes:
                 ui.notify(
-                    "内容和注释不能为空!",
+                    "内容和操作原因不能为空!",
                     type="warning",
                     position="bottom",
                     timeout=3000,
@@ -2484,13 +2627,13 @@ class InteractiveButton:
                 "bg_color": "bg-light-blue-1",
                 "type": "text",
                 "content": text,
-                "notes": notes,
                 "creator": creator,
                 "req_ver": req_max_ver,
                 "select_activ_dic": select_activ_dic,
                 "timestamp": {
                     datetime.now().strftime("%Y-%m-%d %H:%M:%S"): {
                         "creator": creator,
+                        "reason": notes,
                         "select_activ_dic": select_activ_dic,
                     }
                 },
@@ -2555,7 +2698,7 @@ class InteractiveButton:
                     return
                 if not text or not notes:
                     ui.notify(
-                        "引用文件名和注释不能为空!",
+                        "引用文件名和操作原因不能为空!",
                         type="warning",
                         position="bottom",
                         timeout=3000,
@@ -2651,13 +2794,13 @@ class InteractiveButton:
                     "file_type": file_type,
                     "url_path": url_path,
                     "content": text,
-                    "notes": notes,
                     "creator": creator,
                     "req_ver": req_max_ver,
                     "select_activ_dic": select_activ_dic,
                     "timestamp": {
                         datetime.now().strftime("%Y-%m-%d %H:%M:%S"): {
                             "creator": creator,
+                            "reason": notes,
                             "select_activ_dic": select_activ_dic,
                         }
                     },
@@ -2723,7 +2866,7 @@ class InteractiveButton:
                     return
                 if not text or not notes:
                     ui.notify(
-                        "引用文件名和注释不能为空!",
+                        "引用文件名和操作原因不能为空!",
                         type="warning",
                         position="bottom",
                         timeout=3000,
@@ -2808,13 +2951,13 @@ class InteractiveButton:
                     "url_path": url_path,
                     "content": text,
                     "warehouse": warehouse,
-                    "notes": notes,
                     "creator": creator,
                     "req_ver": req_max_ver,
                     "select_activ_dic": select_activ_dic,
                     "timestamp": {
                         datetime.now().strftime("%Y-%m-%d %H:%M:%S"): {
                             "creator": creator,
+                            "reason": notes,
                             "select_activ_dic": select_activ_dic,
                         }
                     },
@@ -2903,7 +3046,7 @@ class InteractiveButton:
                     return
                 elif not notes:
                     ui.notify(
-                        "注释不能为空!",
+                        "请选择操作原因；选择“其他”时需填写具体原因。",
                         type="warning",
                         position="bottom",
                         timeout=3000,
@@ -2955,7 +3098,6 @@ class InteractiveButton:
                     "bg_color": "bg-light-blue-1",
                     "type": "test",
                     "content": text,
-                    "notes": notes,
                     "test_select_data": test_select_data,
                     "creator": creator,
                     "req_ver": req_max_ver,
@@ -2963,6 +3105,7 @@ class InteractiveButton:
                     "timestamp": {
                         datetime.now().strftime("%Y-%m-%d %H:%M:%S"): {
                             "creator": creator,
+                            "reason": notes,
                             "select_activ_dic": select_activ_dic,
                         }
                     },
@@ -3007,7 +3150,7 @@ class InteractiveButton:
             try:
                 if not notes:
                     ui.notify(
-                        "注释不能为空!",
+                        "请选择操作原因；选择“其他”时需填写具体原因。",
                         type="warning",
                         position="bottom",
                         timeout=3000,
@@ -3126,13 +3269,13 @@ class InteractiveButton:
                 "file_type": file_type,
                 "content": original_filename,
                 "url_path": url_path,
-                "notes": self.chip_notes.value.strip(),
                 "creator": creator,
                 "req_ver": req_max_ver,
                 "select_activ_dic": select_activ_dic,
                 "timestamp": {
                     datetime.now().strftime("%Y-%m-%d %H:%M:%S"): {
                         "creator": creator,
+                        "reason": self.chip_notes.value.strip(),
                         "select_activ_dic": select_activ_dic,
                     }
                 },
@@ -3186,12 +3329,15 @@ class InteractiveButton:
             "file_type": file_type,
             "content": original_filename,
             "url_path": url_path,
-            "notes": self.chip_notes.value,
             "creator": creator,
             "req_ver": req_max_ver,
             "select_activ_dic": select_activ_dic,
             "timestamp": {
-                datetime.now().strftime("%Y-%m-%d %H:%M:%S"): {"creator": creator, "select_activ_dic": select_activ_dic}
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S"): {
+                    "creator": creator,
+                    "reason": self.chip_notes.value.strip(),
+                    "select_activ_dic": select_activ_dic,
+                }
             },
         }
         self.chip_notes.value = ""
@@ -3288,6 +3434,19 @@ class InteractiveButton:
 
                     # 只有目标状态不为明确的 False（已失活）时，才需要受到影响
                     if chip_data.get("select_activ_dic", {}).get(max_over_ver) is not False:
+                        related_role = (
+                            app.storage.general.get("over_config_data_flat", {}).get(related_label, {}).get("role", "")
+                        )
+                        related_user_raw = (
+                            app.storage.general.get("overview_role", {})
+                            .get(self.project, {})
+                            .get(related_role, {})
+                            .get("latest_user", "")
+                        )
+                        related_user = (
+                            related_user_raw.split("：", 1)[1] if "：" in related_user_raw else related_user_raw
+                        ) or str(chip_data.get("creator") or "待定负责人")
+
                         # ==========================================
                         # 任务 A：原子化精准更新目标 Chip 本身的激活状态
                         # ==========================================
@@ -3300,6 +3459,11 @@ class InteractiveButton:
                                 target_chip["enabled"] = None
                                 target_chip["icon"] = "question_mark"
                                 target_chip["bg_color"] = "bg-amber-5"
+                                append_overview_timestamp(
+                                    target_chip,
+                                    creator=related_user,
+                                    reason=get_automatic_overview_reason("related_pending"),
+                                )
                             return target_chip
 
                         # 点对点精准写入，将锁的粒度控制在单个 chip 级别
@@ -3311,18 +3475,6 @@ class InteractiveButton:
                         # 任务 B：原子化追加连带影响的打开历史台账 (open记录)
                         # ==========================================
                         # 获取初始化关联人所需的静态数据
-                        related_role = (
-                            app.storage.general.get("over_config_data_flat", {})
-                            .get(related_label, {})
-                            .get("role", "匿名用户")
-                        )
-                        related_user = (
-                            app.storage.general.get("overview_role", {})
-                            .get(self.project, {})
-                            .get(related_role, {})
-                            .get("latest_user", "匿名用户")
-                        )
-
                         def process_open_record(open_dic):
                             if not open_dic:
                                 # 第一次被影响，新建打开记录字典结构
@@ -3454,7 +3606,11 @@ class InteractiveButton:
 
         self.activ_dialog.open()
 
-    async def handle_checkbox_change(self, ui_spinner, chip_id, chip_text):
+    async def handle_checkbox_change(self, ui_spinner, chip_id, chip_text, reason_selector):
+        reason = reason_selector.value.strip()
+        if not reason:
+            ui.notify("请选择操作原因；选择“其他”时需填写具体原因。", type="warning")
+            return
         new_select_activ_dic = copy.deepcopy(
             app.storage.general["over_change_broadcast"][self.project][chip_id]["select_activ_dic"]
         )
@@ -3485,7 +3641,6 @@ class InteractiveButton:
                     await self._update_chip_block_parameter(chip_id)
 
                 creator = app.storage.user.get("current_user", "匿名用户")
-                await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "creator"], creator)
                 await db_storage.set_deep_item(
                     [
                         f"{self.project}_over_data",
@@ -3494,7 +3649,7 @@ class InteractiveButton:
                         "timestamp",
                         datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     ],
-                    {"creator": creator, "select_activ_dic": new_select_activ_dic},
+                    {"creator": creator, "reason": reason, "select_activ_dic": new_select_activ_dic},
                 )
                 # 数据写入完毕后，推高全局版本号
                 OverviewVersionManager.bump(self.project, self.label)
@@ -3525,6 +3680,8 @@ class InteractiveButton:
                 self._show_related_chip_select_dialog(chip_text, chip_state, "activ_change")
                 # self.last_state_hash = None  # Trigger display update via timer
                 # await self._update_chip_display()
+            else:
+                ui.notify("激活状态没有发生变化，无需提交。", type="info", position="bottom", timeout=2500)
 
         except Exception as ex:
             logger.error("数据库更新失败", exc_info=True)
@@ -3573,6 +3730,8 @@ class InteractiveButton:
                         select_label,
                     )
 
+            reason_selector = OverviewReasonSelector("state_change", "本次状态修改原因（必选）")
+
             OPEN_DIC = db_storage.get_deep_item(
                 [f"{self.project}_over_related_record", self.label, chip_id, "open"], {}
             )
@@ -3605,8 +3764,10 @@ class InteractiveButton:
             with ui.row().classes("w-full justify-end items-center") as row:
                 ui_spinner.move(row, 1)
                 ui.button(
-                    "确定", color="green", on_click=lambda: self.handle_checkbox_change(ui_spinner, chip_id, chip_text)
-                ).on("click", self.activ_dialog.close)
+                    "确定",
+                    color="green",
+                    on_click=lambda: self.handle_checkbox_change(ui_spinner, chip_id, chip_text, reason_selector),
+                )
                 ui.button("取消", on_click=lambda: self.cancel_checkbox_change(chip_id)).on(
                     "click", self.activ_dialog.close
                 )
@@ -3779,72 +3940,9 @@ class InteractiveButton:
     # ==========================================================
 
     def show_label_history(self):
-        self.history_dialog.clear()
-        RAW_DATA = db_storage.get_deep_item([f"{self.project}_over_data", self.label], {})
-        history_list = []
-
-        for chip_id, chip_info in RAW_DATA.items():
-            timestamps = chip_info.get("timestamp", {})
-            creation_time = min(timestamps.keys()) if timestamps else "N/A"
-            history_list.append(
-                {
-                    "content": chip_info.get("content", "N/A"),
-                    "req_ver": chip_info.get("req_ver", "0.0"),
-                    "creation_time": creation_time,
-                    "creator": chip_info.get("creator", "未知"),
-                    "notes": chip_info.get("notes", ""),
-                    "enabled": chip_info.get("enabled", True),
-                    "type": chip_info.get("type", ""),
-                }
-            )
-
-        try:
-            history_list.sort(key=lambda x: (float(x["req_ver"]), x["creation_time"]))
-        except ValueError:
-            history_list.sort(key=lambda x: (x["req_ver"], x["creation_time"]))
-
-        with self.history_dialog, ui.card().classes("w-[800px] max-w-full h-[80vh]"):
-            with ui.row().classes("w-full justify-between items-center"):
-                ui.label(f"历史记录: {self.title}").classes("text-xl font-bold text-gray-800")
-                ui.button(icon="close", on_click=self.history_dialog.close).props("flat round dense")
-            ui.label("文字颜色效果代表当前激活状态").classes("text-sm text-gray-500 mt-0 mb-1")
-            ui.separator()
-
-            with ui.scroll_area().classes("w-full flex-grow"):
-                if not history_list:
-                    ui.label("暂无记录").classes("w-full text-center text-gray-500 mt-4")
-
-                current_ver = None
-                for item in history_list:
-                    if item["req_ver"] != current_ver:
-                        current_ver = item["req_ver"]
-                        ui.label(f"需求版本V{current_ver}生效后提交的概述：").classes(
-                            "text-base font-bold text-amber-900 mt-3 mb-1 bg-amber-50 px-2 py-1 rounded"
-                        )
-
-                    with ui.row().classes(
-                        "w-full items-start p-2 border-b border-gray-100 hover:bg-gray-50 transition-colors"
-                    ):
-                        with ui.column().classes("w-1/5 min-w-[120px] gap-0"):
-                            ui.label(format_overview_timestamp(item["creation_time"])).classes("text-xs text-gray-500")
-                            ui.label(item["creator"]).classes("text-xs font-bold text-blue-600")
-
-                        with ui.column().classes("flex-grow gap-1"):
-                            with ui.row().classes("items-center gap-1"):
-                                if item["type"] in ["file", "image", "svn", "search", "video"]:
-                                    ui.icon("attachment", size="xs", color="grey")
-                                color = (
-                                    "text-blue-400"
-                                    if item["enabled"] is True
-                                    else "text-orange-400 italic"
-                                    if item["enabled"] is None or str(item["enabled"]).lower() == "null"
-                                    else "text-gray-400 line-through"
-                                )
-                                ui.label(item["content"]).classes(f"text-sm font-medium {color}")
-                            if item["notes"]:
-                                ui.label(f"注: {item['notes']}").classes("text-xs text-gray-500 italic")
-
-        self.history_dialog.open()
+        raw_data = db_storage.get_deep_item([f"{self.project}_over_data", self.label], {})
+        entries = [{"chip": chip_info} for chip_info in raw_data.values() if isinstance(chip_info, dict)]
+        show_overview_collection_history(self.history_dialog, f"历史记录: {self.title}", entries)
 
     def show_chip_history(self, chip_data):
         self.history_dialog.clear()
@@ -3866,6 +3964,8 @@ class InteractiveButton:
                 for time_str in sorted_times:
                     record = timestamp_data[time_str]
                     creator = record.get("creator", "未知")
+                    reason = str(record.get("reason") or "").strip()
+                    source_id = str(record.get("source_id") or "").strip()
                     activ_dic = record.get("select_activ_dic", {})
 
                     with ui.card().classes("w-full p-2 bg-gray-50 border border-gray-200 -space-y-2"):
@@ -3874,6 +3974,10 @@ class InteractiveButton:
                                 ui.icon("history", size="xs", color="blue")
                                 ui.label(format_overview_timestamp(time_str)).classes("text-sm font-mono text-gray-700")
                             ui.badge(creator, color="blue-grey").props("outline")
+                        if reason:
+                            ui.label(f"原因：{reason}").classes("text-xs text-gray-600")
+                        if source_id:
+                            ui.label(f"来源：{source_id}").classes("text-xs text-blue-700")
 
                         if activ_dic:
                             with ui.row().classes("w-full flex-wrap gap-1"):
@@ -3886,10 +3990,11 @@ class InteractiveButton:
                                         ("green", "white")
                                         if is_active
                                         else ("orange", "white")
-                                        if is_active == "null"
+                                        if is_active is None or str(is_active).lower() == "null"
                                         else ("grey-4", "grey-7")
                                     )
-                                    ui.chip(text=f"V{ver}", color=color, text_color=text_col).props(
+                                    state_text, _state_color = _overview_state_text(is_active)
+                                    ui.chip(text=f"V{ver} {state_text}", color=color, text_color=text_col).props(
                                         "dense square size=sm"
                                     )
 
@@ -4386,7 +4491,7 @@ class InteractiveButton:
             self._continue_after_bulk_pending_decisions,
         )
 
-    async def _apply_bulk_pending_decisions(self, operations: list) -> None:
+    async def _apply_bulk_pending_decisions(self, operations: list, reason: str) -> None:
         decisions_by_chip = defaultdict(dict)
         chip_texts = {}
         for chip_id, chip_text, version, state in operations:
@@ -4438,7 +4543,6 @@ class InteractiveButton:
                         [f"{self.project}_over_data", self.label, chip_id, "bg_color"], "bg-amber-5"
                     )
 
-            await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id, "creator"], creator)
             await db_storage.set_deep_item(
                 [
                     f"{self.project}_over_data",
@@ -4447,7 +4551,11 @@ class InteractiveButton:
                     "timestamp",
                     datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 ],
-                {"creator": creator, "select_activ_dic": copy.deepcopy(select_activ_dic)},
+                {
+                    "creator": creator,
+                    "reason": reason,
+                    "select_activ_dic": copy.deepcopy(select_activ_dic),
+                },
             )
             await _archive_pending_record(self.project, self.label, chip_id, creator)
             applied_states += chip_applied_states
@@ -4582,11 +4690,7 @@ class OverviewTableGroup:
 
     def _open_requested_correction(self) -> None:
         config = next(
-            (
-                item
-                for item in self.configs
-                if str(item.get("label") or "") == self.auto_open_correction_label
-            ),
+            (item for item in self.configs if str(item.get("label") or "") == self.auto_open_correction_label),
             None,
         )
         chip_info = db_storage.get_deep_item(
@@ -4782,7 +4886,7 @@ class OverviewTableGroup:
             self.project,
             config["label"],
             config["title"],
-            lambda operations, c=config: self._apply_column_bulk_pending_decisions(operations, c),
+            lambda operations, reason, c=config: self._apply_column_bulk_pending_decisions(operations, reason, c),
             first_col_title,
             first_col_context,
         )
@@ -4797,8 +4901,8 @@ class OverviewTableGroup:
                 self.project,
                 label,
                 config["title"],
-                lambda remaining_operations, c=config: self._apply_column_bulk_pending_decisions(
-                    remaining_operations, c
+                lambda remaining_operations, reason, c=config: self._apply_column_bulk_pending_decisions(
+                    remaining_operations, reason, c
                 ),
                 first_col_title,
                 first_col_context,
@@ -4839,7 +4943,7 @@ class OverviewTableGroup:
             lambda c=config: self._continue_after_column_bulk_pending_decisions(c),
         )
 
-    async def _apply_column_bulk_pending_decisions(self, operations: list, config: dict) -> None:
+    async def _apply_column_bulk_pending_decisions(self, operations: list, reason: str, config: dict) -> None:
         label = config["label"]
         decisions_by_chip = defaultdict(dict)
         chip_texts = {}
@@ -4906,7 +5010,6 @@ class OverviewTableGroup:
                         [f"{self.project}_over_data", label, chip_id, "bg_color"], "bg-amber-5"
                     )
 
-            await db_storage.set_deep_item([f"{self.project}_over_data", label, chip_id, "creator"], creator)
             await db_storage.set_deep_item(
                 [
                     f"{self.project}_over_data",
@@ -4915,7 +5018,11 @@ class OverviewTableGroup:
                     "timestamp",
                     datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 ],
-                {"creator": creator, "select_activ_dic": copy.deepcopy(select_activ_dic)},
+                {
+                    "creator": creator,
+                    "reason": reason,
+                    "select_activ_dic": copy.deepcopy(select_activ_dic),
+                },
             )
             await _archive_pending_record(self.project, label, chip_id, creator)
             applied_states += chip_applied_states
@@ -5244,7 +5351,9 @@ class OverviewTableGroup:
                 with chip:
                     # 为 chip 添加 tooltip
                     if chip_info.get("type") in ["svn"]:
-                        tooltip_text = f"录入节点: 需求V{chip_info.get('req_ver')}后<br>最近操作人: {chip_info.get('creator')}<br>时间: {next(reversed(chip_info.get('timestamp', {})))}<br>仓库: {chip_info.get('warehouse', '')}<br>注释: <br>●{chip_info.get('notes', '').replace('\n', '<br>')}"
+                        tooltip_text = _overview_tooltip_audit_html(
+                            chip_info, f"仓库: {chip_info.get('warehouse', '')}"
+                        )
                     elif chip_info.get("type") in ["test"]:
                         select_str = "测试条件状态与节点工具："
                         select_bool = False
@@ -5254,9 +5363,9 @@ class OverviewTableGroup:
                                 select_str = f"{select_str}<br>●{select_value}"
                         if not select_bool:
                             select_str = "测试条件状态与节点工具：<br>无"
-                        tooltip_text = f"录入节点: 需求V{chip_info.get('req_ver')}后<br>最近操作人: {chip_info.get('creator')}<br>时间: {next(reversed(chip_info.get('timestamp', {})))}<br>{select_str}<br>注释: <br>●{chip_info.get('notes', '').replace('\n', '<br>')}"
+                        tooltip_text = _overview_tooltip_audit_html(chip_info, select_str)
                     else:
-                        tooltip_text = f"录入节点: 需求V{chip_info.get('req_ver')}后<br>最近操作人: {chip_info.get('creator')}<br>时间: {next(reversed(chip_info.get('timestamp', {})))}<br>注释: <br>●{chip_info.get('notes', '').replace('\n', '<br>')}"
+                        tooltip_text = _overview_tooltip_audit_html(chip_info)
                     with ui.tooltip():
                         ui.html(tooltip_text, sanitize=Sanitizer().sanitize)
 
@@ -5359,7 +5468,7 @@ class OverviewTableGroup:
                 with thumbnail:
                     _render_image_status_badge(chip_info.get("icon"))
                     # 缩略图创建日期提示
-                    tooltip_text = f"录入节点: 需求V{chip_info.get('req_ver')}后<br>图片名: {image_name}<br>最近操作人: {chip_info.get('creator')}<br>时间: {next(reversed(chip_info.get('timestamp', {})))}<br>注释: <br>{chip_info.get('notes', '').replace('\n', '<br>')}"
+                    tooltip_text = _overview_tooltip_audit_html(chip_info, f"图片名: {image_name}")
                     with ui.tooltip():
                         ui.html(tooltip_text, sanitize=Sanitizer().sanitize)
 
@@ -5605,15 +5714,7 @@ class OverviewTableGroup:
                 .props("outlined")
                 .classes("w-full")
             )
-            self.chip_notes = (
-                ui.textarea(
-                    label="注释（必填）",
-                    placeholder="首填/变更原因",
-                    validation={"不能空白": lambda v: v.strip() != ""},
-                )
-                .props("outlined")
-                .classes("w-full")
-            )
+            self.chip_notes = OverviewReasonSelector("create")
             with ui.row().classes("w-full justify-end items-center"):
                 ui_spinner = ui.spinner(type="hourglass", size="md", color="amber-8", thickness=8.0)
                 ui_spinner.set_visibility(False)
@@ -5649,7 +5750,7 @@ class OverviewTableGroup:
                 return
             if not text or not notes:
                 ui.notify(
-                    "内容和注释均不能为空!",
+                    "内容和操作原因均不能为空!",
                     type="warning",
                     position="bottom",
                     timeout=3000,
@@ -5687,13 +5788,13 @@ class OverviewTableGroup:
                 "bg_color": "bg-light-blue-1",
                 "type": "text",
                 "content": text,
-                "notes": notes,
                 "creator": creator,
                 "req_ver": req_max_ver,
                 "select_activ_dic": select_activ_dic,
                 "timestamp": {
                     datetime.now().strftime("%Y-%m-%d %H:%M:%S"): {
                         "creator": creator,
+                        "reason": notes,
                         "select_activ_dic": select_activ_dic,
                     }
                 },
@@ -5779,15 +5880,7 @@ class OverviewTableGroup:
             bind_select(config.get("node_options", []), "节点/位置", "node")
             bind_select(config.get("instrument_options", []), "工具/仪器/治具", "instrument")
 
-            self.chip_notes = (
-                ui.textarea(
-                    label="注释（必填）",
-                    placeholder="首填/变更原因",
-                    validation={"不能空白": lambda v: v.strip() != ""},
-                )
-                .props("outlined")
-                .classes("w-full")
-            )
+            self.chip_notes = OverviewReasonSelector("create")
             with ui.row().classes("w-full justify-end items-center"):
                 ui_spinner = ui.spinner(type="hourglass", size="md", color="amber-8", thickness=8.0)
                 ui_spinner.set_visibility(False)
@@ -5817,7 +5910,7 @@ class OverviewTableGroup:
                 )
                 if not notes:
                     ui.notify(
-                        "注释不能为空!",
+                        "请选择操作原因；选择“其他”时需填写具体原因。",
                         type="warning",
                         position="bottom",
                         timeout=3000,
@@ -5903,7 +5996,6 @@ class OverviewTableGroup:
                     "bg_color": "bg-light-blue-1",
                     "type": "test",
                     "content": text,
-                    "notes": notes,
                     "test_select_data": test_select_data,
                     "creator": creator,
                     "req_ver": req_max_ver,
@@ -5911,6 +6003,7 @@ class OverviewTableGroup:
                     "timestamp": {
                         datetime.now().strftime("%Y-%m-%d %H:%M:%S"): {
                             "creator": creator,
+                            "reason": notes,
                             "select_activ_dic": select_activ_dic,
                         }
                     },
@@ -5960,15 +6053,7 @@ class OverviewTableGroup:
                 .props("outlined")
                 .classes("w-full")
             )
-            self.chip_notes = (
-                ui.textarea(
-                    label="针对该文件的注释（必填）",
-                    placeholder="首次提交/变更原因",
-                    validation={"不能空白": lambda v: v.strip() != ""},
-                )
-                .props("outlined")
-                .classes("w-full")
-            )
+            self.chip_notes = OverviewReasonSelector("create")
             with ui.row().classes("w-full justify-end items-center"):
                 self.spinner = ui.spinner(type="hourglass", size="md", color="amber-8", thickness=8.0)
                 self.spinner.set_visibility(False)
@@ -5991,7 +6076,7 @@ class OverviewTableGroup:
             try:
                 if not notes:
                     ui.notify(
-                        "注释不能为空!",
+                        "请选择操作原因；选择“其他”时需填写具体原因。",
                         type="warning",
                         position="bottom",
                         timeout=3000,
@@ -6169,13 +6254,13 @@ class OverviewTableGroup:
             "file_type": file_type,
             "content": original_filename,
             "url_path": url_path,
-            "notes": self.chip_notes.value.strip(),
             "creator": creator,
             "req_ver": req_max_ver,
             "select_activ_dic": select_activ_dic,
             "timestamp": {
                 datetime.now().strftime("%Y-%m-%d %H:%M:%S"): {
                     "creator": creator,
+                    "reason": self.chip_notes.value.strip(),
                     "select_activ_dic": select_activ_dic,
                 }
             },
@@ -6217,7 +6302,7 @@ class OverviewTableGroup:
                 .props("outlined")
                 .classes("w-full")
             )
-            self.chip_notes = ui.textarea(label="注释（必填）").props("outlined").classes("w-full")
+            self.chip_notes = OverviewReasonSelector("create")
             with ui.row().classes("w-full justify-end items-center"):
                 ui_spinner = ui.spinner(type="hourglass", size="md", color="amber-8", thickness=8.0)
                 ui_spinner.set_visibility(False)
@@ -6260,7 +6345,7 @@ class OverviewTableGroup:
                     return
                 if not text or not notes:
                     ui.notify(
-                        "引用文件名和注释不能为空!",
+                        "引用文件名和操作原因不能为空!",
                         type="warning",
                         position="bottom",
                         timeout=3000,
@@ -6358,13 +6443,13 @@ class OverviewTableGroup:
                     "content": text,
                     # "url_path": f"{FILES_URL_DIR}/{text}",
                     "url_path": url_path,  # 使用返回的 url_path
-                    "notes": notes,
                     "creator": creator,
                     "req_ver": req_max_ver,
                     "select_activ_dic": self._get_select_activ_dic(req_max_ver),
                     "timestamp": {
                         datetime.now().strftime("%Y-%m-%d %H:%M:%S"): {
                             "creator": creator,
+                            "reason": notes,
                             "select_activ_dic": self._get_select_activ_dic(req_max_ver),
                         }
                     },
@@ -6723,11 +6808,16 @@ class OverviewTableGroup:
                     "bg_color": "bg-light-blue-1",
                     "type": "text",  # 强制使用 text 类型，避免 file/image 产生 404
                     "content": "无",
-                    "notes": "首列为无，系统自动跟随填充",
                     "creator": creator,
                     "req_ver": req_max_ver,
                     "select_activ_dic": select_activ_dic,
-                    "timestamp": {time_str: {"creator": creator, "select_activ_dic": select_activ_dic}},
+                    "timestamp": {
+                        time_str: {
+                            "creator": creator,
+                            "reason": get_automatic_overview_reason("row_auto_fill"),
+                            "select_activ_dic": select_activ_dic,
+                        }
+                    },
                 }
                 await db_storage.set_deep_item([f"{self.project}_over_data", label, chip_id], chip_data)
                 # 数据写入完毕后，推高全局版本号
@@ -6847,11 +6937,7 @@ class OverviewTableGroup:
                                 content_str = " | ".join(display_texts)
                                 ui.label(f"【{title}】: {content_str}").classes("text-sm text-gray-700 break-all")
 
-            unified_notes = (
-                ui.textarea(label="统一注释 (必填)", placeholder="例如：继承历史项目配置")
-                .props("outlined")
-                .classes("w-full mt-2")
-            )
+            unified_reason = OverviewReasonSelector("create", "统一录入原因（必选）")
 
             with ui.row().classes("w-full justify-end items-center mt-2 gap-2"):
                 ui.button("跳过不填充", color="grey", on_click=self.autofill_dialog.close)
@@ -6859,18 +6945,18 @@ class OverviewTableGroup:
                     "确认填充",
                     color="green",
                     on_click=lambda: self._execute_autofill(
-                        row_id, combinations[selected_idx["val"]], col_configs, unified_notes.value
+                        row_id, combinations[selected_idx["val"]], col_configs, unified_reason.value
                     ),
                 )
 
         self.autofill_dialog.open()
 
-    async def _execute_autofill(self, row_id: str, combo: dict, col_configs: list, notes: str):
+    async def _execute_autofill(self, row_id: str, combo: dict, col_configs: list, reason: str):
         """
         将选中的联动组合执行落盘
         """
-        if not notes.strip():
-            ui.notify("统一注释不能为空!", type="warning", position="bottom", timeout=2000)
+        if not reason.strip():
+            ui.notify("请选择录入原因；选择“其他”时需填写具体原因。", type="warning", position="bottom")
             return
 
         req_max_ver = app.storage.general["project_req_max_ver"].get(self.project, "0.0")
@@ -6894,11 +6980,16 @@ class OverviewTableGroup:
                         "bg_color": template.get("bg_color", "bg-light-blue-1"),
                         "type": template.get("type", "text"),
                         "content": template.get("content", ""),
-                        "notes": notes,
                         "creator": creator,
                         "req_ver": req_max_ver,
                         "select_activ_dic": select_activ_dic,
-                        "timestamp": {time_str: {"creator": creator, "select_activ_dic": select_activ_dic}},
+                        "timestamp": {
+                            time_str: {
+                                "creator": creator,
+                                "reason": reason,
+                                "select_activ_dic": select_activ_dic,
+                            }
+                        },
                     }
 
                     # 安全深度克隆扩展字段
@@ -6940,6 +7031,18 @@ class OverviewTableGroup:
 
                     # 【找回丢失的逻辑】：只要目标不是明确的 False (已失活)，就需要受到影响并记录历史
                     if current_state is not False:
+                        related_role = (
+                            app.storage.general.get("over_config_data_flat", {}).get(related_label, {}).get("role", "")
+                        )
+                        related_user_raw = (
+                            app.storage.general.get("overview_role", {})
+                            .get(self.project, {})
+                            .get(related_role, {})
+                            .get("latest_user", "")
+                        )
+                        related_user = (
+                            related_user_raw.split("：", 1)[1] if "：" in related_user_raw else related_user_raw
+                        ) or str(chip_data.get("creator") or "待定负责人")
                         # --- 1. 独立更新 Chip 本身的状态（点对点写入） ---
                         if current_state:  # 原本是 True 的才需要改外观，已经是 None 的不重复改
                             new_chip_data = copy.deepcopy(chip_data)
@@ -6947,6 +7050,11 @@ class OverviewTableGroup:
                             new_chip_data["enabled"] = None
                             new_chip_data["icon"] = "question_mark"
                             new_chip_data["bg_color"] = "bg-amber-5"
+                            append_overview_timestamp(
+                                new_chip_data,
+                                creator=related_user,
+                                reason=get_automatic_overview_reason("related_pending"),
+                            )
 
                             await db_storage.set_deep_item(
                                 [f"{self.project}_over_data", related_label, related_chip_id], new_chip_data
@@ -6963,18 +7071,6 @@ class OverviewTableGroup:
                         }
 
                         # 获取需要用于初始化的变量（如果原记录不存在时需要）
-                        related_role = (
-                            app.storage.general.get("over_config_data_flat", {})
-                            .get(related_label, {})
-                            .get("role", "匿名用户")
-                        )
-                        related_user = (
-                            app.storage.general.get("overview_role", {})
-                            .get(self.project, {})
-                            .get(related_role, {})
-                            .get("latest_user", "匿名用户")
-                        )
-
                         def process_open_record(open_dic):
                             if not open_dic:  # 第一次被影响，新建打开记录
                                 return {
@@ -7036,6 +7132,8 @@ class OverviewTableGroup:
                         select_label,
                     )
 
+            reason_selector = OverviewReasonSelector("state_change", "本次状态修改原因（必选）")
+
             OPEN_DIC = db_storage.get_deep_item([f"{self.project}_over_related_record", label, chip_id, "open"], {})
 
             if OPEN_DIC:
@@ -7068,8 +7166,10 @@ class OverviewTableGroup:
                 ui.button(
                     "确定",
                     color="green",
-                    on_click=lambda: self.handle_checkbox_change(ui_spinner, chip_id, chip_text, config),
-                ).on("click", self.activ_dialog.close)
+                    on_click=lambda: self.handle_checkbox_change(
+                        ui_spinner, chip_id, chip_text, config, reason_selector
+                    ),
+                )
                 ui.button("取消", on_click=lambda: self.cancel_checkbox_change(chip_id)).on(
                     "click", self.activ_dialog.close
                 )
@@ -7144,14 +7244,12 @@ class OverviewTableGroup:
                             new_chip_data["enabled"] = False
                             new_chip_data["bg_color"] = "bg-grey-5"
 
-                        # 3. 产生标准操作记录
-                        # history_creator_label = f"{creator}(连带失活)"
-                        new_chip_data["creator"] = creator
-
+                        # 3. 产生标准操作记录；顶层 creator 始终保留原始录入人。
                         if "timestamp" not in new_chip_data:
                             new_chip_data["timestamp"] = {}
                         new_chip_data["timestamp"][time_str] = {
                             "creator": creator,
+                            "reason": get_automatic_overview_reason("row_cascade_inactive"),
                             "select_activ_dic": copy.deepcopy(new_chip_data["select_activ_dic"]),
                         }
                         await db_storage.set_deep_item([f"{self.project}_over_data", label, chip_id], new_chip_data)
@@ -7198,7 +7296,11 @@ class OverviewTableGroup:
             True,
         )
 
-    async def handle_checkbox_change(self, ui_spinner, chip_id, chip_text, config):
+    async def handle_checkbox_change(self, ui_spinner, chip_id, chip_text, config, reason_selector):
+        reason = reason_selector.value.strip()
+        if not reason:
+            ui.notify("请选择操作原因；选择“其他”时需填写具体原因。", type="warning")
+            return
         label = config["label"]
         new_select_activ_dic = copy.deepcopy(
             app.storage.general["over_change_broadcast"][self.project][chip_id]["select_activ_dic"]
@@ -7230,7 +7332,7 @@ class OverviewTableGroup:
                     ]
                     if blocked_versions:
                         ui.notify(
-                            f"非首列概述的修改后状态不能高于同行首列状态！受限需求版本：{', '.join(blocked_versions)}",
+                            f"首列概述状态需先行更新！受限需求版本：{', '.join(blocked_versions)}",
                             type="warning",
                             position="bottom",
                             timeout=4000,
@@ -7258,7 +7360,6 @@ class OverviewTableGroup:
                     await self._update_chip_block_parameter(chip_id, config)
 
                 creator = app.storage.user.get("current_user", "匿名用户")
-                await db_storage.set_deep_item([f"{self.project}_over_data", label, chip_id, "creator"], creator)
                 await db_storage.set_deep_item(
                     [
                         f"{self.project}_over_data",
@@ -7267,7 +7368,7 @@ class OverviewTableGroup:
                         "timestamp",
                         datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                     ],
-                    {"creator": creator, "select_activ_dic": new_select_activ_dic},
+                    {"creator": creator, "reason": reason, "select_activ_dic": new_select_activ_dic},
                 )
                 # 数据写入完毕后，推高全局版本号
                 OverviewVersionManager.bump(self.project, config["label"])
@@ -7307,6 +7408,8 @@ class OverviewTableGroup:
                         await self._cascade_deactivate_row(current_row_id, req_max_ver, creator)
                 # self.last_state_hashes = {}  # 触发整体重绘
                 # await self._update_display()
+            else:
+                ui.notify("激活状态没有发生变化，无需提交。", type="info", position="bottom", timeout=2500)
 
         except Exception as ex:
             ui.notify(
@@ -7381,6 +7484,8 @@ class OverviewTableGroup:
                 for time_str in sorted_times:
                     record = timestamp_data[time_str]
                     creator = record.get("creator", "未知")
+                    reason = str(record.get("reason") or "").strip()
+                    source_id = str(record.get("source_id") or "").strip()
                     activ_dic = record.get("select_activ_dic", {})
 
                     with ui.card().classes("w-full p-2 bg-gray-50 border border-gray-200 -space-y-2"):
@@ -7389,6 +7494,10 @@ class OverviewTableGroup:
                                 ui.icon("history", size="xs", color="blue")
                                 ui.label(format_overview_timestamp(time_str)).classes("text-sm font-mono text-gray-700")
                             ui.badge(creator, color="blue-grey").props("outline")
+                        if reason:
+                            ui.label(f"原因：{reason}").classes("text-xs text-gray-600")
+                        if source_id:
+                            ui.label(f"来源：{source_id}").classes("text-xs text-blue-700")
 
                         if activ_dic:
                             with ui.row().classes("w-full flex-wrap gap-1"):
@@ -7399,12 +7508,13 @@ class OverviewTableGroup:
                                     is_active = activ_dic[ver]
                                     if is_active:
                                         color, text_col = "green", "white"
-                                    elif is_active == "null":
+                                    elif is_active is None or str(is_active).lower() == "null":
                                         color, text_col = "orange", "white"
                                     else:
                                         color, text_col = "grey-4", "grey-7"
 
-                                    ui.chip(text=f"V{ver}", color=color, text_color=text_col).props(
+                                    state_text, _state_color = _overview_state_text(is_active)
+                                    ui.chip(text=f"V{ver} {state_text}", color=color, text_color=text_col).props(
                                         "dense square size=sm"
                                     )
 
@@ -7418,86 +7528,11 @@ class OverviewTableGroup:
 
     def show_label_history(self, config):
         """显示整列标签的历史记录"""
-        self.history_dialog.clear()
         label = config["label"]
         title = config["title"]
-
-        # 1. 获取该列所有数据
-        RAW_DATA = db_storage.get_deep_item([f"{self.project}_over_data", label], {})
-        history_list = []
-
-        for chip_id, chip_info in RAW_DATA.items():
-            # 获取创建时间 (timestamp 字典中最早的时间)
-            timestamps = chip_info.get("timestamp", {})
-            creation_time = min(timestamps.keys()) if timestamps else "N/A"
-
-            history_list.append(
-                {
-                    "content": chip_info.get("content", "N/A"),
-                    "req_ver": chip_info.get("req_ver", "0.0"),
-                    "creation_time": creation_time,
-                    "creator": chip_info.get("creator", "未知"),
-                    "notes": chip_info.get("notes", ""),
-                    "enabled": chip_info.get("enabled", True),
-                    "type": chip_info.get("type", ""),
-                }
-            )
-
-        # 2. 排序：先按版本号(float)排序，版本相同按时间排序
-        try:
-            history_list.sort(key=lambda x: (float(x["req_ver"]), x["creation_time"]))
-        except ValueError:
-            history_list.sort(key=lambda x: (x["req_ver"], x["creation_time"]))
-
-        # 3. 构建 UI
-        with self.history_dialog, ui.card().classes("w-[800px] max-w-full h-[80vh]"):
-            with ui.row().classes("w-full justify-between items-center"):
-                ui.label(f"历史记录: {title}").classes("text-xl font-bold text-gray-800")
-                ui.button(icon="close", on_click=self.history_dialog.close).props("flat round dense")
-            ui.label("文字颜色效果代表当前激活状态").classes("text-sm text-gray-500 mt-0 mb-1")
-            ui.separator()
-
-            with ui.scroll_area().classes("w-full flex-grow"):
-                if not history_list:
-                    ui.label("暂无记录").classes("w-full text-center text-gray-500 mt-4")
-
-                current_ver = None
-                for item in history_list:
-                    # 版本分组标题
-                    if item["req_ver"] != current_ver:
-                        current_ver = item["req_ver"]
-                        ui.label(f"需求版本V{current_ver}生效后提交的概述：").classes(
-                            "text-base font-bold text-amber-900 mt-3 mb-1 bg-amber-50 px-2 py-1 rounded"
-                        )
-
-                    # 条目卡片
-                    with ui.row().classes(
-                        "w-full items-start p-2 border-b border-gray-100 hover:bg-gray-50 transition-colors"
-                    ):
-                        # 左侧：时间和创建人
-                        with ui.column().classes("w-1/5 min-w-[120px] gap-0"):
-                            ui.label(format_overview_timestamp(item["creation_time"])).classes("text-xs text-gray-500")
-                            ui.label(item["creator"]).classes("text-xs font-bold text-blue-600")
-
-                        # 中间：内容
-                        with ui.column().classes("flex-grow gap-1"):
-                            # 内容显示，如果是文件或图片显示图标
-                            with ui.row().classes("items-center gap-1"):
-                                if item["type"] in ["file", "image", "svn", "search", "video"]:
-                                    ui.icon("attachment", size="xs", color="grey")
-
-                                if item["enabled"] is True:
-                                    color = "text-blue-400"
-                                elif item["enabled"] is None or str(item["enabled"]).lower() == "null":
-                                    color = "text-orange-400 italic"
-                                else:
-                                    color = "text-gray-400 line-through"
-
-                                ui.label(item["content"]).classes(f"text-sm font-medium {color}")
-                            if item["notes"]:
-                                ui.label(f"注: {item['notes']}").classes("text-xs text-gray-500 italic")
-
-        self.history_dialog.open()
+        raw_data = db_storage.get_deep_item([f"{self.project}_over_data", label], {})
+        entries = [{"chip": chip_info} for chip_info in raw_data.values() if isinstance(chip_info, dict)]
+        show_overview_collection_history(self.history_dialog, f"历史记录: {title}", entries)
 
     def on_right_click(self, chip_data):
         ui.run_javascript(f"navigator.clipboard.writeText('{chip_data.get('content', '')}');")
@@ -7747,15 +7782,7 @@ class OverviewTableGroup:
                 .props("outlined")
                 .classes("w-full")
             )
-            self.chip_notes = (
-                ui.textarea(
-                    label="注释（必填）",
-                    placeholder="首填/变更原因",
-                    validation={"不能空白": lambda v: v.strip() != ""},
-                )
-                .props("outlined")
-                .classes("w-full")
-            )
+            self.chip_notes = OverviewReasonSelector("create")
             with ui.row().classes("w-full justify-end items-center"):
                 ui_spinner = ui.spinner(type="hourglass", size="md", color="amber-8", thickness=8.0)
                 ui_spinner.set_visibility(False)
@@ -7802,7 +7829,7 @@ class OverviewTableGroup:
                     return
                 if not text or not notes:
                     ui.notify(
-                        "引用文件名和注释不能为空!",
+                        "引用文件名和操作原因不能为空!",
                         type="warning",
                         position="bottom",
                         timeout=3000,
@@ -7889,13 +7916,13 @@ class OverviewTableGroup:
                     "url_path": url_path,  # 使用返回的 url_path
                     "content": text,
                     "warehouse": warehouse,
-                    "notes": notes,
                     "creator": creator,
                     "req_ver": req_max_ver,
                     "select_activ_dic": select_activ_dic,
                     "timestamp": {
                         datetime.now().strftime("%Y-%m-%d %H:%M:%S"): {
                             "creator": creator,
+                            "reason": notes,
                             "select_activ_dic": select_activ_dic,
                         }
                     },
