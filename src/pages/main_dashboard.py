@@ -368,7 +368,7 @@ def main_page():
                 )
 
             # 销售角色的项目待办卡片不包含概述维护任务，避免显示无关紧急提示
-            if current_role in ["销售", "销售总监"]:
+            if current_role in ["销售", "销售主管", "销售总监"]:
                 overview_urgent_projects = []
 
             overview_urgent_count = len(overview_urgent_projects)
@@ -416,7 +416,7 @@ def main_page():
                             + batch_change_task_count
                             + correction_task_count
                         )
-                    elif current_role in ["销售", "销售总监"]:
+                    elif current_role in ["销售", "销售主管", "销售总监"]:
                         # 销售看到的是自己提交的待修改项目数量
                         pending_count = revise_num_user
                     else:

@@ -83,8 +83,8 @@ from ..utils import (
     format_overview_timestamp,
     get_cache_busted_path,
     get_max_numeric_key,
-    get_requirement_overview_impacts,
     get_overview_latest_responsible,
+    get_requirement_overview_impacts,
     handle_key,
     logout,
     merge_data_with_template,
@@ -2442,7 +2442,7 @@ async def requirement_page(
             # 如下情况，这里就没必要自动保存了
             if (
                 # 用户没权限配置需求
-                current_role not in ["销售", "销售总监", "admin"]
+                current_role not in ["销售", "销售主管", "销售总监", "admin"]
                 # 参考需求待审，后面不能暂存或提交，这里没必要自动保存
                 or original_review_state == "待审"
                 # 参考需求待修改且当前用户无权修改，后面不能暂存或提交，这里没必要自动保存
@@ -2492,7 +2492,7 @@ async def requirement_page(
                 # if new_temp_project_bool:
                 #     app.storage.general["temp_project_name"].remove(target_project_name)
                 return
-            if current_role not in ["销售", "销售总监", "admin"]:
+            if current_role not in ["销售", "销售主管", "销售总监", "admin"]:
                 ui.notify(
                     "当前用户无权限提交需求！",
                     type="warning",
@@ -2931,7 +2931,7 @@ async def requirement_page(
                     ui.menu_item("返回主界面", on_click=lambda: ui.navigate.to("/main"))
                     ui.menu_item("返回项目信息表", on_click=lambda: ui.navigate.to("/project_table"))
                     ui.separator().props("size=1px")
-                    if current_role in ["销售", "销售总监", "admin"]:
+                    if current_role in ["销售", "销售主管", "销售总监", "admin"]:
                         ui.menu_item("新建需求", on_click=lambda: get_project_dialog("new"))
                         ui.menu_item(
                             "暂存需求", on_click=lambda: output_config_data(app.storage.client["config_data"], "export")
@@ -4821,9 +4821,7 @@ async def requirement_page(
             for label, title in target_labels:
                 chips = db_storage.get_deep_item([f"{project_name}_over_data", label], {})
                 entries.extend(
-                    {"title": title, "chip": chip_info}
-                    for chip_info in chips.values()
-                    if isinstance(chip_info, dict)
+                    {"title": title, "chip": chip_info} for chip_info in chips.values() if isinstance(chip_info, dict)
                 )
 
             show_overview_collection_history(general_dialog, f"全项历史记录: {role}", entries)
