@@ -7,7 +7,7 @@ import ssl
 import time
 import uuid  # uuid: Python标准库，用于生成全局唯一的标识符
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 import httpx
 from httpx import BasicAuth
@@ -32,7 +32,6 @@ from ..config import (
     ECNState,
 )
 from ..custom_ui import custom_upload
-from ..overview_operation import append_overview_timestamp, get_automatic_overview_reason
 from ..ecn_management_config import (
     ECN_DISPOSITION_MEASURES,
     ECN_DOCUMENT_CHANGE_TYPES,
@@ -81,9 +80,11 @@ from ..ecn_management_config import (
     collect_ecn_pending_overview_overrides,
     confirm_revised_scheme_items,
     ecn_overview_requires_new_content,
+    ensure_ecn_material_execution_tasks,
     expand_new_material_traceability_selection,
     get_active_overview_row_contents,
     get_ecn_execution_pending_role_keywords,
+    get_ecn_execution_pending_usernames,
     get_ecn_material_change_display,
     get_ecn_material_change_missing_fields,
     get_ecn_material_execution_specs,
@@ -91,6 +92,8 @@ from ..ecn_management_config import (
     get_ecn_pending_approval_roles,
     get_ecn_scheme_coverage,
     get_ecn_scheme_target_projects,
+    get_ecn_stage_index,
+    get_ecn_traceability_closure_summary,
     has_unrevised_rejected_scheme_items,
     is_ecn_assistant_execution_ready,
     is_ecn_disposition_condition_required,
@@ -105,6 +108,7 @@ from ..ecn_management_config import (
     resolve_ecn_overview_parameter_config,
     role_matches_keywords,
 )
+from ..overview_operation import append_overview_timestamp, get_automatic_overview_reason
 from ..utils import get_cache_busted_path, logout, setup_global_activity_tracking
 
 logger = logging.getLogger(__name__)
@@ -287,8 +291,7 @@ def build_overview_activation_state(req_max_ver: object) -> tuple[str, dict[str,
     version_index = int(float(str(req_max_ver or "0.0")))
     normalized_version = f"{version_index}.0"
     return normalized_version, {
-        f"{index}.0": f"{index}.0" == normalized_version
-        for index in range(0, version_index + 1)
+        f"{index}.0": f"{index}.0" == normalized_version for index in range(0, version_index + 1)
     }
 
 
@@ -345,9 +348,7 @@ async def execute_ecn_overview_schemes(ecn_data: dict, operation_time: str) -> d
                     "row",
                 )
 
-    def create_new_chip_template(
-        item: dict, project: str, new_data: dict, reason: str
-    ) -> tuple[dict, str]:
+    def create_new_chip_template(item: dict, project: str, new_data: dict, reason: str) -> tuple[dict, str]:
         item_id = str(item.get("item_id") or "")
         scheme_author = str(item.get("author") or "").strip()
         if not scheme_author:
@@ -546,6 +547,243 @@ async def execute_ecn_overview_schemes(ecn_data: dict, operation_time: str) -> d
     return results
 
 
+def get_ecn_list_progress_summary(ecn_data: Any) -> str:
+    """生成ECN首页表格使用的简短流程进度说明。"""
+    if not isinstance(ecn_data, dict):
+        return "—"
+    workflow = ecn_data.get("workflow", {})
+    workflow = workflow if isinstance(workflow, dict) else {}
+    current_state = str(workflow.get("current_state") or "")
+    pending_roles = get_ecn_pending_approval_roles(workflow)
+    if pending_roles and current_state not in [
+        ECNState.DRAFT,
+        ECNState.CLOSED,
+        ECNState.CANCEL,
+        ECNState.REJECTED,
+    ]:
+        return f"等待审批：{'、'.join(pending_roles)}"
+
+    if current_state == ECNState.ECN_EXECUTING:
+        execution_assignees = [
+            *get_ecn_execution_pending_usernames(ecn_data),
+            *get_ecn_execution_pending_role_keywords(ecn_data),
+        ]
+        return f"等待执行确认：{'、'.join(execution_assignees)}" if execution_assignees else "执行处理中"
+
+    if current_state != ECNState.ECN_SCHEMING:
+        return "—"
+    participants = workflow.get("scheme_participants", {})
+    participants = participants if isinstance(participants, dict) else {}
+    needs_reconfirmation = [
+        str(person) for person, status in participants.items() if status == ECN_PARTICIPANT_STATUS_NEEDS_RECONFIRMATION
+    ]
+    if needs_reconfirmation:
+        return f"方案待改进/重新确认：{'、'.join(needs_reconfirmation)}"
+    editing_participants = [
+        str(person)
+        for person, status in participants.items()
+        if status
+        not in [
+            ECN_PARTICIPANT_STATUS_CONFIRMED,
+            ECN_PARTICIPANT_STATUS_NEEDS_RECONFIRMATION,
+        ]
+    ]
+    if editing_participants:
+        return f"等待完成方案编写：{'、'.join(editing_participants)}"
+
+    coverage = get_ecn_scheme_coverage(ecn_data)
+    missing_labels = []
+    if coverage["missing_requirements"]:
+        missing_labels.append("变更要求")
+    if coverage["missing_docs"]:
+        missing_labels.append("资料")
+    if coverage["missing_materials"]:
+        missing_labels.append("物料")
+    if coverage["incomplete_material_schemes"]:
+        missing_labels.append("物料追溯/处置配置")
+    if missing_labels:
+        return f"尚缺{'、'.join(missing_labels)}方案，待补充"
+    return "方案已齐，待发起评审" if participants else "等待方案编写人员"
+
+
+def build_ecn_management_grid_row(
+    ecn_data: Any,
+    current_user: str,
+    current_role: str,
+    *,
+    include_delete: bool = False,
+) -> dict[str, object]:
+    """把ECN记录整理为首页AG Grid行数据。"""
+    if not isinstance(ecn_data, dict):
+        return {}
+    basic_info = ecn_data.get("basic_info", {})
+    basic_info = basic_info if isinstance(basic_info, dict) else {}
+    workflow = ecn_data.get("workflow", {})
+    workflow = workflow if isinstance(workflow, dict) else {}
+    execution_info = ecn_data.get("execution_info", {})
+    execution_info = execution_info if isinstance(execution_info, dict) else {}
+    current_state = str(workflow.get("current_state") or "")
+    is_my_pending = is_ecn_pending_for_user(ecn_data, current_user, current_role)
+    traceability_summary = get_ecn_traceability_closure_summary(ecn_data)
+    projects = get_ecn_scheme_target_projects(ecn_data)
+    summary_text = str(basic_info.get("title") or "").strip()
+    if not summary_text:
+        summary_text = f"涉及项目：{'、'.join(projects)}" if projects else "—"
+    row: dict[str, object] = {
+        "record_id": str(ecn_data.get("ecn_id") or ""),
+        "detail_action": "详情",
+        "delete_action": "删除" if include_delete else "",
+        "ecn_id": str(ecn_data.get("ecn_id") or ""),
+        "current_state": current_state,
+        "attention": "待我处理" if is_my_pending else "",
+        "summary": summary_text,
+        "projects": "、".join(projects) or "—",
+        "applicant": str(basic_info.get("applicant") or "—"),
+        "apply_date": format_ecn_list_date(basic_info.get("apply_date")),
+        "closed_date": (
+            format_ecn_list_date(execution_info.get("completed_time")) if current_state == ECNState.CLOSED else "—"
+        ),
+        "progress": get_ecn_list_progress_summary(ecn_data),
+        "row_tone": (
+            "pending"
+            if is_my_pending
+            else "rejected"
+            if current_state == ECNState.REJECTED
+            else "completed"
+            if current_state == ECNState.CLOSED
+            else "executing"
+            if current_state == ECNState.ECN_EXECUTING
+            else "normal"
+        ),
+    }
+    for index, level in enumerate(ECN_TRACEABILITY_LEVELS):
+        row[f"traceability_{index}"] = traceability_summary[level]
+    return row
+
+
+def format_ecn_list_date(value: object) -> str:
+    """ECN首页只展示申请日期，不展示时分秒。"""
+    text = str(value or "").strip()
+    if not text:
+        return "—"
+    try:
+        return datetime.fromisoformat(text).strftime("%Y-%m-%d")
+    except ValueError:
+        date_prefix = text[:10]
+        if len(date_prefix) == 10 and date_prefix[4:5] == "-" and date_prefix[7:8] == "-":
+            return date_prefix
+        return text
+
+
+def get_ecn_management_grid_columns(include_delete: bool = False) -> list[dict[str, object]]:
+    """返回ECN首页表格列；追溯范围直接按JSON配置顺序生成。"""
+    text_filter = "agTextColumnFilter"
+    columns: list[dict[str, object]] = [
+        {
+            "headerName": "操作",
+            "field": "detail_action",
+            "filter": False,
+            "pinned": "left",
+            "width": 60,
+            "sortable": False,
+            "lockPosition": "left",
+            "lockPinned": True,
+            "suppressMovable": True,
+            "cellStyle": {"color": "#2563eb", "fontWeight": "bold", "cursor": "pointer"},
+        },
+    ]
+    if include_delete:
+        columns.append(
+            {
+                "headerName": "管理",
+                "field": "delete_action",
+                "filter": False,
+                "pinned": "left",
+                "width": 60,
+                "sortable": False,
+                "lockPosition": "left",
+                "lockPinned": True,
+                "suppressMovable": True,
+                "cellStyle": {"color": "#dc2626", "fontWeight": "bold", "cursor": "pointer"},
+            }
+        )
+    columns.extend(
+        [
+            {
+                "headerName": "ECN编号",
+                "field": "ecn_id",
+                "filter": text_filter,
+                "pinned": "left",
+                "lockPosition": "left",
+                "lockPinned": True,
+                "suppressMovable": True,
+                "width": 145,
+            },
+            {"headerName": "当前状态", "field": "current_state", "filter": text_filter, "width": 150},
+            {"headerName": "关注事项", "field": "attention", "filter": text_filter, "width": 105},
+            {
+                "headerName": "变更简要",
+                "field": "summary",
+                "filter": text_filter,
+                "width": 260,
+                "tooltipField": "summary",
+                "cellStyle": {"textAlign": "left"},
+            },
+            {
+                "headerName": "涉及项目",
+                "field": "projects",
+                "filter": text_filter,
+                "width": 200,
+                "tooltipField": "projects",
+            },
+            {"headerName": "申请人", "field": "applicant", "filter": text_filter, "width": 100},
+            {"headerName": "申请日期", "field": "apply_date", "filter": text_filter, "width": 115},
+            {
+                "headerName": "流程进度",
+                "field": "progress",
+                "filter": text_filter,
+                "width": 250,
+                "tooltipField": "progress",
+                "cellStyle": {"textAlign": "left"},
+            },
+        ]
+    )
+    for index, level in enumerate(ECN_TRACEABILITY_LEVELS):
+        columns.append(
+            {
+                "headerName": level,
+                "field": f"traceability_{index}",
+                "filter": text_filter,
+                "width": 110,
+                "cellClassRules": {
+                    "ecn-trace-closed": "value == '已关闭'",
+                    "ecn-trace-progress": "value.includes('进行中')",
+                    "ecn-trace-pending": "value == '待确认'",
+                    "ecn-trace-not-started": "value == '未开始'",
+                    "ecn-trace-na": "value == '—'",
+                },
+            }
+        )
+    columns.append(
+        {
+            "headerName": "关闭日期",
+            "field": "closed_date",
+            "filter": "agDateColumnFilter",
+            "width": 115,
+        }
+    )
+    for column in columns:
+        cell_style = column.setdefault("cellStyle", {})
+        if isinstance(cell_style, dict):
+            cell_style.setdefault("textAlign", "center")
+        if "width" in column:
+            column["minWidth"] = column["width"]
+        column["headerClass"] = "ecn-grid-header-center"
+        column["wrapHeaderText"] = True
+        column["autoHeaderHeight"] = True
+    return columns
+
+
 # ==========================================
 # 主路由页面定义
 # ==========================================
@@ -561,6 +799,17 @@ async def ecn_management_page():
             .pdf-border { border: 1px solid #cbd5e1; }
             .pdf-border-b { border-bottom: 1px solid #cbd5e1; }
             .pdf-border-r { border-right: 1px solid #cbd5e1; }
+            .ecn-management-grid .ecn-grid-header-center .ag-header-cell-label { justify-content: center; }
+            .ecn-management-grid .ag-row.row-pending { background-color: #fff1f2 !important; }
+            .ecn-management-grid .ag-row.row-rejected { background-color: #fff7ed !important; }
+            .ecn-management-grid .ag-row.row-executing { background-color: #f5f3ff !important; }
+            .ecn-management-grid .ag-row.row-completed { background-color: #f0fdf4 !important; }
+            .ecn-management-grid .ag-row:hover { filter: brightness(0.98); }
+            .ecn-management-grid .ecn-trace-closed { color: #15803d; font-weight: 600; }
+            .ecn-management-grid .ecn-trace-progress { color: #7c3aed; font-weight: 600; }
+            .ecn-management-grid .ecn-trace-pending { color: #c2410c; font-weight: 600; }
+            .ecn-management-grid .ecn-trace-not-started { color: #64748b; }
+            .ecn-management-grid .ecn-trace-na { color: #cbd5e1; }
             /*::-webkit-scrollbar {
                 width: 3px; /* 极细滚动条 */
                 background-color: transparent; /* 轨道透明，不占视觉空间 */
@@ -4229,10 +4478,14 @@ async def ecn_management_page():
                                 render_items()
 
                 # --- [TAB 4] ECN 分阶段执行 ---
-                with ui.tab_panel(tab_exec).classes(
-                    "gap-4 p-2 max-w-[1700px] mx-auto overflow-y-auto overflow-x-hidden"
+                with (
+                    ui.tab_panel(tab_exec)
+                    .props("id=ecn-execution-tab-panel")
+                    .classes("gap-4 p-2 mx-auto overflow-y-auto overflow-x-hidden")
                 ):
                     execution_container = ui.column().classes("w-full gap-4")
+                    material_task_controls: dict[str, dict[str, dict[str, Any]]] = {}
+                    material_status_controls: dict[str, dict[str, Any]] = {}
 
                     def get_execution_change_items() -> dict[str, dict]:
                         return {
@@ -4268,6 +4521,53 @@ async def ecn_management_page():
                         except Exception:
                             logger.warning("ECN执行通知发送失败，后台流程继续：%s", message)
 
+                    async def capture_execution_scroll_state(event_client: Client) -> dict[str, float]:
+                        """保存执行页签纵向位置和物料表横向位置。"""
+                        try:
+                            state = await event_client.run_javascript(
+                                """
+                                const panel = document.getElementById('ecn-execution-tab-panel');
+                                const table = document.getElementById('ecn-material-execution-scroll');
+                                return {
+                                    panelY: panel ? panel.scrollTop : 0,
+                                    tableX: table ? table.scrollLeft : 0,
+                                };
+                                """
+                            )
+                        except Exception:
+                            return {}
+                        if not isinstance(state, dict):
+                            return {}
+                        return {
+                            "panelY": float(state.get("panelY") or 0),
+                            "tableX": float(state.get("tableX") or 0),
+                        }
+
+                    async def restore_execution_scroll_state(
+                        event_client: Client,
+                        scroll_state: dict[str, float],
+                    ) -> None:
+                        """执行区重绘后在DOM更新完成时恢复滚动位置。"""
+                        if not scroll_state:
+                            return
+                        panel_y = float(scroll_state.get("panelY") or 0)
+                        table_x = float(scroll_state.get("tableX") or 0)
+                        try:
+                            await event_client.run_javascript(
+                                f"""
+                                const restoreEcnExecutionScroll = () => {{
+                                    const panel = document.getElementById('ecn-execution-tab-panel');
+                                    const table = document.getElementById('ecn-material-execution-scroll');
+                                    if (panel) panel.scrollTop = {panel_y};
+                                    if (table) table.scrollLeft = {table_x};
+                                }};
+                                requestAnimationFrame(() => requestAnimationFrame(restoreEcnExecutionScroll));
+                                setTimeout(restoreEcnExecutionScroll, 80);
+                                """
+                            )
+                        except Exception:
+                            pass
+
                     def execution_scheme_projects(item: dict) -> list[str]:
                         return get_ecn_scheme_target_projects({"target_projects": item.get("projects", [])})
 
@@ -4293,6 +4593,41 @@ async def ecn_management_page():
                             subject = item.get("change_type") or item.get("title") or "资料变更"
                         return f"{subject}" + (f"（{projects}）" if include_projects and projects else "")
 
+                    # 执行页表格默认全部居中。需要将某列改为靠左时，只需把列名加入对应集合。
+                    execution_left_aligned_columns: dict[str, set[str]] = {
+                        "assistant": {"执行前", "应执行内容"},
+                        "overview": {"系统内资料方案"},
+                        "material": {
+                            "变更前",
+                            "变更后",
+                            "文件",
+                            "供应商",
+                            "零件仓",
+                            "生产在线",
+                            "半成品仓",
+                            "成品仓",
+                            "客户/在途",
+                        },
+                    }
+
+                    def execution_column_alignment(
+                        table: str,
+                        column: str,
+                        *,
+                        flex_column: bool = False,
+                    ) -> str:
+                        align_left = column in execution_left_aligned_columns.get(table, set())
+                        text_class = "text-left" if align_left else "text-center"
+                        if flex_column:
+                            return (
+                                f"{text_class} content-center flex flex-col justify-center "
+                                f"{'items-start' if align_left else 'items-center'}"
+                            )
+                        return (
+                            f"{text_class} content-center flex items-center "
+                            f"{'justify-start' if align_left else 'justify-center'}"
+                        )
+
                     def sync_execution_local_data() -> bool:
                         fresh_data = db_storage.get_deep_item(["ecn_management_data", local_data["ecn_id"]])
                         if not isinstance(fresh_data, dict):
@@ -4306,12 +4641,170 @@ async def ecn_management_page():
                         local_data["approval_log"] = copy.deepcopy(fresh_data.get("approval_log", []))
                         return True
 
+                    def get_material_execution_runtime(item_id: str) -> tuple[dict, dict, list[dict], dict]:
+                        execution_info = local_data.get("execution_info", {})
+                        material_confirmations = (
+                            execution_info.get("material_confirmations", {}) if isinstance(execution_info, dict) else {}
+                        )
+                        material_entry = (
+                            material_confirmations.get(str(item_id), {})
+                            if isinstance(material_confirmations, dict)
+                            else {}
+                        )
+                        material_entry = material_entry if isinstance(material_entry, dict) else {}
+                        item = get_execution_change_items().get(str(item_id), {})
+                        specs = get_ecn_material_execution_specs(
+                            item,
+                            material_entry,
+                            app.storage.general.get("project_sale", {}),
+                        )
+                        tasks = material_entry.get("traceability_tasks", {})
+                        return item, material_entry, specs, tasks if isinstance(tasks, dict) else {}
+
+                    def can_cancel_material_confirmation(
+                        spec: dict,
+                        confirmation: dict,
+                        specs: list[dict],
+                        tasks: dict,
+                        item_closed: bool,
+                    ) -> bool:
+                        if item_closed or confirmation.get("confirmed") is not True:
+                            return False
+                        if str(confirmation.get("user") or "") != current_user:
+                            return False
+                        level = str(spec.get("level") or "")
+                        stage_index = get_ecn_stage_index(spec.get("stage_index", 0))
+                        return not any(
+                            str(other_spec.get("level") or "") == level
+                            and get_ecn_stage_index(other_spec.get("stage_index", 0)) > stage_index
+                            and isinstance(tasks.get(str(other_spec.get("key"))), dict)
+                            and tasks[str(other_spec.get("key"))].get("confirmed") is True
+                            for other_spec in specs
+                        )
+
+                    def material_confirmation_tooltip(
+                        spec: dict,
+                        confirmation: dict,
+                        available: bool,
+                        can_cancel: bool,
+                    ) -> str:
+                        responsible_users = normalize_execution_roles(spec.get("users"))
+                        responsible_roles = normalize_execution_roles(spec.get("roles"))
+                        lines = []
+                        if responsible_users:
+                            lines.append(f"指定人：{'、'.join(responsible_users)}")
+                        if responsible_roles:
+                            lines.append(f"责任角色：{'、'.join(responsible_roles)}")
+                        if confirmation.get("confirmed") is True:
+                            lines.append(
+                                f"已由 {confirmation.get('user', '未知')}（{confirmation.get('role', '')}）确认"
+                            )
+                            lines.append(str(confirmation.get("time") or ""))
+                            if can_cancel:
+                                lines.append("可取消本次确认")
+                        elif not available:
+                            lines.append("等待本追溯范围的前序负责人")
+                        return "\n".join(lines)
+
+                    def refresh_material_execution_controls(item_ids: list[str] | None = None) -> None:
+                        execution_info = local_data.get("execution_info", {})
+                        material_is_active = (
+                            isinstance(execution_info, dict)
+                            and execution_info.get("stage") == ECN_EXECUTION_STAGE_MATERIAL
+                            and wf.get("current_state") == ECNState.ECN_EXECUTING
+                        )
+                        target_ids = item_ids or list(material_task_controls)
+                        for item_id in target_ids:
+                            _, material_entry, specs, tasks = get_material_execution_runtime(item_id)
+                            item_closed = material_entry.get("status") == "closed"
+                            specs_by_key = {str(spec.get("key")): spec for spec in specs}
+                            for key, controls in material_task_controls.get(str(item_id), {}).items():
+                                spec = specs_by_key.get(str(key), {})
+                                confirmation = tasks.get(str(key), {})
+                                confirmation = confirmation if isinstance(confirmation, dict) else {}
+                                checked = confirmation.get("confirmed") is True
+                                available = spec.get("available") is True
+                                responsible_roles = normalize_execution_roles(spec.get("roles"))
+                                responsible_users = normalize_execution_roles(spec.get("users"))
+                                can_confirm = (
+                                    material_is_active
+                                    and not item_closed
+                                    and not checked
+                                    and available
+                                    and (
+                                        current_user in responsible_users
+                                        or role_matches_keywords(current_role, responsible_roles)
+                                    )
+                                )
+                                can_cancel = material_is_active and can_cancel_material_confirmation(
+                                    spec,
+                                    confirmation,
+                                    specs,
+                                    tasks,
+                                    item_closed,
+                                )
+                                checkbox = controls.get("checkbox")
+                                tooltip = controls.get("tooltip")
+                                if checkbox is not None:
+                                    checkbox.set_value(checked)
+                                    checkbox.enable() if can_confirm or can_cancel else checkbox.disable()
+                                if tooltip is not None:
+                                    tooltip.set_text(
+                                        material_confirmation_tooltip(
+                                            spec,
+                                            confirmation,
+                                            available,
+                                            can_cancel,
+                                        )
+                                    )
+
+                            status_controls = material_status_controls.get(str(item_id), {})
+                            status_badge = status_controls.get("badge")
+                            progress_label = status_controls.get("progress")
+                            if status_badge is not None:
+                                status_badge.set_text("已关闭" if item_closed else "执行中")
+                                status_badge.props(f"color={'green' if item_closed else 'orange'}")
+                            if progress_label is not None:
+                                completed_count = sum(
+                                    1
+                                    for task in tasks.values()
+                                    if isinstance(task, dict) and task.get("confirmed") is True
+                                )
+                                progress_label.set_text(f"{completed_count}/{len(specs)}")
+
+                    def is_last_pending_material_confirmation(item_id: str, confirmation_key: str) -> bool:
+                        execution_info = local_data.get("execution_info", {})
+                        material_confirmations = (
+                            execution_info.get("material_confirmations", {}) if isinstance(execution_info, dict) else {}
+                        )
+                        if not isinstance(material_confirmations, dict):
+                            return False
+                        pending_keys: list[tuple[str, str]] = []
+                        for current_item_id, material_entry in material_confirmations.items():
+                            if not isinstance(material_entry, dict) or material_entry.get("status") == "closed":
+                                continue
+                            item = get_execution_change_items().get(str(current_item_id), {})
+                            specs = get_ecn_material_execution_specs(
+                                item,
+                                material_entry,
+                                app.storage.general.get("project_sale", {}),
+                            )
+                            tasks = material_entry.get("traceability_tasks", {})
+                            tasks = tasks if isinstance(tasks, dict) else {}
+                            for spec in specs:
+                                key = str(spec.get("key"))
+                                confirmation = tasks.get(key, {})
+                                if not isinstance(confirmation, dict) or confirmation.get("confirmed") is not True:
+                                    pending_keys.append((str(current_item_id), key))
+                        return pending_keys == [(str(item_id), str(confirmation_key))]
+
                     async def update_assistant_execution_confirmation(
                         confirmation_kind: str,
                         item_id: str | None,
                         confirmed: bool,
                     ):
                         event_client = ui.context.client
+                        scroll_state = await capture_execution_scroll_state(event_client)
                         blocked = {"reason": ""}
                         operation_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -4370,6 +4863,7 @@ async def ecn_management_page():
                             )
                             sync_execution_local_data()
                             render_execution_tab()
+                        await restore_execution_scroll_state(event_client, scroll_state)
 
                     async def run_overview_execution():
                         event_client = ui.context.client
@@ -4543,14 +5037,44 @@ async def ecn_management_page():
                                 "negative",
                             )
 
+                    async def request_final_material_confirmation() -> bool:
+                        with (
+                            ui.dialog().props("persistent") as confirm_dialog,
+                            ui.card().classes("w-[440px] max-w-[92vw] p-5 gap-3"),
+                        ):
+                            with ui.row().classes("items-center gap-2"):
+                                ui.icon("warning_amber", color="orange", size="sm")
+                                ui.label("确认完成最后一项？").classes("text-lg font-bold text-slate-800")
+                            ui.label(
+                                "这是本ECN物料执行阶段最后一个待确认项。确认后将完成物料执行并触发后续关闭处理。"
+                            ).classes("text-sm text-slate-600 leading-relaxed")
+                            ui.label("请再次核对实际执行结果无误后再确认。 ").classes(
+                                "text-sm font-semibold text-orange-700 bg-orange-50 px-3 py-2 rounded"
+                            )
+                            with ui.row().classes("w-full justify-end gap-2 mt-2"):
+                                ui.button(
+                                    "返回检查",
+                                    on_click=lambda: confirm_dialog.submit(False),
+                                ).props("flat color=grey no-caps")
+                                ui.button(
+                                    "确认最后一项",
+                                    icon="check_circle",
+                                    on_click=lambda: confirm_dialog.submit(True),
+                                ).props("color=positive no-caps")
+                        return bool(await confirm_dialog)
+
                     async def update_material_execution_confirmation(
                         item_id: str,
-                        confirmation_kind: str,
                         confirmation_key: str,
                         confirmed: bool,
+                        final_confirmation_acknowledged: bool = False,
                     ):
                         event_client = ui.context.client
-                        blocked = {"reason": ""}
+                        scroll_state = await capture_execution_scroll_state(event_client)
+                        blocked: dict[str, Any] = {
+                            "reason": "",
+                            "requires_final_confirmation": False,
+                        }
                         operation_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
                         def update_confirmation(current_ecn):
@@ -4575,25 +5099,6 @@ async def ecn_management_page():
                                 ),
                                 None,
                             )
-                            spec = next(
-                                (
-                                    current_spec
-                                    for current_spec in get_ecn_material_execution_specs(item)
-                                    if current_spec.get("kind") == confirmation_kind
-                                    and str(current_spec.get("key")) == str(confirmation_key)
-                                ),
-                                None,
-                            )
-                            if not isinstance(spec, dict):
-                                blocked["reason"] = "该物料责任项已发生变化。"
-                                return db_storage.ATOMIC_NO_UPDATE
-                            if not role_matches_keywords(
-                                current_role,
-                                normalize_execution_roles(spec.get("roles")),
-                            ):
-                                blocked["reason"] = "当前角色不负责该物料执行项。"
-                                return db_storage.ATOMIC_NO_UPDATE
-
                             material_confirmations = execution_info.get("material_confirmations", {})
                             material_entry = (
                                 material_confirmations.get(str(item_id))
@@ -4603,13 +5108,98 @@ async def ecn_management_page():
                             if not isinstance(material_entry, dict) or material_entry.get("status") == "closed":
                                 blocked["reason"] = "该物料方案已关闭或不在执行清单中。"
                                 return db_storage.ATOMIC_NO_UPDATE
-                            if confirmation_kind == "traceability":
-                                target = material_entry.get("traceability", {}).get(str(confirmation_key))
-                            else:
-                                target = material_entry.get("disposition")
+                            ensure_ecn_material_execution_tasks(
+                                item,
+                                material_entry,
+                                app.storage.general.get("project_sale", {}),
+                            )
+                            change_item_map = {
+                                str(current_item.get("item_id")): current_item
+                                for current_item in current_ecn.get("change_items", [])
+                                if isinstance(current_item, dict) and current_item.get("item_id")
+                            }
+                            for current_item_id, current_entry in material_confirmations.items():
+                                if isinstance(current_entry, dict):
+                                    ensure_ecn_material_execution_tasks(
+                                        change_item_map.get(str(current_item_id), {}),
+                                        current_entry,
+                                        app.storage.general.get("project_sale", {}),
+                                    )
+                            specs = get_ecn_material_execution_specs(
+                                item,
+                                material_entry,
+                                app.storage.general.get("project_sale", {}),
+                            )
+                            spec = next(
+                                (
+                                    current_spec
+                                    for current_spec in specs
+                                    if str(current_spec.get("key")) == str(confirmation_key)
+                                ),
+                                None,
+                            )
+                            if not isinstance(spec, dict):
+                                blocked["reason"] = "该物料追溯责任项已发生变化。"
+                                return db_storage.ATOMIC_NO_UPDATE
+                            traceability_tasks = material_entry.get("traceability_tasks", {})
+                            target = (
+                                traceability_tasks.get(str(confirmation_key))
+                                if isinstance(traceability_tasks, dict)
+                                else None
+                            )
                             if not isinstance(target, dict):
                                 blocked["reason"] = "该物料责任项不存在。"
                                 return db_storage.ATOMIC_NO_UPDATE
+
+                            if confirmed:
+                                if target.get("confirmed") is True:
+                                    blocked["reason"] = "该物料责任项已经确认完成。"
+                                    return db_storage.ATOMIC_NO_UPDATE
+                                if spec.get("available") is not True:
+                                    blocked["reason"] = "该责任项尚未进入所属追溯范围的当前负责人节点。"
+                                    return db_storage.ATOMIC_NO_UPDATE
+                                responsible_roles = normalize_execution_roles(spec.get("roles"))
+                                responsible_users = normalize_execution_roles(spec.get("users"))
+                                if current_user not in responsible_users and not role_matches_keywords(
+                                    current_role,
+                                    responsible_roles,
+                                ):
+                                    blocked["reason"] = "当前用户或角色不负责该物料追溯执行项。"
+                                    return db_storage.ATOMIC_NO_UPDATE
+                                pending_task_count = sum(
+                                    1
+                                    for current_entry in material_confirmations.values()
+                                    if isinstance(current_entry, dict)
+                                    for current_task in (
+                                        current_entry.get("traceability_tasks", {}).values()
+                                        if isinstance(current_entry.get("traceability_tasks"), dict)
+                                        else []
+                                    )
+                                    if isinstance(current_task, dict) and current_task.get("confirmed") is not True
+                                )
+                                if pending_task_count == 1 and not final_confirmation_acknowledged:
+                                    blocked["requires_final_confirmation"] = True
+                                    blocked["reason"] = "这是最后一个待确认项，需要二次确认。"
+                                    return db_storage.ATOMIC_NO_UPDATE
+                            else:
+                                if target.get("confirmed") is not True:
+                                    blocked["reason"] = "该物料责任项尚未确认，无需取消。"
+                                    return db_storage.ATOMIC_NO_UPDATE
+                                if str(target.get("user") or "") != current_user:
+                                    blocked["reason"] = "只能由原确认人取消该项确认。"
+                                    return db_storage.ATOMIC_NO_UPDATE
+                                level = str(spec.get("level") or "")
+                                stage_index = get_ecn_stage_index(spec.get("stage_index", 0))
+                                later_stage_confirmed = any(
+                                    str(other_spec.get("level") or "") == level
+                                    and get_ecn_stage_index(other_spec.get("stage_index", 0)) > stage_index
+                                    and isinstance(traceability_tasks.get(str(other_spec.get("key"))), dict)
+                                    and traceability_tasks[str(other_spec.get("key"))].get("confirmed") is True
+                                    for other_spec in specs
+                                )
+                                if later_stage_confirmed:
+                                    blocked["reason"] = "后续负责人节点已有确认记录，不能取消前序确认。"
+                                    return db_storage.ATOMIC_NO_UPDATE
 
                             target["confirmed"] = bool(confirmed)
                             target["user"] = current_user
@@ -4663,8 +5253,28 @@ async def ecn_management_page():
                         )
                         if success and not blocked["reason"]:
                             sync_execution_local_data()
-                            render_execution_tab()
+                            execution_info = local_data.get("execution_info", {})
+                            if (
+                                isinstance(execution_info, dict)
+                                and execution_info.get("stage") == ECN_EXECUTION_STAGE_MATERIAL
+                                and wf.get("current_state") == ECNState.ECN_EXECUTING
+                            ):
+                                refresh_material_execution_controls([str(item_id)])
+                            else:
+                                render_execution_tab()
                             refresh_list()
+                        elif blocked.get("requires_final_confirmation"):
+                            sync_execution_local_data()
+                            refresh_material_execution_controls([str(item_id)])
+                            await restore_execution_scroll_state(event_client, scroll_state)
+                            if await request_final_material_confirmation():
+                                await update_material_execution_confirmation(
+                                    item_id,
+                                    confirmation_key,
+                                    True,
+                                    True,
+                                )
+                            return
                         else:
                             notify_execution_safely(
                                 event_client,
@@ -4672,10 +5282,45 @@ async def ecn_management_page():
                                 "warning",
                             )
                             sync_execution_local_data()
-                            render_execution_tab()
+                            refresh_material_execution_controls([str(item_id)])
+                        await restore_execution_scroll_state(event_client, scroll_state)
+
+                    async def handle_material_confirmation_change(
+                        event,
+                        item_id: str,
+                        confirmation_key: str,
+                    ) -> None:
+                        confirmed = bool(event.value)
+                        if not confirmed:
+                            _, _, _, traceability_tasks = get_material_execution_runtime(item_id)
+                            current_confirmation = traceability_tasks.get(str(confirmation_key), {})
+                            if (
+                                not isinstance(current_confirmation, dict)
+                                or current_confirmation.get("confirmed") is not True
+                            ):
+                                refresh_material_execution_controls([str(item_id)])
+                                return
+                        if confirmed and is_last_pending_material_confirmation(item_id, confirmation_key):
+                            if await request_final_material_confirmation():
+                                await update_material_execution_confirmation(
+                                    item_id,
+                                    confirmation_key,
+                                    True,
+                                    True,
+                                )
+                            else:
+                                refresh_material_execution_controls([str(item_id)])
+                            return
+                        await update_material_execution_confirmation(
+                            item_id,
+                            confirmation_key,
+                            confirmed,
+                        )
 
                     def render_execution_tab():
                         execution_container.clear()
+                        material_task_controls.clear()
+                        material_status_controls.clear()
                         with execution_container:
                             execution_info = local_data.get("execution_info", {})
                             if not isinstance(execution_info, dict) or not execution_info.get("stage"):
@@ -4701,8 +5346,7 @@ async def ecn_management_page():
                             }
                             if (
                                 stage == ECN_EXECUTION_STAGE_OVERVIEW_RUNNING
-                                and str(local_data.get("ecn_id") or "")
-                                not in ACTIVE_ECN_OVERVIEW_EXECUTIONS
+                                and str(local_data.get("ecn_id") or "") not in ACTIVE_ECN_OVERVIEW_EXECUTIONS
                             ):
                                 stage_labels[stage] = "系统内资料执行已中断"
                                 stage_colors[stage] = "red"
@@ -4757,7 +5401,8 @@ async def ecn_management_page():
                                                     "确认记录",
                                                 ]:
                                                     ui.label(header).classes(
-                                                        "px-3 py-2 border-r border-slate-300 last:border-r-0"
+                                                        "px-3 py-2 border-r border-slate-300 last:border-r-0 "
+                                                        + execution_column_alignment("assistant", header)
                                                     )
 
                                             assistant_rows = (
@@ -4775,7 +5420,8 @@ async def ecn_management_page():
                                                     "items-stretch text-sm text-slate-700"
                                                 ):
                                                     with ui.element("div").classes(
-                                                        "px-3 py-2 border-r border-slate-200 flex items-center justify-center"
+                                                        "px-3 py-2 border-r border-slate-200 flex items-center "
+                                                        + execution_column_alignment("assistant", "完成")
                                                     ):
                                                         checkbox = ui.checkbox(
                                                             value=checked,
@@ -4790,21 +5436,27 @@ async def ecn_management_page():
                                                         if not assistant_can_operate:
                                                             checkbox.props("disable")
                                                     ui.label(execution_scheme_no(str(item_id))).classes(
-                                                        "px-3 py-2 border-r border-slate-200 font-mono font-bold flex items-center"
+                                                        "px-3 py-2 border-r border-slate-200 font-mono font-bold "
+                                                        "flex items-center "
+                                                        + execution_column_alignment("assistant", "编号")
                                                     )
                                                     ui.label(
                                                         execution_scheme_title(item, include_projects=False)
                                                     ).classes(
-                                                        "px-3 py-2 border-r border-slate-200 font-semibold break-words"
+                                                        "px-3 py-2 border-r border-slate-200 font-semibold break-words "
+                                                        + execution_column_alignment("assistant", "事项/方案")
                                                     )
                                                     ui.label("、".join(execution_scheme_projects(item)) or "—").classes(
-                                                        "px-3 py-2 border-r border-slate-200 break-words"
+                                                        "px-3 py-2 border-r border-slate-200 break-words "
+                                                        + execution_column_alignment("assistant", "项目")
                                                     )
                                                     ui.label(str(item.get("old_content") or "无")).classes(
-                                                        "px-3 py-2 border-r border-slate-200 break-all"
+                                                        "px-3 py-2 border-r border-slate-200 break-all "
+                                                        + execution_column_alignment("assistant", "执行前")
                                                     )
                                                     ui.label(str(item.get("new_content") or "无")).classes(
-                                                        "px-3 py-2 border-r border-slate-200 break-all font-medium"
+                                                        "px-3 py-2 border-r border-slate-200 break-all font-medium "
+                                                        + execution_column_alignment("assistant", "应执行内容")
                                                     )
                                                     ui.label(
                                                         (
@@ -4815,6 +5467,8 @@ async def ecn_management_page():
                                                         else "待确认"
                                                     ).classes(
                                                         "px-3 py-2 whitespace-pre-line text-xs "
+                                                        + execution_column_alignment("assistant", "确认记录")
+                                                        + " "
                                                         + ("text-emerald-700" if checked else "text-slate-400")
                                                     )
 
@@ -4826,7 +5480,8 @@ async def ecn_management_page():
                                                 "items-stretch text-sm text-slate-700"
                                             ):
                                                 with ui.element("div").classes(
-                                                    "px-3 py-2 border-r border-slate-200 flex items-center justify-center"
+                                                    "px-3 py-2 border-r border-slate-200 flex items-center "
+                                                    + execution_column_alignment("assistant", "完成")
                                                 ):
                                                     erp_checkbox = ui.checkbox(
                                                         value=erp_checked,
@@ -4839,19 +5494,25 @@ async def ecn_management_page():
                                                     if not assistant_can_operate:
                                                         erp_checkbox.props("disable")
                                                 ui.label("ERP").classes(
-                                                    "px-3 py-2 border-r border-slate-200 font-mono font-bold flex items-center"
+                                                    "px-3 py-2 border-r border-slate-200 font-mono font-bold "
+                                                    "flex items-center "
+                                                    + execution_column_alignment("assistant", "编号")
                                                 )
                                                 ui.label("ERP相关变更").classes(
-                                                    "px-3 py-2 border-r border-slate-200 font-semibold"
+                                                    "px-3 py-2 border-r border-slate-200 font-semibold "
+                                                    + execution_column_alignment("assistant", "事项/方案")
                                                 )
                                                 ui.label("—").classes(
-                                                    "px-3 py-2 border-r border-slate-200 text-slate-400"
+                                                    "px-3 py-2 border-r border-slate-200 text-slate-400 "
+                                                    + execution_column_alignment("assistant", "项目")
                                                 )
                                                 ui.label("—").classes(
-                                                    "px-3 py-2 border-r border-slate-200 text-slate-400"
+                                                    "px-3 py-2 border-r border-slate-200 text-slate-400 "
+                                                    + execution_column_alignment("assistant", "执行前")
                                                 )
                                                 ui.label("ERP相关变更已执行完毕").classes(
-                                                    "px-3 py-2 border-r border-slate-200 font-medium"
+                                                    "px-3 py-2 border-r border-slate-200 font-medium "
+                                                    + execution_column_alignment("assistant", "应执行内容")
                                                 )
                                                 ui.label(
                                                     (
@@ -4862,6 +5523,8 @@ async def ecn_management_page():
                                                     else "待确认"
                                                 ).classes(
                                                     "px-3 py-2 whitespace-pre-line text-xs "
+                                                    + execution_column_alignment("assistant", "确认记录")
+                                                    + " "
                                                     + ("text-emerald-700" if erp_checked else "text-slate-400")
                                                 )
 
@@ -4878,8 +5541,8 @@ async def ecn_management_page():
                                             ECN_EXECUTION_RESULT_FAILED: ("error", "失败", "text-red-600"),
                                         }
                                         result_table_grid = (
-                                            "grid grid-cols-[72px_minmax(180px,0.6fr)_minmax(200px,1fr)_"
-                                            "120px_minmax(260px,0.8fr)]"
+                                            "grid grid-cols-[72px_minmax(180px,0.6fr)_minmax(240px,1.2fr)_"
+                                            "120px_minmax(200px,0.6fr)]"
                                         )
                                         with ui.element("div").classes("w-full overflow-x-auto"):
                                             with ui.element("div").classes("min-w-[1050px] w-full"):
@@ -4895,7 +5558,8 @@ async def ecn_management_page():
                                                         "执行说明",
                                                     ]:
                                                         ui.label(header).classes(
-                                                            "px-3 py-2 border-r border-slate-300 last:border-r-0"
+                                                            "px-3 py-2 border-r border-slate-300 last:border-r-0 "
+                                                            + execution_column_alignment("overview", header)
                                                         )
                                                 for row_index, (item_id, result) in enumerate(overview_results.items()):
                                                     item = item_map.get(str(item_id), {})
@@ -4911,18 +5575,25 @@ async def ecn_management_page():
                                                         "items-stretch text-sm text-slate-700"
                                                     ):
                                                         ui.label(execution_scheme_no(str(item_id))).classes(
-                                                            "px-3 py-2 border-r border-slate-200 font-mono font-bold"
+                                                            "px-3 py-2 border-r border-slate-200 font-mono font-bold "
+                                                            + execution_column_alignment("overview", "编号")
                                                         )
                                                         ui.label(
                                                             execution_scheme_title(item, include_projects=False)
                                                         ).classes(
-                                                            "px-3 py-2 border-r border-slate-200 font-semibold break-words"
+                                                            "px-3 py-2 border-r border-slate-200 font-semibold break-words "
+                                                            + execution_column_alignment("overview", "系统内资料方案")
                                                         )
                                                         ui.label(
                                                             "、".join(execution_scheme_projects(item)) or "—"
-                                                        ).classes("px-3 py-2 border-r border-slate-200 break-words")
+                                                        ).classes(
+                                                            "px-3 py-2 border-r border-slate-200 break-words "
+                                                            + execution_column_alignment("overview", "项目")
+                                                        )
                                                         with ui.row().classes(
-                                                            "px-3 py-2 border-r border-slate-200 items-center gap-1 flex-nowrap"
+                                                            "px-3 py-2 border-r border-slate-200 items-center gap-1 "
+                                                            "flex-nowrap "
+                                                            + execution_column_alignment("overview", "执行状态")
                                                         ):
                                                             ui.icon(icon_name, size="xs").classes(status_class)
                                                             ui.label(status_text).classes(
@@ -4930,7 +5601,8 @@ async def ecn_management_page():
                                                             )
                                                         message = str(result.get("message") or "")
                                                         with ui.row().classes(
-                                                            "px-3 py-2 items-center gap-1 flex-nowrap min-w-0"
+                                                            "px-3 py-2 items-center gap-1 flex-nowrap min-w-0 "
+                                                            + execution_column_alignment("overview", "执行说明")
                                                         ):
                                                             ui.label(message or "—").classes(
                                                                 "text-xs text-slate-600 break-words min-w-0"
@@ -4946,13 +5618,16 @@ async def ecn_management_page():
 
                                 overview_execution_interrupted = (
                                     stage == ECN_EXECUTION_STAGE_OVERVIEW_RUNNING
-                                    and str(local_data.get("ecn_id") or "")
-                                    not in ACTIVE_ECN_OVERVIEW_EXECUTIONS
+                                    and str(local_data.get("ecn_id") or "") not in ACTIVE_ECN_OVERVIEW_EXECUTIONS
                                 )
-                                if stage in [
-                                    ECN_EXECUTION_STAGE_ASSISTANT,
-                                    ECN_EXECUTION_STAGE_OVERVIEW_FAILED,
-                                ] or overview_execution_interrupted:
+                                if (
+                                    stage
+                                    in [
+                                        ECN_EXECUTION_STAGE_ASSISTANT,
+                                        ECN_EXECUTION_STAGE_OVERVIEW_FAILED,
+                                    ]
+                                    or overview_execution_interrupted
+                                ):
                                     with ui.row().classes(
                                         "w-full justify-end items-center gap-3 px-4 py-3 border-t border-slate-200 bg-slate-50"
                                     ):
@@ -4972,9 +5647,9 @@ async def ecn_management_page():
                                             action_label = "重试失败项"
                                         else:
                                             ready = True
-                                            ui.label(
-                                                "检测到上次执行已中断，可从未完成项目继续执行。"
-                                            ).classes("text-xs text-amber-700")
+                                            ui.label("检测到上次执行已中断，可从未完成项目继续执行。").classes(
+                                                "text-xs text-amber-700"
+                                            )
                                             action_label = "恢复中断的执行"
                                         action_button = ui.button(
                                             action_label,
@@ -4997,8 +5672,10 @@ async def ecn_management_page():
                                 with ui.row().classes(
                                     "w-full items-center justify-between px-4 py-2.5 bg-slate-300 text-slate-900"
                                 ):
-                                    ui.label("2. 物料追溯与旧料处置确认").classes("font-bold text-base")
-                                    ui.label("责任角色按配置分派").classes("text-xs text-slate-600")
+                                    ui.label("2. 物料追溯执行确认").classes("font-bold text-base")
+                                    ui.label(
+                                        "各追溯范围独立；范围内负责人同节点并行、节点间串行；负责人同时落实旧料处置"
+                                    ).classes("text-xs text-slate-600")
 
                                 material_confirmations = execution_info.get("material_confirmations", {})
                                 if stage in [
@@ -5010,27 +5687,50 @@ async def ecn_management_page():
                                         "w-full px-4 py-4 text-sm text-slate-400 bg-slate-50"
                                     )
                                 elif isinstance(material_confirmations, dict) and material_confirmations:
-                                    material_table_grid = (
-                                        "grid grid-cols-[64px_72px_minmax(300px,1.5fr)_minmax(230px,1.1fr)_"
-                                        "minmax(200px,1fr)_minmax(230px,1.1fr)_100px]"
-                                    )
-                                    with ui.element("div").classes("w-full overflow-x-auto"):
-                                        with ui.element("div").classes("min-w-[1320px] w-full"):
-                                            with ui.element("div").classes(
-                                                f"{material_table_grid} bg-slate-100 border-t border-slate-300 "
-                                                "text-xs font-bold text-slate-600"
+                                    material_grid_columns = [
+                                        "72px",
+                                        "minmax(130px, 0.6fr)",
+                                        "minmax(90px, 0.4fr)",
+                                        "minmax(210px, 1fr)",
+                                        "minmax(210px, 1fr)",
+                                        "minmax(100px, 0.5fr)",
+                                        *["minmax(100px, 0.5fr)" for _ in ECN_TRACEABILITY_LEVELS],
+                                        "100px",
+                                    ]
+                                    material_grid_style = f"grid-template-columns: {' '.join(material_grid_columns)};"
+                                    material_table_min_width = 1012 + len(ECN_TRACEABILITY_LEVELS) * 100
+                                    with (
+                                        ui.element("div")
+                                        .props("id=ecn-material-execution-scroll")
+                                        .classes("w-full overflow-x-auto")
+                                    ):
+                                        with (
+                                            ui.element("div")
+                                            .classes("w-full")
+                                            .style(f"min-width: {material_table_min_width}px;")
+                                        ):
+                                            headers = [
+                                                "编号",
+                                                "项目",
+                                                "变更类别",
+                                                "变更前",
+                                                "变更后",
+                                                "旧料处理方式",
+                                                *ECN_TRACEABILITY_LEVELS,
+                                                "执行总状态",
+                                            ]
+                                            with (
+                                                ui.element("div")
+                                                .classes(
+                                                    "grid bg-slate-100 border-t border-slate-300 "
+                                                    "text-xs font-bold text-slate-600"
+                                                )
+                                                .style(material_grid_style)
                                             ):
-                                                for header in [
-                                                    "完成",
-                                                    "编号",
-                                                    "物料变更方案",
-                                                    "执行责任项",
-                                                    "责任角色",
-                                                    "确认记录",
-                                                    "方案状态",
-                                                ]:
+                                                for header in headers:
                                                     ui.label(header).classes(
-                                                        "px-3 py-2 border-r border-slate-300 last:border-r-0"
+                                                        "px-3 py-2 border-r border-slate-300 last:border-r-0 "
+                                                        + execution_column_alignment("material", header)
                                                     )
 
                                             for scheme_index, (item_id, material_entry) in enumerate(
@@ -5041,84 +5741,222 @@ async def ecn_management_page():
                                                     material_entry if isinstance(material_entry, dict) else {}
                                                 )
                                                 item_closed = material_entry.get("status") == "closed"
-                                                specs = get_ecn_material_execution_specs(item)
-                                                for spec_index, spec in enumerate(specs):
-                                                    row_bg = "bg-white" if scheme_index % 2 == 0 else "bg-blue-50/35"
-                                                    row_border = (
-                                                        "border-t border-slate-300"
-                                                        if spec_index == 0
-                                                        else "border-t border-slate-100"
+                                                specs = get_ecn_material_execution_specs(
+                                                    item,
+                                                    material_entry,
+                                                    app.storage.general.get("project_sale", {}),
+                                                )
+                                                traceability_tasks = material_entry.get("traceability_tasks", {})
+                                                specs_by_level = {
+                                                    level: [
+                                                        spec for spec in specs if str(spec.get("level") or "") == level
+                                                    ]
+                                                    for level in ECN_TRACEABILITY_LEVELS
+                                                }
+                                                row_bg = "bg-white" if scheme_index % 2 == 0 else "bg-blue-50/35"
+                                                with (
+                                                    ui.element("div")
+                                                    .classes(
+                                                        f"grid {row_bg} border-t border-slate-300 "
+                                                        "items-stretch text-sm text-slate-700"
                                                     )
-                                                    kind = str(spec.get("kind"))
-                                                    key = str(spec.get("key"))
-                                                    if kind == "traceability":
-                                                        confirmation = material_entry.get("traceability", {}).get(
-                                                            key,
-                                                            {},
-                                                        )
-                                                    else:
-                                                        confirmation = material_entry.get("disposition", {})
-                                                    confirmation = (
-                                                        confirmation if isinstance(confirmation, dict) else {}
+                                                    .style(material_grid_style)
+                                                ):
+                                                    ui.label(execution_scheme_no(str(item_id))).classes(
+                                                        "px-3 py-3 border-r border-slate-200 font-mono font-bold "
+                                                        + execution_column_alignment("material", "编号")
                                                     )
-                                                    checked = confirmation.get("confirmed") is True
-                                                    responsible_roles = normalize_execution_roles(spec.get("roles"))
-                                                    can_confirm = (
-                                                        material_is_active
-                                                        and not item_closed
-                                                        and role_matches_keywords(current_role, responsible_roles)
+                                                    ui.label("\n".join(execution_scheme_projects(item)) or "—").classes(
+                                                        "px-3 py-3 border-r border-slate-200 font-semibold "
+                                                        "break-words whitespace-pre-line "
+                                                        + execution_column_alignment("material", "项目")
+                                                    )
+                                                    ui.label(str(item.get("change_type") or "—")).classes(
+                                                        "px-3 py-3 border-r border-slate-200 font-semibold break-words "
+                                                        + execution_column_alignment("material", "变更类别")
+                                                    )
+                                                    old_material, new_material = get_ecn_material_change_display(item)
+                                                    ui.label(old_material or "—").classes(
+                                                        "px-3 py-3 border-r border-slate-200 font-semibold "
+                                                        "break-words whitespace-pre-line "
+                                                        + execution_column_alignment("material", "变更前")
+                                                    )
+                                                    ui.label(new_material or "—").classes(
+                                                        "px-3 py-3 border-r border-slate-200 font-semibold "
+                                                        "break-words whitespace-pre-line "
+                                                        + execution_column_alignment("material", "变更后")
                                                     )
                                                     with ui.element("div").classes(
-                                                        f"{material_table_grid} {row_bg} {row_border} "
-                                                        "items-stretch text-sm text-slate-700"
+                                                        "px-3 py-3 border-r border-slate-200 min-w-0 "
+                                                        + execution_column_alignment(
+                                                            "material",
+                                                            "旧料处理方式",
+                                                            flex_column=True,
+                                                        )
                                                     ):
-                                                        with ui.element("div").classes(
-                                                            "px-3 py-2 border-r border-slate-200 flex items-center justify-center"
+                                                        if not is_ecn_material_disposition_required(
+                                                            item.get("change_type")
                                                         ):
-                                                            checkbox = ui.checkbox(
-                                                                value=checked,
-                                                                on_change=lambda e, current_id=str(item_id), current_kind=kind, current_key=key: (
-                                                                    update_material_execution_confirmation(
-                                                                        current_id,
-                                                                        current_kind,
-                                                                        current_key,
-                                                                        bool(e.value),
-                                                                    )
-                                                                ),
-                                                            ).props("dense color=green")
-                                                            if not can_confirm:
-                                                                checkbox.props("disable")
-                                                        ui.label(execution_scheme_no(str(item_id))).classes(
-                                                            "px-3 py-2 border-r border-slate-200 font-mono font-bold"
-                                                        )
-                                                        ui.label(execution_scheme_title(item)).classes(
-                                                            "px-3 py-2 border-r border-slate-200 font-semibold "
-                                                            "break-words whitespace-pre-line"
-                                                        )
-                                                        ui.label(str(spec.get("label") or "—")).classes(
-                                                            "px-3 py-2 border-r border-slate-200 font-medium break-words"
-                                                        )
-                                                        ui.label("、".join(responsible_roles) or "未配置").classes(
-                                                            "px-3 py-2 border-r border-slate-200 text-xs break-words"
-                                                        )
-                                                        ui.label(
-                                                            (
-                                                                f"{confirmation.get('user', '未知')}（{confirmation.get('role', '')}）\n"
-                                                                f"{confirmation.get('time', '')}"
+                                                            ui.label("不适用").classes("text-sm text-slate-400")
+                                                        else:
+                                                            disposition_measure = str(
+                                                                item.get("disposition_measure") or ""
+                                                            ).strip()
+                                                            disposition_color = {
+                                                                "报废": "text-red-700",
+                                                                "返工": "text-orange-600",
+                                                                "有条件用完止": "text-amber-600",
+                                                            }.get(disposition_measure, "text-slate-700")
+                                                            ui.label(disposition_measure or "未配置").classes(
+                                                                f"font-semibold {disposition_color} break-words"
                                                             )
-                                                            if checked
-                                                            else "待确认"
-                                                        ).classes(
-                                                            "px-3 py-2 border-r border-slate-200 whitespace-pre-line text-xs "
-                                                            + ("text-emerald-700" if checked else "text-slate-400")
-                                                        )
+                                                            disposition_condition = str(
+                                                                item.get("disposition_condition") or ""
+                                                            ).strip()
+                                                            if disposition_condition:
+                                                                ui.label(f"条件：{disposition_condition}").classes(
+                                                                    "mt-1 text-xs text-slate-500 break-words"
+                                                                )
+
+                                                    for level in ECN_TRACEABILITY_LEVELS:
+                                                        level_specs = specs_by_level[level]
                                                         with ui.element("div").classes(
-                                                            "px-3 py-2 flex items-center justify-center"
+                                                            "px-2 py-2 border-r border-slate-200 min-w-0 "
+                                                            + execution_column_alignment(
+                                                                "material",
+                                                                level,
+                                                                flex_column=True,
+                                                            )
                                                         ):
-                                                            ui.badge(
-                                                                "已关闭" if item_closed else "执行中",
-                                                                color="green" if item_closed else "orange",
-                                                            ).props("outline")
+                                                            if not level_specs:
+                                                                ui.label("—").classes("text-sm text-slate-300")
+                                                                continue
+                                                            grouped_specs: dict[int, list[dict]] = {}
+                                                            for spec in level_specs:
+                                                                stage_index = get_ecn_stage_index(
+                                                                    spec.get("stage_index", 0)
+                                                                )
+                                                                grouped_specs.setdefault(stage_index, []).append(spec)
+                                                            show_stage = len(grouped_specs) > 1
+                                                            for stage_index, stage_specs in grouped_specs.items():
+                                                                if show_stage:
+                                                                    ui.label(f"串行节点 {stage_index + 1}").classes(
+                                                                        "text-[11px] font-semibold text-slate-400"
+                                                                    )
+                                                                for spec in stage_specs:
+                                                                    key = str(spec.get("key"))
+                                                                    confirmation = (
+                                                                        traceability_tasks.get(key, {})
+                                                                        if isinstance(traceability_tasks, dict)
+                                                                        else {}
+                                                                    )
+                                                                    confirmation = (
+                                                                        confirmation
+                                                                        if isinstance(confirmation, dict)
+                                                                        else {}
+                                                                    )
+                                                                    checked = confirmation.get("confirmed") is True
+                                                                    responsible_roles = normalize_execution_roles(
+                                                                        spec.get("roles")
+                                                                    )
+                                                                    responsible_users = normalize_execution_roles(
+                                                                        spec.get("users")
+                                                                    )
+                                                                    available = spec.get("available") is True
+                                                                    can_confirm = (
+                                                                        material_is_active
+                                                                        and not item_closed
+                                                                        and not checked
+                                                                        and available
+                                                                        and (
+                                                                            current_user in responsible_users
+                                                                            or role_matches_keywords(
+                                                                                current_role,
+                                                                                responsible_roles,
+                                                                            )
+                                                                        )
+                                                                    )
+                                                                    can_cancel = (
+                                                                        material_is_active
+                                                                        and can_cancel_material_confirmation(
+                                                                            spec,
+                                                                            confirmation,
+                                                                            specs,
+                                                                            traceability_tasks
+                                                                            if isinstance(traceability_tasks, dict)
+                                                                            else {},
+                                                                            item_closed,
+                                                                        )
+                                                                    )
+                                                                    checkbox = (
+                                                                        ui.checkbox(
+                                                                            str(spec.get("label") or "待确认负责人"),
+                                                                            value=checked,
+                                                                            on_change=lambda e, current_id=str(item_id), current_key=key: (
+                                                                                handle_material_confirmation_change(
+                                                                                    e,
+                                                                                    current_id,
+                                                                                    current_key,
+                                                                                )
+                                                                            ),
+                                                                        )
+                                                                        .props("dense color=green")
+                                                                        .classes(
+                                                                            "w-full text-xs "
+                                                                            + execution_column_alignment(
+                                                                                "material",
+                                                                                level,
+                                                                            )
+                                                                        )
+                                                                    )
+                                                                    if not can_confirm and not can_cancel:
+                                                                        checkbox.props("disable")
+                                                                    with checkbox:
+                                                                        tooltip = ui.tooltip(
+                                                                            material_confirmation_tooltip(
+                                                                                spec,
+                                                                                confirmation,
+                                                                                available,
+                                                                                can_cancel,
+                                                                            )
+                                                                        ).classes("text-xs whitespace-pre-line")
+                                                                    material_task_controls.setdefault(
+                                                                        str(item_id),
+                                                                        {},
+                                                                    )[key] = {
+                                                                        "checkbox": checkbox,
+                                                                        "tooltip": tooltip,
+                                                                    }
+
+                                                    total_count = len(specs)
+                                                    completed_count = sum(
+                                                        1
+                                                        for task in (
+                                                            traceability_tasks.values()
+                                                            if isinstance(traceability_tasks, dict)
+                                                            else []
+                                                        )
+                                                        if isinstance(task, dict) and task.get("confirmed") is True
+                                                    )
+                                                    with ui.element("div").classes(
+                                                        "px-3 py-3 flex flex-col justify-center gap-1 "
+                                                        + execution_column_alignment(
+                                                            "material",
+                                                            "执行总状态",
+                                                            flex_column=True,
+                                                        )
+                                                    ):
+                                                        status_badge = ui.badge(
+                                                            "已关闭" if item_closed else "执行中",
+                                                            color="green" if item_closed else "orange",
+                                                        ).props("outline")
+                                                        progress_label = ui.label(
+                                                            f"{completed_count}/{total_count}"
+                                                        ).classes("text-xs text-slate-500")
+                                                        material_status_controls[str(item_id)] = {
+                                                            "badge": status_badge,
+                                                            "progress": progress_label,
+                                                        }
                                 else:
                                     ui.label("本单没有物料变更方案，第一阶段完成后将自动关闭ECN。 ").classes(
                                         "w-full px-4 py-4 text-sm text-slate-400 bg-white"
@@ -5520,7 +6358,8 @@ async def ecn_management_page():
                                     wf["pending_roles"] = []
                                     wf["step_approvals"] = {}
                                     local_data["execution_info"] = build_ecn_execution_info(
-                                        local_data.get("change_items", [])
+                                        local_data.get("change_items", []),
+                                        app.storage.general.get("project_sale", {}),
                                     )
                             else:
                                 wf["pending_roles"] = route[wf["current_step_index"]]
@@ -5652,7 +6491,8 @@ async def ecn_management_page():
                                         c_wf["pending_roles"] = []
                                         c_wf["step_approvals"] = {}
                                         current_ecn["execution_info"] = build_ecn_execution_info(
-                                            current_ecn.get("change_items", [])
+                                            current_ecn.get("change_items", []),
+                                            app.storage.general.get("project_sale", {}),
                                         )
                                 else:
                                     c_wf["pending_roles"] = route[c_wf["current_step_index"]]
@@ -5750,11 +6590,42 @@ async def ecn_management_page():
                     if isinstance(fresh_execution_info, dict) and fresh_execution_info != local_data.get(
                         "execution_info", {}
                     ):
+                        previous_execution_info = local_data.get("execution_info", {})
+                        previous_material = (
+                            previous_execution_info.get("material_confirmations", {})
+                            if isinstance(previous_execution_info, dict)
+                            else {}
+                        )
+                        fresh_material = fresh_execution_info.get("material_confirmations", {})
+                        can_update_controls_only = (
+                            isinstance(previous_execution_info, dict)
+                            and previous_execution_info.get("stage") == ECN_EXECUTION_STAGE_MATERIAL
+                            and fresh_execution_info.get("stage") == ECN_EXECUTION_STAGE_MATERIAL
+                            and isinstance(previous_material, dict)
+                            and isinstance(fresh_material, dict)
+                            and bool(material_task_controls)
+                            and fresh.get("change_items", []) == local_data.get("change_items", [])
+                        )
+                        changed_material_ids = [
+                            str(item_id)
+                            for item_id in set(previous_material) | set(fresh_material)
+                            if previous_material.get(item_id) != fresh_material.get(item_id)
+                        ]
+                        scroll_state = (
+                            {}
+                            if can_update_controls_only
+                            else await capture_execution_scroll_state(execution_container.client)
+                        )
                         local_data["execution_info"] = copy.deepcopy(fresh_execution_info)
                         local_data["change_items"] = copy.deepcopy(fresh.get("change_items", []))
                         local_data["approval_log"] = copy.deepcopy(fresh.get("approval_log", []))
-                        render_execution_tab()
+                        if can_update_controls_only:
+                            refresh_material_execution_controls(changed_material_ids)
+                        else:
+                            render_execution_tab()
                         render_workflow_tab()
+                        if not can_update_controls_only:
+                            await restore_execution_scroll_state(execution_container.client, scroll_state)
 
             if wf["current_state"] in [ECNState.ECN_SCHEMING, ECNState.ECN_EXECUTING] and not is_new:
                 sync_timer = ui.timer(3.0, sync_schemes)
@@ -5826,9 +6697,9 @@ async def ecn_management_page():
     ui.timer(5.0, check_and_refresh_list)
 
     # 将滚动限制在 header 下方的内容区内，避免浏览器主滚动条覆盖到顶部导航栏
-    with ui.element("div").classes("fixed top-12 bottom-0 left-0 right-0 overflow-hidden bg-gray-50"):
-        with ui.row().classes("w-full justify-between items-center bg-white p-4 shadow-sm rounded-md"):
-            with ui.row().classes("gap-4"):
+    with ui.element("div").classes("fixed top-12 bottom-0 left-0 right-0 overflow-hidden bg-slate-50 flex flex-col"):
+        with ui.row().classes("w-full justify-between items-center bg-white p-4 shadow-sm rounded-md shrink-0"):
+            with ui.row().classes("gap-4 items-center"):
                 ui.input("搜索单号/项目/申请人").props("dense outlined").bind_value(
                     page_state, "search_keyword"
                 ).classes("w-64")
@@ -5847,166 +6718,139 @@ async def ecn_management_page():
                     label="状态筛选",
                 ).props("dense outlined").bind_value(page_state, "filter_state").classes("w-40")
                 ui.button("查询", icon="search", on_click=lambda: refresh_list()).props("color=primary outline")
-            ui.button("新建 ECR 申请", icon="add_box", on_click=lambda: open_ecn_detail_dialog()).props("color=red-7")
-        with ui.element("div").classes("w-full h-full overflow-y-auto overflow-x-hidden p-4 md:p-6"):
-            # with ui.column().classes("w-full p-4 h-[calc(100vh-4rem)] bg-gray-100"):
-            list_container = ui.column().classes("w-full mt-4 gap-3 flex-grow overflow-y-auto")
+                ui.button("刷新", icon="refresh", on_click=lambda: refresh_list()).props("flat color=primary")
+                execution_focus_switch = (
+                    ui.switch("关注执行进度", value=False)
+                    .props("dense color=purple")
+                    .tooltip("开启后隐藏中间信息列，优先完整展示各追溯范围的执行状态")
+                )
+            with ui.row().classes("gap-2 items-center"):
+                ui.label("点击“详情”打开ECN").classes("text-xs text-gray-500")
+                ui.button("新建 ECR 申请", icon="add_box", on_click=lambda: open_ecn_detail_dialog()).props(
+                    "color=red-7"
+                )
+        with ui.element("div").classes("w-full flex-1 min-h-0 p-4 md:p-6"):
+            is_admin_user = current_user.lower() == "admin"
+            ecn_grid = ui.aggrid(
+                {
+                    "columnDefs": get_ecn_management_grid_columns(is_admin_user),
+                    "rowData": [],
+                    "defaultColDef": {
+                        "sortable": True,
+                        "resizable": True,
+                        "cellStyle": {"textAlign": "center"},
+                        "headerClass": "ecn-grid-header-center",
+                        "filterParams": {"buttons": ["reset"], "debounceMs": 250},
+                    },
+                    "headerHeight": 42,
+                    "rowHeight": 42,
+                    "enableCellTextSelection": True,
+                    "columnMenu": "new",
+                    "suppressMenuHide": True,
+                    "pagination": True,
+                    "paginationPageSize": 30,
+                    "paginationPageSizeSelector": [20, 30, 50, 100],
+                    "animateRows": False,
+                    "rowClassRules": {
+                        "row-pending": "data.row_tone == 'pending'",
+                        "row-rejected": "data.row_tone == 'rejected'",
+                        "row-executing": "data.row_tone == 'executing'",
+                        "row-completed": "data.row_tone == 'completed'",
+                    },
+                    "overlayNoRowsTemplate": "<span class='text-gray-500'>没有符合当前条件的工程变更记录</span>",
+                },
+                auto_size_columns=False,
+            ).classes("ecn-management-grid ag-theme-alpine w-full h-full min-h-0")
+
+            execution_focus_hidden_fields = [
+                "projects",
+                "applicant",
+                "apply_date",
+            ]
+
+            def apply_execution_focus(enabled: bool) -> None:
+                ecn_grid.run_grid_method(
+                    "setColumnsVisible",
+                    execution_focus_hidden_fields,
+                    not enabled,
+                )
+
+            execution_focus_switch.on_value_change(lambda event: apply_execution_focus(bool(event.value)))
+
+            async def handle_ecn_grid_cell(event: Any) -> None:
+                event_args = event.args if isinstance(event.args, dict) else {}
+                row_data = event_args.get("data")
+                if not isinstance(row_data, dict):
+                    return
+                ecn_id = str(row_data.get("record_id") or "").strip()
+                if not ecn_id:
+                    return
+                column_id = str(event_args.get("colId") or "")
+                if column_id == "detail_action":
+                    await open_ecn_detail_dialog(ecn_id)
+                elif column_id == "delete_action" and is_admin_user:
+                    await confirm_delete(ecn_id)
+
+            async def open_ecn_grid_record(event: Any) -> None:
+                event_args = event.args if isinstance(event.args, dict) else {}
+                if str(event_args.get("colId") or "") == "delete_action":
+                    return
+                row_data = event_args.get("data")
+                ecn_id = str(row_data.get("record_id") or "").strip() if isinstance(row_data, dict) else ""
+                if ecn_id:
+                    await open_ecn_detail_dialog(ecn_id)
+
+            ecn_grid.on("cellClicked", handle_ecn_grid_cell)
+            ecn_grid.on("rowDoubleClicked", open_ecn_grid_record)
 
             def refresh_list():
-                list_container.clear()
-                ALL_ECNS = db_storage.get_item("ecn_management_data", {})
-                kw = page_state["search_keyword"].lower()
-                f_state = page_state["filter_state"]
-
-                # 【增加防御性过滤】：剔除掉值为 None，或者缺失 basic_info 的脏数据
+                all_ecns = db_storage.get_item("ecn_management_data", {})
+                keyword = str(page_state.get("search_keyword") or "").lower().strip()
+                filter_state = str(page_state.get("filter_state") or "全部")
+                raw_ecns = all_ecns.values() if isinstance(all_ecns, dict) else []
                 valid_ecns = [
-                    ecn
-                    for ecn in ALL_ECNS.values()
-                    if ecn and isinstance(ecn, dict) and "basic_info" in ecn and "apply_date" in ecn["basic_info"]
+                    ecn for ecn in raw_ecns if isinstance(ecn, dict) and isinstance(ecn.get("basic_info"), dict)
                 ]
 
-                # 按照申请时间排序，最新的在前面
-                sorted_ecns = sorted(valid_ecns, key=lambda x: x["basic_info"]["apply_date"], reverse=True)
+                def get_apply_date(ecn: dict) -> str:
+                    basic_info = ecn.get("basic_info", {})
+                    return str(basic_info.get("apply_date") or "") if isinstance(basic_info, dict) else ""
 
-                with list_container:
-                    if not sorted_ecns:
-                        return ui.label("暂无工程变更记录").classes("text-gray-500 m-auto mt-10")
-
-                    for ecn in sorted_ecns:
-                        # 增加单号、项目、申请人搜索过滤
-                        if (
-                            kw
-                            and kw not in ecn["ecn_id"].lower()
-                            and kw not in str(ecn.get("target_projects", "")).lower()
-                            and kw not in ecn["basic_info"]["applicant"].lower()
-                        ):
-                            continue
-
-                        # 获取ECN状态
-                        current_state = ecn["workflow"]["current_state"]
-                        # 增加ECN状态筛选过滤
-                        if f_state != "全部" and current_state != f_state:
-                            continue
-
-                        with ui.card().classes(
-                            "w-full flex flex-row justify-between items-center p-4 bg-blue-50 hover:bg-amber-50 transition-colors cursor-pointer border-l-4 border-blue-500 shadow-sm relative"
-                        ) as card:
-                            card.on("click", lambda _, e_id=ecn["ecn_id"]: open_ecn_detail_dialog(e_id))
-
-                            if current_user.lower() == "admin":
-                                ui.button(icon="delete", color="red").props("flat round dense").classes(
-                                    "absolute top-1 right-1 z-10"
-                                ).on("click.stop", lambda e, e_id=ecn["ecn_id"]: confirm_delete(e_id)).tooltip(
-                                    "永久删除此数据 (管理员专用)"
-                                )
-
-                            with ui.column().classes("gap-1"):
-                                # ECN流程状态与方案编写状态信息展示行
-                                with ui.row().classes("items-center gap-3"):
-                                    ui.label(ecn["ecn_id"]).classes("font-mono font-bold text-gray-800 text-lg")
-                                    # 状态标签
-                                    ui.badge(
-                                        current_state,
-                                        color="red"
-                                        if current_state == ECNState.REJECTED
-                                        else "orange"
-                                        if "中" in current_state
-                                        else "green"
-                                        if "完成" in current_state
-                                        else "grey",
-                                    ).props("outline")
-
-                                    pending_roles = get_ecn_pending_approval_roles(ecn.get("workflow", {}))
-
-                                    # 对于审批状态的ECN，增加显示相应信息标签
-                                    if pending_roles and current_state not in [
-                                        ECNState.DRAFT,
-                                        ECNState.CLOSED,
-                                        ECNState.CANCEL,
-                                        ECNState.REJECTED,
-                                    ]:
-                                        ui.label(f"等待审批: {', '.join(pending_roles)}").classes(
-                                            "text-xs font-bold text-orange-600 bg-orange-100 px-2 py-0.5 rounded"
-                                        )
-                                    elif current_state == ECNState.ECN_EXECUTING:
-                                        execution_roles = get_ecn_execution_pending_role_keywords(ecn)
-                                        if execution_roles:
-                                            ui.label(f"等待执行确认: {', '.join(execution_roles)}").classes(
-                                                "text-xs font-bold text-purple-600 bg-purple-100 px-2 py-0.5 rounded"
-                                            )
-                                    # 对于方案编制状态的ECN，增加显示相应信息标签
-                                    elif current_state == ECNState.ECN_SCHEMING:
-                                        # 分开显示常规编写与被驳回后的重新确认，避免列表文案掩盖整改状态。
-                                        needs_reconfirmation = [
-                                            p
-                                            for p, status in ecn["workflow"].get("scheme_participants", {}).items()
-                                            if status == ECN_PARTICIPANT_STATUS_NEEDS_RECONFIRMATION
-                                        ]
-                                        editing_participants = [
-                                            p
-                                            for p, status in ecn["workflow"].get("scheme_participants", {}).items()
-                                            if status
-                                            not in [
-                                                ECN_PARTICIPANT_STATUS_CONFIRMED,
-                                                ECN_PARTICIPANT_STATUS_NEEDS_RECONFIRMATION,
-                                            ]
-                                        ]
-
-                                        coverage = get_ecn_scheme_coverage(ecn)
-                                        missing_requirements = coverage["missing_requirements"]
-                                        missing_docs = coverage["missing_docs"]
-                                        missing_mats = coverage["missing_materials"]
-                                        incomplete_material_schemes = coverage["incomplete_material_schemes"]
-                                        has_missing_deliverables = bool(
-                                            missing_requirements
-                                            or missing_docs
-                                            or missing_mats
-                                            or incomplete_material_schemes
-                                        )
-
-                                        # 3. 综合判断并渲染状态标签
-                                        if needs_reconfirmation:
-                                            ui.label(f"方案待改进/重新确认: {', '.join(needs_reconfirmation)}").classes(
-                                                "text-xs font-bold text-red-600 bg-red-100 px-2 py-0.5 rounded"
-                                            )
-                                        elif editing_participants:
-                                            ui.label(f"等待完成方案编写: {', '.join(editing_participants)}").classes(
-                                                "text-xs font-bold text-purple-600 bg-purple-100 px-2 py-0.5 rounded"
-                                            )
-                                        elif has_missing_deliverables:
-                                            # 核心防呆：人员都点完了确认，但系统查出仍有漏交的强制项
-                                            miss_text = []
-                                            if missing_requirements:
-                                                miss_text.append("变更要求")
-                                            if missing_docs:
-                                                miss_text.append("资料")
-                                            if missing_mats:
-                                                miss_text.append("物料")
-                                            if incomplete_material_schemes:
-                                                miss_text.append("物料追溯/处置配置")
-                                            ui.label(f"尚缺{'、'.join(miss_text)}方案，待补充").classes(
-                                                "text-xs font-bold text-red-600 bg-red-100 px-2 py-0.5 rounded"
-                                            )
-                                        elif ecn["workflow"].get("scheme_participants"):
-                                            ui.label("方案已齐，待发起评审").classes(
-                                                "text-xs font-bold text-green-600 bg-green-100 px-2 py-0.5 rounded"
-                                            )
-                                # ECN涉及项目信息
-                                ui.label(
-                                    ecn["basic_info"].get(
-                                        "title", f"涉及项目: {', '.join(ecn.get('target_projects', []))}"
-                                    )
-                                ).classes("text-sm text-gray-800 font-bold")
-
-                            with ui.column().classes("items-end gap-1"):
-                                ui.label(f"申请人: {ecn['basic_info']['applicant']}").classes("text-sm text-gray-600")
-                                ui.label(ecn["basic_info"]["apply_date"]).classes("text-xs text-gray-400 font-mono")
-
-                                # 与主页角标使用同一套精准待办规则，避免未参与的工程师被提醒。
-                                if is_ecn_pending_for_user(ecn, current_user, current_role):
-                                    # ui.chip: NiceGUI框架中用于渲染小标签/徽章的类
-                                    ui.chip("待处理", icon="notifications_active", color="red").props(
-                                        "dense outline size=sm"
-                                    )
+                valid_ecns.sort(
+                    key=get_apply_date,
+                    reverse=True,
+                )
+                rows = []
+                for ecn in valid_ecns:
+                    basic_info = ecn.get("basic_info", {})
+                    if not isinstance(basic_info, dict):
+                        continue
+                    workflow = ecn.get("workflow", {})
+                    workflow = workflow if isinstance(workflow, dict) else {}
+                    current_state = str(workflow.get("current_state") or "")
+                    searchable = " ".join(
+                        [
+                            str(ecn.get("ecn_id") or ""),
+                            " ".join(get_ecn_scheme_target_projects(ecn)),
+                            str(basic_info.get("applicant") or ""),
+                            str(basic_info.get("title") or ""),
+                        ]
+                    ).lower()
+                    if keyword and keyword not in searchable:
+                        continue
+                    if filter_state != "全部" and current_state != filter_state:
+                        continue
+                    rows.append(
+                        build_ecn_management_grid_row(
+                            ecn,
+                            current_user,
+                            current_role,
+                            include_delete=is_admin_user,
+                        )
+                    )
+                ecn_grid.options["rowData"] = rows
+                ecn_grid.update()
+                if execution_focus_switch.value:
+                    apply_execution_focus(True)
 
             refresh_list()

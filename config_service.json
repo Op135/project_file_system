@@ -7631,9 +7631,37 @@
                     "option_label": ""
                 }
             ]
+        },
+        "221": {
+            "condition": "1!=代工",
+            "node_id": "221",
+            "guide_content": "是否指定测试报告格式与内容",
+            "answer_type": "多行文本",
+            "input_num_accor": "",
+            "input_name_accor": "",
+            "input_tolerance": "",
+            "ref_config": "True",
+            "option_hint": "对产品出厂测试报告的格式与内容无要求则写“无”，有要求则填写详细要求，并附上报告模板。",
+            "placeholder": "",
+            "tolerance_placeholder": "",
+            "option_group_id": "99",
+            "option_view": "工艺+质量",
+            "user_must_out": {},
+            "option_tolerance_out": {},
+            "ref_out": [],
+            "options": [
+                {
+                    "option_id": "opt_1",
+                    "option_content": "",
+                    "option_out": "字典",
+                    "option_bold": "",
+                    "option_show": "测试报告格式与内容要求：{V}",
+                    "option_label": "要求测试报告模板"
+                }
+            ]
         }
     },
-    "config_timestamp": "2026-08-24T12:16:51.310694",
-    "excel_version_hash": "5f930b80",
+    "config_timestamp": "2026-08-25T15:25:06.718567",
+    "excel_version_hash": "da625752",
     "entry_status": false
 }

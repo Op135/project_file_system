@@ -15,8 +15,9 @@
         "scheme_tracking.traceability_levels": "各类ECN方案可选择的追溯范围；物料方案必填，其它方案选填。",
         "scheme_tracking.disposition_measures": "旧料处置措施的可选项。",
         "execution_workflow.assistant_roles": "第一阶段核对普通资料事项、ERP状态并触发系统内资料落盘的研发助理角色关键字。",
-        "execution_workflow.traceability_responsible_roles": "物料执行阶段按追溯范围配置可确认完成的角色关键字。",
-        "execution_workflow.disposition_responsible_roles": "物料执行阶段按旧料处置措施配置可确认完成的角色关键字。",
+        "execution_workflow.traceability_responsible_routes": "每个追溯范围内部的负责人确认路线；外层数组为串行节点，同一内层数组中的负责人并行且均须确认。普通文字按角色关键字处理；客户/在途中的“项目销售”“销售主管”为特殊负责人，分别按项目自动识别销售和生成销售主管确认项。",
+        "execution_workflow.customer_in_transit": "客户/在途的特殊执行配置；项目销售从系统project_sale自动识别，sales_supervisor_roles供销售主管责任项及销售未识别时兜底使用。",
+        "execution_workflow.customer_in_transit.sales_supervisor_roles": "同一个销售管理确认项的可操作角色关键字，属于“或”关系而非多人并行会签。例如同时配置“销售主管、销售总监”时，任意一类角色确认后该项即完成，不要求两者分别确认。",
         "scheme_options.document_change_types": "其它特定事项/资料变更方案的分类选项。",
         "scheme_options.overview_actions": "系统内资料方案的动作显示文案；add、update、deactivate为固定语义键。",
         "scheme_options.material_change_types": "物料变更方案的分类文案映射；add、adjust_quantity、discontinue、replace为固定语义键。",
@@ -153,63 +154,58 @@
         "assistant_roles": [
             "研发助理"
         ],
-        "traceability_responsible_roles": {
+        "traceability_responsible_routes": {
             "文件": [
-                "研发助理"
+                [
+                    "研发助理"
+                ]
             ],
             "供应商": [
-                "采购",
-                "PMC"
+                [
+                    "采购"
+                ],
+                [
+                    "PMC"
+                ]
             ],
             "零件仓": [
-                "仓库",
-                "PMC"
+                [
+                    "PMC"
+                ]
             ],
             "生产在线": [
-                "生产经理"
+                [
+                    "生产经理"
+                ],
+                [
+                    "PMC"
+                ]
             ],
             "半成品仓": [
-                "仓库",
-                "PMC"
+                [
+                    "PMC"
+                ]
             ],
             "成品仓": [
-                "仓库",
-                "PMC"
+                [
+                    "PMC"
+                ]
             ],
             "客户/在途": [
-                "销售",
-                "PMC"
+                [
+                    "项目销售",
+                    "销售主管"
+                ],
+                [
+                    "PMC"
+                ]
             ]
         },
-        "disposition_responsible_roles": {
-            "不适用": [
-                "研发助理"
-            ],
-            "无条件用完止": [
-                "生产经理",
-                "PMC",
-                "质量经理"
-            ],
-            "有条件用完止": [
-                "工程NPI",
-                "生产经理",
-                "PMC",
-                "质量经理"
-            ],
-            "返工": [
-                "工程NPI",
-                "生产经理",
-                "质量经理"
-            ],
-            "暂存移用": [
-                "仓库",
-                "PMC",
-                "质量经理"
-            ],
-            "报废": [
-                "生产经理",
-                "PMC",
-                "质量经理"
+        "customer_in_transit": {
+            "level": "客户/在途",
+            "sales_supervisor_roles": [
+                "销售主管",
+                "销售总监"
             ]
         }
     },

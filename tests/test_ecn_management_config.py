@@ -1,5 +1,6 @@
 import json
 from typing import Any
+from unittest.mock import patch
 
 from src.ecn_management_config import (
     ECN_CONFIG_PATH,
@@ -29,9 +30,12 @@ from src.ecn_management_config import (
     get_ecn_material_change_display,
     get_ecn_material_change_missing_fields,
     get_ecn_scheme_coverage,
+    get_ecn_traceability_closure_summary,
     get_ecn_dashboard_pending_count,
     get_ecn_execution_pending_role_keywords,
+    get_ecn_execution_pending_usernames,
     get_ecn_material_execution_specs,
+    get_ecn_stage_index,
     has_unrevised_rejected_scheme_items,
     is_ecn_pending_for_user,
     is_ecn_assistant_execution_ready,
@@ -46,6 +50,7 @@ from src.ecn_management_config import (
     mark_rejected_scheme_item_revised,
     expand_new_material_traceability_selection,
     ecn_overview_requires_new_content,
+    ensure_ecn_material_execution_tasks,
     reject_ecn_scheme_items,
 )
 
@@ -76,6 +81,68 @@ def _ecn_record(
             "scheme_participants": participants or {},
         },
     }
+
+
+def test_ecn_stage_index_safely_narrows_json_values():
+    assert get_ecn_stage_index(2) == 2
+    assert get_ecn_stage_index("3") == 3
+    assert get_ecn_stage_index(None) == 0
+    assert get_ecn_stage_index({"unexpected": "value"}) == 0
+    assert get_ecn_stage_index("invalid") == 0
+
+
+def test_traceability_closure_summary_aggregates_all_material_schemes():
+    ecn_data = {
+        "change_items": [
+            {
+                "item_id": "material-1",
+                "scheme_category": ECN_SCHEME_GROUP_MATERIAL,
+                "traceability_levels": ["文件", "供应商"],
+            },
+            {
+                "item_id": "material-2",
+                "scheme_category": ECN_SCHEME_GROUP_MATERIAL,
+                "traceability_levels": ["文件"],
+            },
+        ],
+        "execution_info": {
+            "stage": ECN_EXECUTION_STAGE_MATERIAL,
+            "material_confirmations": {
+                "material-1": {
+                    "traceability_tasks": {
+                        "file-1": {"level": "文件", "confirmed": True},
+                        "supplier-1": {"level": "供应商", "confirmed": True},
+                    }
+                },
+                "material-2": {
+                    "traceability_tasks": {
+                        "file-2": {"level": "文件", "confirmed": False},
+                    }
+                },
+            },
+        },
+    }
+
+    summary = get_ecn_traceability_closure_summary(ecn_data)
+
+    assert summary["文件"] == "进行中 1/2"
+    assert summary["供应商"] == "已关闭"
+    assert summary["客户/在途"] == "—"
+
+
+def test_traceability_closure_summary_marks_selected_levels_not_started():
+    summary = get_ecn_traceability_closure_summary(
+        {
+            "change_items": [
+                {
+                    "scheme_category": ECN_SCHEME_GROUP_MATERIAL,
+                    "traceability_levels": ["文件"],
+                }
+            ]
+        }
+    )
+
+    assert summary["文件"] == "未开始"
 
 
 def test_checked_in_config_file_is_valid():
@@ -724,11 +791,12 @@ def test_execution_checklists_are_built_from_the_three_scheme_groups():
     assert set(execution_info["ordinary_confirmations"]) == {"D1"}
     assert set(execution_info["overview_results"]) == {"O1"}
     assert set(execution_info["material_confirmations"]) == {"M1"}
-    assert set(execution_info["material_confirmations"]["M1"]["traceability"]) == {
-        "文件",
-        "供应商",
+    assert set(execution_info["material_confirmations"]["M1"]["traceability_tasks"]) == {
+        "文件::研发助理",
+        "供应商::采购",
+        "供应商::PMC",
     }
-    assert execution_info["material_confirmations"]["M1"]["disposition"]["measure"] == "报废"
+    assert "disposition" not in execution_info["material_confirmations"]["M1"]
     assert is_ecn_assistant_execution_ready(execution_info) is False
 
     execution_info["ordinary_confirmations"]["D1"]["confirmed"] = True
@@ -745,7 +813,7 @@ def test_execution_checklists_are_built_from_the_three_scheme_groups():
     assert is_ecn_pending_for_user(record, "助理A", "研发助理") is True
 
 
-def test_material_execution_specs_and_pending_roles_follow_json_responsibilities():
+def test_material_scopes_are_independent_and_pending_roles_follow_responsible_routes():
     item = {
         "item_id": "M1",
         "scheme_category": ECN_SCHEME_GROUP_MATERIAL,
@@ -753,32 +821,164 @@ def test_material_execution_specs_and_pending_roles_follow_json_responsibilities
         "traceability_levels": ["文件", "供应商"],
         "disposition_measure": "报废",
     }
-    execution_info = build_ecn_execution_info([item])
+    with patch(
+        "src.ecn_management_config.ECN_TRACEABILITY_RESPONSIBLE_ROUTES",
+        {"文件": [["研发助理"]], "供应商": [["采购"], ["PMC"]]},
+    ):
+        execution_info = build_ecn_execution_info([item])
     execution_info["stage"] = ECN_EXECUTION_STAGE_MATERIAL
     record = _ecn_record(state=ECNState.ECN_EXECUTING)
     record["change_items"] = [item]
     record["execution_info"] = execution_info
 
-    specs = get_ecn_material_execution_specs(item)
+    material_entry = execution_info["material_confirmations"]["M1"]
+    specs = get_ecn_material_execution_specs(item, material_entry)
     assert [(spec["kind"], spec["key"]) for spec in specs] == [
-        ("traceability", "文件"),
-        ("traceability", "供应商"),
-        ("disposition", "报废"),
+        ("traceability", "文件::研发助理"),
+        ("traceability", "供应商::采购"),
+        ("traceability", "供应商::PMC"),
     ]
+    assert [spec["key"] for spec in specs if spec["available"]] == [
+        "文件::研发助理",
+        "供应商::采购",
+    ]
+    assert specs[0]["parallel"] is False
+    assert specs[1]["parallel"] is False
+    assert specs[2]["parallel"] is False
+    assert all(spec["disposition_instruction"] == "旧料处置：报废" for spec in specs)
     pending_roles = get_ecn_execution_pending_role_keywords(record)
     assert "研发助理" in pending_roles
     assert "采购" in pending_roles
-    assert "生产经理" in pending_roles
+    assert "PMC" not in pending_roles
     assert is_ecn_pending_for_user(record, "采购A", "采购") is True
 
-    material_entry = execution_info["material_confirmations"]["M1"]
     assert is_ecn_material_execution_closed(material_entry) is False
-    material_entry["traceability"]["文件"]["confirmed"] = True
+    material_entry["traceability_tasks"]["文件::研发助理"]["confirmed"] = True
     assert is_ecn_pending_for_user(record, "助理A", "研发助理") is False
-    for confirmation in material_entry["traceability"].values():
+    assert is_ecn_pending_for_user(record, "采购A", "采购") is True
+    material_entry["traceability_tasks"]["供应商::采购"]["confirmed"] = True
+    assert is_ecn_pending_for_user(record, "采购A", "采购") is False
+    assert is_ecn_pending_for_user(record, "PMC-A", "PMC") is True
+    for confirmation in material_entry["traceability_tasks"].values():
         confirmation["confirmed"] = True
-    material_entry["disposition"]["confirmed"] = True
     assert is_ecn_material_execution_closed(material_entry) is True
+
+
+def test_each_traceability_scope_supports_parallel_and_serial_responsible_nodes():
+    item = {
+        "item_id": "M1",
+        "scheme_category": ECN_SCHEME_GROUP_MATERIAL,
+        "change_type": "更换",
+        "traceability_levels": ["文件"],
+    }
+    with patch(
+        "src.ecn_management_config.ECN_TRACEABILITY_RESPONSIBLE_ROUTES",
+        {
+            "文件": [
+                ["负责人A", "负责人B"],
+                ["负责人C"],
+            ]
+        },
+    ):
+        execution_info = build_ecn_execution_info([item])
+        material_entry = execution_info["material_confirmations"]["M1"]
+        specs = get_ecn_material_execution_specs(item, material_entry)
+
+    assert [spec["key"] for spec in specs if spec["available"]] == [
+        "文件::负责人A",
+        "文件::负责人B",
+    ]
+    assert all(spec["parallel"] is True for spec in specs[:2])
+    material_entry["traceability_tasks"]["文件::负责人A"]["confirmed"] = True
+    first_stage = get_ecn_material_execution_specs(item, material_entry)
+    assert [spec["key"] for spec in first_stage if spec["available"]] == ["文件::负责人B"]
+    material_entry["traceability_tasks"]["文件::负责人B"]["confirmed"] = True
+    second_stage = get_ecn_material_execution_specs(item, material_entry)
+    assert [spec["key"] for spec in second_stage if spec["available"]] == ["文件::负责人C"]
+
+
+def test_customer_traceability_uses_each_project_salesperson_and_parallel_supervisor():
+    item = {
+        "item_id": "M1",
+        "scheme_category": ECN_SCHEME_GROUP_MATERIAL,
+        "change_type": "更换",
+        "projects": ["P1", "P2"],
+        "traceability_levels": ["客户/在途"],
+        "disposition_measure": "有条件用完止",
+        "disposition_condition": "客户书面同意后使用",
+    }
+    with patch(
+        "src.ecn_management_config.ECN_TRACEABILITY_RESPONSIBLE_ROUTES",
+        {"客户/在途": [["项目销售", "销售主管"], ["PMC"]]},
+    ):
+        execution_info = build_ecn_execution_info([item], {"P1": "销售甲", "P2": "销售乙"})
+    execution_info["stage"] = ECN_EXECUTION_STAGE_MATERIAL
+    material_entry = execution_info["material_confirmations"]["M1"]
+    record = _ecn_record(state=ECNState.ECN_EXECUTING)
+    record["change_items"] = [item]
+    record["execution_info"] = execution_info
+
+    specs = get_ecn_material_execution_specs(item, material_entry)
+    assert [spec["key"] for spec in specs if spec["available"]] == [
+        "客户/在途::项目销售::P1",
+        "客户/在途::项目销售::P2",
+        "客户/在途::销售主管::P1",
+        "客户/在途::销售主管::P2",
+    ]
+    assert all(spec["parallel"] is True for spec in specs[:4])
+    assert specs[-1]["key"] == "客户/在途::PMC"
+    assert specs[-1]["available"] is False
+    assert get_ecn_execution_pending_usernames(record) == ["销售甲", "销售乙"]
+    assert is_ecn_pending_for_user(record, "销售甲", "销售") is True
+    assert is_ecn_pending_for_user(record, "无关销售", "销售") is False
+    assert is_ecn_pending_for_user(record, "主管甲", "销售总监") is True
+
+    tasks = material_entry["traceability_tasks"]
+    assert tasks["客户/在途::项目销售::P1"]["users"] == ["销售甲"]
+    assert tasks["客户/在途::项目销售::P2"]["users"] == ["销售乙"]
+    assert "销售总监" in tasks["客户/在途::销售主管::P1"]["roles"]
+    assert tasks["客户/在途::项目销售::P1"]["stage_index"] == tasks[
+        "客户/在途::销售主管::P1"
+    ]["stage_index"]
+    for task_key, task in tasks.items():
+        if task_key != "客户/在途::PMC":
+            task["confirmed"] = True
+    next_stage = get_ecn_material_execution_specs(item, material_entry)
+    assert [spec["key"] for spec in next_stage if spec["available"]] == ["客户/在途::PMC"]
+
+
+def test_material_specs_do_not_mutate_local_data_and_initializer_persists_before_confirmation():
+    item = {
+        "item_id": "M1",
+        "scheme_category": ECN_SCHEME_GROUP_MATERIAL,
+        "change_type": "更换",
+        "traceability_levels": ["文件"],
+    }
+    material_entry = {"status": "open"}
+
+    specs = get_ecn_material_execution_specs(item, material_entry)
+
+    assert specs[0]["key"] == "文件::研发助理"
+    assert "traceability_tasks" not in material_entry
+    ensure_ecn_material_execution_tasks(item, material_entry)
+    assert "文件::研发助理" in material_entry["traceability_tasks"]
+
+
+def test_missing_project_salesperson_is_explicitly_delegated_to_sales_supervisor():
+    item = {
+        "item_id": "M1",
+        "scheme_category": ECN_SCHEME_GROUP_MATERIAL,
+        "change_type": "更换",
+        "projects": ["P1"],
+        "traceability_levels": ["客户/在途"],
+    }
+    execution_info = build_ecn_execution_info([item], {})
+    execution_info["stage"] = ECN_EXECUTION_STAGE_MATERIAL
+    material_entry = execution_info["material_confirmations"]["M1"]
+    sales_task = material_entry["traceability_tasks"]["客户/在途::项目销售::P1"]
+    assert sales_task["users"] == []
+    assert "销售主管" in sales_task["roles"]
+    assert "未识别" in sales_task["label"]
 
 
 def test_invalid_step_approval_data_does_not_hide_pending_roles():

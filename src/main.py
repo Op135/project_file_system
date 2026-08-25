@@ -422,8 +422,7 @@ if __name__ in {"__main__", "__mp_main__"}:
     # 只需修改这一行，不需要在 ui.run() 内反复注释/取消注释多个参数。
     PRODUCTION_MODE = False
     # PRODUCTION_MODE = True
-    # VS Code debugpy 与 NiceGUI/watchfiles 在 Windows + Python 3.13 下热重载时可能冲突。
-    # 调试启动配置通过 NICEGUI_RELOAD=false 关闭监听；普通命令行启动仍默认保留热重载。
+    # 默认启用热重载；需要临时关闭时可显式设置 NICEGUI_RELOAD=false。
     DEVELOPMENT_RELOAD = os.environ.get("NICEGUI_RELOAD", "true").strip().lower() not in {
         "0",
         "false",
@@ -446,7 +445,10 @@ if __name__ in {"__main__", "__mp_main__"}:
 
         # Windows 映射盘、网络盘或同步盘偶尔会丢失文件系统通知；
         # 开发环境改用轮询监听，提高保存代码后触发重载的可靠性。
-        os.environ.setdefault("WATCHFILES_FORCE_POLLING", "true")
+        # 使用直接赋值，避免终端或调试器继承的旧环境变量意外关闭轮询。
+        os.environ["WATCHFILES_FORCE_POLLING"] = "true"
+        # 轮询模式默认间隔为 300ms；缩短到 200ms，让编辑器或 Codex 保存后更快触发。
+        os.environ["WATCHFILES_POLL_DELAY_MS"] = "200"
 
         run_environment_options = {
             "reload": True,
@@ -457,7 +459,7 @@ if __name__ in {"__main__", "__mp_main__"}:
             "uvicorn_reload_excludes": "__pycache__,*.py[cod]",
         }
     else:
-        # VS Code 调试模式：避免 watchfiles 重启进程时触发 debugpy/pydevd 线程补丁异常。
+        # 显式设置 NICEGUI_RELOAD=false 时使用的无热重载模式。
         run_environment_options = {
             "reload": False,
             "reconnect_timeout": 3.0,

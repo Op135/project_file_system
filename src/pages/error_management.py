@@ -2231,7 +2231,7 @@ async def error_management_page(error_id: str = ""):
                     ui.button("查询", icon="search", on_click=lambda: refresh_list()).props("outline color=primary")
                     ui.button("刷新", icon="refresh", on_click=lambda: refresh_list()).props("flat color=primary")
                 with ui.row().classes("gap-2 items-center"):
-                    ui.label("点击“详情”或双击行打开详情").classes("text-xs text-gray-500")
+                    ui.label("点击“详情”打开详情").classes("text-xs text-gray-500")
                     if is_error_rd_manager(current_role):
                         ui.button(
                             "检查提醒",
