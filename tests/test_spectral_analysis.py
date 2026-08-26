@@ -92,6 +92,38 @@ class SpectralCalculationTests(unittest.TestCase):
         self.assertAlmostEqual(d65.XYZ[1], 100.0)
         self.assertAlmostEqual(max(d65.normalized_values), 1.0)
         self.assertLess(d65.cri_reference_distance or 1, 5.4e-3)
+        self.assertEqual(d65.peak_wavelength, 460.0)
+        self.assertIsNotNone(d65.dominant_wavelength)
+        self.assertIsNone(d65.complementary_wavelength)
+        illuminant_a = self.results[1]
+        self.assertAlmostEqual(illuminant_a.dominant_wavelength or 0, 583.5, delta=0.1)
+        self.assertNotEqual(
+            illuminant_a.dominant_wavelength,
+            round(illuminant_a.dominant_wavelength or 0),
+        )
+
+    def test_monochromatic_spectrum_peak_and_dominant_wavelength_agree(self):
+        result = analyze_spectrum_chromaticity(
+            SpectrumInput(
+                "555 nm 窄带",
+                (360.0, 554.0, 555.0, 556.0, 780.0),
+                (0.0, 0.0, 1.0, 0.0, 0.0),
+            )
+        )
+        self.assertEqual(result.peak_wavelength, 555.0)
+        self.assertAlmostEqual(result.dominant_wavelength or 0, 555.0, delta=0.6)
+        self.assertIsNone(result.complementary_wavelength)
+
+    def test_purple_spectrum_reports_complement_instead_of_dominant_wavelength(self):
+        result = analyze_spectrum_chromaticity(
+            SpectrumInput(
+                "紫色双峰",
+                (360.0, 449.0, 450.0, 451.0, 649.0, 650.0, 651.0, 780.0),
+                (0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0),
+            )
+        )
+        self.assertIsNone(result.dominant_wavelength)
+        self.assertAlmostEqual(result.complementary_wavelength or 0, 566.0, delta=1.0)
 
     def test_calculation_requires_visible_range_coverage(self):
         with self.assertRaisesRegex(SpectralAnalysisError, "至少应覆盖"):
@@ -172,6 +204,11 @@ class SpectralCalculationTests(unittest.TestCase):
         self.assertAlmostEqual(second_only.xy[0], second_result.xy[0], places=5)
         self.assertGreater(midpoint.xy[0], min(first_result.xy[0], second_result.xy[0]))
         self.assertLess(midpoint.xy[0], max(first_result.xy[0], second_result.xy[0]))
+        self.assertIn(midpoint.peak_wavelength, midpoint.wavelengths)
+        self.assertTrue(
+            midpoint.dominant_wavelength is not None
+            or midpoint.complementary_wavelength is not None
+        )
 
     def test_three_spectrum_solver_recovers_known_nonnegative_peak_ratios(self):
         source_results = (

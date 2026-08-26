@@ -244,9 +244,9 @@ def _side_legend_options(names: list[Any]) -> dict[str, Any]:
         "tooltip": {"show": True},
         "textStyle": {
             "fontSize": 12,
-            "width": 135,
-            "overflow": "truncate",
-            "ellipsis": "…",
+            "width": 160,
+            "overflow": "breakAll",
+            "lineHeight": 17,
         },
         "data": names,
     }
@@ -765,6 +765,8 @@ def _spectrum_summary_rows(results: list[SpectrumResult]) -> list[dict[str, Any]
     return [
         {
             "name": item.name,
+            "peak_wavelength": f"{item.peak_wavelength:.1f}",
+            "dominant_wavelength": _dominant_wavelength_metric(item),
             "cct": "—" if item.cct is None else f"{item.cct:.0f}",
             "duv": _metric(item.duv, 6),
             "x": _metric(item.xy[0], 5),
@@ -779,6 +781,16 @@ def _spectrum_summary_rows(results: list[SpectrumResult]) -> list[dict[str, Any]
         }
         for item in results
     ]
+
+
+def _dominant_wavelength_metric(result: MixingSpectrumResult) -> str:
+    """格式化主波长；紫边方向明确标注为补色波长。"""
+
+    if result.dominant_wavelength is not None:
+        return f"{result.dominant_wavelength:.1f} nm"
+    if result.complementary_wavelength is not None:
+        return f"—（补色 {result.complementary_wavelength:.1f} nm）"
+    return "—"
 
 
 def _spectrum_chart_options(
@@ -1365,7 +1377,7 @@ class SpectralAnalyzerTool:
 
         if self.spectrum_results and not self.series_styles:
             self.series_styles = _default_series_styles(self.spectrum_results)
-        mixing_step_labels: dict[str, tuple[Any, Any, Any]] = {}
+        mixing_step_labels: dict[str, tuple[Any, Any, Any, Any]] = {}
         mixing_solve_task: asyncio.Task[None] | None = None
         mixing_solve_generation = 0
         mixing_solve_pending = False
@@ -1841,6 +1853,18 @@ class SpectralAnalyzerTool:
                     if self.spectrum_results:
                         columns = [
                             {"name": "name", "label": "光谱", "field": "name", "align": "left"},
+                            {
+                                "name": "peak_wavelength",
+                                "label": "峰值波长(nm)",
+                                "field": "peak_wavelength",
+                                "align": "right",
+                            },
+                            {
+                                "name": "dominant_wavelength",
+                                "label": "主波长 λd",
+                                "field": "dominant_wavelength",
+                                "align": "right",
+                            },
                             {"name": "cct", "label": "CCT(K)", "field": "cct", "align": "right"},
                             {"name": "duv", "label": "Duv", "field": "duv", "align": "right"},
                             {"name": "x", "label": "x", "field": "x", "align": "right"},
@@ -1857,6 +1881,7 @@ class SpectralAnalyzerTool:
                             "dense flat bordered wrap-cells"
                         ).classes("w-full")
                         ui.label(
+                            "峰值波长取光谱最大值所在采样点；主波长以等能白点 E 为参考，紫边方向显示补色波长。"
                             "XYZ 已按 Y=100 归一化；Ra 仍取 R1–R8 平均，R15 标注为 JIS 扩展。"
                         ).classes("text-xs text-slate-500 mt-2")
                     if self.coordinate_results:
@@ -2058,8 +2083,8 @@ class SpectralAnalyzerTool:
         def mixing_step_summary_parts(
             step: dict[str, Any],
             nodes: dict[str, MixingSpectrumResult],
-        ) -> tuple[str, str, str]:
-            """把单个组合步骤格式化为左右配比和中央实时色坐标。"""
+        ) -> tuple[str, str, str, str]:
+            """格式化单个组合步骤的配比、色坐标及混合后波长指标。"""
 
             ratio = _nonnegative_number(step.get("ratio"), 50.0)
             first = nodes[str(step["first_id"])]
@@ -2069,6 +2094,7 @@ class SpectralAnalyzerTool:
                 f"{first.name} {ratio:.0f}%",
                 f"xy = ({result.xy[0]:.6f}, {result.xy[1]:.6f})",
                 f"{second.name} {100 - ratio:.0f}%",
+                f"混合后：峰值 {result.peak_wavelength:.1f} nm；主波长 {_dominant_wavelength_metric(result)}",
             )
 
         @ui.refreshable
@@ -2119,6 +2145,8 @@ class SpectralAnalyzerTool:
                 return
             metrics = [
                 ("目标混合 xy", f"{result.xy[0]:.6f}, {result.xy[1]:.6f}"),
+                ("混合光谱峰值波长", f"{result.peak_wavelength:.1f} nm"),
+                ("混合光谱主波长", _dominant_wavelength_metric(result)),
                 ("CCT", "—" if result.cct is None else f"{result.cct:.0f} K"),
                 ("Duv", _metric(result.duv, 6)),
                 ("混合光功率", f"{power_result.radiant_power:.6g} W"),
@@ -2161,7 +2189,8 @@ class SpectralAnalyzerTool:
                 rows=power_rows,
             ).props("dense flat bordered").classes("w-full mt-2")
             ui.label(
-                "按 360–780 nm 辐射功率上限整体放大到首个光谱达到上限；光通量采用 CIE 1924 明视觉函数计算。"
+                "波长指标由最终混合光谱重新计算，主波长以等能白点 E 为参考；"
+                "按 360–780 nm 辐射功率上限整体放大到首个光谱达到上限，光通量采用 CIE 1924 明视觉函数计算。"
             ).classes("text-xs text-blue-700 mt-1")
 
         @ui.refreshable
@@ -2545,10 +2574,14 @@ class SpectralAnalyzerTool:
                                             second_label = ui.label(summary_parts[2]).classes(
                                                 "w-full min-w-0 text-center text-sm text-blue-800"
                                             )
+                                        wavelength_label = ui.label(summary_parts[3]).classes(
+                                            "w-full text-center text-xs text-slate-600"
+                                        )
                                         mixing_step_labels[str(step["id"])] = (
                                             first_label,
                                             coordinate_label,
                                             second_label,
+                                            wavelength_label,
                                         )
                                         ui.slider(
                                             min=0,

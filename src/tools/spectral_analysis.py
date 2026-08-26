@@ -44,6 +44,7 @@ STANDARD_ILLUMINANTS = {
     "LED-RGB1": "CIE LED-RGB1（RGB LED）",
 }
 ISOTHERM_TEMPERATURES = (1500, 2000, 2500, 3000, 4000, 5000, 6500, 10000, 20000)
+EQUAL_ENERGY_WHITE_XY = (1 / 3, 1 / 3)
 
 
 class SpectralAnalysisError(ValueError):
@@ -85,6 +86,9 @@ class SpectrumResult:
     upvp: tuple[float, float]
     cct: float | None
     duv: float | None
+    peak_wavelength: float
+    dominant_wavelength: float | None
+    complementary_wavelength: float | None
     cri_reference_distance: float | None
     reference_name: str | None
     reference_xy: tuple[float, float] | None
@@ -135,6 +139,9 @@ class SpectrumChromaticityResult:
     upvp: tuple[float, float]
     cct: float | None
     duv: float | None
+    peak_wavelength: float
+    dominant_wavelength: float | None
+    complementary_wavelength: float | None
     warnings: tuple[str, ...]
     normalization_factor: float = 1.0
 
@@ -169,6 +176,100 @@ def _require_colour() -> Any:
         except ImportError as exc:  # pragma: no cover - 仅在部署环境漏装依赖时触发
             raise SpectralAnalysisError("缺少 colour-science 0.4.7，请先安装该计算依赖") from exc
     return colour
+
+
+@lru_cache(maxsize=1)
+def _spectral_locus_xy_samples() -> tuple[tuple[float, float, float], ...]:
+    """返回 380–780 nm CIE 1931 2° 光谱轨迹采样点。"""
+
+    colour_module = _require_colour()
+    cmfs = colour_module.MSDS_CMFS["CIE 1931 2 Degree Standard Observer"]
+    wavelengths = np.asarray(cmfs.wavelengths, dtype=float)
+    xy_values = np.asarray(colour_module.XYZ_to_xy(cmfs.values), dtype=float)
+    visible = (wavelengths >= MIN_REQUIRED_START_NM) & (wavelengths <= CALCULATION_END_NM)
+    return tuple(
+        (float(wavelength), float(xy[0]), float(xy[1]))
+        for wavelength, xy in zip(wavelengths[visible], xy_values[visible])
+    )
+
+
+def _ray_locus_intersection(
+    direction: tuple[float, float],
+    *,
+    include_purple_boundary: bool,
+) -> tuple[int, float] | None:
+    """求等能白点射线与光谱轨迹或紫边的最近交点。"""
+
+    samples = _spectral_locus_xy_samples()
+    segment_count = len(samples) if include_purple_boundary else len(samples) - 1
+    candidates: list[tuple[float, int, float]] = []
+    direction_x, direction_y = direction
+    for index in range(segment_count):
+        end_index = (index + 1) % len(samples)
+        start = samples[index]
+        end = samples[end_index]
+        segment_x, segment_y = end[1] - start[1], end[2] - start[2]
+        denominator = direction_x * segment_y - direction_y * segment_x
+        if abs(denominator) <= 1e-14:
+            continue
+        offset_x = start[1] - EQUAL_ENERGY_WHITE_XY[0]
+        offset_y = start[2] - EQUAL_ENERGY_WHITE_XY[1]
+        ray_parameter = (offset_x * segment_y - offset_y * segment_x) / denominator
+        segment_parameter = (offset_x * direction_y - offset_y * direction_x) / denominator
+        tolerance = 1e-10
+        if ray_parameter > tolerance and -tolerance <= segment_parameter <= 1 + tolerance:
+            candidates.append(
+                (ray_parameter, index, min(1.0, max(0.0, segment_parameter)))
+            )
+    if not candidates:
+        return None
+    _, segment_index, segment_parameter = min(candidates, key=lambda item: item[0])
+    return segment_index, segment_parameter
+
+
+def _dominant_and_complementary_wavelength(
+    xy: tuple[float, float],
+) -> tuple[float | None, float | None]:
+    """按等能白点 E 计算 CIE 主波长；紫边方向则返回补色波长。"""
+
+    direction = (xy[0] - EQUAL_ENERGY_WHITE_XY[0], xy[1] - EQUAL_ENERGY_WHITE_XY[1])
+    if math.hypot(*direction) <= 1e-10:
+        return None, None
+
+    samples = _spectral_locus_xy_samples()
+    intersection = _ray_locus_intersection(direction, include_purple_boundary=True)
+    if intersection is None:
+        return None, None
+    segment_index, segment_parameter = intersection
+    if segment_index < len(samples) - 1:
+        wavelength = samples[segment_index][0] + segment_parameter * (
+            samples[segment_index + 1][0] - samples[segment_index][0]
+        )
+        return wavelength, None
+
+    complementary_intersection = _ray_locus_intersection(
+        (-direction[0], -direction[1]),
+        include_purple_boundary=False,
+    )
+    if complementary_intersection is None:
+        return None, None
+    segment_index, segment_parameter = complementary_intersection
+    wavelength = samples[segment_index][0] + segment_parameter * (
+        samples[segment_index + 1][0] - samples[segment_index][0]
+    )
+    return None, wavelength
+
+
+def _spectrum_wavelength_metrics(
+    wavelengths: np.ndarray,
+    values: np.ndarray,
+    xy: tuple[float, float],
+) -> tuple[float, float | None, float | None]:
+    """计算光谱峰值波长，以及相对等能白点 E 的主波长或补色波长。"""
+
+    peak_wavelength = float(wavelengths[int(np.argmax(values))])
+    dominant_wavelength, complementary_wavelength = _dominant_and_complementary_wavelength(xy)
+    return peak_wavelength, dominant_wavelength, complementary_wavelength
 
 
 def _split_row(line: str) -> list[str]:
@@ -582,6 +683,11 @@ def analyze_spectrum(spectrum: SpectrumInput) -> SpectrumResult:
     upvp = (uv[0], uv[1] * 1.5)
     cct, duv, cct_warnings = _cct_duv_from_uv(uv)
     warnings.extend(cct_warnings)
+    peak_wavelength, dominant_wavelength, complementary_wavelength = _spectrum_wavelength_metrics(
+        wavelengths,
+        values,
+        xy,
+    )
 
     reference_distance: float | None = None
     reference_name: str | None = None
@@ -642,6 +748,9 @@ def analyze_spectrum(spectrum: SpectrumInput) -> SpectrumResult:
         upvp=upvp,
         cct=cct,
         duv=duv,
+        peak_wavelength=peak_wavelength,
+        dominant_wavelength=dominant_wavelength,
+        complementary_wavelength=complementary_wavelength,
         cri_reference_distance=reference_distance,
         reference_name=reference_name,
         reference_xy=reference_xy,
@@ -698,6 +807,11 @@ def analyze_spectrum_chromaticity(spectrum: SpectrumInput) -> SpectrumChromatici
     xy = (float(xy_values[0]), float(xy_values[1]))
     uv = _xy_to_uv(xy)
     cct, duv, warnings = _cct_duv_from_uv(uv)
+    peak_wavelength, dominant_wavelength, complementary_wavelength = _spectrum_wavelength_metrics(
+        calculation_grid,
+        aligned_values,
+        xy,
+    )
     return SpectrumChromaticityResult(
         name=spectrum.name,
         wavelengths=tuple(float(value) for value in calculation_grid),
@@ -713,6 +827,9 @@ def analyze_spectrum_chromaticity(spectrum: SpectrumInput) -> SpectrumChromatici
         upvp=(uv[0], uv[1] * 1.5),
         cct=cct,
         duv=duv,
+        peak_wavelength=peak_wavelength,
+        dominant_wavelength=dominant_wavelength,
+        complementary_wavelength=complementary_wavelength,
         warnings=tuple(dict.fromkeys(warnings)),
     )
 

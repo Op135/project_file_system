@@ -194,6 +194,8 @@ class SpectralAnalyzerOptionsTests(unittest.TestCase):
         self.assertEqual(compact_options["legend"]["type"], "plain")
         self.assertEqual(compact_options["legend"]["orient"], "vertical")
         self.assertTrue(str(compact_options["legend"]["left"]).endswith("%"))
+        self.assertEqual(compact_options["legend"]["textStyle"]["overflow"], "breakAll")
+        self.assertNotIn("ellipsis", compact_options["legend"]["textStyle"])
         self.assertEqual(xy_options["xAxis"]["axisLabel"]["fontSize"], 15)
         self.assertEqual(xy_options["yAxis"]["axisLabel"]["fontSize"], 15)
         self.assertEqual(xy_options["xAxis"]["nameTextStyle"]["fontSize"], 18)
@@ -419,6 +421,9 @@ class SpectralAnalyzerOptionsTests(unittest.TestCase):
         spectrum_row = _spectrum_summary_rows(self.spectra)[0]
         coordinate_row = _coordinate_summary_rows(self.coordinates)[0]
         self.assertEqual(spectrum_row["name"], "D65")
+        self.assertEqual(spectrum_row["peak_wavelength"], "460.0")
+        self.assertIn("nm", spectrum_row["dominant_wavelength"])
+        self.assertEqual(_spectrum_summary_rows(self.spectra)[1]["dominant_wavelength"], "583.5 nm")
         self.assertIn("r15", spectrum_row)
         self.assertIn("rf", spectrum_row)
         self.assertEqual(coordinate_row["Y"], "100.0000")
