@@ -1,8 +1,5 @@
 # -*- encoding: utf-8 -*-
-import copy
-import json
 import logging
-import os
 from datetime import datetime
 
 from nicegui import app, ui
@@ -18,7 +15,9 @@ from src.tools.simple_coupling_calculator import SimpleCouplingCalculator
 from src.tools.spectral_analyzer import SpectralAnalyzerTool
 from src.tools.spherical_lens_calculator import SphericalLensCalculator
 
-from ..config import BASE_DIR, IMG_DIR, OVER_DIR, PRESET_AVATARS, REQ_DIR, REQ_REMOVE_DIR
+from ..access_control import can_use_tool
+from ..config import BASE_DIR, IMG_DIR, PRESET_AVATARS
+from ..permission_catalog import load_tool_role_mapping
 from ..utils import (
     get_cache_busted_path,
     logout,
@@ -148,23 +147,8 @@ def tool_page():
 
     # --- 新增：加载权限配置的函数 ---
     def load_tool_permissions():
-        """
-        加载工具权限配置文件
-        建议将路径放在 config.py 中统一管理，这里为了演示直接写路径
-        """
-        # 假设文件名为 tools_permission.json，位于项目根目录或指定配置目录
-        permission_path = os.path.join(BASE_DIR, "tools_permission.json")
-
-        try:
-            if not os.path.exists(permission_path):
-                logger.warning(f"权限配置文件未找到: {permission_path}，默认所有工具可见")
-                return None  # 返回 None 表示不限制，或者你可以返回空字典 {} 表示全都不显示
-
-            with open(permission_path, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception as e:
-            logger.error(f"读取权限配置文件失败: {e}")
-            return {}
+        """加载旧角色名称，仅作为迁移前的兼容兜底。"""
+        return load_tool_role_mapping(BASE_DIR / "tools_permission.json")
 
     # --- 辅助函数：创建一致的卡片 ---
     def create_tool_card(title, subtitle, icon, color, click_handler):
@@ -186,9 +170,16 @@ def tool_page():
 
     # --- 通用 Dialog 打开器 ---
     def has_tool_permission(tool_key, role):
-        if permissions_config is None:
-            return True
-        return role in permissions_config.get(tool_key, [])
+        legacy_allowed_roles = (
+            None if permissions_config is None else permissions_config.get(tool_key, [])
+        )
+        return can_use_tool(
+            app.state.user_service,
+            current_user,
+            tool_key,
+            legacy_role=role,
+            legacy_allowed_roles=legacy_allowed_roles,
+        )
 
     def open_tool(ToolClass, tool_key):
         # 点击时重新同步角色并再次校验，避免只依赖工具卡片的可见性。

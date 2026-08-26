@@ -1,9 +1,8 @@
-"""Relational identity, organization, permission, and external-account storage.
+"""关系型身份、组织、权限与外部账号存储。
 
-The application historically stores users in ``data/users.xlsx``.  This module
-provides the target SQLite schema and deliberately keeps migration explicit and
-idempotent: the workbook is read from the machine on which the migration runs,
-so development and production passwords are never mixed.
+系统过去将用户保存在 ``data/users.xlsx``。本模块提供目标 SQLite 架构，并确保迁移
+需要显式执行且可以安全重复：迁移读取执行机器上的工作簿，因此开发环境与生产环境的
+密码不会混用。
 """
 
 from __future__ import annotations
@@ -24,6 +23,9 @@ from typing import Any, Iterable
 
 import pandas as pd
 
+from .permission_catalog import ignores_legacy_role_grants
+from .identity_codes import normalize_stable_code, validate_stable_code
+
 PASSWORD_SCHEME = "pbkdf2_sha256"
 PASSWORD_ITERATIONS = 390_000
 ACTIVE_USER_STATUSES = {"active"}
@@ -34,7 +36,7 @@ def _now_text() -> str:
 
 
 def hash_password(password: str, *, iterations: int = PASSWORD_ITERATIONS) -> str:
-    """Return a versioned PBKDF2-SHA256 password hash."""
+    """生成带版本信息的 PBKDF2-SHA256 密码哈希。"""
     if not isinstance(password, str):
         raise TypeError("密码必须是字符串")
     salt = uuid.uuid4().bytes
@@ -50,7 +52,7 @@ def hash_password(password: str, *, iterations: int = PASSWORD_ITERATIONS) -> st
 
 
 def verify_password(password: str, encoded: str | None) -> bool:
-    """Verify a password without exposing the stored value to callers."""
+    """校验密码，同时不向调用方暴露存储值。"""
     if not encoded or not isinstance(password, str):
         return False
     try:
@@ -81,11 +83,11 @@ class UserMigrationResult:
 
 
 class IdentityStore:
-    """Small synchronous repository used by login and NiceGUI callbacks.
+    """供登录逻辑和 NiceGUI 回调使用的小型同步数据仓库。
 
-    It shares the existing SQLite database file, but owns only ``iam_*``,
-    ``org_*`` and ``work_assignments`` tables.  WAL and a process lock keep its
-    short transactions compatible with the application's aiosqlite storage.
+    本仓库与现有系统共用 SQLite 文件，但只维护 ``iam_*``、``org_*`` 和
+    ``work_assignments`` 表。通过 WAL 与进程锁，让短事务能够和系统现有的 aiosqlite
+    存储安全共存。
     """
 
     def __init__(self, db_path: Path | str, *, password_iterations: int = PASSWORD_ITERATIONS):
@@ -207,6 +209,14 @@ class IdentityStore:
             )
             """,
             """
+            CREATE TABLE IF NOT EXISTS iam_position_permissions (
+                position_id TEXT NOT NULL REFERENCES iam_positions(position_id),
+                permission_id TEXT NOT NULL REFERENCES iam_permissions(permission_id),
+                created_at TEXT NOT NULL,
+                PRIMARY KEY (position_id, permission_id)
+            )
+            """,
+            """
             CREATE TABLE IF NOT EXISTS iam_user_roles (
                 user_id TEXT NOT NULL REFERENCES iam_users(user_id),
                 role_id TEXT NOT NULL REFERENCES iam_security_roles(role_id),
@@ -265,14 +275,15 @@ class IdentityStore:
             )
             """,
             "CREATE INDEX IF NOT EXISTS idx_org_memberships_user ON org_memberships(user_id, status)",
+            "CREATE INDEX IF NOT EXISTS idx_position_permissions_position "
+            "ON iam_position_permissions(position_id)",
             "CREATE INDEX IF NOT EXISTS idx_work_assignments_assignee ON work_assignments(assignee_user_id, status)",
         ]
         with self._lock, self._connect() as connection:
             connection.execute("PRAGMA journal_mode=WAL")
             for statement in statements:
                 connection.execute(statement)
-            # Existing installations may already have the first IAM schema.
-            # Add source/override metadata without rebuilding populated tables.
+            # 现有安装可能已经包含第一版身份表，直接补充来源和覆盖元数据，避免重建数据表。
             org_columns = {row["name"] for row in connection.execute("PRAGMA table_info(org_units)").fetchall()}
             org_override_added = "manual_override" not in org_columns
             for column_name, definition in {
@@ -284,8 +295,7 @@ class IdentityStore:
                 if column_name not in org_columns:
                     connection.execute(f"ALTER TABLE org_units ADD COLUMN {column_name} {definition}")
             if org_override_added:
-                # We cannot know whether an imported department was manually
-                # edited before this metadata existed, so preserve it by default.
+                # 无法判断旧版导入部门是否被手工编辑过，因此默认保护其现有内容。
                 connection.execute(
                     "UPDATE org_units SET source='wecom', manual_override=1 "
                     "WHERE wecom_department_id IS NOT NULL AND wecom_department_id<>''"
@@ -302,7 +312,7 @@ class IdentityStore:
                 if column_name not in position_columns:
                     connection.execute(f"ALTER TABLE iam_positions ADD COLUMN {column_name} {definition}")
             connection.execute(
-                "INSERT INTO iam_meta(key, value, updated_at) VALUES('schema_version', '1', ?) "
+                "INSERT INTO iam_meta(key, value, updated_at) VALUES('schema_version', '3', ?) "
                 "ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at",
                 (_now_text(),),
             )
@@ -397,11 +407,10 @@ class IdentityStore:
         backup_dir: Path | str | None = None,
         refresh_existing_passwords: bool = False,
     ) -> UserMigrationResult:
-        """Import the current machine's workbook in one atomic, repeatable pass.
+        """以原子且可重复执行的方式导入当前机器上的用户工作簿。
 
-        Existing database password hashes are preserved unless
-        ``refresh_existing_passwords`` is explicitly requested.  This makes the
-        normal one-click action safe to repeat after deployment.
+        除非明确传入 ``refresh_existing_passwords``，否则保留数据库中已有的密码哈希，
+        确保部署后可以安全地重复执行普通一键迁移。
         """
         source = Path(excel_path)
         if not source.exists():
@@ -479,8 +488,7 @@ class IdentityStore:
                             updated += 1
                         else:
                             unchanged += 1
-                    # A migrated user has exactly one compatibility role.  New
-                    # permission roles can be added later without relying on it.
+                    # 每个迁移用户只保留一个兼容角色，后续可另外叠加不依赖它的新权限角色。
                     legacy_role_ids = connection.execute(
                         "SELECT ur.role_id FROM iam_user_roles ur "
                         "JOIN iam_security_roles r ON r.role_id=ur.role_id "
@@ -696,8 +704,9 @@ class IdentityStore:
         parent_org_unit_id: str | None = None,
         wecom_department_id: str | None = None,
         sort_order: int = 0,
+        reject_existing: bool = False,
     ) -> str:
-        code = str(code).strip()
+        code = normalize_stable_code(code)
         name = str(name).strip()
         if not code or not name:
             raise ValueError("部门编码和名称不能为空")
@@ -708,6 +717,8 @@ class IdentityStore:
                 (code,),
             ).fetchone()
             if existing:
+                if reject_existing:
+                    raise ValueError(f"部门编码已存在：{code}")
                 org_unit_id = existing["org_unit_id"]
                 if parent_org_unit_id == org_unit_id:
                     raise ValueError("部门不能把自己设为上级部门")
@@ -725,6 +736,9 @@ class IdentityStore:
                     ),
                 )
             else:
+                error = validate_stable_code(code)
+                if error:
+                    raise ValueError(error)
                 org_unit_id = str(uuid.uuid4())
                 connection.execute(
                     "INSERT INTO org_units(org_unit_id, code, name, parent_org_unit_id, wecom_department_id, "
@@ -744,7 +758,7 @@ class IdentityStore:
         return org_unit_id
 
     def import_wecom_departments(self, departments: Iterable[dict[str, Any]]) -> tuple[int, int]:
-        """Upsert the administrator-selected WeCom department snapshot."""
+        """新增或更新管理员选定的企业微信部门快照。"""
         normalized = [item for item in departments if str(item.get("id", "")).strip()]
         if not normalized:
             return 0, 0
@@ -808,11 +822,37 @@ class IdentityStore:
 
     def list_positions(self) -> list[dict[str, Any]]:
         with self._lock, self._connect() as connection:
-            rows = connection.execute("SELECT * FROM iam_positions ORDER BY level DESC, name").fetchall()
-        return [dict(row) for row in rows]
+            rows = connection.execute(
+                "SELECT p.*, COUNT(DISTINCT CASE WHEN m.status='active' AND u.status='active' "
+                "THEN m.user_id END) AS member_count "
+                "FROM iam_positions p LEFT JOIN org_memberships m ON m.position_id=p.position_id "
+                "LEFT JOIN iam_users u ON u.user_id=m.user_id "
+                "GROUP BY p.position_id ORDER BY p.level DESC, p.name"
+            ).fetchall()
+            permission_rows = connection.execute(
+                "SELECT pp.position_id, permission.code FROM iam_position_permissions pp "
+                "JOIN iam_permissions permission ON permission.permission_id=pp.permission_id "
+                "ORDER BY permission.code"
+            ).fetchall()
+        permission_map: dict[str, list[str]] = {}
+        for row in permission_rows:
+            permission_map.setdefault(row["position_id"], []).append(row["code"])
+        result = []
+        for row in rows:
+            item = dict(row)
+            item["permission_codes"] = permission_map.get(row["position_id"], [])
+            result.append(item)
+        return result
 
-    def save_position(self, *, code: str, name: str, level: int = 0) -> str:
-        code = str(code).strip()
+    def save_position(
+        self,
+        *,
+        code: str,
+        name: str,
+        level: int = 0,
+        reject_existing: bool = False,
+    ) -> str:
+        code = normalize_stable_code(code)
         name = str(name).strip()
         if not code or not name:
             raise ValueError("岗位编码和名称不能为空")
@@ -823,6 +863,8 @@ class IdentityStore:
                 (code,),
             ).fetchone()
             if row:
+                if reject_existing:
+                    raise ValueError(f"岗位编码已存在：{code}")
                 position_id = row["position_id"]
                 connection.execute(
                     "UPDATE iam_positions SET name=?, level=?, manual_override=?, status='active', "
@@ -830,6 +872,9 @@ class IdentityStore:
                     (name, int(level), int(row["source"] == "wecom"), now, position_id),
                 )
             else:
+                error = validate_stable_code(code)
+                if error:
+                    raise ValueError(error)
                 position_id = str(uuid.uuid4())
                 connection.execute(
                     "INSERT INTO iam_positions(position_id, code, name, source, manual_override, level, "
@@ -839,11 +884,10 @@ class IdentityStore:
         return position_id
 
     def import_wecom_positions(self, contacts: Iterable[dict[str, Any]]) -> tuple[int, int]:
-        """Import distinct WeCom position text without replacing local overrides.
+        """导入不重复的企业微信职务文本，同时保留本地覆盖内容。
 
-        WeCom exposes position as free text rather than a stable position ID.
-        Consequently a renamed external position is imported as a new candidate
-        instead of guessing that two different strings are the same job.
+        企业微信以自由文本而非稳定岗位 ID 提供职务，因此外部职务改名后会作为新的岗位
+        候选导入，不猜测两个不同文本是否代表同一岗位。
         """
         names = sorted(
             {
@@ -876,8 +920,7 @@ class IdentityStore:
                     (external_name,),
                 ).fetchone()
                 if same_name:
-                    # An identical system-defined position already represents
-                    # this text; do not create a visually duplicated candidate.
+                    # 系统中已有同名岗位可以表达该职务，不再建立视觉上重复的候选项。
                     continue
                 digest = hashlib.sha256(external_name.encode("utf-8")).hexdigest()[:16]
                 code = f"wecom.position.{digest}"
@@ -961,3 +1004,519 @@ class IdentityStore:
                     ),
                 )
         return True
+
+    # ------------------------------------------------------------------
+    # 稳定权限与安全角色
+
+    @staticmethod
+    def _validate_security_role_code(code: str) -> str:
+        normalized = normalize_stable_code(code)
+        error = validate_stable_code(normalized)
+        if error:
+            raise ValueError(error)
+        if normalized.startswith("legacy."):
+            raise ValueError("legacy. 前缀由系统兼容层保留")
+        return normalized
+
+    @staticmethod
+    def _audit(
+        connection: sqlite3.Connection,
+        *,
+        actor_username: str | None,
+        action: str,
+        target_type: str,
+        target_id: str,
+        detail: dict[str, Any] | None = None,
+    ) -> None:
+        actor_user_id = None
+        if actor_username:
+            actor = connection.execute(
+                "SELECT user_id FROM iam_users WHERE username=? COLLATE NOCASE",
+                (str(actor_username).strip(),),
+            ).fetchone()
+            actor_user_id = actor["user_id"] if actor else None
+        connection.execute(
+            "INSERT INTO iam_audit_logs(audit_id, actor_user_id, action, target_type, target_id, "
+            "detail_json, created_at) VALUES(?, ?, ?, ?, ?, ?, ?)",
+            (
+                str(uuid.uuid4()),
+                actor_user_id,
+                action,
+                target_type,
+                str(target_id),
+                json.dumps(detail or {}, ensure_ascii=False),
+                _now_text(),
+            ),
+        )
+
+    def seed_permission_catalog(
+        self,
+        permissions: Iterable[dict[str, Any]],
+        default_grants: dict[str, set[str]] | None = None,
+    ) -> tuple[int, int]:
+        """新增或更新权限元数据，并只应用一次兼容默认授权。
+
+        每一组默认角色与权限关系都会写入初始化标记。管理员之后移除授权时，重复启动或
+        迁移不会悄悄将其重新添加。
+        """
+        normalized_permissions: list[dict[str, str]] = []
+        for item in permissions:
+            code = str(item.get("code", "")).strip().lower()
+            name = str(item.get("name", "")).strip()
+            module = str(item.get("module", "")).strip()
+            if not code or not name or not module:
+                raise ValueError("权限编码、名称和模块不能为空")
+            normalized_permissions.append(
+                {
+                    "code": code,
+                    "name": name,
+                    "module": module,
+                    "description": str(item.get("description", "")).strip(),
+                }
+            )
+
+        inserted_permissions = inserted_grants = 0
+        now = _now_text()
+        grants_by_role = {
+            str(role_name).strip().casefold(): {str(code).strip().lower() for code in codes}
+            for role_name, codes in (default_grants or {}).items()
+            if str(role_name).strip()
+        }
+        with self._lock, self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            for item in normalized_permissions:
+                existing = connection.execute(
+                    "SELECT permission_id FROM iam_permissions WHERE code=? COLLATE NOCASE",
+                    (item["code"],),
+                ).fetchone()
+                if existing:
+                    connection.execute(
+                        "UPDATE iam_permissions SET name=?, module=?, description=?, updated_at=? "
+                        "WHERE permission_id=?",
+                        (
+                            item["name"],
+                            item["module"],
+                            item["description"],
+                            now,
+                            existing["permission_id"],
+                        ),
+                    )
+                else:
+                    connection.execute(
+                        "INSERT INTO iam_permissions(permission_id, code, name, module, description, "
+                        "created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?)",
+                        (
+                            str(uuid.uuid4()),
+                            item["code"],
+                            item["name"],
+                            item["module"],
+                            item["description"],
+                            now,
+                            now,
+                        ),
+                    )
+                    inserted_permissions += 1
+
+            permission_rows = connection.execute(
+                "SELECT permission_id, code FROM iam_permissions"
+            ).fetchall()
+            permission_ids = {row["code"].lower(): row["permission_id"] for row in permission_rows}
+            role_rows = connection.execute(
+                "SELECT role_id, name FROM iam_security_roles"
+            ).fetchall()
+            for role in role_rows:
+                for permission_code in grants_by_role.get(str(role["name"]).casefold(), set()):
+                    permission_id = permission_ids.get(permission_code)
+                    if not permission_id:
+                        continue
+                    marker_key = f"permission_default:{role['role_id']}:{permission_id}"
+                    marker = connection.execute(
+                        "SELECT 1 FROM iam_meta WHERE key=?",
+                        (marker_key,),
+                    ).fetchone()
+                    if marker:
+                        continue
+                    cursor = connection.execute(
+                        "INSERT OR IGNORE INTO iam_role_permissions(role_id, permission_id, created_at) "
+                        "VALUES(?, ?, ?)",
+                        (role["role_id"], permission_id, now),
+                    )
+                    inserted_grants += max(0, cursor.rowcount)
+                    connection.execute(
+                        "INSERT INTO iam_meta(key, value, updated_at) VALUES(?, 'applied', ?)",
+                        (marker_key, now),
+                    )
+        return inserted_permissions, inserted_grants
+
+    def list_permissions(self) -> list[dict[str, Any]]:
+        with self._lock, self._connect() as connection:
+            rows = connection.execute(
+                "SELECT p.*, COUNT(rp.role_id) AS role_count "
+                "FROM iam_permissions p LEFT JOIN iam_role_permissions rp "
+                "ON rp.permission_id=p.permission_id "
+                "GROUP BY p.permission_id ORDER BY p.module, p.name, p.code"
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def get_position_permission_codes(self, position_id: str) -> set[str]:
+        with self._lock, self._connect() as connection:
+            rows = connection.execute(
+                "SELECT permission.code FROM iam_position_permissions pp "
+                "JOIN iam_permissions permission ON permission.permission_id=pp.permission_id "
+                "WHERE pp.position_id=? ORDER BY permission.code",
+                (str(position_id),),
+            ).fetchall()
+        return {str(row["code"]) for row in rows}
+
+    def set_position_permissions(
+        self,
+        position_id: str,
+        permission_codes: Iterable[str],
+        *,
+        actor_username: str | None = None,
+    ) -> bool:
+        normalized_codes = list(
+            dict.fromkeys(str(code).strip().lower() for code in permission_codes if str(code).strip())
+        )
+        now = _now_text()
+        with self._lock, self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            position = connection.execute(
+                "SELECT position_id, name FROM iam_positions WHERE position_id=?",
+                (str(position_id),),
+            ).fetchone()
+            if not position:
+                raise ValueError("岗位不存在")
+            permission_ids: list[str] = []
+            if normalized_codes:
+                placeholders = ",".join("?" for _ in normalized_codes)
+                rows = connection.execute(
+                    f"SELECT permission_id, code FROM iam_permissions WHERE code IN ({placeholders})",
+                    normalized_codes,
+                ).fetchall()
+                found = {str(row["code"]).lower(): row["permission_id"] for row in rows}
+                missing = [code for code in normalized_codes if code not in found]
+                if missing:
+                    raise ValueError(f"存在无效权限编码：{'、'.join(missing)}")
+                permission_ids = [found[code] for code in normalized_codes]
+            connection.execute(
+                "DELETE FROM iam_position_permissions WHERE position_id=?",
+                (position["position_id"],),
+            )
+            connection.executemany(
+                "INSERT INTO iam_position_permissions(position_id, permission_id, created_at) "
+                "VALUES(?, ?, ?)",
+                [(position["position_id"], permission_id, now) for permission_id in permission_ids],
+            )
+            self._audit(
+                connection,
+                actor_username=actor_username,
+                action="position_permissions_updated",
+                target_type="position",
+                target_id=position["position_id"],
+                detail={"name": position["name"], "permissions": normalized_codes},
+            )
+        return True
+
+    def list_security_roles(self, *, include_disabled: bool = True) -> list[dict[str, Any]]:
+        where_clause = "" if include_disabled else "WHERE r.status='active'"
+        with self._lock, self._connect() as connection:
+            rows = connection.execute(
+                "SELECT r.*, COUNT(DISTINCT ur.user_id) AS user_count "
+                "FROM iam_security_roles r LEFT JOIN iam_user_roles ur ON ur.role_id=r.role_id "
+                f"{where_clause} GROUP BY r.role_id "
+                "ORDER BY CASE r.status WHEN 'active' THEN 0 ELSE 1 END, r.name, r.code"
+            ).fetchall()
+            permission_rows = connection.execute(
+                "SELECT rp.role_id, p.code FROM iam_role_permissions rp "
+                "JOIN iam_permissions p ON p.permission_id=rp.permission_id ORDER BY p.code"
+            ).fetchall()
+        permission_map: dict[str, list[str]] = {}
+        for row in permission_rows:
+            permission_map.setdefault(row["role_id"], []).append(row["code"])
+        result = []
+        for row in rows:
+            item = dict(row)
+            item["permission_codes"] = permission_map.get(row["role_id"], [])
+            item["is_compatibility"] = str(row["code"]).startswith("legacy.")
+            result.append(item)
+        return result
+
+    def create_security_role(
+        self,
+        *,
+        code: str,
+        name: str,
+        permission_codes: Iterable[str] = (),
+        actor_username: str | None = None,
+    ) -> str:
+        normalized_code = self._validate_security_role_code(code)
+        normalized_name = str(name or "").strip()
+        if not normalized_name:
+            raise ValueError("角色名称不能为空")
+        role_id = str(uuid.uuid4())
+        now = _now_text()
+        with self._lock, self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            duplicate = connection.execute(
+                "SELECT 1 FROM iam_security_roles WHERE code=? COLLATE NOCASE",
+                (normalized_code,),
+            ).fetchone()
+            if duplicate:
+                raise ValueError(f"附加权限组编码已存在：{normalized_code}")
+            connection.execute(
+                "INSERT INTO iam_security_roles(role_id, code, name, is_system, status, created_at, updated_at) "
+                "VALUES(?, ?, ?, 0, 'active', ?, ?)",
+                (role_id, normalized_code, normalized_name, now, now),
+            )
+            self._replace_role_permissions(connection, role_id, permission_codes, now)
+            self._audit(
+                connection,
+                actor_username=actor_username,
+                action="security_role_created",
+                target_type="security_role",
+                target_id=role_id,
+                detail={"code": normalized_code, "name": normalized_name},
+            )
+        return role_id
+
+    @staticmethod
+    def _replace_role_permissions(
+        connection: sqlite3.Connection,
+        role_id: str,
+        permission_codes: Iterable[str],
+        now: str,
+    ) -> list[str]:
+        normalized_codes = list(
+            dict.fromkeys(str(code).strip().lower() for code in permission_codes if str(code).strip())
+        )
+        permission_ids: list[str] = []
+        if normalized_codes:
+            placeholders = ",".join("?" for _ in normalized_codes)
+            rows = connection.execute(
+                f"SELECT permission_id, code FROM iam_permissions WHERE code IN ({placeholders})",
+                normalized_codes,
+            ).fetchall()
+            found = {str(row["code"]).lower(): row["permission_id"] for row in rows}
+            missing = [code for code in normalized_codes if code not in found]
+            if missing:
+                raise ValueError(f"存在无效权限编码：{'、'.join(missing)}")
+            permission_ids = [found[code] for code in normalized_codes]
+        connection.execute("DELETE FROM iam_role_permissions WHERE role_id=?", (role_id,))
+        connection.executemany(
+            "INSERT INTO iam_role_permissions(role_id, permission_id, created_at) VALUES(?, ?, ?)",
+            [(role_id, permission_id, now) for permission_id in permission_ids],
+        )
+        return normalized_codes
+
+    def update_security_role(
+        self,
+        role_id: str,
+        *,
+        name: str,
+        status: str = "active",
+        permission_codes: Iterable[str] = (),
+        actor_username: str | None = None,
+    ) -> bool:
+        normalized_name = str(name or "").strip()
+        if not normalized_name:
+            raise ValueError("角色名称不能为空")
+        if status not in {"active", "disabled"}:
+            raise ValueError("角色状态只支持 active 或 disabled")
+        now = _now_text()
+        with self._lock, self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            role = connection.execute(
+                "SELECT role_id, code, name FROM iam_security_roles WHERE role_id=?",
+                (str(role_id),),
+            ).fetchone()
+            if not role:
+                raise ValueError("安全角色不存在")
+            if str(role["code"]).startswith("legacy.") and normalized_name != role["name"]:
+                raise ValueError("兼容角色名称由旧角色字段维护，不能在此改名")
+            connection.execute(
+                "UPDATE iam_security_roles SET name=?, status=?, updated_at=? WHERE role_id=?",
+                (normalized_name, status, now, role["role_id"]),
+            )
+            normalized_codes = self._replace_role_permissions(
+                connection, role["role_id"], permission_codes, now
+            )
+            self._audit(
+                connection,
+                actor_username=actor_username,
+                action="security_role_updated",
+                target_type="security_role",
+                target_id=role["role_id"],
+                detail={"name": normalized_name, "status": status, "permissions": normalized_codes},
+            )
+        return True
+
+    def get_user_security_roles(
+        self,
+        username: str,
+        *,
+        include_compatibility: bool = True,
+    ) -> list[dict[str, Any]]:
+        compatibility_filter = "" if include_compatibility else "AND r.code NOT LIKE 'legacy.%'"
+        with self._lock, self._connect() as connection:
+            rows = connection.execute(
+                "SELECT r.*, GROUP_CONCAT(p.code) AS permission_codes_text FROM iam_user_roles ur "
+                "JOIN iam_users u ON u.user_id=ur.user_id "
+                "JOIN iam_security_roles r ON r.role_id=ur.role_id "
+                "LEFT JOIN iam_role_permissions rp ON rp.role_id=r.role_id "
+                "LEFT JOIN iam_permissions p ON p.permission_id=rp.permission_id "
+                f"WHERE u.username=? COLLATE NOCASE {compatibility_filter} "
+                "GROUP BY r.role_id ORDER BY r.name, r.code",
+                (str(username).strip(),),
+            ).fetchall()
+        result = []
+        for row in rows:
+            item = dict(row)
+            raw_codes = item.pop("permission_codes_text", "") or ""
+            item["permission_codes"] = sorted(code for code in raw_codes.split(",") if code)
+            item["is_compatibility"] = str(item.get("code", "")).startswith("legacy.")
+            result.append(item)
+        return result
+
+    def set_user_security_roles(
+        self,
+        username: str,
+        role_ids: Iterable[str],
+        *,
+        preserve_compatibility: bool = True,
+        actor_username: str | None = None,
+    ) -> bool:
+        user = self.get_user(username)
+        if not user:
+            raise ValueError(f"用户 {username} 不存在")
+        normalized_role_ids = list(dict.fromkeys(str(value).strip() for value in role_ids if str(value).strip()))
+        now = _now_text()
+        with self._lock, self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            if normalized_role_ids:
+                placeholders = ",".join("?" for _ in normalized_role_ids)
+                rows = connection.execute(
+                    f"SELECT role_id, code, status FROM iam_security_roles WHERE role_id IN ({placeholders})",
+                    normalized_role_ids,
+                ).fetchall()
+                found = {row["role_id"]: row for row in rows}
+                missing = [role_id for role_id in normalized_role_ids if role_id not in found]
+                if missing:
+                    raise ValueError("选择中包含不存在的安全角色")
+                disabled = [
+                    role_id
+                    for role_id in normalized_role_ids
+                    if found[role_id]["status"] != "active"
+                ]
+                if disabled:
+                    raise ValueError("不能分配已停用的安全角色")
+                if preserve_compatibility and any(
+                    str(found[role_id]["code"]).startswith("legacy.")
+                    for role_id in normalized_role_ids
+                ):
+                    raise ValueError("兼容角色由旧角色字段自动维护，不能作为附加角色分配")
+            if preserve_compatibility:
+                connection.execute(
+                    "DELETE FROM iam_user_roles WHERE user_id=? AND role_id IN "
+                    "(SELECT role_id FROM iam_security_roles WHERE code NOT LIKE 'legacy.%')",
+                    (user["user_id"],),
+                )
+            else:
+                connection.execute("DELETE FROM iam_user_roles WHERE user_id=?", (user["user_id"],))
+            connection.executemany(
+                "INSERT INTO iam_user_roles(user_id, role_id, created_at) VALUES(?, ?, ?)",
+                [(user["user_id"], role_id, now) for role_id in normalized_role_ids],
+            )
+            self._audit(
+                connection,
+                actor_username=actor_username,
+                action="user_security_roles_updated",
+                target_type="user",
+                target_id=user["user_id"],
+                detail={"username": username, "role_ids": normalized_role_ids},
+            )
+        return True
+
+    def get_user_permission_codes(self, username: str) -> set[str]:
+        with self._lock, self._connect() as connection:
+            user = connection.execute(
+                "SELECT status FROM iam_users WHERE username=? COLLATE NOCASE",
+                (str(username).strip(),),
+            ).fetchone()
+            if (
+                str(username).strip().casefold() == "admin"
+                and user
+                and user["status"] == "active"
+            ):
+                rows = connection.execute(
+                    "SELECT code FROM iam_permissions ORDER BY code"
+                ).fetchall()
+                return {str(row["code"]) for row in rows}
+            role_rows = connection.execute(
+                "SELECT DISTINCT p.code, r.code AS source_role_code FROM iam_users u "
+                "JOIN iam_user_roles ur ON ur.user_id=u.user_id "
+                "JOIN iam_security_roles r ON r.role_id=ur.role_id AND r.status='active' "
+                "JOIN iam_role_permissions rp ON rp.role_id=r.role_id "
+                "JOIN iam_permissions p ON p.permission_id=rp.permission_id "
+                "WHERE u.username=? COLLATE NOCASE AND u.status='active'",
+                (str(username).strip(),),
+            ).fetchall()
+            position_rows = connection.execute(
+                "SELECT DISTINCT p.code FROM iam_users u "
+                "JOIN org_memberships m ON m.user_id=u.user_id "
+                "AND m.status='active' AND m.is_primary=1 "
+                "JOIN iam_positions position ON position.position_id=m.position_id "
+                "AND position.status='active' "
+                "JOIN iam_position_permissions pp ON pp.position_id=position.position_id "
+                "JOIN iam_permissions p ON p.permission_id=pp.permission_id "
+                "WHERE u.username=? COLLATE NOCASE AND u.status='active'",
+                (str(username).strip(),),
+            ).fetchall()
+        role_codes = {
+            str(row["code"])
+            for row in role_rows
+            if not (
+                str(row["source_role_code"]).startswith("legacy.")
+                and ignores_legacy_role_grants(str(row["code"]))
+            )
+        }
+        return role_codes | {str(row["code"]) for row in position_rows}
+
+    def has_permission(self, username: str, permission_code: str) -> bool:
+        permission_code = str(permission_code or "").strip().lower()
+        if not permission_code:
+            return False
+        ignore_legacy_roles = int(ignores_legacy_role_grants(permission_code))
+        with self._lock, self._connect() as connection:
+            if str(username).strip().casefold() == "admin":
+                admin_permission = connection.execute(
+                    "SELECT 1 FROM iam_users u CROSS JOIN iam_permissions p "
+                    "WHERE u.username='admin' COLLATE NOCASE AND u.status='active' "
+                    "AND p.code=? COLLATE NOCASE LIMIT 1",
+                    (permission_code,),
+                ).fetchone()
+                if admin_permission:
+                    return True
+            row = connection.execute(
+                "SELECT 1 FROM iam_users u WHERE u.username=? COLLATE NOCASE AND u.status='active' AND ("
+                "EXISTS (SELECT 1 FROM iam_user_roles ur "
+                "JOIN iam_security_roles r ON r.role_id=ur.role_id AND r.status='active' "
+                "JOIN iam_role_permissions rp ON rp.role_id=r.role_id "
+                "JOIN iam_permissions p ON p.permission_id=rp.permission_id "
+                "WHERE ur.user_id=u.user_id AND p.code=? COLLATE NOCASE "
+                "AND (?=0 OR r.code NOT LIKE 'legacy.%')) "
+                "OR EXISTS (SELECT 1 FROM org_memberships m "
+                "JOIN iam_positions position ON position.position_id=m.position_id "
+                "AND position.status='active' "
+                "JOIN iam_position_permissions pp ON pp.position_id=position.position_id "
+                "JOIN iam_permissions p ON p.permission_id=pp.permission_id "
+                "WHERE m.user_id=u.user_id AND m.status='active' AND m.is_primary=1 "
+                "AND p.code=? COLLATE NOCASE)) LIMIT 1",
+                (
+                    str(username).strip(),
+                    permission_code,
+                    ignore_legacy_roles,
+                    permission_code,
+                ),
+            ).fetchone()
+        return row is not None

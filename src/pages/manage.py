@@ -6,7 +6,9 @@ import os
 
 from nicegui import app, run, ui
 
+from ..access_control import can
 from ..config import BASE_DIR, IMG_DIR, PRESET_AVATARS
+from ..identity_codes import STABLE_CODE_HINT, normalize_stable_code, validate_stable_code
 from ..requirement_overview_impact import (
     REQUIREMENT_OVERVIEW_IMPACT_STORAGE_KEY,
     RequirementOverviewImpactConfigError,
@@ -21,6 +23,7 @@ from ..utils import (
     project_summary_update,
     project_table_update_config_update,
     setup_global_activity_tracking,
+    sync_current_user_role,
     updata_overview_config,
     update_config_service,
     update_users_data,
@@ -34,21 +37,76 @@ logger = logging.getLogger(__name__)
 
 @ui.page("/manage")
 def manage_page():
-    # 管理员管理界面
-    if app.storage.user.get("current_user") != "admin":
+    current_user = app.storage.user.get("current_user")
+    if not current_user:
+        ui.navigate.to("/login")
+        return
+    current_role = sync_current_user_role()
+    # 分阶段迁移期间保留 admin 紧急入口，避免错误授权导致管理端锁死。
+    if current_user != "admin" and not can(
+        app.state.user_service,
+        current_user,
+        "system.manage",
+        legacy_role=current_role,
+        legacy_allowed_roles=["admin"],
+    ):
         ui.navigate.to("/main")  # 如果不是管理员，跳转到主界面
         return
 
     # --- 调用全局活跃跟踪组件 ---
     setup_global_activity_tracking()
 
-    current_user = app.storage.user.get("current_user")
     # 从全局存储中获取用户当前的头像设置
     # (在 main.py 中定义 "user_preferences")
     user_prefs = app.storage.general.get("user_preferences", {}).get(current_user, {})
     current_avatar_path = user_prefs.get("avatar", PRESET_AVATARS[0])  # 默认为第一个
     # 在 *显示* 前，应用缓存清除
     current_display_path = get_cache_busted_path(current_avatar_path)
+
+    def attach_stable_code_check(code_input, existing_codes_provider, entity_name):
+        """为新建编码输入框增加格式提示和实时查重。"""
+        status_label = ui.label().classes("text-xs text-gray-500 -mt-2 mb-1")
+
+        def get_error():
+            normalized = normalize_stable_code(code_input.value)
+            format_error = validate_stable_code(normalized)
+            if format_error:
+                return format_error
+            existing_codes = {
+                normalize_stable_code(value)
+                for value in existing_codes_provider()
+                if normalize_stable_code(value)
+            }
+            if normalized in existing_codes:
+                return f"{entity_name}编码已存在：{normalized}"
+            return ""
+
+        def refresh_status():
+            normalized = normalize_stable_code(code_input.value)
+            if not normalized:
+                status_label.set_text(f"格式：{STABLE_CODE_HINT}；输入大写会自动保存为小写")
+                status_label.classes(
+                    remove="text-red-600 text-green-600",
+                    add="text-gray-500",
+                )
+                return
+            error = get_error()
+            if error:
+                status_label.set_text(error)
+                status_label.classes(
+                    remove="text-gray-500 text-green-600",
+                    add="text-red-600",
+                )
+            else:
+                status_label.set_text(f"编码可用，将保存为：{normalized}")
+                status_label.classes(
+                    remove="text-gray-500 text-red-600",
+                    add="text-green-600",
+                )
+
+        code_input.on_value_change(lambda _event: refresh_status())
+        refresh_status()
+        return get_error
 
     # --- 定义备份处理函数 ---
     async def handle_manual_backup():
@@ -567,7 +625,7 @@ def manage_page():
         dialog.open()
 
     def open_user_migration_dialog():
-        """Migrate the workbook present on this machine without assuming passwords."""
+        """迁移当前机器上的用户工作簿，不对其中密码作任何预设。"""
         user_svc = app.state.user_service
         mode_text = "身份数据库" if user_svc.storage_mode == "database" else "旧版 Excel"
 
@@ -681,9 +739,19 @@ def manage_page():
                 }
                 with ui.dialog() as form_dialog, ui.card().classes("w-[32rem] max-w-[95vw] p-6"):
                     ui.label("编辑部门" if current else "新增部门").classes("text-lg font-bold")
-                    code_input = ui.input("稳定编码", value=current.get("code", "")).classes("w-full")
+                    code_input = ui.input(
+                        "稳定编码（保存后不可修改）",
+                        value=current.get("code", ""),
+                    ).props("debounce=250").classes("w-full")
+                    code_check = None
                     if current:
                         code_input.disable()
+                    else:
+                        code_check = attach_stable_code_check(
+                            code_input,
+                            lambda: [item.get("code", "") for item in user_svc.list_org_units()],
+                            "部门",
+                        )
                     name_input = ui.input("部门名称", value=current.get("name", "")).classes("w-full")
                     parent_select = ui.select(
                         parent_options,
@@ -702,13 +770,19 @@ def manage_page():
                     ).classes("w-full")
 
                     def save_org():
+                        if code_check:
+                            error = code_check()
+                            if error:
+                                ui.notify(error, type="warning")
+                                return
                         try:
                             user_svc.save_org_unit(
-                                code=code_input.value,
+                                code=normalize_stable_code(code_input.value),
                                 name=name_input.value,
                                 parent_org_unit_id=parent_select.value,
                                 wecom_department_id=wecom_input.value,
                                 sort_order=int(order_input.value or 0),
+                                reject_existing=not bool(current),
                             )
                             render_org_units()
                             form_dialog.close()
@@ -733,6 +807,7 @@ def manage_page():
                                 ui.label(item.get("name", "")).classes("font-semibold")
                                 ui.label(
                                     f"编码：{item.get('code', '')} ｜ 职级：{item.get('level', 0)} ｜ "
+                                    f"默认权限：{len(item.get('permission_codes', []))} 项 ｜ "
                                     f"来源：{'企业微信' if item.get('source') == 'wecom' else '系统手工'}"
                                     f"{'（本地编辑保护）' if item.get('manual_override') else ''}"
                                 ).classes("text-xs text-gray-500")
@@ -745,9 +820,19 @@ def manage_page():
                 current = current or {}
                 with ui.dialog() as form_dialog, ui.card().classes("w-96 p-6"):
                     ui.label("编辑岗位" if current else "新增岗位").classes("text-lg font-bold")
-                    code_input = ui.input("稳定编码", value=current.get("code", "")).classes("w-full")
+                    code_input = ui.input(
+                        "稳定编码（保存后不可修改）",
+                        value=current.get("code", ""),
+                    ).props("debounce=250").classes("w-full")
+                    code_check = None
                     if current:
                         code_input.disable()
+                    else:
+                        code_check = attach_stable_code_check(
+                            code_input,
+                            lambda: [item.get("code", "") for item in user_svc.list_positions()],
+                            "岗位",
+                        )
                     name_input = ui.input("岗位名称", value=current.get("name", "")).classes("w-full")
                     level_input = ui.number(
                         "职级数字",
@@ -756,11 +841,17 @@ def manage_page():
                     ).classes("w-full")
 
                     def save_position():
+                        if code_check:
+                            error = code_check()
+                            if error:
+                                ui.notify(error, type="warning")
+                                return
                         try:
                             user_svc.save_position(
-                                code=code_input.value,
+                                code=normalize_stable_code(code_input.value),
                                 name=name_input.value,
                                 level=int(level_input.value or 0),
+                                reject_existing=not bool(current),
                             )
                             render_positions()
                             form_dialog.close()
@@ -806,6 +897,464 @@ def manage_page():
             render_org_units()
             render_positions()
         org_dialog.open()
+
+    def open_security_role_management_dialog():
+        """配置岗位默认权限与少量附加权限组。"""
+        user_svc = app.state.user_service
+        if user_svc.storage_mode != "database":
+            ui.notify("请先执行用户一键迁移，再维护岗位与权限。", type="warning")
+            return
+        try:
+            user_svc.sync_permission_catalog()
+        except Exception as exc:
+            ui.notify(f"权限目录初始化失败：{exc}", type="negative", multi_line=True)
+            return
+
+        with (
+            ui.dialog().props("maximized") as role_dialog,
+            ui.card().classes("w-full h-full p-5 flex flex-col no-wrap bg-gray-50"),
+        ):
+            with ui.row().classes("w-full items-center justify-between shrink-0"):
+                with ui.column().classes("gap-0"):
+                    ui.label("岗位权限与附加权限组").classes("text-xl font-bold")
+                    ui.label(
+                        "岗位提供日常默认权限；附加权限组只用于兼职、专项职责和特殊管理权限。"
+                    ).classes("text-xs text-gray-500")
+                ui.button(icon="close", on_click=role_dialog.close).props("flat round dense")
+            ui.separator()
+
+            with ui.tabs().classes("w-full shrink-0") as tabs:
+                position_tab = ui.tab("岗位默认权限", icon="badge")
+                role_tab = ui.tab("附加权限组", icon="admin_panel_settings")
+                user_tab = ui.tab("用户附加授权", icon="how_to_reg")
+
+            with ui.tab_panels(tabs, value=position_tab).classes(
+                "w-full flex-grow min-h-0 bg-transparent p-0"
+            ):
+                with ui.tab_panel(position_tab).classes("w-full h-full p-0 pt-3"):
+                    with ui.grid(columns=2).classes("w-full h-full min-h-0 gap-4"):
+                        with ui.card().classes("w-full h-full min-h-0 flex flex-col no-wrap"):
+                            with ui.column().classes("gap-0 shrink-0"):
+                                ui.label("岗位字典").classes("text-lg font-bold")
+                                ui.label(
+                                    "员工绑定主岗位后自动继承这里配置的权限。"
+                                ).classes("text-xs text-gray-500")
+                            position_list_container = ui.column().classes(
+                                "w-full flex-grow min-h-0 overflow-y-auto gap-1 pt-2"
+                            )
+                        with ui.card().classes("w-full h-full min-h-0 flex flex-col no-wrap"):
+                            position_permission_container = ui.column().classes(
+                                "w-full flex-grow min-h-0 overflow-y-auto gap-3"
+                            )
+
+                    position_state = {"selected_position_id": None}
+
+                    def select_permission_position(position_id):
+                        position_state["selected_position_id"] = position_id
+                        render_permission_positions()
+                        render_position_permissions()
+
+                    def render_permission_positions():
+                        positions = user_svc.list_positions()
+                        selected_id = position_state["selected_position_id"]
+                        if selected_id not in {item["position_id"] for item in positions}:
+                            position_state["selected_position_id"] = (
+                                positions[0]["position_id"] if positions else None
+                            )
+                        position_list_container.clear()
+                        with position_list_container:
+                            if not positions:
+                                ui.label("尚无岗位，请先在组织架构中建立岗位字典。").classes(
+                                    "text-gray-500 p-4"
+                                )
+                            for position in positions:
+                                selected = (
+                                    position["position_id"] == position_state["selected_position_id"]
+                                )
+                                background = (
+                                    "bg-blue-50 border-blue-400"
+                                    if selected
+                                    else "bg-white border-gray-200"
+                                )
+                                with ui.row().classes(
+                                    f"w-full items-center border rounded p-3 cursor-pointer {background}"
+                                ).on(
+                                    "click",
+                                    lambda _event, position_id=position["position_id"]: (
+                                        select_permission_position(position_id)
+                                    ),
+                                ):
+                                    with ui.column().classes("gap-0 flex-grow"):
+                                        ui.label(position["name"]).classes("font-semibold")
+                                        ui.label(
+                                            f"{position['code']} ｜ 职级 {position.get('level', 0)}"
+                                        ).classes("text-xs text-gray-500")
+                                    ui.label(
+                                        f"{len(position.get('permission_codes', []))} 项权限 / "
+                                        f"{position.get('member_count', 0)} 人"
+                                    ).classes("text-xs text-gray-500")
+
+                    def render_position_permissions():
+                        positions = user_svc.list_positions()
+                        permissions = user_svc.list_permissions()
+                        selected = next(
+                            (
+                                position
+                                for position in positions
+                                if position["position_id"]
+                                == position_state["selected_position_id"]
+                            ),
+                            None,
+                        )
+                        position_permission_container.clear()
+                        with position_permission_container:
+                            if not selected:
+                                ui.label("请选择一个岗位。").classes("text-gray-500 p-4")
+                                return
+                            ui.label(f"{selected['name']} · 默认权限").classes("text-lg font-bold")
+                            ui.label(
+                                f"稳定编码：{selected['code']} ｜ 当前任职："
+                                f"{selected.get('member_count', 0)} 人"
+                            ).classes("text-xs text-gray-500")
+                            ui.label(
+                                "权限会自动授予所有以该岗位作为主岗位的在职用户；企业微信职务文本本身不会自动授权。"
+                            ).classes("text-xs text-blue-800 bg-blue-50 rounded p-2")
+                            checkbox_by_code = {}
+                            selected_codes = set(selected.get("permission_codes", []))
+                            modules = list(dict.fromkeys(item["module"] for item in permissions))
+                            for module_name in modules:
+                                ui.label(module_name).classes(
+                                    "text-sm font-semibold text-blue-800 bg-blue-50 rounded px-2 py-1 w-full"
+                                )
+                                with ui.grid(columns=2).classes("w-full gap-x-4 gap-y-1"):
+                                    for permission in permissions:
+                                        if permission["module"] != module_name:
+                                            continue
+                                        checkbox = ui.checkbox(
+                                            permission["name"],
+                                            value=permission["code"] in selected_codes,
+                                        ).classes("text-sm")
+                                        checkbox.tooltip(
+                                            f"{permission['code']}\n{permission.get('description', '')}"
+                                        )
+                                        checkbox_by_code[permission["code"]] = checkbox
+
+                            def save_position_permissions():
+                                try:
+                                    user_svc.set_position_permissions(
+                                        selected["position_id"],
+                                        [
+                                            code
+                                            for code, checkbox in checkbox_by_code.items()
+                                            if checkbox.value
+                                        ],
+                                        actor_username=current_user,
+                                    )
+                                except Exception as exc:
+                                    ui.notify(
+                                        f"岗位权限保存失败：{exc}",
+                                        type="negative",
+                                        multi_line=True,
+                                    )
+                                    return
+                                # 必须在刷新当前容器前发送通知，否则事件所属槽位已被删除。
+                                ui.notify("岗位默认权限已保存。", type="positive")
+                                render_permission_positions()
+                                render_position_permissions()
+
+                            with ui.row().classes("w-full justify-end pt-2"):
+                                ui.button(
+                                    "保存岗位默认权限",
+                                    on_click=save_position_permissions,
+                                    icon="save",
+                                ).props("color=primary")
+
+                    render_permission_positions()
+                    render_position_permissions()
+
+                with ui.tab_panel(role_tab).classes("w-full h-full p-0 pt-3"):
+                    with ui.grid(columns=2).classes("w-full h-full min-h-0 gap-4"):
+                        with ui.card().classes("w-full h-full min-h-0 flex flex-col no-wrap"):
+                            with ui.row().classes("w-full items-center justify-between shrink-0"):
+                                with ui.column().classes("gap-0"):
+                                    ui.label("附加权限组").classes("text-lg font-bold")
+                                    ui.label("只处理岗位之外的兼任或专项权限").classes("text-xs text-gray-500")
+                                add_role_button = ui.button("新增权限组", icon="add").props("color=primary")
+                            role_list_container = ui.column().classes(
+                                "w-full flex-grow min-h-0 overflow-y-auto gap-1"
+                            )
+
+                        with ui.card().classes("w-full h-full min-h-0 flex flex-col no-wrap"):
+                            role_editor_container = ui.column().classes(
+                                "w-full flex-grow min-h-0 overflow-y-auto gap-3"
+                            )
+
+                    role_state = {"selected_role_id": None}
+
+                    def load_role_data():
+                        roles = [
+                            role
+                            for role in user_svc.list_security_roles()
+                            if not role.get("is_compatibility")
+                        ]
+                        return roles, user_svc.list_permissions()
+
+                    def select_role(role_id):
+                        role_state["selected_role_id"] = role_id
+                        render_role_list()
+                        render_role_editor()
+
+                    def render_role_list():
+                        roles, _ = load_role_data()
+                        if not role_state["selected_role_id"] and roles:
+                            role_state["selected_role_id"] = roles[0]["role_id"]
+                        role_list_container.clear()
+                        with role_list_container:
+                            if not roles:
+                                ui.label("尚无附加权限组，普通用户只需配置岗位。").classes(
+                                    "text-gray-500 p-4"
+                                )
+                            for role in roles:
+                                selected = role["role_id"] == role_state["selected_role_id"]
+                                background = "bg-blue-50 border-blue-400" if selected else "bg-white border-gray-200"
+                                with ui.row().classes(
+                                    f"w-full items-center border rounded p-3 cursor-pointer {background}"
+                                ).on(
+                                    "click",
+                                    lambda _event, role_id=role["role_id"]: select_role(role_id),
+                                ):
+                                    with ui.column().classes("gap-0 flex-grow"):
+                                        with ui.row().classes("items-center gap-2"):
+                                            ui.label(role["name"]).classes("font-semibold")
+                                            if role.get("status") != "active":
+                                                ui.chip("已停用", color="negative").props("dense").classes("text-xs")
+                                        ui.label(role["code"]).classes("text-xs text-gray-500")
+                                    ui.label(
+                                        f"{len(role.get('permission_codes', []))} 项权限 / "
+                                        f"{role.get('user_count', 0)} 人"
+                                    ).classes("text-xs text-gray-500")
+
+                    def render_role_editor():
+                        roles, permissions = load_role_data()
+                        selected = next(
+                            (
+                                role
+                                for role in roles
+                                if role["role_id"] == role_state["selected_role_id"]
+                            ),
+                            None,
+                        )
+                        role_editor_container.clear()
+                        with role_editor_container:
+                            if not selected:
+                                ui.label("请选择一个附加权限组。").classes("text-gray-500 p-4")
+                                return
+                            ui.label("权限组配置").classes("text-lg font-bold")
+                            code_input = ui.input("稳定编码", value=selected["code"]).classes("w-full")
+                            code_input.disable()
+                            name_input = ui.input("显示名称", value=selected["name"]).classes("w-full")
+                            active_switch = ui.switch(
+                                "权限组启用",
+                                value=selected.get("status") == "active",
+                            )
+                            ui.separator()
+                            ui.label("权限清单").classes("font-bold")
+                            checkbox_by_code = {}
+                            modules = list(dict.fromkeys(item["module"] for item in permissions))
+                            selected_codes = set(selected.get("permission_codes", []))
+                            for module_name in modules:
+                                ui.label(module_name).classes(
+                                    "text-sm font-semibold text-blue-800 bg-blue-50 rounded px-2 py-1 w-full"
+                                )
+                                with ui.grid(columns=2).classes("w-full gap-x-4 gap-y-1"):
+                                    for permission in permissions:
+                                        if permission["module"] != module_name:
+                                            continue
+                                        checkbox = ui.checkbox(
+                                            permission["name"],
+                                            value=permission["code"] in selected_codes,
+                                        ).classes("text-sm")
+                                        checkbox.tooltip(
+                                            f"{permission['code']}\n{permission.get('description', '')}"
+                                        )
+                                        checkbox_by_code[permission["code"]] = checkbox
+
+                            def save_role():
+                                try:
+                                    user_svc.update_security_role(
+                                        selected["role_id"],
+                                        name=name_input.value,
+                                        status="active" if active_switch.value else "disabled",
+                                        permission_codes=[
+                                            code for code, checkbox in checkbox_by_code.items() if checkbox.value
+                                        ],
+                                        actor_username=current_user,
+                                    )
+                                except Exception as exc:
+                                    ui.notify(f"权限组保存失败：{exc}", type="negative", multi_line=True)
+                                    return
+                                # 当前编辑器会被重建，通知必须先使用仍然有效的事件槽位。
+                                ui.notify("附加权限组已保存。", type="positive")
+                                render_role_list()
+                                render_role_editor()
+
+                            with ui.row().classes("w-full justify-end pt-2"):
+                                ui.button("保存权限组", on_click=save_role, icon="save").props(
+                                    "color=primary"
+                                )
+
+                    def open_add_role_form():
+                        with ui.dialog() as add_dialog, ui.card().classes("w-[30rem] max-w-[95vw] p-6"):
+                            ui.label("新增附加权限组").classes("text-lg font-bold")
+                            ui.label(
+                                "编码保存后不可修改，例如 ecn.reviewer 或 system.operator。"
+                            ).classes(
+                                "text-xs text-gray-500"
+                            )
+                            code_input = (
+                                ui.input("稳定编码（保存后不可修改）")
+                                .props("debounce=250")
+                                .classes("w-full")
+                            )
+                            code_check = attach_stable_code_check(
+                                code_input,
+                                lambda: [
+                                    role.get("code", "")
+                                    for role in user_svc.list_security_roles()
+                                ],
+                                "附加权限组",
+                            )
+                            name_input = ui.input("显示名称").classes("w-full")
+
+                            def create_role():
+                                error = code_check()
+                                if error:
+                                    ui.notify(error, type="warning")
+                                    return
+                                try:
+                                    role_id = user_svc.create_security_role(
+                                        code=normalize_stable_code(code_input.value),
+                                        name=name_input.value,
+                                        actor_username=current_user,
+                                    )
+                                    role_state["selected_role_id"] = role_id
+                                    render_role_list()
+                                    render_role_editor()
+                                    add_dialog.close()
+                                    ui.notify("附加权限组已创建，请继续勾选权限。", type="positive")
+                                except Exception as exc:
+                                    ui.notify(f"权限组创建失败：{exc}", type="negative", multi_line=True)
+
+                            with ui.row().classes("w-full justify-end gap-3"):
+                                ui.button("取消", on_click=add_dialog.close).props("flat")
+                                ui.button("创建", on_click=create_role).props("color=primary")
+                        add_dialog.open()
+
+                    add_role_button.on_click(open_add_role_form)
+                    render_role_list()
+                    render_role_editor()
+
+                with ui.tab_panel(user_tab).classes("w-full h-full p-0 pt-3"):
+                    with ui.card().classes("w-full h-full min-h-0 flex flex-col no-wrap"):
+                        ui.label("为用户分配附加权限组").classes("text-lg font-bold")
+                        ui.label(
+                            "日常权限来自主岗位；只有兼任、专项职责或特殊管理需要在这里额外分配。"
+                        ).classes("text-xs text-gray-500")
+                        user_options = {
+                            username: f"{info.get('display_name') or username} ｜ {username}"
+                            for username, info in sorted(app.state.users_data.items())
+                        }
+                        user_select = ui.select(
+                            user_options,
+                            label="选择用户",
+                            with_input=True,
+                        ).props("outlined options-dense").classes("w-full max-w-2xl")
+                        user_assignment_container = ui.column().classes(
+                            "w-full flex-grow min-h-0 overflow-y-auto gap-3 pt-2"
+                        )
+
+                        def render_user_assignment(username=None):
+                            user_assignment_container.clear()
+                            with user_assignment_container:
+                                if not username:
+                                    ui.label("选择用户后可查看角色和最终权限。").classes("text-gray-500 p-4")
+                                    return
+                                all_roles = user_svc.list_security_roles(include_disabled=False)
+                                compatibility_roles = user_svc.get_user_security_roles(
+                                    username,
+                                    include_compatibility=True,
+                                )
+                                additional_roles = [
+                                    role for role in compatibility_roles if not role["code"].startswith("legacy.")
+                                ]
+                                compatibility_roles = [
+                                    role for role in compatibility_roles if role["code"].startswith("legacy.")
+                                ]
+                                assignable_roles = [
+                                    role for role in all_roles if not role.get("is_compatibility")
+                                ]
+                                with ui.row().classes("items-center gap-2"):
+                                    ui.label("旧角色过渡信息：").classes("text-sm font-semibold")
+                                    if compatibility_roles:
+                                        for role in compatibility_roles:
+                                            ui.chip(role["name"], color="grey").props("dense")
+                                    else:
+                                        ui.label("无").classes("text-sm text-gray-500")
+                                role_select = ui.select(
+                                    {role["role_id"]: role["name"] for role in assignable_roles},
+                                    value=[role["role_id"] for role in additional_roles],
+                                    label="附加权限组",
+                                    multiple=True,
+                                    with_input=True,
+                                ).props("outlined use-chips options-dense").classes("w-full max-w-3xl")
+
+                                effective_codes = user_svc.get_user_permission_codes(username)
+                                permissions = {
+                                    item["code"]: item for item in user_svc.list_permissions()
+                                }
+                                ui.label(f"当前最终权限：{len(effective_codes)} 项").classes("font-semibold pt-2")
+                                if effective_codes:
+                                    with ui.row().classes("w-full gap-2"):
+                                        for code in sorted(
+                                            effective_codes,
+                                            key=lambda value: (
+                                                permissions.get(value, {}).get("module", ""),
+                                                permissions.get(value, {}).get("name", value),
+                                            ),
+                                        ):
+                                            permission = permissions.get(code, {})
+                                            ui.chip(permission.get("name", code), color="blue").props("dense").tooltip(
+                                                code
+                                            )
+                                else:
+                                    ui.label("当前没有稳定权限；尚未迁移的模块仍按兼容规则运行。").classes(
+                                        "text-sm text-orange-700"
+                                    )
+
+                                def save_user_roles():
+                                    try:
+                                        user_svc.set_user_security_roles(
+                                            username,
+                                            role_select.value or [],
+                                            actor_username=current_user,
+                                        )
+                                    except Exception as exc:
+                                        ui.notify(f"用户授权失败：{exc}", type="negative", multi_line=True)
+                                        return
+                                    # 用户授权区域刷新会删除保存按钮所属槽位，因此先反馈结果。
+                                    ui.notify("用户附加权限已保存。", type="positive")
+                                    render_user_assignment(username)
+                                    render_role_list()
+
+                                with ui.row().classes("w-full justify-end"):
+                                    ui.button("保存用户授权", on_click=save_user_roles, icon="save").props(
+                                        "color=primary"
+                                    )
+
+                        user_select.on_value_change(lambda event: render_user_assignment(event.value))
+                        render_user_assignment()
+
+        role_dialog.open()
 
     # --- 用户管理界面的定义 (抛弃 Table，使用原生卡片列表) ---
     def open_user_management_dialog():
@@ -873,13 +1422,19 @@ def manage_page():
                 if app.state.user_service.storage_mode != "database":
                     ui.notify("请先执行一键迁移，再绑定企业微信账号。", type="warning")
                     return
+                if str(target_user).strip().casefold() == "admin":
+                    ui.notify(
+                        "admin 是系统管理账号，无需绑定企业微信；同一企业微信成员仍只允许绑定一个员工账号。",
+                        type="info",
+                        multi_line=True,
+                    )
+                    return
 
                 cache_data = load_wecom_contacts_cache()
 
                 def contact_name_sort_key(item):
                     name = str(item.get("name", "")).strip().casefold()
-                    # GB18030 keeps common Chinese surnames close to familiar
-                    # pinyin order without adding a runtime pinyin dependency.
+                    # 使用 GB18030 让常见中文姓氏接近拼音顺序，避免增加拼音运行依赖。
                     return (
                         name.encode("gb18030", errors="replace"),
                         str(item.get("userid", "")).casefold(),
@@ -1174,7 +1729,7 @@ def manage_page():
             )
 
             async def refresh_user_list_preserving_scroll():
-                """Rebuild rows without sending the administrator back to the top."""
+                """重建用户列表，并保持管理员当前的滚动位置。"""
                 try:
                     raw_scroll_top = await ui.run_javascript(
                         """
@@ -1221,7 +1776,7 @@ def manage_page():
                         missing_items = []
                         if not info.get("password_set"):
                             missing_items.append("登录密码")
-                        if not binding:
+                        if username.casefold() != "admin" and not binding:
                             missing_items.append("企业微信账号")
                         if not membership.get("org_unit_id"):
                             missing_items.append("主部门")
@@ -1278,10 +1833,13 @@ def manage_page():
                                 ).classes("text-xs")
 
                             with ui.column().classes("w-[22%] min-w-[120px] gap-0"):
-                                ui.label(binding.get("external_display_name") or "未绑定").classes(
-                                    "text-sm" if binding else "text-sm text-orange-700"
-                                )
-                                if binding:
+                                if username.casefold() == "admin":
+                                    ui.label("系统账号免绑定").classes("text-sm text-blue-700")
+                                else:
+                                    ui.label(binding.get("external_display_name") or "未绑定").classes(
+                                        "text-sm" if binding else "text-sm text-orange-700"
+                                    )
+                                if binding and username.casefold() != "admin":
                                     ui.label(binding.get("external_userid", "")).classes("text-xs text-gray-500")
 
                             # 原生按钮绑定，绝不会出现点击失效的问题
@@ -1290,9 +1848,10 @@ def manage_page():
                                 ui.button("编辑", on_click=lambda u=username: open_form("edit", u)).props(
                                     "outline size=sm color=primary"
                                 )
-                                ui.button("微信", on_click=lambda u=username: open_wecom_binding_form(u)).props(
-                                    "outline size=sm color=teal"
-                                )
+                                if username.casefold() != "admin":
+                                    ui.button("微信", on_click=lambda u=username: open_wecom_binding_form(u)).props(
+                                        "outline size=sm color=teal"
+                                    )
                                 ui.button("组织", on_click=lambda u=username: open_membership_form(u)).props(
                                     "outline size=sm color=indigo"
                                 )
@@ -1480,6 +2039,120 @@ def manage_page():
 
         dialog.open()
 
+    def open_identity_management_center():
+        """以单一入口汇总用户、组织、权限、企业微信与迁移维护。"""
+        user_svc = app.state.user_service
+        database_mode = user_svc.storage_mode == "database"
+        user_count = len(app.state.users_data)
+        binding_count = len(user_svc.list_wecom_bindings()) if database_mode else 0
+        org_count = len(user_svc.list_org_units()) if database_mode else 0
+        position_count = len(user_svc.list_positions()) if database_mode else 0
+
+        with (
+            ui.dialog().props("maximized") as center_dialog,
+            ui.card().classes("w-full h-full p-6 flex flex-col no-wrap bg-slate-50"),
+        ):
+            with ui.row().classes("w-full items-center justify-between shrink-0"):
+                with ui.column().classes("gap-0"):
+                    ui.label("用户、组织与权限中心").classes("text-2xl font-bold text-slate-800")
+                    ui.label(
+                        "一个入口维护系统账号、组织任职、岗位默认权限、附加权限及企业微信关联。"
+                    ).classes("text-sm text-slate-500")
+                ui.button(icon="close", on_click=center_dialog.close).props("flat round dense")
+            ui.separator().classes("my-3")
+
+            with ui.row().classes("w-full gap-3 shrink-0"):
+                ui.chip(
+                    "身份数据库" if database_mode else "旧版 Excel",
+                    color="positive" if database_mode else "warning",
+                    icon="database",
+                )
+                ui.chip(f"系统用户 {user_count} 人", icon="group").props("outline")
+                if database_mode:
+                    ui.chip(f"微信已绑定 {binding_count} 人", icon="link").props("outline")
+                    ui.chip(f"部门 {org_count} 个", icon="account_tree").props("outline")
+                    ui.chip(f"岗位 {position_count} 个", icon="badge").props("outline")
+
+            ui.label("管理功能").classes("text-lg font-bold text-slate-700 mt-4")
+            with ui.grid().classes(
+                "w-full grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 overflow-y-auto p-1"
+            ):
+
+                def management_card(title, description, icon, color, handler, status_text=""):
+                    with ui.card().classes(
+                        "w-full min-h-[10rem] p-5 cursor-pointer border-l-4 "
+                        f"border-{color}-500 hover:shadow-lg transition-shadow"
+                    ).on("click", handler):
+                        with ui.row().classes("w-full items-start justify-between"):
+                            ui.icon(icon, size="42px").classes(f"text-{color}-600")
+                            if status_text:
+                                ui.chip(status_text, color=color).props("dense outline")
+                        ui.label(title).classes("text-lg font-bold text-slate-800")
+                        ui.label(description).classes("text-sm text-slate-500 leading-6")
+
+                management_card(
+                    "用户与微信账号",
+                    "维护登录账号、账号状态、企业微信绑定及每位员工的组织任职。",
+                    "manage_accounts",
+                    "blue",
+                    lambda: open_user_management_dialog(),
+                    f"{user_count} 人",
+                )
+                management_card(
+                    "组织架构与岗位字典",
+                    "维护部门上下级、系统岗位、职级和直属上级关系。",
+                    "account_tree",
+                    "cyan",
+                    lambda: open_organization_management_dialog(),
+                    f"{org_count} 部门 / {position_count} 岗位" if database_mode else "迁移后可用",
+                )
+                management_card(
+                    "岗位权限与附加权限组",
+                    "岗位提供默认权限；附加权限组用于兼职、专项职责和特殊授权。",
+                    "admin_panel_settings",
+                    "deep-purple",
+                    lambda: open_security_role_management_dialog(),
+                    "迁移后可用" if not database_mode else "权限配置",
+                )
+                management_card(
+                    "企业微信通讯录",
+                    "同步并查询企业微信成员、部门和职务，供账号及组织自动匹配。",
+                    "contacts",
+                    "teal",
+                    lambda: open_wecom_contacts_dialog(),
+                    f"已绑定 {binding_count} 人" if database_mode else "通讯录",
+                )
+                management_card(
+                    "身份数据库迁移",
+                    "将当前部署机器的用户安全迁移到身份数据库，不覆盖已有数据库密码。",
+                    "database",
+                    "indigo",
+                    lambda: open_user_migration_dialog(),
+                    "已迁移" if database_mode else "待迁移",
+                )
+
+                def refresh_users():
+                    try:
+                        update_users_data()
+                        ui.notify("用户数据已刷新到内存；重新打开中心可查看最新统计。", type="positive")
+                    except Exception as exc:
+                        ui.notify(f"用户数据刷新失败：{exc}", type="negative")
+
+                management_card(
+                    "刷新用户运行数据",
+                    "重新读取当前用户数据源，更新运行中的用户缓存。",
+                    "refresh",
+                    "green",
+                    refresh_users,
+                    "维护操作",
+                )
+
+            ui.label(
+                "建议日常只维护用户的部门和岗位；确有兼任或专项职责时，再分配附加权限组。"
+            ).classes("text-sm text-blue-800 bg-blue-50 rounded p-3 mt-auto shrink-0")
+
+        center_dialog.open()
+
     with ui.header(elevated=True).classes("flex justify-between items-center bg-blue-500 h-12 px-4"):
         ui.image(f"{IMG_DIR}/Rayfine.png").classes("absolute w-20")
         ui.label("系统管理员界面").classes("text-white text-lg absolute left-1/2 transform -translate-x-1/2")
@@ -1571,20 +2244,10 @@ def manage_page():
                 ).props("").classes("")
             with ui.row().classes("gap-4"):
                 ui.separator().props("size=1px")
-                # 【新增】用户数据管理按钮
-                ui.button("用户与微信账号管理", on_click=open_user_management_dialog).props(
-                    "icon=manage_accounts"
-                ).classes("bg-blue-600 text-white")
-                ui.button("一键迁移用户到身份数据库", on_click=open_user_migration_dialog).props(
-                    "icon=database"
-                ).classes("bg-indigo-700 text-white")
-                ui.button("组织架构与岗位", on_click=open_organization_management_dialog).props(
-                    "icon=account_tree"
-                ).classes("bg-cyan-800 text-white")
-                ui.button("企业微信通讯录", on_click=open_wecom_contacts_dialog).props("icon=contacts").classes(
-                    "bg-teal-700 text-white"
-                )
-                ui.button("刷新用户数据到内存", on_click=lambda: update_users_data()).props("").classes("")
+                ui.button(
+                    "用户、组织与权限中心",
+                    on_click=open_identity_management_center,
+                ).props("icon=manage_accounts size=lg").classes("bg-blue-700 text-white px-6")
         # 日志监控区域
         with ui.card().classes("w-full -space-y-2 overflow-hidden"):
             # 日志标题栏

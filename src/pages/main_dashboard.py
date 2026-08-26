@@ -7,6 +7,7 @@ from typing import Any, Dict  # 引入类型提示，便于静态类型检查
 from nicegui import app, ui
 
 from .. import db_storage  # 导入我们创建的模块
+from ..access_control import can
 from ..config import IMG_DIR, PRESET_AVATARS
 from ..ecn_management_config import ECN_DATA_KEY, get_ecn_dashboard_pending_count
 from ..overview_batch_operations import (
@@ -184,6 +185,13 @@ def main_page():
         return
     current_user = app.storage.user.get("current_user", "匿名用户")
     current_role = sync_current_user_role()
+    can_manage_system = current_user == "admin" or can(
+        app.state.user_service,
+        current_user,
+        "system.manage",
+        legacy_role=current_role,
+        legacy_allowed_roles=["admin"],
+    )
     # 从全局存储中获取用户当前的头像设置
     # (在 main.py 中定义 "user_preferences")
     user_prefs = app.storage.general.get("user_preferences", {}).get(current_user, {})
@@ -282,7 +290,7 @@ def main_page():
             with ui.menu().props("auto-close"):
                 ui.menu_item(f"你好, {app.storage.user.get('current_user', '匿名')}").style("white-space: nowrap;")
                 ui.menu_item("用户信息", on_click=lambda: ui.navigate.to("/profile"))
-                if current_user == "admin":
+                if can_manage_system:
                     ui.separator().props("size=1px")
                     ui.menu_item("系统管理", on_click=lambda: ui.navigate.to("/manage"))
                 ui.separator().props("size=1px")

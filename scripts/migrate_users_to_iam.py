@@ -7,6 +7,10 @@ Run from the project root with the same Python environment as the application:
 The default operation is idempotent and never replaces an existing database
 password hash.  ``--refresh-existing-passwords`` is intentionally explicit and
 should only be used when the workbook must become authoritative again.
+
+The same command idempotently initializes the stable permission catalog and
+one-time compatibility grants.  Repeating it does not restore permissions that
+an administrator has subsequently removed in the management UI.
 """
 
 from __future__ import annotations

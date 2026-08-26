@@ -1,4 +1,4 @@
-"""Compatibility facade for legacy Excel users and the new IAM database."""
+"""旧版 Excel 用户数据与新身份数据库之间的兼容服务。"""
 
 from __future__ import annotations
 
@@ -11,15 +11,21 @@ import pandas as pd
 
 from .identity_store import IdentityStore, UserMigrationResult
 from .identity_matching import build_wecom_user_match_plan, suggest_contact_for_user
+from .permission_catalog import (
+    PERMISSION_CODES,
+    build_legacy_default_grants,
+    load_tool_role_mapping,
+    permission_catalog_rows,
+)
 
 logger = logging.getLogger(__name__)
 
 
 class UserService:
-    """Serve users from SQLite after migration, otherwise from ``users.xlsx``.
+    """迁移后从 SQLite 提供用户数据，否则继续读取 ``users.xlsx``。
 
-    Deploying the code alone does not lock a server out: its workbook remains
-    authoritative until an administrator runs migration on that server.
+    只部署新代码不会导致服务器用户无法登录；管理员在服务器执行迁移前，服务器上的
+    Excel 用户文件仍是权威数据源。
     """
 
     def __init__(
@@ -39,6 +45,8 @@ class UserService:
             store_kwargs["password_iterations"] = password_iterations
         self.identity_store = IdentityStore(resolved_db_path, **store_kwargs)
         self._lock = threading.RLock()
+        if self.identity_store.has_database_users():
+            self.sync_permission_catalog()
 
     @property
     def storage_mode(self) -> str:
@@ -139,12 +147,16 @@ class UserService:
         return self._update_excel_password(username, normalized)
 
     def modify_user(self, action: str, username: str, password: str = "", role: str = "") -> bool:
-        """Create, edit, or change user status in the active source."""
+        """在当前启用的数据源中新增、编辑用户或修改用户状态。"""
         if self.storage_mode == "database":
             if action == "add":
-                return self.identity_store.create_user(username, password or "", role or "普通用户")
+                result = self.identity_store.create_user(username, password or "", role or "普通用户")
+                self.sync_permission_catalog()
+                return result
             if action in {"update", "edit"}:
-                return self.identity_store.update_user(username, password or None, role)
+                result = self.identity_store.update_user(username, password or None, role)
+                self.sync_permission_catalog()
+                return result
             if action in {"delete", "deactivate"}:
                 return self.identity_store.set_user_status(username, "disabled")
             if action == "depart":
@@ -153,7 +165,7 @@ class UserService:
                 return self.identity_store.set_user_status(username, "active")
             raise ValueError(f"未知的操作指令: {action}")
 
-        # Legacy mode remains intentionally compatible until migration.
+        # 在执行迁移前，旧版 Excel 模式继续保持原有兼容行为。
         with self._lock:
             try:
                 frame = pd.read_excel(self.excel_path, dtype=str)
@@ -181,7 +193,7 @@ class UserService:
                 elif action in {"update", "edit"}:
                     if username not in frame["用户名"].values:
                         raise ValueError(f"用户 {username} 不存在")
-                    if password:  # empty means keep the current password
+                    if password:  # 留空表示保持当前密码
                         frame.loc[frame["用户名"] == username, "密码"] = str(password)
                     if role is not None:
                         frame.loc[frame["用户名"] == username, "角色"] = str(role)
@@ -198,11 +210,99 @@ class UserService:
                 raise
 
     def migrate_legacy_users(self, *, refresh_existing_passwords: bool = False) -> UserMigrationResult:
-        return self.identity_store.migrate_legacy_users(
+        result = self.identity_store.migrate_legacy_users(
             self.excel_path,
             backup_dir=self.backup_dir,
             refresh_existing_passwords=refresh_existing_passwords,
         )
+        self.sync_permission_catalog()
+        return result
+
+    def sync_permission_catalog(self) -> tuple[int, int]:
+        """以幂等方式注册稳定权限和旧角色初始授权。"""
+        roles = self.identity_store.list_security_roles()
+        role_names = [str(item.get("name", "")) for item in roles]
+        tool_mapping = load_tool_role_mapping(self.excel_path.parent.parent / "tools_permission.json")
+        grants = build_legacy_default_grants(tool_mapping, known_role_names=role_names)
+        return self.identity_store.seed_permission_catalog(permission_catalog_rows(), grants)
+
+    def has_permission(
+        self,
+        username: str,
+        permission_code: str,
+        *,
+        legacy_role: str = "",
+        legacy_allowed_roles=None,
+    ) -> bool:
+        if self.storage_mode == "database":
+            return self.identity_store.has_permission(username, permission_code)
+        if (
+            str(username).strip().casefold() == "admin"
+            and str(permission_code).strip().lower() in PERMISSION_CODES
+        ):
+            user = self.get_user(username)
+            return bool(user and user.get("status", "active") == "active")
+        if legacy_allowed_roles is None:
+            return True
+        allowed = {str(role).strip() for role in legacy_allowed_roles if str(role).strip()}
+        return str(legacy_role or "").strip() in allowed
+
+    def list_permissions(self) -> list[dict[str, Any]]:
+        if self.storage_mode != "database":
+            return []
+        return self.identity_store.list_permissions()
+
+    def get_position_permission_codes(self, position_id: str) -> set[str]:
+        if self.storage_mode != "database":
+            return set()
+        return self.identity_store.get_position_permission_codes(position_id)
+
+    def set_position_permissions(self, position_id: str, permission_codes, **values) -> bool:
+        if self.storage_mode != "database":
+            raise RuntimeError("请先迁移用户，再配置岗位默认权限")
+        return self.identity_store.set_position_permissions(
+            position_id,
+            permission_codes,
+            **values,
+        )
+
+    def list_security_roles(self, *, include_disabled: bool = True) -> list[dict[str, Any]]:
+        if self.storage_mode != "database":
+            return []
+        return self.identity_store.list_security_roles(include_disabled=include_disabled)
+
+    def create_security_role(self, **values) -> str:
+        if self.storage_mode != "database":
+            raise RuntimeError("请先迁移用户，再维护安全角色")
+        return self.identity_store.create_security_role(**values)
+
+    def update_security_role(self, role_id: str, **values) -> bool:
+        if self.storage_mode != "database":
+            raise RuntimeError("请先迁移用户，再维护安全角色")
+        return self.identity_store.update_security_role(role_id, **values)
+
+    def get_user_security_roles(
+        self,
+        username: str,
+        *,
+        include_compatibility: bool = True,
+    ) -> list[dict[str, Any]]:
+        if self.storage_mode != "database":
+            return []
+        return self.identity_store.get_user_security_roles(
+            username,
+            include_compatibility=include_compatibility,
+        )
+
+    def set_user_security_roles(self, username: str, role_ids, **values) -> bool:
+        if self.storage_mode != "database":
+            raise RuntimeError("请先迁移用户，再分配安全角色")
+        return self.identity_store.set_user_security_roles(username, role_ids, **values)
+
+    def get_user_permission_codes(self, username: str) -> set[str]:
+        if self.storage_mode != "database":
+            return set()
+        return self.identity_store.get_user_permission_codes(username)
 
     def get_wecom_binding(self, username: str) -> dict[str, Any]:
         if self.storage_mode != "database":
@@ -258,7 +358,7 @@ class UserService:
         )
 
     def suggest_org_membership(self, contact: dict[str, Any]) -> dict[str, Any]:
-        """Resolve an imported department and position for one WeCom contact."""
+        """为一名企业微信成员解析已导入的部门和岗位。"""
         units = self.list_org_units()
         units_by_wecom_id = {
             str(item.get("wecom_department_id", "")): item
@@ -303,7 +403,7 @@ class UserService:
         }
 
     def apply_suggested_org_membership(self, username: str, contact: dict[str, Any]) -> bool:
-        """Fill a missing membership but never replace an existing assignment."""
+        """补齐缺失的组织任职，但绝不替换已经存在的分配。"""
         if self.get_primary_membership(username):
             return False
         suggestion = self.suggest_org_membership(contact)

@@ -197,6 +197,50 @@ class IdentityStoreMigrationTests(unittest.TestCase):
         self.assertEqual(software["name"], "内部软件研发岗")
         self.assertEqual(software["manual_override"], 1)
 
+    def test_manual_codes_are_normalized_validated_and_checked_for_duplicates(self):
+        self.service.migrate_legacy_users()
+        org_unit_id = self.service.save_org_unit(
+            code="ORG.Sales",
+            name="销售部",
+            reject_existing=True,
+        )
+        org_unit = next(
+            item for item in self.service.list_org_units() if item["org_unit_id"] == org_unit_id
+        )
+        self.assertEqual(org_unit["code"], "org.sales")
+        with self.assertRaisesRegex(ValueError, "部门编码已存在"):
+            self.service.save_org_unit(
+                code="org.sales",
+                name="重复销售部",
+                reject_existing=True,
+            )
+        with self.assertRaisesRegex(ValueError, "编码格式不正确"):
+            self.service.save_position(
+                code="中文岗位",
+                name="无效岗位",
+                reject_existing=True,
+            )
+
+        position_id = self.service.save_position(
+            code="POSITION.Sales.Manager",
+            name="销售经理",
+            reject_existing=True,
+        )
+        position = next(
+            item for item in self.service.list_positions() if item["position_id"] == position_id
+        )
+        self.assertEqual(position["code"], "position.sales.manager")
+        with self.assertRaisesRegex(ValueError, "岗位编码已存在"):
+            self.service.save_position(
+                code="position.sales.manager",
+                name="重复销售经理",
+                reject_existing=True,
+            )
+
+        self.service.create_security_role(code="ECN.Reviewer", name="ECN审核员")
+        with self.assertRaisesRegex(ValueError, "附加权限组编码已存在"):
+            self.service.create_security_role(code="ecn.reviewer", name="重复审核员")
+
     def test_safe_match_plan_binds_and_fills_only_missing_org_membership(self):
         self.service.migrate_legacy_users()
         departments = [
@@ -237,8 +281,7 @@ class IdentityStoreMigrationTests(unittest.TestCase):
         self.assertEqual(membership["org_name"], "研发部")
         self.assertEqual(membership["position_name"], "研发工程师")
 
-        # A later WeCom suggestion must not replace a manually established
-        # system membership.
+        # 后续企业微信建议不能替换已经手工建立的系统任职。
         root = next(item for item in self.service.list_org_units() if item["wecom_department_id"] == "1")
         self.service.set_primary_membership("张三", org_unit_id=root["org_unit_id"])
         self.assertFalse(self.service.apply_suggested_org_membership("张三", contacts[1]))
