@@ -4,7 +4,7 @@ import json
 import logging
 import os
 
-from nicegui import app, ui
+from nicegui import app, run, ui
 
 from ..config import BASE_DIR, IMG_DIR, PRESET_AVATARS
 from ..requirement_overview_impact import (
@@ -382,10 +382,7 @@ def manage_page():
 
         all_node_ids = {str(node_id) for node_id in requirement_nodes}
         all_node_ids.update(working_impacts)
-        node_options = {
-            node_id: node_display(node_id)
-            for node_id in sorted(all_node_ids, key=node_sort_key)
-        }
+        node_options = {node_id: node_display(node_id) for node_id in sorted(all_node_ids, key=node_sort_key)}
 
         overview_options = {}
         for label, item in sorted(
@@ -406,15 +403,11 @@ def manage_page():
 
         selected_node_id = next(iter(node_options), None)
 
-        with ui.dialog() as dialog, ui.card().classes(
-            "w-[95vw] max-w-7xl h-[90vh] p-4 flex flex-col no-wrap"
-        ):
+        with ui.dialog() as dialog, ui.card().classes("w-[95vw] max-w-7xl h-[90vh] p-4 flex flex-col no-wrap"):
             with ui.row().classes("w-full items-center justify-between shrink-0"):
                 with ui.column().classes("gap-0"):
                     ui.label("需求变动 → 概述待定影响配置").classes("text-xl font-bold")
-                    ui.label(f"编辑来源：{source_name}；保存后立即供后续需求审批使用").classes(
-                        "text-xs text-gray-500"
-                    )
+                    ui.label(f"编辑来源：{source_name}；保存后立即供后续需求审批使用").classes("text-xs text-gray-500")
                 ui.icon("close", size="sm").classes("cursor-pointer").on("click", dialog.close)
 
             ui.separator().classes("shrink-0")
@@ -438,16 +431,20 @@ def manage_page():
                         label="需求节点（来自 app.state.init_config_data）",
                         with_input=True,
                     ).classes("w-full shrink-0")
-                    impact_select = ui.select(
-                        options=overview_options,
-                        value=list(working_impacts.get(selected_node_id, [])) if selected_node_id else [],
-                        label="会被置为待定的概述项",
-                        multiple=True,
-                        with_input=True,
-                    ).props("use-chips options-dense").classes("w-full")
-                    ui.label(
-                        "空列表表示该需求变动不影响任何概述；删除映射则会触发上方的“未配置”策略。"
-                    ).classes("text-xs text-gray-600")
+                    impact_select = (
+                        ui.select(
+                            options=overview_options,
+                            value=list(working_impacts.get(selected_node_id, [])) if selected_node_id else [],
+                            label="会被置为待定的概述项",
+                            multiple=True,
+                            with_input=True,
+                        )
+                        .props("use-chips options-dense")
+                        .classes("w-full")
+                    )
+                    ui.label("空列表表示该需求变动不影响任何概述；删除映射则会触发上方的“未配置”策略。").classes(
+                        "text-xs text-gray-600"
+                    )
 
                     with ui.row().classes("w-full gap-2 shrink-0"):
                         ui.button(
@@ -490,9 +487,7 @@ def manage_page():
 
             def render_mapping_list():
                 mapping_container.clear()
-                summary_label.set_text(
-                    f"已显式配置 {len(working_impacts)} / {len(node_options)} 个需求节点"
-                )
+                summary_label.set_text(f"已显式配置 {len(working_impacts)} / {len(node_options)} 个需求节点")
                 with mapping_container:
                     if not working_impacts:
                         ui.label("暂无显式映射").classes("text-gray-400 italic")
@@ -507,9 +502,7 @@ def manage_page():
                                 title_list = [overview_options.get(label, label) for label in labels]
                                 ui.label("\n".join(title_list)).classes("text-xs whitespace-pre-line")
                             else:
-                                ui.label("已显式配置为空：该节点变动不影响概述").classes(
-                                    "text-xs text-green-700"
-                                )
+                                ui.label("已显式配置为空：该节点变动不影响概述").classes("text-xs text-green-700")
                             with ui.row().classes("gap-2"):
                                 ui.button(
                                     "编辑",
@@ -573,26 +566,274 @@ def manage_page():
 
         dialog.open()
 
+    def open_user_migration_dialog():
+        """Migrate the workbook present on this machine without assuming passwords."""
+        user_svc = app.state.user_service
+        mode_text = "身份数据库" if user_svc.storage_mode == "database" else "旧版 Excel"
+
+        with ui.dialog() as migration_dialog, ui.card().classes("w-[42rem] max-w-[95vw] p-6"):
+            ui.label("一键迁移用户到身份数据库").classes("text-xl font-bold")
+            ui.label(f"当前模式：{mode_text}").classes("text-sm text-gray-600")
+            ui.label(
+                "系统读取当前部署机器上的 data/users.xlsx，将其中实际密码转换为不可逆哈希。"
+                "不会写回或删除 Excel；迁移前会额外生成备份。"
+            ).classes("text-sm leading-6")
+            ui.label(
+                "普通重复执行只补充新用户、同步兼容角色，不覆盖数据库中已有密码。因此本地测试密码不会被带到服务器。"
+            ).classes("text-sm text-blue-800 bg-blue-50 rounded p-3")
+            result_label = ui.label().classes("text-sm whitespace-pre-line")
+
+            async def run_migration(event):
+                event.sender.disable()
+                notice = ui.notification("正在迁移并计算密码哈希...", timeout=None, spinner=True)
+                try:
+                    result = await run.io_bound(user_svc.migrate_legacy_users)
+                    app.state.users_data = user_svc.load_users()
+                    result_label.set_text(
+                        f"迁移完成：总计 {result.total} 人；新增 {result.imported}；"
+                        f"更新 {result.updated}；未变化 {result.unchanged}。\n"
+                        f"Excel 备份：{result.backup_path or '未生成'}"
+                    )
+                    ui.notify("用户已切换到身份数据库。", type="positive")
+                except Exception as exc:
+                    logger.exception("用户迁移失败")
+                    result_label.set_text(f"迁移失败：{exc}")
+                    ui.notify(f"用户迁移失败：{exc}", type="negative", multi_line=True)
+                finally:
+                    notice.dismiss()
+                    event.sender.enable()
+
+            with ui.row().classes("w-full justify-end gap-3"):
+                ui.button("关闭", on_click=migration_dialog.close).props("flat")
+                ui.button("开始安全迁移", on_click=run_migration).props("color=primary icon=database")
+        migration_dialog.open()
+
+    def open_organization_management_dialog():
+        user_svc = app.state.user_service
+        if user_svc.storage_mode != "database":
+            ui.notify("请先执行用户一键迁移，再维护组织架构。", type="warning")
+            return
+
+        with (
+            ui.dialog().props("maximized") as org_dialog,
+            ui.card().classes("w-full h-full p-5 flex flex-col no-wrap bg-gray-50"),
+        ):
+            with ui.row().classes("w-full items-center justify-between shrink-0"):
+                with ui.column().classes("gap-0"):
+                    ui.label("组织架构与岗位字典").classes("text-xl font-bold")
+                    ui.label("部门上下级用于审批上交；岗位只描述任职，不直接等同于权限。").classes(
+                        "text-xs text-gray-500"
+                    )
+                ui.button(icon="close", on_click=org_dialog.close).props("flat round dense")
+            ui.separator()
+
+            with ui.grid(columns=2).classes("w-full flex-grow min-h-0 gap-5"):
+                with ui.card().classes("w-full h-full min-h-0 flex flex-col no-wrap"):
+                    with ui.row().classes("w-full items-center justify-between"):
+                        ui.label("部门层级").classes("text-lg font-bold")
+                        with ui.row().classes("gap-2"):
+                            import_button = ui.button("导入企业微信部门", icon="cloud_download").props(
+                                "outline color=teal"
+                            )
+                            add_org_button = ui.button("新增部门", icon="add").props("color=primary")
+                    org_container = ui.column().classes("w-full flex-grow min-h-0 overflow-y-auto gap-1")
+
+                with ui.card().classes("w-full h-full min-h-0 flex flex-col no-wrap"):
+                    with ui.row().classes("w-full items-center justify-between"):
+                        ui.label("岗位字典").classes("text-lg font-bold")
+                        with ui.row().classes("gap-2"):
+                            import_position_button = ui.button(
+                                "导入企业微信职务",
+                                icon="cloud_download",
+                            ).props("outline color=teal")
+                            add_position_button = ui.button("新增岗位", icon="add").props("color=primary")
+                    position_container = ui.column().classes("w-full flex-grow min-h-0 overflow-y-auto gap-1")
+
+            def render_org_units():
+                org_container.clear()
+                with org_container:
+                    units = user_svc.list_org_units()
+                    if not units:
+                        ui.label("尚无部门，可手工新增或从企业微信通讯录导入。").classes("text-gray-500 p-4")
+                    for item in units:
+                        with ui.row().classes("w-full items-center border-b p-2 hover:bg-blue-50"):
+                            with ui.column().classes("gap-0 flex-grow"):
+                                ui.label(item.get("name", "")).classes("font-semibold")
+                                ui.label(
+                                    f"编码：{item.get('code', '')} ｜ "
+                                    f"上级：{item.get('parent_name') or '根节点'} ｜ "
+                                    f"企业微信ID：{item.get('wecom_department_id') or '-'} ｜ "
+                                    f"来源：{'企业微信' if item.get('source') == 'wecom' else '系统手工'}"
+                                    f"{'（本地编辑保护）' if item.get('manual_override') else ''}"
+                                ).classes("text-xs text-gray-500")
+                            ui.button(
+                                "编辑",
+                                on_click=lambda current=item: open_org_form(current),
+                            ).props("flat dense color=primary")
+
+            def open_org_form(current=None):
+                current = current or {}
+                all_units = user_svc.list_org_units()
+                parent_options = {
+                    item["org_unit_id"]: item["name"]
+                    for item in all_units
+                    if item["org_unit_id"] != current.get("org_unit_id")
+                }
+                with ui.dialog() as form_dialog, ui.card().classes("w-[32rem] max-w-[95vw] p-6"):
+                    ui.label("编辑部门" if current else "新增部门").classes("text-lg font-bold")
+                    code_input = ui.input("稳定编码", value=current.get("code", "")).classes("w-full")
+                    if current:
+                        code_input.disable()
+                    name_input = ui.input("部门名称", value=current.get("name", "")).classes("w-full")
+                    parent_select = ui.select(
+                        parent_options,
+                        value=current.get("parent_org_unit_id"),
+                        label="上级部门",
+                        clearable=True,
+                    ).classes("w-full")
+                    wecom_input = ui.input(
+                        "企业微信部门ID（可空）",
+                        value=current.get("wecom_department_id", ""),
+                    ).classes("w-full")
+                    order_input = ui.number(
+                        "排序",
+                        value=current.get("sort_order", 0),
+                        precision=0,
+                    ).classes("w-full")
+
+                    def save_org():
+                        try:
+                            user_svc.save_org_unit(
+                                code=code_input.value,
+                                name=name_input.value,
+                                parent_org_unit_id=parent_select.value,
+                                wecom_department_id=wecom_input.value,
+                                sort_order=int(order_input.value or 0),
+                            )
+                            render_org_units()
+                            form_dialog.close()
+                            ui.notify("部门已保存。", type="positive")
+                        except Exception as exc:
+                            ui.notify(f"部门保存失败：{exc}", type="negative")
+
+                    with ui.row().classes("w-full justify-end gap-3"):
+                        ui.button("取消", on_click=form_dialog.close).props("flat")
+                        ui.button("保存", on_click=save_org).props("color=primary")
+                form_dialog.open()
+
+            def render_positions():
+                position_container.clear()
+                with position_container:
+                    positions = user_svc.list_positions()
+                    if not positions:
+                        ui.label("尚无岗位，请先建立岗位字典。").classes("text-gray-500 p-4")
+                    for item in positions:
+                        with ui.row().classes("w-full items-center border-b p-2 hover:bg-blue-50"):
+                            with ui.column().classes("gap-0 flex-grow"):
+                                ui.label(item.get("name", "")).classes("font-semibold")
+                                ui.label(
+                                    f"编码：{item.get('code', '')} ｜ 职级：{item.get('level', 0)} ｜ "
+                                    f"来源：{'企业微信' if item.get('source') == 'wecom' else '系统手工'}"
+                                    f"{'（本地编辑保护）' if item.get('manual_override') else ''}"
+                                ).classes("text-xs text-gray-500")
+                            ui.button(
+                                "编辑",
+                                on_click=lambda current=item: open_position_form(current),
+                            ).props("flat dense color=primary")
+
+            def open_position_form(current=None):
+                current = current or {}
+                with ui.dialog() as form_dialog, ui.card().classes("w-96 p-6"):
+                    ui.label("编辑岗位" if current else "新增岗位").classes("text-lg font-bold")
+                    code_input = ui.input("稳定编码", value=current.get("code", "")).classes("w-full")
+                    if current:
+                        code_input.disable()
+                    name_input = ui.input("岗位名称", value=current.get("name", "")).classes("w-full")
+                    level_input = ui.number(
+                        "职级数字",
+                        value=current.get("level", 0),
+                        precision=0,
+                    ).classes("w-full")
+
+                    def save_position():
+                        try:
+                            user_svc.save_position(
+                                code=code_input.value,
+                                name=name_input.value,
+                                level=int(level_input.value or 0),
+                            )
+                            render_positions()
+                            form_dialog.close()
+                            ui.notify("岗位已保存。", type="positive")
+                        except Exception as exc:
+                            ui.notify(f"岗位保存失败：{exc}", type="negative")
+
+                    with ui.row().classes("w-full justify-end gap-3"):
+                        ui.button("取消", on_click=form_dialog.close).props("flat")
+                        ui.button("保存", on_click=save_position).props("color=primary")
+                form_dialog.open()
+
+            def import_wecom_org():
+                cache_data = load_wecom_contacts_cache()
+                departments = cache_data.get("departments", [])
+                if not departments:
+                    ui.notify("企业微信通讯录缓存中没有部门，请先同步通讯录。", type="warning")
+                    return
+                try:
+                    inserted, updated = user_svc.import_wecom_departments(departments)
+                    render_org_units()
+                    ui.notify(f"部门导入完成：新增 {inserted}，更新 {updated}。", type="positive")
+                except Exception as exc:
+                    ui.notify(f"部门导入失败：{exc}", type="negative", multi_line=True)
+
+            def import_wecom_position_catalog():
+                cache_data = load_wecom_contacts_cache()
+                contacts = cache_data.get("contacts", [])
+                if not contacts:
+                    ui.notify("企业微信通讯录缓存中没有成员，请先同步通讯录。", type="warning")
+                    return
+                try:
+                    inserted, updated = user_svc.import_wecom_positions(contacts)
+                    render_positions()
+                    ui.notify(f"岗位导入完成：新增 {inserted}，已存在 {updated}。", type="positive")
+                except Exception as exc:
+                    ui.notify(f"岗位导入失败：{exc}", type="negative", multi_line=True)
+
+            add_org_button.on_click(lambda: open_org_form())
+            add_position_button.on_click(lambda: open_position_form())
+            import_button.on_click(import_wecom_org)
+            import_position_button.on_click(import_wecom_position_catalog)
+            render_org_units()
+            render_positions()
+        org_dialog.open()
+
     # --- 用户管理界面的定义 (抛弃 Table，使用原生卡片列表) ---
     def open_user_management_dialog():
         # 1. 弹窗容器：响应式尺寸，严格控制内外边距和溢出
         with ui.dialog() as dialog, ui.card().classes("w-[90vw] max-w-5xl h-[85vh] p-4 flex flex-col no-wrap"):
             # 2. 顶部标题栏
             with ui.row().classes("w-full items-center justify-between shrink-0 mb-2"):
-                ui.label("用户账号及权限管理").classes("text-xl font-bold")
+                with ui.column().classes("gap-0"):
+                    ui.label("用户、账号及外部身份管理").classes("text-xl font-bold")
+                    ui.label(
+                        f"当前用户数据源：{'身份数据库' if app.state.user_service.storage_mode == 'database' else '旧版 Excel'}"
+                    ).classes("text-xs text-gray-500")
+                    ui.label("绿色：资料完整 ｜ 黄色：仍有待补项 ｜ 灰色：已停用或离职").classes(
+                        "text-xs text-gray-500"
+                    )
                 ui.icon("close", size="sm").classes("cursor-pointer").on("click", dialog.close)
 
             ui.separator().classes("shrink-0 mb-2")
 
             # 3. 核心交互函数定义
-            def save_user(action, target_username, form_pwd, form_role, form_dialog):
+            async def save_user(action, target_username, form_pwd, form_role, form_dialog):
                 try:
                     user_svc = app.state.user_service
                     user_svc.modify_user(action, target_username, form_pwd, form_role)
                     # 更新内存数据
                     app.state.users_data = user_svc.load_users()
                     # 重新渲染列表
-                    render_user_list()
+                    await refresh_user_list_preserving_scroll()
                     ui.notify("用户数据保存成功！", type="positive")
                     form_dialog.close()
                 except Exception as e:
@@ -606,7 +847,10 @@ def manage_page():
                     ui.label(title).classes("text-lg font-bold mb-4")
 
                     username_input = ui.input("用户名", value=target_username or "").classes("w-full mb-2")
-                    password_input = ui.input("密码", value=user_info.get("password", "")).classes("w-full mb-2")
+                    password_label = "初始密码" if action == "add" else "重置密码（留空表示保持不变）"
+                    password_input = ui.input(password_label, password=True, password_toggle_button=True).classes(
+                        "w-full mb-2"
+                    )
 
                     # 【核心修改区】：去掉下拉菜单逻辑，直接使用普通的文本输入框
                     current_role = user_info.get("role", "普通用户")
@@ -625,64 +869,441 @@ def manage_page():
                         ).props("color=primary")
                 form_dialog.open()
 
+            def open_wecom_binding_form(target_user):
+                if app.state.user_service.storage_mode != "database":
+                    ui.notify("请先执行一键迁移，再绑定企业微信账号。", type="warning")
+                    return
+
+                cache_data = load_wecom_contacts_cache()
+
+                def contact_name_sort_key(item):
+                    name = str(item.get("name", "")).strip().casefold()
+                    # GB18030 keeps common Chinese surnames close to familiar
+                    # pinyin order without adding a runtime pinyin dependency.
+                    return (
+                        name.encode("gb18030", errors="replace"),
+                        str(item.get("userid", "")).casefold(),
+                    )
+
+                contacts = sorted(
+                    [
+                        item
+                        for item in cache_data.get("contacts", [])
+                        if item.get("userid") and item.get("is_active", True)
+                    ],
+                    key=contact_name_sort_key,
+                )
+                contact_map = {str(item["userid"]): item for item in contacts}
+                options = {
+                    str(item["userid"]): (
+                        f"{item.get('name', '')} ｜ {item.get('userid', '')} ｜ "
+                        f"{'、'.join(item.get('departments', [])) or '未标部门'} ｜ "
+                        f"{item.get('position', '') or '未填职务'}"
+                    )
+                    for item in contacts
+                }
+                current_binding = app.state.user_service.get_wecom_binding(target_user)
+                auto_suggestion = (
+                    {} if current_binding else app.state.user_service.suggest_wecom_contact(target_user, contacts)
+                )
+                suggested_contact = auto_suggestion.get("contact")
+                initial_userid = current_binding.get("external_userid")
+                if not initial_userid and isinstance(suggested_contact, dict):
+                    initial_userid = suggested_contact.get("userid")
+
+                with ui.dialog() as binding_dialog, ui.card().classes("w-[44rem] max-w-[95vw] p-6"):
+                    ui.label(f"绑定企业微信：{target_user}").classes("text-lg font-bold")
+                    ui.label("同一企业微信账号只能绑定一个系统用户；保存会记录为手工绑定。").classes(
+                        "text-xs text-gray-500"
+                    )
+                    binding_select = (
+                        ui.select(
+                            options=options,
+                            value=initial_userid,
+                            label="企业微信成员",
+                            with_input=True,
+                            clearable=True,
+                        )
+                        .props("outlined options-dense")
+                        .classes("w-full")
+                    )
+                    if auto_suggestion:
+                        suggestion_type = "positive" if auto_suggestion.get("status") == "matched" else "warning"
+                        ui.label(f"自动匹配：{auto_suggestion.get('reason', '未找到候选')}").classes(
+                            "text-xs text-green-700" if suggestion_type == "positive" else "text-xs text-orange-700"
+                        )
+
+                    async def save_binding():
+                        try:
+                            if binding_select.value:
+                                app.state.user_service.import_wecom_departments(cache_data.get("departments", []))
+                                app.state.user_service.import_wecom_positions(contacts)
+                                selected_contact = contact_map[str(binding_select.value)]
+                                app.state.user_service.bind_wecom_user(
+                                    target_user,
+                                    selected_contact,
+                                )
+                                org_assigned = app.state.user_service.apply_suggested_org_membership(
+                                    target_user,
+                                    selected_contact,
+                                )
+                                message = "企业微信账号绑定成功。"
+                                if org_assigned:
+                                    message += " 已自动补齐部门和可匹配岗位。"
+                                ui.notify(message, type="positive")
+                            else:
+                                app.state.user_service.unbind_wecom_user(target_user)
+                                ui.notify("企业微信账号绑定已解除。", type="positive")
+                            await refresh_user_list_preserving_scroll()
+                            binding_dialog.close()
+                        except Exception as exc:
+                            ui.notify(f"绑定失败：{exc}", type="negative", multi_line=True)
+
+                    with ui.row().classes("w-full justify-end gap-3"):
+                        ui.button("取消", on_click=binding_dialog.close).props("flat")
+                        ui.button("保存绑定", on_click=save_binding).props("color=primary icon=link")
+                binding_dialog.open()
+
+            def open_membership_form(target_user):
+                if app.state.user_service.storage_mode != "database":
+                    ui.notify("请先执行一键迁移，再分配部门和岗位。", type="warning")
+                    return
+                units = app.state.user_service.list_org_units()
+                if not units:
+                    ui.notify("请先在组织架构管理中建立部门。", type="warning")
+                    return
+                positions = app.state.user_service.list_positions()
+                current = app.state.user_service.get_primary_membership(target_user)
+                binding = app.state.user_service.get_wecom_binding(target_user)
+                contact = next(
+                    (
+                        item
+                        for item in load_wecom_contacts_cache().get("contacts", [])
+                        if str(item.get("userid", "")) == str(binding.get("external_userid", ""))
+                    ),
+                    None,
+                )
+                suggested = (
+                    app.state.user_service.suggest_org_membership(contact)
+                    if not current and isinstance(contact, dict)
+                    else {}
+                )
+                active_users = {
+                    username: info.get("display_name") or username
+                    for username, info in app.state.users_data.items()
+                    if username != target_user and info.get("status", "active") == "active"
+                }
+                with ui.dialog() as membership_dialog, ui.card().classes("w-[34rem] max-w-[95vw] p-6"):
+                    ui.label(f"组织任职：{target_user}").classes("text-lg font-bold")
+                    org_select = ui.select(
+                        {item["org_unit_id"]: item["name"] for item in units},
+                        value=current.get("org_unit_id") or suggested.get("org_unit_id"),
+                        label="主部门",
+                        with_input=True,
+                    ).classes("w-full")
+                    position_select = ui.select(
+                        {item["position_id"]: item["name"] for item in positions},
+                        value=current.get("position_id") or suggested.get("position_id"),
+                        label="岗位",
+                        with_input=True,
+                        clearable=True,
+                    ).classes("w-full")
+                    manager_select = ui.select(
+                        active_users,
+                        value=current.get("manager_username"),
+                        label="直属上级",
+                        with_input=True,
+                        clearable=True,
+                    ).classes("w-full")
+                    ui.label("直属上级将作为离职上交和后续审批策略的首选解析对象。").classes("text-xs text-gray-500")
+                    if suggested:
+                        ui.label(
+                            f"企业微信建议：部门 {suggested.get('org_name') or '未匹配'}；"
+                            f"岗位 {suggested.get('position_name') or '未匹配'}。"
+                        ).classes("text-xs text-blue-700")
+
+                    async def save_membership():
+                        if not org_select.value:
+                            ui.notify("请选择主部门。", type="warning")
+                            return
+                        try:
+                            app.state.user_service.set_primary_membership(
+                                target_user,
+                                org_unit_id=org_select.value,
+                                position_id=position_select.value,
+                                manager_username=manager_select.value,
+                            )
+                            await refresh_user_list_preserving_scroll()
+                            membership_dialog.close()
+                            ui.notify("组织任职已保存。", type="positive")
+                        except Exception as exc:
+                            ui.notify(f"任职保存失败：{exc}", type="negative")
+
+                    with ui.row().classes("w-full justify-end gap-3"):
+                        ui.button("取消", on_click=membership_dialog.close).props("flat")
+                        ui.button("保存", on_click=save_membership).props("color=primary")
+                membership_dialog.open()
+
+            def open_auto_match_dialog():
+                if app.state.user_service.storage_mode != "database":
+                    ui.notify("请先执行一键迁移，再自动匹配企业微信账号。", type="warning")
+                    return
+                cache_data = load_wecom_contacts_cache()
+                contacts = cache_data.get("contacts", [])
+                if not contacts:
+                    ui.notify("企业微信通讯录缓存为空，请先同步通讯录。", type="warning")
+                    return
+                plan = app.state.user_service.build_wecom_match_plan(contacts)
+                rows = []
+                for index, item in enumerate(plan):
+                    contact = item.get("contact") if isinstance(item.get("contact"), dict) else {}
+                    status = item.get("status")
+                    rows.append(
+                        {
+                            "id": index,
+                            "username": item.get("username", ""),
+                            "contact": (f"{contact.get('name', '')} ({contact.get('userid', '')})" if contact else "—"),
+                            "organization": (
+                                f"{'、'.join(contact.get('departments', [])) or '-'} / "
+                                f"{contact.get('position', '') or '-'}"
+                                if contact
+                                else "—"
+                            ),
+                            "status": {
+                                "matched": "可自动绑定",
+                                "ambiguous": "需要人工确认",
+                                "unmatched": "未匹配",
+                            }.get(status, str(status)),
+                            "reason": item.get("reason", ""),
+                        }
+                    )
+                columns = [
+                    {"name": "username", "label": "系统用户", "field": "username", "align": "left"},
+                    {"name": "contact", "label": "企业微信建议", "field": "contact", "align": "left"},
+                    {"name": "organization", "label": "部门 / 职务", "field": "organization", "align": "left"},
+                    {"name": "status", "label": "结果", "field": "status", "align": "left"},
+                    {"name": "reason", "label": "匹配依据", "field": "reason", "align": "left"},
+                ]
+                matched_count = sum(1 for item in plan if item.get("status") == "matched")
+                with (
+                    ui.dialog().props("maximized") as match_dialog,
+                    ui.card().classes("w-full h-full p-5 flex flex-col no-wrap"),
+                ):
+                    with ui.row().classes("w-full items-center justify-between"):
+                        with ui.column().classes("gap-0"):
+                            ui.label("企业微信安全自动匹配预览").classes("text-xl font-bold")
+                            ui.label(f"可自动绑定 {matched_count} 人；重名、冲突和未匹配人员不会自动处理。").classes(
+                                "text-sm text-gray-600"
+                            )
+                        ui.button(icon="close", on_click=match_dialog.close).props("flat round")
+                    ui.table(
+                        columns=columns,
+                        rows=rows,
+                        row_key="id",
+                        pagination={"rowsPerPage": 25},
+                    ).props("dense flat bordered").classes("w-full flex-grow min-h-0")
+
+                    async def apply_matches():
+                        try:
+                            app.state.user_service.import_wecom_departments(cache_data.get("departments", []))
+                            app.state.user_service.import_wecom_positions(contacts)
+                            bound_count, org_count = app.state.user_service.apply_wecom_match_plan(plan)
+                            await refresh_user_list_preserving_scroll()
+                            match_dialog.close()
+                            ui.notify(
+                                f"自动绑定 {bound_count} 人，其中自动补齐组织任职 {org_count} 人。",
+                                type="positive",
+                            )
+                        except Exception as exc:
+                            ui.notify(f"自动匹配应用失败：{exc}", type="negative", multi_line=True)
+
+                    with ui.row().classes("w-full justify-end gap-3"):
+                        ui.button("取消", on_click=match_dialog.close).props("flat")
+                        apply_button = ui.button("应用安全匹配", on_click=apply_matches).props(
+                            "color=primary icon=auto_fix_high"
+                        )
+                        if matched_count == 0:
+                            apply_button.disable()
+                match_dialog.open()
+
             def confirm_delete(target_user):
                 if target_user == "admin":
                     ui.notify("系统安全限制：禁止删除超级管理员账号", type="warning")
                     return
 
+                if app.state.user_service.storage_mode != "database":
+                    ui.notify("请先迁移到身份数据库；旧 Excel 模式不再执行人员删除。", type="warning")
+                    return
+
                 with ui.dialog() as confirm_dialog, ui.card().classes("p-6"):
-                    ui.label(f"高危操作：确认删除用户 【{target_user}】 吗？").classes("text-lg font-bold text-red-600")
-                    ui.label("删除后该用户将无法再登录本系统。").classes("text-sm text-gray-500 mb-6")
+                    ui.label(f"确认停用用户 【{target_user}】 吗？").classes("text-lg font-bold text-red-600")
+                    ui.label("账号资料和历史记录会保留，但该用户将无法登录。").classes("text-sm text-gray-500 mb-6")
 
                     with ui.row().classes("w-full justify-end gap-4"):
                         ui.button("取消", on_click=confirm_dialog.close).props("flat")
                         ui.button(
-                            "确认删除", on_click=lambda: save_user("delete", target_user, None, None, confirm_dialog)
+                            "确认停用",
+                            on_click=lambda: save_user("deactivate", target_user, None, None, confirm_dialog),
                         ).props("color=negative")
                 confirm_dialog.open()
+
+            async def activate_user(target_user):
+                try:
+                    app.state.user_service.modify_user("activate", target_user, None, None)
+                    app.state.users_data = app.state.user_service.load_users()
+                    await refresh_user_list_preserving_scroll()
+                    ui.notify(f"用户 {target_user} 已恢复登录。", type="positive")
+                except Exception as exc:
+                    ui.notify(f"启用失败：{exc}", type="negative")
 
             # 4. 手工构建列表头部
             with ui.row().classes(
                 "w-full bg-blue-50 p-3 font-bold text-blue-900 rounded flex-nowrap shrink-0 items-center border"
             ):
-                ui.label("用户名").classes("w-1/4 min-w-[100px]")
-                ui.label("密码").classes("w-1/4 min-w-[100px]")
-                ui.label("角色").classes("w-1/4 min-w-[100px]")
-                ui.label("操作").classes("w-1/4 min-w-[120px] text-center")
+                ui.label("用户名").classes("w-[16%] min-w-[90px]")
+                ui.label("密码/状态").classes("w-[15%] min-w-[100px]")
+                ui.label("兼容角色").classes("w-[19%] min-w-[100px]")
+                ui.label("企业微信").classes("w-[22%] min-w-[120px]")
+                ui.label("操作").classes("w-[28%] min-w-[240px] text-center")
 
             # 5. 数据列表挂载点
-            list_container = ui.column().classes("w-full flex-grow min-h-0 overflow-y-auto gap-0 mt-2 border rounded")
+            list_container = (
+                ui.column()
+                .classes("w-full flex-grow min-h-0 overflow-y-auto gap-0 mt-2 border rounded")
+                .props("id=manage-user-list-scroll")
+            )
+
+            async def refresh_user_list_preserving_scroll():
+                """Rebuild rows without sending the administrator back to the top."""
+                try:
+                    raw_scroll_top = await ui.run_javascript(
+                        """
+                        const list = document.getElementById('manage-user-list-scroll');
+                        return list ? list.scrollTop : 0;
+                        """
+                    )
+                    scroll_top = float(raw_scroll_top or 0)
+                except Exception:
+                    scroll_top = 0.0
+
+                render_user_list()
+                try:
+                    await ui.run_javascript(
+                        f"""
+                        const restoreManageUserScroll = () => {{
+                            const list = document.getElementById('manage-user-list-scroll');
+                            if (list) list.scrollTop = {scroll_top};
+                        }};
+                        requestAnimationFrame(() => requestAnimationFrame(restoreManageUserScroll));
+                        setTimeout(restoreManageUserScroll, 80);
+                        """
+                    )
+                except Exception:
+                    logger.debug("恢复用户管理列表滚动位置失败", exc_info=True)
 
             # 6. 列表渲染引擎：每次增删改后，清空容器并重新生成行
             def render_user_list():
                 list_container.clear()
+                wecom_bindings = app.state.user_service.list_wecom_bindings()
                 with list_container:
                     # 【核心修改】：提取字典的键值对，并按照 role 字段进行升序排序
                     # item[0] 是用户名，item[1] 是包含密码和角色的字典
                     sorted_users = sorted(app.state.users_data.items(), key=lambda item: item[1].get("role", ""))
 
                     for username, info in sorted_users:
-                        # 使用 hover 效果增强交互感
-                        with ui.row().classes("w-full items-center p-3 border-b hover:bg-gray-100 flex-nowrap"):
-                            ui.label(username).classes("w-1/4 min-w-[100px] break-all")
-                            # 密码过长自动截断显示省略号
-                            ui.label(info.get("password", "")).classes("w-1/4 min-w-[100px] truncate text-gray-500")
+                        membership = app.state.user_service.get_primary_membership(username)
+                        binding = wecom_bindings.get(username, {})
+                        status = info.get("status", "active")
+                        is_top_level_account = username == "admin" or str(info.get("role", "")).lower() in {
+                            "admin",
+                            "boss",
+                        }
+                        missing_items = []
+                        if not info.get("password_set"):
+                            missing_items.append("登录密码")
+                        if not binding:
+                            missing_items.append("企业微信账号")
+                        if not membership.get("org_unit_id"):
+                            missing_items.append("主部门")
+                        if not membership.get("position_id"):
+                            missing_items.append("岗位")
+                        if not is_top_level_account and not membership.get("direct_manager_user_id"):
+                            missing_items.append("直属上级")
 
-                            with ui.row().classes("w-1/4 min-w-[100px]"):
+                        if status != "active":
+                            row_classes = "bg-gray-100 opacity-75 border-l-4 border-gray-400"
+                            config_label = "非在职账号"
+                            config_color = "grey"
+                        elif not missing_items:
+                            row_classes = "bg-green-50 border-l-4 border-green-500 hover:bg-green-100"
+                            config_label = "资料完整"
+                            config_color = "positive"
+                        else:
+                            row_classes = "bg-amber-50 border-l-4 border-amber-500 hover:bg-amber-100"
+                            config_label = f"待补 {len(missing_items)} 项"
+                            config_color = "warning"
+                        # 使用 hover 效果增强交互感
+                        with ui.row().classes(
+                            f"w-full items-center p-3 border-b flex-nowrap {row_classes}"
+                        ):
+                            with ui.column().classes("w-[16%] min-w-[90px] gap-0"):
+                                ui.label(username).classes("break-all")
+                                if membership:
+                                    ui.label(
+                                        f"{membership.get('org_name', '')} / "
+                                        f"{membership.get('position_name') or '未设岗位'}"
+                                    ).classes("text-xs text-gray-500")
+                            with ui.column().classes("w-[15%] min-w-[100px] gap-0"):
+                                config_chip = (
+                                    ui.chip(config_label, color=config_color)
+                                    .props("dense")
+                                    .classes("text-xs")
+                                )
+                                if missing_items:
+                                    config_chip.tooltip(f"缺少：{'、'.join(missing_items)}")
+                                ui.label("密码已设置" if info.get("password_set") else "密码未设置").classes(
+                                    "text-xs text-green-700" if info.get("password_set") else "text-xs text-orange-700"
+                                )
+                                status_text = {
+                                    "active": "在职",
+                                    "disabled": "已停用",
+                                    "departed": "已离职",
+                                }.get(status, status)
+                                ui.label(status_text).classes("text-xs text-gray-500")
+
+                            with ui.row().classes("w-[19%] min-w-[100px]"):
                                 ui.chip(
                                     info.get("role", "普通用户"),
                                     color="primary" if info.get("role") == "管理员" else "default",
                                 ).classes("text-xs")
 
+                            with ui.column().classes("w-[22%] min-w-[120px] gap-0"):
+                                ui.label(binding.get("external_display_name") or "未绑定").classes(
+                                    "text-sm" if binding else "text-sm text-orange-700"
+                                )
+                                if binding:
+                                    ui.label(binding.get("external_userid", "")).classes("text-xs text-gray-500")
+
                             # 原生按钮绑定，绝不会出现点击失效的问题
-                            with ui.row().classes("w-1/4 min-w-[120px] justify-center gap-2"):
+                            with ui.row().classes("w-[28%] min-w-[240px] justify-center gap-2"):
                                 # 注意：这里必须使用 u=username 捕获循环变量，防止闭包晚绑定陷阱
                                 ui.button("编辑", on_click=lambda u=username: open_form("edit", u)).props(
                                     "outline size=sm color=primary"
                                 )
-                                ui.button("删除", on_click=lambda u=username: confirm_delete(u)).props(
-                                    "outline size=sm color=negative"
+                                ui.button("微信", on_click=lambda u=username: open_wecom_binding_form(u)).props(
+                                    "outline size=sm color=teal"
                                 )
+                                ui.button("组织", on_click=lambda u=username: open_membership_form(u)).props(
+                                    "outline size=sm color=indigo"
+                                )
+                                if info.get("status", "active") == "active":
+                                    ui.button("停用", on_click=lambda u=username: confirm_delete(u)).props(
+                                        "outline size=sm color=negative"
+                                    )
+                                else:
+                                    ui.button("启用", on_click=lambda u=username: activate_user(u)).props(
+                                        "outline size=sm color=positive"
+                                    )
 
             # 初始加载渲染列表
             render_user_list()
@@ -690,9 +1311,13 @@ def manage_page():
             # 7. 底部控制区
             with ui.row().classes("w-full justify-between items-center shrink-0 mt-4 pt-2 border-t"):
                 ui.label("系统管理员专属管理通道").classes("text-gray-500 text-sm font-bold")
-                ui.button("新增用户", on_click=lambda: open_form("add"), icon="person_add").classes(
-                    "bg-green-600 text-white px-6"
-                )
+                with ui.row().classes("gap-3"):
+                    ui.button("自动匹配企业微信", on_click=open_auto_match_dialog, icon="auto_fix_high").props(
+                        "outline color=teal"
+                    )
+                    ui.button("新增用户", on_click=lambda: open_form("add"), icon="person_add").classes(
+                        "bg-green-600 text-white px-6"
+                    )
 
         dialog.open()
 
@@ -709,8 +1334,9 @@ def manage_page():
             {"name": "department_ids", "label": "部门ID", "field": "department_ids", "align": "left"},
         ]
 
-        with ui.dialog().props("maximized") as dialog, ui.card().classes(
-            "w-full h-full p-4 flex flex-col no-wrap bg-gray-50"
+        with (
+            ui.dialog().props("maximized") as dialog,
+            ui.card().classes("w-full h-full p-4 flex flex-col no-wrap bg-gray-50"),
         ):
             with ui.row().classes("w-full items-center justify-between shrink-0"):
                 with ui.row().classes("items-center gap-2"):
@@ -726,38 +1352,38 @@ def manage_page():
             scope_label = ui.label().classes("text-xs text-gray-500 shrink-0")
 
             with ui.row().classes("w-full gap-3 items-center shrink-0"):
-                keyword_input = ui.input("搜索姓名、账号、部门或职务").props("outlined dense clearable").classes(
-                    "w-80"
+                keyword_input = ui.input("搜索姓名、账号、部门或职务").props("outlined dense clearable").classes("w-80")
+                department_filter = (
+                    ui.select(["全部"], label="部门", value="全部")
+                    .props("outlined dense options-dense")
+                    .classes("w-52")
                 )
-                department_filter = ui.select(["全部"], label="部门", value="全部").props(
-                    "outlined dense options-dense"
-                ).classes("w-52")
-                status_filter = ui.select(["全部", "在职", "停用"], label="状态", value="全部").props(
-                    "outlined dense options-dense"
-                ).classes("w-36")
+                status_filter = (
+                    ui.select(["全部", "在职", "停用"], label="状态", value="全部")
+                    .props("outlined dense options-dense")
+                    .classes("w-36")
+                )
                 result_label = ui.label().classes("text-sm text-gray-500")
 
-            contacts_table = ui.table(
-                columns=columns,
-                rows=[],
-                row_key="userid",
-                pagination={"rowsPerPage": 20, "sortBy": "departments"},
-            ).props("dense flat bordered separator=cell").classes("w-full flex-grow min-h-0 bg-white")
+            contacts_table = (
+                ui.table(
+                    columns=columns,
+                    rows=[],
+                    row_key="userid",
+                    pagination={"rowsPerPage": 20, "sortBy": "departments"},
+                )
+                .props("dense flat bordered separator=cell")
+                .classes("w-full flex-grow min-h-0 bg-white")
+            )
 
             def render_contacts():
                 cache_data = cache_state["data"]
                 contacts = cache_data.get("contacts", [])
                 department_map = {
-                    str(item.get("id", "")): item.get("name", "")
-                    for item in cache_data.get("departments", [])
+                    str(item.get("id", "")): item.get("name", "") for item in cache_data.get("departments", [])
                 }
                 department_options = sorted(
-                    {
-                        department
-                        for contact in contacts
-                        for department in contact.get("departments", [])
-                        if department
-                    }
+                    {department for contact in contacts for department in contact.get("departments", []) if department}
                 )
                 department_filter.options = ["全部", *department_options]
                 if filter_state["department"] not in department_filter.options:
@@ -802,9 +1428,7 @@ def manage_page():
                     for department_id in cache_data.get("visible_department_ids", [])
                 ]
                 scope_name = (
-                    "自建应用可见范围"
-                    if cache_data.get("sync_scope") == "agent_visible_scope"
-                    else "配置的根部门范围"
+                    "自建应用可见范围" if cache_data.get("sync_scope") == "agent_visible_scope" else "配置的根部门范围"
                 )
                 summary_label.set_text(
                     f"缓存员工 {cache_data.get('contact_count', len(contacts))} 人 ｜ "
@@ -948,13 +1572,19 @@ def manage_page():
             with ui.row().classes("gap-4"):
                 ui.separator().props("size=1px")
                 # 【新增】用户数据管理按钮
-                ui.button("用户数据管理 (增删改)", on_click=open_user_management_dialog).props(
+                ui.button("用户与微信账号管理", on_click=open_user_management_dialog).props(
                     "icon=manage_accounts"
                 ).classes("bg-blue-600 text-white")
+                ui.button("一键迁移用户到身份数据库", on_click=open_user_migration_dialog).props(
+                    "icon=database"
+                ).classes("bg-indigo-700 text-white")
+                ui.button("组织架构与岗位", on_click=open_organization_management_dialog).props(
+                    "icon=account_tree"
+                ).classes("bg-cyan-800 text-white")
                 ui.button("企业微信通讯录", on_click=open_wecom_contacts_dialog).props("icon=contacts").classes(
                     "bg-teal-700 text-white"
                 )
-                ui.button("更新用户数据(JSON->内存)", on_click=lambda: update_users_data()).props("").classes("")
+                ui.button("刷新用户数据到内存", on_click=lambda: update_users_data()).props("").classes("")
         # 日志监控区域
         with ui.card().classes("w-full -space-y-2 overflow-hidden"):
             # 日志标题栏

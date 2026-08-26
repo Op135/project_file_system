@@ -88,17 +88,30 @@ def login_page(redirect_to: str = ""):
                     close_button="✖",
                 )
                 return
+            if user_info.get("status", "active") != "active":
+                ui.notify(
+                    "该账号已停用或离职，请联系管理员",
+                    type="warning",
+                    position="bottom",
+                    timeout=3000,
+                )
+                return
 
-            # 正常密码验证流程
-            if str(user_info.get("password", "")) == input_password:
+            # 密码由用户服务统一验证：迁移前兼容 Excel，迁移后验证数据库哈希。
+            if app.state.user_service.authenticate(input_username, input_password):
                 app.storage.user.update(
                     {
+                        "current_user_id": user_info.get("user_id"),
                         "current_user": input_username,
-                        "is_admin": check_admin_role(input_username),
+                        "is_admin": str(user_info.get("role", "")).lower() == "admin",
                         "current_role": user_info.get("role", "anonymous"),
                     }
                 )
-                target_path = redirect_to if redirect_to.startswith("/") and not redirect_to.startswith("//") else "/main"
+                target_path = (
+                    redirect_to
+                    if redirect_to.startswith("/") and not redirect_to.startswith("//")
+                    else "/main"
+                )
                 ui.navigate.to(target_path)
             else:
                 ui.notify(
@@ -138,9 +151,17 @@ def login_page(redirect_to: str = ""):
                     close_button="✖",
                 )
                 return
+            if user_info.get("status", "active") != "active":
+                ui.notify(
+                    "该账号已停用或离职，不能修改密码",
+                    type="warning",
+                    position="bottom",
+                    timeout=3000,
+                )
+                return
 
             # 正常密码验证流程
-            if str(user_info.get("password", "")) == input_password:
+            if app.state.user_service.authenticate(input_username, input_password):
                 create_password_dialog(input_username)
             else:
                 ui.notify(
@@ -184,8 +205,8 @@ def login_page(redirect_to: str = ""):
         try:
             # 获取对应用户的密码与角色组成的字典{'password': 'xxx', 'role': 'user'}
             user_info = app.state.user_service.get_user(input_username)
-            # 条件1：用户存在且密码为空
-            if user_info and user_info.get("password") is None:
+            # 迁移后不能通过读取密码字段判断，交给用户服务检查哈希是否存在。
+            if user_info and app.state.user_service.needs_password_setup(input_username):
                 create_password_dialog(input_username)  # 直接弹出密码设置
         except Exception as e:
             ui.notify(

@@ -869,6 +869,12 @@ def sync_current_user_role(default: str = "未知角色") -> str:
     if not latest_role:
         return default
 
+    latest_user_id = user_info.get("user_id")
+    if latest_user_id:
+        # Existing browser sessions gain the stable identity after the server's
+        # Excel-to-IAM migration without requiring a forced logout.
+        app.storage.user["current_user_id"] = str(latest_user_id)
+
     app.storage.user["current_role"] = latest_role
     app.storage.user["is_admin"] = latest_role.lower() == "admin"
     return latest_role

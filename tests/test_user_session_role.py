@@ -63,6 +63,25 @@ class CurrentUserRoleSyncTests(unittest.TestCase):
         self.assertEqual(current_role, "研发样品组长")
         self.assertEqual(user_storage["current_role"], "研发样品组长")
 
+    def test_existing_session_receives_stable_user_id_after_migration(self):
+        user_storage = {"current_user": "叶子浩", "current_role": "研发样品"}
+        user_service = SimpleNamespace(
+            get_user=lambda _username: {
+                "user_id": "user-stable-id",
+                "role": "研发样品组长",
+                "status": "active",
+            }
+        )
+        fake_app = SimpleNamespace(
+            storage=SimpleNamespace(user=user_storage),
+            state=SimpleNamespace(users_data={}, user_service=user_service),
+        )
+
+        with patch.object(utils, "app", fake_app):
+            utils.sync_current_user_role()
+
+        self.assertEqual(user_storage["current_user_id"], "user-stable-id")
+
 
 if __name__ == "__main__":
     unittest.main()
