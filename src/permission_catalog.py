@@ -91,6 +91,147 @@ SAMPLE_ORDER_PERMISSIONS = (
 )
 
 
+ERROR_VIEW_PERMISSION = "error.view"
+ERROR_RECORD_EDIT_PERMISSION = "error.record.edit"
+ERROR_REQUEST_APPROVE_PERMISSION = "error.request.approve"
+ERROR_RECORD_RENAME_PERMISSION = "error.record.rename"
+ERROR_RECORD_DELETE_PERMISSION = "error.record.delete"
+ERROR_REMINDER_CHECK_PERMISSION = "error.reminder.check"
+
+
+ERROR_PERMISSIONS = (
+    PermissionDefinition(
+        ERROR_VIEW_PERMISSION,
+        "查看异常单跟进",
+        "异常单跟进",
+        "允许从主页进入并查看生产异常单",
+    ),
+    PermissionDefinition(
+        ERROR_RECORD_EDIT_PERMISSION,
+        "维护异常单",
+        "异常单跟进",
+        "允许新建并维护异常单整单内容",
+    ),
+    PermissionDefinition(
+        ERROR_REQUEST_APPROVE_PERMISSION,
+        "审批异常措施申请",
+        "异常单跟进",
+        "允许审批纠正预防措施的延期申请和关闭申请",
+    ),
+    PermissionDefinition(
+        ERROR_RECORD_RENAME_PERMISSION,
+        "修改异常单号",
+        "异常单跟进",
+        "允许修改已有异常单的单号",
+    ),
+    PermissionDefinition(
+        ERROR_RECORD_DELETE_PERMISSION,
+        "删除异常单",
+        "异常单跟进",
+        "允许永久删除整张异常单",
+    ),
+    PermissionDefinition(
+        ERROR_REMINDER_CHECK_PERMISSION,
+        "人工检查异常提醒",
+        "异常单跟进",
+        "允许手动触发异常措施到期提醒检查",
+    ),
+)
+
+
+SAMPLE_ORDER_EXTENSION_NOTIFY_PERMISSION = "notifications.sample_order.extension.receive"
+SAMPLE_ORDER_SPECIAL_STATUS_NOTIFY_PERMISSION = "notifications.sample_order.special_status.receive"
+ERROR_EXTENSION_REQUEST_NOTIFY_PERMISSION = "notifications.error.extension.request.receive"
+ERROR_EXTENSION_RESULT_NOTIFY_PERMISSION = "notifications.error.extension.result.receive"
+ERROR_EXTENSION_APPROVED_NOTIFY_PERMISSION = "notifications.error.extension.approved.receive"
+ERROR_CLOSE_REQUEST_NOTIFY_PERMISSION = "notifications.error.close.request.receive"
+ERROR_CLOSE_RESULT_NOTIFY_PERMISSION = "notifications.error.close.result.receive"
+ERROR_CLOSE_APPROVED_NOTIFY_PERMISSION = "notifications.error.close.approved.receive"
+ERROR_OWNER_MISSING_REMINDER_PERMISSION = "notifications.error.owner_missing_reminder.receive"
+SAMPLE_ORDER_NOTIFICATION_MODULE = "样品单执行看板 · 通知接收"
+ERROR_NOTIFICATION_MODULE = "异常单跟进 · 通知接收"
+
+
+NOTIFICATION_PERMISSIONS = (
+    PermissionDefinition(
+        SAMPLE_ORDER_EXTENSION_NOTIFY_PERMISSION,
+        "接收样品单延期关注通知",
+        SAMPLE_ORDER_NOTIFICATION_MODULE,
+        "接收样品单超过延期次数阈值的关注通知；调试转发开启时也接收申请人延期通知",
+    ),
+    PermissionDefinition(
+        SAMPLE_ORDER_SPECIAL_STATUS_NOTIFY_PERMISSION,
+        "接收样品单特殊状态通知",
+        SAMPLE_ORDER_NOTIFICATION_MODULE,
+        "接收样品单暂停、作废等特殊状态变更通知",
+    ),
+    PermissionDefinition(
+        ERROR_EXTENSION_REQUEST_NOTIFY_PERMISSION,
+        "接收异常措施延期申请通知",
+        ERROR_NOTIFICATION_MODULE,
+        "负责人提交纠正预防措施延期申请时接收通知",
+    ),
+    PermissionDefinition(
+        ERROR_EXTENSION_RESULT_NOTIFY_PERMISSION,
+        "接收异常措施延期审批结果通知",
+        ERROR_NOTIFICATION_MODULE,
+        "纠正预防措施延期申请通过或驳回后接收审批结果通知",
+    ),
+    PermissionDefinition(
+        ERROR_EXTENSION_APPROVED_NOTIFY_PERMISSION,
+        "接收异常措施延期通过追加通知",
+        ERROR_NOTIFICATION_MODULE,
+        "仅在纠正预防措施延期申请审批通过后接收追加通知",
+    ),
+    PermissionDefinition(
+        ERROR_CLOSE_REQUEST_NOTIFY_PERMISSION,
+        "接收异常措施关闭申请通知",
+        ERROR_NOTIFICATION_MODULE,
+        "负责人提交纠正预防措施关闭申请时接收通知",
+    ),
+    PermissionDefinition(
+        ERROR_CLOSE_RESULT_NOTIFY_PERMISSION,
+        "接收异常措施关闭审批结果通知",
+        ERROR_NOTIFICATION_MODULE,
+        "纠正预防措施关闭申请通过或驳回后接收审批结果通知",
+    ),
+    PermissionDefinition(
+        ERROR_CLOSE_APPROVED_NOTIFY_PERMISSION,
+        "接收异常措施关闭通过追加通知",
+        ERROR_NOTIFICATION_MODULE,
+        "仅在纠正预防措施关闭申请审批通过后接收追加通知",
+    ),
+    PermissionDefinition(
+        ERROR_OWNER_MISSING_REMINDER_PERMISSION,
+        "接收异常措施无负责人兜底提醒",
+        ERROR_NOTIFICATION_MODULE,
+        "异常措施未填写负责人时，作为到期提醒的兜底接收人",
+    ),
+)
+
+
+# 上一版宽粒度通知权限只用于一次性迁移已有授权，不再显示在权限目录中。
+DEPRECATED_PERMISSION_REPLACEMENTS = {
+    "notifications.sample_order.attention.receive": (
+        SAMPLE_ORDER_EXTENSION_NOTIFY_PERMISSION,
+        SAMPLE_ORDER_SPECIAL_STATUS_NOTIFY_PERMISSION,
+    ),
+    "notifications.error.workflow.receive": (
+        ERROR_EXTENSION_REQUEST_NOTIFY_PERMISSION,
+        ERROR_EXTENSION_RESULT_NOTIFY_PERMISSION,
+        ERROR_CLOSE_REQUEST_NOTIFY_PERMISSION,
+        ERROR_CLOSE_RESULT_NOTIFY_PERMISSION,
+    ),
+    "notifications.error.approval.receive": (
+        ERROR_EXTENSION_APPROVED_NOTIFY_PERMISSION,
+        ERROR_CLOSE_APPROVED_NOTIFY_PERMISSION,
+    ),
+    "notifications.error.fallback.receive": (
+        ERROR_OWNER_MISSING_REMINDER_PERMISSION,
+    ),
+}
+
+
 _TOOL_NAMES = {
     "etendue_calc": "光学扩展量极限计算",
     "simple_coupling_calc": "简单透镜组耦合效率",
@@ -119,7 +260,13 @@ TOOL_PERMISSIONS = tuple(
     for tool_key, name in _TOOL_NAMES.items()
 )
 
-PERMISSION_CATALOG = CORE_PERMISSIONS + TOOL_PERMISSIONS + SAMPLE_ORDER_PERMISSIONS
+PERMISSION_CATALOG = (
+    CORE_PERMISSIONS
+    + TOOL_PERMISSIONS
+    + SAMPLE_ORDER_PERMISSIONS
+    + ERROR_PERMISSIONS
+    + NOTIFICATION_PERMISSIONS
+)
 PERMISSION_CODES = frozenset(item.code for item in PERMISSION_CATALOG)
 
 
@@ -130,6 +277,8 @@ def ignores_legacy_role_grants(permission_code: str) -> bool:
         normalized == "system.manage"
         or (normalized.startswith("tools.") and normalized.endswith(".use"))
         or normalized.startswith("sample_order.")
+        or normalized.startswith("error.")
+        or normalized.startswith("notifications.")
     )
 
 

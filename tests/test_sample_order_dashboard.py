@@ -1270,11 +1270,6 @@ class SampleOrderNotificationTests(unittest.IsolatedAsyncioTestCase):
     async def test_debug_mode_redirects_all_extension_notifications_to_manager(self):
         record = make_record()
 
-        async def fake_resolve(targets, fallback_touser="", **_kwargs):
-            if isinstance(targets, list) and targets and isinstance(targets[0], dict) and "names" in targets[0]:
-                return "applicant_userid"
-            return "manager_userid"
-
         send_message = AsyncMock(return_value=(True, "已发送"))
         events = [
             {
@@ -1294,8 +1289,13 @@ class SampleOrderNotificationTests(unittest.IsolatedAsyncioTestCase):
                 "created_role": "研发样品组长",
             },
         ]
+        permission_resolver = AsyncMock(return_value="manager_userid")
         with (
-            patch.object(dashboard, "resolve_wecom_recipients", side_effect=fake_resolve),
+            patch.object(
+                dashboard,
+                "resolve_permission_wecom_recipients",
+                new=permission_resolver,
+            ),
             patch.object(dashboard, "send_wecom_text_message", new=send_message),
             patch.object(dashboard, "SAMPLE_ORDER_REDIRECT_APPLICANT_NOTIFICATIONS_TO_MANAGER", True),
         ):
@@ -1306,14 +1306,13 @@ class SampleOrderNotificationTests(unittest.IsolatedAsyncioTestCase):
         third_recipients = send_message.await_args_list[1].args[1]
         self.assertEqual(first_recipients, "manager_userid")
         self.assertEqual(third_recipients, "manager_userid")
+        self.assertEqual(
+            permission_resolver.await_args.args[0],
+            dashboard.SAMPLE_ORDER_EXTENSION_NOTIFY_PERMISSION,
+        )
 
     async def test_debug_mode_redirects_special_status_notification_to_manager(self):
         record = make_record()
-
-        async def fake_resolve(targets, fallback_touser="", **_kwargs):
-            if isinstance(targets, list) and targets and isinstance(targets[0], dict) and "names" in targets[0]:
-                return "applicant_userid"
-            return "manager_userid"
 
         send_message = AsyncMock(return_value=(True, "已发送"))
         status_event = {
@@ -1324,8 +1323,13 @@ class SampleOrderNotificationTests(unittest.IsolatedAsyncioTestCase):
             "updated_by": "组长A",
             "updated_role": "研发样品组长",
         }
+        permission_resolver = AsyncMock(return_value="manager_userid")
         with (
-            patch.object(dashboard, "resolve_wecom_recipients", side_effect=fake_resolve),
+            patch.object(
+                dashboard,
+                "resolve_permission_wecom_recipients",
+                new=permission_resolver,
+            ),
             patch.object(dashboard, "send_wecom_text_message", new=send_message),
             patch.object(dashboard, "SAMPLE_ORDER_REDIRECT_APPLICANT_NOTIFICATIONS_TO_MANAGER", True),
         ):
@@ -1337,6 +1341,10 @@ class SampleOrderNotificationTests(unittest.IsolatedAsyncioTestCase):
         assert awaited_call is not None
         recipients = awaited_call.args[1]
         self.assertEqual(recipients, "manager_userid")
+        self.assertEqual(
+            permission_resolver.await_args.args[0],
+            dashboard.SAMPLE_ORDER_SPECIAL_STATUS_NOTIFY_PERMISSION,
+        )
 
     async def test_disabling_debug_redirect_restores_applicant_notification(self):
         record = make_record()

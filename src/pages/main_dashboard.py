@@ -25,7 +25,11 @@ from ..utils import (
     sync_current_user_role,
 )
 from .design_knowledge import DESIGN_KNOWLEDGE_DATA_KEY, get_design_knowledge_dashboard_pending_count
-from .error_management import ERROR_DATA_KEY, get_error_dashboard_pending_count
+from .error_management import (
+    ERROR_DATA_KEY,
+    can_view_error_management,
+    get_error_dashboard_pending_count,
+)
 from .sample_issue_collection import SAMPLE_ISSUE_DATA_KEY, get_sample_dashboard_pending_count
 from .sample_order_dashboard import (
     can_view_sample_order_dashboard,
@@ -230,9 +234,10 @@ def main_page():
             k in str(current_role) for k in ["总监", "经理", "主管", "boss", "admin"]
         ):
             continue
-        # 异常单跟进只对角色字符串里含有如下关键字的用户展示
-        elif items[3] == "/error_management" and not any(
-            k in str(current_role) for k in ["质量", "销售", "工程", "研发", "boss", "admin"]
+        # 异常单跟进使用稳定权限控制入口，旧 Excel 环境仍沿用原角色关键词。
+        elif items[3] == "/error_management" and not can_view_error_management(
+            current_role,
+            current_user,
         ):
             continue
         # 样品问题跟进只对角色字符串里含有如下关键字的用户展示
@@ -505,14 +510,20 @@ def main_page():
                     # 4. 渲染增强后的 Badge (红点)
                     if pending_count > 0:
                         # 【修改】微调了位置，并去除了 transparent，让红点更饱满
-                        pending_badge = ui.badge(str(pending_count), color="red").props("floating rounded").classes(
-                            "animate-shake ring-2 ring-white shadow-md text-xs font-bold px-2 top-0 right-0 transform translate-x-1/3 -translate-y-1/3"
+                        pending_badge = (
+                            ui.badge(str(pending_count), color="red")
+                            .props("floating rounded")
+                            .classes(
+                                "animate-shake ring-2 ring-white shadow-md text-xs font-bold px-2 top-0 right-0 transform translate-x-1/3 -translate-y-1/3"
+                            )
                         )
-                        if target == "/sample_order_dashboard":
+                        pending_target = {
+                            "/error_management": "/error_management?view=my_pending",
+                            "/sample_order_dashboard": "/sample_order_dashboard?view=my_pending",
+                        }.get(target)
+                        if pending_target:
                             pending_badge.classes("cursor-pointer").tooltip("查看我的待办")
                             pending_badge.on(
                                 "click.stop",
-                                lambda _=None: ui.navigate.to(
-                                    "/sample_order_dashboard?view=my_pending"
-                                ),
+                                lambda _=None, pending_url=pending_target: ui.navigate.to(pending_url),
                             )

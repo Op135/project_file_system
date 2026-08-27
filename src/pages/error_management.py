@@ -7,9 +7,9 @@
 - 纠正预防措施拥有独立 id，延期申请又拥有自己的 id，便于并发更新时准确定位。
 - ``_revision`` 是整张异常单的版本号，用于阻止较早打开的表单覆盖其他用户或后台任务的新修改。
 
-权限分为两层：配置中的编辑角色可以维护整张异常单，其中只有 admin 可以修改异常单号或删除
-整张异常单；普通用户仅能对自己负责的纠正预防措施申请延期或提交关闭说明。延期、审批、关闭
-等局部业务动作会在原子更新回调里重新检查权限和最新状态，不能只依赖页面按钮是否可见。
+权限分为两层：稳定权限控制模块查看、整单维护、申请审批、改号、删除和人工提醒检查；普通用户
+仅能对自己负责的纠正预防措施申请延期或提交关闭说明。延期、审批、关闭等局部业务动作会在
+原子更新回调里重新检查权限和最新状态，不能只依赖页面按钮是否可见。
 """
 
 import copy
@@ -21,11 +21,12 @@ import uuid
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import Any, Optional
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 from nicegui import app, ui
 
 from .. import db_storage
+from ..access_control import can
 from ..config import (
     IMG_DIR,
     PRESET_AVATARS,
@@ -33,12 +34,12 @@ from ..config import (
     UPLOADS_DIR,
 )
 from ..error_management_config import (
-    ERROR_DEFAULT_NOTIFY_TARGETS,
-    ERROR_EDITOR_ROLES,
-    ERROR_EXTENSION_APPROVAL_NOTIFY_TARGETS,
-    ERROR_EXTENSION_APPROVER_ROLES,
+    ERROR_DEFAULT_NOTIFY_TARGETS as ERROR_LEGACY_DEFAULT_NOTIFY_TARGETS,
+    ERROR_EDITOR_ROLES as ERROR_LEGACY_EDITOR_ROLES,
+    ERROR_EXTENSION_APPROVAL_NOTIFY_TARGETS as ERROR_LEGACY_EXTENSION_APPROVAL_NOTIFY_TARGETS,
+    ERROR_EXTENSION_APPROVER_ROLES as ERROR_LEGACY_EXTENSION_APPROVER_ROLES,
     ERROR_EXTENSION_NOTIFY_REQUESTER_ON_APPROVAL,
-    ERROR_EXTENSION_NOTIFY_TARGETS,
+    ERROR_EXTENSION_NOTIFY_TARGETS as ERROR_LEGACY_EXTENSION_NOTIFY_TARGETS,
     ERROR_FILTER_ALL_STATE,
     ERROR_FILTER_CLOSED_STATE,
     ERROR_FILTER_OPEN_STATE,
@@ -57,7 +58,29 @@ from ..issue_workflow_utils import (
     split_people,
     unique_nonempty_texts,
 )
-from ..utils import apply_chinese_date_locale, get_cache_busted_path, logout, setup_global_activity_tracking
+from ..notification_recipients import resolve_permission_wecom_recipients
+from ..permission_catalog import (
+    ERROR_CLOSE_APPROVED_NOTIFY_PERMISSION,
+    ERROR_CLOSE_REQUEST_NOTIFY_PERMISSION,
+    ERROR_CLOSE_RESULT_NOTIFY_PERMISSION,
+    ERROR_EXTENSION_APPROVED_NOTIFY_PERMISSION,
+    ERROR_EXTENSION_REQUEST_NOTIFY_PERMISSION,
+    ERROR_EXTENSION_RESULT_NOTIFY_PERMISSION,
+    ERROR_OWNER_MISSING_REMINDER_PERMISSION,
+    ERROR_RECORD_DELETE_PERMISSION,
+    ERROR_RECORD_EDIT_PERMISSION,
+    ERROR_RECORD_RENAME_PERMISSION,
+    ERROR_REMINDER_CHECK_PERMISSION,
+    ERROR_REQUEST_APPROVE_PERMISSION,
+    ERROR_VIEW_PERMISSION,
+)
+from ..utils import (
+    apply_chinese_date_locale,
+    get_cache_busted_path,
+    logout,
+    setup_global_activity_tracking,
+    sync_current_user_role,
+)
 from ..wecom_service import (
     find_unknown_wecom_names,
     resolve_wecom_recipients,
@@ -72,6 +95,20 @@ ERROR_DATA_KEY = "error_management_data"
 ERROR_VERSION_KEY = "error_management_version_stamp"
 ERROR_CLOSURE_NATURE_CATALOG_KEY = "error_closure_nature_catalog"
 ERROR_GRID_PAGE_SIZE = 30
+ERROR_FILTER_MY_PENDING_STATE = "我的待办"
+ERROR_LEGACY_VIEW_ROLE_KEYWORDS = ["质量", "销售", "工程", "研发", "boss", "admin"]
+ERROR_LEGACY_ADMIN_ROLES = ["admin"]
+ERROR_LEGACY_REMINDER_CHECK_ROLES = ["研发经理"]
+ERROR_NOTIFY_PERMISSION_BY_MESSAGE_TYPE = {
+    "extension_request": ERROR_EXTENSION_REQUEST_NOTIFY_PERMISSION,
+    "extension_approval": ERROR_EXTENSION_RESULT_NOTIFY_PERMISSION,
+    "close_request": ERROR_CLOSE_REQUEST_NOTIFY_PERMISSION,
+    "close_approval": ERROR_CLOSE_RESULT_NOTIFY_PERMISSION,
+}
+ERROR_APPROVED_NOTIFY_PERMISSION_BY_MESSAGE_TYPE = {
+    "extension_approval": ERROR_EXTENSION_APPROVED_NOTIFY_PERMISSION,
+    "close_approval": ERROR_CLOSE_APPROVED_NOTIFY_PERMISSION,
+}
 
 
 @dataclass
@@ -84,11 +121,19 @@ class ErrorUpdateResult:
     record: Optional[dict] = None
 
 
-async def resolve_error_notify_recipients(targets) -> str:
-    """按企业微信通讯录规则解析异常模块收件人，不再回落到固定个人账号。"""
-    touser = await resolve_wecom_recipients(targets, fallback_touser="")
+async def resolve_error_notify_recipients(permission_code: str, legacy_targets) -> str:
+    """数据库模式按通知权限找人，Excel 模式继续使用旧企业微信目标规则。"""
+    touser = await resolve_permission_wecom_recipients(
+        permission_code,
+        legacy_targets=legacy_targets,
+        fallback_touser="",
+    )
     if not touser:
-        logger.error("生产异常通知规则未匹配到任何企业微信成员：%s", targets)
+        logger.error(
+            "生产异常通知权限未匹配到已绑定成员：permission=%s, legacy_targets=%s",
+            permission_code,
+            legacy_targets,
+        )
     return touser
 
 
@@ -100,14 +145,29 @@ async def send_error_extension_wecom_message(
     message_type: str,
     additional_people: str = "",
     additional_targets=None,
+    include_approval_recipients: bool = False,
 ) -> tuple[bool, str]:
-    """通知配置指定角色，并可额外合并申请人等动态人员。"""
-    role_recipients = await resolve_error_notify_recipients(ERROR_EXTENSION_NOTIFY_TARGETS)
-    additional_role_recipients = await resolve_error_notify_recipients(additional_targets) if additional_targets else ""
+    """通知稳定权限的订阅人，并可额外合并申请人等动态人员。"""
+    primary_permission = ERROR_NOTIFY_PERMISSION_BY_MESSAGE_TYPE.get(message_type)
+    if not primary_permission:
+        return False, f"未配置异常通知类型对应的接收权限：{message_type}"
+    primary_recipients = await resolve_error_notify_recipients(
+        primary_permission,
+        ERROR_LEGACY_EXTENSION_NOTIFY_TARGETS,
+    )
+    approved_permission = ERROR_APPROVED_NOTIFY_PERMISSION_BY_MESSAGE_TYPE.get(message_type)
+    approved_recipients = (
+        await resolve_error_notify_recipients(
+            approved_permission,
+            additional_targets,
+        )
+        if include_approval_recipients and approved_permission
+        else ""
+    )
     people_recipients = await format_people_for_wecom(additional_people) if additional_people else ""
-    touser = merge_wecom_recipients(role_recipients, additional_role_recipients, people_recipients)
+    touser = merge_wecom_recipients(primary_recipients, approved_recipients, people_recipients)
     if not touser:
-        return False, "生产异常延期通知规则未匹配到企业微信成员"
+        return False, "生产异常通知权限未匹配到已绑定企业微信成员"
     return await send_wecom_text_message(
         content,
         touser,
@@ -212,31 +272,120 @@ def calculate_error_status(error_data: dict) -> str:
     return "异常录入"
 
 
-def is_error_editor(role: str) -> bool:
-    """判断当前角色是否包含任一配置的整单编辑角色关键字。"""
-    return any(role_key in str(role) for role_key in ERROR_EDITOR_ROLES)
+def _error_role_matches(role: object, allowed_roles: list[str]) -> bool:
+    role_text = str(role or "").strip().casefold()
+    return any(str(role_key).strip().casefold() in role_text for role_key in allowed_roles)
 
 
-def is_error_extension_approver(role: str) -> bool:
-    """判断当前角色是否可以审批延期申请。"""
-    return any(role_key in str(role) for role_key in ERROR_EXTENSION_APPROVER_ROLES)
+def _has_error_permission(
+    username: str,
+    role: object,
+    permission_code: str,
+    legacy_allowed_roles: list[str],
+) -> bool:
+    """按稳定权限判断异常模块操作；旧 Excel 环境继续使用原角色配置。"""
+    user_service = getattr(app.state, "user_service", None)
+    role_text = str(role or "").strip()
+    if user_service is None or not str(username or "").strip():
+        # 无应用上下文时保留纯函数兼容，供历史脚本和单元测试使用。
+        return _error_role_matches(role_text, legacy_allowed_roles)
+    matched_legacy_roles = [role_text] if _error_role_matches(role_text, legacy_allowed_roles) else []
+    return can(
+        user_service,
+        str(username).strip(),
+        permission_code,
+        legacy_role=role_text,
+        legacy_allowed_roles=matched_legacy_roles,
+    )
 
 
-def is_error_rd_manager(role: str) -> bool:
-    """判断是否为研发经理角色，用于专属待办和人工提醒检查入口。"""
-    return "研发经理" in str(role)
+def can_view_error_management(role: object, username: str = "") -> bool:
+    """判断用户是否可以进入异常单跟进模块。"""
+    return _has_error_permission(
+        username,
+        role,
+        ERROR_VIEW_PERMISSION,
+        ERROR_LEGACY_VIEW_ROLE_KEYWORDS,
+    )
 
 
-def is_error_admin(role: str) -> bool:
-    """删除整张异常单属于高风险操作，仅允许角色值严格等于 admin。"""
-    return str(role).strip().lower() == "admin"
+def is_error_editor(role: object, username: str = "") -> bool:
+    """判断用户是否可以维护整张异常单。"""
+    return _has_error_permission(
+        username,
+        role,
+        ERROR_RECORD_EDIT_PERMISSION,
+        list(dict.fromkeys([*ERROR_LEGACY_EDITOR_ROLES, *ERROR_LEGACY_ADMIN_ROLES])),
+    )
+
+
+def can_approve_error_requests(role: object, username: str = "") -> bool:
+    """判断用户是否可以审批延期和措施关闭申请。"""
+    return _has_error_permission(
+        username,
+        role,
+        ERROR_REQUEST_APPROVE_PERMISSION,
+        list(
+            dict.fromkeys(
+                [*ERROR_LEGACY_EXTENSION_APPROVER_ROLES, *ERROR_LEGACY_ADMIN_ROLES]
+            )
+        ),
+    )
+
+
+def is_error_extension_approver(role: object, username: str = "") -> bool:
+    """兼容旧调用：判断用户是否可以审批异常措施申请。"""
+    return can_approve_error_requests(role, username)
+
+
+def can_check_error_reminders(role: object, username: str = "") -> bool:
+    """判断用户是否可以人工触发异常提醒检查。"""
+    return _has_error_permission(
+        username,
+        role,
+        ERROR_REMINDER_CHECK_PERMISSION,
+        ERROR_LEGACY_REMINDER_CHECK_ROLES,
+    )
+
+
+def can_rename_error_record(role: object, username: str = "") -> bool:
+    """判断用户是否可以修改已有异常单号。"""
+    return _has_error_permission(
+        username,
+        role,
+        ERROR_RECORD_RENAME_PERMISSION,
+        ERROR_LEGACY_ADMIN_ROLES,
+    )
+
+
+def is_error_rd_manager(role: object, username: str = "") -> bool:
+    """兼容旧调用：判断用户是否可以人工触发异常提醒检查。"""
+    return can_check_error_reminders(role, username)
+
+
+def can_delete_error_record(role: object, username: str = "") -> bool:
+    """判断用户是否拥有删除整张异常单的高风险权限。"""
+    return _has_error_permission(
+        username,
+        role,
+        ERROR_RECORD_DELETE_PERMISSION,
+        ERROR_LEGACY_ADMIN_ROLES,
+    )
+
+
+def is_error_admin(role: object, username: str = "") -> bool:
+    """兼容旧调用：判断用户是否拥有删除异常单权限。"""
+    return can_delete_error_record(role, username)
 
 
 async def format_people_for_wecom(value: str) -> str:
     """把负责人姓名解析成企业微信账号；解析不到时保留直接输入值作为发送兜底。"""
     people = split_people(value)
     if not people:
-        return await resolve_error_notify_recipients(ERROR_DEFAULT_NOTIFY_TARGETS)
+        return await resolve_error_notify_recipients(
+            ERROR_OWNER_MISSING_REMINDER_PERMISSION,
+            ERROR_LEGACY_DEFAULT_NOTIFY_TARGETS,
+        )
     direct_value = "|".join(people)
     return await resolve_wecom_recipients(
         [{"names": people}],
@@ -412,7 +561,7 @@ def get_owner_extension_summary(error_data: dict) -> list[tuple[str, int]]:
 def is_error_pending_for_user(error_data: dict, current_user: str, current_role: str) -> bool:
     """按主页角标口径判断一张异常单是否需要当前用户处理。"""
     actions = error_data.get("preventive_actions", [])
-    if is_error_extension_approver(current_role):
+    if can_approve_error_requests(current_role, current_user):
         return any(
             isinstance(action, dict)
             and action.get("status") != "已关闭"
@@ -432,9 +581,10 @@ def has_error_overdue_without_request_for_reviewer(
     error_data: dict,
     current_role: str,
     today: Optional[date] = None,
+    current_user: str = "",
 ) -> bool:
     """判断评审角色是否需要关注任一已逾期且尚无延期或关闭申请的措施。"""
-    if not is_error_extension_approver(current_role):
+    if not can_approve_error_requests(current_role, current_user):
         return False
 
     reference_date = today or datetime.now().date()
@@ -463,7 +613,12 @@ def get_error_card_sort_key(
     updated_at = error_data.get("updated_at") or error_data.get("created_at") or ""
     if is_error_pending_for_user(error_data, current_user, current_role):
         priority = 2
-    elif has_error_overdue_without_request_for_reviewer(error_data, current_role, today):
+    elif has_error_overdue_without_request_for_reviewer(
+        error_data,
+        current_role,
+        today,
+        current_user,
+    ):
         priority = 1
     else:
         priority = 0
@@ -480,7 +635,7 @@ def get_error_dashboard_pending_count(all_errors: Any, current_user: str, curren
     if not isinstance(all_errors, dict):
         return 0
 
-    if is_error_extension_approver(current_role):
+    if can_approve_error_requests(current_role, current_user):
         return sum(
             1
             for error_data in all_errors.values()
@@ -501,7 +656,13 @@ def get_error_dashboard_pending_count(all_errors: Any, current_user: str, curren
     )
 
 
-def error_matches_filter(error_data: dict, filter_state: str) -> bool:
+def error_matches_filter(
+    error_data: dict,
+    filter_state: str,
+    *,
+    current_user: str = "",
+    current_role: str = "",
+) -> bool:
     """判断异常单是否符合总览页筛选条件。
 
     “延期申请中”和“关闭申请中”是跨主状态的特殊筛选，只要存在对应的待审批申请就命中。
@@ -509,6 +670,8 @@ def error_matches_filter(error_data: dict, filter_state: str) -> bool:
     """
     if filter_state == ERROR_FILTER_ALL_STATE:
         return True
+    if filter_state == ERROR_FILTER_MY_PENDING_STATE:
+        return is_error_pending_for_user(error_data, current_user, current_role)
     if filter_state == ERROR_FILTER_OPEN_STATE:
         return calculate_error_status(error_data) != ERROR_FILTER_CLOSED_STATE
     if filter_state == ERROR_FILTER_PENDING_EXTENSION_STATE:
@@ -582,7 +745,11 @@ def build_error_grid_row(error_data: dict, current_user: str, current_role: str)
     closed_preventive = sum(1 for item in preventive_actions if item.get("status") == "已关闭")
     card_status = get_error_card_status(data)
     is_my_pending = is_error_pending_for_user(data, current_user, current_role)
-    is_reviewer_overdue = has_error_overdue_without_request_for_reviewer(data, current_role)
+    is_reviewer_overdue = has_error_overdue_without_request_for_reviewer(
+        data,
+        current_role,
+        current_user=current_user,
+    )
     attention_labels = []
     if is_my_pending:
         attention_labels.append("待我处理")
@@ -715,6 +882,8 @@ async def save_error_record(
     更新过记录，保存会返回 ``revision_conflict``，避免旧页面覆盖新内容。admin 修改已有异常单号时，
     会改为原子迁移顶层数据库键，确保旧键删除、新键写入和操作日志保存属于同一次事务。
     """
+    if not is_error_editor(role, user):
+        return ErrorUpdateResult(db_success=False, changed=False, code="forbidden")
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     record = merge_with_error_template(error_data)
     source_error_id = str(original_error_id or record["error_id"]).strip()
@@ -754,8 +923,8 @@ async def rename_error_record(
     expected_revision: Optional[int] = None,
     renamed_at: str = "",
 ) -> ErrorUpdateResult:
-    """仅允许 admin 原子迁移异常单数据库键，并同步记录单号变更日志。"""
-    if not is_error_admin(role):
+    """按改号权限原子迁移异常单数据库键，并同步记录单号变更日志。"""
+    if not can_rename_error_record(role, user):
         return ErrorUpdateResult(db_success=False, changed=False, code="forbidden")
 
     source_error_id = str(original_error_id or "").strip()
@@ -915,7 +1084,9 @@ async def submit_error_preventive_close_request(
             return "action_not_found", current
         if stored_action.get("status") == "已关闭":
             return "already_closed", current
-        if not is_current_responsible(stored_action.get("owner", ""), user, role) and not is_error_editor(role):
+        if not is_current_responsible(
+            stored_action.get("owner", ""), user, role
+        ) and not is_error_editor(role, user):
             return "permission_changed", current
         if get_pending_extension_request(stored_action):
             return "pending_extension", current
@@ -944,7 +1115,7 @@ async def approve_error_preventive_close_request(
     closure_nature: str = "",
 ) -> ErrorUpdateResult:
     """审批纠正预防措施关闭申请；通过时写入措施性质并关闭该措施。"""
-    if not is_error_extension_approver(role):
+    if not can_approve_error_requests(role, user):
         return ErrorUpdateResult(db_success=False, changed=False, code="forbidden")
 
     nature = normalize_closure_nature(closure_nature)
@@ -993,13 +1164,18 @@ async def approve_error_preventive_close_request(
     return result
 
 
-async def delete_error_record(error_id: str, role: str) -> ErrorUpdateResult:
-    """由 admin 原子删除单张异常单。
+async def delete_error_record(
+    error_id: str,
+    role: str,
+    *,
+    user: str = "",
+) -> ErrorUpdateResult:
+    """按删除权限原子删除单张异常单。
 
     删除时更新整个 ``error_management_data`` 顶层字典，而不是调用依赖当前实例缓存的深层删除。
     ``atomic_deep_update`` 会在事务内读取最新字典，因此其它实例同时新增或修改的异常单会被保留。
     """
-    if not is_error_admin(role):
+    if not can_delete_error_record(role, user):
         return ErrorUpdateResult(db_success=False, changed=False, code="forbidden")
 
     outcome = {"changed": False, "code": "db_error", "record": None}
@@ -1188,7 +1364,7 @@ def save_uploaded_evidence_file(error_id: str, action_id: str, original_filename
 # ==========================================
 # @ui.page: NiceGUI框架的路由装饰器，用于定义页面路径
 @ui.page("/error_management")
-async def error_management_page(error_id: str = ""):
+async def error_management_page(error_id: str = "", view: str = ""):
     """构建异常管理页面；error_id 来自企业微信直达链接，可在登录后自动打开对应异常单。"""
     # --- 调用全局活跃跟踪组件 ---
     setup_global_activity_tracking()
@@ -1214,26 +1390,41 @@ async def error_management_page(error_id: str = ""):
         </style>
     """)
     if not app.storage.user.get("current_user"):
-        redirect_target = f"/error_management?error_id={error_id}" if error_id else "/error_management"
+        redirect_params = {}
+        if error_id:
+            redirect_params["error_id"] = error_id
+        if view:
+            redirect_params["view"] = view
+        redirect_target = "/error_management"
+        if redirect_params:
+            redirect_target = f"{redirect_target}?{urlencode(redirect_params)}"
         ui.navigate.to(f"/login?redirect_to={quote(redirect_target, safe='')}")
         return
 
     current_user = app.storage.user.get("current_user", "未知用户")
-    current_role = app.storage.user.get("current_role", "未知角色")
+    current_role = sync_current_user_role()
+    if not can_view_error_management(current_role, current_user):
+        ui.notify("当前用户没有查看异常单跟进的权限", type="warning")
+        ui.navigate.to("/main")
+        return
     current_display_path = get_cache_busted_path(
         app.storage.general.get("user_preferences", {}).get(current_user, {}).get("avatar", PRESET_AVATARS[0])
     )
 
-    page_state = {"search_keyword": "", "filter_state": ERROR_FILTER_OPEN_STATE}
+    initial_filter = (
+        ERROR_FILTER_MY_PENDING_STATE
+        if str(view or "").strip().lower() == "my_pending"
+        else ERROR_FILTER_OPEN_STATE
+    )
+    page_state = {"search_keyword": "", "filter_state": initial_filter}
 
     # ui.dialog: NiceGUI框架提供的模态对话框组件
     dialog = ui.dialog().props("persistent")
     root_dialog = ui.dialog().props("maximized persistent")
 
-    # admin 始终拥有整单编辑权；即使后续配置误删 admin，也不能影响管理员修正基础输入项。
-    can_edit_all = is_error_admin(current_role) or is_error_editor(current_role)
-    can_delete_record = is_error_admin(current_role)
-    can_rename_record = is_error_admin(current_role)
+    can_edit_all = is_error_editor(current_role, current_user)
+    can_delete_record = can_delete_error_record(current_role, current_user)
+    can_rename_record = can_rename_error_record(current_role, current_user)
     # 此变量只防止同一页面被连续点击触发多个手工检查；跨页面、跨用户的提醒去重由数据库认领机制负责。
     reminder_guard = {"running": False}
 
@@ -1247,6 +1438,8 @@ async def error_management_page(error_id: str = ""):
             reminder_guard["running"] = False
 
     async def handle_manual_reminder_check():
+        if not can_check_error_reminders(current_role, current_user):
+            return ui.notify("当前用户没有人工检查异常提醒的权限", type="warning")
         await run_reminder_check(True)
 
     async def handle_new_error_record():
@@ -1306,7 +1499,11 @@ async def error_management_page(error_id: str = ""):
             item.setdefault("extension_requests", [])
 
         read_only = not can_edit_all
-        owner_allowed_values = [*ERROR_EDITOR_ROLES, *ERROR_EXTENSION_APPROVER_ROLES, current_role]
+        owner_allowed_values = [
+            *ERROR_LEGACY_EDITOR_ROLES,
+            *ERROR_LEGACY_EXTENSION_APPROVER_ROLES,
+            current_role,
+        ]
 
         def bind_input(label, target, key, classes="w-full", readonly=None):
             field_readonly = read_only if readonly is None else readonly
@@ -1456,7 +1653,7 @@ async def error_management_page(error_id: str = ""):
                 original_error_id=stored_error_id,
             )
             if result.code == "forbidden":
-                return ui.notify("只有 admin 可以修改异常单号", type="warning", position="bottom")
+                return ui.notify("当前用户没有保存或修改该异常单的权限", type="warning", position="bottom")
             if result.code == "already_exists":
                 return ui.notify("异常单号已存在，请使用其它单号", type="warning", position="bottom")
             if result.code == "not_found":
@@ -1475,14 +1672,18 @@ async def error_management_page(error_id: str = ""):
             refresh_list()
 
         def open_delete_confirmation():
-            """打开高风险操作确认框；真正删除时仍会再次校验 admin 角色。"""
+            """打开高风险操作确认框；真正删除时仍会再次校验稳定权限。"""
             if is_new or not can_delete_record:
                 return ui.notify("当前角色无删除异常单权限", type="warning", position="bottom")
 
             target_error_id = stored_error_id
 
             async def confirm_delete():
-                result = await delete_error_record(target_error_id, current_role)
+                result = await delete_error_record(
+                    target_error_id,
+                    current_role,
+                    user=current_user,
+                )
                 if result.code == "forbidden":
                     return ui.notify("当前角色无删除异常单权限", type="warning", position="bottom")
                 if result.code == "not_found":
@@ -1644,7 +1845,7 @@ async def error_management_page(error_id: str = ""):
                     f"原预计日期：{fresh_request.get('old_due_date') or '-'}\n"
                     f"申请延期至：{fresh_request['new_due_date']}\n"
                     f"延期原因：{fresh_request['reason']}\n"
-                    f"审批角色：{', '.join(ERROR_EXTENSION_APPROVER_ROLES)}"
+                    "审批权限：审批异常措施申请"
                 )
                 await send_error_extension_wecom_message(
                     content,
@@ -1670,7 +1871,7 @@ async def error_management_page(error_id: str = ""):
 
         async def approve_extension_request(action: dict, request: dict, approved: bool):
             """审批一条延期申请；通过时才修改措施预计完成日期，驳回只记录审批结果。"""
-            if not is_error_extension_approver(current_role):
+            if not can_approve_error_requests(current_role, current_user):
                 return ui.notify("当前角色无延期审批权限", type="warning", position="bottom")
 
             action_id = get_item_id(action)
@@ -1749,8 +1950,9 @@ async def error_management_page(error_id: str = ""):
                     additional_people=(
                         fresh_request.get("requester", "") if ERROR_EXTENSION_NOTIFY_REQUESTER_ON_APPROVAL else ""
                     ),
-                    # 品质经理和 QE 工程师只在延期通过时追加通知，驳回时不通知。
-                    additional_targets=ERROR_EXTENSION_APPROVAL_NOTIFY_TARGETS if approved else None,
+                    # 旧 Excel 模式仍按追加目标发送；数据库模式按“延期通过追加通知”权限发送。
+                    additional_targets=ERROR_LEGACY_EXTENSION_APPROVAL_NOTIFY_TARGETS,
+                    include_approval_recipients=approved,
                 ),
                 "延期审批企业微信通知",
             )
@@ -1792,7 +1994,7 @@ async def error_management_page(error_id: str = ""):
                     f"措施：{fresh_action.get('content', '')}\n"
                     f"申请人：{current_user}\n"
                     f"关闭说明：{fresh_request.get('note', '-')}\n"
-                    f"审批角色：{', '.join(ERROR_EXTENSION_APPROVER_ROLES)}"
+                    "审批权限：审批异常措施申请"
                 )
                 schedule_background_task(
                     send_error_extension_wecom_message(
@@ -1861,7 +2063,8 @@ async def error_management_page(error_id: str = ""):
                     additional_people=(
                         fresh_request.get("requester", "") if ERROR_EXTENSION_NOTIFY_REQUESTER_ON_APPROVAL else ""
                     ),
-                    additional_targets=ERROR_EXTENSION_APPROVAL_NOTIFY_TARGETS if approved else None,
+                    additional_targets=ERROR_LEGACY_EXTENSION_APPROVAL_NOTIFY_TARGETS,
+                    include_approval_recipients=approved,
                 ),
                 "纠正预防措施关闭审批企业微信通知",
             )
@@ -1942,7 +2145,7 @@ async def error_management_page(error_id: str = ""):
                                     f"申请人：{pending_extension.get('requester', '-')} ｜ "
                                     f"原因：{pending_extension.get('reason', '-')}"
                                 ).classes("text-sm text-orange-700")
-                                if is_error_extension_approver(current_role):
+                                if can_approve_error_requests(current_role, current_user):
 
                                     async def reject_extension(event=None, a=item, r=pending_extension):
                                         await approve_extension_request(a, r, False)
@@ -1987,7 +2190,7 @@ async def error_management_page(error_id: str = ""):
                                     f"申请人：{pending_close.get('requester', '-')} ｜ "
                                     f"说明：{pending_close.get('note', '-')}"
                                 ).classes("text-sm text-purple-700")
-                                if is_error_extension_approver(current_role):
+                                if can_approve_error_requests(current_role, current_user):
 
                                     async def reject_close(event=None, a=item, r=pending_close):
                                         await approve_close_request_from_dialog(a, r, False)
@@ -2225,14 +2428,17 @@ async def error_management_page(error_id: str = ""):
                     ui.input("搜索产品/料号/订单/负责人").props("dense outlined").bind_value(
                         page_state, "search_keyword"
                     ).classes("w-64")
-                    ui.select(ERROR_FILTER_STATES, label="状态筛选").props("dense outlined").bind_value(
+                    error_filter_options = list(
+                        dict.fromkeys([ERROR_FILTER_MY_PENDING_STATE, *ERROR_FILTER_STATES])
+                    )
+                    ui.select(error_filter_options, label="状态筛选").props("dense outlined").bind_value(
                         page_state, "filter_state"
                     ).classes("w-44")
                     ui.button("查询", icon="search", on_click=lambda: refresh_list()).props("outline color=primary")
                     ui.button("刷新", icon="refresh", on_click=lambda: refresh_list()).props("flat color=primary")
                 with ui.row().classes("gap-2 items-center"):
                     ui.label("点击“详情”打开详情").classes("text-xs text-gray-500")
-                    if is_error_rd_manager(current_role):
+                    if can_check_error_reminders(current_role, current_user):
                         ui.button(
                             "检查提醒",
                             icon="notifications_active",
@@ -2321,7 +2527,12 @@ async def error_management_page(error_id: str = ""):
                     ).lower()
                     if keyword and keyword not in searchable:
                         continue
-                    if not error_matches_filter(error_data, filter_state):
+                    if not error_matches_filter(
+                        error_data,
+                        filter_state,
+                        current_user=current_user,
+                        current_role=current_role,
+                    ):
                         continue
                     rows.append(build_error_grid_row(error_data, current_user, current_role))
                 error_grid.options["rowData"] = rows

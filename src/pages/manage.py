@@ -1019,8 +1019,38 @@ def manage_page():
                             ui.label(
                                 "权限会自动授予所有以该岗位作为主岗位的在职用户；企业微信职务文本本身不会自动授权。"
                             ).classes("text-xs text-blue-800 bg-blue-50 rounded p-2")
+                            auto_save_status = ui.label("勾选状态变化后自动保存").classes(
+                                "text-xs text-green-700"
+                            )
                             checkbox_by_code = {}
                             selected_codes = set(selected.get("permission_codes", []))
+
+                            def auto_save_position_permissions(_event=None):
+                                """任一权限勾选变化后立即保存整个岗位权限集合。"""
+                                auto_save_status.set_text("正在自动保存…")
+                                try:
+                                    user_svc.set_position_permissions(
+                                        selected["position_id"],
+                                        [
+                                            code
+                                            for code, checkbox in checkbox_by_code.items()
+                                            if checkbox.value
+                                        ],
+                                        actor_username=current_user,
+                                    )
+                                except Exception as exc:
+                                    # 失败时先提示，再重建右侧内容以恢复数据库中的真实勾选状态。
+                                    ui.notify(
+                                        f"岗位权限自动保存失败：{exc}",
+                                        type="negative",
+                                        multi_line=True,
+                                    )
+                                    render_position_permissions()
+                                    return
+                                auto_save_status.set_text("已自动保存")
+                                # 只刷新左侧权限数量，保留右侧滚动位置和当前勾选上下文。
+                                render_permission_positions()
+
                             modules = list(dict.fromkeys(item["module"] for item in permissions))
                             for module_name in modules:
                                 ui.label(module_name).classes(
@@ -1038,36 +1068,7 @@ def manage_page():
                                             f"{permission['code']}\n{permission.get('description', '')}"
                                         )
                                         checkbox_by_code[permission["code"]] = checkbox
-
-                            def save_position_permissions():
-                                try:
-                                    user_svc.set_position_permissions(
-                                        selected["position_id"],
-                                        [
-                                            code
-                                            for code, checkbox in checkbox_by_code.items()
-                                            if checkbox.value
-                                        ],
-                                        actor_username=current_user,
-                                    )
-                                except Exception as exc:
-                                    ui.notify(
-                                        f"岗位权限保存失败：{exc}",
-                                        type="negative",
-                                        multi_line=True,
-                                    )
-                                    return
-                                # 必须在刷新当前容器前发送通知，否则事件所属槽位已被删除。
-                                ui.notify("岗位默认权限已保存。", type="positive")
-                                render_permission_positions()
-                                render_position_permissions()
-
-                            with ui.row().classes("w-full justify-end pt-2"):
-                                ui.button(
-                                    "保存岗位默认权限",
-                                    on_click=save_position_permissions,
-                                    icon="save",
-                                ).props("color=primary")
+                                        checkbox.on_value_change(auto_save_position_permissions)
 
                     render_permission_positions()
                     render_position_permissions()

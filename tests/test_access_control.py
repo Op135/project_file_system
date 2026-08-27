@@ -8,6 +8,12 @@ import pandas as pd
 
 from src.access_control import can_use_tool
 from src.permission_catalog import (
+    ERROR_NOTIFICATION_MODULE,
+    ERROR_RECORD_EDIT_PERMISSION,
+    ERROR_VIEW_PERMISSION,
+    SAMPLE_ORDER_EXTENSION_NOTIFY_PERMISSION,
+    SAMPLE_ORDER_NOTIFICATION_MODULE,
+    SAMPLE_ORDER_SPECIAL_STATUS_NOTIFY_PERMISSION,
     SAMPLE_ORDER_BASE_EDIT_PERMISSION,
     SAMPLE_ORDER_VIEW_PERMISSION,
     tool_permission_code,
@@ -243,6 +249,84 @@ class AccessControlTests(unittest.TestCase):
         self.service.set_position_permissions(position_id, [], actor_username="admin")
         self.assertFalse(self.service.has_permission("张三", permission_code))
 
+    def test_notification_subscription_uses_stable_permission_and_excludes_admin(self):
+        """通知订阅按岗位权限找在职用户，系统管理员不会因全权限被自动订阅。"""
+        self.service.migrate_legacy_users()
+        org_unit_id = self.service.save_org_unit(code="org.notice", name="通知测试部")
+        position_id = self.service.save_position(code="notice.receiver", name="通知接收岗")
+        self.service.set_primary_membership(
+            "张三",
+            org_unit_id=org_unit_id,
+            position_id=position_id,
+        )
+        self.service.set_position_permissions(
+            position_id,
+            [SAMPLE_ORDER_EXTENSION_NOTIFY_PERMISSION],
+            actor_username="admin",
+        )
+
+        self.assertEqual(
+            self.service.list_usernames_with_permission(SAMPLE_ORDER_EXTENSION_NOTIFY_PERMISSION),
+            ["张三"],
+        )
+        self.assertEqual(
+            set(
+                self.service.list_usernames_with_permission(
+                    SAMPLE_ORDER_EXTENSION_NOTIFY_PERMISSION,
+                    include_system_admin=True,
+                )
+            ),
+            {"admin", "张三"},
+        )
+
+    def test_notification_permissions_are_grouped_by_business_module(self):
+        """样品单和异常单通知应在权限界面形成两个独立分组。"""
+        self.service.migrate_legacy_users()
+        notification_modules = {
+            item["module"]
+            for item in self.service.list_permissions()
+            if str(item["code"]).startswith("notifications.")
+        }
+        self.assertEqual(
+            notification_modules,
+            {SAMPLE_ORDER_NOTIFICATION_MODULE, ERROR_NOTIFICATION_MODULE},
+        )
+
+    def test_broad_notification_permission_is_split_without_losing_assignments(self):
+        """上一版宽权限应迁移到全部对应事件权限，并从管理目录移除。"""
+        self.service.migrate_legacy_users()
+        old_code = "notifications.sample_order.attention.receive"
+        self.service.identity_store.seed_permission_catalog(
+            [
+                {
+                    "code": old_code,
+                    "name": "旧样品单关注通知",
+                    "module": "通知接收",
+                    "description": "测试旧权限迁移",
+                }
+            ]
+        )
+        org_unit_id = self.service.save_org_unit(code="org.notice.old", name="旧通知测试部")
+        position_id = self.service.save_position(code="notice.old", name="旧通知接收岗")
+        self.service.set_primary_membership(
+            "张三",
+            org_unit_id=org_unit_id,
+            position_id=position_id,
+        )
+        self.service.set_position_permissions(position_id, [old_code])
+
+        self.service.sync_permission_catalog()
+
+        permission_codes = {item["code"] for item in self.service.list_permissions()}
+        self.assertNotIn(old_code, permission_codes)
+        self.assertEqual(
+            self.service.get_position_permission_codes(position_id),
+            {
+                SAMPLE_ORDER_EXTENSION_NOTIFY_PERMISSION,
+                SAMPLE_ORDER_SPECIAL_STATUS_NOTIFY_PERMISSION,
+            },
+        )
+
     def test_sample_order_permission_requires_new_position_or_additional_group(self):
         """样品单完成迁移后不得继续从兼容角色继承操作权限。"""
         self.service.migrate_legacy_users()
@@ -278,6 +362,44 @@ class AccessControlTests(unittest.TestCase):
 
         self.assertTrue(
             self.service.has_permission("张三", SAMPLE_ORDER_BASE_EDIT_PERMISSION)
+        )
+
+    def test_error_permission_requires_new_position_or_additional_group(self):
+        """异常模块迁移后不得继续从兼容角色继承操作权限。"""
+        self.service.migrate_legacy_users()
+        registered_codes = {item["code"] for item in self.service.list_permissions()}
+        self.assertIn(ERROR_VIEW_PERMISSION, registered_codes)
+        self.assertIn(ERROR_RECORD_EDIT_PERMISSION, registered_codes)
+        legacy_role = next(
+            role
+            for role in self.service.get_user_security_roles("张三")
+            if role["code"].startswith("legacy.")
+        )
+        self.service.update_security_role(
+            legacy_role["role_id"],
+            name=legacy_role["name"],
+            permission_codes=[ERROR_RECORD_EDIT_PERMISSION],
+        )
+        self.assertFalse(
+            self.service.has_permission("张三", ERROR_RECORD_EDIT_PERMISSION)
+        )
+
+        org_unit_id = self.service.save_org_unit(code="org.quality", name="质量部")
+        position_id = self.service.save_position(code="quality.engineer", name="质量工程师")
+        self.service.set_primary_membership(
+            "张三",
+            org_unit_id=org_unit_id,
+            position_id=position_id,
+        )
+        self.service.set_position_permissions(
+            position_id,
+            [ERROR_VIEW_PERMISSION, ERROR_RECORD_EDIT_PERMISSION],
+            actor_username="admin",
+        )
+
+        self.assertTrue(self.service.has_permission("张三", ERROR_VIEW_PERMISSION))
+        self.assertTrue(
+            self.service.has_permission("张三", ERROR_RECORD_EDIT_PERMISSION)
         )
 
 

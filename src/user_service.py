@@ -12,6 +12,7 @@ import pandas as pd
 from .identity_store import IdentityStore, UserMigrationResult
 from .identity_matching import build_wecom_user_match_plan, suggest_contact_for_user
 from .permission_catalog import (
+    DEPRECATED_PERMISSION_REPLACEMENTS,
     PERMISSION_CODES,
     build_legacy_default_grants,
     load_tool_role_mapping,
@@ -224,7 +225,9 @@ class UserService:
         role_names = [str(item.get("name", "")) for item in roles]
         tool_mapping = load_tool_role_mapping(self.excel_path.parent.parent / "tools_permission.json")
         grants = build_legacy_default_grants(tool_mapping, known_role_names=role_names)
-        return self.identity_store.seed_permission_catalog(permission_catalog_rows(), grants)
+        result = self.identity_store.seed_permission_catalog(permission_catalog_rows(), grants)
+        self.identity_store.replace_permission_codes(DEPRECATED_PERMISSION_REPLACEMENTS)
+        return result
 
     def has_permission(
         self,
@@ -303,6 +306,30 @@ class UserService:
         if self.storage_mode != "database":
             return set()
         return self.identity_store.get_user_permission_codes(username)
+
+    def list_usernames_with_permission(
+        self,
+        permission_code: str,
+        *,
+        include_system_admin: bool = False,
+    ) -> list[str]:
+        """列出拥有稳定权限的在职用户，供通知订阅等非页面场景使用。
+
+        系统管理员会自动拥有全部已注册权限，但这不代表管理员希望订阅全部业务通知，
+        因此默认排除 ``admin``；确有需要时应给实际业务账号或岗位分配通知接收权限。
+        """
+        if self.storage_mode != "database":
+            return []
+        usernames: list[str] = []
+        for username, user in self.load_users().items():
+            normalized_username = str(username).strip()
+            if user.get("status", "active") != "active":
+                continue
+            if not include_system_admin and normalized_username.casefold() == "admin":
+                continue
+            if self.has_permission(normalized_username, permission_code):
+                usernames.append(normalized_username)
+        return usernames
 
     def get_wecom_binding(self, username: str) -> dict[str, Any]:
         if self.storage_mode != "database":

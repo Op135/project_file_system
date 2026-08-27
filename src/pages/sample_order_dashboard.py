@@ -29,6 +29,7 @@ from ..access_control import can
 from ..config import IMG_DIR, PRESET_AVATARS
 from ..custom_ui import custom_upload
 from ..issue_workflow_utils import merge_wecom_recipients, schedule_background_task
+from ..notification_recipients import resolve_permission_wecom_recipients
 from ..permission_catalog import (
     SAMPLE_ORDER_AVERAGE_SCORE_VIEW_PERMISSION,
     SAMPLE_ORDER_BASE_EDIT_PERMISSION,
@@ -36,6 +37,8 @@ from ..permission_catalog import (
     SAMPLE_ORDER_DELAY_NATURE_EDIT_PERMISSION,
     SAMPLE_ORDER_DELETE_PERMISSION,
     SAMPLE_ORDER_SPECIAL_STATUS_EDIT_PERMISSION,
+    SAMPLE_ORDER_EXTENSION_NOTIFY_PERMISSION,
+    SAMPLE_ORDER_SPECIAL_STATUS_NOTIFY_PERMISSION,
     SAMPLE_ORDER_VIEW_PERMISSION,
 )
 from ..sample_order_dashboard_config import (
@@ -44,7 +47,7 @@ from ..sample_order_dashboard_config import (
     SAMPLE_ORDER_DELAY_ATTENTION_THRESHOLD,
     SAMPLE_ORDER_DELAY_EDITOR_ROLES as SAMPLE_ORDER_LEGACY_DELAY_EDITOR_ROLES,
     SAMPLE_ORDER_DELAY_NATURE_MARKER_ROLES as SAMPLE_ORDER_LEGACY_DELAY_NATURE_MARKER_ROLES,
-    SAMPLE_ORDER_MANAGER_NOTIFY_TARGETS,
+    SAMPLE_ORDER_MANAGER_NOTIFY_TARGETS as SAMPLE_ORDER_LEGACY_MANAGER_NOTIFY_TARGETS,
     SAMPLE_ORDER_NOTIFY_APPLICANT_ON_EXTENSION,
     SAMPLE_ORDER_NOTIFY_APPLICANT_ON_SPECIAL_STATUS,
     SAMPLE_ORDER_PUBLIC_BASE_URL,
@@ -1009,39 +1012,49 @@ async def _send_sample_order_change_notifications(
             [{"names": [applicant]}],
             fallback_touser="",
         )
-    manager_recipients = ""
-    needs_manager = (
+    needs_extension_subscribers = bool(extension_events) and (
         redirect_applicant
-        or bool(status_event)
         or any(
-            normalize_int(event.get("extension_number"), 0) > SAMPLE_ORDER_DELAY_ATTENTION_THRESHOLD
+            normalize_int(event.get("extension_number"), 0)
+            > SAMPLE_ORDER_DELAY_ATTENTION_THRESHOLD
             for event in extension_events
         )
     )
-    if needs_manager:
-        manager_recipients = await resolve_wecom_recipients(
-            SAMPLE_ORDER_MANAGER_NOTIFY_TARGETS,
+    extension_subscribers = ""
+    if needs_extension_subscribers:
+        extension_subscribers = await resolve_permission_wecom_recipients(
+            SAMPLE_ORDER_EXTENSION_NOTIFY_PERMISSION,
+            legacy_targets=SAMPLE_ORDER_LEGACY_MANAGER_NOTIFY_TARGETS,
+            fallback_touser="",
+        )
+    special_status_subscribers = ""
+    if status_event:
+        special_status_subscribers = await resolve_permission_wecom_recipients(
+            SAMPLE_ORDER_SPECIAL_STATUS_NOTIFY_PERMISSION,
+            legacy_targets=SAMPLE_ORDER_LEGACY_MANAGER_NOTIFY_TARGETS,
             fallback_touser="",
         )
 
     failures: list[str] = []
     if applicant_needed and not redirect_applicant and not applicant_recipient:
         failures.append(f"申请人“{applicant or '未填写'}”未匹配到企业微信成员")
-    if needs_manager and not manager_recipients:
-        failures.append("研发经理通知规则未匹配到企业微信成员")
+    if needs_extension_subscribers and not extension_subscribers:
+        failures.append("样品单延期关注通知权限未匹配到已绑定企业微信成员")
+    if status_event and not special_status_subscribers:
+        failures.append("样品单特殊状态通知权限未匹配到已绑定企业微信成员")
     for event in extension_events:
         extension_number = normalize_int(event.get("extension_number"), 0)
         notify_manager = extension_number > SAMPLE_ORDER_DELAY_ATTENTION_THRESHOLD
         recipients = merge_wecom_recipients(
             applicant_recipient if SAMPLE_ORDER_NOTIFY_APPLICANT_ON_EXTENSION and not redirect_applicant else "",
-            manager_recipients if notify_manager or redirect_applicant else "",
+            extension_subscribers if notify_manager or redirect_applicant else "",
         )
         if not recipients:
             failures.append(f"第{extension_number}次延期未匹配到企业微信收件人")
             continue
-        manager_notice = (
+        attention_notice = (
             f"\n该订单已延期{extension_number}次，超过配置阈值"
-            f"{SAMPLE_ORDER_DELAY_ATTENTION_THRESHOLD}次，请研发经理关注。"
+            f"{SAMPLE_ORDER_DELAY_ATTENTION_THRESHOLD}次，请相关负责人关注。"
             if notify_manager
             else ""
         )
@@ -1054,7 +1067,7 @@ async def _send_sample_order_change_notifications(
             f"延期目标日期：{event.get('target_date', '')}\n"
             f"延期原因：{event.get('reason', '')}\n"
             f"操作人：{event.get('created_by', '')}（{event.get('created_role', '')}）"
-            f"{manager_notice}"
+            f"{attention_notice}"
         )
         success, message = await send_wecom_text_message(
             content,
@@ -1070,7 +1083,7 @@ async def _send_sample_order_change_notifications(
     if status_event:
         recipients = merge_wecom_recipients(
             applicant_recipient if SAMPLE_ORDER_NOTIFY_APPLICANT_ON_SPECIAL_STATUS and not redirect_applicant else "",
-            manager_recipients,
+            special_status_subscribers,
         )
         if not recipients:
             failures.append("特殊状态通知未匹配到企业微信收件人")
@@ -2755,7 +2768,7 @@ async def sample_order_dashboard_page(record_id: str = "", view: str = "") -> No
                     with ui.row().classes("items-center gap-2 mb-1"):
                         ui.icon("flag_circle", color="purple")
                         ui.label("订单特殊状态 · 研发样品组长设置").classes("text-lg font-bold")
-                    ui.label("暂停、作废及恢复正常都会通知申请人和研发经理。").classes("text-sm text-purple-700 mb-3")
+                    ui.label("暂停、作废及恢复正常都会通知申请人和已订阅该事件的人员。").classes("text-sm text-purple-700 mb-3")
                     with ui.grid().classes("w-full grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4"):
                         status_select = (
                             ui.select(

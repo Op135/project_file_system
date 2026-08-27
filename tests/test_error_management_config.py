@@ -11,6 +11,7 @@ import tempfile
 import unittest
 from datetime import datetime
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -107,11 +108,19 @@ class ErrorManagementConfigTests(unittest.TestCase):
 class ErrorManagementNotificationTests(unittest.IsolatedAsyncioTestCase):
     async def test_extension_approval_notification_combines_role_and_requester(self):
         """审批结果通知应同时包含配置角色和申请人，并由发送层统一发送。"""
-        resolve_mock = AsyncMock(side_effect=["rd-manager-userid", "quality-manager-userid|qe-userid", "requester-userid"])
+        permission_resolve_mock = AsyncMock(
+            side_effect=["rd-manager-userid", "quality-manager-userid|qe-userid"]
+        )
+        people_resolve_mock = AsyncMock(return_value="requester-userid")
         send_mock = AsyncMock(return_value=(True, "发送成功"))
 
         with (
-            patch.object(error_management, "resolve_wecom_recipients", resolve_mock),
+            patch.object(
+                error_management,
+                "resolve_permission_wecom_recipients",
+                permission_resolve_mock,
+            ),
+            patch.object(error_management, "resolve_wecom_recipients", people_resolve_mock),
             patch.object(error_management, "send_wecom_text_message", send_mock),
         ):
             success, _ = await error_management.send_error_extension_wecom_message(
@@ -120,7 +129,9 @@ class ErrorManagementNotificationTests(unittest.IsolatedAsyncioTestCase):
                 business_key="ERR-001:approval",
                 message_type="extension_approval",
                 additional_people="申请人",
-                additional_targets=[{"position": "品质经理"}, {"position": "QE工程师"}],
+                # 数据库模式的审批订阅不能被空的旧 JSON 目标关闭。
+                additional_targets=[],
+                include_approval_recipients=True,
             )
 
         self.assertTrue(success)
@@ -131,7 +142,35 @@ class ErrorManagementNotificationTests(unittest.IsolatedAsyncioTestCase):
             await_args.args[1],
             "rd-manager-userid|quality-manager-userid|qe-userid|requester-userid",
         )
-        self.assertEqual(resolve_mock.await_count, 3)
+        self.assertEqual(permission_resolve_mock.await_count, 2)
+        self.assertEqual(people_resolve_mock.await_count, 1)
+        self.assertEqual(
+            permission_resolve_mock.await_args_list[0].args[0],
+            error_management.ERROR_EXTENSION_RESULT_NOTIFY_PERMISSION,
+        )
+        self.assertEqual(
+            permission_resolve_mock.await_args_list[1].args[0],
+            error_management.ERROR_EXTENSION_APPROVED_NOTIFY_PERMISSION,
+        )
+
+    def test_each_error_message_type_has_an_independent_notification_permission(self):
+        """延期和关闭的申请、结果及通过追加通知不得共用宽权限。"""
+        self.assertEqual(
+            error_management.ERROR_NOTIFY_PERMISSION_BY_MESSAGE_TYPE,
+            {
+                "extension_request": error_management.ERROR_EXTENSION_REQUEST_NOTIFY_PERMISSION,
+                "extension_approval": error_management.ERROR_EXTENSION_RESULT_NOTIFY_PERMISSION,
+                "close_request": error_management.ERROR_CLOSE_REQUEST_NOTIFY_PERMISSION,
+                "close_approval": error_management.ERROR_CLOSE_RESULT_NOTIFY_PERMISSION,
+            },
+        )
+        self.assertEqual(
+            error_management.ERROR_APPROVED_NOTIFY_PERMISSION_BY_MESSAGE_TYPE,
+            {
+                "extension_approval": error_management.ERROR_EXTENSION_APPROVED_NOTIFY_PERMISSION,
+                "close_approval": error_management.ERROR_CLOSE_APPROVED_NOTIFY_PERMISSION,
+            },
+        )
 
 
 class ErrorManagementDashboardPendingTests(unittest.TestCase):
@@ -356,6 +395,40 @@ class ErrorManagementDashboardPendingTests(unittest.TestCase):
         self.assertTrue(error_management.is_error_rd_manager("研发经理兼项目负责人"))
         self.assertFalse(error_management.is_error_rd_manager("admin"))
         self.assertFalse(error_management.is_error_rd_manager("研发助理"))
+
+    def test_database_runtime_uses_stable_permission_instead_of_role_text(self):
+        """存在用户服务时，异常模块必须委托给稳定权限入口。"""
+        fake_app = SimpleNamespace(state=SimpleNamespace(user_service=object()))
+        with (
+            patch.object(error_management, "app", fake_app),
+            patch.object(error_management, "can", return_value=True) as permission_check,
+        ):
+            allowed = error_management.is_error_editor("完全无关的旧角色", "张三")
+
+        self.assertTrue(allowed)
+        self.assertEqual(
+            permission_check.call_args.args[2],
+            error_management.ERROR_RECORD_EDIT_PERMISSION,
+        )
+
+    def test_my_pending_filter_uses_responsibility_and_approval_rules(self):
+        """我的待办筛选应复用主页角标的负责人和审批判断。"""
+        self.assertTrue(
+            error_management.error_matches_filter(
+                self.all_errors["ERR-001"],
+                error_management.ERROR_FILTER_MY_PENDING_STATE,
+                current_user="张三",
+                current_role="QE工程师",
+            )
+        )
+        self.assertFalse(
+            error_management.error_matches_filter(
+                self.all_errors["ERR-002"],
+                error_management.ERROR_FILTER_MY_PENDING_STATE,
+                current_user="张三",
+                current_role="QE工程师",
+            )
+        )
 
 
 if __name__ == "__main__":

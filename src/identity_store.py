@@ -1158,6 +1158,90 @@ class IdentityStore:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def replace_permission_codes(
+        self,
+        replacements: dict[str, Iterable[str]],
+    ) -> int:
+        """把旧权限的岗位及附加权限组授权复制到新权限后删除旧权限。
+
+        此迁移可重复执行。只有数据库中实际存在旧权限时才产生修改，因此管理员之后对
+        新权限进行的细分调整不会在后续启动时被重新覆盖。
+        """
+        replaced_count = 0
+        now = _now_text()
+        with self._lock, self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            for old_code, new_codes in replacements.items():
+                old_permission = connection.execute(
+                    "SELECT permission_id FROM iam_permissions WHERE code=? COLLATE NOCASE",
+                    (str(old_code).strip().lower(),),
+                ).fetchone()
+                if not old_permission:
+                    continue
+                normalized_new_codes = list(
+                    dict.fromkeys(
+                        str(code).strip().lower()
+                        for code in new_codes
+                        if str(code).strip()
+                    )
+                )
+                if not normalized_new_codes:
+                    raise ValueError(f"旧权限 {old_code} 没有配置替代权限")
+                placeholders = ",".join("?" for _ in normalized_new_codes)
+                new_permissions = connection.execute(
+                    f"SELECT permission_id, code FROM iam_permissions WHERE code IN ({placeholders})",
+                    normalized_new_codes,
+                ).fetchall()
+                new_permission_ids = {
+                    str(row["code"]).lower(): row["permission_id"] for row in new_permissions
+                }
+                missing = [
+                    code for code in normalized_new_codes if code not in new_permission_ids
+                ]
+                if missing:
+                    raise ValueError(f"替代权限尚未注册：{'、'.join(missing)}")
+
+                role_rows = connection.execute(
+                    "SELECT role_id FROM iam_role_permissions WHERE permission_id=?",
+                    (old_permission["permission_id"],),
+                ).fetchall()
+                position_rows = connection.execute(
+                    "SELECT position_id FROM iam_position_permissions WHERE permission_id=?",
+                    (old_permission["permission_id"],),
+                ).fetchall()
+                connection.executemany(
+                    "INSERT OR IGNORE INTO iam_role_permissions(role_id, permission_id, created_at) "
+                    "VALUES(?, ?, ?)",
+                    [
+                        (role["role_id"], new_permission_ids[new_code], now)
+                        for role in role_rows
+                        for new_code in normalized_new_codes
+                    ],
+                )
+                connection.executemany(
+                    "INSERT OR IGNORE INTO iam_position_permissions(position_id, permission_id, created_at) "
+                    "VALUES(?, ?, ?)",
+                    [
+                        (position["position_id"], new_permission_ids[new_code], now)
+                        for position in position_rows
+                        for new_code in normalized_new_codes
+                    ],
+                )
+                connection.execute(
+                    "DELETE FROM iam_role_permissions WHERE permission_id=?",
+                    (old_permission["permission_id"],),
+                )
+                connection.execute(
+                    "DELETE FROM iam_position_permissions WHERE permission_id=?",
+                    (old_permission["permission_id"],),
+                )
+                connection.execute(
+                    "DELETE FROM iam_permissions WHERE permission_id=?",
+                    (old_permission["permission_id"],),
+                )
+                replaced_count += 1
+        return replaced_count
+
     def get_position_permission_codes(self, position_id: str) -> set[str]:
         with self._lock, self._connect() as connection:
             rows = connection.execute(
