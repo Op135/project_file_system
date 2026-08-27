@@ -139,6 +139,53 @@ ERROR_PERMISSIONS = (
 )
 
 
+SAMPLE_ISSUE_VIEW_PERMISSION = "sample_issue.view"
+SAMPLE_ISSUE_CREATE_PERMISSION = "sample_issue.record.create"
+SAMPLE_ISSUE_EDIT_ALL_PERMISSION = "sample_issue.record.edit_all"
+SAMPLE_ISSUE_EXTENSION_APPROVE_PERMISSION = "sample_issue.extension.approve"
+SAMPLE_ISSUE_CLOSE_DEFAULT_APPROVE_PERMISSION = "sample_issue.close.approve.default"
+SAMPLE_ISSUE_CLOSE_ELECTRON_APPROVE_PERMISSION = (
+    "sample_issue.close.approve.electron_to_electron"
+)
+SAMPLE_ISSUE_REMINDER_CHECK_PERMISSION = "sample_issue.reminder.check"
+SAMPLE_ISSUE_DELETE_PERMISSION = "sample_issue.delete"
+
+
+SAMPLE_ISSUE_PERMISSIONS = (
+    PermissionDefinition(SAMPLE_ISSUE_VIEW_PERMISSION, "查看样品问题跟进", "样品问题跟进"),
+    PermissionDefinition(SAMPLE_ISSUE_CREATE_PERMISSION, "录入样品问题", "样品问题跟进"),
+    PermissionDefinition(
+        SAMPLE_ISSUE_EDIT_ALL_PERMISSION,
+        "协助维护全部样品问题",
+        "样品问题跟进",
+        "允许维护非本人创建的录入区块，并协助维护非本人负责的对策区块",
+    ),
+    PermissionDefinition(
+        SAMPLE_ISSUE_EXTENSION_APPROVE_PERMISSION,
+        "审批样品问题延期申请",
+        "样品问题跟进",
+    ),
+    PermissionDefinition(
+        SAMPLE_ISSUE_CLOSE_DEFAULT_APPROVE_PERMISSION,
+        "审批样品问题默认关闭申请",
+        "样品问题跟进",
+        "审批未命中特殊路由的关闭申请",
+    ),
+    PermissionDefinition(
+        SAMPLE_ISSUE_CLOSE_ELECTRON_APPROVE_PERMISSION,
+        "审批研发电子类样品问题关闭申请",
+        "样品问题跟进",
+        "审批研发硬件、研发软件岗位人员发起的关闭申请",
+    ),
+    PermissionDefinition(
+        SAMPLE_ISSUE_REMINDER_CHECK_PERMISSION,
+        "人工检查样品问题提醒",
+        "样品问题跟进",
+    ),
+    PermissionDefinition(SAMPLE_ISSUE_DELETE_PERMISSION, "删除样品问题", "样品问题跟进"),
+)
+
+
 SAMPLE_ORDER_EXTENSION_NOTIFY_PERMISSION = "notifications.sample_order.extension.receive"
 SAMPLE_ORDER_SPECIAL_STATUS_NOTIFY_PERMISSION = "notifications.sample_order.special_status.receive"
 ERROR_EXTENSION_REQUEST_NOTIFY_PERMISSION = "notifications.error.extension.request.receive"
@@ -148,8 +195,19 @@ ERROR_CLOSE_REQUEST_NOTIFY_PERMISSION = "notifications.error.close.request.recei
 ERROR_CLOSE_RESULT_NOTIFY_PERMISSION = "notifications.error.close.result.receive"
 ERROR_CLOSE_APPROVED_NOTIFY_PERMISSION = "notifications.error.close.approved.receive"
 ERROR_OWNER_MISSING_REMINDER_PERMISSION = "notifications.error.owner_missing_reminder.receive"
+SAMPLE_ISSUE_EXTENSION_REQUEST_NOTIFY_PERMISSION = "notifications.sample_issue.extension.request.receive"
+SAMPLE_ISSUE_EXTENSION_RESULT_NOTIFY_PERMISSION = "notifications.sample_issue.extension.result.receive"
+SAMPLE_ISSUE_EXTENSION_APPROVED_NOTIFY_PERMISSION = "notifications.sample_issue.extension.approved.receive"
+SAMPLE_ISSUE_CLOSE_DEFAULT_REQUEST_NOTIFY_PERMISSION = "notifications.sample_issue.close.default.request.receive"
+SAMPLE_ISSUE_CLOSE_DEFAULT_RESULT_NOTIFY_PERMISSION = "notifications.sample_issue.close.default.result.receive"
+SAMPLE_ISSUE_CLOSE_DEFAULT_APPROVED_NOTIFY_PERMISSION = "notifications.sample_issue.close.default.approved.receive"
+SAMPLE_ISSUE_CLOSE_ELECTRON_REQUEST_NOTIFY_PERMISSION = "notifications.sample_issue.close.electron.request.receive"
+SAMPLE_ISSUE_CLOSE_ELECTRON_RESULT_NOTIFY_PERMISSION = "notifications.sample_issue.close.electron.result.receive"
+SAMPLE_ISSUE_CLOSE_ELECTRON_APPROVED_NOTIFY_PERMISSION = "notifications.sample_issue.close.electron.approved.receive"
+SAMPLE_ISSUE_FALLBACK_REMINDER_PERMISSION = "notifications.sample_issue.fallback_reminder.receive"
 SAMPLE_ORDER_NOTIFICATION_MODULE = "样品单执行看板 · 通知接收"
 ERROR_NOTIFICATION_MODULE = "异常单跟进 · 通知接收"
+SAMPLE_ISSUE_NOTIFICATION_MODULE = "样品问题跟进 · 通知接收"
 
 
 NOTIFICATION_PERMISSIONS = (
@@ -206,6 +264,56 @@ NOTIFICATION_PERMISSIONS = (
         "接收异常措施无负责人兜底提醒",
         ERROR_NOTIFICATION_MODULE,
         "异常措施未填写负责人时，作为到期提醒的兜底接收人",
+    ),
+    PermissionDefinition(
+        SAMPLE_ISSUE_EXTENSION_REQUEST_NOTIFY_PERMISSION,
+        "接收样品问题延期申请通知",
+        SAMPLE_ISSUE_NOTIFICATION_MODULE,
+    ),
+    PermissionDefinition(
+        SAMPLE_ISSUE_EXTENSION_RESULT_NOTIFY_PERMISSION,
+        "接收样品问题延期审批结果通知",
+        SAMPLE_ISSUE_NOTIFICATION_MODULE,
+    ),
+    PermissionDefinition(
+        SAMPLE_ISSUE_EXTENSION_APPROVED_NOTIFY_PERMISSION,
+        "接收样品问题延期通过追加通知",
+        SAMPLE_ISSUE_NOTIFICATION_MODULE,
+    ),
+    PermissionDefinition(
+        SAMPLE_ISSUE_CLOSE_DEFAULT_REQUEST_NOTIFY_PERMISSION,
+        "接收样品问题默认关闭申请通知",
+        SAMPLE_ISSUE_NOTIFICATION_MODULE,
+    ),
+    PermissionDefinition(
+        SAMPLE_ISSUE_CLOSE_DEFAULT_RESULT_NOTIFY_PERMISSION,
+        "接收样品问题默认关闭审批结果通知",
+        SAMPLE_ISSUE_NOTIFICATION_MODULE,
+    ),
+    PermissionDefinition(
+        SAMPLE_ISSUE_CLOSE_DEFAULT_APPROVED_NOTIFY_PERMISSION,
+        "接收样品问题默认关闭通过追加通知",
+        SAMPLE_ISSUE_NOTIFICATION_MODULE,
+    ),
+    PermissionDefinition(
+        SAMPLE_ISSUE_CLOSE_ELECTRON_REQUEST_NOTIFY_PERMISSION,
+        "接收研发电子类样品问题关闭申请通知",
+        SAMPLE_ISSUE_NOTIFICATION_MODULE,
+    ),
+    PermissionDefinition(
+        SAMPLE_ISSUE_CLOSE_ELECTRON_RESULT_NOTIFY_PERMISSION,
+        "接收研发电子类样品问题关闭审批结果通知",
+        SAMPLE_ISSUE_NOTIFICATION_MODULE,
+    ),
+    PermissionDefinition(
+        SAMPLE_ISSUE_CLOSE_ELECTRON_APPROVED_NOTIFY_PERMISSION,
+        "接收研发电子类样品问题关闭通过追加通知",
+        SAMPLE_ISSUE_NOTIFICATION_MODULE,
+    ),
+    PermissionDefinition(
+        SAMPLE_ISSUE_FALLBACK_REMINDER_PERMISSION,
+        "接收样品问题无人员兜底提醒",
+        SAMPLE_ISSUE_NOTIFICATION_MODULE,
     ),
 )
 
@@ -265,6 +373,7 @@ PERMISSION_CATALOG = (
     + TOOL_PERMISSIONS
     + SAMPLE_ORDER_PERMISSIONS
     + ERROR_PERMISSIONS
+    + SAMPLE_ISSUE_PERMISSIONS
     + NOTIFICATION_PERMISSIONS
 )
 PERMISSION_CODES = frozenset(item.code for item in PERMISSION_CATALOG)
@@ -278,6 +387,7 @@ def ignores_legacy_role_grants(permission_code: str) -> bool:
         or (normalized.startswith("tools.") and normalized.endswith(".use"))
         or normalized.startswith("sample_order.")
         or normalized.startswith("error.")
+        or normalized.startswith("sample_issue.")
         or normalized.startswith("notifications.")
     )
 

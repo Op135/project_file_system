@@ -111,6 +111,30 @@ class SampleIssueCollectionDataTests(unittest.TestCase):
         self.assertFalse(sample_issue.sample_issue_matches_filter(issue, "未关闭"))
         self.assertTrue(sample_issue.sample_issue_matches_filter(issue, "已关闭"))
 
+    def test_my_pending_filter_uses_current_user(self):
+        """主页角标进入模块后，“我的待办”只保留当前责任人的记录。"""
+        from src.pages import sample_issue_collection as sample_issue
+
+        issue = sample_issue.generate_initial_sample_issue_data("张三", "测试工程师")
+        issue["countermeasure"]["owner"] = "李四"
+
+        self.assertTrue(
+            sample_issue.sample_issue_matches_filter(
+                issue,
+                sample_issue.SAMPLE_FILTER_MY_PENDING_STATE,
+                "李四",
+                "测试工程师",
+            )
+        )
+        self.assertFalse(
+            sample_issue.sample_issue_matches_filter(
+                issue,
+                sample_issue.SAMPLE_FILTER_MY_PENDING_STATE,
+                "王五",
+                "测试工程师",
+            )
+        )
+
     def test_template_merge_backfills_evidence_files(self):
         """旧样品问题数据缺少附件字段时应安全补齐。"""
         from src.pages import sample_issue_collection as sample_issue
@@ -474,6 +498,61 @@ class SampleIssueCollectionDataTests(unittest.TestCase):
         self.assertEqual(unknown_with_inactive, ["李四"])
 
 
+class SampleIssueNotificationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_extension_approved_notification_uses_two_stable_permissions(self):
+        """延期通过通知应分别解析审批结果和通过追加接收权限。"""
+        from src.pages import sample_issue_collection as sample_issue
+
+        resolver = AsyncMock(side_effect=["result_user", "approved_user"])
+        sender = AsyncMock(return_value=(True, "ok"))
+        with patch.object(sample_issue, "resolve_permission_wecom_recipients", resolver), patch.object(
+            sample_issue,
+            "send_wecom_text_message",
+            sender,
+        ):
+            result = await sample_issue.send_sample_extension_wecom_message(
+                "延期通过",
+                issue_id="SPI001",
+                business_key="SPI001:extension",
+                message_type="extension_approval",
+                include_approved_recipients=True,
+            )
+
+        self.assertEqual(result, (True, "ok"))
+        self.assertEqual(
+            [call.args[0] for call in resolver.await_args_list],
+            [
+                sample_issue.SAMPLE_ISSUE_EXTENSION_RESULT_NOTIFY_PERMISSION,
+                sample_issue.SAMPLE_ISSUE_EXTENSION_APPROVED_NOTIFY_PERMISSION,
+            ],
+        )
+        self.assertEqual(sender.await_args.args[1], "result_user|approved_user")
+
+    async def test_electron_close_request_uses_route_specific_notification_permission(self):
+        """研发电子类关闭申请不能落入默认关闭通知权限。"""
+        from src.pages import sample_issue_collection as sample_issue
+
+        resolver = AsyncMock(return_value="electron_approver")
+        sender = AsyncMock(return_value=(True, "ok"))
+        with patch.object(sample_issue, "resolve_permission_wecom_recipients", resolver), patch.object(
+            sample_issue,
+            "send_wecom_text_message",
+            sender,
+        ):
+            await sample_issue.send_sample_extension_wecom_message(
+                "电子类关闭申请",
+                issue_id="SPI002",
+                business_key="SPI002:close",
+                message_type="close_request",
+                route_key="electron_to_electron",
+            )
+
+        self.assertEqual(
+            resolver.await_args.args[0],
+            sample_issue.SAMPLE_ISSUE_CLOSE_ELECTRON_REQUEST_NOTIFY_PERMISSION,
+        )
+
+
 class SampleIssueCollectionConfigTests(unittest.TestCase):
     def test_project_config_has_required_business_values(self):
         """项目实际使用的样品问题 JSON 应能生成一份可运行的配置。"""
@@ -613,6 +692,27 @@ class SampleIssueCollectionConfigTests(unittest.TestCase):
 
 
 class SampleIssueCollectionConcurrencyTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        """并发测试只验证旧 Excel 兼容路径，隔离主程序已经初始化的数据库用户服务。"""
+        from nicegui import app
+        from src.pages import sample_issue_collection as sample_issue
+
+        self.original_user_service = getattr(app.state, "user_service", None)
+        self.original_can_create_sample_issue = sample_issue.can_create_sample_issue
+        self.original_can_view_sample_issue_collection = sample_issue.can_view_sample_issue_collection
+        app.state.user_service = None
+        sample_issue.can_create_sample_issue = lambda role, username="": True
+        sample_issue.can_view_sample_issue_collection = lambda role, username="": True
+
+    async def asyncTearDown(self):
+        """恢复主程序用户服务，避免影响后续权限测试。"""
+        from nicegui import app
+        from src.pages import sample_issue_collection as sample_issue
+
+        app.state.user_service = self.original_user_service
+        sample_issue.can_create_sample_issue = self.original_can_create_sample_issue
+        sample_issue.can_view_sample_issue_collection = self.original_can_view_sample_issue_collection
+
     async def test_admin_delete_preserves_concurrent_record_and_rejects_other_roles(self):
         """admin 删除单张样品问题时应保留其它实例的并发新增，非 admin 不能删除。"""
         with tempfile.TemporaryDirectory() as temp_dir:

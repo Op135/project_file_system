@@ -19,6 +19,7 @@ from urllib.parse import quote, unquote
 from nicegui import app, ui
 
 from .. import db_storage
+from ..access_control import can
 from ..components import ButtonUploader, FileThumbnail, get_upload_local_path
 from ..config import IMG_DIR, PRESET_AVATARS, REQ_UPLOADS_FILE_TYPE, UPLOAD_URL_DIR, UPLOADS_DIR
 from ..issue_workflow_utils import (
@@ -28,6 +29,27 @@ from ..issue_workflow_utils import (
     schedule_background_task,
     split_people,
     unique_nonempty_texts,
+)
+from ..notification_recipients import resolve_permission_wecom_recipients
+from ..permission_catalog import (
+    SAMPLE_ISSUE_CLOSE_DEFAULT_APPROVE_PERMISSION,
+    SAMPLE_ISSUE_CLOSE_DEFAULT_APPROVED_NOTIFY_PERMISSION,
+    SAMPLE_ISSUE_CLOSE_DEFAULT_REQUEST_NOTIFY_PERMISSION,
+    SAMPLE_ISSUE_CLOSE_DEFAULT_RESULT_NOTIFY_PERMISSION,
+    SAMPLE_ISSUE_CLOSE_ELECTRON_APPROVE_PERMISSION,
+    SAMPLE_ISSUE_CLOSE_ELECTRON_APPROVED_NOTIFY_PERMISSION,
+    SAMPLE_ISSUE_CLOSE_ELECTRON_REQUEST_NOTIFY_PERMISSION,
+    SAMPLE_ISSUE_CLOSE_ELECTRON_RESULT_NOTIFY_PERMISSION,
+    SAMPLE_ISSUE_CREATE_PERMISSION,
+    SAMPLE_ISSUE_DELETE_PERMISSION,
+    SAMPLE_ISSUE_EDIT_ALL_PERMISSION,
+    SAMPLE_ISSUE_EXTENSION_APPROVE_PERMISSION,
+    SAMPLE_ISSUE_EXTENSION_APPROVED_NOTIFY_PERMISSION,
+    SAMPLE_ISSUE_EXTENSION_REQUEST_NOTIFY_PERMISSION,
+    SAMPLE_ISSUE_EXTENSION_RESULT_NOTIFY_PERMISSION,
+    SAMPLE_ISSUE_FALLBACK_REMINDER_PERMISSION,
+    SAMPLE_ISSUE_REMINDER_CHECK_PERMISSION,
+    SAMPLE_ISSUE_VIEW_PERMISSION,
 )
 from ..sample_issue_config import (
     SAMPLE_CLOSE_APPROVAL_NOTIFY_TARGETS,
@@ -60,7 +82,14 @@ from ..sample_issue_config import (
     SAMPLE_STATUS_SPECIAL_PREPARATION,
     SAMPLE_STATUS_TEMPORARY_ACTION_DONE,
 )
-from ..utils import apply_chinese_date_locale, get_cache_busted_path, handle_key, logout, setup_global_activity_tracking
+from ..utils import (
+    apply_chinese_date_locale,
+    get_cache_busted_path,
+    handle_key,
+    logout,
+    setup_global_activity_tracking,
+    sync_current_user_role,
+)
 from ..wecom_service import (
     find_unknown_wecom_names,
     load_wecom_contacts_cache,
@@ -81,6 +110,29 @@ SAMPLE_ISSUE_GRID_PAGE_SIZE = 30
 SAMPLE_ATTACHMENT_DIR_NAME = "sample_issue"
 SAMPLE_ATTACHMENT_ACCEPT = ",".join(["image/*", *sorted(REQ_UPLOADS_FILE_TYPE)])
 SAMPLE_ATTACHMENT_PARENTS_H = 12
+SAMPLE_FILTER_MY_PENDING_STATE = "我的待办"
+SAMPLE_LEGACY_VIEW_ROLE_KEYWORDS = ["质量", "销售", "工程", "研发", "boss", "admin"]
+SAMPLE_LEGACY_ADMIN_ROLES = ["admin"]
+SAMPLE_CLOSE_APPROVE_PERMISSION_BY_ROUTE = {
+    "default": SAMPLE_ISSUE_CLOSE_DEFAULT_APPROVE_PERMISSION,
+    "electron_to_electron": SAMPLE_ISSUE_CLOSE_ELECTRON_APPROVE_PERMISSION,
+}
+SAMPLE_EXTENSION_NOTIFY_PERMISSION_BY_MESSAGE_TYPE = {
+    "extension_request": SAMPLE_ISSUE_EXTENSION_REQUEST_NOTIFY_PERMISSION,
+    "extension_approval": SAMPLE_ISSUE_EXTENSION_RESULT_NOTIFY_PERMISSION,
+}
+SAMPLE_CLOSE_NOTIFY_PERMISSIONS_BY_ROUTE = {
+    "default": {
+        "close_request": SAMPLE_ISSUE_CLOSE_DEFAULT_REQUEST_NOTIFY_PERMISSION,
+        "close_approval": SAMPLE_ISSUE_CLOSE_DEFAULT_RESULT_NOTIFY_PERMISSION,
+        "approved": SAMPLE_ISSUE_CLOSE_DEFAULT_APPROVED_NOTIFY_PERMISSION,
+    },
+    "electron_to_electron": {
+        "close_request": SAMPLE_ISSUE_CLOSE_ELECTRON_REQUEST_NOTIFY_PERMISSION,
+        "close_approval": SAMPLE_ISSUE_CLOSE_ELECTRON_RESULT_NOTIFY_PERMISSION,
+        "approved": SAMPLE_ISSUE_CLOSE_ELECTRON_APPROVED_NOTIFY_PERMISSION,
+    },
+}
 
 
 def get_attachment_label_number(file_info: dict) -> int:
@@ -362,14 +414,58 @@ def generate_initial_sample_issue_data(current_user: str, current_role: str) -> 
     return data
 
 
-def is_sample_editor(role: str) -> bool:
-    """判断当前角色是否包含任一样品问题维护角色关键字。"""
-    return any(role_key in str(role) for role_key in SAMPLE_EDITOR_ROLES)
+def _sample_role_matches(role: object, allowed_roles: list[str]) -> bool:
+    role_text = str(role or "").strip().casefold()
+    return any(str(role_key).strip().casefold() in role_text for role_key in allowed_roles)
 
 
-def is_sample_extension_approver(role: str) -> bool:
-    """判断当前角色是否可以审批样品问题延期申请。"""
-    return any(role_key in str(role) for role_key in SAMPLE_EXTENSION_APPROVER_ROLES)
+def _has_sample_permission(
+    username: str,
+    role: object,
+    permission_code: str,
+    legacy_allowed_roles: list[str],
+) -> bool:
+    """数据库模式按稳定权限判断；旧 Excel 模式继续兼容原角色关键词。"""
+    user_service = getattr(app.state, "user_service", None)
+    role_text = str(role or "").strip()
+    if user_service is None or not str(username or "").strip():
+        return _sample_role_matches(role_text, legacy_allowed_roles)
+    matched_roles = [role_text] if _sample_role_matches(role_text, legacy_allowed_roles) else []
+    return can(
+        user_service,
+        str(username).strip(),
+        permission_code,
+        legacy_role=role_text,
+        legacy_allowed_roles=matched_roles,
+    )
+
+
+def can_view_sample_issue_collection(role: object, username: str = "") -> bool:
+    return _has_sample_permission(
+        username,
+        role,
+        SAMPLE_ISSUE_VIEW_PERMISSION,
+        SAMPLE_LEGACY_VIEW_ROLE_KEYWORDS,
+    )
+
+
+def can_create_sample_issue(role: object, username: str = "") -> bool:
+    return _has_sample_permission(username, role, SAMPLE_ISSUE_CREATE_PERMISSION, SAMPLE_EDITOR_ROLES)
+
+
+def is_sample_editor(role: object, username: str = "") -> bool:
+    """判断用户是否可以协助维护全部样品问题。"""
+    return _has_sample_permission(username, role, SAMPLE_ISSUE_EDIT_ALL_PERMISSION, SAMPLE_EDITOR_ROLES)
+
+
+def is_sample_extension_approver(role: object, username: str = "") -> bool:
+    """判断用户是否可以审批样品问题延期申请。"""
+    return _has_sample_permission(
+        username,
+        role,
+        SAMPLE_ISSUE_EXTENSION_APPROVE_PERMISSION,
+        SAMPLE_EXTENSION_APPROVER_ROLES,
+    )
 
 
 def get_default_sample_close_approval_route() -> dict:
@@ -385,9 +481,17 @@ def get_default_sample_close_approval_route() -> dict:
     }
 
 
-def get_sample_close_approval_route(requester_role: str) -> dict:
-    """按申请人角色关键词匹配关闭审批路由；未命中时返回默认路由。"""
+def get_sample_close_approval_route(requester_role: str, requester_username: str = "") -> dict:
+    """数据库模式按申请人主岗位匹配路由；旧 Excel 模式继续使用角色文本。"""
     role_text = str(requester_role or "")
+    user_service = getattr(app.state, "user_service", None)
+    if (
+        user_service is not None
+        and getattr(user_service, "storage_mode", "legacy_excel") == "database"
+        and requester_username
+    ):
+        membership = user_service.get_primary_membership(requester_username)
+        role_text = str(membership.get("position_name", ""))
     for rule in SAMPLE_CLOSE_ROUTING_RULES:
         if any(keyword in role_text for keyword in rule.get("requester_role_keywords", [])):
             return copy.deepcopy(rule)
@@ -399,7 +503,10 @@ def get_sample_close_approval_route_for_request(close_request: Optional[dict]) -
     if not isinstance(close_request, dict):
         return get_default_sample_close_approval_route()
 
-    route = get_sample_close_approval_route(close_request.get("requester_role", ""))
+    route = get_sample_close_approval_route(
+        close_request.get("requester_role", ""),
+        close_request.get("requester", ""),
+    )
     for key in ["key", "label"]:
         if isinstance(close_request.get(key), str) and close_request[key].strip():
             route[key] = close_request[key].strip()
@@ -411,16 +518,32 @@ def get_sample_close_approval_route_for_request(close_request: Optional[dict]) -
     return route
 
 
-def is_sample_close_approver(role: str, close_request: Optional[dict] = None) -> bool:
-    """判断当前角色是否能审批指定关闭申请。"""
+def is_sample_close_approver(
+    role: object,
+    close_request: Optional[dict] = None,
+    username: str = "",
+) -> bool:
+    """判断用户是否能审批指定路由的关闭申请。"""
     if close_request is not None:
         route = get_sample_close_approval_route_for_request(close_request)
-        return any(role_key in str(role) for role_key in route.get("approver_roles", []))
+        permission_code = SAMPLE_CLOSE_APPROVE_PERMISSION_BY_ROUTE.get(
+            str(route.get("key", "default")),
+            SAMPLE_ISSUE_CLOSE_DEFAULT_APPROVE_PERMISSION,
+        )
+        return _has_sample_permission(
+            username,
+            role,
+            permission_code,
+            route.get("approver_roles", []),
+        )
 
     all_roles = [*SAMPLE_CLOSE_APPROVER_ROLES]
     for rule in SAMPLE_CLOSE_ROUTING_RULES:
         all_roles.extend(rule.get("approver_roles", []))
-    return any(role_key in str(role) for role_key in dict.fromkeys(all_roles))
+    return any(
+        _has_sample_permission(username, role, permission_code, list(dict.fromkeys(all_roles)))
+        for permission_code in set(SAMPLE_CLOSE_APPROVE_PERMISSION_BY_ROUTE.values())
+    )
 
 
 def get_all_sample_close_approver_roles() -> list[str]:
@@ -445,20 +568,34 @@ def get_sample_close_approval_additional_people(
     )
 
 
-def is_sample_admin(role: str) -> bool:
-    """删除样品问题属于高风险操作，仅允许角色值严格等于 admin。"""
-    return str(role).strip().lower() == "admin"
+def can_check_sample_reminders(role: object, username: str = "") -> bool:
+    return _has_sample_permission(
+        username,
+        role,
+        SAMPLE_ISSUE_REMINDER_CHECK_PERMISSION,
+        SAMPLE_EXTENSION_APPROVER_ROLES,
+    )
+
+
+def is_sample_admin(role: object, username: str = "") -> bool:
+    """判断用户是否拥有删除样品问题的高风险权限。"""
+    return _has_sample_permission(
+        username,
+        role,
+        SAMPLE_ISSUE_DELETE_PERMISSION,
+        SAMPLE_LEGACY_ADMIN_ROLES,
+    )
 
 
 def can_edit_sample_base(issue_data: dict, current_user: str, current_role: str) -> bool:
     """创建人和配置编辑角色可维护录入区块。"""
-    return is_sample_editor(current_role) or issue_data.get("created_by") == current_user
+    return is_sample_editor(current_role, current_user) or issue_data.get("created_by") == current_user
 
 
 def can_edit_sample_countermeasure(issue_data: dict, current_user: str, current_role: str) -> bool:
     """对策责任人和配置编辑角色可维护对策区块。"""
     owner = issue_data.get("countermeasure", {}).get("owner", "")
-    return is_sample_editor(current_role) or is_current_responsible(owner, current_user, current_role)
+    return is_sample_editor(current_role, current_user) or is_current_responsible(owner, current_user, current_role)
 
 
 def get_record_revision(issue_data: Optional[dict]) -> int:
@@ -744,8 +881,15 @@ def calculate_sample_issue_status(issue_data: dict) -> str:
     return SAMPLE_STATUS_ISSUE_RECORDED
 
 
-def sample_issue_matches_filter(issue_data: dict, filter_state: str) -> bool:
+def sample_issue_matches_filter(
+    issue_data: dict,
+    filter_state: str,
+    current_user: str = "",
+    current_role: str = "",
+) -> bool:
     """判断记录是否符合列表筛选条件。"""
+    if filter_state == SAMPLE_FILTER_MY_PENDING_STATE:
+        return is_sample_issue_pending_for_user(issue_data, current_user, current_role)
     if filter_state == SAMPLE_FILTER_ALL_STATE:
         return True
     if filter_state == SAMPLE_FILTER_OPEN_STATE:
@@ -807,20 +951,24 @@ def get_missing_countermeasure_labels(issue_data: dict) -> list[str]:
     return [label for label, value in required_fields if not str(value).strip()]
 
 
-def has_sample_approval_pending_for_role(issue_data: dict, current_role: str) -> bool:
-    """判断当前角色是否有样品问题审批待办。"""
+def has_sample_approval_pending_for_role(
+    issue_data: dict,
+    current_role: str,
+    current_user: str = "",
+) -> bool:
+    """判断当前用户是否有样品问题审批待办。"""
     countermeasure = issue_data.get("countermeasure", {})
     pending_extension = get_pending_extension_request(countermeasure)
     pending_close = get_pending_close_request(countermeasure)
-    return bool(pending_extension and is_sample_extension_approver(current_role)) or bool(
-        pending_close and is_sample_close_approver(current_role, pending_close)
+    return bool(pending_extension and is_sample_extension_approver(current_role, current_user)) or bool(
+        pending_close and is_sample_close_approver(current_role, pending_close, current_user)
     )
 
 
 def is_sample_issue_pending_for_user(issue_data: dict, current_user: str, current_role: str) -> bool:
     """按主页角标口径判断一条样品问题是否需要当前用户处理。"""
-    if is_sample_extension_approver(current_role) or is_sample_close_approver(current_role):
-        return has_sample_approval_pending_for_role(issue_data, current_role)
+    if has_sample_approval_pending_for_role(issue_data, current_role, current_user):
+        return True
 
     normalized_issue = merge_with_sample_issue_template(issue_data)
     if is_sample_special_preparation_active(normalized_issue):
@@ -837,9 +985,13 @@ def is_sample_issue_overdue_without_request_for_reviewer(
     issue_data: dict,
     current_role: str,
     today: Optional[date] = None,
+    current_user: str = "",
 ) -> bool:
-    """判断评审角色是否需要关注已逾期且尚无延期或关闭申请的问题。"""
-    if not (is_sample_extension_approver(current_role) or is_sample_close_approver(current_role)):
+    """判断评审用户是否需要关注已逾期且尚无延期或关闭申请的问题。"""
+    if not (
+        is_sample_extension_approver(current_role, current_user)
+        or is_sample_close_approver(current_role, username=current_user)
+    ):
         return False
 
     normalized_issue = merge_with_sample_issue_template(issue_data)
@@ -858,9 +1010,16 @@ def is_sample_issue_overdue_without_request_for_reviewer(
     )
 
 
-def is_sample_issue_missing_due_date_for_reviewer(issue_data: dict, current_role: str) -> bool:
-    """判断评审角色是否需要关注已指定负责人但尚未填写预计完成日期的问题。"""
-    if not (is_sample_extension_approver(current_role) or is_sample_close_approver(current_role)):
+def is_sample_issue_missing_due_date_for_reviewer(
+    issue_data: dict,
+    current_role: str,
+    current_user: str = "",
+) -> bool:
+    """判断评审用户是否需要关注已指定负责人但尚未填写预计完成日期的问题。"""
+    if not (
+        is_sample_extension_approver(current_role, current_user)
+        or is_sample_close_approver(current_role, username=current_user)
+    ):
         return False
 
     normalized_issue = merge_with_sample_issue_template(issue_data)
@@ -884,8 +1043,8 @@ def get_sample_issue_card_sort_key(
     if is_sample_issue_pending_for_user(issue_data, current_user, current_role):
         priority = 2
     elif is_sample_issue_overdue_without_request_for_reviewer(
-        issue_data, current_role, today
-    ) or is_sample_issue_missing_due_date_for_reviewer(issue_data, current_role):
+        issue_data, current_role, today, current_user
+    ) or is_sample_issue_missing_due_date_for_reviewer(issue_data, current_role, current_user):
         priority = 1
     else:
         priority = 0
@@ -902,8 +1061,16 @@ def build_sample_issue_grid_row(issue_data: dict, current_user: str, current_rol
     pending_extension = bool(get_pending_extension_request(countermeasure))
     pending_close = bool(get_pending_close_request(countermeasure))
     is_my_pending = is_sample_issue_pending_for_user(data, current_user, current_role)
-    is_reviewer_overdue = is_sample_issue_overdue_without_request_for_reviewer(data, current_role)
-    is_reviewer_missing_due_date = is_sample_issue_missing_due_date_for_reviewer(data, current_role)
+    is_reviewer_overdue = is_sample_issue_overdue_without_request_for_reviewer(
+        data,
+        current_role,
+        current_user=current_user,
+    )
+    is_reviewer_missing_due_date = is_sample_issue_missing_due_date_for_reviewer(
+        data,
+        current_role,
+        current_user,
+    )
     attention_labels = []
     if pending_extension:
         attention_labels.append(SAMPLE_FILTER_PENDING_EXTENSION_STATE)
@@ -1008,13 +1175,6 @@ def get_sample_dashboard_pending_count(all_issues: Any, current_user: str, curre
     if not isinstance(all_issues, dict):
         return 0
 
-    if is_sample_extension_approver(current_role) or is_sample_close_approver(current_role):
-        return sum(
-            1
-            for issue_data in all_issues.values()
-            if isinstance(issue_data, dict) and has_sample_approval_pending_for_role(issue_data, current_role)
-        )
-
     return sum(
         1
         for issue_data in all_issues.values()
@@ -1028,11 +1188,15 @@ def get_sample_issue_collection_url(issue_id: str = "") -> str:
     return f"{page_url}?issue_id={quote(issue_id, safe='')}" if issue_id else page_url
 
 
-async def resolve_sample_notify_recipients(targets) -> str:
-    """按企业微信通讯录规则解析收件人。"""
-    touser = await resolve_wecom_recipients(targets, fallback_touser="")
+async def resolve_sample_notify_recipients(permission_code: str, legacy_targets=None) -> str:
+    """按稳定通知权限解析收件人，旧 Excel 模式兼容原 JSON 规则。"""
+    touser = await resolve_permission_wecom_recipients(
+        permission_code,
+        legacy_targets=legacy_targets,
+        fallback_touser="",
+    )
     if not touser:
-        logger.error("样品问题通知规则未匹配到任何企业微信成员：%s", targets)
+        logger.error("样品问题通知权限未匹配到已绑定企业微信成员：%s", permission_code)
     return touser
 
 
@@ -1040,7 +1204,10 @@ async def format_people_for_wecom(value: str) -> str:
     """把人员姓名解析成企业微信账号；解析不到时保留直接输入值作为发送兜底。"""
     people = split_people(value)
     if not people:
-        return await resolve_sample_notify_recipients(SAMPLE_DEFAULT_NOTIFY_TARGETS)
+        return await resolve_sample_notify_recipients(
+            SAMPLE_ISSUE_FALLBACK_REMINDER_PERMISSION,
+            SAMPLE_DEFAULT_NOTIFY_TARGETS,
+        )
     direct_value = "|".join(people)
     return await resolve_wecom_recipients(
         [{"names": people}],
@@ -1317,15 +1484,36 @@ async def send_sample_extension_wecom_message(
     issue_id: str,
     business_key: str,
     message_type: str,
+    route_key: str = "default",
     notify_targets=None,
     additional_people: str = "",
     additional_targets=None,
+    include_approved_recipients: bool = False,
 ) -> tuple[bool, str]:
-    """发送样品问题延期相关企业微信通知。"""
-    role_recipients = await resolve_sample_notify_recipients(notify_targets or SAMPLE_EXTENSION_NOTIFY_TARGETS)
-    additional_role_recipients = (
-        await resolve_sample_notify_recipients(additional_targets) if additional_targets else ""
-    )
+    """按事件和关闭路由发送样品问题企业微信通知。"""
+    if message_type in SAMPLE_EXTENSION_NOTIFY_PERMISSION_BY_MESSAGE_TYPE:
+        permission_code = SAMPLE_EXTENSION_NOTIFY_PERMISSION_BY_MESSAGE_TYPE[message_type]
+        legacy_targets = notify_targets or SAMPLE_EXTENSION_NOTIFY_TARGETS
+        approved_permission = SAMPLE_ISSUE_EXTENSION_APPROVED_NOTIFY_PERMISSION
+    else:
+        route_permissions = SAMPLE_CLOSE_NOTIFY_PERMISSIONS_BY_ROUTE.get(
+            route_key,
+            SAMPLE_CLOSE_NOTIFY_PERMISSIONS_BY_ROUTE["default"],
+        )
+        permission_code = route_permissions.get(
+            message_type,
+            SAMPLE_ISSUE_CLOSE_DEFAULT_RESULT_NOTIFY_PERMISSION,
+        )
+        legacy_targets = notify_targets or SAMPLE_CLOSE_NOTIFY_TARGETS
+        approved_permission = route_permissions["approved"]
+
+    role_recipients = await resolve_sample_notify_recipients(permission_code, legacy_targets)
+    additional_role_recipients = ""
+    if include_approved_recipients:
+        additional_role_recipients = await resolve_sample_notify_recipients(
+            approved_permission,
+            additional_targets,
+        )
     people_recipients = await format_people_for_wecom(additional_people) if additional_people else ""
     touser = merge_wecom_recipients(role_recipients, additional_role_recipients, people_recipients)
     if not touser:
@@ -1394,6 +1582,11 @@ async def atomic_sample_issue_update(
 
 async def save_sample_issue_record(issue_data: dict, user: str, role: str, *, is_new: bool) -> SampleIssueUpdateResult:
     """保存样品问题记录，并在事务内按录入区块/对策区块重新校验权限。"""
+    if not can_view_sample_issue_collection(role, user):
+        return SampleIssueUpdateResult(db_success=False, changed=False, code="forbidden")
+    if is_new and not can_create_sample_issue(role, user):
+        return SampleIssueUpdateResult(db_success=False, changed=False, code="forbidden")
+
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     incoming = merge_with_sample_issue_template(issue_data)
     incoming["updated_by"] = user
@@ -1486,9 +1679,12 @@ async def submit_sample_close_request(
     close_note: str = "",
 ) -> SampleIssueUpdateResult:
     """由当前阶段责任人申请关闭样品问题。"""
+    if not can_view_sample_issue_collection(role, user):
+        return SampleIssueUpdateResult(db_success=False, changed=False, code="forbidden")
+
     note = close_note.strip()
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    close_route = get_sample_close_approval_route(role)
+    close_route = get_sample_close_approval_route(role, user)
     close_request = {
         "id": f"close_{uuid.uuid4().hex[:8]}",
         "status": "待审批",
@@ -1569,6 +1765,9 @@ async def approve_sample_close_request(
     special_owner: Optional[dict] = None,
 ) -> SampleIssueUpdateResult:
     """审批关闭申请；首次通过时可转入试产前特殊准备。"""
+    if not can_view_sample_issue_collection(role, user):
+        return SampleIssueUpdateResult(db_success=False, changed=False, code="forbidden")
+
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     action_text = "通过关闭申请" if approved else "驳回关闭申请"
     nature = normalize_sample_closure_nature(closure_nature)
@@ -1582,7 +1781,7 @@ async def approve_sample_close_request(
         stored_request = find_close_request(countermeasure, request_id)
         if not stored_request:
             return "request_not_found", current
-        if not is_sample_close_approver(role, stored_request):
+        if not is_sample_close_approver(role, stored_request, user):
             return "forbidden", current
         if stored_request.get("status") != "待审批":
             return "already_processed", current
@@ -1683,6 +1882,9 @@ async def set_sample_special_action_completed(
     role: str,
 ) -> SampleIssueUpdateResult:
     """由 NPI 工程师原子更新一项试产前特殊准备动作。"""
+    if not can_view_sample_issue_collection(role, user):
+        return SampleIssueUpdateResult(db_success=False, changed=False, code="forbidden")
+
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     def update_special_action(current):
@@ -1723,9 +1925,9 @@ async def set_sample_special_action_completed(
     return await atomic_sample_issue_update(issue_id, update_special_action)
 
 
-async def delete_sample_issue_record(issue_id: str, role: str) -> SampleIssueUpdateResult:
-    """由 admin 原子删除单张样品问题。"""
-    if not is_sample_admin(role):
+async def delete_sample_issue_record(issue_id: str, role: str, username: str = "") -> SampleIssueUpdateResult:
+    """由拥有删除权限的用户原子删除单张样品问题。"""
+    if not is_sample_admin(role, username):
         return SampleIssueUpdateResult(db_success=False, changed=False, code="forbidden")
 
     outcome = {"changed": False, "code": "db_error", "record": None}
@@ -1753,7 +1955,7 @@ async def delete_sample_issue_record(issue_id: str, role: str) -> SampleIssueUpd
 
 
 @ui.page("/sample_issue_collection")
-async def sample_issue_collection_page(issue_id: str = ""):
+async def sample_issue_collection_page(issue_id: str = "", view: str = ""):
     """构建样品问题收集页面。"""
     setup_global_activity_tracking()
     app.storage.client.setdefault("key_state", {})
@@ -1774,23 +1976,37 @@ async def sample_issue_collection_page(issue_id: str = ""):
     """)
 
     if not app.storage.user.get("current_user"):
-        redirect_target = f"/sample_issue_collection?issue_id={issue_id}" if issue_id else "/sample_issue_collection"
+        query_parts = []
+        if issue_id:
+            query_parts.append(f"issue_id={quote(issue_id, safe='')}")
+        if view:
+            query_parts.append(f"view={quote(view, safe='')}")
+        redirect_target = "/sample_issue_collection"
+        if query_parts:
+            redirect_target += f"?{'&'.join(query_parts)}"
         ui.navigate.to(f"/login?redirect_to={quote(redirect_target, safe='')}")
         return
 
     current_user = app.storage.user.get("current_user", "未知用户")
-    current_role = app.storage.user.get("current_role", "未知角色")
+    current_role = sync_current_user_role()
+    if not can_view_sample_issue_collection(current_role, current_user):
+        ui.notify("当前用户没有查看样品问题跟进的权限", type="warning", position="bottom")
+        ui.navigate.to("/main")
+        return
     current_display_path = get_cache_busted_path(
         app.storage.general.get("user_preferences", {}).get(current_user, {}).get("avatar", PRESET_AVATARS[0])
     )
 
-    page_state = {"search_keyword": "", "filter_state": SAMPLE_FILTER_OPEN_STATE}
+    initial_filter = SAMPLE_FILTER_MY_PENDING_STATE if view == "my_pending" else SAMPLE_FILTER_OPEN_STATE
+    page_state = {"search_keyword": "", "filter_state": initial_filter}
     dialog = ui.dialog().props("persistent")
     root_dialog = ui.dialog().props("maximized persistent")
-    can_delete_record = is_sample_admin(current_role)
+    can_delete_record = is_sample_admin(current_role, current_user)
     reminder_guard = {"running": False}
 
     async def handle_new_sample_issue():
+        if not can_create_sample_issue(current_role, current_user):
+            return ui.notify("当前用户没有录入样品问题的权限", type="warning", position="bottom")
         await open_sample_issue_detail_dialog()
 
     async def run_reminder_check(show_result: bool = False):
@@ -2355,16 +2571,16 @@ async def sample_issue_collection_page(issue_id: str = ""):
             refresh_list()
 
         def open_delete_confirmation():
-            """打开删除确认框；真正删除时仍会再次校验 admin 角色。"""
+            """打开删除确认框；真正删除时仍会再次校验稳定删除权限。"""
             if is_new or not can_delete_record:
-                return ui.notify("当前角色无删除样品问题权限", type="warning", position="bottom")
+                return ui.notify("当前用户无删除样品问题权限", type="warning", position="bottom")
 
             target_issue_id = local_data["issue_id"]
 
             async def confirm_delete():
-                result = await delete_sample_issue_record(target_issue_id, current_role)
+                result = await delete_sample_issue_record(target_issue_id, current_role, current_user)
                 if result.code == "forbidden":
-                    return ui.notify("当前角色无删除样品问题权限", type="warning", position="bottom")
+                    return ui.notify("当前用户无删除样品问题权限", type="warning", position="bottom")
                 if result.code == "not_found":
                     ui.notify("该样品问题已被删除", type="warning", position="bottom")
                     dialog.close()
@@ -2500,7 +2716,7 @@ async def sample_issue_collection_page(issue_id: str = ""):
                     f"原预计日期：{fresh_request.get('old_due_date') or '-'}\n"
                     f"申请延期至：{fresh_request['new_due_date']}\n"
                     f"延期原因：{fresh_request['reason']}\n"
-                    f"审批角色：{', '.join(SAMPLE_EXTENSION_APPROVER_ROLES)}"
+                    "请具有“审批样品问题延期申请”权限的人员处理"
                 )
                 await send_sample_extension_wecom_message(
                     content,
@@ -2526,14 +2742,19 @@ async def sample_issue_collection_page(issue_id: str = ""):
 
         async def approve_extension_request(request: dict, approved: bool):
             """审批一条延期申请；通过时修改预计完成日期。"""
-            if not is_sample_extension_approver(current_role):
-                return ui.notify("当前角色无延期审批权限", type="warning", position="bottom")
+            if not is_sample_extension_approver(current_role, current_user):
+                return ui.notify("当前用户无延期审批权限", type="warning", position="bottom")
 
             request_id = str(request.get("id", ""))
             now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             action_text = "通过延期申请" if approved else "驳回延期申请"
 
             def update_extension_request(current):
+                if not can_view_sample_issue_collection(
+                    current_role,
+                    current_user,
+                ) or not is_sample_extension_approver(current_role, current_user):
+                    return "forbidden", current
                 stored_countermeasure = current.get("countermeasure", {})
                 stored_request = find_extension_request(stored_countermeasure, request_id)
                 if not stored_request:
@@ -2563,6 +2784,8 @@ async def sample_issue_collection_page(issue_id: str = ""):
                 return "updated", current
 
             result = await atomic_sample_issue_update(local_data["issue_id"], update_extension_request)
+            if result.code == "forbidden":
+                return ui.notify("当前用户无延期审批权限", type="warning", position="bottom")
             if result.code == "already_processed":
                 return ui.notify("该延期申请已被其他审批人处理，请刷新查看", type="warning", position="bottom")
             if result.code == "due_date_changed":
@@ -2600,6 +2823,7 @@ async def sample_issue_collection_page(issue_id: str = ""):
                         fresh_request.get("requester", "") if SAMPLE_EXTENSION_NOTIFY_REQUESTER_ON_APPROVAL else ""
                     ),
                     additional_targets=SAMPLE_EXTENSION_APPROVAL_NOTIFY_TARGETS if approved else None,
+                    include_approved_recipients=approved,
                 ),
                 "样品问题延期审批企业微信通知",
             )
@@ -2685,13 +2909,14 @@ async def sample_issue_collection_page(issue_id: str = ""):
                 f"问题点：{basic.get('issue_description', '')}\n"
                 f"申请阶段：{'试产前特殊准备' if fresh_request.get('stage') == 'special_preparation' else '原问题对策'}\n"
                 f"申请人：{current_user}\n"
-                f"审批角色：{', '.join(close_route.get('approver_roles', []))}"
+                f"审批路由：{close_route.get('label', '默认关闭审批')}"
             )
             await send_sample_extension_wecom_message(
                 content,
                 issue_id=result.record["issue_id"],
                 business_key=f"{result.record['issue_id']}:{fresh_request['id']}:close_request",
                 message_type="close_request",
+                route_key=str(close_route.get("key", "default")),
                 notify_targets=close_route.get("notify_targets"),
             )
             ui.notify("关闭申请已提交", type="positive", position="bottom")
@@ -2707,8 +2932,8 @@ async def sample_issue_collection_page(issue_id: str = ""):
             special_owner: Optional[dict] = None,
         ):
             """审批样品问题关闭申请。"""
-            if not is_sample_close_approver(current_role, request):
-                return ui.notify("当前角色无关闭审批权限", type="warning", position="bottom")
+            if not is_sample_close_approver(current_role, request, current_user):
+                return ui.notify("当前用户无关闭审批权限", type="warning", position="bottom")
 
             request_id = str(request.get("id", ""))
             result = await approve_sample_close_request(
@@ -2723,7 +2948,7 @@ async def sample_issue_collection_page(issue_id: str = ""):
                 special_owner,
             )
             if result.code == "forbidden":
-                return ui.notify("当前角色无关闭审批权限", type="warning", position="bottom")
+                return ui.notify("当前用户无关闭审批权限", type="warning", position="bottom")
             if result.code == "missing_closure_nature":
                 return ui.notify("请填写或选择问题性质", type="warning", position="bottom")
             if result.code == "missing_follow_up_actions":
@@ -2776,9 +3001,11 @@ async def sample_issue_collection_page(issue_id: str = ""):
                     issue_id=result.record["issue_id"],
                     business_key=f"{result.record['issue_id']}:{fresh_request['id']}:close_approval",
                     message_type="close_approval",
+                    route_key=str(close_route.get("key", "default")),
                     notify_targets=close_route.get("notify_targets"),
                     additional_people=approval_additional_people,
                     additional_targets=close_route.get("approval_notify_targets") if approved else None,
+                    include_approved_recipients=approved,
                 ),
                 "样品问题关闭审批企业微信通知",
             )
@@ -2807,7 +3034,7 @@ async def sample_issue_collection_page(issue_id: str = ""):
                     ui.label(
                         f"申请人：{pending_extension.get('requester', '-')} ｜ 原因：{pending_extension.get('reason', '-')}"
                     ).classes("text-sm text-orange-700")
-                    if is_sample_extension_approver(current_role):
+                    if is_sample_extension_approver(current_role, current_user):
 
                         async def reject_extension(event=None, r=pending_extension):
                             await approve_extension_request(r, False)
@@ -2955,7 +3182,7 @@ async def sample_issue_collection_page(issue_id: str = ""):
                     ui.label(f"审批角色：{', '.join(pending_close_route.get('approver_roles', []))}").classes(
                         "text-xs text-purple-600"
                     )
-                    if is_sample_close_approver(current_role, pending_close):
+                    if is_sample_close_approver(current_role, pending_close, current_user):
 
                         async def reject_close(event=None, r=pending_close):
                             await approve_close_request_from_dialog(r, False)
@@ -3164,20 +3391,26 @@ async def sample_issue_collection_page(issue_id: str = ""):
                     ui.input("搜索型号/样品单号/问题/责任人").props("dense outlined").bind_value(
                         page_state, "search_keyword"
                     ).classes("w-72")
-                    ui.select(SAMPLE_FILTER_STATES, label="状态筛选").props("dense outlined").bind_value(
+                    ui.select(
+                        [*SAMPLE_FILTER_STATES, SAMPLE_FILTER_MY_PENDING_STATE],
+                        label="状态筛选",
+                    ).props("dense outlined").bind_value(
                         page_state, "filter_state"
                     ).classes("w-44")
                     ui.button("查询", icon="search", on_click=lambda: refresh_list()).props("outline color=primary")
                     ui.button("刷新", icon="refresh", on_click=lambda: refresh_list()).props("flat color=primary")
                 with ui.row().classes("gap-2 items-center"):
                     ui.label("点击“详情”打开详情").classes("text-xs text-gray-500")
-                    if is_sample_extension_approver(current_role):
+                    if can_check_sample_reminders(current_role, current_user):
                         ui.button(
                             "检查提醒",
                             icon="notifications_active",
                             on_click=handle_manual_reminder_check,
                         ).props("outline color=orange")
-                    ui.button("录入样品问题", icon="add_box", on_click=handle_new_sample_issue).props("color=red-7")
+                    if can_create_sample_issue(current_role, current_user):
+                        ui.button("录入样品问题", icon="add_box", on_click=handle_new_sample_issue).props(
+                            "color=red-7"
+                        )
 
             sample_issue_grid = ui.aggrid(
                 {
@@ -3262,7 +3495,12 @@ async def sample_issue_collection_page(issue_id: str = ""):
                     ).lower()
                     if keyword and keyword not in searchable:
                         continue
-                    if not sample_issue_matches_filter(issue_data, filter_state):
+                    if not sample_issue_matches_filter(
+                        issue_data,
+                        filter_state,
+                        current_user,
+                        current_role,
+                    ):
                         continue
                     rows.append(build_sample_issue_grid_row(issue_data, current_user, current_role))
                 sample_issue_grid.options["rowData"] = rows

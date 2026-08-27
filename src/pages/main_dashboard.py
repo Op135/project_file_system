@@ -30,7 +30,11 @@ from .error_management import (
     can_view_error_management,
     get_error_dashboard_pending_count,
 )
-from .sample_issue_collection import SAMPLE_ISSUE_DATA_KEY, get_sample_dashboard_pending_count
+from .sample_issue_collection import (
+    SAMPLE_ISSUE_DATA_KEY,
+    can_view_sample_issue_collection,
+    get_sample_dashboard_pending_count,
+)
 from .sample_order_dashboard import (
     can_view_sample_order_dashboard,
     get_all_sample_order_records,
@@ -240,9 +244,10 @@ def main_page():
             current_user,
         ):
             continue
-        # 样品问题跟进只对角色字符串里含有如下关键字的用户展示
-        elif items[3] == "/sample_issue_collection" and not any(
-            k in str(current_role) for k in ["质量", "销售", "工程", "研发", "boss", "admin"]
+        # 样品问题跟进使用稳定权限控制入口，旧 Excel 环境仍沿用原角色关键词。
+        elif items[3] == "/sample_issue_collection" and not can_view_sample_issue_collection(
+            current_role,
+            current_user,
         ):
             continue
         # 样品问题跟进只对角色字符串里含有如下关键字的用户展示
@@ -519,6 +524,7 @@ def main_page():
                         )
                         pending_target = {
                             "/error_management": "/error_management?view=my_pending",
+                            "/sample_issue_collection": "/sample_issue_collection?view=my_pending",
                             "/sample_order_dashboard": "/sample_order_dashboard?view=my_pending",
                         }.get(target)
                         if pending_target:

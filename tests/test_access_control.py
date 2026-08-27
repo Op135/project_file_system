@@ -11,6 +11,9 @@ from src.permission_catalog import (
     ERROR_NOTIFICATION_MODULE,
     ERROR_RECORD_EDIT_PERMISSION,
     ERROR_VIEW_PERMISSION,
+    SAMPLE_ISSUE_CREATE_PERMISSION,
+    SAMPLE_ISSUE_NOTIFICATION_MODULE,
+    SAMPLE_ISSUE_VIEW_PERMISSION,
     SAMPLE_ORDER_EXTENSION_NOTIFY_PERMISSION,
     SAMPLE_ORDER_NOTIFICATION_MODULE,
     SAMPLE_ORDER_SPECIAL_STATUS_NOTIFY_PERMISSION,
@@ -280,7 +283,7 @@ class AccessControlTests(unittest.TestCase):
         )
 
     def test_notification_permissions_are_grouped_by_business_module(self):
-        """样品单和异常单通知应在权限界面形成两个独立分组。"""
+        """各业务模块通知应在权限界面形成互相独立的分组。"""
         self.service.migrate_legacy_users()
         notification_modules = {
             item["module"]
@@ -289,8 +292,39 @@ class AccessControlTests(unittest.TestCase):
         }
         self.assertEqual(
             notification_modules,
-            {SAMPLE_ORDER_NOTIFICATION_MODULE, ERROR_NOTIFICATION_MODULE},
+            {
+                SAMPLE_ORDER_NOTIFICATION_MODULE,
+                ERROR_NOTIFICATION_MODULE,
+                SAMPLE_ISSUE_NOTIFICATION_MODULE,
+            },
         )
+
+    def test_sample_issue_database_mode_ignores_legacy_role_and_uses_position_permissions(self):
+        """样品问题模块迁移后只认稳定岗位权限，不再叠加旧角色授权。"""
+        self.service.migrate_legacy_users()
+        org_unit_id = self.service.save_org_unit(code="org.sample.issue", name="样品问题测试部")
+        position_id = self.service.save_position(code="sample.issue.owner", name="样品问题岗位")
+        self.service.set_primary_membership(
+            "张三",
+            org_unit_id=org_unit_id,
+            position_id=position_id,
+        )
+
+        self.assertFalse(
+            self.service.has_permission(
+                "张三",
+                SAMPLE_ISSUE_VIEW_PERMISSION,
+                legacy_role="研发硬件",
+                legacy_allowed_roles=["研发硬件"],
+            )
+        )
+        self.service.set_position_permissions(
+            position_id,
+            [SAMPLE_ISSUE_VIEW_PERMISSION, SAMPLE_ISSUE_CREATE_PERMISSION],
+            actor_username="admin",
+        )
+        self.assertTrue(self.service.has_permission("张三", SAMPLE_ISSUE_VIEW_PERMISSION))
+        self.assertTrue(self.service.has_permission("张三", SAMPLE_ISSUE_CREATE_PERMISSION))
 
     def test_broad_notification_permission_is_split_without_losing_assignments(self):
         """上一版宽权限应迁移到全部对应事件权限，并从管理目录移除。"""
