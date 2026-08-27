@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from html import escape
 from typing import Any, Optional
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 from chinese_calendar import is_holiday
 from nicegui import app, ui
@@ -25,21 +25,31 @@ from openpyxl import load_workbook
 from openpyxl.utils.datetime import from_excel
 
 from .. import db_storage
+from ..access_control import can
 from ..config import IMG_DIR, PRESET_AVATARS
 from ..custom_ui import custom_upload
 from ..issue_workflow_utils import merge_wecom_recipients, schedule_background_task
+from ..permission_catalog import (
+    SAMPLE_ORDER_AVERAGE_SCORE_VIEW_PERMISSION,
+    SAMPLE_ORDER_BASE_EDIT_PERMISSION,
+    SAMPLE_ORDER_DELAY_EDIT_PERMISSION,
+    SAMPLE_ORDER_DELAY_NATURE_EDIT_PERMISSION,
+    SAMPLE_ORDER_DELETE_PERMISSION,
+    SAMPLE_ORDER_SPECIAL_STATUS_EDIT_PERMISSION,
+    SAMPLE_ORDER_VIEW_PERMISSION,
+)
 from ..sample_order_dashboard_config import (
-    SAMPLE_ORDER_ADMIN_ROLES,
-    SAMPLE_ORDER_BASE_EDITOR_ROLES,
+    SAMPLE_ORDER_ADMIN_ROLES as SAMPLE_ORDER_LEGACY_ADMIN_ROLES,
+    SAMPLE_ORDER_BASE_EDITOR_ROLES as SAMPLE_ORDER_LEGACY_BASE_EDITOR_ROLES,
     SAMPLE_ORDER_DELAY_ATTENTION_THRESHOLD,
-    SAMPLE_ORDER_DELAY_EDITOR_ROLES,
-    SAMPLE_ORDER_DELAY_NATURE_MARKER_ROLES,
+    SAMPLE_ORDER_DELAY_EDITOR_ROLES as SAMPLE_ORDER_LEGACY_DELAY_EDITOR_ROLES,
+    SAMPLE_ORDER_DELAY_NATURE_MARKER_ROLES as SAMPLE_ORDER_LEGACY_DELAY_NATURE_MARKER_ROLES,
     SAMPLE_ORDER_MANAGER_NOTIFY_TARGETS,
     SAMPLE_ORDER_NOTIFY_APPLICANT_ON_EXTENSION,
     SAMPLE_ORDER_NOTIFY_APPLICANT_ON_SPECIAL_STATUS,
     SAMPLE_ORDER_PUBLIC_BASE_URL,
     SAMPLE_ORDER_REDIRECT_APPLICANT_NOTIFICATIONS_TO_MANAGER,
-    SAMPLE_ORDER_SPECIAL_STATUS_EDITOR_ROLES,
+    SAMPLE_ORDER_SPECIAL_STATUS_EDITOR_ROLES as SAMPLE_ORDER_LEGACY_SPECIAL_STATUS_EDITOR_ROLES,
     SAMPLE_ORDER_SPECIAL_STATUS_REASON_REQUIRED,
     SAMPLE_ORDER_SPECIAL_STATUSES,
     SAMPLE_ORDER_WARNING_DAYS,
@@ -51,6 +61,7 @@ SAMPLE_ORDER_DATA_KEY = "sample_order_dashboard_data"
 SAMPLE_ORDER_ENTITY_NAMESPACE = "sample_order_dashboard"
 SAMPLE_ORDER_VERSION_KEY = "sample_order_dashboard_version_stamp"
 SAMPLE_ORDER_EXCEL_IMPORT_OWNER = "叶子浩"
+SAMPLE_ORDER_LEGACY_VIEW_ROLE_KEYWORDS = ["销售", "工程", "研发", "boss", "admin"]
 
 logger = logging.getLogger(__name__)
 
@@ -78,12 +89,14 @@ FILTER_WARNING = "预警"
 FILTER_DELAYED = "延期"
 FILTER_MANY_DELAYS = "多次延期"
 FILTER_NATURE_PENDING = "待性质标记"
+FILTER_MY_PENDING = "我的待办"
 DEFAULT_SAMPLE_ORDER_FILTER = FILTER_IN_PROGRESS
 SAMPLE_ORDER_GRID_PAGE_SIZE = 50
 FILTER_OPTIONS = list(
     dict.fromkeys(
         [
             FILTER_ALL,
+            FILTER_MY_PENDING,
             FILTER_IN_PROGRESS,
             FILTER_COMPLETED,
             FILTER_WARNING,
@@ -535,34 +548,118 @@ def _role_matches(role: object, allowed_roles: list[str]) -> bool:
     return any(allowed.lower() in role_text for allowed in allowed_roles)
 
 
-def is_sample_order_admin(role: object) -> bool:
-    """判断角色是否拥有样品单模块管理权限。"""
-    return _role_matches(role, SAMPLE_ORDER_ADMIN_ROLES)
+def _has_sample_order_permission(
+    username: str,
+    role: object,
+    permission_code: str,
+    legacy_allowed_roles: list[str],
+) -> bool:
+    """按稳定权限判断操作；旧 Excel 环境继续使用原角色配置。"""
+    user_service = getattr(app.state, "user_service", None)
+    if user_service is None or not option_text(username):
+        # 无应用上下文时保留纯函数兼容，便于历史脚本和单元测试调用。
+        return _role_matches(role, legacy_allowed_roles)
+    role_text = option_text(role)
+    matched_legacy_roles = [role_text] if _role_matches(role_text, legacy_allowed_roles) else []
+    return can(
+        user_service,
+        option_text(username),
+        permission_code,
+        legacy_role=role_text,
+        legacy_allowed_roles=matched_legacy_roles,
+    )
 
 
-def is_sample_order_base_editor(role: object) -> bool:
-    """判断角色是否可以录入和维护基础信息。"""
-    return is_sample_order_admin(role) or _role_matches(role, SAMPLE_ORDER_BASE_EDITOR_ROLES)
+def can_view_sample_order_dashboard(role: object, username: str = "") -> bool:
+    """判断用户是否可以进入样品单执行看板。"""
+    return _has_sample_order_permission(
+        username,
+        role,
+        SAMPLE_ORDER_VIEW_PERMISSION,
+        SAMPLE_ORDER_LEGACY_VIEW_ROLE_KEYWORDS,
+    )
 
 
-def is_sample_order_delay_editor(role: object) -> bool:
-    """判断角色是否可以维护制样执行与延期信息。"""
-    return is_sample_order_admin(role) or _role_matches(role, SAMPLE_ORDER_DELAY_EDITOR_ROLES)
+def is_sample_order_admin(role: object, username: str = "") -> bool:
+    """判断用户是否拥有删除样品单权限。"""
+    return _has_sample_order_permission(
+        username,
+        role,
+        SAMPLE_ORDER_DELETE_PERMISSION,
+        SAMPLE_ORDER_LEGACY_ADMIN_ROLES,
+    )
 
 
-def is_sample_order_special_status_editor(role: object) -> bool:
-    """判断角色是否可以设置暂停、作废等特殊状态。"""
-    return is_sample_order_admin(role) or _role_matches(role, SAMPLE_ORDER_SPECIAL_STATUS_EDITOR_ROLES)
+def is_sample_order_base_editor(role: object, username: str = "") -> bool:
+    """判断用户是否可以录入和维护基础信息。"""
+    return _has_sample_order_permission(
+        username,
+        role,
+        SAMPLE_ORDER_BASE_EDIT_PERMISSION,
+        list(
+            dict.fromkeys(
+                [*SAMPLE_ORDER_LEGACY_BASE_EDITOR_ROLES, *SAMPLE_ORDER_LEGACY_ADMIN_ROLES]
+            )
+        ),
+    )
 
 
-def is_sample_order_delay_nature_marker(role: object) -> bool:
-    """判断角色是否可以为已完成延期订单标记性质。"""
-    return is_sample_order_admin(role) or _role_matches(role, SAMPLE_ORDER_DELAY_NATURE_MARKER_ROLES)
+def is_sample_order_delay_editor(role: object, username: str = "") -> bool:
+    """判断用户是否可以维护制样执行与延期信息。"""
+    return _has_sample_order_permission(
+        username,
+        role,
+        SAMPLE_ORDER_DELAY_EDIT_PERMISSION,
+        list(
+            dict.fromkeys(
+                [*SAMPLE_ORDER_LEGACY_DELAY_EDITOR_ROLES, *SAMPLE_ORDER_LEGACY_ADMIN_ROLES]
+            )
+        ),
+    )
 
 
-def can_view_sample_order_average_score(role: object) -> bool:
-    """平均考核分仅向研发样品组长和研发经理展示。"""
-    return _role_matches(role, ["研发样品组长", "研发经理"])
+def is_sample_order_special_status_editor(role: object, username: str = "") -> bool:
+    """判断用户是否可以设置暂停、作废等特殊状态。"""
+    return _has_sample_order_permission(
+        username,
+        role,
+        SAMPLE_ORDER_SPECIAL_STATUS_EDIT_PERMISSION,
+        list(
+            dict.fromkeys(
+                [
+                    *SAMPLE_ORDER_LEGACY_SPECIAL_STATUS_EDITOR_ROLES,
+                    *SAMPLE_ORDER_LEGACY_ADMIN_ROLES,
+                ]
+            )
+        ),
+    )
+
+
+def is_sample_order_delay_nature_marker(role: object, username: str = "") -> bool:
+    """判断用户是否可以为已完成延期订单标记性质。"""
+    return _has_sample_order_permission(
+        username,
+        role,
+        SAMPLE_ORDER_DELAY_NATURE_EDIT_PERMISSION,
+        list(
+            dict.fromkeys(
+                [
+                    *SAMPLE_ORDER_LEGACY_DELAY_NATURE_MARKER_ROLES,
+                    *SAMPLE_ORDER_LEGACY_ADMIN_ROLES,
+                ]
+            )
+        ),
+    )
+
+
+def can_view_sample_order_average_score(role: object, username: str = "") -> bool:
+    """判断用户是否可以查看平均考核分。"""
+    return _has_sample_order_permission(
+        username,
+        role,
+        SAMPLE_ORDER_AVERAGE_SCORE_VIEW_PERMISSION,
+        ["研发样品组长", "研发经理"],
+    )
 
 
 def sample_order_matches_kpi(record: object, metrics: dict, label: str) -> bool:
@@ -747,6 +844,27 @@ def is_delay_nature_pending(record: object) -> bool:
     return _is_delay_nature_pending_from_data(merge_with_sample_order_template(record))
 
 
+def is_sample_order_pending_for_user(
+    record: object,
+    today: Optional[date] = None,
+    *,
+    can_edit_delay: bool,
+    can_mark_delay_nature: bool,
+    calculated_metrics: Optional[dict] = None,
+) -> bool:
+    """判断订单是否属于当前用户有权处理的样品单待办。"""
+    if can_mark_delay_nature and is_delay_nature_pending(record):
+        return True
+    if not can_edit_delay:
+        return False
+    metrics = (
+        calculated_metrics
+        if isinstance(calculated_metrics, dict)
+        else calculate_sample_order_metrics(record, today)
+    )
+    return metrics.get("attention_level") == "overdue"
+
+
 def get_delay_nature_catalog(all_records: object) -> list[str]:
     """从历史订单标记中自动汇总性质标签，并按使用次数优先排序。"""
     if not isinstance(all_records, dict):
@@ -768,17 +886,27 @@ def get_sample_order_dashboard_pending_count(
     all_records: object,
     today: Optional[date] = None,
     *,
+    current_user: str = "",
     current_role: str = "",
 ) -> int:
-    """按当前角色统计主页卡片需要显示的红点数量。"""
+    """按当前用户权限统计主页卡片需要显示的红点数量。"""
     if not isinstance(all_records, dict):
         return 0
     valid_records = [record for record in all_records.values() if isinstance(record, dict)]
-    if is_sample_order_delay_nature_marker(current_role):
-        return sum(1 for record in valid_records if is_delay_nature_pending(record))
-    if not is_sample_order_delay_editor(current_role):
+    can_edit_delay = is_sample_order_delay_editor(current_role, current_user)
+    can_mark_delay_nature = is_sample_order_delay_nature_marker(current_role, current_user)
+    if not (can_edit_delay or can_mark_delay_nature):
         return 0
-    return sum(1 for record in valid_records if sample_order_is_overdue(record, today))
+    return sum(
+        1
+        for record in valid_records
+        if is_sample_order_pending_for_user(
+            record,
+            today,
+            can_edit_delay=can_edit_delay,
+            can_mark_delay_nature=can_mark_delay_nature,
+        )
+    )
 
 
 def validate_sample_order_submission(
@@ -992,9 +1120,9 @@ async def save_sample_order_record(
     is_new: bool,
 ) -> SampleOrderUpdateResult:
     """按字段职责和记录版本原子保存一张样品单。"""
-    can_edit_base = is_sample_order_base_editor(role)
-    can_edit_delay = is_sample_order_delay_editor(role)
-    can_edit_special_status = is_sample_order_special_status_editor(role)
+    can_edit_base = is_sample_order_base_editor(role, user)
+    can_edit_delay = is_sample_order_delay_editor(role, user)
+    can_edit_special_status = is_sample_order_special_status_editor(role, user)
     can_edit_execution = can_edit_base
     if is_new and not can_edit_base:
         return SampleOrderUpdateResult(True, False, "forbidden")
@@ -1160,7 +1288,7 @@ async def import_sample_order_records(
     source_name: str,
 ) -> SampleOrderImportResult:
     """由研发助理把预览通过的Excel记录一次性原子导入。"""
-    if not is_sample_order_base_editor(role):
+    if not is_sample_order_base_editor(role, user):
         return SampleOrderImportResult(True, 0, "forbidden")
     if not records:
         return SampleOrderImportResult(True, 0, "empty")
@@ -1229,7 +1357,7 @@ async def mark_sample_order_delay_nature(
     expected_revision: int,
 ) -> SampleOrderUpdateResult:
     """由研发经理原子标记已完成延期订单的标准性质标签。"""
-    if not is_sample_order_delay_nature_marker(role):
+    if not is_sample_order_delay_nature_marker(role, user):
         return SampleOrderUpdateResult(True, False, "forbidden")
     normalized_tag = option_text(nature_tag)
     if not normalized_tag:
@@ -1315,9 +1443,14 @@ async def mark_sample_order_delay_nature(
     )
 
 
-async def delete_sample_order_record(record_id: str, role: str) -> SampleOrderUpdateResult:
+async def delete_sample_order_record(
+    record_id: str,
+    role: str,
+    *,
+    user: str = "",
+) -> SampleOrderUpdateResult:
     """由管理员原子删除一张样品单。"""
-    if not is_sample_order_admin(role):
+    if not is_sample_order_admin(role, user):
         return SampleOrderUpdateResult(True, False, "forbidden")
     outcome: dict[str, Any] = {"changed": False, "code": "db_error", "record": None}
 
@@ -1533,6 +1666,8 @@ def sample_order_matches_filter(
     today: Optional[date] = None,
     *,
     calculated_metrics: Optional[dict] = None,
+    can_edit_delay: bool = False,
+    can_mark_delay_nature: bool = False,
 ) -> bool:
     """判断记录是否符合页面状态筛选条件。"""
     data = merge_with_sample_order_template(record)
@@ -1543,6 +1678,14 @@ def sample_order_matches_filter(
         return bool(actual_date is None and data["special_status"].get("status") == "正常")
     if filter_value == FILTER_NATURE_PENDING:
         return _is_delay_nature_pending_from_data(data)
+    if filter_value == FILTER_MY_PENDING:
+        return is_sample_order_pending_for_user(
+            data,
+            today,
+            can_edit_delay=can_edit_delay,
+            can_mark_delay_nature=can_mark_delay_nature,
+            calculated_metrics=calculated_metrics,
+        )
     if filter_value in SAMPLE_ORDER_SPECIAL_STATUSES and filter_value != "正常":
         return data["special_status"].get("status") == filter_value
     if filter_value == FILTER_ALL:
@@ -1910,7 +2053,7 @@ def build_sample_order_delay_reason_trend_chart(statistics: dict[str, Any]) -> d
 
 
 @ui.page("/sample_order_dashboard")
-async def sample_order_dashboard_page(record_id: str = "") -> None:
+async def sample_order_dashboard_page(record_id: str = "", view: str = "") -> None:
     """构建样品单执行看板页面。"""
     setup_global_activity_tracking()
     ui.add_head_html(
@@ -1933,25 +2076,41 @@ async def sample_order_dashboard_page(record_id: str = "") -> None:
         """
     )
     if not app.storage.user.get("current_user"):
-        redirect_target = f"/sample_order_dashboard?record_id={record_id}" if record_id else "/sample_order_dashboard"
+        redirect_params = {}
+        if record_id:
+            redirect_params["record_id"] = record_id
+        if view:
+            redirect_params["view"] = view
+        redirect_target = "/sample_order_dashboard"
+        if redirect_params:
+            redirect_target = f"{redirect_target}?{urlencode(redirect_params)}"
         ui.navigate.to(f"/login?redirect_to={quote(redirect_target, safe='')}")
         return
 
     current_user = option_text(app.storage.user.get("current_user"), "未知用户")
-    # 用户会话会跨服务器重启保留；每次进入权限页都从当前用户表同步角色，避免管理员改完角色后
-    # 浏览器仍沿用旧的 current_role。
+    # 用户会话会跨服务器重启保留；进入页面时同步兼容角色文本，供旧 Excel 模式和操作留痕使用。
     current_role = option_text(sync_current_user_role(), "未知角色")
+    if not can_view_sample_order_dashboard(current_role, current_user):
+        ui.notify("当前用户没有查看样品单执行看板的权限", type="warning")
+        ui.navigate.to("/main")
+        return
     current_display_path = get_cache_busted_path(
         app.storage.general.get("user_preferences", {}).get(current_user, {}).get("avatar", PRESET_AVATARS[0])
     )
-    can_edit_base = is_sample_order_base_editor(current_role)
-    can_edit_delay = is_sample_order_delay_editor(current_role)
-    can_edit_special_status = is_sample_order_special_status_editor(current_role)
-    can_mark_delay_nature = is_sample_order_delay_nature_marker(current_role)
-    can_delete = is_sample_order_admin(current_role)
+    can_edit_base = is_sample_order_base_editor(current_role, current_user)
+    can_edit_delay = is_sample_order_delay_editor(current_role, current_user)
+    can_edit_special_status = is_sample_order_special_status_editor(current_role, current_user)
+    can_mark_delay_nature = is_sample_order_delay_nature_marker(current_role, current_user)
+    can_delete = is_sample_order_admin(current_role, current_user)
+    has_pending_scope = can_edit_delay or can_mark_delay_nature
+    initial_filter = (
+        FILTER_MY_PENDING
+        if option_text(view).lower() == "my_pending" and has_pending_scope
+        else DEFAULT_SAMPLE_ORDER_FILTER
+    )
     page_state: dict[str, object] = {
         "search_keyword": "",
-        "filter_state": DEFAULT_SAMPLE_ORDER_FILTER,
+        "filter_state": initial_filter,
         "last_version": db_storage.get_item(SAMPLE_ORDER_VERSION_KEY, 0),
         "kpi_cache_key": None,
     }
@@ -2777,7 +2936,11 @@ async def sample_order_dashboard_page(record_id: str = "") -> None:
                     ui.notify("保存失败，请稍后重试", type="negative", position="bottom")
 
             async def confirm_delete() -> None:
-                result = await delete_sample_order_record(local_data["record_id"], current_role)
+                result = await delete_sample_order_record(
+                    local_data["record_id"],
+                    current_role,
+                    user=current_user,
+                )
                 confirm_dialog.close()
                 if result.changed:
                     detail_dialog.close()
@@ -2828,7 +2991,12 @@ async def sample_order_dashboard_page(record_id: str = "") -> None:
                     ui.input("搜索单号/客户/型号/申请人/负责人").props("dense outlined clearable").bind_value(
                         page_state, "search_keyword"
                     ).classes("w-80")
-                    ui.select(FILTER_OPTIONS, label="状态筛选").props("dense outlined").bind_value(
+                    available_filter_options = (
+                        FILTER_OPTIONS
+                        if has_pending_scope
+                        else [item for item in FILTER_OPTIONS if item != FILTER_MY_PENDING]
+                    )
+                    ui.select(available_filter_options, label="状态筛选").props("dense outlined").bind_value(
                         page_state, "filter_state"
                     ).classes("w-40")
                     ui.button("查询", icon="search", on_click=apply_filters).props("outline color=primary")
@@ -2950,6 +3118,8 @@ async def sample_order_dashboard_page(record_id: str = "") -> None:
                         record,
                         filter_value,
                         calculated_metrics=metrics,
+                        can_edit_delay=can_edit_delay,
+                        can_mark_delay_nature=can_mark_delay_nature,
                     ):
                         continue
                     visible_entries.append((record, metrics))
@@ -3004,7 +3174,7 @@ async def sample_order_dashboard_page(record_id: str = "") -> None:
                 if can_mark_delay_nature:
                     pending_records = kpi_records("待性质标记")
                     kpi_items.append(("待性质标记", len(pending_records), "sell", "red", pending_records))
-                if can_view_sample_order_average_score(current_role):
+                if can_view_sample_order_average_score(current_role, current_user):
                     # score_records = kpi_records("平均考核分")
                     kpi_items.append(("平均考核分", average_score, "military_tech", "green", None))
                 kpi_container.clear()

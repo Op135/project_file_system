@@ -7,7 +7,11 @@ from pathlib import Path
 import pandas as pd
 
 from src.access_control import can_use_tool
-from src.permission_catalog import tool_permission_code
+from src.permission_catalog import (
+    SAMPLE_ORDER_BASE_EDIT_PERMISSION,
+    SAMPLE_ORDER_VIEW_PERMISSION,
+    tool_permission_code,
+)
 from src.user_service import UserService
 
 
@@ -238,6 +242,43 @@ class AccessControlTests(unittest.TestCase):
 
         self.service.set_position_permissions(position_id, [], actor_username="admin")
         self.assertFalse(self.service.has_permission("张三", permission_code))
+
+    def test_sample_order_permission_requires_new_position_or_additional_group(self):
+        """样品单完成迁移后不得继续从兼容角色继承操作权限。"""
+        self.service.migrate_legacy_users()
+        registered_codes = {item["code"] for item in self.service.list_permissions()}
+        self.assertIn(SAMPLE_ORDER_BASE_EDIT_PERMISSION, registered_codes)
+        self.assertIn(SAMPLE_ORDER_VIEW_PERMISSION, registered_codes)
+        legacy_role = next(
+            role
+            for role in self.service.get_user_security_roles("张三")
+            if role["code"].startswith("legacy.")
+        )
+        self.service.update_security_role(
+            legacy_role["role_id"],
+            name=legacy_role["name"],
+            permission_codes=[SAMPLE_ORDER_BASE_EDIT_PERMISSION],
+        )
+        self.assertFalse(
+            self.service.has_permission("张三", SAMPLE_ORDER_BASE_EDIT_PERMISSION)
+        )
+
+        org_unit_id = self.service.save_org_unit(code="org.samples", name="样品组")
+        position_id = self.service.save_position(code="sample.assistant", name="样品助理")
+        self.service.set_primary_membership(
+            "张三",
+            org_unit_id=org_unit_id,
+            position_id=position_id,
+        )
+        self.service.set_position_permissions(
+            position_id,
+            [SAMPLE_ORDER_BASE_EDIT_PERMISSION],
+            actor_username="admin",
+        )
+
+        self.assertTrue(
+            self.service.has_permission("张三", SAMPLE_ORDER_BASE_EDIT_PERMISSION)
+        )
 
 
 if __name__ == "__main__":

@@ -28,6 +28,7 @@ from .design_knowledge import DESIGN_KNOWLEDGE_DATA_KEY, get_design_knowledge_da
 from .error_management import ERROR_DATA_KEY, get_error_dashboard_pending_count
 from .sample_issue_collection import SAMPLE_ISSUE_DATA_KEY, get_sample_dashboard_pending_count
 from .sample_order_dashboard import (
+    can_view_sample_order_dashboard,
     get_all_sample_order_records,
     get_sample_order_dashboard_pending_count,
 )
@@ -244,9 +245,10 @@ def main_page():
             k in str(current_role) for k in ["质量", "销售", "工程", "研发", "boss", "admin"]
         ):
             continue
-        # 样品单执行看板只对角色字符串里含有如下关键字的用户展示
-        elif items[3] == "/sample_order_dashboard" and not any(
-            k in str(current_role) for k in ["销售", "工程", "研发", "boss", "admin"]
+        # 样品单执行看板使用稳定权限控制入口，旧 Excel 环境仍沿用原角色关键词。
+        elif items[3] == "/sample_order_dashboard" and not can_view_sample_order_dashboard(
+            current_role,
+            current_user,
         ):
             continue
         # elif items[3] == "/ecn_management" and not any(k in str(current_role) for k in ["研发经理", "admin"]):
@@ -336,6 +338,7 @@ def main_page():
             )
             sample_order_pending_num = get_sample_order_dashboard_pending_count(
                 get_all_sample_order_records(),
+                current_user=current_user,
                 current_role=current_role,
             )
             design_knowledge_pending_num_user = get_design_knowledge_dashboard_pending_count(
@@ -502,6 +505,14 @@ def main_page():
                     # 4. 渲染增强后的 Badge (红点)
                     if pending_count > 0:
                         # 【修改】微调了位置，并去除了 transparent，让红点更饱满
-                        ui.badge(str(pending_count), color="red").props("floating rounded").classes(
+                        pending_badge = ui.badge(str(pending_count), color="red").props("floating rounded").classes(
                             "animate-shake ring-2 ring-white shadow-md text-xs font-bold px-2 top-0 right-0 transform translate-x-1/3 -translate-y-1/3"
                         )
+                        if target == "/sample_order_dashboard":
+                            pending_badge.classes("cursor-pointer").tooltip("查看我的待办")
+                            pending_badge.on(
+                                "click.stop",
+                                lambda _=None: ui.navigate.to(
+                                    "/sample_order_dashboard?view=my_pending"
+                                ),
+                            )

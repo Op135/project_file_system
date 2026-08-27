@@ -36,6 +36,61 @@ CORE_PERMISSIONS = (
 )
 
 
+SAMPLE_ORDER_BASE_EDIT_PERMISSION = "sample_order.base.edit"
+SAMPLE_ORDER_VIEW_PERMISSION = "sample_order.view"
+SAMPLE_ORDER_DELAY_EDIT_PERMISSION = "sample_order.delay.edit"
+SAMPLE_ORDER_SPECIAL_STATUS_EDIT_PERMISSION = "sample_order.special_status.edit"
+SAMPLE_ORDER_DELAY_NATURE_EDIT_PERMISSION = "sample_order.delay_nature.edit"
+SAMPLE_ORDER_DELETE_PERMISSION = "sample_order.delete"
+SAMPLE_ORDER_AVERAGE_SCORE_VIEW_PERMISSION = "sample_order.average_score.view"
+
+
+SAMPLE_ORDER_PERMISSIONS = (
+    PermissionDefinition(
+        SAMPLE_ORDER_VIEW_PERMISSION,
+        "查看样品单执行看板",
+        "样品单执行看板",
+        "允许从主页进入并查看样品单执行看板",
+    ),
+    PermissionDefinition(
+        SAMPLE_ORDER_BASE_EDIT_PERMISSION,
+        "维护样品单基础与执行信息",
+        "样品单执行看板",
+        "允许新建、导入并维护样品单基础信息和执行信息",
+    ),
+    PermissionDefinition(
+        SAMPLE_ORDER_DELAY_EDIT_PERMISSION,
+        "维护样品单延期信息",
+        "样品单执行看板",
+        "允许新增和维护样品单延期记录",
+    ),
+    PermissionDefinition(
+        SAMPLE_ORDER_SPECIAL_STATUS_EDIT_PERMISSION,
+        "维护样品单特殊状态",
+        "样品单执行看板",
+        "允许设置样品单暂停、作废等特殊状态",
+    ),
+    PermissionDefinition(
+        SAMPLE_ORDER_DELAY_NATURE_EDIT_PERMISSION,
+        "标记样品单延期性质",
+        "样品单执行看板",
+        "允许为已完成的延期样品单标记延期性质",
+    ),
+    PermissionDefinition(
+        SAMPLE_ORDER_DELETE_PERMISSION,
+        "删除样品单",
+        "样品单执行看板",
+        "允许永久删除样品单记录",
+    ),
+    PermissionDefinition(
+        SAMPLE_ORDER_AVERAGE_SCORE_VIEW_PERMISSION,
+        "查看样品单平均考核分",
+        "样品单执行看板",
+        "允许查看样品单看板中的平均考核分统计",
+    ),
+)
+
+
 _TOOL_NAMES = {
     "etendue_calc": "光学扩展量极限计算",
     "simple_coupling_calc": "简单透镜组耦合效率",
@@ -64,15 +119,17 @@ TOOL_PERMISSIONS = tuple(
     for tool_key, name in _TOOL_NAMES.items()
 )
 
-PERMISSION_CATALOG = CORE_PERMISSIONS + TOOL_PERMISSIONS
+PERMISSION_CATALOG = CORE_PERMISSIONS + TOOL_PERMISSIONS + SAMPLE_ORDER_PERMISSIONS
 PERMISSION_CODES = frozenset(item.code for item in PERMISSION_CATALOG)
 
 
 def ignores_legacy_role_grants(permission_code: str) -> bool:
     """判断权限是否已经正式停止读取旧角色过渡授权。"""
     normalized = str(permission_code or "").strip().lower()
-    return normalized == "system.manage" or (
-        normalized.startswith("tools.") and normalized.endswith(".use")
+    return (
+        normalized == "system.manage"
+        or (normalized.startswith("tools.") and normalized.endswith(".use"))
+        or normalized.startswith("sample_order.")
     )
 
 
@@ -96,9 +153,7 @@ def load_tool_role_mapping(path: Path | str) -> dict[str, list[str]] | None:
     for tool_key, roles in raw.items():
         if tool_key not in _TOOL_NAMES or not isinstance(roles, list):
             continue
-        result[tool_key] = list(
-            dict.fromkeys(str(role).strip() for role in roles if str(role).strip())
-        )
+        result[tool_key] = list(dict.fromkeys(str(role).strip() for role in roles if str(role).strip()))
     return result
 
 

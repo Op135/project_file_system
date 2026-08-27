@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -694,6 +695,78 @@ class SampleOrderCalculationTests(unittest.TestCase):
             1,
         )
 
+    def test_combined_permissions_badge_counts_pending_union(self):
+        """同时拥有延期和性质权限时，应合并两类待办并按订单计数。"""
+        overdue = make_record()
+        nature_pending = make_record()
+        nature_pending["record_id"] = "record-nature"
+        nature_pending["execution"]["actual_delivery_date"] = "2026-07-25"
+        nature_pending["extensions"] = [
+            dashboard.normalize_extension(
+                {"target_date": "2026-07-25", "reason": "内部排产"}
+            )
+        ]
+        normal = make_record()
+        normal["record_id"] = "record-normal"
+        normal["basic_info"]["planned_delivery_date"] = "2026-07-30"
+        records = {
+            record["record_id"]: record
+            for record in [overdue, nature_pending, normal]
+        }
+
+        with (
+            patch.object(dashboard, "is_sample_order_delay_editor", return_value=True),
+            patch.object(
+                dashboard,
+                "is_sample_order_delay_nature_marker",
+                return_value=True,
+            ),
+        ):
+            count = dashboard.get_sample_order_dashboard_pending_count(
+                records,
+                date(2026, 7, 21),
+                current_user="测试用户",
+                current_role="任意历史角色",
+            )
+
+        self.assertEqual(count, 2)
+
+    def test_my_pending_filter_uses_current_operation_permissions(self):
+        """我的待办筛选应只显示当前用户有权处理的业务记录。"""
+        overdue = make_record()
+        nature_pending = make_record()
+        nature_pending["execution"]["actual_delivery_date"] = "2026-07-25"
+        nature_pending["extensions"] = [
+            dashboard.normalize_extension(
+                {"target_date": "2026-07-25", "reason": "内部排产"}
+            )
+        ]
+
+        self.assertTrue(
+            dashboard.sample_order_matches_filter(
+                overdue,
+                dashboard.FILTER_MY_PENDING,
+                date(2026, 7, 21),
+                can_edit_delay=True,
+            )
+        )
+        self.assertFalse(
+            dashboard.sample_order_matches_filter(
+                overdue,
+                dashboard.FILTER_MY_PENDING,
+                date(2026, 7, 21),
+                can_mark_delay_nature=True,
+            )
+        )
+        self.assertTrue(
+            dashboard.sample_order_matches_filter(
+                nature_pending,
+                dashboard.FILTER_MY_PENDING,
+                date(2026, 7, 21),
+                can_mark_delay_nature=True,
+            )
+        )
+
 
 class SampleOrderExcelImportTests(unittest.TestCase):
     def test_excel_parser_maps_business_columns_and_reports_invalid_rows(self):
@@ -802,6 +875,21 @@ class SampleOrderValidationTests(unittest.TestCase):
         self.assertTrue(dashboard.can_view_sample_order_average_score("研发经理"))
         self.assertFalse(dashboard.can_view_sample_order_average_score("研发助理"))
         self.assertFalse(dashboard.can_view_sample_order_average_score("admin"))
+
+    def test_database_runtime_uses_stable_permission_instead_of_role_text(self):
+        """存在用户服务时，页面权限判断必须委托给稳定权限入口。"""
+        fake_app = SimpleNamespace(state=SimpleNamespace(user_service=object()))
+        with (
+            patch.object(dashboard, "app", fake_app),
+            patch.object(dashboard, "can", return_value=True) as permission_check,
+        ):
+            allowed = dashboard.is_sample_order_base_editor("完全无关的旧角色", "张三")
+
+        self.assertTrue(allowed)
+        self.assertEqual(
+            permission_check.call_args.args[2],
+            dashboard.SAMPLE_ORDER_BASE_EDIT_PERMISSION,
+        )
 
     def test_delay_date_and_reason_must_be_filled_together(self):
         record = make_record()
