@@ -501,3 +501,38 @@ class UserService:
         if self.storage_mode != "database":
             raise RuntimeError("请先迁移用户，再分配组织和岗位")
         return self.identity_store.set_primary_membership(username, **values)
+
+    def list_approval_workflows(self, **values) -> list[dict[str, Any]]:
+        if self.storage_mode != "database":
+            return []
+        return self.identity_store.list_approval_workflows(**values)
+
+    def save_approval_workflow_draft(self, **values) -> tuple[str, str]:
+        if self.storage_mode != "database":
+            raise RuntimeError("请先迁移用户，再维护审批流程")
+        return self.identity_store.save_approval_workflow_draft(**values)
+
+    def publish_approval_workflow(self, workflow_id: str, **values) -> bool:
+        if self.storage_mode != "database":
+            raise RuntimeError("请先迁移用户，再发布审批流程")
+        return self.identity_store.publish_approval_workflow(workflow_id, **values)
+
+    def set_approval_workflow_status(self, workflow_id: str, status: str, **values) -> bool:
+        if self.storage_mode != "database":
+            raise RuntimeError("请先迁移用户，再修改审批流程")
+        return self.identity_store.set_approval_workflow_status(workflow_id, status, **values)
+
+    def replace_work_assignments(self, **values) -> list[str]:
+        if self.storage_mode != "database":
+            return []
+        return self.identity_store.replace_work_assignments(**values)
+
+    def list_pending_assignment_usernames(self, **values) -> list[str]:
+        if self.storage_mode != "database":
+            return []
+        return self.identity_store.list_pending_assignment_usernames(**values)
+
+    def complete_work_assignment(self, **values) -> bool:
+        if self.storage_mode != "database":
+            return False
+        return self.identity_store.complete_work_assignment(**values)

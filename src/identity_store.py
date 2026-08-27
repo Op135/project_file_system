@@ -272,6 +272,39 @@ class IdentityStore:
             )
             """,
             """
+            CREATE TABLE IF NOT EXISTS approval_workflows (
+                workflow_id TEXT PRIMARY KEY,
+                code TEXT NOT NULL COLLATE NOCASE UNIQUE,
+                module TEXT NOT NULL,
+                event TEXT NOT NULL,
+                name TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'draft'
+                    CHECK (status IN ('draft', 'active', 'disabled')),
+                active_version_id TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            )
+            """,
+            """
+            CREATE TABLE IF NOT EXISTS approval_workflow_versions (
+                version_id TEXT PRIMARY KEY,
+                workflow_id TEXT NOT NULL REFERENCES approval_workflows(workflow_id),
+                version_number INTEGER NOT NULL,
+                priority INTEGER NOT NULL DEFAULT 100,
+                condition_json TEXT NOT NULL DEFAULT '{}',
+                approver_json TEXT NOT NULL DEFAULT '{}',
+                required_permission_code TEXT NOT NULL,
+                approval_mode TEXT NOT NULL DEFAULT 'any'
+                    CHECK (approval_mode IN ('any', 'all', 'sequential')),
+                notification_json TEXT NOT NULL DEFAULT '{}',
+                state TEXT NOT NULL DEFAULT 'draft'
+                    CHECK (state IN ('draft', 'published', 'retired')),
+                created_at TEXT NOT NULL,
+                published_at TEXT,
+                UNIQUE(workflow_id, version_number)
+            )
+            """,
+            """
             CREATE TABLE IF NOT EXISTS iam_audit_logs (
                 audit_id TEXT PRIMARY KEY,
                 actor_user_id TEXT,
@@ -288,6 +321,10 @@ class IdentityStore:
             "CREATE INDEX IF NOT EXISTS idx_position_scopes_org "
             "ON org_position_scopes(org_unit_id, position_id)",
             "CREATE INDEX IF NOT EXISTS idx_work_assignments_assignee ON work_assignments(assignee_user_id, status)",
+            "CREATE INDEX IF NOT EXISTS idx_approval_workflows_event "
+            "ON approval_workflows(module, event, status)",
+            "CREATE INDEX IF NOT EXISTS idx_approval_versions_workflow "
+            "ON approval_workflow_versions(workflow_id, state, version_number)",
         ]
         with self._lock, self._connect() as connection:
             connection.execute("PRAGMA journal_mode=WAL")
@@ -329,7 +366,7 @@ class IdentityStore:
                 (_now_text(),),
             )
             connection.execute(
-                "INSERT INTO iam_meta(key, value, updated_at) VALUES('schema_version', '4', ?) "
+                "INSERT INTO iam_meta(key, value, updated_at) VALUES('schema_version', '5', ?) "
                 "ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at",
                 (_now_text(),),
             )
@@ -1155,6 +1192,486 @@ class IdentityStore:
                         now,
                         now,
                     ),
+                )
+        return True
+
+    # ------------------------------------------------------------------
+    # 通用审批流程与具体人员待办
+
+    @staticmethod
+    def _decode_workflow_json(value: Any) -> dict[str, Any]:
+        """解析流程 JSON 字段；历史异常值统一按空对象处理。"""
+        if isinstance(value, dict):
+            return dict(value)
+        try:
+            parsed = json.loads(str(value or "{}"))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+
+    @classmethod
+    def _workflow_version_row_to_dict(cls, row: sqlite3.Row | dict[str, Any]) -> dict[str, Any]:
+        item = dict(row)
+        item["condition"] = cls._decode_workflow_json(item.pop("condition_json", "{}"))
+        item["approver"] = cls._decode_workflow_json(item.pop("approver_json", "{}"))
+        item["notification"] = cls._decode_workflow_json(item.pop("notification_json", "{}"))
+        return item
+
+    def list_approval_workflows(
+        self,
+        *,
+        module: str | None = None,
+        event: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """返回流程主记录及当前草稿、已发布版本。"""
+        clauses: list[str] = []
+        parameters: list[Any] = []
+        if module:
+            clauses.append("w.module=?")
+            parameters.append(str(module).strip())
+        if event:
+            clauses.append("w.event=?")
+            parameters.append(str(event).strip())
+        where_clause = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        with self._lock, self._connect() as connection:
+            workflow_rows = connection.execute(
+                "SELECT w.* FROM approval_workflows w "
+                f"{where_clause} ORDER BY w.module, w.event, w.name, w.code",
+                parameters,
+            ).fetchall()
+            result: list[dict[str, Any]] = []
+            for workflow_row in workflow_rows:
+                item = dict(workflow_row)
+                version_rows = connection.execute(
+                    "SELECT * FROM approval_workflow_versions WHERE workflow_id=? "
+                    "ORDER BY version_number DESC",
+                    (item["workflow_id"],),
+                ).fetchall()
+                versions = [self._workflow_version_row_to_dict(row) for row in version_rows]
+                item["versions"] = versions
+                item["draft_version"] = next(
+                    (version for version in versions if version.get("state") == "draft"),
+                    None,
+                )
+                item["active_version"] = next(
+                    (
+                        version
+                        for version in versions
+                        if version.get("version_id") == item.get("active_version_id")
+                    ),
+                    None,
+                )
+                result.append(item)
+        return result
+
+    def save_approval_workflow_draft(
+        self,
+        *,
+        code: str,
+        module: str,
+        event: str,
+        name: str,
+        priority: int,
+        condition: dict[str, Any],
+        approver: dict[str, Any],
+        required_permission_code: str,
+        approval_mode: str = "any",
+        notification: dict[str, Any] | None = None,
+        workflow_id: str | None = None,
+        actor_username: str | None = None,
+    ) -> tuple[str, str]:
+        """新增或更新流程草稿；已发布版本始终保持不可变。"""
+        normalized_code = normalize_stable_code(code)
+        code_error = validate_stable_code(normalized_code)
+        if code_error:
+            raise ValueError(code_error)
+        normalized_module = str(module or "").strip().lower()
+        normalized_event = str(event or "").strip().lower()
+        normalized_name = str(name or "").strip()
+        permission_code = str(required_permission_code or "").strip().lower()
+        normalized_mode = str(approval_mode or "any").strip().lower()
+        if not normalized_module or not normalized_event or not normalized_name:
+            raise ValueError("模块、业务事件和流程名称不能为空")
+        if normalized_mode != "any":
+            raise ValueError("第一版审批方式只支持任意一人处理")
+        if not isinstance(condition, dict) or not isinstance(approver, dict):
+            raise ValueError("触发条件和审批人规则必须是对象")
+        try:
+            normalized_priority = int(priority)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("流程优先级必须是整数") from exc
+
+        now = _now_text()
+        with self._lock, self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            permission = connection.execute(
+                "SELECT permission_id FROM iam_permissions WHERE code=? COLLATE NOCASE",
+                (permission_code,),
+            ).fetchone()
+            if not permission:
+                raise ValueError("流程要求的稳定权限不存在")
+
+            workflow = None
+            if workflow_id:
+                workflow = connection.execute(
+                    "SELECT * FROM approval_workflows WHERE workflow_id=?",
+                    (str(workflow_id),),
+                ).fetchone()
+                if not workflow:
+                    raise ValueError("审批流程不存在")
+            if workflow is None:
+                workflow = connection.execute(
+                    "SELECT * FROM approval_workflows WHERE code=? COLLATE NOCASE",
+                    (normalized_code,),
+                ).fetchone()
+
+            if workflow:
+                if str(workflow["code"]).casefold() != normalized_code.casefold():
+                    raise ValueError("流程稳定编码保存后不能修改")
+                target_workflow_id = str(workflow["workflow_id"])
+                connection.execute(
+                    "UPDATE approval_workflows SET module=?, event=?, name=?, updated_at=? "
+                    "WHERE workflow_id=?",
+                    (
+                        normalized_module,
+                        normalized_event,
+                        normalized_name,
+                        now,
+                        target_workflow_id,
+                    ),
+                )
+            else:
+                target_workflow_id = str(uuid.uuid4())
+                connection.execute(
+                    "INSERT INTO approval_workflows(workflow_id, code, module, event, name, status, "
+                    "created_at, updated_at) VALUES(?, ?, ?, ?, ?, 'draft', ?, ?)",
+                    (
+                        target_workflow_id,
+                        normalized_code,
+                        normalized_module,
+                        normalized_event,
+                        normalized_name,
+                        now,
+                        now,
+                    ),
+                )
+
+            draft = connection.execute(
+                "SELECT version_id, version_number FROM approval_workflow_versions "
+                "WHERE workflow_id=? AND state='draft' ORDER BY version_number DESC LIMIT 1",
+                (target_workflow_id,),
+            ).fetchone()
+            if draft:
+                version_id = str(draft["version_id"])
+                version_number = int(draft["version_number"])
+                connection.execute(
+                    "UPDATE approval_workflow_versions SET priority=?, condition_json=?, "
+                    "approver_json=?, required_permission_code=?, approval_mode=?, notification_json=? "
+                    "WHERE version_id=?",
+                    (
+                        normalized_priority,
+                        json.dumps(condition, ensure_ascii=False),
+                        json.dumps(approver, ensure_ascii=False),
+                        permission_code,
+                        normalized_mode,
+                        json.dumps(notification or {}, ensure_ascii=False),
+                        version_id,
+                    ),
+                )
+            else:
+                row = connection.execute(
+                    "SELECT COALESCE(MAX(version_number), 0) AS max_version "
+                    "FROM approval_workflow_versions WHERE workflow_id=?",
+                    (target_workflow_id,),
+                ).fetchone()
+                version_number = int(row["max_version"] or 0) + 1
+                version_id = str(uuid.uuid4())
+                connection.execute(
+                    "INSERT INTO approval_workflow_versions(version_id, workflow_id, version_number, "
+                    "priority, condition_json, approver_json, required_permission_code, approval_mode, "
+                    "notification_json, state, created_at) "
+                    "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?)",
+                    (
+                        version_id,
+                        target_workflow_id,
+                        version_number,
+                        normalized_priority,
+                        json.dumps(condition, ensure_ascii=False),
+                        json.dumps(approver, ensure_ascii=False),
+                        permission_code,
+                        normalized_mode,
+                        json.dumps(notification or {}, ensure_ascii=False),
+                        now,
+                    ),
+                )
+            self._audit(
+                connection,
+                actor_username=actor_username,
+                action="approval_workflow_draft_saved",
+                target_type="approval_workflow",
+                target_id=target_workflow_id,
+                detail={"code": normalized_code, "version": version_number},
+            )
+        return target_workflow_id, version_id
+
+    def publish_approval_workflow(
+        self,
+        workflow_id: str,
+        *,
+        actor_username: str | None = None,
+    ) -> bool:
+        """发布最新草稿并把原活动版本转为历史版本。"""
+        now = _now_text()
+        with self._lock, self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            workflow = connection.execute(
+                "SELECT * FROM approval_workflows WHERE workflow_id=?",
+                (str(workflow_id),),
+            ).fetchone()
+            if not workflow:
+                raise ValueError("审批流程不存在")
+            draft = connection.execute(
+                "SELECT * FROM approval_workflow_versions WHERE workflow_id=? AND state='draft' "
+                "ORDER BY version_number DESC LIMIT 1",
+                (str(workflow_id),),
+            ).fetchone()
+            if not draft:
+                raise ValueError("没有可以发布的流程草稿")
+            condition = self._decode_workflow_json(draft["condition_json"])
+            approver = self._decode_workflow_json(draft["approver_json"])
+            if condition.get("migration_requires_review"):
+                raise ValueError("旧配置没有匹配到申请岗位，请先检查并保存草稿后再发布")
+            strategy = str(approver.get("strategy", "")).strip().lower()
+            if strategy not in {"position", "direct_manager", "users", "permission"}:
+                raise ValueError("审批人来源无效")
+            if strategy == "position" and not approver.get("position_ids"):
+                raise ValueError("指定岗位审批至少需要选择一个岗位")
+            if strategy == "users" and not approver.get("user_ids"):
+                raise ValueError("指定人员审批至少需要选择一个人员")
+            reference_checks = [
+                ("requester_position_ids", "iam_positions", "position_id"),
+                ("requester_org_unit_ids", "org_units", "org_unit_id"),
+            ]
+            for field_name, table_name, id_column in reference_checks:
+                values = list(
+                    dict.fromkeys(
+                        str(value) for value in condition.get(field_name, []) if str(value)
+                    )
+                )
+                if not values:
+                    continue
+                placeholders = ",".join("?" for _ in values)
+                count = connection.execute(
+                    f"SELECT COUNT(*) AS total FROM {table_name} "
+                    f"WHERE {id_column} IN ({placeholders}) AND status='active'",
+                    values,
+                ).fetchone()["total"]
+                if int(count) != len(values):
+                    raise ValueError("流程触发条件包含不存在或已停用的组织岗位")
+            approver_reference_checks: list[tuple[list[str], str, str, str]] = []
+            if strategy == "position":
+                approver_reference_checks.append(
+                    (
+                        list(approver.get("position_ids", [])),
+                        "iam_positions",
+                        "position_id",
+                        "审批岗位",
+                    )
+                )
+                org_scope = str(approver.get("org_scope", "any")).strip().lower()
+                if org_scope not in {"any", "requester", "fixed"}:
+                    raise ValueError("审批岗位的部门范围无效")
+                if org_scope == "fixed":
+                    if not approver.get("org_unit_ids"):
+                        raise ValueError("限定指定部门时至少需要选择一个部门")
+                    approver_reference_checks.append(
+                        (
+                            list(approver.get("org_unit_ids", [])),
+                            "org_units",
+                            "org_unit_id",
+                            "审批部门",
+                        )
+                    )
+            elif strategy == "users":
+                approver_reference_checks.append(
+                    (list(approver.get("user_ids", [])), "iam_users", "user_id", "审批人员")
+                )
+            for raw_values, table_name, id_column, label in approver_reference_checks:
+                values = list(dict.fromkeys(str(value) for value in raw_values if str(value)))
+                placeholders = ",".join("?" for _ in values)
+                count = connection.execute(
+                    f"SELECT COUNT(*) AS total FROM {table_name} "
+                    f"WHERE {id_column} IN ({placeholders}) AND status='active'",
+                    values,
+                ).fetchone()["total"]
+                if int(count) != len(values):
+                    raise ValueError(f"{label}包含不存在或已停用的记录")
+            connection.execute(
+                "UPDATE approval_workflow_versions SET state='retired' "
+                "WHERE workflow_id=? AND state='published'",
+                (str(workflow_id),),
+            )
+            connection.execute(
+                "UPDATE approval_workflow_versions SET state='published', published_at=? "
+                "WHERE version_id=?",
+                (now, draft["version_id"]),
+            )
+            connection.execute(
+                "UPDATE approval_workflows SET active_version_id=?, status='active', updated_at=? "
+                "WHERE workflow_id=?",
+                (draft["version_id"], now, str(workflow_id)),
+            )
+            self._audit(
+                connection,
+                actor_username=actor_username,
+                action="approval_workflow_published",
+                target_type="approval_workflow",
+                target_id=str(workflow_id),
+                detail={"code": workflow["code"], "version": draft["version_number"]},
+            )
+        return True
+
+    def set_approval_workflow_status(
+        self,
+        workflow_id: str,
+        status: str,
+        *,
+        actor_username: str | None = None,
+    ) -> bool:
+        """停用或重新启用已经发布的流程。"""
+        normalized_status = str(status or "").strip().lower()
+        if normalized_status not in {"active", "disabled"}:
+            raise ValueError("流程状态只支持 active 或 disabled")
+        now = _now_text()
+        with self._lock, self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            workflow = connection.execute(
+                "SELECT code, active_version_id FROM approval_workflows WHERE workflow_id=?",
+                (str(workflow_id),),
+            ).fetchone()
+            if not workflow:
+                raise ValueError("审批流程不存在")
+            if normalized_status == "active" and not workflow["active_version_id"]:
+                raise ValueError("尚未发布的流程不能启用")
+            connection.execute(
+                "UPDATE approval_workflows SET status=?, updated_at=? WHERE workflow_id=?",
+                (normalized_status, now, str(workflow_id)),
+            )
+            self._audit(
+                connection,
+                actor_username=actor_username,
+                action="approval_workflow_status_updated",
+                target_type="approval_workflow",
+                target_id=str(workflow_id),
+                detail={"code": workflow["code"], "status": normalized_status},
+            )
+        return True
+
+    def replace_work_assignments(
+        self,
+        *,
+        module: str,
+        entity_id: str,
+        task_key: str,
+        assignee_usernames: Iterable[str],
+        source_policy_code: str,
+    ) -> list[str]:
+        """把流程解析结果固化为具体在职用户待办。"""
+        usernames = list(
+            dict.fromkeys(str(value).strip() for value in assignee_usernames if str(value).strip())
+        )
+        now = _now_text()
+        with self._lock, self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            rows: list[sqlite3.Row] = []
+            if usernames:
+                placeholders = ",".join("?" for _ in usernames)
+                rows = connection.execute(
+                    f"SELECT user_id, username FROM iam_users WHERE username COLLATE NOCASE "
+                    f"IN ({placeholders}) AND status='active'",
+                    usernames,
+                ).fetchall()
+            found = {str(row["username"]).casefold(): row for row in rows}
+            missing = [username for username in usernames if username.casefold() not in found]
+            if missing:
+                raise ValueError(f"审批人不存在或已停用：{'、'.join(missing)}")
+            connection.execute(
+                "UPDATE work_assignments SET status='superseded', updated_at=? "
+                "WHERE module=? AND entity_id=? AND task_key=? AND status='pending'",
+                (now, str(module), str(entity_id), str(task_key)),
+            )
+            for username in usernames:
+                user_id = found[username.casefold()]["user_id"]
+                connection.execute(
+                    "INSERT INTO work_assignments(assignment_id, module, entity_id, task_key, "
+                    "assignment_type, assignee_user_id, status, source_policy_code, created_at, updated_at) "
+                    "VALUES(?, ?, ?, ?, 'approval', ?, 'pending', ?, ?, ?) "
+                    "ON CONFLICT(module, entity_id, task_key, assignee_user_id) DO UPDATE SET "
+                    "status='pending', source_policy_code=excluded.source_policy_code, "
+                    "updated_at=excluded.updated_at, completed_at=NULL",
+                    (
+                        str(uuid.uuid4()),
+                        str(module),
+                        str(entity_id),
+                        str(task_key),
+                        user_id,
+                        str(source_policy_code),
+                        now,
+                        now,
+                    ),
+                )
+        return usernames
+
+    def list_pending_assignment_usernames(
+        self,
+        *,
+        module: str,
+        entity_id: str,
+        task_key: str,
+    ) -> list[str]:
+        with self._lock, self._connect() as connection:
+            rows = connection.execute(
+                "SELECT u.username FROM work_assignments a "
+                "JOIN iam_users u ON u.user_id=a.assignee_user_id AND u.status='active' "
+                "WHERE a.module=? AND a.entity_id=? AND a.task_key=? AND a.status='pending' "
+                "ORDER BY u.username",
+                (str(module), str(entity_id), str(task_key)),
+            ).fetchall()
+        return [str(row["username"]) for row in rows]
+
+    def complete_work_assignment(
+        self,
+        *,
+        module: str,
+        entity_id: str,
+        task_key: str,
+        username: str,
+        approval_mode: str = "any",
+    ) -> bool:
+        """完成当前审批人的待办；任意一人模式同时结束其余待办。"""
+        normalized_mode = str(approval_mode or "any").strip().lower()
+        now = _now_text()
+        with self._lock, self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT a.assignment_id FROM work_assignments a "
+                "JOIN iam_users u ON u.user_id=a.assignee_user_id "
+                "WHERE a.module=? AND a.entity_id=? AND a.task_key=? AND a.status='pending' "
+                "AND u.username=? COLLATE NOCASE LIMIT 1",
+                (str(module), str(entity_id), str(task_key), str(username).strip()),
+            ).fetchone()
+            if not row:
+                return False
+            connection.execute(
+                "UPDATE work_assignments SET status='completed', completed_at=?, updated_at=? "
+                "WHERE assignment_id=?",
+                (now, now, row["assignment_id"]),
+            )
+            if normalized_mode == "any":
+                connection.execute(
+                    "UPDATE work_assignments SET status='superseded', updated_at=? "
+                    "WHERE module=? AND entity_id=? AND task_key=? AND status='pending'",
+                    (now, str(module), str(entity_id), str(task_key)),
                 )
         return True
 

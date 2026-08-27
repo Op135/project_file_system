@@ -7,6 +7,12 @@ import os
 from nicegui import app, run, ui
 
 from ..access_control import can
+from ..approval_workflow import (
+    APPROVAL_WORKFLOW_EVENTS,
+    APPROVER_STRATEGY_NAMES,
+    import_sample_issue_legacy_workflows,
+    resolve_approval_workflow,
+)
 from ..config import BASE_DIR, IMG_DIR, PRESET_AVATARS
 from ..identity_codes import STABLE_CODE_HINT, normalize_stable_code, validate_stable_code
 from ..requirement_overview_impact import (
@@ -971,7 +977,7 @@ def manage_page():
         org_dialog.open()
 
     def open_security_role_management_dialog():
-        """配置岗位默认权限与少量附加权限组。"""
+        """统一配置岗位权限、附加权限组和审批流程。"""
         user_svc = app.state.user_service
         if user_svc.storage_mode != "database":
             ui.notify("请先执行用户一键迁移，再维护岗位与权限。", type="warning")
@@ -988,9 +994,9 @@ def manage_page():
         ):
             with ui.row().classes("w-full items-center justify-between shrink-0"):
                 with ui.column().classes("gap-0"):
-                    ui.label("岗位权限与附加权限组").classes("text-xl font-bold")
+                    ui.label("岗位、权限与审批流程").classes("text-xl font-bold")
                     ui.label(
-                        "岗位提供日常默认权限；附加权限组只用于兼职、专项职责和特殊管理权限。"
+                        "岗位提供日常权限；附加权限组处理特殊授权；审批流程把业务单据分派给具体人员。"
                     ).classes("text-xs text-gray-500")
                 ui.button(icon="close", on_click=role_dialog.close).props("flat round dense")
             ui.separator()
@@ -999,6 +1005,7 @@ def manage_page():
                 position_tab = ui.tab("岗位默认权限", icon="badge")
                 role_tab = ui.tab("附加权限组", icon="admin_panel_settings")
                 user_tab = ui.tab("用户附加授权", icon="how_to_reg")
+                workflow_tab = ui.tab("审批流程", icon="account_tree")
 
             with ui.tab_panels(tabs, value=position_tab).classes(
                 "w-full flex-grow min-h-0 bg-transparent p-0"
@@ -1482,6 +1489,594 @@ def manage_page():
 
                         user_select.on_value_change(lambda event: render_user_assignment(event.value))
                         render_user_assignment()
+
+                with ui.tab_panel(workflow_tab).classes("w-full h-full p-0 pt-3"):
+                    with ui.grid(columns=2).classes("w-full h-full min-h-0 gap-4"):
+                        with ui.card().classes("w-full h-full min-h-0 flex flex-col no-wrap"):
+                            with ui.row().classes("w-full items-center justify-between shrink-0"):
+                                with ui.column().classes("gap-0"):
+                                    ui.label("流程策略").classes("text-lg font-bold")
+                                    ui.label("草稿不会影响业务，发布后才参与匹配。") \
+                                        .classes("text-xs text-gray-500")
+                                add_workflow_button = ui.button("新增", icon="add").props(
+                                    "outline dense"
+                                )
+                            with ui.row().classes("w-full gap-2 shrink-0"):
+                                import_workflow_button = ui.button(
+                                    "从样品旧配置生成草稿",
+                                    icon="move_to_inbox",
+                                ).props("outline dense")
+                            workflow_list_container = ui.column().classes(
+                                "w-full flex-grow min-h-0 overflow-y-auto gap-2 pt-2"
+                            )
+                        with ui.card().classes("w-full h-full min-h-0 flex flex-col no-wrap"):
+                            workflow_editor_container = ui.column().classes(
+                                "w-full flex-grow min-h-0 overflow-y-auto gap-3"
+                            )
+
+                    workflow_state = {"selected_workflow_id": None}
+
+                    def workflow_event_options():
+                        return {
+                            definition.key: definition.name
+                            for definition in APPROVAL_WORKFLOW_EVENTS
+                        }
+
+                    def workflow_reference_options():
+                        units = [
+                            item for item in user_svc.list_org_units()
+                            if item.get("status") == "active"
+                        ]
+                        positions = [
+                            item for item in user_svc.list_positions()
+                            if item.get("status") == "active"
+                        ]
+                        users = user_svc.load_users()
+                        unit_options = {
+                            item["org_unit_id"]: f"{item['name']} ｜ {item['code']}"
+                            for item in units
+                        }
+                        position_options = {
+                            item["position_id"]: (
+                                f"{item['name']} ｜ "
+                                f"{'、'.join(item.get('org_names', [])) or '未划分部门'}"
+                            )
+                            for item in positions
+                        }
+                        user_options = {
+                            info["user_id"]: f"{info.get('display_name') or username} ｜ {username}"
+                            for username, info in sorted(
+                                users.items(),
+                                key=lambda item: (
+                                    str(item[1].get("display_name") or item[0]).casefold(),
+                                    item[0].casefold(),
+                                ),
+                            )
+                            if info.get("status", "active") == "active"
+                        }
+                        simulation_options = {
+                            username: f"{info.get('display_name') or username} ｜ {username}"
+                            for username, info in sorted(
+                                users.items(),
+                                key=lambda item: (
+                                    str(item[1].get("display_name") or item[0]).casefold(),
+                                    item[0].casefold(),
+                                ),
+                            )
+                            if info.get("status", "active") == "active"
+                        }
+                        return unit_options, position_options, user_options, simulation_options
+
+                    def select_workflow(workflow_id):
+                        workflow_state["selected_workflow_id"] = workflow_id
+                        render_workflow_list()
+                        render_workflow_editor()
+
+                    def render_workflow_list():
+                        workflows = user_svc.list_approval_workflows()
+                        selected_id = workflow_state["selected_workflow_id"]
+                        if selected_id not in {item["workflow_id"] for item in workflows}:
+                            workflow_state["selected_workflow_id"] = (
+                                workflows[0]["workflow_id"] if workflows else None
+                            )
+                        workflow_list_container.clear()
+                        with workflow_list_container:
+                            if not workflows:
+                                ui.label("尚无流程，可新增或从旧配置生成草稿。") \
+                                    .classes("text-gray-500 p-4")
+                                return
+                            for workflow in workflows:
+                                selected = (
+                                    workflow["workflow_id"]
+                                    == workflow_state["selected_workflow_id"]
+                                )
+                                background = (
+                                    "bg-blue-50 border-blue-400"
+                                    if selected else "bg-white border-gray-200"
+                                )
+                                with ui.row().classes(
+                                    f"w-full items-center border rounded p-3 cursor-pointer {background}"
+                                ).on(
+                                    "click",
+                                    lambda _event, workflow_id=workflow["workflow_id"]: (
+                                        select_workflow(workflow_id)
+                                    ),
+                                ):
+                                    with ui.column().classes("gap-0 flex-grow min-w-0"):
+                                        ui.label(workflow["name"]).classes("font-semibold")
+                                        ui.label(workflow["code"]).classes(
+                                            "text-xs text-gray-500 truncate"
+                                        )
+                                    if workflow.get("draft_version"):
+                                        ui.chip("有草稿", color="orange").props("dense")
+                                    if workflow.get("status") == "active":
+                                        ui.chip("运行中", color="positive").props("dense")
+                                    elif workflow.get("status") == "disabled":
+                                        ui.chip("已停用", color="grey").props("dense")
+
+                    def render_workflow_editor():
+                        workflows = user_svc.list_approval_workflows()
+                        selected = next(
+                            (
+                                item for item in workflows
+                                if item["workflow_id"]
+                                == workflow_state["selected_workflow_id"]
+                            ),
+                            None,
+                        )
+                        workflow_editor_container.clear()
+                        with workflow_editor_container:
+                            if not selected:
+                                ui.label("请选择或新增一个审批流程。") \
+                                    .classes("text-gray-500 p-4")
+                                return
+
+                            version = selected.get("draft_version") or selected.get("active_version")
+                            version = version or {
+                                "priority": 100,
+                                "condition": {},
+                                "approver": {"strategy": "permission"},
+                                "notification": {},
+                            }
+                            condition = version.get("condition", {})
+                            approver = version.get("approver", {})
+                            event_key = f"{selected['module']}:{selected['event']}"
+                            event_definition = next(
+                                (
+                                    item for item in APPROVAL_WORKFLOW_EVENTS
+                                    if item.key == event_key
+                                ),
+                                None,
+                            )
+                            permission_catalog = {
+                                item["code"]: item for item in user_svc.list_permissions()
+                            }
+                            permission_options = {
+                                code: permission_catalog.get(code, {}).get("name", code)
+                                for code in (
+                                    event_definition.permission_codes
+                                    if event_definition else ()
+                                )
+                            }
+                            unit_options, position_options, user_options, simulation_options = (
+                                workflow_reference_options()
+                            )
+
+                            with ui.row().classes("w-full items-center justify-between"):
+                                with ui.column().classes("gap-0"):
+                                    ui.label(selected["name"]).classes("text-lg font-bold")
+                                    active_version = selected.get("active_version")
+                                    ui.label(
+                                        f"稳定编码：{selected['code']} ｜ "
+                                        f"当前版本：{active_version.get('version_number') if active_version else '未发布'}"
+                                    ).classes("text-xs text-gray-500")
+                                if selected.get("draft_version"):
+                                    ui.chip(
+                                        f"草稿 v{selected['draft_version']['version_number']}",
+                                        color="orange",
+                                    ).props("dense")
+
+                            ui.label(
+                                "运行顺序：先按申请人的主部门/主岗位匹配优先级最高的流程，"
+                                "再解析具体审批人，并校验其审批权限。"
+                            ).classes("text-xs text-blue-800 bg-blue-50 rounded p-2")
+                            name_input = ui.input("流程名称", value=selected["name"]).classes("w-full")
+                            with ui.row().classes("w-full gap-3"):
+                                ui.select(
+                                    workflow_event_options(),
+                                    value=event_key,
+                                    label="业务事件",
+                                ).props("outlined disable").classes("flex-grow")
+                                priority_input = ui.number(
+                                    "优先级（数字越小越优先）",
+                                    value=version.get("priority", 100),
+                                    min=0,
+                                    step=1,
+                                ).classes("w-64")
+
+                            ui.separator()
+                            ui.label("触发条件").classes("font-bold")
+                            requester_org_select = ui.select(
+                                unit_options,
+                                value=condition.get("requester_org_unit_ids", []),
+                                label="申请人所属部门（不选表示全部）",
+                                multiple=True,
+                                with_input=True,
+                            ).props("outlined use-chips options-dense").classes("w-full")
+                            include_children_switch = ui.switch(
+                                "包含所选部门的全部下级部门",
+                                value=condition.get("include_child_org_units", True),
+                            )
+                            requester_position_select = ui.select(
+                                position_options,
+                                value=condition.get("requester_position_ids", []),
+                                label="申请人岗位（不选表示全部）",
+                                multiple=True,
+                                with_input=True,
+                            ).props("outlined use-chips options-dense").classes("w-full")
+
+                            ui.separator()
+                            ui.label("审批人和资格").classes("font-bold")
+                            permission_select = ui.select(
+                                permission_options,
+                                value=version.get("required_permission_code"),
+                                label="审批所需权限",
+                            ).props("outlined options-dense").classes("w-full")
+                            strategy_select = ui.select(
+                                APPROVER_STRATEGY_NAMES,
+                                value=approver.get("strategy", "permission"),
+                                label="审批人来源",
+                            ).props("outlined options-dense").classes("w-full")
+
+                            with ui.column().classes("w-full gap-2") as position_settings:
+                                approver_position_select = ui.select(
+                                    position_options,
+                                    value=approver.get("position_ids", []),
+                                    label="审批岗位",
+                                    multiple=True,
+                                    with_input=True,
+                                ).props("outlined use-chips options-dense").classes("w-full")
+                                org_scope_select = ui.select(
+                                    {
+                                        "any": "不限部门",
+                                        "requester": "与申请人同部门",
+                                        "fixed": "限定到指定部门",
+                                    },
+                                    value=approver.get("org_scope", "any"),
+                                    label="审批岗位的部门范围",
+                                ).props("outlined options-dense").classes("w-full")
+                                approver_org_select = ui.select(
+                                    unit_options,
+                                    value=approver.get("org_unit_ids", []),
+                                    label="指定审批部门",
+                                    multiple=True,
+                                    with_input=True,
+                                ).props("outlined use-chips options-dense").classes("w-full")
+                            with ui.column().classes("w-full") as user_settings:
+                                approver_user_select = ui.select(
+                                    user_options,
+                                    value=approver.get("user_ids", []),
+                                    label="指定审批人员",
+                                    multiple=True,
+                                    with_input=True,
+                                ).props("outlined use-chips options-dense").classes("w-full")
+                            with ui.column().classes("w-full") as direct_manager_hint:
+                                ui.label(
+                                    "系统读取申请人组织任职中配置的直属上级；直属上级仍必须拥有上面的审批权限。"
+                                ).classes("text-xs text-blue-800 bg-blue-50 rounded p-2")
+                            with ui.column().classes("w-full") as permission_hint:
+                                ui.label(
+                                    "系统会选择所有拥有上面审批权限的在职用户；admin 不会自动成为业务审批人。"
+                                ).classes("text-xs text-blue-800 bg-blue-50 rounded p-2")
+                            ui.label("审批方式：任意一人处理（第一版固定）").classes(
+                                "text-xs text-gray-600"
+                            )
+
+                            def update_strategy_visibility():
+                                strategy = strategy_select.value
+                                position_settings.visible = strategy == "position"
+                                user_settings.visible = strategy == "users"
+                                direct_manager_hint.visible = strategy == "direct_manager"
+                                permission_hint.visible = strategy == "permission"
+
+                            def update_org_scope_visibility():
+                                approver_org_select.visible = org_scope_select.value == "fixed"
+
+                            strategy_select.on_value_change(
+                                lambda _event: update_strategy_visibility()
+                            )
+                            org_scope_select.on_value_change(
+                                lambda _event: update_org_scope_visibility()
+                            )
+                            update_strategy_visibility()
+                            update_org_scope_visibility()
+
+                            def build_approver_rule():
+                                strategy = strategy_select.value
+                                rule = {"strategy": strategy}
+                                if strategy == "position":
+                                    rule.update(
+                                        {
+                                            "position_ids": approver_position_select.value or [],
+                                            "org_scope": org_scope_select.value or "any",
+                                            "org_unit_ids": approver_org_select.value or [],
+                                        }
+                                    )
+                                elif strategy == "users":
+                                    rule["user_ids"] = approver_user_select.value or []
+                                elif strategy == "permission":
+                                    rule["permission_code"] = permission_select.value
+                                return rule
+
+                            def save_workflow_draft():
+                                try:
+                                    user_svc.save_approval_workflow_draft(
+                                        workflow_id=selected["workflow_id"],
+                                        code=selected["code"],
+                                        module=selected["module"],
+                                        event=selected["event"],
+                                        name=name_input.value,
+                                        priority=int(priority_input.value or 0),
+                                        condition={
+                                            "requester_org_unit_ids": requester_org_select.value or [],
+                                            "requester_position_ids": requester_position_select.value or [],
+                                            "include_child_org_units": bool(
+                                                include_children_switch.value
+                                            ),
+                                        },
+                                        approver=build_approver_rule(),
+                                        required_permission_code=permission_select.value,
+                                        approval_mode="any",
+                                        notification={
+                                            "notify_assignees": True,
+                                            "notify_requester_on_result": True,
+                                        },
+                                        actor_username=current_user,
+                                    )
+                                except Exception as exc:
+                                    ui.notify(
+                                        f"流程草稿保存失败：{exc}",
+                                        type="negative",
+                                        multi_line=True,
+                                    )
+                                    return
+                                ui.notify("流程草稿已保存，尚未影响实际业务。", type="positive")
+                                render_workflow_list()
+                                render_workflow_editor()
+
+                            def publish_workflow():
+                                try:
+                                    user_svc.publish_approval_workflow(
+                                        selected["workflow_id"],
+                                        actor_username=current_user,
+                                    )
+                                except Exception as exc:
+                                    ui.notify(
+                                        f"流程发布失败：{exc}",
+                                        type="negative",
+                                        multi_line=True,
+                                    )
+                                    return
+                                ui.notify("流程已发布，后续新申请将使用该版本。", type="positive")
+                                render_workflow_list()
+                                render_workflow_editor()
+
+                            def toggle_workflow_status():
+                                target_status = (
+                                    "disabled" if selected.get("status") == "active" else "active"
+                                )
+                                try:
+                                    user_svc.set_approval_workflow_status(
+                                        selected["workflow_id"],
+                                        target_status,
+                                        actor_username=current_user,
+                                    )
+                                except Exception as exc:
+                                    ui.notify(
+                                        f"流程状态修改失败：{exc}",
+                                        type="negative",
+                                        multi_line=True,
+                                    )
+                                    return
+                                ui.notify(
+                                    "流程已停用。" if target_status == "disabled" else "流程已启用。",
+                                    type="positive",
+                                )
+                                render_workflow_list()
+                                render_workflow_editor()
+
+                            with ui.row().classes("w-full justify-end gap-2"):
+                                if selected.get("active_version"):
+                                    ui.button(
+                                        "停用" if selected.get("status") == "active" else "启用",
+                                        on_click=toggle_workflow_status,
+                                        icon="pause_circle" if selected.get("status") == "active" else "play_circle",
+                                    ).props("outline")
+                                ui.button(
+                                    "保存草稿",
+                                    on_click=save_workflow_draft,
+                                    icon="save",
+                                ).props("outline color=primary")
+                                if selected.get("draft_version"):
+                                    ui.button(
+                                        "发布草稿",
+                                        on_click=publish_workflow,
+                                        icon="publish",
+                                    ).props("color=primary")
+
+                            ui.separator()
+                            ui.label("发布结果模拟").classes("font-bold")
+                            ui.label(
+                                "模拟只读取已发布且启用的版本，不会产生待办或修改业务数据。"
+                            ).classes("text-xs text-gray-500")
+                            simulation_user_select = ui.select(
+                                simulation_options,
+                                label="选择申请人",
+                                with_input=True,
+                            ).props("outlined options-dense").classes("w-full")
+                            simulation_result = ui.column().classes(
+                                "w-full gap-1 bg-gray-50 border rounded p-3"
+                            )
+
+                            def simulate_workflow():
+                                simulation_result.clear()
+                                with simulation_result:
+                                    if not simulation_user_select.value:
+                                        ui.label("请先选择申请人。") \
+                                            .classes("text-orange-700")
+                                        return
+                                    result = resolve_approval_workflow(
+                                        user_svc,
+                                        module=selected["module"],
+                                        event=selected["event"],
+                                        requester_username=simulation_user_select.value,
+                                    )
+                                    result_type = (
+                                        "text-green-700"
+                                        if result.get("status") == "matched"
+                                        else "text-red-700"
+                                    )
+                                    ui.label(result.get("message", "未知结果")).classes(
+                                        f"font-semibold {result_type}"
+                                    )
+                                    if result.get("workflow"):
+                                        ui.label(
+                                            f"命中流程：{result['workflow']['name']}"
+                                        ).classes("text-sm")
+                                    approvers = result.get("approvers", [])
+                                    if approvers:
+                                        ui.label(
+                                            "实际审批人："
+                                            + "、".join(
+                                                item.get("display_name") or item["username"]
+                                                for item in approvers
+                                            )
+                                        ).classes("text-sm")
+                                    for warning in result.get("warnings", []):
+                                        ui.label(f"提醒：{warning}").classes(
+                                            "text-xs text-orange-700"
+                                        )
+
+                            ui.button(
+                                "模拟匹配",
+                                on_click=simulate_workflow,
+                                icon="science",
+                            ).props("outline")
+
+                    def open_add_workflow_form():
+                        event_options = workflow_event_options()
+                        with ui.dialog() as add_dialog, ui.card().classes(
+                            "w-[34rem] max-w-[95vw] p-6"
+                        ):
+                            ui.label("新增审批流程草稿").classes("text-lg font-bold")
+                            ui.label(
+                                "编码保存后不可修改，例如 sample_issue.close.hardware。"
+                            ).classes("text-xs text-gray-500")
+                            code_input = ui.input("稳定编码（保存后不可修改）").props(
+                                "debounce=250"
+                            ).classes("w-full")
+                            code_check = attach_stable_code_check(
+                                code_input,
+                                lambda: [
+                                    workflow.get("code", "")
+                                    for workflow in user_svc.list_approval_workflows()
+                                ],
+                                "审批流程",
+                            )
+                            name_input = ui.input("流程名称").classes("w-full")
+                            event_select = ui.select(
+                                event_options,
+                                value=next(iter(event_options), None),
+                                label="业务事件",
+                            ).props("outlined options-dense").classes("w-full")
+
+                            def create_workflow():
+                                error = code_check()
+                                if error:
+                                    ui.notify(error, type="warning")
+                                    return
+                                definition = next(
+                                    (
+                                        item for item in APPROVAL_WORKFLOW_EVENTS
+                                        if item.key == event_select.value
+                                    ),
+                                    None,
+                                )
+                                if not definition:
+                                    ui.notify("请选择有效的业务事件。", type="warning")
+                                    return
+                                try:
+                                    workflow_id, _version_id = user_svc.save_approval_workflow_draft(
+                                        code=normalize_stable_code(code_input.value),
+                                        module=definition.module,
+                                        event=definition.event,
+                                        name=name_input.value,
+                                        priority=100,
+                                        condition={
+                                            "requester_org_unit_ids": [],
+                                            "requester_position_ids": [],
+                                            "include_child_org_units": True,
+                                        },
+                                        approver={
+                                            "strategy": "permission",
+                                            "permission_code": definition.permission_codes[0],
+                                        },
+                                        required_permission_code=definition.permission_codes[0],
+                                        approval_mode="any",
+                                        notification={
+                                            "notify_assignees": True,
+                                            "notify_requester_on_result": True,
+                                        },
+                                        actor_username=current_user,
+                                    )
+                                except Exception as exc:
+                                    ui.notify(
+                                        f"流程创建失败：{exc}",
+                                        type="negative",
+                                        multi_line=True,
+                                    )
+                                    return
+                                workflow_state["selected_workflow_id"] = workflow_id
+                                add_dialog.close()
+                                ui.notify("流程草稿已创建，请继续配置后再发布。", type="positive")
+                                render_workflow_list()
+                                render_workflow_editor()
+
+                            with ui.row().classes("w-full justify-end gap-2"):
+                                ui.button("取消", on_click=add_dialog.close).props("flat")
+                                ui.button("创建草稿", on_click=create_workflow).props(
+                                    "color=primary"
+                                )
+                        add_dialog.open()
+
+                    def import_legacy_workflows():
+                        try:
+                            created, warnings = import_sample_issue_legacy_workflows(
+                                user_svc,
+                                actor_username=current_user,
+                            )
+                        except Exception as exc:
+                            ui.notify(
+                                f"旧配置导入失败：{exc}",
+                                type="negative",
+                                multi_line=True,
+                            )
+                            return
+                        message = f"已生成 {created} 条流程草稿。"
+                        if warnings:
+                            message += "\n" + "\n".join(warnings)
+                        ui.notify(
+                            message,
+                            type="warning" if warnings else "positive",
+                            multi_line=True,
+                        )
+                        render_workflow_list()
+                        render_workflow_editor()
+
+                    add_workflow_button.on_click(open_add_workflow_form)
+                    import_workflow_button.on_click(import_legacy_workflows)
+                    render_workflow_list()
+                    render_workflow_editor()
 
         role_dialog.open()
 
@@ -2257,8 +2852,8 @@ def manage_page():
                     f"{org_count} 部门 / {position_count} 岗位" if database_mode else "迁移后可用",
                 )
                 management_card(
-                    "岗位权限与附加权限组",
-                    "岗位提供默认权限；附加权限组用于兼职、专项职责和特殊授权。",
+                    "岗位、权限与审批流程",
+                    "统一维护岗位默认权限、附加授权，以及按组织和具体人员运行的审批流程。",
                     "admin_panel_settings",
                     "deep-purple",
                     lambda: open_security_role_management_dialog(),

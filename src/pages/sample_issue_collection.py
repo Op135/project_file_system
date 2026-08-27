@@ -20,6 +20,7 @@ from nicegui import app, ui
 
 from .. import db_storage
 from ..access_control import can
+from ..approval_workflow import is_assigned_approver, resolve_approval_workflow
 from ..components import ButtonUploader, FileThumbnail, get_upload_local_path
 from ..config import IMG_DIR, PRESET_AVATARS, REQ_UPLOADS_FILE_TYPE, UPLOAD_URL_DIR, UPLOADS_DIR
 from ..issue_workflow_utils import (
@@ -525,6 +526,46 @@ def is_sample_close_approver(
 ) -> bool:
     """判断用户是否能审批指定路由的关闭申请。"""
     if close_request is not None:
+        workflow_assignment = close_request.get("workflow_assignment", {})
+        user_service = getattr(app.state, "user_service", None)
+        if (
+            isinstance(workflow_assignment, dict)
+            and workflow_assignment.get("task_key")
+            and user_service is not None
+            and getattr(user_service, "storage_mode", "legacy_excel") == "database"
+        ):
+            permission_code = str(workflow_assignment.get("required_permission_code", ""))
+            if not permission_code or not _has_sample_permission(username, role, permission_code, []):
+                return False
+            pending_usernames = user_service.list_pending_assignment_usernames(
+                module="sample_issue",
+                entity_id=str(close_request.get("entity_id", "")),
+                task_key=str(workflow_assignment["task_key"]),
+            )
+            if not pending_usernames and close_request.get("status") == "待审批":
+                try:
+                    pending_usernames = user_service.replace_work_assignments(
+                        module="sample_issue",
+                        entity_id=str(close_request.get("entity_id", "")),
+                        task_key=str(workflow_assignment["task_key"]),
+                        assignee_usernames=workflow_assignment.get("assignee_usernames", []),
+                        source_policy_code=(
+                            f"{workflow_assignment.get('workflow_code', '')}@"
+                            f"{workflow_assignment.get('version_number', '')}"
+                        ),
+                    )
+                except Exception:
+                    logger.error("恢复样品问题关闭审批待办失败", exc_info=True)
+                    return False
+            if str(username).casefold() not in {value.casefold() for value in pending_usernames}:
+                return False
+            return is_assigned_approver(
+                user_service,
+                module="sample_issue",
+                entity_id=str(close_request.get("entity_id", "")),
+                task_key=str(workflow_assignment["task_key"]),
+                username=username,
+            )
         route = get_sample_close_approval_route_for_request(close_request)
         permission_code = SAMPLE_CLOSE_APPROVE_PERMISSION_BY_ROUTE.get(
             str(route.get("key", "default")),
@@ -1685,8 +1726,53 @@ async def submit_sample_close_request(
     note = close_note.strip()
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     close_route = get_sample_close_approval_route(role, user)
+    workflow_result = None
+    user_service = getattr(app.state, "user_service", None)
+    if user_service is not None and getattr(user_service, "storage_mode", "legacy_excel") == "database":
+        active_workflows = [
+            workflow
+            for workflow in user_service.list_approval_workflows(
+                module="sample_issue",
+                event="close_request",
+            )
+            if workflow.get("status") == "active" and workflow.get("active_version")
+        ]
+        if active_workflows:
+            workflow_result = resolve_approval_workflow(
+                user_service,
+                module="sample_issue",
+                event="close_request",
+                requester_username=user,
+            )
+            if workflow_result.get("status") != "matched":
+                return SampleIssueUpdateResult(
+                    db_success=False,
+                    changed=False,
+                    code=f"workflow_{workflow_result.get('status', 'error')}",
+                    record=workflow_result,
+                )
+            required_permission = str(
+                workflow_result["version"].get("required_permission_code", "")
+            )
+            route_key = (
+                "electron_to_electron"
+                if required_permission == SAMPLE_ISSUE_CLOSE_ELECTRON_APPROVE_PERMISSION
+                else "default"
+            )
+            close_route = {
+                **close_route,
+                "key": route_key,
+                "label": workflow_result["workflow"]["name"],
+                "approver_roles": [
+                    item.get("position_name") or item.get("display_name") or item["username"]
+                    for item in workflow_result["approvers"]
+                ],
+            }
+    request_id = f"close_{uuid.uuid4().hex[:8]}"
+    task_key = f"close_approval:{request_id}"
     close_request = {
-        "id": f"close_{uuid.uuid4().hex[:8]}",
+        "id": request_id,
+        "entity_id": issue_id,
         "status": "待审批",
         "note": note,
         "requester": user,
@@ -1704,6 +1790,20 @@ async def submit_sample_close_request(
             SAMPLE_CLOSE_NOTIFY_REQUESTER_ON_APPROVAL,
         ),
     }
+    if workflow_result is not None:
+        workflow = workflow_result["workflow"]
+        version = workflow_result["version"]
+        close_request["workflow_assignment"] = {
+            "workflow_id": workflow["workflow_id"],
+            "workflow_code": workflow["code"],
+            "workflow_name": workflow["name"],
+            "version_id": version["version_id"],
+            "version_number": version["version_number"],
+            "task_key": task_key,
+            "required_permission_code": version["required_permission_code"],
+            "approval_mode": version.get("approval_mode", "any"),
+            "assignee_usernames": [item["username"] for item in workflow_result["approvers"]],
+        }
 
     def add_close_request(current):
         countermeasure = current.get("countermeasure", {})
@@ -1740,7 +1840,23 @@ async def submit_sample_close_request(
         )
         return "updated", current
 
-    return await atomic_sample_issue_update(issue_id, add_close_request)
+    result = await atomic_sample_issue_update(issue_id, add_close_request)
+    if result.changed and workflow_result is not None and user_service is not None:
+        assignment = close_request["workflow_assignment"]
+        try:
+            user_service.replace_work_assignments(
+                module="sample_issue",
+                entity_id=issue_id,
+                task_key=assignment["task_key"],
+                assignee_usernames=assignment["assignee_usernames"],
+                source_policy_code=(
+                    f"{assignment['workflow_code']}@{assignment['version_number']}"
+                ),
+            )
+        except Exception:
+            # 单据中已固化完整审批人快照，详情页会自动尝试恢复待办。
+            logger.error("创建样品问题关闭审批待办失败，等待页面自愈", exc_info=True)
+    return result
 
 
 async def save_and_submit_sample_close_request(issue_data: dict, user: str, role: str) -> SampleIssueUpdateResult:
@@ -1867,6 +1983,33 @@ async def approve_sample_close_request(
         return "updated", current
 
     result = await atomic_sample_issue_update(issue_id, update_close_request)
+    if result.changed:
+        completed_request = find_close_request(
+            result.record.get("countermeasure", {}) if result.record else {},
+            request_id,
+        )
+        workflow_assignment = (
+            completed_request.get("workflow_assignment", {})
+            if isinstance(completed_request, dict)
+            else {}
+        )
+        user_service = getattr(app.state, "user_service", None)
+        if (
+            workflow_assignment.get("task_key")
+            and user_service is not None
+            and getattr(user_service, "storage_mode", "legacy_excel") == "database"
+        ):
+            try:
+                user_service.complete_work_assignment(
+                    module="sample_issue",
+                    entity_id=issue_id,
+                    task_key=workflow_assignment["task_key"],
+                    username=user,
+                    approval_mode=workflow_assignment.get("approval_mode", "any"),
+                )
+            except Exception:
+                # 业务单据已经完成审批，待办清理失败不能把成功结果伪装成审批失败。
+                logger.error("完成样品问题关闭审批待办失败", exc_info=True)
     if approved and result.changed and nature:
         catalog_saved = await record_sample_closure_nature(nature, user, role, now_str)
         if not catalog_saved:
@@ -2865,6 +3008,18 @@ async def sample_issue_collection_page(issue_id: str = "", view: str = ""):
             )
             if result.code == "forbidden":
                 return ui.notify("当前用户无保存权限，无法申请关闭", type="warning", position="bottom")
+            if result.code.startswith("workflow_"):
+                workflow_message = (
+                    result.record.get("message", "审批流程配置无效")
+                    if isinstance(result.record, dict)
+                    else "审批流程配置无效"
+                )
+                return ui.notify(
+                    f"关闭申请未提交：{workflow_message}",
+                    type="warning",
+                    position="bottom",
+                    multi_line=True,
+                )
             if result.code == "revision_conflict":
                 return ui.notify(
                     "自动保存已取消：该样品问题已被其他用户更新，请关闭窗口后重新打开再申请关闭",
@@ -2900,6 +3055,12 @@ async def sample_issue_collection_page(issue_id: str = "", view: str = ""):
             if not fresh_request:
                 return ui.notify("关闭申请已保存，但读取最新数据失败，请刷新查看", type="warning", position="bottom")
             close_route = get_sample_close_approval_route_for_request(fresh_request)
+            workflow_assignment = fresh_request.get("workflow_assignment", {})
+            assigned_people = (
+                "|".join(workflow_assignment.get("assignee_usernames", []))
+                if isinstance(workflow_assignment, dict)
+                else ""
+            )
             basic = result.record.get("basic_info", {})
             content = (
                 "样品问题关闭申请\n"
@@ -2918,6 +3079,7 @@ async def sample_issue_collection_page(issue_id: str = "", view: str = ""):
                 message_type="close_request",
                 route_key=str(close_route.get("key", "default")),
                 notify_targets=close_route.get("notify_targets"),
+                additional_people=assigned_people,
             )
             ui.notify("关闭申请已提交", type="positive", position="bottom")
             refresh_list()
@@ -3179,9 +3341,23 @@ async def sample_issue_collection_page(issue_id: str = "", view: str = ""):
                         "text-sm font-bold text-purple-800"
                     )
                     ui.label(f"申请人：{pending_close.get('requester', '-')}").classes("text-sm text-purple-700")
-                    ui.label(f"审批角色：{', '.join(pending_close_route.get('approver_roles', []))}").classes(
-                        "text-xs text-purple-600"
+                    workflow_assignment = pending_close.get("workflow_assignment", {})
+                    assigned_usernames = (
+                        workflow_assignment.get("assignee_usernames", [])
+                        if isinstance(workflow_assignment, dict)
+                        else []
                     )
+                    if assigned_usernames:
+                        ui.label(f"指定审批人：{'、'.join(assigned_usernames)}").classes(
+                            "text-xs text-blue-700"
+                        )
+                        ui.label(
+                            f"审批流程：{workflow_assignment.get('workflow_name', pending_close_route.get('label', ''))}"
+                        ).classes("text-xs text-purple-600")
+                    else:
+                        ui.label(
+                            f"审批角色：{', '.join(pending_close_route.get('approver_roles', []))}"
+                        ).classes("text-xs text-purple-600")
                     if is_sample_close_approver(current_role, pending_close, current_user):
 
                         async def reject_close(event=None, r=pending_close):
