@@ -169,6 +169,49 @@ class IdentityStoreMigrationTests(unittest.TestCase):
         self.assertEqual(membership["org_name"], "内部研发中心")
         self.assertEqual(membership["position_name"], "研发工程师")
         self.assertEqual(membership["manager_username"], "admin")
+        position = next(
+            item for item in self.service.list_positions() if item["position_id"] == position_id
+        )
+        self.assertEqual(position["org_unit_ids"], [rd_unit["org_unit_id"]])
+
+    def test_positions_are_scoped_and_filtered_by_department(self):
+        """岗位支持多部门归属，任职时不能选择其他部门的岗位。"""
+        self.service.migrate_legacy_users()
+        rd_unit_id = self.service.save_org_unit(code="org.rd.scope", name="研发部")
+        engineering_unit_id = self.service.save_org_unit(
+            code="org.engineering.scope",
+            name="工程部",
+        )
+        quality_unit_id = self.service.save_org_unit(code="org.quality.scope", name="质量部")
+        position_id = self.service.save_position(
+            code="position.shared.engineer",
+            name="共用工程师",
+            org_unit_ids=[rd_unit_id, engineering_unit_id],
+        )
+
+        self.assertEqual(
+            {item["position_id"] for item in self.service.list_positions(rd_unit_id)},
+            {position_id},
+        )
+        self.assertEqual(self.service.list_positions(quality_unit_id), [])
+        with self.assertRaisesRegex(ValueError, "不属于当前部门"):
+            self.service.set_primary_membership(
+                "张三",
+                org_unit_id=quality_unit_id,
+                position_id=position_id,
+            )
+
+        self.service.set_primary_membership(
+            "张三",
+            org_unit_id=rd_unit_id,
+            position_id=position_id,
+        )
+        with self.assertRaisesRegex(ValueError, "仍有在职员工"):
+            self.service.save_position(
+                code="position.shared.engineer",
+                name="共用工程师",
+                org_unit_ids=[engineering_unit_id],
+            )
 
     def test_wecom_position_import_is_sorted_deduplicated_and_preserves_manual_edit(self):
         self.service.migrate_legacy_users()
@@ -269,6 +312,16 @@ class IdentityStoreMigrationTests(unittest.TestCase):
         ]
         self.service.import_wecom_departments(departments)
         self.service.import_wecom_positions(contacts)
+
+        rd_unit = next(
+            item for item in self.service.list_org_units() if item["wecom_department_id"] == "2"
+        )
+        rd_position = next(
+            item
+            for item in self.service.list_positions()
+            if item["external_name_snapshot"] == "研发工程师"
+        )
+        self.assertEqual(rd_position["org_unit_ids"], [rd_unit["org_unit_id"]])
 
         plan = self.service.build_wecom_match_plan(contacts)
         self.assertEqual(sum(item["status"] == "matched" for item in plan), 2)

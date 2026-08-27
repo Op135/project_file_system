@@ -217,6 +217,14 @@ class IdentityStore:
             )
             """,
             """
+            CREATE TABLE IF NOT EXISTS org_position_scopes (
+                position_id TEXT NOT NULL REFERENCES iam_positions(position_id),
+                org_unit_id TEXT NOT NULL REFERENCES org_units(org_unit_id),
+                created_at TEXT NOT NULL,
+                PRIMARY KEY (position_id, org_unit_id)
+            )
+            """,
+            """
             CREATE TABLE IF NOT EXISTS iam_user_roles (
                 user_id TEXT NOT NULL REFERENCES iam_users(user_id),
                 role_id TEXT NOT NULL REFERENCES iam_security_roles(role_id),
@@ -277,6 +285,8 @@ class IdentityStore:
             "CREATE INDEX IF NOT EXISTS idx_org_memberships_user ON org_memberships(user_id, status)",
             "CREATE INDEX IF NOT EXISTS idx_position_permissions_position "
             "ON iam_position_permissions(position_id)",
+            "CREATE INDEX IF NOT EXISTS idx_position_scopes_org "
+            "ON org_position_scopes(org_unit_id, position_id)",
             "CREATE INDEX IF NOT EXISTS idx_work_assignments_assignee ON work_assignments(assignee_user_id, status)",
         ]
         with self._lock, self._connect() as connection:
@@ -311,8 +321,15 @@ class IdentityStore:
             }.items():
                 if column_name not in position_columns:
                     connection.execute(f"ALTER TABLE iam_positions ADD COLUMN {column_name} {definition}")
+            # 历史岗位没有独立的部门范围，以现有在职任职关系安全反向补齐，不改动任何任职数据。
             connection.execute(
-                "INSERT INTO iam_meta(key, value, updated_at) VALUES('schema_version', '3', ?) "
+                "INSERT OR IGNORE INTO org_position_scopes(position_id, org_unit_id, created_at) "
+                "SELECT DISTINCT position_id, org_unit_id, ? FROM org_memberships "
+                "WHERE position_id IS NOT NULL AND status='active'",
+                (_now_text(),),
+            )
+            connection.execute(
+                "INSERT INTO iam_meta(key, value, updated_at) VALUES('schema_version', '4', ?) "
                 "ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at",
                 (_now_text(),),
             )
@@ -820,7 +837,8 @@ class IdentityStore:
             connection.commit()
         return inserted, max(0, len(normalized) - inserted)
 
-    def list_positions(self) -> list[dict[str, Any]]:
+    def list_positions(self, org_unit_id: str | None = None) -> list[dict[str, Any]]:
+        """列出岗位及其可用部门；指定部门时只返回该部门岗位。"""
         with self._lock, self._connect() as connection:
             rows = connection.execute(
                 "SELECT p.*, COUNT(DISTINCT CASE WHEN m.status='active' AND u.status='active' "
@@ -834,13 +852,29 @@ class IdentityStore:
                 "JOIN iam_permissions permission ON permission.permission_id=pp.permission_id "
                 "ORDER BY permission.code"
             ).fetchall()
+            scope_rows = connection.execute(
+                "SELECT scope.position_id, scope.org_unit_id, unit.name AS org_name, "
+                "unit.sort_order FROM org_position_scopes scope "
+                "JOIN org_units unit ON unit.org_unit_id=scope.org_unit_id "
+                "WHERE unit.status='active' ORDER BY unit.sort_order, unit.name"
+            ).fetchall()
         permission_map: dict[str, list[str]] = {}
         for row in permission_rows:
             permission_map.setdefault(row["position_id"], []).append(row["code"])
+        scope_map: dict[str, list[dict[str, Any]]] = {}
+        for row in scope_rows:
+            scope_map.setdefault(row["position_id"], []).append(dict(row))
         result = []
         for row in rows:
             item = dict(row)
+            scopes = scope_map.get(row["position_id"], [])
+            if org_unit_id and str(org_unit_id) not in {
+                str(scope["org_unit_id"]) for scope in scopes
+            }:
+                continue
             item["permission_codes"] = permission_map.get(row["position_id"], [])
+            item["org_unit_ids"] = [scope["org_unit_id"] for scope in scopes]
+            item["org_names"] = [scope["org_name"] for scope in scopes]
             result.append(item)
         return result
 
@@ -850,6 +884,7 @@ class IdentityStore:
         code: str,
         name: str,
         level: int = 0,
+        org_unit_ids: Iterable[str] | None = None,
         reject_existing: bool = False,
     ) -> str:
         code = normalize_stable_code(code)
@@ -858,6 +893,28 @@ class IdentityStore:
             raise ValueError("岗位编码和名称不能为空")
         now = _now_text()
         with self._lock, self._connect() as connection:
+            normalized_org_unit_ids = (
+                list(
+                    dict.fromkeys(
+                        str(org_unit_id).strip()
+                        for org_unit_id in org_unit_ids
+                        if str(org_unit_id).strip()
+                    )
+                )
+                if org_unit_ids is not None
+                else None
+            )
+            if normalized_org_unit_ids:
+                placeholders = ",".join("?" for _ in normalized_org_unit_ids)
+                found_units = connection.execute(
+                    f"SELECT org_unit_id FROM org_units WHERE status='active' "
+                    f"AND org_unit_id IN ({placeholders})",
+                    normalized_org_unit_ids,
+                ).fetchall()
+                found_ids = {str(unit["org_unit_id"]) for unit in found_units}
+                missing = [value for value in normalized_org_unit_ids if value not in found_ids]
+                if missing:
+                    raise ValueError("选择中包含不存在或已停用的部门")
             row = connection.execute(
                 "SELECT position_id, source FROM iam_positions WHERE code=? COLLATE NOCASE",
                 (code,),
@@ -881,6 +938,30 @@ class IdentityStore:
                     "status, created_at, updated_at) VALUES(?, ?, ?, 'manual', 0, ?, 'active', ?, ?)",
                     (position_id, code, name, int(level), now, now),
                 )
+            if normalized_org_unit_ids is not None:
+                active_membership_units = {
+                    str(item["org_unit_id"])
+                    for item in connection.execute(
+                        "SELECT DISTINCT org_unit_id FROM org_memberships "
+                        "WHERE position_id=? AND status='active'",
+                        (position_id,),
+                    ).fetchall()
+                }
+                removed_in_use = active_membership_units - set(normalized_org_unit_ids)
+                if removed_in_use:
+                    raise ValueError("不能移除仍有在职员工使用该岗位的部门归属")
+                connection.execute(
+                    "DELETE FROM org_position_scopes WHERE position_id=?",
+                    (position_id,),
+                )
+                connection.executemany(
+                    "INSERT INTO org_position_scopes(position_id, org_unit_id, created_at) "
+                    "VALUES(?, ?, ?)",
+                    [
+                        (position_id, org_unit_id, now)
+                        for org_unit_id in normalized_org_unit_ids
+                    ],
+                )
         return position_id
 
     def import_wecom_positions(self, contacts: Iterable[dict[str, Any]]) -> tuple[int, int]:
@@ -889,6 +970,7 @@ class IdentityStore:
         企业微信以自由文本而非稳定岗位 ID 提供职务，因此外部职务改名后会作为新的岗位
         候选导入，不猜测两个不同文本是否代表同一岗位。
         """
+        contacts = list(contacts)
         names = sorted(
             {
                 str(contact.get("position", "")).strip()
@@ -903,9 +985,18 @@ class IdentityStore:
         now = _now_text()
         with self._lock, self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
+            unit_rows = connection.execute(
+                "SELECT org_unit_id, wecom_department_id FROM org_units "
+                "WHERE status='active' AND wecom_department_id IS NOT NULL"
+            ).fetchall()
+            units_by_wecom_id = {
+                str(row["wecom_department_id"]): str(row["org_unit_id"])
+                for row in unit_rows
+            }
             for external_name in names:
                 row = connection.execute(
-                    "SELECT position_id FROM iam_positions WHERE source='wecom' AND external_name_snapshot=?",
+                    "SELECT position_id, manual_override FROM iam_positions "
+                    "WHERE source='wecom' AND external_name_snapshot=?",
                     (external_name,),
                 ).fetchone()
                 if row:
@@ -914,24 +1005,59 @@ class IdentityStore:
                         "status='active', updated_at=? WHERE position_id=?",
                         (external_name, now, row["position_id"]),
                     )
-                    continue
-                same_name = connection.execute(
-                    "SELECT position_id FROM iam_positions WHERE name=? AND status='active' LIMIT 1",
-                    (external_name,),
-                ).fetchone()
-                if same_name:
+                    position_id = str(row["position_id"])
+                    manual_override = bool(row["manual_override"])
+                else:
+                    same_name = connection.execute(
+                        "SELECT position_id FROM iam_positions WHERE name=? AND status='active' LIMIT 1",
+                        (external_name,),
+                    ).fetchone()
+                    if same_name:
+                        # 手工岗位的名称和部门归属均由系统维护，不由企业微信导入修改。
+                        continue
+                    digest = hashlib.sha256(external_name.encode("utf-8")).hexdigest()[:16]
+                    code = f"wecom.position.{digest}"
+                    position_id = str(uuid.uuid4())
+                    connection.execute(
+                        "INSERT INTO iam_positions(position_id, code, name, source, manual_override, "
+                        "external_name_snapshot, level, status, created_at, updated_at) "
+                        "VALUES(?, ?, ?, 'wecom', 0, ?, 0, 'active', ?, ?)",
+                        (position_id, code, external_name, external_name, now, now),
+                    )
+                    manual_override = False
+                    inserted += 1
+                if manual_override:
                     # 系统中已有同名岗位可以表达该职务，不再建立视觉上重复的候选项。
                     continue
-                digest = hashlib.sha256(external_name.encode("utf-8")).hexdigest()[:16]
-                code = f"wecom.position.{digest}"
-                position_id = str(uuid.uuid4())
-                connection.execute(
-                    "INSERT INTO iam_positions(position_id, code, name, source, manual_override, "
-                    "external_name_snapshot, level, status, created_at, updated_at) "
-                    "VALUES(?, ?, ?, 'wecom', 0, ?, 0, 'active', ?, ?)",
-                    (position_id, code, external_name, external_name, now, now),
+                department_ids: set[str] = set()
+                for contact in contacts:
+                    if (
+                        str(contact.get("position", "")).strip() != external_name
+                        or not contact.get("is_active", True)
+                    ):
+                        continue
+                    external_department_ids = [
+                        str(value).strip()
+                        for value in contact.get("department_ids", [])
+                        if str(value).strip()
+                    ]
+                    main_department_id = str(contact.get("main_department_id", "")).strip()
+                    ordered_ids = list(
+                        dict.fromkeys([main_department_id, *external_department_ids])
+                    )
+                    department_ids.update(
+                        units_by_wecom_id[value]
+                        for value in ordered_ids
+                        if value in units_by_wecom_id
+                    )
+                connection.executemany(
+                    "INSERT OR IGNORE INTO org_position_scopes(position_id, org_unit_id, created_at) "
+                    "VALUES(?, ?, ?)",
+                    [
+                        (position_id, org_unit_id, now)
+                        for org_unit_id in sorted(department_ids)
+                    ],
                 )
-                inserted += 1
             connection.commit()
         return inserted, len(names) - inserted
 
@@ -972,6 +1098,33 @@ class IdentityStore:
         now = _now_text()
         with self._lock, self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
+            org_unit = connection.execute(
+                "SELECT 1 FROM org_units WHERE org_unit_id=? AND status='active'",
+                (org_unit_id,),
+            ).fetchone()
+            if not org_unit:
+                raise ValueError("选择的部门不存在或已停用")
+            if position_id:
+                position = connection.execute(
+                    "SELECT 1 FROM iam_positions WHERE position_id=? AND status='active'",
+                    (position_id,),
+                ).fetchone()
+                if not position:
+                    raise ValueError("选择的岗位不存在或已停用")
+                scopes = connection.execute(
+                    "SELECT org_unit_id FROM org_position_scopes WHERE position_id=?",
+                    (position_id,),
+                ).fetchall()
+                allowed_org_ids = {str(item["org_unit_id"]) for item in scopes}
+                if allowed_org_ids and str(org_unit_id) not in allowed_org_ids:
+                    raise ValueError("所选岗位不属于当前部门")
+                if not allowed_org_ids:
+                    # 兼容尚未归类的历史岗位：首次任职时自动建立部门归属。
+                    connection.execute(
+                        "INSERT OR IGNORE INTO org_position_scopes(position_id, org_unit_id, created_at) "
+                        "VALUES(?, ?, ?)",
+                        (position_id, org_unit_id, now),
+                    )
             connection.execute(
                 "UPDATE org_memberships SET is_primary=0, updated_at=? WHERE user_id=? AND status='active'",
                 (now, user["user_id"]),

@@ -707,6 +707,15 @@ def manage_page():
                             add_position_button = ui.button("新增岗位", icon="add").props("color=primary")
                     position_container = ui.column().classes("w-full flex-grow min-h-0 overflow-y-auto gap-1")
 
+            expanded_position_departments: set[str] = set()
+
+            def remember_position_department(event, department_key: str):
+                """记录当前弹窗内已展开的岗位部门，首次打开时集合为空。"""
+                if event.value:
+                    expanded_position_departments.add(department_key)
+                else:
+                    expanded_position_departments.discard(department_key)
+
             def render_org_units():
                 org_container.clear()
                 with org_container:
@@ -799,9 +808,11 @@ def manage_page():
                 position_container.clear()
                 with position_container:
                     positions = user_svc.list_positions()
+                    units = user_svc.list_org_units()
                     if not positions:
                         ui.label("尚无岗位，请先建立岗位字典。").classes("text-gray-500 p-4")
-                    for item in positions:
+
+                    def render_position_item(item):
                         with ui.row().classes("w-full items-center border-b p-2 hover:bg-blue-50"):
                             with ui.column().classes("gap-0 flex-grow"):
                                 ui.label(item.get("name", "")).classes("font-semibold")
@@ -816,9 +827,51 @@ def manage_page():
                                 on_click=lambda current=item: open_position_form(current),
                             ).props("flat dense color=primary")
 
+                    for unit in units:
+                        scoped_positions = [
+                            item
+                            for item in positions
+                            if unit["org_unit_id"] in item.get("org_unit_ids", [])
+                        ]
+                        if not scoped_positions:
+                            continue
+                        department_key = str(unit["org_unit_id"])
+                        with ui.expansion(
+                            f"{unit['name']}（{len(scoped_positions)} 个岗位）",
+                            icon="business",
+                            value=department_key in expanded_position_departments,
+                        ).classes("w-full bg-blue-50 border border-blue-100 rounded mt-2") as expansion:
+                            for item in scoped_positions:
+                                render_position_item(item)
+                        expansion.on_value_change(
+                            lambda event, key=department_key: remember_position_department(event, key)
+                        )
+                    unscoped_positions = [
+                        item for item in positions if not item.get("org_unit_ids")
+                    ]
+                    if unscoped_positions:
+                        unscoped_key = "__unscoped__"
+                        with ui.expansion(
+                            f"未划分部门（{len(unscoped_positions)} 个岗位）",
+                            icon="help_outline",
+                            value=unscoped_key in expanded_position_departments,
+                        ).classes("w-full bg-orange-50 border border-orange-100 rounded mt-2") as expansion:
+                            for item in unscoped_positions:
+                                render_position_item(item)
+                        expansion.on_value_change(
+                            lambda event, key=unscoped_key: remember_position_department(event, key)
+                        )
+
             def open_position_form(current=None):
                 current = current or {}
-                with ui.dialog() as form_dialog, ui.card().classes("w-96 p-6"):
+                units = user_svc.list_org_units()
+                if not units:
+                    ui.notify("请先建立部门，再维护岗位。", type="warning")
+                    return
+                department_options = {
+                    item["org_unit_id"]: item["name"] for item in units
+                }
+                with ui.dialog() as form_dialog, ui.card().classes("w-[30rem] max-w-[95vw] p-6"):
                     ui.label("编辑岗位" if current else "新增岗位").classes("text-lg font-bold")
                     code_input = ui.input(
                         "稳定编码（保存后不可修改）",
@@ -834,6 +887,16 @@ def manage_page():
                             "岗位",
                         )
                     name_input = ui.input("岗位名称", value=current.get("name", "")).classes("w-full")
+                    department_select = ui.select(
+                        department_options,
+                        value=current.get("org_unit_ids", []),
+                        label="适用部门（可多选）",
+                        multiple=True,
+                        with_input=True,
+                    ).props("use-chips").classes("w-full")
+                    ui.label(
+                        "岗位会在所选部门下显示；同一岗位跨部门共用默认权限。"
+                    ).classes("text-xs text-gray-500")
                     level_input = ui.number(
                         "职级数字",
                         value=current.get("level", 0),
@@ -846,11 +909,15 @@ def manage_page():
                             if error:
                                 ui.notify(error, type="warning")
                                 return
+                        if not department_select.value:
+                            ui.notify("请至少选择一个适用部门。", type="warning")
+                            return
                         try:
                             user_svc.save_position(
                                 code=normalize_stable_code(code_input.value),
                                 name=name_input.value,
                                 level=int(level_input.value or 0),
+                                org_unit_ids=department_select.value,
                                 reject_existing=not bool(current),
                             )
                             render_positions()
@@ -884,7 +951,12 @@ def manage_page():
                     ui.notify("企业微信通讯录缓存中没有成员，请先同步通讯录。", type="warning")
                     return
                 try:
+                    departments = cache_data.get("departments", [])
+                    if departments:
+                        # 岗位需要按部门归类，导入职务前先确保企业微信部门映射已经存在。
+                        user_svc.import_wecom_departments(departments)
                     inserted, updated = user_svc.import_wecom_positions(contacts)
+                    render_org_units()
                     render_positions()
                     ui.notify(f"岗位导入完成：新增 {inserted}，已存在 {updated}。", type="positive")
                 except Exception as exc:
@@ -948,6 +1020,14 @@ def manage_page():
                             )
 
                     position_state = {"selected_position_id": None}
+                    expanded_permission_departments: set[str] = set()
+
+                    def remember_permission_department(event, department_key: str):
+                        """保留权限列表当前展开部门，同时保证首次进入全部收起。"""
+                        if event.value:
+                            expanded_permission_departments.add(department_key)
+                        else:
+                            expanded_permission_departments.discard(department_key)
 
                     def select_permission_position(position_id):
                         position_state["selected_position_id"] = position_id
@@ -956,6 +1036,7 @@ def manage_page():
 
                     def render_permission_positions():
                         positions = user_svc.list_positions()
+                        units = user_svc.list_org_units()
                         selected_id = position_state["selected_position_id"]
                         if selected_id not in {item["position_id"] for item in positions}:
                             position_state["selected_position_id"] = (
@@ -967,7 +1048,7 @@ def manage_page():
                                 ui.label("尚无岗位，请先在组织架构中建立岗位字典。").classes(
                                     "text-gray-500 p-4"
                                 )
-                            for position in positions:
+                            def render_permission_position_item(position):
                                 selected = (
                                     position["position_id"] == position_state["selected_position_id"]
                                 )
@@ -993,6 +1074,53 @@ def manage_page():
                                         f"{len(position.get('permission_codes', []))} 项权限 / "
                                         f"{position.get('member_count', 0)} 人"
                                     ).classes("text-xs text-gray-500")
+
+                            for unit in units:
+                                scoped_positions = [
+                                    position
+                                    for position in positions
+                                    if unit["org_unit_id"] in position.get("org_unit_ids", [])
+                                ]
+                                if not scoped_positions:
+                                    continue
+                                department_key = str(unit["org_unit_id"])
+                                with ui.expansion(
+                                    f"{unit['name']}（{len(scoped_positions)} 个岗位）",
+                                    icon="business",
+                                    value=department_key in expanded_permission_departments,
+                                ).classes(
+                                    "w-full bg-blue-50 border border-blue-100 rounded mt-2"
+                                ) as expansion:
+                                    for position in scoped_positions:
+                                        render_permission_position_item(position)
+                                expansion.on_value_change(
+                                    lambda event, key=department_key: remember_permission_department(
+                                        event,
+                                        key,
+                                    )
+                                )
+                            unscoped_positions = [
+                                position
+                                for position in positions
+                                if not position.get("org_unit_ids")
+                            ]
+                            if unscoped_positions:
+                                unscoped_key = "__unscoped__"
+                                with ui.expansion(
+                                    f"未划分部门（{len(unscoped_positions)} 个岗位）",
+                                    icon="help_outline",
+                                    value=unscoped_key in expanded_permission_departments,
+                                ).classes(
+                                    "w-full bg-orange-50 border border-orange-100 rounded mt-2"
+                                ) as expansion:
+                                    for position in unscoped_positions:
+                                        render_permission_position_item(position)
+                                expansion.on_value_change(
+                                    lambda event, key=unscoped_key: remember_permission_department(
+                                        event,
+                                        key,
+                                    )
+                                )
 
                     def render_position_permissions():
                         positions = user_svc.list_positions()
@@ -1544,6 +1672,16 @@ def manage_page():
                     if not current and isinstance(contact, dict)
                     else {}
                 )
+                initial_org_unit_id = current.get("org_unit_id") or suggested.get("org_unit_id")
+                initial_position_id = current.get("position_id") or suggested.get("position_id")
+
+                def position_options_for_org(org_unit_id):
+                    return {
+                        item["position_id"]: item["name"]
+                        for item in positions
+                        if org_unit_id in item.get("org_unit_ids", [])
+                    }
+
                 active_users = {
                     username: info.get("display_name") or username
                     for username, info in app.state.users_data.items()
@@ -1553,17 +1691,27 @@ def manage_page():
                     ui.label(f"组织任职：{target_user}").classes("text-lg font-bold")
                     org_select = ui.select(
                         {item["org_unit_id"]: item["name"] for item in units},
-                        value=current.get("org_unit_id") or suggested.get("org_unit_id"),
+                        value=initial_org_unit_id,
                         label="主部门",
                         with_input=True,
                     ).classes("w-full")
                     position_select = ui.select(
-                        {item["position_id"]: item["name"] for item in positions},
-                        value=current.get("position_id") or suggested.get("position_id"),
+                        position_options_for_org(initial_org_unit_id),
+                        value=initial_position_id,
                         label="岗位",
                         with_input=True,
                         clearable=True,
                     ).classes("w-full")
+
+                    def refresh_position_options(event):
+                        options = position_options_for_org(event.value)
+                        current_position_id = position_select.value
+                        position_select.set_options(
+                            options,
+                            value=current_position_id if current_position_id in options else None,
+                        )
+
+                    org_select.on_value_change(refresh_position_options)
                     manager_select = ui.select(
                         active_users,
                         value=current.get("manager_username"),
@@ -1572,6 +1720,7 @@ def manage_page():
                         clearable=True,
                     ).classes("w-full")
                     ui.label("直属上级将作为离职上交和后续审批策略的首选解析对象。").classes("text-xs text-gray-500")
+                    ui.label("岗位列表会随主部门自动过滤。").classes("text-xs text-blue-700")
                     if suggested:
                         ui.label(
                             f"企业微信建议：部门 {suggested.get('org_name') or '未匹配'}；"

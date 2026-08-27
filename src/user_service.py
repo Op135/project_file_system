@@ -418,6 +418,11 @@ class UserService:
                 str(item.get("external_name_snapshot", "")).strip(),
                 str(item.get("name", "")).strip(),
             }
+            and (
+                not item.get("org_unit_ids")
+                or org_unit is None
+                or org_unit.get("org_unit_id") in item.get("org_unit_ids", [])
+            )
         ]
         position = matching_positions[0] if len(matching_positions) == 1 else None
         return {
@@ -475,8 +480,12 @@ class UserService:
             raise RuntimeError("请先迁移用户，再导入岗位字典")
         return self.identity_store.import_wecom_positions(contacts)
 
-    def list_positions(self) -> list[dict[str, Any]]:
-        return self.identity_store.list_positions() if self.storage_mode == "database" else []
+    def list_positions(self, org_unit_id: str | None = None) -> list[dict[str, Any]]:
+        return (
+            self.identity_store.list_positions(org_unit_id=org_unit_id)
+            if self.storage_mode == "database"
+            else []
+        )
 
     def save_position(self, **values) -> str:
         if self.storage_mode != "database":
