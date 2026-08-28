@@ -23,8 +23,9 @@ logger = logging.getLogger(__name__)
 
 
 # --- 新增代码：独立的测试汇总报告页面 ---
+@ui.page("/report/test_summary")
 @ui.page("/report/test_summary/{project_name}")
-def test_summary_report(project_name: str):
+def test_summary_report(project_name: str = ""):
     # 报表可通过地址直接打开，因此必须独立复核权限，不能只依赖上游按钮。
     stored_current_user = app.storage.user.get("current_user")
     if not isinstance(stored_current_user, str) or not stored_current_user:
@@ -33,6 +34,11 @@ def test_summary_report(project_name: str):
     if not can_view_project_test_summary(sync_current_user_role(), stored_current_user):
         ui.notify("当前账号没有查看生产测试项汇总表的权限", type="negative")
         ui.navigate.to("/main")
+        return
+    project_name = str(project_name or "").strip()
+    if not project_name:
+        ui.notify("未指定要查看的项目，无法生成生产测试项汇总表", type="negative")
+        ui.navigate.to("/project_table")
         return
 
     # --- 调用全局活跃跟踪组件 ---

@@ -28,7 +28,10 @@ from ..permission_catalog import (
 from ..project_access import can_edit_project_status, can_manage_project_records
 from ..project_requirement_access import can_view_project_requirement
 from ..project_overview_access import can_view_any_project_overview
-from ..project_test_summary_access import can_view_project_test_summary
+from ..project_test_summary_access import (
+    build_project_test_summary_url,
+    can_view_project_test_summary,
+)
 from ..utils import (
     find_files_with_prefix_and_version,
     get_cache_busted_path,
@@ -1067,7 +1070,11 @@ def project_table_page():
                 ui.notify("当前账号没有查看生产测试项汇总表的权限", type="negative")
                 return
             await save_project_table_view_state(aggrid)
-            ui.run_javascript(f'window.open("/report/test_summary/{project_name}", "_blank")')
+            target_url = build_project_test_summary_url(project_name)
+            if not target_url:
+                ui.notify("当前行没有有效项目名，无法打开生产测试项汇总表", type="negative")
+                return
+            ui.run_javascript(f"window.open({json.dumps(target_url)}, '_blank')")
 
     async def switch_toggle_vis(visible=None):
         # 切换传入列的可见性

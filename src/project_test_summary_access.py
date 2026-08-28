@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from urllib.parse import urlencode
+
 from nicegui import app
 
 from .access_control import can
@@ -26,3 +28,12 @@ def can_view_project_test_summary(
         legacy_role=str(current_role or ""),
         legacy_allowed_roles=None,
     )
+
+
+def build_project_test_summary_url(project_name: object) -> str:
+    """生成测试项汇总地址；项目名为空时拒绝生成不完整路由。"""
+    normalized_project_name = str(project_name or "").strip()
+    if not normalized_project_name:
+        return ""
+    # 项目名允许包含斜杠，必须放在查询参数中，避免被路由器误判为新的路径层级。
+    return f"/report/test_summary?{urlencode({'project_name': normalized_project_name})}"

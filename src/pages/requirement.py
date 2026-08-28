@@ -90,7 +90,10 @@ from ..project_requirement_access import (
     can_edit_project_requirement,
     can_view_project_requirement,
 )
-from ..project_test_summary_access import can_view_project_test_summary
+from ..project_test_summary_access import (
+    build_project_test_summary_url,
+    can_view_project_test_summary,
+)
 from ..requirement_overview_impact import RequirementOverviewImpactConfigError
 from ..utils import (
     compare_configs_by_id,
@@ -266,11 +269,16 @@ async def requirement_page(
             user_service=app.state.user_service,
         )
 
-    def open_project_test_summary() -> None:
+    def open_project_test_summary(target_project_name: object) -> None:
+        """按概述区域的实际项目名打开汇总，不能使用可能为空的外层路由参数。"""
         if not has_project_test_summary_permission():
             ui.notify("当前账号没有查看生产测试项汇总表的权限", type="negative")
             return
-        ui.run_javascript(f'window.open("/report/test_summary/{project_name}", "_blank")')
+        target_url = build_project_test_summary_url(target_project_name)
+        if not target_url:
+            ui.notify("当前概述没有有效项目名，无法打开生产测试项汇总表", type="negative")
+            return
+        ui.run_javascript(f"window.open({json.dumps(target_url)}, '_blank')")
     if is_requirement_mode and json_path:
         try:
             Path(json_path).resolve().relative_to(Path(REQ_DIR).resolve())
@@ -5534,11 +5542,12 @@ async def requirement_page(
 
                         # 3. 右侧操作区：打印按钮 + 开关
                         with ui.row().classes("items-center gap-4"):
+                            # 与项目总表使用同一个稳定权限；无权限时不创建按钮。
                             if has_project_test_summary_permission():
                                 ui.button(
                                     "测试项",
                                     icon="print",
-                                    on_click=open_project_test_summary,
+                                    on_click=lambda pn=project_name: open_project_test_summary(pn),
                                 ).props("flat dense").classes("text-sm text-blue-800 hover:bg-blue-100 px-2")
 
                             if can_view_inactive_project_overview(current_role, current_user):
