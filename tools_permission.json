@@ -57,7 +57,8 @@
         "admin",
         "boss",
         "研发经理",
-        "研发光学"
+        "研发光学",
+        "研发软件"
     ],
     "operand_lookup": [
         "admin",
