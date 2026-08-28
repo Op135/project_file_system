@@ -1905,7 +1905,7 @@ class IdentityStore:
         self,
         replacements: dict[str, Iterable[str]],
     ) -> int:
-        """把旧权限的岗位及附加权限组授权复制到新权限后删除旧权限。
+        """把旧权限授权及一对一流程引用迁移到新权限后删除旧权限。
 
         此迁移可重复执行。只有数据库中实际存在旧权限时才产生修改，因此管理员之后对
         新权限进行的细分调整不会在后续启动时被重新覆盖。
@@ -1943,6 +1943,36 @@ class IdentityStore:
                 ]
                 if missing:
                     raise ValueError(f"替代权限尚未注册：{'、'.join(missing)}")
+
+                # 审批流程只能引用单个资格权限；一对一替换时同步迁移已发布版本和草稿。
+                if len(normalized_new_codes) == 1:
+                    replacement_code = normalized_new_codes[0]
+                    connection.execute(
+                        "UPDATE approval_workflow_versions SET required_permission_code=? "
+                        "WHERE required_permission_code=? COLLATE NOCASE",
+                        (replacement_code, str(old_code).strip().lower()),
+                    )
+                    workflow_versions = connection.execute(
+                        "SELECT version_id, approver_json FROM approval_workflow_versions"
+                    ).fetchall()
+                    for workflow_version in workflow_versions:
+                        try:
+                            approver = json.loads(workflow_version["approver_json"] or "{}")
+                        except (TypeError, json.JSONDecodeError):
+                            continue
+                        if not isinstance(approver, dict) or (
+                            str(approver.get("permission_code", "")).strip().lower()
+                            != str(old_code).strip().lower()
+                        ):
+                            continue
+                        approver["permission_code"] = replacement_code
+                        connection.execute(
+                            "UPDATE approval_workflow_versions SET approver_json=? WHERE version_id=?",
+                            (
+                                json.dumps(approver, ensure_ascii=False),
+                                workflow_version["version_id"],
+                            ),
+                        )
 
                 role_rows = connection.execute(
                     "SELECT role_id FROM iam_role_permissions WHERE permission_id=?",

@@ -8,10 +8,16 @@ import pandas as pd
 
 from src.access_control import can_use_tool
 from src.permission_catalog import (
+    DESIGN_KNOWLEDGE_CREATE_PERMISSION,
+    DESIGN_KNOWLEDGE_REVIEW_PERMISSION,
+    DESIGN_KNOWLEDGE_VIEW_PERMISSION,
     ERROR_NOTIFICATION_MODULE,
     ERROR_RECORD_EDIT_PERMISSION,
     ERROR_VIEW_PERMISSION,
     SAMPLE_ISSUE_CREATE_PERMISSION,
+    SAMPLE_ISSUE_CLOSE_APPROVE_PERMISSION,
+    SAMPLE_ISSUE_LEGACY_CLOSE_DEFAULT_APPROVE_PERMISSION,
+    SAMPLE_ISSUE_LEGACY_CLOSE_ELECTRON_APPROVE_PERMISSION,
     SAMPLE_ISSUE_NOTIFICATION_MODULE,
     SAMPLE_ISSUE_VIEW_PERMISSION,
     SAMPLE_ORDER_EXTENSION_NOTIFY_PERMISSION,
@@ -326,6 +332,38 @@ class AccessControlTests(unittest.TestCase):
         self.assertTrue(self.service.has_permission("张三", SAMPLE_ISSUE_VIEW_PERMISSION))
         self.assertTrue(self.service.has_permission("张三", SAMPLE_ISSUE_CREATE_PERMISSION))
 
+    def test_design_knowledge_database_mode_uses_only_stable_permissions(self):
+        """设计知识库迁移后不再从研发角色名称自动获得权限。"""
+        self.service.migrate_legacy_users()
+        org_unit_id = self.service.save_org_unit(code="org.design.knowledge", name="知识测试部")
+        position_id = self.service.save_position(code="design.knowledge.editor", name="知识录入岗位")
+        self.service.set_primary_membership(
+            "张三",
+            org_unit_id=org_unit_id,
+            position_id=position_id,
+        )
+
+        self.assertFalse(
+            self.service.has_permission(
+                "张三",
+                DESIGN_KNOWLEDGE_VIEW_PERMISSION,
+                legacy_role="研发硬件",
+                legacy_allowed_roles=["研发硬件"],
+            )
+        )
+        self.service.set_position_permissions(
+            position_id,
+            [
+                DESIGN_KNOWLEDGE_VIEW_PERMISSION,
+                DESIGN_KNOWLEDGE_CREATE_PERMISSION,
+                DESIGN_KNOWLEDGE_REVIEW_PERMISSION,
+            ],
+            actor_username="admin",
+        )
+        self.assertTrue(self.service.has_permission("张三", DESIGN_KNOWLEDGE_VIEW_PERMISSION))
+        self.assertTrue(self.service.has_permission("张三", DESIGN_KNOWLEDGE_CREATE_PERMISSION))
+        self.assertTrue(self.service.has_permission("张三", DESIGN_KNOWLEDGE_REVIEW_PERMISSION))
+
     def test_broad_notification_permission_is_split_without_losing_assignments(self):
         """上一版宽权限应迁移到全部对应事件权限，并从管理目录移除。"""
         self.service.migrate_legacy_users()
@@ -359,6 +397,81 @@ class AccessControlTests(unittest.TestCase):
                 SAMPLE_ORDER_EXTENSION_NOTIFY_PERMISSION,
                 SAMPLE_ORDER_SPECIAL_STATUS_NOTIFY_PERMISSION,
             },
+        )
+
+    def test_sample_close_permissions_are_merged_and_workflow_references_are_updated(self):
+        """两项旧关闭权限应合并，并同步迁移已保存流程的资格权限。"""
+        self.service.migrate_legacy_users()
+        self.service.identity_store.seed_permission_catalog(
+            [
+                {
+                    "code": SAMPLE_ISSUE_LEGACY_CLOSE_DEFAULT_APPROVE_PERMISSION,
+                    "name": "旧默认关闭审批",
+                    "module": "样品问题跟进",
+                },
+                {
+                    "code": SAMPLE_ISSUE_LEGACY_CLOSE_ELECTRON_APPROVE_PERMISSION,
+                    "name": "旧电子组关闭审批",
+                    "module": "样品问题跟进",
+                },
+            ]
+        )
+        org_unit_id = self.service.save_org_unit(code="org.sample.close", name="关闭审批测试部")
+        position_id = self.service.save_position(code="sample.close.approver", name="关闭审批岗位")
+        self.service.set_primary_membership(
+            "张三",
+            org_unit_id=org_unit_id,
+            position_id=position_id,
+        )
+        self.service.set_position_permissions(
+            position_id,
+            [
+                SAMPLE_ISSUE_LEGACY_CLOSE_DEFAULT_APPROVE_PERMISSION,
+                SAMPLE_ISSUE_LEGACY_CLOSE_ELECTRON_APPROVE_PERMISSION,
+            ],
+        )
+        workflow_id, _version_id = self.service.save_approval_workflow_draft(
+            code="sample_issue.close.legacy_electron",
+            module="sample_issue",
+            event="close_request",
+            name="旧电子组关闭流程",
+            priority=10,
+            condition={
+                "requester_org_unit_ids": [],
+                "requester_position_ids": [],
+                "include_child_org_units": True,
+            },
+            approver={
+                "strategy": "permission",
+                "permission_code": SAMPLE_ISSUE_LEGACY_CLOSE_ELECTRON_APPROVE_PERMISSION,
+            },
+            required_permission_code=SAMPLE_ISSUE_LEGACY_CLOSE_ELECTRON_APPROVE_PERMISSION,
+            actor_username="admin",
+        )
+        self.service.publish_approval_workflow(workflow_id, actor_username="admin")
+
+        self.service.sync_permission_catalog()
+
+        permission_codes = {item["code"] for item in self.service.list_permissions()}
+        self.assertIn(SAMPLE_ISSUE_CLOSE_APPROVE_PERMISSION, permission_codes)
+        self.assertNotIn(SAMPLE_ISSUE_LEGACY_CLOSE_DEFAULT_APPROVE_PERMISSION, permission_codes)
+        self.assertNotIn(SAMPLE_ISSUE_LEGACY_CLOSE_ELECTRON_APPROVE_PERMISSION, permission_codes)
+        self.assertEqual(
+            self.service.get_position_permission_codes(position_id),
+            {SAMPLE_ISSUE_CLOSE_APPROVE_PERMISSION},
+        )
+        workflow = next(
+            item
+            for item in self.service.list_approval_workflows(module="sample_issue")
+            if item["workflow_id"] == workflow_id
+        )
+        self.assertEqual(
+            workflow["active_version"]["required_permission_code"],
+            SAMPLE_ISSUE_CLOSE_APPROVE_PERMISSION,
+        )
+        self.assertEqual(
+            workflow["active_version"]["approver"]["permission_code"],
+            SAMPLE_ISSUE_CLOSE_APPROVE_PERMISSION,
         )
 
     def test_sample_order_permission_requires_new_position_or_additional_group(self):

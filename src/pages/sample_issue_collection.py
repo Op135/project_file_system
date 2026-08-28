@@ -33,11 +33,10 @@ from ..issue_workflow_utils import (
 )
 from ..notification_recipients import resolve_permission_wecom_recipients
 from ..permission_catalog import (
-    SAMPLE_ISSUE_CLOSE_DEFAULT_APPROVE_PERMISSION,
+    SAMPLE_ISSUE_CLOSE_APPROVE_PERMISSION,
     SAMPLE_ISSUE_CLOSE_DEFAULT_APPROVED_NOTIFY_PERMISSION,
     SAMPLE_ISSUE_CLOSE_DEFAULT_REQUEST_NOTIFY_PERMISSION,
     SAMPLE_ISSUE_CLOSE_DEFAULT_RESULT_NOTIFY_PERMISSION,
-    SAMPLE_ISSUE_CLOSE_ELECTRON_APPROVE_PERMISSION,
     SAMPLE_ISSUE_CLOSE_ELECTRON_APPROVED_NOTIFY_PERMISSION,
     SAMPLE_ISSUE_CLOSE_ELECTRON_REQUEST_NOTIFY_PERMISSION,
     SAMPLE_ISSUE_CLOSE_ELECTRON_RESULT_NOTIFY_PERMISSION,
@@ -49,6 +48,8 @@ from ..permission_catalog import (
     SAMPLE_ISSUE_EXTENSION_REQUEST_NOTIFY_PERMISSION,
     SAMPLE_ISSUE_EXTENSION_RESULT_NOTIFY_PERMISSION,
     SAMPLE_ISSUE_FALLBACK_REMINDER_PERMISSION,
+    SAMPLE_ISSUE_LEGACY_CLOSE_DEFAULT_APPROVE_PERMISSION,
+    SAMPLE_ISSUE_LEGACY_CLOSE_ELECTRON_APPROVE_PERMISSION,
     SAMPLE_ISSUE_REMINDER_CHECK_PERMISSION,
     SAMPLE_ISSUE_VIEW_PERMISSION,
 )
@@ -114,9 +115,9 @@ SAMPLE_ATTACHMENT_PARENTS_H = 12
 SAMPLE_FILTER_MY_PENDING_STATE = "我的待办"
 SAMPLE_LEGACY_VIEW_ROLE_KEYWORDS = ["质量", "销售", "工程", "研发", "boss", "admin"]
 SAMPLE_LEGACY_ADMIN_ROLES = ["admin"]
-SAMPLE_CLOSE_APPROVE_PERMISSION_BY_ROUTE = {
-    "default": SAMPLE_ISSUE_CLOSE_DEFAULT_APPROVE_PERMISSION,
-    "electron_to_electron": SAMPLE_ISSUE_CLOSE_ELECTRON_APPROVE_PERMISSION,
+SAMPLE_LEGACY_CLOSE_APPROVE_PERMISSION_CODES = {
+    SAMPLE_ISSUE_LEGACY_CLOSE_DEFAULT_APPROVE_PERMISSION,
+    SAMPLE_ISSUE_LEGACY_CLOSE_ELECTRON_APPROVE_PERMISSION,
 }
 SAMPLE_EXTENSION_NOTIFY_PERMISSION_BY_MESSAGE_TYPE = {
     "extension_request": SAMPLE_ISSUE_EXTENSION_REQUEST_NOTIFY_PERMISSION,
@@ -519,6 +520,14 @@ def get_sample_close_approval_route_for_request(close_request: Optional[dict]) -
     return route
 
 
+def normalize_sample_close_approval_permission(permission_code: object) -> str:
+    """把历史关闭审批权限快照统一映射到当前资格权限。"""
+    normalized = str(permission_code or "").strip().lower()
+    if normalized in SAMPLE_LEGACY_CLOSE_APPROVE_PERMISSION_CODES:
+        return SAMPLE_ISSUE_CLOSE_APPROVE_PERMISSION
+    return normalized
+
+
 def is_sample_close_approver(
     role: object,
     close_request: Optional[dict] = None,
@@ -534,8 +543,18 @@ def is_sample_close_approver(
             and user_service is not None
             and getattr(user_service, "storage_mode", "legacy_excel") == "database"
         ):
-            permission_code = str(workflow_assignment.get("required_permission_code", ""))
-            if not permission_code or not _has_sample_permission(username, role, permission_code, []):
+            permission_code = normalize_sample_close_approval_permission(
+                workflow_assignment.get("required_permission_code", "")
+            )
+            if (
+                permission_code != SAMPLE_ISSUE_CLOSE_APPROVE_PERMISSION
+                or not _has_sample_permission(
+                    username,
+                    role,
+                    SAMPLE_ISSUE_CLOSE_APPROVE_PERMISSION,
+                    [],
+                )
+            ):
                 return False
             pending_usernames = user_service.list_pending_assignment_usernames(
                 module="sample_issue",
@@ -567,23 +586,38 @@ def is_sample_close_approver(
                 username=username,
             )
         route = get_sample_close_approval_route_for_request(close_request)
-        permission_code = SAMPLE_CLOSE_APPROVE_PERMISSION_BY_ROUTE.get(
-            str(route.get("key", "default")),
-            SAMPLE_ISSUE_CLOSE_DEFAULT_APPROVE_PERMISSION,
-        )
+        user_service = getattr(app.state, "user_service", None)
+        if (
+            user_service is not None
+            and getattr(user_service, "storage_mode", "legacy_excel") == "database"
+        ):
+            if not _has_sample_permission(
+                username,
+                role,
+                SAMPLE_ISSUE_CLOSE_APPROVE_PERMISSION,
+                [],
+            ):
+                return False
+            if str(username or "").strip().casefold() == "admin":
+                return True
+            membership = user_service.get_primary_membership(username)
+            effective_role = str(membership.get("position_name") or role or "")
+            return _sample_role_matches(effective_role, route.get("approver_roles", []))
         return _has_sample_permission(
             username,
             role,
-            permission_code,
+            SAMPLE_ISSUE_CLOSE_APPROVE_PERMISSION,
             route.get("approver_roles", []),
         )
 
     all_roles = [*SAMPLE_CLOSE_APPROVER_ROLES]
     for rule in SAMPLE_CLOSE_ROUTING_RULES:
         all_roles.extend(rule.get("approver_roles", []))
-    return any(
-        _has_sample_permission(username, role, permission_code, list(dict.fromkeys(all_roles)))
-        for permission_code in set(SAMPLE_CLOSE_APPROVE_PERMISSION_BY_ROUTE.values())
+    return _has_sample_permission(
+        username,
+        role,
+        SAMPLE_ISSUE_CLOSE_APPROVE_PERMISSION,
+        list(dict.fromkeys(all_roles)),
     )
 
 
@@ -1729,45 +1763,27 @@ async def submit_sample_close_request(
     workflow_result = None
     user_service = getattr(app.state, "user_service", None)
     if user_service is not None and getattr(user_service, "storage_mode", "legacy_excel") == "database":
-        active_workflows = [
-            workflow
-            for workflow in user_service.list_approval_workflows(
-                module="sample_issue",
-                event="close_request",
+        workflow_result = resolve_approval_workflow(
+            user_service,
+            module="sample_issue",
+            event="close_request",
+            requester_username=user,
+        )
+        if workflow_result.get("status") != "matched":
+            return SampleIssueUpdateResult(
+                db_success=False,
+                changed=False,
+                code=f"workflow_{workflow_result.get('status', 'error')}",
+                record=workflow_result,
             )
-            if workflow.get("status") == "active" and workflow.get("active_version")
-        ]
-        if active_workflows:
-            workflow_result = resolve_approval_workflow(
-                user_service,
-                module="sample_issue",
-                event="close_request",
-                requester_username=user,
-            )
-            if workflow_result.get("status") != "matched":
-                return SampleIssueUpdateResult(
-                    db_success=False,
-                    changed=False,
-                    code=f"workflow_{workflow_result.get('status', 'error')}",
-                    record=workflow_result,
-                )
-            required_permission = str(
-                workflow_result["version"].get("required_permission_code", "")
-            )
-            route_key = (
-                "electron_to_electron"
-                if required_permission == SAMPLE_ISSUE_CLOSE_ELECTRON_APPROVE_PERMISSION
-                else "default"
-            )
-            close_route = {
-                **close_route,
-                "key": route_key,
-                "label": workflow_result["workflow"]["name"],
-                "approver_roles": [
-                    item.get("position_name") or item.get("display_name") or item["username"]
-                    for item in workflow_result["approvers"]
-                ],
-            }
+        close_route = {
+            **close_route,
+            "label": workflow_result["workflow"]["name"],
+            "approver_roles": [
+                item.get("position_name") or item.get("display_name") or item["username"]
+                for item in workflow_result["approvers"]
+            ],
+        }
     request_id = f"close_{uuid.uuid4().hex[:8]}"
     task_key = f"close_approval:{request_id}"
     close_request = {

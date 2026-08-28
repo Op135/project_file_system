@@ -11,6 +11,7 @@ import logging
 import os
 import re
 import time
+import uuid
 from datetime import datetime
 from typing import Any, Optional
 from urllib.parse import quote_from_bytes, unquote
@@ -18,6 +19,8 @@ from urllib.parse import quote_from_bytes, unquote
 from nicegui import app, ui
 
 from .. import db_storage
+from ..access_control import can
+from ..approval_workflow import is_assigned_approver, resolve_approval_workflow
 from ..components import ButtonUploader, FileThumbnail, get_upload_local_path
 from ..config import IMG_DIR, PRESET_AVATARS, REQ_UPLOADS_FILE_TYPE, UPLOAD_URL_DIR, UPLOADS_DIR
 from ..design_knowledge_config import (
@@ -34,12 +37,26 @@ from ..design_knowledge_config import (
     PRACTICE_VALUE_LEVELS,
     PROJECT_CATEGORIES,
     RULE_LEVELS,
-    can_review_design_knowledge_submission as can_review_submission,
+    can_review_design_knowledge_submission as can_review_legacy_submission,
     is_design_knowledge_review_approver_role as is_review_approver_role,
     resolve_design_knowledge_review_route as get_review_route,
-    resolve_design_knowledge_submission_review_route as get_review_route_for_submission,
 )
-from ..utils import get_cache_busted_path, handle_key, logout, setup_global_activity_tracking
+from ..permission_catalog import (
+    DESIGN_KNOWLEDGE_CREATE_PERMISSION,
+    DESIGN_KNOWLEDGE_DELETE_PERMISSION,
+    DESIGN_KNOWLEDGE_EDIT_PERMISSION,
+    DESIGN_KNOWLEDGE_REVIEW_PERMISSION,
+    DESIGN_KNOWLEDGE_TAG_MANAGE_PERMISSION,
+    DESIGN_KNOWLEDGE_TAG_REVIEW_PERMISSION,
+    DESIGN_KNOWLEDGE_VIEW_PERMISSION,
+)
+from ..utils import (
+    get_cache_busted_path,
+    handle_key,
+    logout,
+    setup_global_activity_tracking,
+    sync_current_user_role,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +65,10 @@ DESIGN_KNOWLEDGE_VERSION_KEY = "design_knowledge_version_stamp"
 DESIGN_TAG_CATALOG_KEY = "design_knowledge_tag_catalog"
 DESIGN_TAG_REQUESTS_KEY = "design_knowledge_tag_requests"
 DESIGN_ATTACHMENT_ACCEPT = ",".join(["image/*", *sorted(REQ_UPLOADS_FILE_TYPE)])
+DESIGN_KNOWLEDGE_MODULE = "design_knowledge"
+DESIGN_KNOWLEDGE_REVIEW_EVENT = "knowledge_review"
+DESIGN_TAG_REVIEW_EVENT = "tag_review"
+DESIGN_KNOWLEDGE_LEGACY_VIEW_ROLE_KEYWORDS = ["质量", "销售", "工程", "研发", "boss", "admin"]
 
 RECORD_STATUS_DRAFT = "草稿"
 RECORD_STATUS_REVIEW = "待审核"
@@ -207,6 +228,7 @@ def get_design_knowledge_template() -> dict:
         "review_route_key": "",
         "review_route_label": "",
         "approver_roles": [],
+        "workflow_assignment": {},
         "created_by": "",
         "created_role": "",
         "created_at": "",
@@ -232,6 +254,8 @@ def merge_with_knowledge_template(db_data: Any) -> dict:
             "operation_log",
         }:
             merged[key] = copy.deepcopy(value) if isinstance(value, list) else []
+        elif key == "workflow_assignment":
+            merged[key] = copy.deepcopy(value) if isinstance(value, dict) else {}
         elif key in merged:
             merged[key] = copy.deepcopy(value)
 
@@ -382,51 +406,199 @@ def get_level_options_for_content_type(content_type: str) -> list[str]:
     return [*RULE_LEVELS, *ERROR_SEVERITY_LEVELS, *PRACTICE_VALUE_LEVELS]
 
 
-def get_design_knowledge_dashboard_pending_count(all_records: Any, current_user: str, current_role: str) -> int:
-    """返回主页设计知识库角标数量。
+def _design_role_matches(role: object, keywords: list[str]) -> bool:
+    """只供旧 Excel 模式兼容原角色关键词。"""
+    role_text = str(role or "").strip().casefold()
+    return any(
+        str(keyword).strip().casefold() in role_text
+        for keyword in keywords
+        if str(keyword).strip()
+    )
 
-    审核人只看路由分配给自己的待审核知识；录入人看自己被退回后需要修改的知识。
-    """
-    if not isinstance(all_records, dict):
-        return 0
 
-    current_user = str(current_user or "")
-    pending_count = 0
-    for record_data in all_records.values():
-        if not isinstance(record_data, dict):
-            continue
-        record = merge_with_knowledge_template(record_data)
-        if record.get("status") == RECORD_STATUS_REVIEW and can_review_submission(
-            record,
-            current_user,
-            current_role,
-        ):
-            pending_count += 1
-        elif (
-            record.get("created_by") == current_user
-            and record.get("status") == RECORD_STATUS_RETURNED
-        ):
-            pending_count += 1
-    return pending_count
+def _has_design_permission(
+    username: str,
+    role: object,
+    permission_code: str,
+    legacy_keywords: list[str],
+) -> bool:
+    """数据库模式只认稳定权限；旧 Excel 模式继续兼容原角色规则。"""
+    role_text = str(role or "").strip()
+    user_service = getattr(app.state, "user_service", None)
+    if user_service is None or not str(username or "").strip():
+        return _design_role_matches(role_text, legacy_keywords)
+    matched_roles = [role_text] if _design_role_matches(role_text, legacy_keywords) else []
+    return can(
+        user_service,
+        str(username).strip(),
+        permission_code,
+        legacy_role=role_text,
+        legacy_allowed_roles=matched_roles,
+    )
+
+
+def can_view_design_knowledge(role: object, username: str = "") -> bool:
+    return _has_design_permission(
+        username,
+        role,
+        DESIGN_KNOWLEDGE_VIEW_PERMISSION,
+        DESIGN_KNOWLEDGE_LEGACY_VIEW_ROLE_KEYWORDS,
+    )
+
+
+def can_create_design_knowledge(role: object, username: str = "") -> bool:
+    return _has_design_permission(
+        username,
+        role,
+        DESIGN_KNOWLEDGE_CREATE_PERMISSION,
+        DESIGN_KNOWLEDGE_EDITOR_ROLE_KEYWORDS,
+    )
 
 
 def is_knowledge_editor(current_user: str, current_role: str) -> bool:
-    return current_user == "admin" or any(key in str(current_role) for key in DESIGN_KNOWLEDGE_EDITOR_ROLE_KEYWORDS)
+    return _has_design_permission(
+        current_user,
+        current_role,
+        DESIGN_KNOWLEDGE_EDIT_PERMISSION,
+        DESIGN_KNOWLEDGE_EDITOR_ROLE_KEYWORDS,
+    )
 
 
 def is_tag_manager(current_user: str, current_role: str) -> bool:
-    return current_user == "admin" or any(
-        key in str(current_role) for key in DESIGN_KNOWLEDGE_TAG_MANAGER_ROLE_KEYWORDS
+    return _has_design_permission(
+        current_user,
+        current_role,
+        DESIGN_KNOWLEDGE_TAG_MANAGE_PERMISSION,
+        DESIGN_KNOWLEDGE_TAG_MANAGER_ROLE_KEYWORDS,
+    )
+
+
+def can_review_design_knowledge(current_user: str, current_role: str) -> bool:
+    legacy_roles = [
+        str(current_role)
+        if is_review_approver_role(current_role)
+        else ""
+    ]
+    return _has_design_permission(
+        current_user,
+        current_role,
+        DESIGN_KNOWLEDGE_REVIEW_PERMISSION,
+        legacy_roles,
+    )
+
+
+def can_review_design_tag(current_user: str, current_role: str) -> bool:
+    legacy_roles = [
+        str(current_role)
+        if is_review_approver_role(current_role)
+        else ""
+    ]
+    return _has_design_permission(
+        current_user,
+        current_role,
+        DESIGN_KNOWLEDGE_TAG_REVIEW_PERMISSION,
+        legacy_roles,
     )
 
 
 def is_design_knowledge_admin(current_user: str, current_role: str) -> bool:
-    """删除知识卡属于高风险操作，仅允许 admin 账号或严格 admin 角色。"""
-    return str(current_user).strip().lower() == "admin" or str(current_role).strip().lower() == "admin"
+    """判断用户是否拥有永久删除设计知识的高风险权限。"""
+    return _has_design_permission(
+        current_user,
+        current_role,
+        DESIGN_KNOWLEDGE_DELETE_PERMISSION,
+        ["admin"],
+    )
+
+
+def _submission_event_and_permission(submission_type: str) -> tuple[str, str]:
+    if submission_type == "tag":
+        return DESIGN_TAG_REVIEW_EVENT, DESIGN_KNOWLEDGE_TAG_REVIEW_PERMISSION
+    return DESIGN_KNOWLEDGE_REVIEW_EVENT, DESIGN_KNOWLEDGE_REVIEW_PERMISSION
+
+
+def _restore_pending_assignment(submission: dict) -> list[str]:
+    """待办表意外缺失时，使用单据内固化的审批人快照恢复。"""
+    assignment = submission.get("workflow_assignment", {})
+    user_service = getattr(app.state, "user_service", None)
+    if (
+        not isinstance(assignment, dict)
+        or not assignment.get("task_key")
+        or user_service is None
+        or getattr(user_service, "storage_mode", "legacy_excel") != "database"
+    ):
+        return []
+    entity_id = str(submission.get("request_id") or submission.get("knowledge_id") or "")
+    pending = user_service.list_pending_assignment_usernames(
+        module=DESIGN_KNOWLEDGE_MODULE,
+        entity_id=entity_id,
+        task_key=str(assignment["task_key"]),
+    )
+    if pending or submission.get("status") not in {RECORD_STATUS_REVIEW, "待审核"}:
+        return pending
+    try:
+        return user_service.replace_work_assignments(
+            module=DESIGN_KNOWLEDGE_MODULE,
+            entity_id=entity_id,
+            task_key=str(assignment["task_key"]),
+            assignee_usernames=assignment.get("assignee_usernames", []),
+            source_policy_code=(
+                f"{assignment.get('workflow_code', '')}@"
+                f"{assignment.get('version_number', '')}"
+            ),
+        )
+    except Exception:
+        logger.error("恢复设计知识审批待办失败", exc_info=True)
+        return []
+
+
+def can_review_submission(
+    submission: Any,
+    current_user: str,
+    current_role: str,
+    *,
+    submission_type: str = "knowledge",
+) -> bool:
+    """数据库模式校验稳定权限和本单待办；旧记录继续兼容固化角色快照。"""
+    if not isinstance(submission, dict):
+        return False
+    permission_code = _submission_event_and_permission(submission_type)[1]
+    legacy_allowed = (
+        can_review_legacy_submission(submission, current_user, current_role)
+    )
+    legacy_roles = [str(current_role)] if legacy_allowed else []
+    if not _has_design_permission(
+        current_user,
+        current_role,
+        permission_code,
+        legacy_roles,
+    ):
+        return False
+
+    user_service = getattr(app.state, "user_service", None)
+    if user_service is None or getattr(user_service, "storage_mode", "legacy_excel") != "database":
+        return legacy_allowed
+    assignment = submission.get("workflow_assignment", {})
+    if not isinstance(assignment, dict) or not assignment.get("task_key"):
+        # 只有迁移前已经处于待审核状态的记录才允许按原审批角色快照收尾。
+        return legacy_allowed
+    _restore_pending_assignment(submission)
+    entity_id = str(submission.get("request_id") or submission.get("knowledge_id") or "")
+    return is_assigned_approver(
+        user_service,
+        module=DESIGN_KNOWLEDGE_MODULE,
+        entity_id=entity_id,
+        task_key=str(assignment["task_key"]),
+        username=current_user,
+    ) and str(assignment.get("required_permission_code", "")) == permission_code
 
 
 def can_edit_record(record: dict, current_user: str, current_role: str) -> bool:
-    if can_review_submission(record, current_user, current_role):
+    if record.get("status") == RECORD_STATUS_REVIEW and can_review_submission(
+        record,
+        current_user,
+        current_role,
+    ):
         return True
     return (
         is_knowledge_editor(current_user, current_role)
@@ -435,16 +607,218 @@ def can_edit_record(record: dict, current_user: str, current_role: str) -> bool:
     )
 
 
+def can_manage_record_status(record: dict, current_user: str, current_role: str) -> bool:
+    """待审核记录必须是本单审批人；已发布记录按审核管理权限维护。"""
+    if record.get("status") == RECORD_STATUS_REVIEW:
+        return can_review_submission(record, current_user, current_role)
+    return can_review_design_knowledge(current_user, current_role)
+
+
+def get_design_knowledge_dashboard_pending_count(
+    all_records: Any,
+    current_user: str,
+    current_role: str,
+    tag_requests: Any = None,
+) -> int:
+    """返回本人知识审核、标签审核和退回修改待办数量。"""
+    current_user = str(current_user or "")
+    pending_count = 0
+    if isinstance(all_records, dict):
+        for record_data in all_records.values():
+            if not isinstance(record_data, dict):
+                continue
+            record = merge_with_knowledge_template(record_data)
+            if record.get("status") == RECORD_STATUS_REVIEW and can_review_submission(
+                record,
+                current_user,
+                current_role,
+            ):
+                pending_count += 1
+            elif (
+                record.get("created_by") == current_user
+                and record.get("status") == RECORD_STATUS_RETURNED
+                and is_knowledge_editor(current_user, current_role)
+            ):
+                pending_count += 1
+    if isinstance(tag_requests, dict):
+        pending_count += sum(
+            1
+            for request in tag_requests.values()
+            if isinstance(request, dict)
+            and request.get("status") == "待审核"
+            and can_review_submission(
+                request,
+                current_user,
+                current_role,
+                submission_type="tag",
+            )
+        )
+    return pending_count
+
+
+def _resolve_design_workflow(event: str, requester_username: str) -> Optional[dict]:
+    """数据库身份模式必须命中已发布流程；旧 Excel 模式返回空值。"""
+    user_service = getattr(app.state, "user_service", None)
+    if user_service is None or getattr(user_service, "storage_mode", "legacy_excel") != "database":
+        return None
+    return resolve_approval_workflow(
+        user_service,
+        module=DESIGN_KNOWLEDGE_MODULE,
+        event=event,
+        requester_username=requester_username,
+    )
+
+
+def _workflow_error_message(result: dict, subject: str) -> str:
+    status = str(result.get("status", "error"))
+    details = str(result.get("message") or "审批流程解析失败")
+    hints = {
+        "missing_membership": "请先在用户管理中配置申请人的主部门和主岗位",
+        "no_match": "请在系统管理中发布能匹配该申请人的审批流程",
+        "ambiguous": "请调整重复命中流程的条件或优先级",
+        "no_approver": "请检查审批岗位、在职人员及审批权限",
+        "invalid_policy": "请修正流程使用的审批权限",
+    }
+    hint = hints.get(status, "请检查系统管理中的审批流程配置")
+    return f"{subject}无法提交：{details}；{hint}"
+
+
+def _build_workflow_assignment(workflow_result: dict, task_key: str) -> dict:
+    workflow = workflow_result["workflow"]
+    version = workflow_result["version"]
+    return {
+        "workflow_id": workflow["workflow_id"],
+        "workflow_code": workflow["code"],
+        "workflow_name": workflow["name"],
+        "version_id": version["version_id"],
+        "version_number": version["version_number"],
+        "task_key": task_key,
+        "required_permission_code": version["required_permission_code"],
+        "approval_mode": version.get("approval_mode", "any"),
+        "assignee_usernames": [item["username"] for item in workflow_result["approvers"]],
+        "assignee_names": [
+            item.get("display_name") or item["username"]
+            for item in workflow_result["approvers"]
+        ],
+    }
+
+
+def _workflow_approver_text(submission: dict) -> str:
+    assignment = submission.get("workflow_assignment", {})
+    if isinstance(assignment, dict) and assignment.get("assignee_names"):
+        return "、".join(str(value) for value in assignment["assignee_names"] if str(value))
+    return "、".join(submission.get("approver_roles", [])) or "未配置"
+
+
+def _persist_workflow_assignments(entity_id: str, assignment: dict) -> None:
+    """创建具体审批待办；失败时保留单据快照供页面自动恢复。"""
+    user_service = getattr(app.state, "user_service", None)
+    if user_service is None or getattr(user_service, "storage_mode", "legacy_excel") != "database":
+        return
+    try:
+        user_service.replace_work_assignments(
+            module=DESIGN_KNOWLEDGE_MODULE,
+            entity_id=entity_id,
+            task_key=str(assignment["task_key"]),
+            assignee_usernames=assignment.get("assignee_usernames", []),
+            source_policy_code=(
+                f"{assignment.get('workflow_code', '')}@"
+                f"{assignment.get('version_number', '')}"
+            ),
+        )
+    except Exception:
+        logger.error("创建设计知识审批待办失败，等待页面自愈", exc_info=True)
+
+
+def _complete_workflow_assignment(submission: dict, current_user: str) -> None:
+    assignment = submission.get("workflow_assignment", {})
+    user_service = getattr(app.state, "user_service", None)
+    if (
+        not isinstance(assignment, dict)
+        or not assignment.get("task_key")
+        or user_service is None
+        or getattr(user_service, "storage_mode", "legacy_excel") != "database"
+    ):
+        return
+    entity_id = str(submission.get("request_id") or submission.get("knowledge_id") or "")
+    try:
+        user_service.complete_work_assignment(
+            module=DESIGN_KNOWLEDGE_MODULE,
+            entity_id=entity_id,
+            task_key=str(assignment["task_key"]),
+            username=current_user,
+            approval_mode=str(assignment.get("approval_mode", "any")),
+        )
+    except Exception:
+        logger.error("完成设计知识审批待办失败", exc_info=True)
+
+
 async def save_knowledge_record(
     record_data: dict, current_user: str, current_role: str
 ) -> tuple[bool, str, Optional[dict]]:
     """原子保存知识记录，返回保存结果和最新记录。"""
+    incoming = merge_with_knowledge_template(record_data)
+    knowledge_id = normalize_text(incoming.get("knowledge_id"))
+    all_records_snapshot = db_storage.get_item(DESIGN_KNOWLEDGE_DATA_KEY, {})
+    existing_snapshot = (
+        merge_with_knowledge_template(all_records_snapshot.get(knowledge_id, {}))
+        if knowledge_id and isinstance(all_records_snapshot, dict) and knowledge_id in all_records_snapshot
+        else None
+    )
+    if existing_snapshot is None:
+        if not can_create_design_knowledge(current_role, current_user):
+            return False, "当前用户没有录入设计知识的权限", None
+    elif not can_edit_record(existing_snapshot, current_user, current_role):
+        return False, "当前用户没有维护这条设计知识的权限", None
+
+    target_status = incoming.get("status")
+    previous_status = existing_snapshot.get("status") if existing_snapshot else None
+    allowed_save_transitions = {
+        None: {RECORD_STATUS_DRAFT, RECORD_STATUS_REVIEW},
+        RECORD_STATUS_DRAFT: {RECORD_STATUS_DRAFT, RECORD_STATUS_REVIEW},
+        RECORD_STATUS_RETURNED: {RECORD_STATUS_DRAFT, RECORD_STATUS_REVIEW},
+        RECORD_STATUS_REVIEW: {RECORD_STATUS_REVIEW},
+        RECORD_STATUS_PUBLISHED: {RECORD_STATUS_REVIEW, RECORD_STATUS_PUBLISHED},
+        RECORD_STATUS_INACTIVE: {RECORD_STATUS_INACTIVE},
+    }
+    if target_status not in allowed_save_transitions.get(previous_status, set()):
+        return False, "当前状态不能通过编辑表单直接切换到目标状态", None
+    if target_status == RECORD_STATUS_PUBLISHED:
+        if (
+            existing_snapshot is None
+            or existing_snapshot.get("status") not in {RECORD_STATUS_REVIEW, RECORD_STATUS_PUBLISHED, RECORD_STATUS_INACTIVE}
+            or not can_manage_record_status(existing_snapshot, current_user, current_role)
+        ):
+            return False, "当前用户不能直接发布这条设计知识", None
+    elif target_status == RECORD_STATUS_INACTIVE:
+        if (
+            existing_snapshot is None
+            or existing_snapshot.get("status") not in {RECORD_STATUS_PUBLISHED, RECORD_STATUS_INACTIVE}
+            or not can_review_design_knowledge(current_user, current_role)
+        ):
+            return False, "当前用户不能调整这条设计知识的适用状态", None
+
+    workflow_result = None
+    workflow_assignment = None
+    starts_new_review = target_status == RECORD_STATUS_REVIEW and (
+        existing_snapshot is None or existing_snapshot.get("status") != RECORD_STATUS_REVIEW
+    )
+    if starts_new_review:
+        workflow_result = _resolve_design_workflow(DESIGN_KNOWLEDGE_REVIEW_EVENT, current_user)
+        if workflow_result is not None:
+            if workflow_result.get("status") != "matched":
+                return False, _workflow_error_message(workflow_result, "设计知识"), None
+            workflow_assignment = _build_workflow_assignment(
+                workflow_result,
+                f"knowledge_review:{uuid.uuid4().hex[:12]}",
+            )
+
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     result: dict[str, Any] = {"code": "", "record": None}
 
     def update_all_records(all_records: Any) -> Any:
         records = all_records if isinstance(all_records, dict) else {}
-        record = merge_with_knowledge_template(record_data)
+        record = merge_with_knowledge_template(incoming)
         knowledge_id = normalize_text(record.get("knowledge_id"))
         is_new = not knowledge_id or knowledge_id not in records
         existing: Optional[dict] = None
@@ -481,18 +855,17 @@ async def save_knowledge_record(
         record["status"] = LEGACY_STATUS_MAP.get(record["status"], record["status"])
         record["status"] = record["status"] if record["status"] in RECORD_STATUSES else RECORD_STATUS_DRAFT
         if record["status"] == RECORD_STATUS_REVIEW:
-            route = get_review_route(record.get("created_role", current_role))
-            record["review_route_key"] = route["key"]
-            record["review_route_label"] = route["label"]
-            record["approver_roles"] = copy.deepcopy(route["approver_roles"])
-        permission_record = existing or record
-        if record["status"] in {RECORD_STATUS_PUBLISHED, RECORD_STATUS_INACTIVE} and not can_review_submission(
-            permission_record,
-            current_user,
-            current_role,
-        ):
-            result["code"] = "permission"
-            return db_storage.ATOMIC_NO_UPDATE
+            if workflow_assignment is not None and workflow_result is not None:
+                record["review_route_key"] = workflow_result["workflow"]["code"]
+                record["review_route_label"] = workflow_result["workflow"]["name"]
+                record["approver_roles"] = copy.deepcopy(workflow_assignment["assignee_names"])
+                record["workflow_assignment"] = copy.deepcopy(workflow_assignment)
+            elif not record.get("workflow_assignment"):
+                # 旧 Excel 模式仍按原 JSON 路由固化审核角色。
+                route = get_review_route(record.get("created_role", current_role))
+                record["review_route_key"] = route["key"]
+                record["review_route_label"] = route["label"]
+                record["approver_roles"] = copy.deepcopy(route["approver_roles"])
         record["updated_by"] = current_user
         record["updated_at"] = now_str
         record["operation_log"].append({"user": current_user, "role": current_role, "action": action, "time": now_str})
@@ -507,15 +880,15 @@ async def save_knowledge_record(
         return False, "数据库写入失败", None
     if result["code"] == "conflict":
         return False, "这条知识已被其他人更新，请刷新后再编辑", None
-    if result["code"] == "permission":
-        return False, "当前用户不是该知识指定的审核人，不能发布或调整其状态", None
     if result["code"] != "saved":
         return False, "未保存任何修改", None
 
     await db_storage.set_item(DESIGN_KNOWLEDGE_VERSION_KEY, time.time())
     saved_record = result["record"]
+    if saved_record and workflow_assignment is not None:
+        _persist_workflow_assignments(saved_record["knowledge_id"], workflow_assignment)
     if saved_record and saved_record.get("status") == RECORD_STATUS_REVIEW:
-        approver_text = "、".join(saved_record.get("approver_roles", [])) or "默认审核角色"
+        approver_text = _workflow_approver_text(saved_record)
         self_review_hint = "；当前账号也会收到待审批提示" if can_review_submission(
             saved_record,
             current_user,
@@ -571,6 +944,11 @@ def get_next_tag_request_id(all_requests: Any) -> str:
 async def submit_tag_request(
     domain: str, tag_name: str, reason: str, current_user: str, current_role: str
 ) -> tuple[bool, str]:
+    if not (
+        is_knowledge_editor(current_user, current_role)
+        or can_create_design_knowledge(current_role, current_user)
+    ):
+        return False, "当前用户没有维护设计知识和申请新标签的权限"
     tag_name = normalize_text(tag_name)
     reason = normalize_text(reason)
     if domain not in DESIGN_DOMAINS:
@@ -581,12 +959,27 @@ async def submit_tag_request(
         return False, "该标签已在受控标签库中"
 
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    review_route = get_review_route(current_role)
+    workflow_result = _resolve_design_workflow(DESIGN_TAG_REVIEW_EVENT, current_user)
+    workflow_assignment = None
+    if workflow_result is not None:
+        if workflow_result.get("status") != "matched":
+            return False, _workflow_error_message(workflow_result, "新标签申请")
+        workflow_assignment = _build_workflow_assignment(
+            workflow_result,
+            f"tag_review:{uuid.uuid4().hex[:12]}",
+        )
+    review_route = get_review_route(current_role) if workflow_result is None else {
+        "key": workflow_result["workflow"]["code"],
+        "label": workflow_result["workflow"]["name"],
+        "approver_roles": copy.deepcopy(workflow_assignment["assignee_names"]),
+    }
+    saved_request: dict[str, Any] = {}
 
     def update_requests(all_requests: Any) -> Any:
+        nonlocal saved_request
         requests = all_requests if isinstance(all_requests, dict) else {}
         request_id = get_next_tag_request_id(requests)
-        requests[request_id] = {
+        request = {
             "request_id": request_id,
             "domain": domain,
             "tag_name": tag_name,
@@ -601,20 +994,26 @@ async def submit_tag_request(
             "handled_by": "",
             "handled_at": "",
         }
+        if workflow_assignment is not None:
+            request["workflow_assignment"] = copy.deepcopy(workflow_assignment)
+        requests[request_id] = request
+        saved_request = copy.deepcopy(request)
         return requests
 
     success = await db_storage.atomic_deep_update([DESIGN_TAG_REQUESTS_KEY], update_requests)
-    approver_text = "、".join(review_route["approver_roles"]) or "默认审核角色"
+    if success and workflow_assignment is not None and saved_request:
+        _persist_workflow_assignments(saved_request["request_id"], workflow_assignment)
+    approver_text = _workflow_approver_text(saved_request) if saved_request else (
+        "、".join(review_route["approver_roles"]) or "未配置"
+    )
     self_review_hint = ""
     if success:
-        request_preview = {
-            "created_by": current_user,
-            "created_role": current_role,
-            "approver_roles": copy.deepcopy(review_route["approver_roles"]),
-            "review_route_key": review_route["key"],
-            "review_route_label": review_route["label"],
-        }
-        if can_review_submission(request_preview, current_user, current_role):
+        if can_review_submission(
+            saved_request,
+            current_user,
+            current_role,
+            submission_type="tag",
+        ):
             self_review_hint = "；当前账号也会收到待审批提示"
     return success, f"标签申请已提交至 {approver_text}{self_review_hint}" if success else "标签申请提交失败"
 
@@ -623,6 +1022,8 @@ async def update_tag_request_status(
     request_id: str, status: str, current_user: str, current_role: str
 ) -> tuple[bool, str]:
     """审批或驳回标签申请。"""
+    if status not in {"已通过", "已驳回"}:
+        return False, "标签申请目标状态无效"
     request_data = {}
     outcome = {"code": "not_found"}
 
@@ -632,7 +1033,12 @@ async def update_tag_request_status(
         current = requests.get(request_id)
         if not isinstance(current, dict) or current.get("status") != "待审核":
             return db_storage.ATOMIC_NO_UPDATE
-        if not can_review_submission(current, current_user, current_role):
+        if not can_review_submission(
+            current,
+            current_user,
+            current_role,
+            submission_type="tag",
+        ):
             outcome["code"] = "forbidden"
             return db_storage.ATOMIC_NO_UPDATE
         current = copy.deepcopy(current)
@@ -650,6 +1056,8 @@ async def update_tag_request_status(
         return False, "当前用户不是该标签申请指定的审核人"
     if not success or not request_data:
         return False, "标签申请状态更新失败或已被处理"
+
+    _complete_workflow_assignment(request_data, current_user)
 
     if status == "已通过":
         catalog = get_tag_catalog()
@@ -690,18 +1098,25 @@ def design_knowledge_page():
         return
 
     current_user = app.storage.user.get("current_user", "匿名用户")
-    current_role = app.storage.user.get("current_role", "未知角色")
+    current_role = sync_current_user_role()
+    if not can_view_design_knowledge(current_role, current_user):
+        ui.navigate.to("/main")
+        return
     user_prefs = app.storage.general.get("user_preferences", {}).get(current_user, {})
     current_avatar_path = user_prefs.get("avatar", PRESET_AVATARS[0])
     current_display_path = get_cache_busted_path(current_avatar_path)
-    can_add_or_edit = is_knowledge_editor(current_user, current_role)
+    can_add_record = can_create_design_knowledge(current_role, current_user)
+    can_edit_own_record = is_knowledge_editor(current_user, current_role)
     can_manage_tags = is_tag_manager(current_user, current_role)
-    can_review_assigned_role = is_review_approver_role(current_role) or is_design_knowledge_admin(
-        current_user,
-        current_role,
+    can_review_knowledge_records = can_review_design_knowledge(current_user, current_role)
+    can_review_tag_requests = can_review_design_tag(current_user, current_role)
+    can_access_tag_manager = can_manage_tags or can_review_tag_requests
+    can_view_workflow_records = (
+        can_add_record
+        or can_edit_own_record
+        or can_review_knowledge_records
+        or can_review_tag_requests
     )
-    can_access_tag_manager = can_manage_tags or can_review_assigned_role
-    can_view_workflow_records = can_add_or_edit or can_review_assigned_role
     can_delete_record = is_design_knowledge_admin(current_user, current_role)
 
     page_state = {
@@ -738,12 +1153,17 @@ def design_knowledge_page():
             return False
         if record.get("status") == RECORD_STATUS_DRAFT and record.get("created_by") != current_user:
             return False
-        if (
-            record.get("status") != RECORD_STATUS_PUBLISHED
-            and record.get("created_by") != current_user
-            and not can_review_submission(record, current_user, current_role)
-        ):
-            return False
+        if record.get("status") != RECORD_STATUS_PUBLISHED and record.get("created_by") != current_user:
+            can_see_assigned_review = (
+                record.get("status") == RECORD_STATUS_REVIEW
+                and can_review_submission(record, current_user, current_role)
+            )
+            can_see_inactive = (
+                record.get("status") == RECORD_STATUS_INACTIVE
+                and can_review_knowledge_records
+            )
+            if not can_see_assigned_review and not can_see_inactive:
+                return False
         if page_state["content_type"] != FILTER_ALL and record.get("content_type") != page_state["content_type"]:
             return False
         if page_state["domain"] != FILTER_ALL and record.get("domain") != page_state["domain"]:
@@ -814,7 +1234,7 @@ def design_knowledge_page():
             return
 
         now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        result = {"changed": False, "code": "not_found"}
+        result = {"changed": False, "code": "not_found", "record": None, "previous_status": ""}
 
         def update_all_records(all_records: Any) -> Any:
             records = all_records if isinstance(all_records, dict) else {}
@@ -822,9 +1242,18 @@ def design_knowledge_page():
             if not isinstance(current, dict):
                 return db_storage.ATOMIC_NO_UPDATE
             record_data = merge_with_knowledge_template(current)
-            if not can_review_submission(record_data, current_user, current_role):
+            allowed_targets = {
+                RECORD_STATUS_REVIEW: {RECORD_STATUS_PUBLISHED, RECORD_STATUS_RETURNED},
+                RECORD_STATUS_PUBLISHED: {RECORD_STATUS_INACTIVE},
+                RECORD_STATUS_INACTIVE: {RECORD_STATUS_PUBLISHED},
+            }
+            if target_status not in allowed_targets.get(record_data.get("status"), set()):
+                result["code"] = "invalid_transition"
+                return db_storage.ATOMIC_NO_UPDATE
+            if not can_manage_record_status(record_data, current_user, current_role):
                 result["code"] = "forbidden"
                 return db_storage.ATOMIC_NO_UPDATE
+            result["previous_status"] = record_data.get("status", "")
             record_data["status"] = target_status
             record_data["_revision"] = int(record_data.get("_revision", 0)) + 1
             record_data["updated_by"] = current_user
@@ -835,16 +1264,22 @@ def design_knowledge_page():
             records[knowledge_id] = record_data
             result["changed"] = True
             result["code"] = "updated"
+            result["record"] = copy.deepcopy(record_data)
             return records
 
         success = await db_storage.atomic_deep_update([DESIGN_KNOWLEDGE_DATA_KEY], update_all_records)
         if result["code"] == "forbidden":
-            ui.notify("当前用户不是该知识指定的审核人", type="warning", position="bottom")
+            ui.notify("当前用户没有该知识的审核或状态管理权限", type="warning", position="bottom")
+            return
+        if result["code"] == "invalid_transition":
+            ui.notify("知识状态已经变化，请刷新后重试", type="warning", position="bottom")
             return
         if not success or not result["changed"]:
             ui.notify("状态调整失败，请刷新后重试", type="warning", position="bottom")
             return
         await db_storage.set_item(DESIGN_KNOWLEDGE_VERSION_KEY, time.time())
+        if result["previous_status"] == RECORD_STATUS_REVIEW and result["record"]:
+            _complete_workflow_assignment(result["record"], current_user)
         ui.notify("状态已更新", type="positive", position="bottom")
         detail_dialog.close()
         refresh_list()
@@ -931,8 +1366,7 @@ def design_knowledge_page():
                         detail_field("等级", level_label, emphasize=True)
                         detail_field("状态", record.get("status", ""), emphasize=True)
                         if record.get("status") == RECORD_STATUS_REVIEW:
-                            review_route = get_review_route_for_submission(record)
-                            detail_field("审核角色", "、".join(review_route.get("approver_roles", [])))
+                            detail_field("审批人", _workflow_approver_text(record))
                         detail_field("适用对象", record.get("project_category", ""))
                         detail_field("适用环节", "、".join(record.get("applicable_phases", [])))
                         detail_field("受控标签", "、".join(record.get("tags", [])))
@@ -985,6 +1419,7 @@ def design_knowledge_page():
 
             with ui.row().classes("w-full justify-end gap-2 border-t px-5 py-3 bg-white"):
                 can_review_current_record = can_review_submission(record, current_user, current_role)
+                can_manage_current_status = can_manage_record_status(record, current_user, current_role)
                 if can_edit_record(record, current_user, current_role):
 
                     def edit_current_record(_=None, record_data=record) -> None:
@@ -1002,7 +1437,7 @@ def design_knowledge_page():
 
                     ui.button("审核通过", icon="check_circle", on_click=approve_current_record).props("color=green")
                     ui.button("退回修改", icon="reply", on_click=return_current_record).props("outline color=orange")
-                elif can_review_current_record and record.get("status") == RECORD_STATUS_PUBLISHED:
+                elif can_manage_current_status and record.get("status") == RECORD_STATUS_PUBLISHED:
 
                     async def deactivate_current_record(_=None, k=record["knowledge_id"]):
                         await change_record_status(k, RECORD_STATUS_INACTIVE)
@@ -1012,7 +1447,7 @@ def design_knowledge_page():
                         icon="archive",
                         on_click=deactivate_current_record,
                     ).props("outline color=grey")
-                elif can_review_current_record and record.get("status") == RECORD_STATUS_INACTIVE:
+                elif can_manage_current_status and record.get("status") == RECORD_STATUS_INACTIVE:
 
                     async def restore_current_record(_=None, k=record["knowledge_id"]):
                         await change_record_status(k, RECORD_STATUS_PUBLISHED)
@@ -1033,6 +1468,9 @@ def design_knowledge_page():
         detail_dialog.open()
 
     def open_tag_request_dialog(default_domain: str = DESIGN_DOMAINS[0]) -> None:
+        if not (can_edit_own_record or can_add_record):
+            ui.notify("当前账号无申请新标签权限", type="warning", position="bottom")
+            return
         form_data = {
             "domain": default_domain if default_domain in DESIGN_DOMAINS else DESIGN_DOMAINS[0],
             "tag_name": "",
@@ -1070,6 +1508,9 @@ def design_knowledge_page():
         tag_request_dialog.open()
 
     def open_tag_manager_dialog() -> None:
+        if not can_access_tag_manager:
+            ui.notify("当前账号无标签管理或标签审批权限", type="warning", position="bottom")
+            return
         manager_state = {"domain": DESIGN_DOMAINS[0], "new_tag": ""}
         tag_manager_dialog.clear()
         with tag_manager_dialog, ui.card().classes("w-[820px] max-w-[95vw] max-h-[88vh] p-0 overflow-hidden"):
@@ -1092,6 +1533,9 @@ def design_knowledge_page():
                         )
 
                         async def handle_add_tag():
+                            if not can_manage_tags:
+                                ui.notify("当前账号无直接维护标签库权限", type="warning", position="bottom")
+                                return
                             tag_name = normalize_text(new_tag_input.value)
                             domain = option_text_in(domain_select.value, DESIGN_DOMAINS, DESIGN_DOMAINS[0])
                             if not tag_name:
@@ -1130,7 +1574,12 @@ def design_knowledge_page():
                             if (
                                 isinstance(request, dict)
                                 and request.get("status") == "待审核"
-                                and can_review_submission(request, current_user, current_role)
+                                and can_review_submission(
+                                    request,
+                                    current_user,
+                                    current_role,
+                                    submission_type="tag",
+                                )
                             )
                         ]
                         if isinstance(requests, dict)
@@ -1182,6 +1631,12 @@ def design_knowledge_page():
 
     def open_edit_dialog(record: Optional[dict] = None) -> None:
         source_record = merge_with_knowledge_template(record) if record else get_design_knowledge_template()
+        if record and not can_edit_record(source_record, current_user, current_role):
+            ui.notify("当前账号无权编辑这条设计知识", type="warning", position="bottom")
+            return
+        if not record and not can_add_record:
+            ui.notify("当前账号无录入设计知识权限", type="warning", position="bottom")
+            return
         if not record:
             source_record["created_by"] = current_user
             source_record["created_role"] = current_role
@@ -1692,7 +2147,7 @@ def design_knowledge_page():
                             ui.button("标签管理", icon="local_offer", on_click=open_tag_manager_dialog).props(
                                 "outline color=primary"
                             )
-                        if can_add_or_edit:
+                        if can_add_record:
                             ui.button("录入知识", icon="add_box", on_click=lambda _=None: open_edit_dialog()).props(
                                 "color=primary"
                             )
@@ -1743,7 +2198,7 @@ def design_knowledge_page():
                         .bind_value(page_state, "level")
                         .classes("w-36")
                     )
-                    if can_add_or_edit:
+                    if can_view_workflow_records:
                         ui.select([FILTER_ALL, *RECORD_STATUSES], label="状态", value=page_state["status"]).props(
                             "dense outlined"
                         ).bind_value(page_state, "status").classes("w-36")
@@ -1786,7 +2241,7 @@ def design_knowledge_page():
                     with list_container:
                         with ui.row().classes("w-full justify-between items-center px-1"):
                             ui.label(f"共 {len(records)} 条知识").classes("text-sm text-gray-500")
-                            if page_state["status"] != RECORD_STATUS_PUBLISHED and not can_add_or_edit:
+                            if page_state["status"] != RECORD_STATUS_PUBLISHED and not can_view_workflow_records:
                                 ui.label("当前仅显示已发布内容").classes("text-xs text-gray-400")
 
                         if not records:

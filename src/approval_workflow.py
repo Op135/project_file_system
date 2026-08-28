@@ -6,8 +6,9 @@ from dataclasses import dataclass
 from typing import Any
 
 from .permission_catalog import (
-    SAMPLE_ISSUE_CLOSE_DEFAULT_APPROVE_PERMISSION,
-    SAMPLE_ISSUE_CLOSE_ELECTRON_APPROVE_PERMISSION,
+    DESIGN_KNOWLEDGE_REVIEW_PERMISSION,
+    DESIGN_KNOWLEDGE_TAG_REVIEW_PERMISSION,
+    SAMPLE_ISSUE_CLOSE_APPROVE_PERMISSION,
 )
 
 
@@ -28,10 +29,19 @@ APPROVAL_WORKFLOW_EVENTS = (
         module="sample_issue",
         event="close_request",
         name="样品问题关闭申请",
-        permission_codes=(
-            SAMPLE_ISSUE_CLOSE_DEFAULT_APPROVE_PERMISSION,
-            SAMPLE_ISSUE_CLOSE_ELECTRON_APPROVE_PERMISSION,
-        ),
+        permission_codes=(SAMPLE_ISSUE_CLOSE_APPROVE_PERMISSION,),
+    ),
+    ApprovalWorkflowEventDefinition(
+        module="design_knowledge",
+        event="knowledge_review",
+        name="设计知识发布审核",
+        permission_codes=(DESIGN_KNOWLEDGE_REVIEW_PERMISSION,),
+    ),
+    ApprovalWorkflowEventDefinition(
+        module="design_knowledge",
+        event="tag_review",
+        name="设计知识新标签审核",
+        permission_codes=(DESIGN_KNOWLEDGE_TAG_REVIEW_PERMISSION,),
     ),
 )
 
@@ -368,11 +378,7 @@ def import_sample_issue_legacy_workflows(user_service, *, actor_username: str) -
             "name": str(rule.get("label") or rule.get("key") or "特殊关闭审批").strip(),
             "requester_keywords": list(rule.get("requester_role_keywords", [])),
             "approver_keywords": list(rule.get("approver_roles", [])),
-            "permission_code": (
-                SAMPLE_ISSUE_CLOSE_ELECTRON_APPROVE_PERMISSION
-                if str(rule.get("key", "")) == "electron_to_electron"
-                else SAMPLE_ISSUE_CLOSE_DEFAULT_APPROVE_PERMISSION
-            ),
+            "permission_code": SAMPLE_ISSUE_CLOSE_APPROVE_PERMISSION,
             "priority": 10 + index,
         }
         for index, rule in enumerate(SAMPLE_CLOSE_ROUTING_RULES)
@@ -383,7 +389,7 @@ def import_sample_issue_legacy_workflows(user_service, *, actor_username: str) -
             "name": "样品问题默认关闭审批",
             "requester_keywords": [],
             "approver_keywords": list(SAMPLE_CLOSE_APPROVER_ROLES),
-            "permission_code": SAMPLE_ISSUE_CLOSE_DEFAULT_APPROVE_PERMISSION,
+            "permission_code": SAMPLE_ISSUE_CLOSE_APPROVE_PERMISSION,
             "priority": 1000,
         }
     )
@@ -424,4 +430,104 @@ def import_sample_issue_legacy_workflows(user_service, *, actor_username: str) -
             actor_username=actor_username,
         )
         created += 1
+    return created, warnings
+
+
+def import_design_knowledge_legacy_workflows(
+    user_service,
+    *,
+    actor_username: str,
+) -> tuple[int, list[str]]:
+    """把设计知识库旧角色路由转换为两个业务事件的流程草稿。"""
+    from .design_knowledge_config import (
+        DESIGN_KNOWLEDGE_REVIEW_FALLBACK_APPROVER_ROLES,
+        DESIGN_KNOWLEDGE_REVIEW_ROUTING_RULES,
+    )
+
+    positions = user_service.list_positions()
+    existing_codes = {
+        str(item.get("code", "")).casefold()
+        for item in user_service.list_approval_workflows(module="design_knowledge")
+    }
+    warnings: list[str] = []
+    created = 0
+
+    def position_ids_matching(keywords: list[str]) -> list[str]:
+        matched = [
+            str(position["position_id"])
+            for position in positions
+            if any(
+                str(keyword).strip().casefold() in str(position.get("name", "")).casefold()
+                for keyword in keywords
+                if str(keyword).strip()
+            )
+        ]
+        return list(dict.fromkeys(matched))
+
+    rules = [
+        {
+            "key": str(rule.get("key", "")).strip(),
+            "name": str(rule.get("label") or rule.get("key") or "知识审核").strip(),
+            "requester_keywords": list(rule.get("submitter_role_keywords", [])),
+            "approver_keywords": list(rule.get("approver_roles", [])),
+            "priority": 10 + index,
+        }
+        for index, rule in enumerate(DESIGN_KNOWLEDGE_REVIEW_ROUTING_RULES)
+    ]
+    rules.append(
+        {
+            "key": "default",
+            "name": "设计知识默认审核",
+            "requester_keywords": [],
+            "approver_keywords": list(DESIGN_KNOWLEDGE_REVIEW_FALLBACK_APPROVER_ROLES),
+            "priority": 1000,
+        }
+    )
+    events = (
+        ("knowledge_review", DESIGN_KNOWLEDGE_REVIEW_PERMISSION, "知识发布"),
+        ("tag_review", DESIGN_KNOWLEDGE_TAG_REVIEW_PERMISSION, "新标签"),
+    )
+
+    for event, permission_code, event_name in events:
+        for rule in rules:
+            workflow_code = f"design_knowledge.{event}.{rule['key']}"
+            if workflow_code.casefold() in existing_codes:
+                continue
+            requester_position_ids = position_ids_matching(rule["requester_keywords"])
+            approver_position_ids = position_ids_matching(rule["approver_keywords"])
+            display_name = f"{event_name} · {rule['name']}"
+            if rule["requester_keywords"] and not requester_position_ids:
+                warnings.append(f"{display_name}：未匹配到申请人岗位，请手工选择")
+            if not approver_position_ids:
+                warnings.append(f"{display_name}：未匹配到审批岗位，请手工选择")
+            user_service.save_approval_workflow_draft(
+                code=workflow_code,
+                module="design_knowledge",
+                event=event,
+                name=display_name,
+                priority=rule["priority"],
+                condition={
+                    "requester_org_unit_ids": [],
+                    "requester_position_ids": requester_position_ids,
+                    "include_child_org_units": True,
+                    "migration_requires_review": bool(
+                        rule["requester_keywords"] and not requester_position_ids
+                    ),
+                },
+                approver={
+                    "strategy": "position",
+                    "position_ids": approver_position_ids,
+                    "org_scope": "any",
+                    "org_unit_ids": [],
+                },
+                required_permission_code=permission_code,
+                approval_mode="any",
+                notification={
+                    "notify_assignees": True,
+                    "notify_requester_on_result": True,
+                },
+                actor_username=actor_username,
+            )
+            existing_codes.add(workflow_code.casefold())
+            created += 1
     return created, warnings

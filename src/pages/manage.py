@@ -10,6 +10,7 @@ from ..access_control import can
 from ..approval_workflow import (
     APPROVAL_WORKFLOW_EVENTS,
     APPROVER_STRATEGY_NAMES,
+    import_design_knowledge_legacy_workflows,
     import_sample_issue_legacy_workflows,
     resolve_approval_workflow,
 )
@@ -2059,8 +2060,12 @@ def manage_page():
                                     "outline dense"
                                 )
                             with ui.row().classes("w-full gap-2 shrink-0"):
-                                import_workflow_button = ui.button(
+                                import_sample_workflow_button = ui.button(
                                     "从样品旧配置生成草稿",
+                                    icon="move_to_inbox",
+                                ).props("outline dense")
+                                import_design_workflow_button = ui.button(
+                                    "从设计知识旧配置生成草稿",
                                     icon="move_to_inbox",
                                 ).props("outline dense")
                             workflow_list_container = ui.column().classes(
@@ -2606,15 +2611,15 @@ def manage_page():
                                 )
                         add_dialog.open()
 
-                    def import_legacy_workflows():
+                    def import_legacy_workflows(importer, source_name):
                         try:
-                            created, warnings = import_sample_issue_legacy_workflows(
+                            created, warnings = importer(
                                 user_svc,
                                 actor_username=current_user,
                             )
                         except Exception as exc:
                             ui.notify(
-                                f"旧配置导入失败：{exc}",
+                                f"{source_name}旧配置导入失败：{exc}",
                                 type="negative",
                                 multi_line=True,
                             )
@@ -2631,7 +2636,18 @@ def manage_page():
                         render_workflow_editor()
 
                     add_workflow_button.on_click(open_add_workflow_form)
-                    import_workflow_button.on_click(import_legacy_workflows)
+                    import_sample_workflow_button.on_click(
+                        lambda: import_legacy_workflows(
+                            import_sample_issue_legacy_workflows,
+                            "样品问题",
+                        )
+                    )
+                    import_design_workflow_button.on_click(
+                        lambda: import_legacy_workflows(
+                            import_design_knowledge_legacy_workflows,
+                            "设计知识",
+                        )
+                    )
                     render_workflow_list()
                     render_workflow_editor()
 

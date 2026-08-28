@@ -8,10 +8,17 @@ import pandas as pd
 
 from src.approval_workflow import (
     create_approval_assignments,
+    get_workflow_event_definition,
+    import_design_knowledge_legacy_workflows,
     is_assigned_approver,
     resolve_approval_workflow,
 )
-from src.permission_catalog import SAMPLE_ISSUE_CLOSE_DEFAULT_APPROVE_PERMISSION
+from src.permission_catalog import (
+    DESIGN_KNOWLEDGE_REVIEW_PERMISSION,
+    DESIGN_KNOWLEDGE_TAG_REVIEW_PERMISSION,
+    SAMPLE_ISSUE_CLOSE_APPROVE_PERMISSION,
+    SAMPLE_ISSUE_LEGACY_CLOSE_ELECTRON_APPROVE_PERMISSION,
+)
 from src.user_service import UserService
 
 
@@ -72,11 +79,11 @@ class ApprovalWorkflowTests(unittest.TestCase):
         )
         self.service.set_position_permissions(
             self.approver_position_id,
-            [SAMPLE_ISSUE_CLOSE_DEFAULT_APPROVE_PERMISSION],
+            [SAMPLE_ISSUE_CLOSE_APPROVE_PERMISSION],
         )
         self.service.set_position_permissions(
             self.observer_position_id,
-            [SAMPLE_ISSUE_CLOSE_DEFAULT_APPROVE_PERMISSION],
+            [SAMPLE_ISSUE_CLOSE_APPROVE_PERMISSION],
         )
 
     def tearDown(self):
@@ -100,12 +107,13 @@ class ApprovalWorkflowTests(unittest.TestCase):
                 "org_scope": "any",
                 "org_unit_ids": [],
             },
-            required_permission_code=SAMPLE_ISSUE_CLOSE_DEFAULT_APPROVE_PERMISSION,
+            required_permission_code=SAMPLE_ISSUE_CLOSE_APPROVE_PERMISSION,
             approval_mode="any",
             notification={"notify_assignees": True},
             actor_username="admin",
         )
         self.service.publish_approval_workflow(workflow_id, actor_username="admin")
+        self.workflow_id = workflow_id
         return workflow_id
 
     def test_stable_position_id_survives_display_name_change(self):
@@ -213,7 +221,7 @@ class ApprovalWorkflowTests(unittest.TestCase):
             priority=20,
             condition=before["active_version"]["condition"],
             approver=before["active_version"]["approver"],
-            required_permission_code=SAMPLE_ISSUE_CLOSE_DEFAULT_APPROVE_PERMISSION,
+            required_permission_code=SAMPLE_ISSUE_CLOSE_APPROVE_PERMISSION,
             approval_mode="any",
             actor_username="admin",
         )
@@ -227,6 +235,46 @@ class ApprovalWorkflowTests(unittest.TestCase):
         after = self.service.list_approval_workflows()[0]
         self.assertEqual(after["active_version"]["version_number"], 2)
         self.assertEqual(after["active_version"]["priority"], 20)
+
+    def test_design_knowledge_events_and_legacy_import_are_idempotent(self):
+        knowledge_event = get_workflow_event_definition(
+            "design_knowledge",
+            "knowledge_review",
+        )
+        tag_event = get_workflow_event_definition(
+            "design_knowledge",
+            "tag_review",
+        )
+        self.assertIsNotNone(knowledge_event)
+        self.assertIsNotNone(tag_event)
+        assert knowledge_event is not None
+        assert tag_event is not None
+        self.assertEqual(
+            knowledge_event.permission_codes,
+            (DESIGN_KNOWLEDGE_REVIEW_PERMISSION,),
+        )
+        self.assertEqual(
+            tag_event.permission_codes,
+            (DESIGN_KNOWLEDGE_TAG_REVIEW_PERMISSION,),
+        )
+
+        created, warnings = import_design_knowledge_legacy_workflows(
+            self.service,
+            actor_username="admin",
+        )
+        self.assertGreater(created, 0)
+        self.assertTrue(warnings)
+        imported = self.service.list_approval_workflows(module="design_knowledge")
+        self.assertEqual(len(imported), created)
+        self.assertEqual(
+            {item["event"] for item in imported},
+            {"knowledge_review", "tag_review"},
+        )
+        created_again, _warnings_again = import_design_knowledge_legacy_workflows(
+            self.service,
+            actor_username="admin",
+        )
+        self.assertEqual(created_again, 0)
 
 
 class SampleIssueWorkflowIntegrationTests(unittest.IsolatedAsyncioTestCase):
@@ -288,11 +336,11 @@ class SampleIssueWorkflowIntegrationTests(unittest.IsolatedAsyncioTestCase):
         )
         self.service.set_position_permissions(
             approver_position_id,
-            [SAMPLE_ISSUE_CLOSE_DEFAULT_APPROVE_PERMISSION],
+            [SAMPLE_ISSUE_CLOSE_APPROVE_PERMISSION],
         )
         self.service.set_position_permissions(
             other_position_id,
-            [SAMPLE_ISSUE_CLOSE_DEFAULT_APPROVE_PERMISSION],
+            [SAMPLE_ISSUE_CLOSE_APPROVE_PERMISSION],
         )
         workflow_id, _version_id = self.service.save_approval_workflow_draft(
             code="sample_issue.close.integration",
@@ -311,10 +359,11 @@ class SampleIssueWorkflowIntegrationTests(unittest.IsolatedAsyncioTestCase):
                 "org_scope": "any",
                 "org_unit_ids": [],
             },
-            required_permission_code=SAMPLE_ISSUE_CLOSE_DEFAULT_APPROVE_PERMISSION,
+            required_permission_code=SAMPLE_ISSUE_CLOSE_APPROVE_PERMISSION,
             actor_username="admin",
         )
         self.service.publish_approval_workflow(workflow_id, actor_username="admin")
+        self.workflow_id = workflow_id
         app.state.user_service = self.service
         sample_issue.can_view_sample_issue_collection = lambda role, username="": True
 
@@ -371,6 +420,17 @@ class SampleIssueWorkflowIntegrationTests(unittest.IsolatedAsyncioTestCase):
             assignment = close_request["workflow_assignment"]
             self.assertEqual(assignment["workflow_code"], "sample_issue.close.integration")
             self.assertEqual(assignment["assignee_usernames"], ["李四"])
+            legacy_snapshot = copy.deepcopy(close_request)
+            legacy_snapshot["workflow_assignment"]["required_permission_code"] = (
+                SAMPLE_ISSUE_LEGACY_CLOSE_ELECTRON_APPROVE_PERMISSION
+            )
+            self.assertTrue(
+                self.sample_issue.is_sample_close_approver(
+                    "审批人",
+                    legacy_snapshot,
+                    "李四",
+                )
+            )
 
             # 王五拥有同一个稳定权限，但没有本单待办，因此不能代替李四审批。
             forbidden = await self.sample_issue.approve_sample_close_request(
@@ -405,6 +465,23 @@ class SampleIssueWorkflowIntegrationTests(unittest.IsolatedAsyncioTestCase):
         finally:
             self.sample_issue.atomic_sample_issue_update = original_atomic_update
             self.sample_issue.record_sample_closure_nature = original_record_nature
+
+    async def test_database_mode_rejects_new_close_request_without_published_workflow(self):
+        """统一资格权限后不得再通过旧角色路由创建无具体审批人的申请。"""
+        self.service.set_approval_workflow_status(
+            self.workflow_id,
+            "disabled",
+            actor_username="admin",
+        )
+
+        result = await self.sample_issue.submit_sample_close_request(
+            "SPI-NO-WORKFLOW",
+            "张三",
+            "申请人",
+        )
+
+        self.assertFalse(result.changed)
+        self.assertEqual(result.code, "workflow_no_match")
 
 
 if __name__ == "__main__":

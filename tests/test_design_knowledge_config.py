@@ -33,7 +33,7 @@ class DesignKnowledgeReviewRoutingTests(unittest.TestCase):
         self.assertLess(route_keys.index("rd_structure"), route_keys.index("rd_other"))
 
     def test_unmatched_role_uses_fallback_approvers(self):
-        route = resolve_design_knowledge_review_route("未配置部门工程师")
+        route = resolve_design_knowledge_review_route("未配置岗位成员")
         self.assertEqual(route["key"], "fallback")
         self.assertEqual(route["approver_roles"], DESIGN_KNOWLEDGE_REVIEW_FALLBACK_APPROVER_ROLES)
 
@@ -44,7 +44,7 @@ class DesignKnowledgeReviewRoutingTests(unittest.TestCase):
         fresh_route = resolve_design_knowledge_review_route("研发软件")
         self.assertEqual(fresh_route["approver_roles"], ["研发电子主管"])
 
-    def test_only_assigned_group_supervisor_can_review(self):
+    def test_only_assigned_group_supervisor_can_review_and_config_allows_self_review(self):
         submission = {
             "created_by": "张三",
             "created_role": "研发硬件工程师",
@@ -53,7 +53,7 @@ class DesignKnowledgeReviewRoutingTests(unittest.TestCase):
 
         self.assertTrue(can_review_design_knowledge_submission(submission, "李主管", "研发电子主管"))
         self.assertFalse(can_review_design_knowledge_submission(submission, "王组长", "研发结构组长"))
-        self.assertFalse(can_review_design_knowledge_submission(submission, "张三", "研发电子主管"))
+        self.assertTrue(can_review_design_knowledge_submission(submission, "张三", "研发电子主管"))
         self.assertTrue(can_review_design_knowledge_submission(submission, "admin", "admin"))
 
     def test_submission_keeps_route_snapshot(self):

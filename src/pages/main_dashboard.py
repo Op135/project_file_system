@@ -24,7 +24,12 @@ from ..utils import (
     setup_global_activity_tracking,
     sync_current_user_role,
 )
-from .design_knowledge import DESIGN_KNOWLEDGE_DATA_KEY, get_design_knowledge_dashboard_pending_count
+from .design_knowledge import (
+    DESIGN_KNOWLEDGE_DATA_KEY,
+    DESIGN_TAG_REQUESTS_KEY,
+    can_view_design_knowledge,
+    get_design_knowledge_dashboard_pending_count,
+)
 from .error_management import (
     ERROR_DATA_KEY,
     can_view_error_management,
@@ -250,9 +255,10 @@ def main_page():
             current_user,
         ):
             continue
-        # 样品问题跟进只对角色字符串里含有如下关键字的用户展示
-        elif items[3] == "/design_knowledge" and not any(
-            k in str(current_role) for k in ["质量", "销售", "工程", "研发", "boss", "admin"]
+        # 设计知识库使用稳定权限控制入口，旧 Excel 环境仍沿用原角色关键词。
+        elif items[3] == "/design_knowledge" and not can_view_design_knowledge(
+            current_role,
+            current_user,
         ):
             continue
         # 样品单执行看板使用稳定权限控制入口，旧 Excel 环境仍沿用原角色关键词。
@@ -355,6 +361,7 @@ def main_page():
                 db_storage.get_item(DESIGN_KNOWLEDGE_DATA_KEY, {}),
                 current_user,
                 current_role,
+                db_storage.get_item(DESIGN_TAG_REQUESTS_KEY, {}),
             )
             # {项目工程师名:[负责项目,负责项目]}
             project_engineer_dic = get_project_engineer_project_list_dic()

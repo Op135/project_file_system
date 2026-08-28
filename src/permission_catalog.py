@@ -143,8 +143,9 @@ SAMPLE_ISSUE_VIEW_PERMISSION = "sample_issue.view"
 SAMPLE_ISSUE_CREATE_PERMISSION = "sample_issue.record.create"
 SAMPLE_ISSUE_EDIT_ALL_PERMISSION = "sample_issue.record.edit_all"
 SAMPLE_ISSUE_EXTENSION_APPROVE_PERMISSION = "sample_issue.extension.approve"
-SAMPLE_ISSUE_CLOSE_DEFAULT_APPROVE_PERMISSION = "sample_issue.close.approve.default"
-SAMPLE_ISSUE_CLOSE_ELECTRON_APPROVE_PERMISSION = "sample_issue.close.approve.electron_to_electron"
+SAMPLE_ISSUE_CLOSE_APPROVE_PERMISSION = "sample_issue.close.approve"
+SAMPLE_ISSUE_LEGACY_CLOSE_DEFAULT_APPROVE_PERMISSION = "sample_issue.close.approve.default"
+SAMPLE_ISSUE_LEGACY_CLOSE_ELECTRON_APPROVE_PERMISSION = "sample_issue.close.approve.electron_to_electron"
 SAMPLE_ISSUE_REMINDER_CHECK_PERMISSION = "sample_issue.reminder.check"
 SAMPLE_ISSUE_DELETE_PERMISSION = "sample_issue.delete"
 
@@ -164,16 +165,10 @@ SAMPLE_ISSUE_PERMISSIONS = (
         "样品问题跟进",
     ),
     PermissionDefinition(
-        SAMPLE_ISSUE_CLOSE_DEFAULT_APPROVE_PERMISSION,
-        "审批 — 非特殊组别关闭申请",
+        SAMPLE_ISSUE_CLOSE_APPROVE_PERMISSION,
+        "审批 — 关闭申请",
         "样品问题跟进",
-        "审批未命中特殊路由的关闭申请",
-    ),
-    PermissionDefinition(
-        SAMPLE_ISSUE_CLOSE_ELECTRON_APPROVE_PERMISSION,
-        "审批 — 电子组关闭申请",
-        "样品问题跟进",
-        "审批研发电子组岗位人员发起的关闭申请",
+        "作为审批流程候选人处理样品问题关闭申请；实际可审批单据由具体流程待办决定",
     ),
     PermissionDefinition(
         SAMPLE_ISSUE_REMINDER_CHECK_PERMISSION,
@@ -181,6 +176,61 @@ SAMPLE_ISSUE_PERMISSIONS = (
         "样品问题跟进",
     ),
     PermissionDefinition(SAMPLE_ISSUE_DELETE_PERMISSION, "删除 — 样品问题", "样品问题跟进"),
+)
+
+
+DESIGN_KNOWLEDGE_VIEW_PERMISSION = "design_knowledge.view"
+DESIGN_KNOWLEDGE_CREATE_PERMISSION = "design_knowledge.record.create"
+DESIGN_KNOWLEDGE_EDIT_PERMISSION = "design_knowledge.record.edit"
+DESIGN_KNOWLEDGE_REVIEW_PERMISSION = "design_knowledge.record.review"
+DESIGN_KNOWLEDGE_TAG_MANAGE_PERMISSION = "design_knowledge.tag.manage"
+DESIGN_KNOWLEDGE_TAG_REVIEW_PERMISSION = "design_knowledge.tag.review"
+DESIGN_KNOWLEDGE_DELETE_PERMISSION = "design_knowledge.delete"
+
+
+DESIGN_KNOWLEDGE_PERMISSIONS = (
+    PermissionDefinition(
+        DESIGN_KNOWLEDGE_VIEW_PERMISSION,
+        "查看 — 设计知识库",
+        "设计知识库",
+        "允许从主页进入并查看已发布的设计知识",
+    ),
+    PermissionDefinition(
+        DESIGN_KNOWLEDGE_CREATE_PERMISSION,
+        "录入 — 设计知识",
+        "设计知识库",
+        "允许新建设计知识草稿",
+    ),
+    PermissionDefinition(
+        DESIGN_KNOWLEDGE_EDIT_PERMISSION,
+        "维护 — 本人设计知识",
+        "设计知识库",
+        "允许维护本人创建且尚未停用的设计知识，并提交审核",
+    ),
+    PermissionDefinition(
+        DESIGN_KNOWLEDGE_REVIEW_PERMISSION,
+        "审批 — 设计知识发布",
+        "设计知识库",
+        "作为审批流程候选人审核知识发布申请，并维护已发布知识的适用状态",
+    ),
+    PermissionDefinition(
+        DESIGN_KNOWLEDGE_TAG_MANAGE_PERMISSION,
+        "维护 — 受控标签库",
+        "设计知识库",
+        "允许直接新增和维护受控标签",
+    ),
+    PermissionDefinition(
+        DESIGN_KNOWLEDGE_TAG_REVIEW_PERMISSION,
+        "审批 — 新标签申请",
+        "设计知识库",
+        "作为审批流程候选人审批新标签申请",
+    ),
+    PermissionDefinition(
+        DESIGN_KNOWLEDGE_DELETE_PERMISSION,
+        "删除 — 设计知识",
+        "设计知识库",
+        "允许永久删除设计知识记录",
+    ),
 )
 
 
@@ -328,6 +378,12 @@ NOTIFICATION_PERMISSIONS = (
 
 # 上一版宽粒度通知权限只用于一次性迁移已有授权，不再显示在权限目录中。
 DEPRECATED_PERMISSION_REPLACEMENTS = {
+    SAMPLE_ISSUE_LEGACY_CLOSE_DEFAULT_APPROVE_PERMISSION: (
+        SAMPLE_ISSUE_CLOSE_APPROVE_PERMISSION,
+    ),
+    SAMPLE_ISSUE_LEGACY_CLOSE_ELECTRON_APPROVE_PERMISSION: (
+        SAMPLE_ISSUE_CLOSE_APPROVE_PERMISSION,
+    ),
     "notifications.sample_order.attention.receive": (
         SAMPLE_ORDER_EXTENSION_NOTIFY_PERMISSION,
         SAMPLE_ORDER_SPECIAL_STATUS_NOTIFY_PERMISSION,
@@ -380,6 +436,7 @@ PERMISSION_CATALOG = (
     + SAMPLE_ORDER_PERMISSIONS
     + ERROR_PERMISSIONS
     + SAMPLE_ISSUE_PERMISSIONS
+    + DESIGN_KNOWLEDGE_PERMISSIONS
     + NOTIFICATION_PERMISSIONS
 )
 PERMISSION_CODES = frozenset(item.code for item in PERMISSION_CATALOG)
@@ -394,6 +451,7 @@ def ignores_legacy_role_grants(permission_code: str) -> bool:
         or normalized.startswith("sample_order.")
         or normalized.startswith("error.")
         or normalized.startswith("sample_issue.")
+        or normalized.startswith("design_knowledge.")
         or normalized.startswith("notifications.")
     )
 
