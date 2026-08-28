@@ -35,6 +35,14 @@ from ..overview_corrections import (
     validate_staged_path,
 )
 from ..overview_warning import get_overview_counts, get_overview_warning, sort_overview_pending_items
+from ..project_requirement_access import (
+    can_edit_project_requirement,
+    can_manage_all_project_requirement_drafts,
+    can_review_all_project_requirements,
+    can_review_project_requirement,
+    can_revoke_project_requirement_approval,
+    has_assigned_requirement_review_permission,
+)
 from ..requirement_overview_impact import RequirementOverviewImpactConfigError
 from ..utils import (
     delete_file,
@@ -53,6 +61,7 @@ from ..utils import (
     set_project_custom_labels,
     setup_global_activity_tracking,
     snapshot_file_bytes,
+    sync_current_user_role,
     validate_search_path,
     validate_svn_url,
 )
@@ -253,7 +262,25 @@ def information_page():
 
     dialog = ui.dialog().props("persistent").classes("")
     current_user = app.storage.user.get("current_user", "匿名用户")
-    current_role = app.storage.user.get("current_role")
+    current_role = sync_current_user_role()
+
+    def current_project_engineers() -> dict:
+        return app.storage.general.get("project_engineer", {}) or {}
+
+    def can_review_requirement(project_name: str) -> bool:
+        """复核稳定审批资格及当前项目工程师的具体责任。"""
+        return can_review_project_requirement(
+            current_role,
+            current_user,
+            project_name,
+            current_project_engineers(),
+        )
+
+    def can_review_all_requirements() -> bool:
+        return can_review_all_project_requirements(current_role, current_user)
+
+    def can_edit_requirements() -> bool:
+        return can_edit_project_requirement(current_role, current_user)
 
     # 读取配置文件
     try:
@@ -273,10 +300,18 @@ def information_page():
     # -------------------------------------------------------------------------
 
     def set_review_revise(p_name, v):
+        review_record = app.storage.general.get("wait_review", {}).get(p_name, {}).get(v, {})
+        is_submitter = review_record.get("submitter") == current_user and can_edit_requirements()
+        if not is_submitter and not can_review_requirement(p_name):
+            ui.notify("当前账号无权退回或申请修改该需求", type="negative")
+            return
         app.storage.general["wait_review"][p_name][v]["state"] = "待修改"
 
     async def set_review_pass(container_row, p_name, v):
         """审核通过逻辑"""
+        if not can_review_requirement(p_name):
+            ui.notify("当前账号不是该项目需求配置的审批人", type="negative")
+            return
         async with _requirement_review_locks[p_name]:
             current_record = app.storage.general.get("wait_review", {}).get(p_name, {}).get(v, {})
             if current_record.get("state") != "待审":
@@ -441,6 +476,9 @@ def information_page():
             dialog.close()
 
     async def set_temporary_project_review_pass(container_row, p_name, v, data):
+        if not can_review_requirement(p_name):
+            ui.notify("当前账号不是该项目需求配置的审批人", type="negative")
+            return
         if data.get("introduction").strip() and data.get("customer").strip():
             temp_data = {
                 p_name: {
@@ -468,6 +506,9 @@ def information_page():
             ui.notify("项目简介与客户简称必须填写!", type="warning", position="bottom", close_button="✖")
 
     async def set_temporary_project_dialog(container_row, p_name, v):
+        if not can_review_requirement(p_name):
+            ui.notify("当前账号不是该项目需求配置的审批人", type="negative")
+            return
         if "RFTS" in p_name and p_name not in app.storage.general["project_summary"]:
             dialog.clear()
             with dialog, ui.card().classes("w-full max-w-lg"):
@@ -491,6 +532,9 @@ def information_page():
 
     async def set_review_pass_dialog(container_row, p_name, v):
         """点击审核通过的入口"""
+        if not can_review_requirement(p_name):
+            ui.notify("当前账号不是该项目需求配置的审批人", type="negative")
+            return
         current_state = app.storage.general["wait_review"][p_name].get(v, {}).get("state")
 
         if current_state == "待审":
@@ -528,6 +572,9 @@ def information_page():
             refresh_review_row(container_row, p_name, v)
 
     def remove_requirement_file(container_row, p_name, v):
+        if not can_review_requirement(p_name):
+            ui.notify("当前账号无权移除该需求记录", type="negative")
+            return
         move_file_with_timestamp_pathlib(f"{REQ_DIR}/{p_name}_需求配置_V{v}.json", REQ_REMOVE_DIR)
         delete_file(f"{OVER_DIR}/{p_name}_概述整理_temp.json")
         app.storage.general["wait_review"][p_name].pop(v, None)
@@ -535,6 +582,9 @@ def information_page():
         dialog.close()
 
     def remove_requirement_dialog(container_row, p_name, v):
+        if not can_review_requirement(p_name):
+            ui.notify("当前账号无权移除该需求记录", type="negative")
+            return
         dialog.clear()
         with dialog, ui.card():
             ui.label("⚠️ 危险操作").classes("text-lg font-bold text-red-600")
@@ -548,12 +598,18 @@ def information_page():
         file_path = os.path.join(REQ_DIR, f"{project_name}_需求配置_V{ver}.json")
         ui.navigate.to(f"/main/requirement?type=requirement&json_path={file_path}")
 
-    def get_req_page(project_name, version):
-        file_path = os.path.join(REQ_DIR, f"temp/{current_user}/{project_name}_需求配置_V{version}.json")
-        ui.navigate.to(f"/main/requirement?type=requirement&json_path={file_path}")
+    def get_req_page(project_name, version, owner_username=None):
+        """打开草稿；查看他人草稿时强制使用只读模式。"""
+        owner = str(owner_username or current_user)
+        file_path = os.path.join(REQ_DIR, f"temp/{owner}/{project_name}_需求配置_V{version}.json")
+        readonly_query = "&readonly=1" if owner != current_user else ""
+        ui.navigate.to(f"/main/requirement?type=requirement&json_path={file_path}{readonly_query}")
 
     def dele_temp_req_row(container_row, project_name, version):
         """删除暂存记录的行"""
+        if not can_edit_requirements():
+            ui.notify("当前账号无权删除需求草稿", type="negative")
+            return
         try:
             app.storage.general["temp_req"][current_user][project_name].remove(version)
             file_path = Path(os.path.join(REQ_DIR, f"temp/{current_user}/{project_name}_需求配置_V{version}.json"))
@@ -580,12 +636,10 @@ def information_page():
             container.delete()  # 数据丢失，删除UI
             return
 
-        project_engineer_dic = get_project_engineer_project_list_dic()
-        is_manager = current_role in ["研发经理"]
-        # is_engineer = current_user == project_engineer_dic.get(project_name, "")
-        is_engineer = current_user in project_engineer_dic
-        # 2. 如果已审 或 属于项目工程师 且 为待修改 且不是研发经理（研发经理可能也兼任项目工程师），删除该行
-        if review_state == "已审" or review_state == "待修改" and not is_manager and is_engineer:
+        can_review = can_review_requirement(project_name)
+        can_review_all = can_review_all_requirements()
+        # 全局审批人仍可看到待修改记录；仅负责具体项目的审批人在退回后不再保留待办。
+        if review_state == "已审" or review_state == "待修改" and not can_review_all and can_review:
             container.delete()
             return
 
@@ -613,7 +667,7 @@ def information_page():
                     # 右侧：操作按钮组
                     with ui.row().classes("items-center gap-2"):
                         # 权限判断
-                        if is_manager or is_engineer:
+                        if can_review:
                             # 审核者视角
                             ui.button(icon="visibility", on_click=lambda: get_overviow_page(project_name, True)).props(
                                 "flat round dense text-color=grey-7"
@@ -652,7 +706,10 @@ def information_page():
                             ).tooltip("申请修改")
 
     def create_revoke_dialog():
-        """构建研发经理专属的撤销审批对话框"""
+        """构建需要独立稳定权限的撤销审批对话框。"""
+        if not can_revoke_project_requirement_approval(current_role, current_user):
+            ui.notify("当前账号没有撤销需求审批的权限", type="negative")
+            return
         dialog.clear()
         # 运行时状态初始化，避免使用全局变量造成的静态类型冲突或闭包引用问题
         revoke_state = {
@@ -665,7 +722,7 @@ def information_page():
         # ui.card(): NiceGUI 卡片容器组件，提供背景和阴影包裹。
         with dialog, ui.card().classes("w-full p-4"):
             # ui.label(): NiceGUI 文本标签组件。
-            ui.label("撤销需求审批 (研发经理专属)").classes("text-lg font-bold text-red-600 mb-4")
+            ui.label("撤销需求审批").classes("text-lg font-bold text-red-600 mb-4")
 
             # ui.input(): NiceGUI 文本输入框组件，用于接收用户输入内容。
             model_input = ui.input(label="请输入要撤销审批的项目型号", placeholder="严格区分大小写...").classes(
@@ -727,6 +784,9 @@ def information_page():
 
             def execute_revoke():
                 """确认执行撤销操作"""
+                if not can_revoke_project_requirement_approval(current_role, current_user):
+                    ui.notify("当前账号没有撤销需求审批的权限", type="negative")
+                    return
                 p_name = revoke_state["project_name"]
                 t_ver = revoke_state["target_ver"]
 
@@ -1072,9 +1132,7 @@ def information_page():
                             "w-full p-2 rounded bg-red-50 text-red-700 font-bold"
                         )
                     ui.label(
-                        "处理方式：纠正原记录"
-                        if request.get("action") == "correct"
-                        else "处理方式：删除错误记录"
+                        "处理方式：纠正原记录" if request.get("action") == "correct" else "处理方式：删除错误记录"
                     ).classes("font-bold")
                     ui.separator()
                     ui.label("修改内容对照").classes("font-bold text-gray-800")
@@ -1549,8 +1607,7 @@ def information_page():
             with ui.menu().props("auto-close"):
                 ui.menu_item(f"你好, {app.storage.user.get('current_user', '匿名')}").style("white-space: nowrap;")
                 ui.separator().props("size=1px")
-                # 权限管控：仅研发经理可看见撤销入口
-                if current_role == "研发经理":
+                if can_revoke_project_requirement_approval(current_role, current_user):
                     ui.menu_item("撤销需求审批", on_click=lambda: create_revoke_dialog()).classes(
                         "text-red-600 font-bold"
                     )
@@ -1727,10 +1784,10 @@ def information_page():
                                             ).props(f"flat dense color={base_color} size=sm")
 
                     # B. 需求评审队列 (Review Queue)
-                    if (
-                        current_role in module_show_data.get("wait_review_module", [])
-                        or current_user in project_engineer_dic
-                    ):
+                    has_assigned_projects = bool(project_engineer_dic.get(current_user)) and (
+                        has_assigned_requirement_review_permission(current_role, current_user)
+                    )
+                    if can_edit_requirements() or can_review_all_requirements() or has_assigned_projects:
                         with ui.card().classes("w-full rounded-xl shadow-sm border border-gray-100 bg-white"):
                             ui_card_header("需求评审看板", "rate_review", "blue-600")
 
@@ -1742,16 +1799,16 @@ def information_page():
                                     for project_name, ver_dic in app.storage.general["wait_review"].items():
                                         for ver, dic in ver_dic.items():
                                             # 过滤显示逻辑
-                                            is_manager = current_role in ["研发经理"]
-                                            is_engineer = project_name in project_engineer_dic.get(current_user, [])
+                                            is_reviewer = can_review_requirement(project_name)
+                                            is_global_reviewer = can_review_all_requirements()
                                             is_submitter = dic.get("submitter") == current_user
 
                                             should_show = False
-                                            # 销售查看非已审项目待办项
-                                            if (is_manager or is_submitter) and dic.get("state") != "已审":
+                                            # 全局审批人或提交人查看尚未完成的需求记录。
+                                            if (is_global_reviewer or is_submitter) and dic.get("state") != "已审":
                                                 should_show = True
-                                            # 研发经理或项目工程师查看待审项目待办项
-                                            elif is_engineer and dic.get("state") == "待审":
+                                            # 具体项目审批人只查看分配给自己的待审记录。
+                                            elif is_reviewer and dic.get("state") == "待审":
                                                 should_show = True
 
                                             if should_show:
@@ -1770,7 +1827,11 @@ def information_page():
                 # =========================================================
                 with ui.column().classes("col-span-12 lg:col-span-6 gap-4"):
                     # D. 草稿箱 (Drafts)
-                    if current_role in module_show_data.get("temp_req_module", []):
+                    can_manage_all_drafts = can_manage_all_project_requirement_drafts(
+                        current_role,
+                        current_user,
+                    )
+                    if can_edit_requirements() or can_manage_all_drafts:
                         with ui.card().classes("w-full rounded-xl shadow-sm border border-gray-100 bg-white"):
                             ui_card_header("需求草稿箱", "save_as", "amber-600")
 
@@ -1779,7 +1840,7 @@ def information_page():
 
                             with ui.scroll_area().classes("h-64 w-full pr-2"):
                                 for user, project_dic in temp_req_dic.items():
-                                    if user == current_user or current_role == "研发经理":
+                                    if user == current_user or can_manage_all_drafts:
                                         for project_name, version_li in project_dic.items():
                                             for version in version_li:
                                                 has_drafts = True
@@ -1796,21 +1857,16 @@ def information_page():
                                                         )
 
                                                     with ui.row().classes("gap-1"):
-                                                        # 经理只能看，本人可编辑
-                                                        btn_icon = (
-                                                            "visibility"
-                                                            if (current_role == "研发经理" and user != current_user)
-                                                            else "edit"
-                                                        )
+                                                        # 跨用户草稿管理权限只允许查看，草稿本人仍可继续编辑。
+                                                        btn_icon = "visibility" if user != current_user else "edit"
                                                         ui.button(
                                                             icon=btn_icon,
-                                                            on_click=lambda pn=project_name, v=version: get_req_page(
-                                                                pn, v
+                                                            on_click=lambda pn=project_name, v=version, owner=user: (
+                                                                get_req_page(pn, v, owner)
                                                             ),
                                                         ).props("flat dense size=sm color=amber").tooltip("查看/编辑")
 
-                                                        # 只有非经理(本人)可以删除
-                                                        if current_role != "研发经理":
+                                                        if user == current_user:
                                                             ui.button(
                                                                 icon="close",
                                                                 color="red",
@@ -1853,10 +1909,7 @@ def information_page():
                     visible_single_requests = {
                         rid: request
                         for rid, request in all_requests.items()
-                        if (
-                            current_role == "研发经理"
-                            and request.get("status") == "pending"
-                        )
+                        if (current_role == "研发经理" and request.get("status") == "pending")
                         or request.get("submitter") == current_user
                     }
                     if can_show_single_requests or visible_correction_requests or visible_batch_requests:

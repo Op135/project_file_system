@@ -74,6 +74,10 @@ from ..overview_batch_operations import (
 )
 from ..overview_corrections import get_project_correction_archives
 from ..overview_operation import append_overview_timestamp, get_automatic_overview_reason
+from ..project_requirement_access import (
+    can_edit_project_requirement,
+    can_view_project_requirement,
+)
 from ..requirement_overview_impact import RequirementOverviewImpactConfigError
 from ..utils import (
     compare_configs_by_id,
@@ -92,6 +96,7 @@ from ..utils import (
     refresh_overview_pending_labels,
     set_overview_active_state,
     setup_global_activity_tracking,
+    sync_current_user_role,
     update_overview_charge_pending_dic,
     validate_format_regex,
     validate_search_path,
@@ -110,6 +115,7 @@ async def requirement_page(
     project_name="",
     correction_label="",
     correction_chip_id="",
+    readonly="",
 ):
     ui.add_head_html("""
         <style>
@@ -204,12 +210,41 @@ async def requirement_page(
 
     # 检查用户是否已登录
     # {'current_user': '用户名', 'is_admin': False}
-    if not app.storage.user.get("current_user"):
+    stored_current_user = app.storage.user.get("current_user")
+    if not isinstance(stored_current_user, str) or not stored_current_user:
         ui.navigate.to("/login")  # 如果未登录，跳转到登录页
         return
     setup_global_activity_tracking()
-    current_user = app.storage.user.get("current_user")
-    current_role = app.storage.user.get("current_role")
+    current_user = stored_current_user
+    current_role = sync_current_user_role()
+    is_requirement_mode = type in {"", "requirement"}
+    requirement_read_only = str(readonly or "").strip().lower() in {"1", "true", "yes"}
+    if is_requirement_mode and not can_view_project_requirement(current_role, current_user):
+        ui.notify("当前账号没有查看项目需求配置正文的权限", type="negative")
+        ui.navigate.to("/project_table")
+        return
+    if is_requirement_mode and json_path:
+        try:
+            Path(json_path).resolve().relative_to(Path(REQ_DIR).resolve())
+        except (OSError, ValueError):
+            ui.notify("需求文件路径不在系统需求目录内，已拒绝访问", type="negative")
+            ui.navigate.to("/project_table")
+            return
+
+    def has_requirement_edit_permission() -> bool:
+        """在需求写入前实时复核稳定维护权限。"""
+        return not requirement_read_only and can_edit_project_requirement(current_role, current_user)
+
+    def reject_requirement_edit(*, quiet: bool = False) -> bool:
+        if not is_requirement_mode or has_requirement_edit_permission():
+            return False
+        if not quiet:
+            ui.notify("当前账号没有新建或维护项目需求配置的权限", type="negative")
+        return True
+
+    if type == "" and reject_requirement_edit():
+        ui.navigate.to("/project_table")
+        return
     # 从全局存储中获取用户当前的头像设置
     # (在 main.py 中定义 "user_preferences")
     user_prefs = app.storage.general.get("user_preferences", {}).get(current_user, {})
@@ -782,6 +817,8 @@ async def requirement_page(
 
     # 弹出项目名设置弹窗
     def get_project_dialog(key_str="revise"):
+        if reject_requirement_edit():
+            return
         project_card = app.storage.client["page_elements"].get("project_card")
         project_old_name = app.storage.client["project_name"]
         project_card.clear()
@@ -804,6 +841,8 @@ async def requirement_page(
 
     # 确认项目命名处理函数
     def confirm_peoject_name(key_str):
+        if reject_requirement_edit():
+            return
         target_project_name = app.storage.client["target_project_name"]
         # 参照项目的审核状态
         # version = app.storage.client["version"]
@@ -1067,6 +1106,8 @@ async def requirement_page(
     # json数据导入处理函数——处理数据
     async def json_handle_upload(e: events.UploadEventArguments):
         """处理上传的JSON文件"""
+        if reject_requirement_edit():
+            return
         try:
             # 获取上传的文件内容
             content_obj = await e.file.read()
@@ -1108,6 +1149,8 @@ async def requirement_page(
 
     # 文件上传后的处理函数
     async def handle_upload(e: UploadEventArguments, parents_h):
+        if reject_requirement_edit():
+            return
         try:
             hash_obj = hashlib.md5()
             # new_file_hash = ""
@@ -2200,6 +2243,8 @@ async def requirement_page(
 
     # 需求数据输出处理函数
     async def output_config_data(data, type):
+        if reject_requirement_edit(quiet=type == "autosave"):
+            return
         # [新增安全锁检查] 如果是自动保存，且开关未开启，直接中止
         if type == "autosave" and not app.storage.client.get("allow_autosave", False):
             # 可选：打印日志方便调试
@@ -2442,7 +2487,7 @@ async def requirement_page(
             # 如下情况，这里就没必要自动保存了
             if (
                 # 用户没权限配置需求
-                current_role not in ["销售", "销售主管", "销售总监", "admin"]
+                not has_requirement_edit_permission()
                 # 参考需求待审，后面不能暂存或提交，这里没必要自动保存
                 or original_review_state == "待审"
                 # 参考需求待修改且当前用户无权修改，后面不能暂存或提交，这里没必要自动保存
@@ -2492,7 +2537,7 @@ async def requirement_page(
                 # if new_temp_project_bool:
                 #     app.storage.general["temp_project_name"].remove(target_project_name)
                 return
-            if current_role not in ["销售", "销售主管", "销售总监", "admin"]:
+            if not has_requirement_edit_permission():
                 ui.notify(
                     "当前用户无权限提交需求！",
                     type="warning",
@@ -2931,7 +2976,7 @@ async def requirement_page(
                     ui.menu_item("返回主界面", on_click=lambda: ui.navigate.to("/main"))
                     ui.menu_item("返回项目信息表", on_click=lambda: ui.navigate.to("/project_table"))
                     ui.separator().props("size=1px")
-                    if current_role in ["销售", "销售主管", "销售总监", "admin"]:
+                    if has_requirement_edit_permission():
                         ui.menu_item("新建需求", on_click=lambda: get_project_dialog("new"))
                         ui.menu_item(
                             "暂存需求", on_click=lambda: output_config_data(app.storage.client["config_data"], "export")

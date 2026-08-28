@@ -26,6 +26,7 @@ from ..permission_catalog import (
     PROJECT_RECORD_MANAGE_PERMISSION,
     PROJECT_VIEW_PERMISSION,
 )
+from ..project_requirement_access import can_view_project_requirement
 from ..utils import (
     find_files_with_prefix_and_version,
     get_cache_busted_path,
@@ -264,10 +265,11 @@ def project_table_page():
     """)
     # 检查用户是否已登录
     # {'current_user': '用户名', 'is_admin': False}
-    if not app.storage.user.get("current_user"):
+    stored_current_user = app.storage.user.get("current_user")
+    if not isinstance(stored_current_user, str) or not stored_current_user:
         ui.navigate.to("/login")  # 如果未登录，跳转到登录页
         return
-    current_user = app.storage.user.get("current_user")
+    current_user = stored_current_user
     current_role = sync_current_user_role()
     if not can_view_project_table(current_role, current_user):
         ui.notify("当前账号没有查看项目资料的权限", type="negative")
@@ -1029,6 +1031,9 @@ def project_table_page():
         # row_id = event.args["rowId"]  # 点击行的ID
         project_name = row_data["sub_project"]
         if col_id == "requirement":
+            if not can_view_project_requirement(current_role, current_user):
+                ui.notify("当前账号没有查看项目需求配置正文的权限", type="negative")
+                return
             await save_project_table_view_state(aggrid)
             # 查找指定路径下，含有提供项目名的文件，得到一个字典，完整版本为键，值为：{"name":文件名, "v_a":版本号整数部分, "v_b":版本号小数部分}
             project_exists_file = find_files_with_prefix_and_version(REQ_DIR, project_name)

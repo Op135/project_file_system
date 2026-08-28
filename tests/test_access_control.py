@@ -16,6 +16,12 @@ from src.permission_catalog import (
     ERROR_VIEW_PERMISSION,
     PROJECT_ALL_STATES_VIEW_PERMISSION,
     PROJECT_RECORD_MANAGE_PERMISSION,
+    PROJECT_REQUIREMENT_DRAFT_MANAGE_ALL_PERMISSION,
+    PROJECT_REQUIREMENT_EDIT_PERMISSION,
+    PROJECT_REQUIREMENT_REVIEW_ALL_PERMISSION,
+    PROJECT_REQUIREMENT_REVIEW_ASSIGNED_PERMISSION,
+    PROJECT_REQUIREMENT_REVOKE_PERMISSION,
+    PROJECT_REQUIREMENT_VIEW_PERMISSION,
     PROJECT_VIEW_PERMISSION,
     SAMPLE_ISSUE_CREATE_PERMISSION,
     SAMPLE_ISSUE_CLOSE_APPROVE_PERMISSION,
@@ -34,6 +40,14 @@ from src.pages.project_table import (
     can_manage_project_records,
     can_view_all_project_states,
     can_view_project_table,
+)
+from src.project_requirement_access import (
+    can_edit_project_requirement,
+    can_manage_all_project_requirement_drafts,
+    can_review_all_project_requirements,
+    can_review_project_requirement,
+    can_revoke_project_requirement_approval,
+    can_view_project_requirement,
 )
 from src.user_service import UserService
 
@@ -194,6 +208,131 @@ class AccessControlTests(unittest.TestCase):
         )
         self.assertTrue(
             can_manage_project_records("普通岗位", "张三", user_service=self.service)
+        )
+
+    def test_project_requirement_legacy_mode_keeps_editor_and_assignee_rules(self):
+        """旧模式继续按销售编辑、研发经理全审和项目工程师具体分配运行。"""
+        engineers = {"P1": "张三", "P2": "李四"}
+        self.assertTrue(
+            can_view_project_requirement("普通用户", "张三", user_service=self.service)
+        )
+        self.assertTrue(
+            can_edit_project_requirement("销售", "张三", user_service=self.service)
+        )
+        self.assertTrue(
+            can_review_project_requirement(
+                "研发硬件",
+                "张三",
+                "P1",
+                engineers,
+                user_service=self.service,
+            )
+        )
+        self.assertFalse(
+            can_review_project_requirement(
+                "研发硬件",
+                "张三",
+                "P2",
+                engineers,
+                user_service=self.service,
+            )
+        )
+        self.assertTrue(
+            can_review_all_project_requirements("研发经理", "张三", user_service=self.service)
+        )
+        self.assertTrue(
+            can_revoke_project_requirement_approval(
+                "研发经理",
+                "张三",
+                user_service=self.service,
+            )
+        )
+
+    def test_project_requirement_database_mode_uses_stable_and_assigned_permissions(self):
+        """数据库模式同时校验稳定资格和项目工程师的具体责任。"""
+        self.service.migrate_legacy_users()
+        engineers = {"P1": "张三", "P2": "李四"}
+        self.assertFalse(
+            can_edit_project_requirement("销售", "张三", user_service=self.service)
+        )
+        self.assertFalse(
+            can_review_all_project_requirements("研发经理", "张三", user_service=self.service)
+        )
+
+        org_unit_id = self.service.save_org_unit(code="org.requirement", name="需求测试部")
+        position_id = self.service.save_position(code="requirement.owner", name="需求维护岗位")
+        self.service.set_primary_membership(
+            "张三",
+            org_unit_id=org_unit_id,
+            position_id=position_id,
+        )
+        self.service.set_position_permissions(
+            position_id,
+            [
+                PROJECT_REQUIREMENT_VIEW_PERMISSION,
+                PROJECT_REQUIREMENT_EDIT_PERMISSION,
+                PROJECT_REQUIREMENT_REVIEW_ASSIGNED_PERMISSION,
+            ],
+            actor_username="admin",
+        )
+        self.assertTrue(
+            can_view_project_requirement("普通岗位", "张三", user_service=self.service)
+        )
+        self.assertTrue(
+            can_edit_project_requirement("普通岗位", "张三", user_service=self.service)
+        )
+        self.assertTrue(
+            can_review_project_requirement(
+                "普通岗位",
+                "张三",
+                "P1",
+                engineers,
+                user_service=self.service,
+            )
+        )
+        self.assertFalse(
+            can_review_project_requirement(
+                "研发经理",
+                "张三",
+                "P2",
+                engineers,
+                user_service=self.service,
+            )
+        )
+
+        self.service.set_position_permissions(
+            position_id,
+            [
+                PROJECT_REQUIREMENT_VIEW_PERMISSION,
+                PROJECT_REQUIREMENT_EDIT_PERMISSION,
+                PROJECT_REQUIREMENT_REVIEW_ALL_PERMISSION,
+                PROJECT_REQUIREMENT_REVOKE_PERMISSION,
+                PROJECT_REQUIREMENT_DRAFT_MANAGE_ALL_PERMISSION,
+            ],
+            actor_username="admin",
+        )
+        self.assertTrue(
+            can_review_project_requirement(
+                "普通岗位",
+                "张三",
+                "P2",
+                engineers,
+                user_service=self.service,
+            )
+        )
+        self.assertTrue(
+            can_revoke_project_requirement_approval(
+                "普通岗位",
+                "张三",
+                user_service=self.service,
+            )
+        )
+        self.assertTrue(
+            can_manage_all_project_requirement_drafts(
+                "普通岗位",
+                "张三",
+                user_service=self.service,
+            )
         )
 
     def test_admin_automatically_has_every_registered_permission(self):

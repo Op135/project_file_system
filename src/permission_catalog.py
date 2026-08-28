@@ -63,6 +63,54 @@ PROJECT_PERMISSIONS = (
 )
 
 
+PROJECT_REQUIREMENT_VIEW_PERMISSION = "project_requirement.view"
+PROJECT_REQUIREMENT_EDIT_PERMISSION = "project_requirement.edit"
+PROJECT_REQUIREMENT_REVIEW_ASSIGNED_PERMISSION = "project_requirement.review.assigned"
+PROJECT_REQUIREMENT_REVIEW_ALL_PERMISSION = "project_requirement.review.all"
+PROJECT_REQUIREMENT_REVOKE_PERMISSION = "project_requirement.approval.revoke"
+PROJECT_REQUIREMENT_DRAFT_MANAGE_ALL_PERMISSION = "project_requirement.draft.manage_all"
+
+
+PROJECT_REQUIREMENT_PERMISSIONS = (
+    PermissionDefinition(
+        PROJECT_REQUIREMENT_VIEW_PERMISSION,
+        "查看 — 项目需求配置正文",
+        "项目需求配置",
+        "允许从项目资料总表打开并查看项目需求配置正文",
+    ),
+    PermissionDefinition(
+        PROJECT_REQUIREMENT_EDIT_PERMISSION,
+        "维护 — 项目需求配置正文",
+        "项目需求配置",
+        "允许新建、暂存、自动保存和提交项目需求配置",
+    ),
+    PermissionDefinition(
+        PROJECT_REQUIREMENT_REVIEW_ASSIGNED_PERMISSION,
+        "审批 — 本人负责项目需求配置",
+        "项目需求配置",
+        "允许审批本人被指定为项目工程师的项目需求配置",
+    ),
+    PermissionDefinition(
+        PROJECT_REQUIREMENT_REVIEW_ALL_PERMISSION,
+        "审批 — 全部项目需求配置",
+        "项目需求配置",
+        "允许审批全部项目需求配置，不受项目工程师分配限制",
+    ),
+    PermissionDefinition(
+        PROJECT_REQUIREMENT_REVOKE_PERMISSION,
+        "撤销 — 已通过需求审批",
+        "项目需求配置",
+        "允许撤销已经通过的需求版本并回退项目最高需求版本",
+    ),
+    PermissionDefinition(
+        PROJECT_REQUIREMENT_DRAFT_MANAGE_ALL_PERMISSION,
+        "查看 — 全部需求草稿",
+        "项目需求配置",
+        "允许在项目待办页查看其他用户的需求草稿；草稿仍只能由创建人删除",
+    ),
+)
+
+
 SAMPLE_ORDER_BASE_EDIT_PERMISSION = "sample_order.base.edit"
 SAMPLE_ORDER_VIEW_PERMISSION = "sample_order.view"
 SAMPLE_ORDER_DELAY_EDIT_PERMISSION = "sample_order.delay.edit"
@@ -405,12 +453,8 @@ NOTIFICATION_PERMISSIONS = (
 
 # 上一版宽粒度通知权限只用于一次性迁移已有授权，不再显示在权限目录中。
 DEPRECATED_PERMISSION_REPLACEMENTS = {
-    SAMPLE_ISSUE_LEGACY_CLOSE_DEFAULT_APPROVE_PERMISSION: (
-        SAMPLE_ISSUE_CLOSE_APPROVE_PERMISSION,
-    ),
-    SAMPLE_ISSUE_LEGACY_CLOSE_ELECTRON_APPROVE_PERMISSION: (
-        SAMPLE_ISSUE_CLOSE_APPROVE_PERMISSION,
-    ),
+    SAMPLE_ISSUE_LEGACY_CLOSE_DEFAULT_APPROVE_PERMISSION: (SAMPLE_ISSUE_CLOSE_APPROVE_PERMISSION,),
+    SAMPLE_ISSUE_LEGACY_CLOSE_ELECTRON_APPROVE_PERMISSION: (SAMPLE_ISSUE_CLOSE_APPROVE_PERMISSION,),
     "notifications.sample_order.attention.receive": (
         SAMPLE_ORDER_EXTENSION_NOTIFY_PERMISSION,
         SAMPLE_ORDER_SPECIAL_STATUS_NOTIFY_PERMISSION,
@@ -461,6 +505,7 @@ PERMISSION_CATALOG = (
     CORE_PERMISSIONS
     + TOOL_PERMISSIONS
     + PROJECT_PERMISSIONS
+    + PROJECT_REQUIREMENT_PERMISSIONS
     + SAMPLE_ORDER_PERMISSIONS
     + ERROR_PERMISSIONS
     + SAMPLE_ISSUE_PERMISSIONS
@@ -477,6 +522,7 @@ def ignores_legacy_role_grants(permission_code: str) -> bool:
         normalized == "system.manage"
         or (normalized.startswith("tools.") and normalized.endswith(".use"))
         or normalized.startswith("project.")
+        or normalized.startswith("project_requirement.")
         or normalized.startswith("sample_order.")
         or normalized.startswith("error.")
         or normalized.startswith("sample_issue.")

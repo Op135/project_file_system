@@ -16,6 +16,13 @@ from ..overview_batch_operations import (
 )
 from ..overview_corrections import OVERVIEW_CORRECTION_REQUESTS_KEY, get_correction_pending_count
 from ..overview_warning import get_urgent_overview_projects
+from ..project_requirement_access import (
+    can_edit_project_requirement,
+    can_manage_all_project_requirement_drafts,
+    can_review_all_project_requirements,
+    can_revoke_project_requirement_approval,
+    has_assigned_requirement_review_permission,
+)
 from ..utils import (
     get_cache_busted_path,
     get_project_engineer_project_list_dic,
@@ -236,10 +243,23 @@ def main_page():
         ):
             continue
         # 需求结构图只对角色字符串里含有如下关键字的用户展示
-        elif items[3] == "/information" and not any(
-            k in str(current_role) for k in ["销售", "研发", "工程", "质量", "boss", "admin"]
-        ):
-            continue
+        elif items[3] == "/information":
+            project_engineers = app.storage.general.get("project_engineer", {}) or {}
+            has_assigned_requirement_projects = (
+                current_user in {str(user or "") for user in project_engineers.values()}
+                and has_assigned_requirement_review_permission(current_role, current_user)
+            )
+            can_access_requirement_workbench = (
+                can_edit_project_requirement(current_role, current_user)
+                or can_review_all_project_requirements(current_role, current_user)
+                or has_assigned_requirement_projects
+                or can_revoke_project_requirement_approval(current_role, current_user)
+                or can_manage_all_project_requirement_drafts(current_role, current_user)
+            )
+            if not can_access_requirement_workbench and not any(
+                k in str(current_role) for k in ["销售", "研发", "工程", "质量", "boss", "admin"]
+            ):
+                continue
         # 需求结构图只对角色字符串里含有如下关键字的用户展示
         elif items[3] == "/question_tree_tabs" and not any(
             k in str(current_role) for k in ["销售", "研发", "boss", "admin"]
@@ -330,14 +350,6 @@ def main_page():
         # max-w-6xl 限制最大宽度，在超大屏幕下不会显得过于稀疏
         # grid-cols-1 到 xl:grid-cols-5 实现浏览器大中小窗口的自适应
         with ui.grid().classes("w-full max-w-7xl grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-6 px-6"):
-            # 所有待修改项目数量
-            revise_num_sum = 0
-            # 所有登录用户提交的待修改项目数量
-            revise_num_user = 0
-            # 所有待审项目数量
-            pending_num_sum = 0
-            # 所有登录用户负责审核的待审核项目数量
-            pending_num_user = 0
             # 当前用户负责且达到3级以上的概述项目
             overview_urgent_projects: list[tuple[str, int]] = []
             # 所有登录用户负责的概述变更任务数量
@@ -372,20 +384,26 @@ def main_page():
             )
             # {项目工程师名:[负责项目,负责项目]}
             project_engineer_dic = get_project_engineer_project_list_dic()
+            can_edit_requirements = can_edit_project_requirement(current_role, current_user)
+            can_review_all_requirements = can_review_all_project_requirements(current_role, current_user)
+            can_review_assigned_requirements = has_assigned_requirement_review_permission(
+                current_role,
+                current_user,
+            )
+            requirement_pending_keys: set[tuple[str, str]] = set()
             for project_name, ver_dic in app.storage.general["wait_review"].items():
                 for ver, dic in ver_dic.items():
                     state = dic.get("state")
                     submitter = dic.get("submitter")
                     if state == "待修改":
-                        revise_num_sum += 1
-                        # 待修改项目提交人与当前用户匹配
-                        if submitter == current_user:
-                            revise_num_user += 1
+                        if submitter == current_user and can_edit_requirements:
+                            requirement_pending_keys.add((project_name, str(ver)))
                     elif state == "待审":
-                        pending_num_sum += 1
-                        # 待审项目的项目工程师由当前用户负责跟进
-                        if project_name in project_engineer_dic.get(current_user, []):
-                            pending_num_user += 1
+                        if can_review_all_requirements or (
+                            can_review_assigned_requirements
+                            and project_name in project_engineer_dic.get(current_user, [])
+                        ):
+                            requirement_pending_keys.add((project_name, str(ver)))
 
             # --- 仅针对项目概述待办进行状态过滤 ---
             project_summary = app.storage.general.get("project_summary", {})
@@ -440,30 +458,16 @@ def main_page():
                 #    这样我们可以根据数量来决定图标的颜色
                 pending_count = 0
                 if target == "/information":
-                    # 根据当前用户角色判断统计口径
-                    if current_role in ["研发经理"]:
-                        # 经理看到的是所有待审项目数量 + 自己负责的概述（紧急的）
-                        # pending_count = pending_num_sum + over_charge_num + change_task_count + batch_change_task_count
-                        pending_count = (
-                            pending_num_sum
-                            + overview_urgent_count
+                    # 需求待办按稳定权限与具体项目工程师责任计算；概述待办暂保留旧模块规则。
+                    overview_pending_count = 0
+                    if current_role not in ["销售", "销售主管", "销售总监"]:
+                        overview_pending_count = (
+                            overview_urgent_count
                             + change_task_count
                             + batch_change_task_count
                             + correction_task_count
                         )
-                    elif current_role in ["销售", "销售主管", "销售总监"]:
-                        # 销售看到的是自己提交的待修改项目数量
-                        pending_count = revise_num_user
-                    else:
-                        # 其他人看到的是自己负责审核的待审项目数量（项目工程师才有） + 自己负责的概述（紧急的）
-                        # pending_count = pending_num_user + over_charge_num + change_task_count + batch_change_task_count
-                        pending_count = (
-                            pending_num_user
-                            + overview_urgent_count
-                            + change_task_count
-                            + batch_change_task_count
-                            + correction_task_count
-                        )
+                    pending_count = len(requirement_pending_keys) + overview_pending_count
                 elif target == "/ecn_management":
                     # 将算出的 ECN 待办数量赋给这个卡片
                     pending_count = ecn_pending_num_user
