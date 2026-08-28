@@ -10,6 +10,7 @@ from datetime import date, datetime, timedelta
 from nicegui import app, ui
 
 from .. import db_storage  # 导入我们创建的模块
+from ..access_control import can
 from ..config import (
     BASE_DIR,
     IMG_DIR,
@@ -20,6 +21,11 @@ from ..config import (
     REQ_DIR,
     TABLE_IGNORE_REGULAR,
 )
+from ..permission_catalog import (
+    PROJECT_ALL_STATES_VIEW_PERMISSION,
+    PROJECT_RECORD_MANAGE_PERMISSION,
+    PROJECT_VIEW_PERMISSION,
+)
 from ..utils import (
     find_files_with_prefix_and_version,
     get_cache_busted_path,
@@ -28,6 +34,7 @@ from ..utils import (
     project_summary_update,
     project_table_update_config_update,
     setup_global_activity_tracking,
+    sync_current_user_role,
 )
 
 # 获取一个以此模块命名的 logger
@@ -35,6 +42,57 @@ from ..utils import (
 logger = logging.getLogger(__name__)
 
 PROJECT_TABLE_SESSION_STORAGE_KEY = "project_table_view_state"
+PROJECT_TABLE_LEGACY_MANAGE_ROLES = ("研发经理",)
+
+
+def can_view_project_table(
+    current_role: object,
+    current_user: str,
+    *,
+    user_service=None,
+) -> bool:
+    """数据库模式按稳定权限控制项目总表入口，旧模式保持登录用户可查看。"""
+    service = user_service or getattr(app.state, "user_service", None)
+    return can(
+        service,
+        current_user,
+        PROJECT_VIEW_PERMISSION,
+        legacy_role=str(current_role or ""),
+        legacy_allowed_roles=None,
+    )
+
+
+def can_view_all_project_states(
+    current_role: object,
+    current_user: str,
+    *,
+    user_service=None,
+) -> bool:
+    """判断是否可以查看待定、作废等全部项目状态。"""
+    service = user_service or getattr(app.state, "user_service", None)
+    if service is None or not current_user:
+        return False
+    if getattr(service, "storage_mode", "legacy_excel") != "database":
+        role_text = str(current_role or "")
+        return not any(keyword in role_text for keyword in PROJECT_TABLE_STATE_FILTER_ROLE_KEYWORDS)
+    return can(service, current_user, PROJECT_ALL_STATES_VIEW_PERMISSION)
+
+
+def can_manage_project_records(
+    current_role: object,
+    current_user: str,
+    *,
+    user_service=None,
+) -> bool:
+    """判断是否可以新增或修改项目基础资料。"""
+    service = user_service or getattr(app.state, "user_service", None)
+    return can(
+        service,
+        current_user,
+        PROJECT_RECORD_MANAGE_PERMISSION,
+        legacy_role=str(current_role or ""),
+        legacy_allowed_roles=PROJECT_TABLE_LEGACY_MANAGE_ROLES,
+    )
 
 
 @ui.page("/project_table")
@@ -210,12 +268,23 @@ def project_table_page():
         ui.navigate.to("/login")  # 如果未登录，跳转到登录页
         return
     current_user = app.storage.user.get("current_user")
-    current_role = app.storage.user.get("current_role", "")
+    current_role = sync_current_user_role()
+    if not can_view_project_table(current_role, current_user):
+        ui.notify("当前账号没有查看项目资料的权限", type="negative")
+        ui.navigate.to("/main")
+        return
     project_table_session_storage_key = f"{PROJECT_TABLE_SESSION_STORAGE_KEY}:{current_user}"
-    current_role_text = str(current_role)
-    state_filter_enabled = any(
-        role_keyword in current_role_text for role_keyword in PROJECT_TABLE_STATE_FILTER_ROLE_KEYWORDS
-    )
+    state_filter_enabled = not can_view_all_project_states(current_role, current_user)
+
+    def has_project_manage_permission() -> bool:
+        """保存前重新同步岗位并复核权限，避免只依赖菜单可见性。"""
+        return can_manage_project_records(sync_current_user_role(), current_user)
+
+    def reject_project_manage_without_permission() -> bool:
+        if has_project_manage_permission():
+            return False
+        ui.notify("当前账号没有新增或修改项目资料的权限", type="negative")
+        return True
 
     def should_show_project_by_role(row_data: dict) -> bool:
         if not state_filter_enabled:
@@ -268,6 +337,8 @@ def project_table_page():
         return True, key
 
     async def save_new_project_to_file(new_project_data):
+        if reject_project_manage_without_permission():
+            return False
         try:
             # === 性能优化：将文件读写推入后台线程执行 ===
             success, msg = await asyncio.to_thread(_sync_process_project_save, new_project_data, True)
@@ -300,6 +371,8 @@ def project_table_page():
             return False
 
     async def save_revise_project_to_file(new_project_data):
+        if reject_project_manage_without_permission():
+            return False
         try:
             # === 性能优化：将文件读写推入后台线程执行 ===
             success, msg = await asyncio.to_thread(_sync_process_project_save, new_project_data, False)
@@ -387,6 +460,8 @@ def project_table_page():
 
     # === 新增功能：构建弹窗 UI ===
     def open_add_project_dialog():
+        if reject_project_manage_without_permission():
+            return
         table_dialog.clear()
         with table_dialog, ui.card().classes("w-[500px]"):
             ui.label("新增/修改研发项目").classes("text-xl font-bold mb-4")
@@ -1249,7 +1324,7 @@ def project_table_page():
                 ui.menu_item(f"你好, {app.storage.user.get('current_user', '匿名')}").style("white-space: nowrap;")
                 ui.separator().props("size=1px")
                 ui.menu_item("返回主界面", on_click=lambda: ui.navigate.to("/main"))
-                if current_role in ["研发经理"]:
+                if can_manage_project_records(current_role, current_user):
                     ui.menu_item("新增/修改项目", on_click=open_add_project_dialog)
                     # ui.menu_item("配置概述负责人", on_click=open_set_table_dialog)
                 ui.separator().props("size=1px")

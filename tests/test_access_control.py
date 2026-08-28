@@ -14,6 +14,9 @@ from src.permission_catalog import (
     ERROR_NOTIFICATION_MODULE,
     ERROR_RECORD_EDIT_PERMISSION,
     ERROR_VIEW_PERMISSION,
+    PROJECT_ALL_STATES_VIEW_PERMISSION,
+    PROJECT_RECORD_MANAGE_PERMISSION,
+    PROJECT_VIEW_PERMISSION,
     SAMPLE_ISSUE_CREATE_PERMISSION,
     SAMPLE_ISSUE_CLOSE_APPROVE_PERMISSION,
     SAMPLE_ISSUE_LEGACY_CLOSE_DEFAULT_APPROVE_PERMISSION,
@@ -26,6 +29,11 @@ from src.permission_catalog import (
     SAMPLE_ORDER_BASE_EDIT_PERMISSION,
     SAMPLE_ORDER_VIEW_PERMISSION,
     tool_permission_code,
+)
+from src.pages.project_table import (
+    can_manage_project_records,
+    can_view_all_project_states,
+    can_view_project_table,
 )
 from src.user_service import UserService
 
@@ -116,6 +124,76 @@ class AccessControlTests(unittest.TestCase):
                 legacy_role="admin",
                 legacy_allowed_roles=["admin"],
             )
+        )
+
+    def test_project_table_legacy_mode_keeps_original_role_behavior(self):
+        """旧 Excel 模式仍允许登录用户查看，并保留原项目维护和状态范围规则。"""
+        self.assertTrue(
+            can_view_project_table("普通用户", "张三", user_service=self.service)
+        )
+        self.assertTrue(
+            can_manage_project_records("研发经理", "张三", user_service=self.service)
+        )
+        self.assertFalse(
+            can_manage_project_records("研发硬件", "张三", user_service=self.service)
+        )
+        self.assertFalse(
+            can_view_all_project_states("工程IE", "张三", user_service=self.service)
+        )
+        self.assertTrue(
+            can_view_all_project_states("研发硬件", "张三", user_service=self.service)
+        )
+
+    def test_project_table_database_mode_uses_only_stable_permissions(self):
+        """项目资料迁移后不得从旧角色名称获得查看或维护能力。"""
+        self.service.migrate_legacy_users()
+
+        self.assertFalse(
+            can_view_project_table("研发经理", "张三", user_service=self.service)
+        )
+        self.assertFalse(
+            can_manage_project_records("研发经理", "张三", user_service=self.service)
+        )
+        self.assertFalse(
+            can_view_all_project_states("研发经理", "张三", user_service=self.service)
+        )
+
+        org_unit_id = self.service.save_org_unit(code="org.project", name="项目测试部")
+        position_id = self.service.save_position(code="project.manager", name="项目管理员")
+        self.service.set_primary_membership(
+            "张三",
+            org_unit_id=org_unit_id,
+            position_id=position_id,
+        )
+        self.service.set_position_permissions(
+            position_id,
+            [PROJECT_VIEW_PERMISSION],
+            actor_username="admin",
+        )
+        self.assertTrue(
+            can_view_project_table("普通岗位", "张三", user_service=self.service)
+        )
+        self.assertFalse(
+            can_view_all_project_states("普通岗位", "张三", user_service=self.service)
+        )
+        self.assertFalse(
+            can_manage_project_records("普通岗位", "张三", user_service=self.service)
+        )
+
+        self.service.set_position_permissions(
+            position_id,
+            [
+                PROJECT_VIEW_PERMISSION,
+                PROJECT_ALL_STATES_VIEW_PERMISSION,
+                PROJECT_RECORD_MANAGE_PERMISSION,
+            ],
+            actor_username="admin",
+        )
+        self.assertTrue(
+            can_view_all_project_states("普通岗位", "张三", user_service=self.service)
+        )
+        self.assertTrue(
+            can_manage_project_records("普通岗位", "张三", user_service=self.service)
         )
 
     def test_admin_automatically_has_every_registered_permission(self):

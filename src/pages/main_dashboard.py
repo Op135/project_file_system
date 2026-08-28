@@ -35,6 +35,7 @@ from .error_management import (
     can_view_error_management,
     get_error_dashboard_pending_count,
 )
+from .project_table import can_view_project_table
 from .sample_issue_collection import (
     SAMPLE_ISSUE_DATA_KEY,
     can_view_sample_issue_collection,
@@ -228,8 +229,14 @@ def main_page():
     ]
     menu_items = []
     for items in menu_items_metadata:
+        # 项目资料总表使用稳定权限控制入口，旧 Excel 环境仍允许所有登录用户查看。
+        if items[3] == "/project_table" and not can_view_project_table(
+            current_role,
+            current_user,
+        ):
+            continue
         # 需求结构图只对角色字符串里含有如下关键字的用户展示
-        if items[3] == "/information" and not any(
+        elif items[3] == "/information" and not any(
             k in str(current_role) for k in ["销售", "研发", "工程", "质量", "boss", "admin"]
         ):
             continue

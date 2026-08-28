@@ -36,6 +36,33 @@ CORE_PERMISSIONS = (
 )
 
 
+PROJECT_VIEW_PERMISSION = "project.view"
+PROJECT_ALL_STATES_VIEW_PERMISSION = "project.all_states.view"
+PROJECT_RECORD_MANAGE_PERMISSION = "project.record.manage"
+
+
+PROJECT_PERMISSIONS = (
+    PermissionDefinition(
+        PROJECT_VIEW_PERMISSION,
+        "查看 — 项目资料总表",
+        "项目资料",
+        "允许从主页进入并查看项目资料总表；未同时授权全部状态时只显示试产、量产项目",
+    ),
+    PermissionDefinition(
+        PROJECT_ALL_STATES_VIEW_PERMISSION,
+        "查看 — 全部项目状态",
+        "项目资料",
+        "允许在项目资料总表中查看待定、作废等全部状态的项目",
+    ),
+    PermissionDefinition(
+        PROJECT_RECORD_MANAGE_PERMISSION,
+        "维护 — 项目基础资料",
+        "项目资料",
+        "允许新增项目并修改项目状态、立项日期、简介、备注和客户简称",
+    ),
+)
+
+
 SAMPLE_ORDER_BASE_EDIT_PERMISSION = "sample_order.base.edit"
 SAMPLE_ORDER_VIEW_PERMISSION = "sample_order.view"
 SAMPLE_ORDER_DELAY_EDIT_PERMISSION = "sample_order.delay.edit"
@@ -433,6 +460,7 @@ TOOL_PERMISSIONS = tuple(
 PERMISSION_CATALOG = (
     CORE_PERMISSIONS
     + TOOL_PERMISSIONS
+    + PROJECT_PERMISSIONS
     + SAMPLE_ORDER_PERMISSIONS
     + ERROR_PERMISSIONS
     + SAMPLE_ISSUE_PERMISSIONS
@@ -448,6 +476,7 @@ def ignores_legacy_role_grants(permission_code: str) -> bool:
     return (
         normalized == "system.manage"
         or (normalized.startswith("tools.") and normalized.endswith(".use"))
+        or normalized.startswith("project.")
         or normalized.startswith("sample_order.")
         or normalized.startswith("error.")
         or normalized.startswith("sample_issue.")
