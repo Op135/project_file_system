@@ -10,11 +10,17 @@ import pandas as pd
 from nicegui import app, ui
 
 from ..config import BASE_DIR, IMG_DIR, OVER_DIR, PRESET_AVATARS, PROJECT_STATE_LIST, REQ_DIR, REQ_REMOVE_DIR
+from ..statistics_access import (
+    can_manage_overview_owners,
+    can_view_overview_statistics,
+    can_view_statistics,
+)
 from ..utils import (
     get_cache_busted_path,
     logout,
     overview_role_update,
     setup_global_activity_tracking,
+    sync_current_user_role,
     update_overview_charge_pending_dic,
 )
 
@@ -203,7 +209,8 @@ def status_badge(text, color_name="gray"):
 @ui.page("/statistics")
 def statistics_page():
     # 1. 权限与基础数据获取
-    if not app.storage.user.get("current_user"):
+    stored_current_user = app.storage.user.get("current_user")
+    if not isinstance(stored_current_user, str) or not stored_current_user:
         ui.navigate.to("/login")
         return
 
@@ -223,8 +230,8 @@ def statistics_page():
     """)
 
     dialog = ui.dialog().props("persistent").classes("")
-    current_user = app.storage.user.get("current_user", "匿名用户")
-    current_role = app.storage.user.get("current_role")
+    current_user = stored_current_user
+    current_role = sync_current_user_role()
 
     # 读取配置文件
     try:
@@ -233,6 +240,21 @@ def statistics_page():
     except Exception as e:
         logger.error(f"无法读取权限配置: {e}")
         module_show_data = {}  # 防止报错
+    legacy_overview_roles = module_show_data.get("overview_charge_pending_statistics", [])
+    if not can_view_statistics(current_role, current_user):
+        ui.notify("当前账号没有查看统计信息的权限", type="negative")
+        ui.navigate.to("/main")
+        return
+    can_view_overview_stats = can_view_overview_statistics(
+        current_role,
+        current_user,
+        legacy_allowed_roles=legacy_overview_roles,
+    )
+    can_manage_overview_owner_data = can_manage_overview_owners(
+        current_role,
+        current_user,
+        legacy_allowed_roles=legacy_overview_roles,
+    )
 
     # 头像处理
     user_prefs = app.storage.general.get("user_preferences", {}).get(current_user, {})
@@ -241,6 +263,13 @@ def statistics_page():
 
     # === 新增功能：配置项目概述负责人弹窗 ===
     def open_set_table_dialog():
+        if not can_manage_overview_owners(
+            sync_current_user_role(),
+            current_user,
+            legacy_allowed_roles=legacy_overview_roles,
+        ):
+            ui.notify("当前账号没有配置项目概述负责人的权限", type="negative")
+            return
         dialog.clear()
         # 增加 max-w-[90vw] 以适配不同浏览器页面大中小情况
         with dialog, ui.card().classes("w-[500px] max-w-[90vw]"):
@@ -294,6 +323,13 @@ def statistics_page():
             with ui.row().classes("w-full justify-end mt-4"):
 
                 async def on_confirm():
+                    if not can_manage_overview_owners(
+                        sync_current_user_role(),
+                        current_user,
+                        legacy_allowed_roles=legacy_overview_roles,
+                    ):
+                        ui.notify("当前账号没有配置项目概述负责人的权限", type="negative")
+                        return
                     pn = form_data["project_name"]
                     # 提交前再次校验项目名是否合法
                     if not pn or pn not in app.storage.general.get("project_summary", {}):
@@ -376,8 +412,9 @@ def statistics_page():
                 ui.separator().props("size=1px")
                 ui.menu_item("返回主界面", on_click=lambda: ui.navigate.to("/main"))
                 ui.separator().props("size=1px")
-                ui.menu_item("配置概述负责人", on_click=open_set_table_dialog)
-                ui.separator().props("size=1px")
+                if can_manage_overview_owner_data:
+                    ui.menu_item("配置概述负责人", on_click=open_set_table_dialog)
+                    ui.separator().props("size=1px")
                 ui.menu_item("注销登录", on_click=lambda: logout())
 
     # 2. 主内容区域 (Grid布局)
@@ -402,7 +439,6 @@ def statistics_page():
                         # if not pending_project_dic:
                         pending_data.pop(user, None)
 
-                can_view_overview_stats = current_role in module_show_data.get("overview_charge_pending_statistics", [])
                 overview_role = app.storage.general.get("overview_role", {})
                 management_snapshot = build_overview_management_snapshot(overview_role, management_pending_data)
 
@@ -1148,7 +1184,7 @@ def statistics_page():
                 # =========================================================
                 with ui.column().classes("col-span-12 lg:col-span-6 gap-4"):
                     # D. 其他统计信息 (Other Statistics)
-                    if can_view_overview_stats:
+                    if can_view_statistics(current_role, current_user):
                         with ui.card().classes(
                             "w-full rounded-xl shadow-sm border border-gray-100 overflow-hidden bg-white mb-2"
                         ):

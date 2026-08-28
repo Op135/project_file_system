@@ -440,6 +440,33 @@ DESIGN_KNOWLEDGE_PERMISSIONS = (
 )
 
 
+STATISTICS_VIEW_PERMISSION = "statistics.view"
+STATISTICS_OVERVIEW_VIEW_PERMISSION = "statistics.overview.view"
+STATISTICS_OVERVIEW_OWNER_MANAGE_PERMISSION = "statistics.overview_owner.manage"
+
+
+STATISTICS_PERMISSIONS = (
+    PermissionDefinition(
+        STATISTICS_VIEW_PERMISSION,
+        "查看 — 统计信息",
+        "统计信息",
+        "允许从主页进入统计信息页面并查看通用统计区块",
+    ),
+    PermissionDefinition(
+        STATISTICS_OVERVIEW_VIEW_PERMISSION,
+        "查看 — 全部概述待办与负责人统计",
+        "统计信息",
+        "允许查看全体概述负责人的待办、完成度和历史趋势统计",
+    ),
+    PermissionDefinition(
+        STATISTICS_OVERVIEW_OWNER_MANAGE_PERMISSION,
+        "维护 — 项目概述负责人",
+        "统计信息",
+        "允许跨项目配置光学、结构、硬件、软件、UI 和工艺等概述负责人",
+    ),
+)
+
+
 SAMPLE_ORDER_EXTENSION_NOTIFY_PERMISSION = "notifications.sample_order.extension.receive"
 SAMPLE_ORDER_SPECIAL_STATUS_NOTIFY_PERMISSION = "notifications.sample_order.special_status.receive"
 ERROR_EXTENSION_REQUEST_NOTIFY_PERMISSION = "notifications.error.extension.request.receive"
@@ -647,6 +674,7 @@ STATIC_PERMISSION_CATALOG = (
     + ERROR_PERMISSIONS
     + SAMPLE_ISSUE_PERMISSIONS
     + DESIGN_KNOWLEDGE_PERMISSIONS
+    + STATISTICS_PERMISSIONS
     + NOTIFICATION_PERMISSIONS
 )
 try:
@@ -684,6 +712,7 @@ def ignores_legacy_role_grants(permission_code: str) -> bool:
         or normalized.startswith("error.")
         or normalized.startswith("sample_issue.")
         or normalized.startswith("design_knowledge.")
+        or normalized.startswith("statistics.")
         or normalized.startswith("notifications.")
     )
 

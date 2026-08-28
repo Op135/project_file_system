@@ -31,6 +31,7 @@ from ..project_requirement_access import (
     can_revoke_project_requirement_approval,
     has_assigned_requirement_review_permission,
 )
+from ..statistics_access import can_view_statistics
 from ..utils import (
     get_cache_busted_path,
     get_project_engineer_project_list_dic,
@@ -282,9 +283,10 @@ def main_page():
             k in str(current_role) for k in ["销售", "研发", "boss", "admin"]
         ):
             continue
-        # 统计信息只对角色字符串里含有如下关键字的用户展示
-        elif items[3] == "/statistics" and not any(
-            k in str(current_role) for k in ["总监", "经理", "主管", "boss", "admin"]
+        # 统计信息入口使用稳定权限，旧 Excel 模式继续沿用原角色关键词。
+        elif items[3] == "/statistics" and not can_view_statistics(
+            current_role,
+            current_user,
         ):
             continue
         # 异常单跟进使用稳定权限控制入口，旧 Excel 环境仍沿用原角色关键词。
