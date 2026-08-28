@@ -127,6 +127,19 @@ PROJECT_REQUIREMENT_PERMISSIONS = (
 )
 
 
+PROJECT_TODO_VIEW_PERMISSION = "project_todo.view"
+
+
+PROJECT_TODO_PERMISSIONS = (
+    PermissionDefinition(
+        PROJECT_TODO_VIEW_PERMISSION,
+        "查看 — 项目待办工作台",
+        "项目待办",
+        "允许从主页进入项目待办工作台；具体需求、概述和审批内容仍按各自业务权限过滤",
+    ),
+)
+
+
 PROJECT_OVERVIEW_DIMENSIONS = (
     ("optical", "光学"),
     ("structure", "结构"),
@@ -669,6 +682,7 @@ STATIC_PERMISSION_CATALOG = (
     + TOOL_PERMISSIONS
     + PROJECT_PERMISSIONS
     + PROJECT_REQUIREMENT_PERMISSIONS
+    + PROJECT_TODO_PERMISSIONS
     + PROJECT_OVERVIEW_PERMISSIONS
     + SAMPLE_ORDER_PERMISSIONS
     + ERROR_PERMISSIONS
@@ -707,6 +721,7 @@ def ignores_legacy_role_grants(permission_code: str) -> bool:
         or (normalized.startswith("tools.") and normalized.endswith(".use"))
         or normalized.startswith("project.")
         or normalized.startswith("project_requirement.")
+        or normalized.startswith("project_todo.")
         or normalized.startswith("project_overview.")
         or normalized.startswith("sample_order.")
         or normalized.startswith("error.")

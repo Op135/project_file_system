@@ -43,6 +43,7 @@ from ..project_requirement_access import (
     can_revoke_project_requirement_approval,
     has_assigned_requirement_review_permission,
 )
+from ..project_todo_access import can_view_project_todo, filter_actionable_overview_pending
 from ..project_overview_access import can_review_overview_correction
 from ..requirement_overview_impact import RequirementOverviewImpactConfigError
 from ..utils import (
@@ -265,6 +266,10 @@ def information_page():
     dialog = ui.dialog().props("persistent").classes("")
     current_user = stored_current_user
     current_role = sync_current_user_role()
+    if not can_view_project_todo(current_role, current_user):
+        ui.notify("当前账号没有查看项目待办工作台的权限", type="negative")
+        ui.navigate.to("/main")
+        return
 
     def current_project_engineers() -> dict:
         return app.storage.general.get("project_engineer", {}) or {}
@@ -283,14 +288,6 @@ def information_page():
 
     def can_edit_requirements() -> bool:
         return can_edit_project_requirement(current_role, current_user)
-
-    # 读取配置文件
-    try:
-        with open(f"{BASE_DIR}/module_show_role.json", "r", encoding="utf-8") as f:
-            module_show_data = json.load(f)
-    except Exception as e:
-        logger.error(f"无法读取权限配置: {e}")
-        module_show_data = {}  # 防止报错
 
     # 头像处理
     user_prefs = app.storage.general.get("user_preferences", {}).get(current_user, {})
@@ -1648,7 +1645,13 @@ def information_page():
                 # =========================================================
                 with ui.column().classes("col-span-12 lg:col-span-6 gap-4"):
                     # A. 待判断概述 (Priority Task)
-                    my_pending = app.storage.general["overview_charge_pending"].get(current_user, {})
+                    over_flat = app.storage.general.get("over_config_data_flat", {})
+                    my_pending = filter_actionable_overview_pending(
+                        app.storage.general["overview_charge_pending"].get(current_user, {}),
+                        over_flat,
+                        current_role,
+                        current_user,
+                    )
                     if my_pending:
                         # 待办已按具体用户名分配，不再额外依赖旧角色名单控制显示。
                         if isinstance(my_pending, dict):
@@ -1657,7 +1660,6 @@ def information_page():
                                 with ui.column().classes(
                                     "w-full gap-2 px-1 pr-2 max-h-[60vh] overflow-y-auto overflow-x-hidden"
                                 ):
-                                    over_flat = app.storage.general.get("over_config_data_flat", {})
                                     project_summary = app.storage.general.get("project_summary", {})
 
                                     project_states = {

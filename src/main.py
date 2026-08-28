@@ -297,7 +297,8 @@ async def master_startup():
 
     # 第二顺位：执行依赖数据库的全局数据加载与配置更新
     # 此时可以100%确定数据库已经就绪
-    updata_overview_config()
+    # 启动钩子没有浏览器客户端与 UI slot，只执行同步并写日志，不能调用界面通知。
+    updata_overview_config(show_notification=False)
     # 第三顺位：满足需求，在系统启动时仅执行一次业务字典更新
     # update_overview_charge_pending_dic("all") 上面updata_overview_config()里已经包含
 

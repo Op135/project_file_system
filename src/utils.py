@@ -1166,7 +1166,8 @@ def get_requirement_overview_impacts(
 
 
 # 更新概述概述项配置设置
-def updata_overview_config():
+def updata_overview_config(*, show_notification: bool = True) -> bool:
+    """同步概述配置和权限目录；后台调用时可关闭界面通知。"""
     try:
         # 每次都以配置文件为准，不以服务器现有数据为准
         # 配置更新能直接呈现，但配置减项将导致原有数据不呈现
@@ -1200,10 +1201,23 @@ def updata_overview_config():
             # --- 新增：配置结构变更后，强制进行一次全局待定状态重构 ---
             update_overview_charge_pending_dic("all")
             logger.info("全局概述待定状态已基于最新配置文件重新构建。")
-            ui.notify("概述配置与 label 级权限目录已同步。", type="positive")
     except Exception as e:
-        logger.error(f"更新概述项配置失败；{e}")
-        ui.notify(f"概述配置更新失败：{e}", type="negative", multi_line=True)
+        logger.error("更新概述项配置失败：%s", e, exc_info=True)
+        if show_notification:
+            try:
+                ui.notify(f"概述配置更新失败：{e}", type="negative", multi_line=True)
+            except RuntimeError:
+                # 页面已关闭或后台任务没有 UI slot 时，日志已经保留真实错误，不再二次抛错。
+                logger.warning("当前没有可用的 UI 上下文，已跳过概述配置失败通知。")
+        return False
+
+    if show_notification:
+        try:
+            ui.notify("概述配置与 label 级权限目录已同步。", type="positive")
+        except RuntimeError:
+            # 通知失败不能把已经成功完成的配置同步反向标记为业务失败。
+            logger.warning("当前没有可用的 UI 上下文，已跳过概述配置成功通知。")
+    return True
 
 
 # 传入待判断字符串和正则表达式，输出判断结果

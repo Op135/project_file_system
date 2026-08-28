@@ -28,6 +28,7 @@ from src.permission_catalog import (
     PROJECT_REQUIREMENT_REVIEW_ASSIGNED_PERMISSION,
     PROJECT_REQUIREMENT_REVOKE_PERMISSION,
     PROJECT_REQUIREMENT_VIEW_PERMISSION,
+    PROJECT_TODO_VIEW_PERMISSION,
     PROJECT_VIEW_PERMISSION,
     ProjectOverviewPermissionCatalogError,
     SAMPLE_ISSUE_CREATE_PERMISSION,
@@ -62,6 +63,10 @@ from src.project_requirement_access import (
     can_review_project_requirement,
     can_revoke_project_requirement_approval,
     can_view_project_requirement,
+)
+from src.project_todo_access import (
+    can_view_project_todo,
+    filter_actionable_overview_pending,
 )
 from src.project_overview_access import (
     can_edit_overview_item,
@@ -219,6 +224,62 @@ class AccessControlTests(unittest.TestCase):
         )
         self.assertTrue(
             can_manage_overview_owners("普通岗位", "张三", user_service=self.service)
+        )
+
+    def test_project_todo_legacy_mode_keeps_original_entry_keywords(self):
+        """旧 Excel 模式继续按原角色关键词开放项目待办入口。"""
+        self.assertTrue(can_view_project_todo("质量工程师", "张三", user_service=self.service))
+        self.assertTrue(can_view_project_todo("研发硬件", "张三", user_service=self.service))
+        self.assertFalse(can_view_project_todo("行政专员", "张三", user_service=self.service))
+
+    def test_project_todo_database_mode_requires_stable_entry_permission(self):
+        """数据库模式不得因岗位名称碰巧包含旧关键词而开放项目待办。"""
+        self.service.migrate_legacy_users()
+        org_unit_id = self.service.save_org_unit(code="org.todo", name="待办测试部")
+        position_id = self.service.save_position(code="todo.viewer", name="研发待办查看岗位")
+        self.service.set_primary_membership(
+            "张三",
+            org_unit_id=org_unit_id,
+            position_id=position_id,
+        )
+
+        self.assertFalse(can_view_project_todo("研发经理", "张三", user_service=self.service))
+        self.service.set_position_permissions(
+            position_id,
+            [PROJECT_TODO_VIEW_PERMISSION],
+            actor_username="admin",
+        )
+        self.assertTrue(can_view_project_todo("普通岗位", "张三", user_service=self.service))
+
+    def test_project_todo_only_keeps_actionable_overview_labels(self):
+        """个人概述待办只显示当前角色真正可以维护的 label。"""
+        pending = {
+            "P100": {
+                "hardware_summary": "缺必填",
+                "optical_summary": "有待定",
+                "removed_summary": "缺需填",
+            }
+        }
+        overview_config = {
+            "hardware_summary": {
+                "label": "hardware_summary",
+                "permission": {"edit_role": ["研发硬件"]},
+            },
+            "optical_summary": {
+                "label": "optical_summary",
+                "permission": {"edit_role": ["研发光学"]},
+            },
+        }
+
+        self.assertEqual(
+            filter_actionable_overview_pending(
+                pending,
+                overview_config,
+                "研发硬件",
+                "张三",
+                user_service=self.service,
+            ),
+            {"P100": {"hardware_summary": "缺必填"}},
         )
 
     def test_project_table_legacy_mode_keeps_original_role_behavior(self):

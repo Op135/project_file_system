@@ -16,21 +16,13 @@ from ..overview_batch_operations import (
 )
 from ..overview_corrections import OVERVIEW_CORRECTION_REQUESTS_KEY, get_correction_pending_count
 from ..overview_warning import get_urgent_overview_projects
-from ..permission_catalog import (
-    PROJECT_OVERVIEW_BATCH_REVIEW_PERMISSION,
-    PROJECT_OVERVIEW_CORRECTION_REVIEW_PERMISSION,
-)
-from ..project_overview_access import (
-    can_review_overview_correction,
-    can_view_any_project_overview,
-)
+from ..project_overview_access import can_review_overview_correction
 from ..project_requirement_access import (
     can_edit_project_requirement,
-    can_manage_all_project_requirement_drafts,
     can_review_all_project_requirements,
-    can_revoke_project_requirement_approval,
     has_assigned_requirement_review_permission,
 )
+from ..project_todo_access import can_view_project_todo, filter_actionable_overview_pending
 from ..statistics_access import can_view_statistics
 from ..utils import (
     get_cache_busted_path,
@@ -251,33 +243,12 @@ def main_page():
             current_user,
         ):
             continue
-        # 需求结构图只对角色字符串里含有如下关键字的用户展示
-        elif items[3] == "/information":
-            project_engineers = app.storage.general.get("project_engineer", {}) or {}
-            has_assigned_requirement_projects = (
-                current_user in {str(user or "") for user in project_engineers.values()}
-                and has_assigned_requirement_review_permission(current_role, current_user)
-            )
-            can_access_requirement_workbench = (
-                can_edit_project_requirement(current_role, current_user)
-                or can_review_all_project_requirements(current_role, current_user)
-                or has_assigned_requirement_projects
-                or can_revoke_project_requirement_approval(current_role, current_user)
-                or can_manage_all_project_requirement_drafts(current_role, current_user)
-            )
-            user_service = app.state.user_service
-            database_mode = getattr(user_service, "storage_mode", "legacy_excel") == "database"
-            can_access_overview_workbench = (
-                can_view_any_project_overview(current_role, current_user)
-                or can(user_service, current_user, PROJECT_OVERVIEW_BATCH_REVIEW_PERMISSION)
-                or can(user_service, current_user, PROJECT_OVERVIEW_CORRECTION_REVIEW_PERMISSION)
-            )
-            legacy_access = not database_mode and any(
-                keyword in str(current_role)
-                for keyword in ["销售", "研发", "工程", "质量", "boss", "admin"]
-            )
-            if not can_access_requirement_workbench and not can_access_overview_workbench and not legacy_access:
-                continue
+        # 项目待办使用独立稳定入口权限，内部内容继续按各业务权限和具体责任过滤。
+        elif items[3] == "/information" and not can_view_project_todo(
+            current_role,
+            current_user,
+        ):
+            continue
         # 需求结构图只对角色字符串里含有如下关键字的用户展示
         elif items[3] == "/question_tree_tabs" and not any(
             k in str(current_role) for k in ["销售", "研发", "boss", "admin"]
@@ -427,7 +398,12 @@ def main_page():
             # --- 仅针对项目概述待办进行状态过滤 ---
             project_summary = app.storage.general.get("project_summary", {})
             overview_pending_by_user = app.storage.general.get("overview_charge_pending", {})
-            current_overview_pending = overview_pending_by_user.get(current_user, {})
+            current_overview_pending = filter_actionable_overview_pending(
+                overview_pending_by_user.get(current_user, {}),
+                app.storage.general.get("over_config_data_flat", {}),
+                current_role,
+                current_user,
+            )
             if current_overview_pending:
                 # 仅统计状态非“作废”且非“待定”的项目，确保与 information.py 逻辑一致
                 overview_project_states = {
