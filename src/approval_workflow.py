@@ -264,6 +264,11 @@ def _version_approval_nodes(version: dict[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
+def get_approval_workflow_editor_nodes(version: dict[str, Any]) -> list[dict[str, Any]]:
+    """把任意历史版本转换为管理界面可编辑的独立节点副本。"""
+    return copy.deepcopy(_version_approval_nodes(version))
+
+
 def resolve_approval_workflow(
     user_service,
     *,

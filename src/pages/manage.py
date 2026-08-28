@@ -10,6 +10,7 @@ from ..access_control import can
 from ..approval_workflow import (
     APPROVAL_WORKFLOW_EVENTS,
     APPROVER_STRATEGY_NAMES,
+    get_approval_workflow_editor_nodes,
     import_design_knowledge_legacy_workflows,
     import_project_overview_legacy_workflows,
     import_sample_issue_legacy_workflows,
@@ -2533,7 +2534,6 @@ def manage_page():
                                 "notification": {},
                             }
                             condition = version.get("condition", {})
-                            approver = version.get("approver", {})
                             event_key = f"{selected['module']}:{selected['event']}"
                             event_definition = next(
                                 (
@@ -2610,100 +2610,369 @@ def manage_page():
                             ).props("outlined use-chips options-dense").classes("w-full")
 
                             ui.separator()
-                            ui.label("审批人和资格").classes("font-bold")
-                            permission_select = ui.select(
-                                permission_options,
-                                value=version.get("required_permission_code"),
-                                label="审批所需权限",
-                            ).props("outlined options-dense").classes("w-full")
-                            strategy_select = ui.select(
-                                APPROVER_STRATEGY_NAMES,
-                                value=approver.get("strategy", "permission"),
-                                label="审批人来源",
-                            ).props("outlined options-dense").classes("w-full")
+                            ui.label("审批节点").classes("font-bold")
+                            ui.label(
+                                "多节点按界面顺序依次执行；每个节点可以选择任意一人处理或全部人员会签。"
+                            ).classes("text-xs text-blue-800 bg-blue-50 rounded p-2")
+                            ui.label(
+                                f"节点编码格式：{STABLE_CODE_HINT}；同一流程内不得重复，保存时会自动查重。"
+                            ).classes("text-xs text-gray-500")
 
-                            with ui.column().classes("w-full gap-2") as position_settings:
-                                approver_position_select = ui.select(
-                                    position_options,
-                                    value=approver.get("position_ids", []),
-                                    label="审批岗位",
-                                    multiple=True,
-                                    with_input=True,
-                                ).props("outlined use-chips options-dense").classes("w-full")
-                                org_scope_select = ui.select(
+                            initial_mode = (
+                                "sequential"
+                                if str(version.get("approval_mode") or "any").lower() == "sequential"
+                                else "single"
+                            )
+                            try:
+                                initial_nodes = get_approval_workflow_editor_nodes(version)
+                            except ValueError as exc:
+                                ui.label(f"当前流程节点配置无效：{exc}").classes(
+                                    "text-sm text-red-700 bg-red-50 rounded p-2"
+                                )
+                                return
+                            editor_state = {
+                                "mode": initial_mode,
+                                "nodes": initial_nodes,
+                            }
+                            workflow_mode_select = ui.select(
+                                {
+                                    "single": "单节点审批",
+                                    "sequential": "多节点串行审批",
+                                },
+                                value=initial_mode,
+                                label="流程执行方式",
+                            ).props("outlined options-dense").classes("w-full")
+                            node_editor_container = ui.column().classes("w-full gap-3")
+
+                            def update_node_value(node, key, value):
+                                node[key] = value
+
+                            def update_node_approver(node, key, value):
+                                node.setdefault("approver", {})[key] = value
+
+                            def move_approval_node(index, offset):
+                                nodes = editor_state["nodes"]
+                                target_index = index + offset
+                                if target_index < 0 or target_index >= len(nodes):
+                                    return
+                                nodes[index], nodes[target_index] = nodes[target_index], nodes[index]
+                                render_approval_nodes()
+
+                            def remove_approval_node(index):
+                                nodes = editor_state["nodes"]
+                                minimum_nodes = 2 if editor_state["mode"] == "sequential" else 1
+                                if len(nodes) <= minimum_nodes:
+                                    message = (
+                                        "多节点串行审批至少需要保留两个节点。"
+                                        if minimum_nodes == 2
+                                        else "审批流程至少需要保留一个节点。"
+                                    )
+                                    ui.notify(message, type="warning")
+                                    return
+                                nodes.pop(index)
+                                # 先更新界面，再由新槽位承接后续操作，避免引用已删除的节点容器。
+                                render_approval_nodes()
+
+                            def next_node_key():
+                                existing_keys = {
+                                    normalize_stable_code(node.get("node_key", ""))
+                                    for node in editor_state["nodes"]
+                                }
+                                number = len(editor_state["nodes"]) + 1
+                                while f"approval_{number}" in existing_keys:
+                                    number += 1
+                                return f"approval_{number}"
+
+                            def add_approval_node():
+                                node_number = len(editor_state["nodes"]) + 1
+                                default_permission = next(iter(permission_options), "")
+                                editor_state["nodes"].append(
                                     {
-                                        "any": "不限部门",
-                                        "requester": "与申请人同部门",
-                                        "fixed": "限定到指定部门",
-                                    },
-                                    value=approver.get("org_scope", "any"),
-                                    label="审批岗位的部门范围",
-                                ).props("outlined options-dense").classes("w-full")
-                                approver_org_select = ui.select(
-                                    unit_options,
-                                    value=approver.get("org_unit_ids", []),
-                                    label="指定审批部门",
-                                    multiple=True,
-                                    with_input=True,
-                                ).props("outlined use-chips options-dense").classes("w-full")
-                            with ui.column().classes("w-full") as user_settings:
-                                approver_user_select = ui.select(
-                                    user_options,
-                                    value=approver.get("user_ids", []),
-                                    label="指定审批人员",
-                                    multiple=True,
-                                    with_input=True,
-                                ).props("outlined use-chips options-dense").classes("w-full")
-                            with ui.column().classes("w-full") as direct_manager_hint:
-                                ui.label(
-                                    "系统读取申请人组织任职中配置的直属上级；直属上级仍必须拥有上面的审批权限。"
-                                ).classes("text-xs text-blue-800 bg-blue-50 rounded p-2")
-                            with ui.column().classes("w-full") as permission_hint:
-                                ui.label(
-                                    "系统会选择所有拥有上面审批权限的在职用户；admin 不会自动成为业务审批人。"
-                                ).classes("text-xs text-blue-800 bg-blue-50 rounded p-2")
-                            ui.label("审批方式：任意一人处理（第一版固定）").classes(
-                                "text-xs text-gray-600"
-                            )
+                                        "node_key": next_node_key(),
+                                        "name": f"审批节点 {node_number}",
+                                        "approval_mode": "any",
+                                        "required_permission_code": default_permission,
+                                        "approver": {
+                                            "strategy": "permission",
+                                            "permission_code": default_permission,
+                                        },
+                                    }
+                                )
+                                render_approval_nodes()
 
-                            def update_strategy_visibility():
-                                strategy = strategy_select.value
-                                position_settings.visible = strategy == "position"
-                                user_settings.visible = strategy == "users"
-                                direct_manager_hint.visible = strategy == "direct_manager"
-                                permission_hint.visible = strategy == "permission"
+                            def render_approval_nodes():
+                                node_editor_container.clear()
+                                nodes = editor_state["nodes"]
+                                visible_nodes = nodes if editor_state["mode"] == "sequential" else nodes[:1]
+                                with node_editor_container:
+                                    for index, node in enumerate(visible_nodes):
+                                        node_approver = node.setdefault("approver", {})
+                                        with ui.card().classes(
+                                            "w-full border border-blue-100 shadow-none bg-white p-4 gap-3"
+                                        ):
+                                            with ui.row().classes("w-full items-center justify-between"):
+                                                ui.label(
+                                                    f"第 {index + 1} 步｜{node.get('name') or '未命名节点'}"
+                                                ).classes("font-semibold text-blue-900")
+                                                if editor_state["mode"] == "sequential":
+                                                    with ui.row().classes("gap-1"):
+                                                        ui.button(
+                                                            icon="arrow_upward",
+                                                            on_click=lambda idx=index: move_approval_node(idx, -1),
+                                                        ).props(
+                                                            "flat round dense"
+                                                            + (" disable" if index == 0 else "")
+                                                        ).tooltip("上移")
+                                                        ui.button(
+                                                            icon="arrow_downward",
+                                                            on_click=lambda idx=index: move_approval_node(idx, 1),
+                                                        ).props(
+                                                            "flat round dense"
+                                                            + (" disable" if index == len(visible_nodes) - 1 else "")
+                                                        ).tooltip("下移")
+                                                        ui.button(
+                                                            icon="delete",
+                                                            on_click=lambda idx=index: remove_approval_node(idx),
+                                                        ).props("flat round dense color=negative").tooltip("删除节点")
 
-                            def update_org_scope_visibility():
-                                approver_org_select.visible = org_scope_select.value == "fixed"
+                                            with ui.row().classes("w-full gap-3"):
+                                                ui.input(
+                                                    "节点编码",
+                                                    value=node.get("node_key", ""),
+                                                    on_change=lambda event, target=node: update_node_value(
+                                                        target, "node_key", event.value
+                                                    ),
+                                                ).props("outlined dense").classes("w-64").tooltip(STABLE_CODE_HINT)
+                                                ui.input(
+                                                    "节点名称",
+                                                    value=node.get("name", ""),
+                                                    on_change=lambda event, target=node: update_node_value(
+                                                        target, "name", event.value
+                                                    ),
+                                                ).props("outlined dense").classes("flex-grow")
+                                                ui.select(
+                                                    {
+                                                        "any": "任意一人处理",
+                                                        "all": "全部人员会签",
+                                                    },
+                                                    value=node.get("approval_mode", "any"),
+                                                    label="节点审批方式",
+                                                    on_change=lambda event, target=node: update_node_value(
+                                                        target, "approval_mode", event.value
+                                                    ),
+                                                ).props("outlined dense options-dense").classes("w-48")
 
-                            strategy_select.on_value_change(
-                                lambda _event: update_strategy_visibility()
-                            )
-                            org_scope_select.on_value_change(
-                                lambda _event: update_org_scope_visibility()
-                            )
-                            update_strategy_visibility()
-                            update_org_scope_visibility()
+                                            node_permission_select = ui.select(
+                                                permission_options,
+                                                value=node.get("required_permission_code"),
+                                                label="该节点审批所需权限",
+                                            ).props("outlined options-dense").classes("w-full")
+                                            node_strategy_select = ui.select(
+                                                APPROVER_STRATEGY_NAMES,
+                                                value=node_approver.get("strategy", "permission"),
+                                                label="该节点审批人来源",
+                                            ).props("outlined options-dense").classes("w-full")
 
-                            def build_approver_rule():
-                                strategy = strategy_select.value
-                                rule = {"strategy": strategy}
+                                            with ui.column().classes("w-full gap-2") as node_position_settings:
+                                                node_position_select = ui.select(
+                                                    position_options,
+                                                    value=node_approver.get("position_ids", []),
+                                                    label="审批岗位",
+                                                    multiple=True,
+                                                    with_input=True,
+                                                ).props("outlined use-chips options-dense").classes("w-full")
+                                                node_org_scope_select = ui.select(
+                                                    {
+                                                        "any": "不限部门",
+                                                        "requester": "与申请人同部门",
+                                                        "fixed": "限定到指定部门",
+                                                    },
+                                                    value=node_approver.get("org_scope", "any"),
+                                                    label="审批岗位的部门范围",
+                                                ).props("outlined options-dense").classes("w-full")
+                                                node_org_select = ui.select(
+                                                    unit_options,
+                                                    value=node_approver.get("org_unit_ids", []),
+                                                    label="指定审批部门",
+                                                    multiple=True,
+                                                    with_input=True,
+                                                ).props("outlined use-chips options-dense").classes("w-full")
+                                            with ui.column().classes("w-full") as node_user_settings:
+                                                node_user_select = ui.select(
+                                                    user_options,
+                                                    value=node_approver.get("user_ids", []),
+                                                    label="指定审批人员",
+                                                    multiple=True,
+                                                    with_input=True,
+                                                ).props("outlined use-chips options-dense").classes("w-full")
+                                            with ui.column().classes("w-full") as node_manager_hint:
+                                                ui.label(
+                                                    "读取申请人的直属上级；直属上级仍须拥有本节点要求的审批权限。"
+                                                ).classes("text-xs text-blue-800 bg-blue-50 rounded p-2")
+                                            with ui.column().classes("w-full") as node_permission_hint:
+                                                ui.label(
+                                                    "选择所有拥有本节点审批权限的在职用户；admin 不会仅凭管理员身份成为审批人。"
+                                                ).classes("text-xs text-blue-800 bg-blue-50 rounded p-2")
+
+                                            def update_permission(
+                                                _event=None,
+                                                *,
+                                                target=node,
+                                                permission_control=node_permission_select,
+                                            ):
+                                                permission_code = permission_control.value
+                                                target["required_permission_code"] = permission_code
+                                                if target.setdefault("approver", {}).get("strategy") == "permission":
+                                                    target["approver"]["permission_code"] = permission_code
+
+                                            def update_strategy(
+                                                _event=None,
+                                                *,
+                                                target=node,
+                                                strategy_control=node_strategy_select,
+                                                position_container=node_position_settings,
+                                                user_container=node_user_settings,
+                                                manager_container=node_manager_hint,
+                                                permission_container=node_permission_hint,
+                                            ):
+                                                strategy = strategy_control.value or "permission"
+                                                target.setdefault("approver", {})["strategy"] = strategy
+                                                position_container.visible = strategy == "position"
+                                                user_container.visible = strategy == "users"
+                                                manager_container.visible = strategy == "direct_manager"
+                                                permission_container.visible = strategy == "permission"
+
+                                            def update_node_org_scope(
+                                                _event=None,
+                                                *,
+                                                target=node,
+                                                scope_control=node_org_scope_select,
+                                                org_container=node_org_select,
+                                            ):
+                                                scope = scope_control.value or "any"
+                                                target.setdefault("approver", {})["org_scope"] = scope
+                                                org_container.visible = scope == "fixed"
+
+                                            node_permission_select.on_value_change(update_permission)
+                                            node_strategy_select.on_value_change(update_strategy)
+                                            node_position_select.on_value_change(
+                                                lambda event, target=node: update_node_approver(
+                                                    target, "position_ids", event.value or []
+                                                )
+                                            )
+                                            node_org_scope_select.on_value_change(update_node_org_scope)
+                                            node_org_select.on_value_change(
+                                                lambda event, target=node: update_node_approver(
+                                                    target, "org_unit_ids", event.value or []
+                                                )
+                                            )
+                                            node_user_select.on_value_change(
+                                                lambda event, target=node: update_node_approver(
+                                                    target, "user_ids", event.value or []
+                                                )
+                                            )
+                                            update_permission()
+                                            update_strategy()
+                                            update_node_org_scope()
+
+                            def update_workflow_mode():
+                                editor_state["mode"] = workflow_mode_select.value or "single"
+                                add_node_button.visible = editor_state["mode"] == "sequential"
+                                multi_node_warning.visible = editor_state["mode"] == "sequential"
+                                render_approval_nodes()
+
+                            workflow_mode_select.on_value_change(lambda _event: update_workflow_mode())
+                            with ui.row().classes("w-full items-center justify-between"):
+                                multi_node_warning = ui.label(
+                                    "当前业务模块尚未接入多节点执行接口：可以保存草稿，但暂不能发布。"
+                                ).classes("text-xs text-orange-700 bg-orange-50 rounded p-2")
+                                add_node_button = ui.button(
+                                    "添加审批节点",
+                                    icon="add",
+                                    on_click=add_approval_node,
+                                ).props("outline dense color=primary")
+                            add_node_button.visible = initial_mode == "sequential"
+                            multi_node_warning.visible = initial_mode == "sequential"
+                            render_approval_nodes()
+
+                            def build_node_payload(node, index):
+                                node_key = normalize_stable_code(node.get("node_key", ""))
+                                code_error = validate_stable_code(node_key)
+                                if code_error:
+                                    raise ValueError(f"第 {index + 1} 个审批节点编码无效：{code_error}")
+                                node_name = str(node.get("name") or "").strip()
+                                if not node_name:
+                                    raise ValueError(f"第 {index + 1} 个审批节点名称不能为空")
+                                permission_code = str(node.get("required_permission_code") or "").strip()
+                                if permission_code not in permission_options:
+                                    raise ValueError(f"{node_name}没有选择当前业务事件允许的审批权限")
+                                node_mode = str(node.get("approval_mode") or "any")
+                                if node_mode not in {"any", "all"}:
+                                    raise ValueError(f"{node_name}的审批方式无效")
+                                source_approver = node.get("approver", {})
+                                strategy = str(source_approver.get("strategy") or "permission")
+                                if strategy not in APPROVER_STRATEGY_NAMES:
+                                    raise ValueError(f"{node_name}的审批人来源无效")
+                                approver_rule: dict[str, object] = {"strategy": strategy}
                                 if strategy == "position":
-                                    rule.update(
+                                    position_ids = source_approver.get("position_ids") or []
+                                    if not position_ids:
+                                        raise ValueError(f"{node_name}至少需要选择一个审批岗位")
+                                    approver_rule.update(
                                         {
-                                            "position_ids": approver_position_select.value or [],
-                                            "org_scope": org_scope_select.value or "any",
-                                            "org_unit_ids": approver_org_select.value or [],
+                                            "position_ids": position_ids,
+                                            "org_scope": source_approver.get("org_scope") or "any",
+                                            "org_unit_ids": source_approver.get("org_unit_ids") or [],
                                         }
                                     )
                                 elif strategy == "users":
-                                    rule["user_ids"] = approver_user_select.value or []
+                                    user_ids = source_approver.get("user_ids") or []
+                                    if not user_ids:
+                                        raise ValueError(f"{node_name}至少需要选择一名审批人员")
+                                    approver_rule["user_ids"] = user_ids
                                 elif strategy == "permission":
-                                    rule["permission_code"] = permission_select.value
-                                return rule
+                                    approver_rule["permission_code"] = permission_code
+                                return {
+                                    "node_key": node_key,
+                                    "name": node_name,
+                                    "approval_mode": node_mode,
+                                    "required_permission_code": permission_code,
+                                    "approver": approver_rule,
+                                }
+
+                            def build_workflow_approval_config():
+                                source_nodes = (
+                                    editor_state["nodes"]
+                                    if editor_state["mode"] == "sequential"
+                                    else editor_state["nodes"][:1]
+                                )
+                                if not source_nodes:
+                                    raise ValueError("审批流程至少需要一个审批节点")
+                                if editor_state["mode"] == "sequential" and len(source_nodes) < 2:
+                                    raise ValueError("多节点串行审批至少需要配置两个节点")
+                                nodes = [
+                                    build_node_payload(node, index)
+                                    for index, node in enumerate(source_nodes)
+                                ]
+                                node_keys = [node["node_key"] for node in nodes]
+                                if len(node_keys) != len(set(node_keys)):
+                                    raise ValueError("同一流程内的审批节点编码不能重复")
+                                if editor_state["mode"] == "sequential":
+                                    return {
+                                        "approver": {"nodes": nodes},
+                                        "required_permission_code": nodes[0]["required_permission_code"],
+                                        "approval_mode": "sequential",
+                                    }
+                                first_node = nodes[0]
+                                return {
+                                    "approver": first_node["approver"],
+                                    "required_permission_code": first_node["required_permission_code"],
+                                    "approval_mode": first_node["approval_mode"],
+                                }
 
                             def save_workflow_draft():
                                 try:
+                                    approval_config = build_workflow_approval_config()
                                     user_svc.save_approval_workflow_draft(
                                         workflow_id=selected["workflow_id"],
                                         code=selected["code"],
@@ -2718,9 +2987,11 @@ def manage_page():
                                                 include_children_switch.value
                                             ),
                                         },
-                                        approver=build_approver_rule(),
-                                        required_permission_code=permission_select.value,
-                                        approval_mode="any",
+                                        approver=approval_config["approver"],
+                                        required_permission_code=approval_config[
+                                            "required_permission_code"
+                                        ],
+                                        approval_mode=approval_config["approval_mode"],
                                         notification={
                                             "notify_assignees": True,
                                             "notify_requester_on_result": True,
@@ -2739,6 +3010,13 @@ def manage_page():
                                 render_workflow_editor()
 
                             def publish_workflow():
+                                draft_version = selected.get("draft_version") or {}
+                                if str(draft_version.get("approval_mode") or "any") == "sequential":
+                                    ui.notify(
+                                        "该业务事件尚未接入多节点执行接口，多节点草稿暂不能发布。",
+                                        type="warning",
+                                    )
+                                    return
                                 try:
                                     user_svc.publish_approval_workflow(
                                         selected["workflow_id"],
@@ -2846,6 +3124,23 @@ def manage_page():
                                                 for item in approvers
                                             )
                                         ).classes("text-sm")
+                                    approval_nodes = result.get("approval_nodes", [])
+                                    if approval_nodes:
+                                        ui.label("审批节点顺序：").classes("text-sm font-semibold mt-1")
+                                        for node in approval_nodes:
+                                            mode_name = (
+                                                "全部会签"
+                                                if node.get("approval_mode") == "all"
+                                                else "任意一人"
+                                            )
+                                            names = "、".join(
+                                                item.get("display_name") or item.get("username", "")
+                                                for item in node.get("approvers", [])
+                                            )
+                                            ui.label(
+                                                f"第 {int(node.get('node_index', 0)) + 1} 步 "
+                                                f"{node.get('name', '审批')}（{mode_name}）：{names or '无'}"
+                                            ).classes("text-xs")
                                     for warning in result.get("warnings", []):
                                         ui.label(f"提醒：{warning}").classes(
                                             "text-xs text-orange-700"

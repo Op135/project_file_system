@@ -70,7 +70,10 @@ from src.project_todo_access import (
     can_view_project_todo,
     filter_actionable_overview_pending,
 )
-from src.project_test_summary_access import can_view_project_test_summary
+from src.project_test_summary_access import (
+    build_project_test_summary_url,
+    can_view_project_test_summary,
+)
 from src.question_tree_access import can_view_question_tree
 from src.project_overview_access import (
     can_edit_overview_item,
@@ -336,6 +339,15 @@ class AccessControlTests(unittest.TestCase):
         )
         self.assertTrue(
             can_view_project_test_summary("普通岗位", "张三", user_service=self.service)
+        )
+
+    def test_project_test_summary_url_requires_and_encodes_project_name(self):
+        """汇总入口必须携带实际项目名，并安全编码中文、空格等字符。"""
+        self.assertEqual(build_project_test_summary_url(""), "")
+        self.assertEqual(build_project_test_summary_url(None), "")
+        self.assertEqual(
+            build_project_test_summary_url(" 测试 项目/01 "),
+            "/report/test_summary?project_name=%E6%B5%8B%E8%AF%95+%E9%A1%B9%E7%9B%AE%2F01",
         )
 
     def test_project_table_legacy_mode_keeps_original_role_behavior(self):

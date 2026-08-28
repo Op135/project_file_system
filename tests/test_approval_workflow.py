@@ -11,6 +11,7 @@ from src.approval_workflow import (
     create_approval_assignments,
     create_approval_sequence_assignments,
     get_workflow_event_definition,
+    get_approval_workflow_editor_nodes,
     import_design_knowledge_legacy_workflows,
     import_project_overview_legacy_workflows,
     is_assigned_approver,
@@ -284,6 +285,48 @@ class ApprovalWorkflowTests(unittest.TestCase):
         )
         self.assertEqual(final["status"], "completed")
         self.assertEqual(final["assignment"]["status"], "completed")
+
+    def test_workflow_editor_nodes_support_old_single_and_new_sequence_versions(self):
+        """管理界面应把旧单节点与新串行版本统一转换成可编辑节点。"""
+        single_nodes = get_approval_workflow_editor_nodes(
+            {
+                "approval_mode": "all",
+                "required_permission_code": SAMPLE_ISSUE_CLOSE_APPROVE_PERMISSION,
+                "approver": {
+                    "strategy": "position",
+                    "position_ids": [self.approver_position_id],
+                },
+            }
+        )
+        self.assertEqual(single_nodes[0]["node_key"], "approval")
+        self.assertEqual(single_nodes[0]["approval_mode"], "all")
+
+        source_version = {
+            "approval_mode": "sequential",
+            "required_permission_code": SAMPLE_ISSUE_CLOSE_APPROVE_PERMISSION,
+            "approver": {
+                "nodes": [
+                    {
+                        "node_key": "technical_review",
+                        "name": "技术审核",
+                        "approval_mode": "any",
+                        "required_permission_code": SAMPLE_ISSUE_CLOSE_APPROVE_PERMISSION,
+                        "approver": {"strategy": "users", "user_ids": ["user-1"]},
+                    },
+                    {
+                        "node_key": "joint_review",
+                        "name": "联合会签",
+                        "approval_mode": "all",
+                        "required_permission_code": SAMPLE_ISSUE_CLOSE_APPROVE_PERMISSION,
+                        "approver": {"strategy": "permission"},
+                    },
+                ]
+            },
+        }
+        sequence_nodes = get_approval_workflow_editor_nodes(source_version)
+        self.assertEqual([node["node_key"] for node in sequence_nodes], ["technical_review", "joint_review"])
+        sequence_nodes[0]["name"] = "界面临时修改"
+        self.assertEqual(source_version["approver"]["nodes"][0]["name"], "技术审核")
 
     def test_sequential_workflow_rejects_duplicate_node_codes(self):
         """节点编码用于稳定待办键，同一版本内不允许重复。"""
