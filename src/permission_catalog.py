@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -38,7 +39,10 @@ CORE_PERMISSIONS = (
 
 PROJECT_VIEW_PERMISSION = "project.view"
 PROJECT_ALL_STATES_VIEW_PERMISSION = "project.all_states.view"
-PROJECT_RECORD_MANAGE_PERMISSION = "project.record.manage"
+PROJECT_BASE_EDIT_PERMISSION = "project.base.edit"
+PROJECT_STATUS_EDIT_PERMISSION = "project.status.edit"
+PROJECT_ENGINEER_ASSIGN_ALL_PERMISSION = "project.engineer.assign_all"
+PROJECT_LEGACY_RECORD_MANAGE_PERMISSION = "project.record.manage"
 
 
 PROJECT_PERMISSIONS = (
@@ -55,10 +59,22 @@ PROJECT_PERMISSIONS = (
         "允许在项目资料总表中查看待定、作废等全部状态的项目",
     ),
     PermissionDefinition(
-        PROJECT_RECORD_MANAGE_PERMISSION,
+        PROJECT_BASE_EDIT_PERMISSION,
         "维护 — 项目基础资料",
         "项目资料",
-        "允许新增项目并修改项目状态、立项日期、简介、备注和客户简称",
+        "允许新增项目，并修改立项日期、简介、备注和客户简称；不包含项目状态和项目工程师",
+    ),
+    PermissionDefinition(
+        PROJECT_STATUS_EDIT_PERMISSION,
+        "维护 — 项目状态",
+        "项目资料",
+        "允许独立修改项目状态；新建项目时未获此权限则固定使用默认研发状态",
+    ),
+    PermissionDefinition(
+        PROJECT_ENGINEER_ASSIGN_ALL_PERMISSION,
+        "指定 — 全部项目的项目工程师",
+        "项目资料",
+        "允许为任意项目指定或更换项目工程师负责人",
     ),
 )
 
@@ -86,7 +102,7 @@ PROJECT_REQUIREMENT_PERMISSIONS = (
     ),
     PermissionDefinition(
         PROJECT_REQUIREMENT_REVIEW_ASSIGNED_PERMISSION,
-        "审批 — 本人负责项目需求配置",
+        "审批 — 本人（项目工程师）负责项目需求配置",
         "项目需求配置",
         "允许审批本人被指定为项目工程师的项目需求配置",
     ),
@@ -109,6 +125,121 @@ PROJECT_REQUIREMENT_PERMISSIONS = (
         "允许在项目待办页查看其他用户的需求草稿；草稿仍只能由创建人删除",
     ),
 )
+
+
+PROJECT_OVERVIEW_DIMENSIONS = (
+    ("optical", "光学"),
+    ("structure", "结构"),
+    ("hardware", "硬件"),
+    ("software", "软件"),
+    ("ui", "UI"),
+    ("process", "工艺"),
+)
+PROJECT_OVERVIEW_INACTIVE_VIEW_PERMISSION = "project_overview.inactive.view"
+PROJECT_OVERVIEW_CONTENT_MANAGE_ALL_PERMISSION = "project_overview.content.manage_all"
+PROJECT_OVERVIEW_BATCH_SUBMIT_PERMISSION = "project_overview.batch.submit"
+PROJECT_OVERVIEW_BATCH_REVIEW_PERMISSION = "project_overview.batch.review"
+PROJECT_OVERVIEW_CORRECTION_REVIEW_PERMISSION = "project_overview.correction.review"
+
+
+def project_overview_dimension_permission(dimension: str, action: str) -> str:
+    """生成上一版专业维度权限编码，仅用于迁移已有授权。"""
+    return f"project_overview.{str(dimension).strip().lower()}.{str(action).strip().lower()}"
+
+
+def project_overview_item_permission(label: str, action: str) -> str:
+    """按概述配置的稳定 label 生成查看或维护权限编码。"""
+    return f"project_overview.item.{str(label).strip().lower()}.{str(action).strip().lower()}"
+
+
+PROJECT_OVERVIEW_PERMISSIONS = (
+    PermissionDefinition(
+        PROJECT_OVERVIEW_INACTIVE_VIEW_PERMISSION,
+        "查看 — 失活项目概述",
+        "项目概述",
+        "允许在概述页面切换并查阅已经失活的历史概述内容",
+    ),
+    PermissionDefinition(
+        PROJECT_OVERVIEW_CONTENT_MANAGE_ALL_PERMISSION,
+        "修改 — 全部概述原始内容（无痕迹记录）",
+        "项目概述",
+        "允许使用管理工具直接修正全部专业的概述原始内容，不产生记录",
+    ),
+    PermissionDefinition(
+        PROJECT_OVERVIEW_BATCH_SUBMIT_PERMISSION,
+        "申请 — 批量概述变更",
+        "项目概述",
+        "允许跨项目批量新增概述或申请修改概述激活状态",
+    ),
+    PermissionDefinition(
+        PROJECT_OVERVIEW_BATCH_REVIEW_PERMISSION,
+        "审批 — 批量概述变更",
+        "项目概述",
+        "允许审批批量概述变更申请",
+    ),
+    PermissionDefinition(
+        PROJECT_OVERVIEW_CORRECTION_REVIEW_PERMISSION,
+        "审批 — 概述原记录纠错",
+        "项目概述",
+        "允许审批单条概述原记录纠错或删除申请",
+    ),
+)
+
+
+class ProjectOverviewPermissionCatalogError(ValueError):
+    """概述配置无法生成稳定权限目录。"""
+
+
+def project_overview_permission_definitions(
+    overview_config: dict[str, Any] | None = None,
+    *,
+    path: Path | str | None = None,
+) -> tuple[PermissionDefinition, ...]:
+    """从概述 JSON 动态生成 label 级权限，并拒绝空值、非法编码和重复 label。"""
+    if overview_config is None:
+        source = Path(path) if path else Path(__file__).resolve().parents[1] / "overview_config.json"
+        try:
+            overview_config = json.loads(source.read_text(encoding="utf-8"))
+        except Exception as exc:
+            raise ProjectOverviewPermissionCatalogError(f"读取概述配置失败：{exc}") from exc
+    if not isinstance(overview_config, dict):
+        raise ProjectOverviewPermissionCatalogError("overview_config.json 根节点必须是对象")
+
+    definitions: list[PermissionDefinition] = []
+    seen: dict[str, str] = {}
+    for raw_dimension, raw_groups in overview_config.items():
+        dimension = str(raw_dimension).strip()
+        if not dimension or not isinstance(raw_groups, dict):
+            raise ProjectOverviewPermissionCatalogError(f"概述专业 {dimension or '<空>'} 的分组必须是对象")
+        for raw_group, raw_items in raw_groups.items():
+            group = str(raw_group).strip()
+            if not group or not isinstance(raw_items, list):
+                raise ProjectOverviewPermissionCatalogError(f"{dimension} / {group or '<空>'} 必须是列表")
+            for index, item in enumerate(raw_items, start=1):
+                if not isinstance(item, dict):
+                    raise ProjectOverviewPermissionCatalogError(f"{dimension} / {group} 第 {index} 项必须是对象")
+                label = str(item.get("label") or "").strip()
+                title = str(item.get("title") or label).strip()
+                location = f"{dimension} / {group} / {title or '<未命名>'}"
+                if not re.fullmatch(r"[a-z][a-z0-9_]{1,39}", label):
+                    raise ProjectOverviewPermissionCatalogError(
+                        f"{location} 的 label“{label}”格式无效；必须以小写字母开头，"
+                        "仅使用小写字母、数字和下划线，长度 2–40 位"
+                    )
+                if label in seen:
+                    raise ProjectOverviewPermissionCatalogError(f"概述 label“{label}”重复：{seen[label]}；{location}")
+                seen[label] = location
+                module = f"项目概述 · {dimension} · {group}"
+                for action, action_name in (("view", "查看"), ("edit", "维护")):
+                    definitions.append(
+                        PermissionDefinition(
+                            project_overview_item_permission(label, action),
+                            f"{action_name} — {title}",
+                            module,
+                            f"允许{action_name}{dimension} / {group}中的“{title}”；稳定标识：{label}",
+                        )
+                    )
+    return tuple(definitions)
 
 
 SAMPLE_ORDER_BASE_EDIT_PERMISSION = "sample_order.base.edit"
@@ -453,6 +584,11 @@ NOTIFICATION_PERMISSIONS = (
 
 # 上一版宽粒度通知权限只用于一次性迁移已有授权，不再显示在权限目录中。
 DEPRECATED_PERMISSION_REPLACEMENTS = {
+    PROJECT_LEGACY_RECORD_MANAGE_PERMISSION: (
+        PROJECT_BASE_EDIT_PERMISSION,
+        PROJECT_STATUS_EDIT_PERMISSION,
+        PROJECT_ENGINEER_ASSIGN_ALL_PERMISSION,
+    ),
     SAMPLE_ISSUE_LEGACY_CLOSE_DEFAULT_APPROVE_PERMISSION: (SAMPLE_ISSUE_CLOSE_APPROVE_PERMISSION,),
     SAMPLE_ISSUE_LEGACY_CLOSE_ELECTRON_APPROVE_PERMISSION: (SAMPLE_ISSUE_CLOSE_APPROVE_PERMISSION,),
     "notifications.sample_order.attention.receive": (
@@ -501,18 +637,38 @@ TOOL_PERMISSIONS = tuple(
     for tool_key, name in _TOOL_NAMES.items()
 )
 
-PERMISSION_CATALOG = (
+STATIC_PERMISSION_CATALOG = (
     CORE_PERMISSIONS
     + TOOL_PERMISSIONS
     + PROJECT_PERMISSIONS
     + PROJECT_REQUIREMENT_PERMISSIONS
+    + PROJECT_OVERVIEW_PERMISSIONS
     + SAMPLE_ORDER_PERMISSIONS
     + ERROR_PERMISSIONS
     + SAMPLE_ISSUE_PERMISSIONS
     + DESIGN_KNOWLEDGE_PERMISSIONS
     + NOTIFICATION_PERMISSIONS
 )
+try:
+    PROJECT_OVERVIEW_ITEM_PERMISSIONS = project_overview_permission_definitions()
+except ProjectOverviewPermissionCatalogError:
+    # 配置错误不能阻断整个系统启动；进入权限管理或手动刷新概述配置时会严格校验并提示。
+    logger.exception("概述 label 权限目录初始化失败，本次启动暂不注册概述项权限")
+    PROJECT_OVERVIEW_ITEM_PERMISSIONS = ()
+PERMISSION_CATALOG = STATIC_PERMISSION_CATALOG + PROJECT_OVERVIEW_ITEM_PERMISSIONS
 PERMISSION_CODES = frozenset(item.code for item in PERMISSION_CATALOG)
+
+# 把上一版专业级授权一次性展开到该专业当前已有的全部 label，随后删除专业级权限。
+for dimension_code, dimension_name in PROJECT_OVERVIEW_DIMENSIONS:
+    dimension_permissions = tuple(
+        item for item in PROJECT_OVERVIEW_ITEM_PERMISSIONS if item.module.startswith(f"项目概述 · {dimension_name} · ")
+    )
+    for action in ("view", "edit"):
+        replacement_codes = tuple(item.code for item in dimension_permissions if item.code.endswith(f".{action}"))
+        if replacement_codes:
+            DEPRECATED_PERMISSION_REPLACEMENTS[project_overview_dimension_permission(dimension_code, action)] = (
+                replacement_codes
+            )
 
 
 def ignores_legacy_role_grants(permission_code: str) -> bool:
@@ -523,6 +679,7 @@ def ignores_legacy_role_grants(permission_code: str) -> bool:
         or (normalized.startswith("tools.") and normalized.endswith(".use"))
         or normalized.startswith("project.")
         or normalized.startswith("project_requirement.")
+        or normalized.startswith("project_overview.")
         or normalized.startswith("sample_order.")
         or normalized.startswith("error.")
         or normalized.startswith("sample_issue.")
@@ -579,5 +736,21 @@ def build_legacy_default_grants(
     return grants
 
 
-def permission_catalog_rows() -> list[dict[str, Any]]:
-    return [item.to_dict() for item in PERMISSION_CATALOG]
+def permission_catalog_rows(
+    *,
+    overview_config: dict[str, Any] | None = None,
+    overview_config_path: Path | str | None = None,
+    strict_overview: bool = True,
+) -> list[dict[str, Any]]:
+    """返回当前权限目录；概述 label 每次调用都从最新 JSON 动态生成。"""
+    try:
+        overview_permissions = project_overview_permission_definitions(
+            overview_config,
+            path=overview_config_path,
+        )
+    except ProjectOverviewPermissionCatalogError:
+        if strict_overview:
+            raise
+        logger.exception("概述 label 权限目录同步失败，本次仅同步静态权限")
+        overview_permissions = ()
+    return [item.to_dict() for item in STATIC_PERMISSION_CATALOG + overview_permissions]

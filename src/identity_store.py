@@ -478,18 +478,24 @@ class IdentityStore:
         records: list[tuple[str, str, str]] = []
         seen_usernames: set[str] = set()
         for _, row in frame.iterrows():
-            raw_username = row.get("用户名")
-            username = "" if pd.isna(raw_username) else str(raw_username).strip()
+            # 转成普通字典后再处理单元格，避免 pandas 类型定义把标量推断成 Series。
+            record: dict[str, Any] = row.to_dict()
+            raw_username = record.get("用户名")
+            username = "" if bool(pd.isna(raw_username)) else str(raw_username).strip()
             if not username:
                 continue
             normalized = username.casefold()
             if normalized in seen_usernames:
                 raise ValueError(f"用户文件存在重复用户名：{username}")
             seen_usernames.add(normalized)
-            raw_password = row.get("密码")
-            password = "" if pd.isna(raw_password) else str(raw_password).strip()
-            raw_role = row.get("角色")
-            role = "普通用户" if pd.isna(raw_role) or not str(raw_role).strip() else str(raw_role).strip()
+            raw_password = record.get("密码")
+            password = "" if bool(pd.isna(raw_password)) else str(raw_password).strip()
+            raw_role = record.get("角色")
+            role = (
+                "普通用户"
+                if bool(pd.isna(raw_role)) or not str(raw_role).strip()
+                else str(raw_role).strip()
+            )
             records.append((username, password, role))
         if not records:
             raise ValueError("用户文件中没有可迁移的用户")
@@ -2024,6 +2030,173 @@ class IdentityStore:
                 (str(position_id),),
             ).fetchall()
         return {str(row["code"]) for row in rows}
+
+    def get_overview_role_position_mapping(self) -> dict[str, list[str]]:
+        """读取管理员保存的旧概述角色到新岗位映射。"""
+        with self._lock, self._connect() as connection:
+            row = connection.execute(
+                "SELECT value FROM iam_meta WHERE key='project_overview_role_position_mapping'"
+            ).fetchone()
+        if not row:
+            return {}
+        try:
+            value = json.loads(row["value"])
+        except Exception:
+            return {}
+        if not isinstance(value, dict):
+            return {}
+        return {
+            str(role): [str(position_id) for position_id in position_ids]
+            for role, position_ids in value.items()
+            if isinstance(position_ids, list)
+        }
+
+    def get_overview_role_position_managed_permissions(self) -> dict[str, set[str]]:
+        """读取上次批量映射实际管理的权限快照，用于保护手工附加权限。"""
+        from .overview_permission_mapping import OVERVIEW_ROLE_POSITION_MANAGED_META_KEY
+
+        with self._lock, self._connect() as connection:
+            row = connection.execute(
+                "SELECT value FROM iam_meta WHERE key=?",
+                (OVERVIEW_ROLE_POSITION_MANAGED_META_KEY,),
+            ).fetchone()
+        if not row:
+            return {}
+        try:
+            value = json.loads(row["value"])
+        except Exception:
+            return {}
+        if not isinstance(value, dict):
+            return {}
+        return {
+            str(position_id): {
+                str(code).strip().lower()
+                for code in codes
+                if str(code).strip()
+            }
+            for position_id, codes in value.items()
+            if isinstance(codes, list)
+        }
+
+    def apply_overview_role_position_mapping(
+        self,
+        role_position_mapping: dict[str, list[str]],
+        position_permission_codes: dict[str, set[str]],
+        *,
+        affected_position_ids: Iterable[str],
+        actor_username: str | None = None,
+    ) -> int:
+        """原子保存映射，并只替换相关岗位的项目概述 label 权限。"""
+        from .overview_permission_mapping import (
+            OVERVIEW_ITEM_PERMISSION_PREFIX,
+            OVERVIEW_ROLE_POSITION_MANAGED_META_KEY,
+            OVERVIEW_ROLE_POSITION_MAPPING_META_KEY,
+        )
+
+        affected_ids = list(
+            dict.fromkeys(str(position_id).strip() for position_id in affected_position_ids if str(position_id).strip())
+        )
+        normalized_plan = {
+            str(position_id).strip(): sorted(
+                {
+                    str(code).strip().lower()
+                    for code in codes
+                    if str(code).strip().lower().startswith(OVERVIEW_ITEM_PERMISSION_PREFIX)
+                }
+            )
+            for position_id, codes in position_permission_codes.items()
+            if str(position_id).strip()
+        }
+        all_codes = sorted({code for codes in normalized_plan.values() for code in codes})
+        now = _now_text()
+        with self._lock, self._connect() as connection:
+            # 映射配置和全部目标岗位权限必须作为一个整体提交，避免并发管理操作相互覆盖。
+            connection.execute("BEGIN IMMEDIATE")
+            managed_row = connection.execute(
+                "SELECT value FROM iam_meta WHERE key=?",
+                (OVERVIEW_ROLE_POSITION_MANAGED_META_KEY,),
+            ).fetchone()
+            try:
+                previous_managed_raw = json.loads(managed_row["value"]) if managed_row else {}
+            except Exception:
+                previous_managed_raw = {}
+            previous_managed = {
+                str(position_id): {
+                    str(code).strip().lower()
+                    for code in codes
+                    if str(code).strip().lower().startswith(OVERVIEW_ITEM_PERMISSION_PREFIX)
+                }
+                for position_id, codes in previous_managed_raw.items()
+                if isinstance(codes, list)
+            } if isinstance(previous_managed_raw, dict) else {}
+            if affected_ids:
+                placeholders = ",".join("?" for _ in affected_ids)
+                rows = connection.execute(
+                    f"SELECT position_id FROM iam_positions WHERE position_id IN ({placeholders})",
+                    affected_ids,
+                ).fetchall()
+                found_positions = {str(row["position_id"]) for row in rows}
+                missing_positions = [position_id for position_id in affected_ids if position_id not in found_positions]
+                if missing_positions:
+                    raise ValueError(f"存在无效岗位：{'、'.join(missing_positions)}")
+
+            permission_ids: dict[str, str] = {}
+            if all_codes:
+                placeholders = ",".join("?" for _ in all_codes)
+                rows = connection.execute(
+                    f"SELECT permission_id, code FROM iam_permissions WHERE code IN ({placeholders})",
+                    all_codes,
+                ).fetchall()
+                permission_ids = {str(row["code"]).lower(): str(row["permission_id"]) for row in rows}
+                missing_codes = [code for code in all_codes if code not in permission_ids]
+                if missing_codes:
+                    raise ValueError(f"存在尚未登记的概述权限：{'、'.join(missing_codes)}")
+
+            for position_id in affected_ids:
+                old_managed_codes = sorted(previous_managed.get(position_id, set()))
+                if old_managed_codes:
+                    placeholders = ",".join("?" for _ in old_managed_codes)
+                    connection.execute(
+                        "DELETE FROM iam_position_permissions WHERE position_id=? AND permission_id IN "
+                        f"(SELECT permission_id FROM iam_permissions WHERE code IN ({placeholders}))",
+                        [position_id, *old_managed_codes],
+                    )
+                connection.executemany(
+                    "INSERT OR IGNORE INTO iam_position_permissions(position_id, permission_id, created_at) "
+                    "VALUES(?, ?, ?)",
+                    [
+                        (position_id, permission_ids[code], now)
+                        for code in normalized_plan.get(position_id, [])
+                    ],
+                )
+                self._audit(
+                    connection,
+                    actor_username=actor_username,
+                    action="overview_position_permissions_organized",
+                    target_type="position",
+                    target_id=position_id,
+                    detail={"permissions": normalized_plan.get(position_id, [])},
+                )
+
+            connection.execute(
+                "INSERT INTO iam_meta(key, value, updated_at) VALUES(?, ?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at",
+                (
+                    OVERVIEW_ROLE_POSITION_MAPPING_META_KEY,
+                    json.dumps(role_position_mapping, ensure_ascii=False, sort_keys=True),
+                    now,
+                ),
+            )
+            connection.execute(
+                "INSERT INTO iam_meta(key, value, updated_at) VALUES(?, ?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at",
+                (
+                    OVERVIEW_ROLE_POSITION_MANAGED_META_KEY,
+                    json.dumps(normalized_plan, ensure_ascii=False, sort_keys=True),
+                    now,
+                ),
+            )
+        return len(affected_ids)
 
     def set_position_permissions(
         self,

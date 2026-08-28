@@ -8,6 +8,8 @@ from typing import Any
 from .permission_catalog import (
     DESIGN_KNOWLEDGE_REVIEW_PERMISSION,
     DESIGN_KNOWLEDGE_TAG_REVIEW_PERMISSION,
+    PROJECT_OVERVIEW_BATCH_REVIEW_PERMISSION,
+    PROJECT_OVERVIEW_CORRECTION_REVIEW_PERMISSION,
     SAMPLE_ISSUE_CLOSE_APPROVE_PERMISSION,
 )
 
@@ -42,6 +44,18 @@ APPROVAL_WORKFLOW_EVENTS = (
         event="tag_review",
         name="设计知识新标签审核",
         permission_codes=(DESIGN_KNOWLEDGE_TAG_REVIEW_PERMISSION,),
+    ),
+    ApprovalWorkflowEventDefinition(
+        module="project_overview",
+        event="batch_change",
+        name="项目概述批量变更",
+        permission_codes=(PROJECT_OVERVIEW_BATCH_REVIEW_PERMISSION,),
+    ),
+    ApprovalWorkflowEventDefinition(
+        module="project_overview",
+        event="correction",
+        name="项目概述原记录纠错",
+        permission_codes=(PROJECT_OVERVIEW_CORRECTION_REVIEW_PERMISSION,),
     ),
 )
 
@@ -430,6 +444,88 @@ def import_sample_issue_legacy_workflows(user_service, *, actor_username: str) -
             actor_username=actor_username,
         )
         created += 1
+    return created, warnings
+
+
+def import_project_overview_legacy_workflows(
+    user_service,
+    *,
+    actor_username: str,
+) -> tuple[int, list[str]]:
+    """把项目概述 JSON 中的两类角色路由转换为可检查的流程草稿。"""
+    from .overview_change_workflow_config import OVERVIEW_CHANGE_WORKFLOW_CONFIG
+
+    positions = user_service.list_positions()
+    existing_codes = {
+        str(item.get("code", "")).casefold()
+        for item in user_service.list_approval_workflows(module="project_overview")
+    }
+    warnings: list[str] = []
+    created = 0
+
+    def matching_position_ids(names: list[str]) -> list[str]:
+        expected = {str(name).strip().casefold() for name in names if str(name).strip()}
+        return list(
+            dict.fromkeys(
+                str(position["position_id"])
+                for position in positions
+                if str(position.get("name", "")).strip().casefold() in expected
+            )
+        )
+
+    events = (
+        (
+            "batch_change",
+            "批量概述变更",
+            PROJECT_OVERVIEW_BATCH_REVIEW_PERMISSION,
+            OVERVIEW_CHANGE_WORKFLOW_CONFIG["batch_overview"]["approval_role_targets"],
+        ),
+        (
+            "correction",
+            "概述原记录纠错",
+            PROJECT_OVERVIEW_CORRECTION_REVIEW_PERMISSION,
+            OVERVIEW_CHANGE_WORKFLOW_CONFIG["single_correction"]["approval_role_targets"],
+        ),
+    )
+    for event, event_name, permission_code, routes in events:
+        for index, (reviewer_role, requester_roles) in enumerate(routes.items()):
+            # 旧角色名称可能含中文，流程编码只能使用稳定 ASCII 字符。
+            rule_key = f"route_{index + 1}"
+            workflow_code = f"project_overview.{event}.{rule_key}"
+            if workflow_code.casefold() in existing_codes:
+                continue
+            requester_position_ids = matching_position_ids(list(requester_roles))
+            approver_position_ids = matching_position_ids([reviewer_role])
+            display_name = f"{event_name} · {reviewer_role}审批"
+            if requester_roles and not requester_position_ids:
+                warnings.append(f"{display_name}：未匹配到申请人岗位，请手工选择")
+            if not approver_position_ids:
+                warnings.append(f"{display_name}：未匹配到审批岗位，请手工选择")
+            user_service.save_approval_workflow_draft(
+                code=workflow_code,
+                module="project_overview",
+                event=event,
+                name=display_name,
+                priority=10 + index,
+                condition={
+                    "requester_org_unit_ids": [],
+                    "requester_position_ids": requester_position_ids,
+                    "include_child_org_units": True,
+                    "migration_requires_review": bool(requester_roles and not requester_position_ids),
+                },
+                approver={
+                    "strategy": "position",
+                    "position_ids": approver_position_ids,
+                    "org_scope": "any",
+                    "org_unit_ids": [],
+                },
+                required_permission_code=permission_code,
+                approval_mode="any",
+                notification={"notify_assignees": True, "notify_requester_on_result": True},
+                actor_username=actor_username,
+            )
+            existing_codes.add(workflow_code.casefold())
+            created += 1
     return created, warnings
 
 

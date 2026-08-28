@@ -81,20 +81,28 @@ class UserService:
                 engine="openpyxl",
                 dtype={"用户名": "string", "密码": "string", "角色": "string"},
             )
-            return {
-                str(row["用户名"]): {
-                    "username": str(row["用户名"]),
-                    "display_name": str(row["用户名"]),
-                    "password": str(row["密码"]) if pd.notna(row["密码"]) else None,
-                    "password_set": pd.notna(row["密码"]) and bool(str(row["密码"])),
-                    "role": str(row["角色"]) if pd.notna(row["角色"]) else "匿名用户",
+            users: Dict[str, dict] = {}
+            for _, row in frame.iterrows():
+                # 先转为普通字典，避免 pandas 的 Series 联合类型污染标量判空判断。
+                record: dict[str, Any] = row.to_dict()
+                username_value = record.get("用户名")
+                if not bool(pd.notna(username_value)) or not str(username_value).strip():
+                    continue
+                username = str(username_value)
+                password_value = record.get("密码")
+                role_value = record.get("角色")
+                password_present = bool(pd.notna(password_value))
+                users[username] = {
+                    "username": username,
+                    "display_name": username,
+                    "password": str(password_value) if password_present else None,
+                    "password_set": password_present and bool(str(password_value)),
+                    "role": str(role_value) if bool(pd.notna(role_value)) else "匿名用户",
                     "status": "active",
                     "user_id": None,
                     "must_change_password": False,
                 }
-                for _, row in frame.iterrows()
-                if pd.notna(row.get("用户名")) and str(row.get("用户名")).strip()
-            }
+            return users
         except Exception as exc:
             raise RuntimeError(f"用户数据加载失败: {exc}") from exc
 
@@ -219,13 +227,24 @@ class UserService:
         self.sync_permission_catalog()
         return result
 
-    def sync_permission_catalog(self) -> tuple[int, int]:
+    def sync_permission_catalog(
+        self,
+        *,
+        strict_overview: bool = False,
+        overview_config: dict[str, Any] | None = None,
+    ) -> tuple[int, int]:
         """以幂等方式注册稳定权限和旧角色初始授权。"""
         roles = self.identity_store.list_security_roles()
         role_names = [str(item.get("name", "")) for item in roles]
         tool_mapping = load_tool_role_mapping(self.excel_path.parent.parent / "tools_permission.json")
         grants = build_legacy_default_grants(tool_mapping, known_role_names=role_names)
-        result = self.identity_store.seed_permission_catalog(permission_catalog_rows(), grants)
+        result = self.identity_store.seed_permission_catalog(
+            permission_catalog_rows(
+                overview_config=overview_config,
+                strict_overview=strict_overview,
+            ),
+            grants,
+        )
         self.identity_store.replace_permission_codes(DEPRECATED_PERMISSION_REPLACEMENTS)
         return result
 
@@ -253,12 +272,51 @@ class UserService:
     def list_permissions(self) -> list[dict[str, Any]]:
         if self.storage_mode != "database":
             return []
-        return self.identity_store.list_permissions()
+        permissions = self.identity_store.list_permissions()
+        current_codes = {
+            str(item["code"]).strip().lower()
+            for item in permission_catalog_rows(strict_overview=False)
+        }
+        # 已从 JSON 删除的 label 权限保留在数据库供审计和恢复，但不再显示在授权界面。
+        return [
+            permission
+            for permission in permissions
+            if not str(permission.get("code", "")).lower().startswith("project_overview.item.")
+            or str(permission.get("code", "")).lower() in current_codes
+        ]
 
     def get_position_permission_codes(self, position_id: str) -> set[str]:
         if self.storage_mode != "database":
             return set()
         return self.identity_store.get_position_permission_codes(position_id)
+
+    def get_overview_role_position_mapping(self) -> dict[str, list[str]]:
+        if self.storage_mode != "database":
+            return {}
+        return self.identity_store.get_overview_role_position_mapping()
+
+    def get_overview_role_position_managed_permissions(self) -> dict[str, set[str]]:
+        if self.storage_mode != "database":
+            return {}
+        return self.identity_store.get_overview_role_position_managed_permissions()
+
+    def apply_overview_role_position_mapping(
+        self,
+        role_position_mapping: dict[str, list[str]],
+        position_permission_codes: dict[str, set[str]],
+        *,
+        affected_position_ids,
+        actor_username: str | None = None,
+    ) -> int:
+        """保存旧角色映射，并批量整理相关岗位的概述项权限。"""
+        if self.storage_mode != "database":
+            raise RuntimeError("请先迁移用户，再整理项目概述权限")
+        return self.identity_store.apply_overview_role_position_mapping(
+            role_position_mapping,
+            position_permission_codes,
+            affected_position_ids=affected_position_ids,
+            actor_username=actor_username,
+        )
 
     def set_position_permissions(self, position_id: str, permission_codes, **values) -> bool:
         if self.storage_mode != "database":

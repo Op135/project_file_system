@@ -15,7 +15,13 @@ from src.permission_catalog import (
     ERROR_RECORD_EDIT_PERMISSION,
     ERROR_VIEW_PERMISSION,
     PROJECT_ALL_STATES_VIEW_PERMISSION,
-    PROJECT_RECORD_MANAGE_PERMISSION,
+    PROJECT_BASE_EDIT_PERMISSION,
+    PROJECT_ENGINEER_ASSIGN_ALL_PERMISSION,
+    PROJECT_LEGACY_RECORD_MANAGE_PERMISSION,
+    PROJECT_OVERVIEW_BATCH_REVIEW_PERMISSION,
+    PROJECT_OVERVIEW_BATCH_SUBMIT_PERMISSION,
+    PROJECT_OVERVIEW_CORRECTION_REVIEW_PERMISSION,
+    PROJECT_STATUS_EDIT_PERMISSION,
     PROJECT_REQUIREMENT_DRAFT_MANAGE_ALL_PERMISSION,
     PROJECT_REQUIREMENT_EDIT_PERMISSION,
     PROJECT_REQUIREMENT_REVIEW_ALL_PERMISSION,
@@ -23,6 +29,7 @@ from src.permission_catalog import (
     PROJECT_REQUIREMENT_REVOKE_PERMISSION,
     PROJECT_REQUIREMENT_VIEW_PERMISSION,
     PROJECT_VIEW_PERMISSION,
+    ProjectOverviewPermissionCatalogError,
     SAMPLE_ISSUE_CREATE_PERMISSION,
     SAMPLE_ISSUE_CLOSE_APPROVE_PERMISSION,
     SAMPLE_ISSUE_LEGACY_CLOSE_DEFAULT_APPROVE_PERMISSION,
@@ -35,12 +42,16 @@ from src.permission_catalog import (
     SAMPLE_ORDER_BASE_EDIT_PERMISSION,
     SAMPLE_ORDER_VIEW_PERMISSION,
     tool_permission_code,
+    project_overview_item_permission,
+    project_overview_dimension_permission,
+    project_overview_permission_definitions,
 )
 from src.pages.project_table import (
     can_manage_project_records,
     can_view_all_project_states,
     can_view_project_table,
 )
+from src.project_access import can_assign_all_project_engineers, can_edit_project_status
 from src.project_requirement_access import (
     can_edit_project_requirement,
     can_manage_all_project_requirement_drafts,
@@ -48,6 +59,13 @@ from src.project_requirement_access import (
     can_review_project_requirement,
     can_revoke_project_requirement_approval,
     can_view_project_requirement,
+)
+from src.project_overview_access import (
+    can_edit_overview_item,
+    can_review_batch_overview,
+    can_review_overview_correction,
+    can_submit_batch_overview,
+    can_view_overview_item,
 )
 from src.user_service import UserService
 
@@ -151,6 +169,12 @@ class AccessControlTests(unittest.TestCase):
         self.assertFalse(
             can_manage_project_records("研发硬件", "张三", user_service=self.service)
         )
+        self.assertTrue(
+            can_edit_project_status("研发助理", "张三", user_service=self.service)
+        )
+        self.assertTrue(
+            can_assign_all_project_engineers("研发经理", "张三", user_service=self.service)
+        )
         self.assertFalse(
             can_view_all_project_states("工程IE", "张三", user_service=self.service)
         )
@@ -170,6 +194,12 @@ class AccessControlTests(unittest.TestCase):
         )
         self.assertFalse(
             can_view_all_project_states("研发经理", "张三", user_service=self.service)
+        )
+        self.assertFalse(
+            can_edit_project_status("研发经理", "张三", user_service=self.service)
+        )
+        self.assertFalse(
+            can_assign_all_project_engineers("研发经理", "张三", user_service=self.service)
         )
 
         org_unit_id = self.service.save_org_unit(code="org.project", name="项目测试部")
@@ -199,7 +229,7 @@ class AccessControlTests(unittest.TestCase):
             [
                 PROJECT_VIEW_PERMISSION,
                 PROJECT_ALL_STATES_VIEW_PERMISSION,
-                PROJECT_RECORD_MANAGE_PERMISSION,
+                PROJECT_BASE_EDIT_PERMISSION,
             ],
             actor_username="admin",
         )
@@ -208,6 +238,62 @@ class AccessControlTests(unittest.TestCase):
         )
         self.assertTrue(
             can_manage_project_records("普通岗位", "张三", user_service=self.service)
+        )
+        self.assertFalse(
+            can_edit_project_status("普通岗位", "张三", user_service=self.service)
+        )
+        self.assertFalse(
+            can_assign_all_project_engineers("普通岗位", "张三", user_service=self.service)
+        )
+
+        self.service.set_position_permissions(
+            position_id,
+            [
+                PROJECT_VIEW_PERMISSION,
+                PROJECT_STATUS_EDIT_PERMISSION,
+                PROJECT_ENGINEER_ASSIGN_ALL_PERMISSION,
+            ],
+            actor_username="admin",
+        )
+        self.assertFalse(
+            can_manage_project_records("普通岗位", "张三", user_service=self.service)
+        )
+        self.assertTrue(
+            can_edit_project_status("普通岗位", "张三", user_service=self.service)
+        )
+        self.assertTrue(
+            can_assign_all_project_engineers("普通岗位", "张三", user_service=self.service)
+        )
+
+    def test_legacy_project_manage_grant_expands_to_three_independent_permissions(self):
+        """上一版项目维护授权只迁移一次，拆为基础资料、状态和工程师指定。"""
+        self.service.migrate_legacy_users()
+        position_id = self.service.save_position(code="project.legacy.manager", name="旧项目管理员")
+        self.service.identity_store.seed_permission_catalog(
+            [
+                {
+                    "code": PROJECT_LEGACY_RECORD_MANAGE_PERMISSION,
+                    "name": "旧项目维护",
+                    "module": "项目资料",
+                    "description": "",
+                }
+            ],
+            {},
+        )
+        self.service.set_position_permissions(
+            position_id,
+            [PROJECT_LEGACY_RECORD_MANAGE_PERMISSION],
+            actor_username="admin",
+        )
+        self.service.sync_permission_catalog(strict_overview=True)
+        permission_codes = self.service.get_position_permission_codes(position_id)
+        self.assertNotIn(PROJECT_LEGACY_RECORD_MANAGE_PERMISSION, permission_codes)
+        self.assertTrue(
+            {
+                PROJECT_BASE_EDIT_PERMISSION,
+                PROJECT_STATUS_EDIT_PERMISSION,
+                PROJECT_ENGINEER_ASSIGN_ALL_PERMISSION,
+            }.issubset(permission_codes)
         )
 
     def test_project_requirement_legacy_mode_keeps_editor_and_assignee_rules(self):
@@ -334,6 +420,117 @@ class AccessControlTests(unittest.TestCase):
                 user_service=self.service,
             )
         )
+
+    def test_project_overview_legacy_mode_keeps_item_role_rules(self):
+        """旧 Excel 模式继续读取概述项自身的读写角色配置。"""
+        config = {
+            "role": "硬件",
+            "permission": {
+                "read_role": ["研发结构"],
+                "edit_role": ["研发硬件"],
+            },
+        }
+        self.assertTrue(can_view_overview_item(config, "研发结构", "张三", user_service=self.service))
+        self.assertTrue(can_view_overview_item(config, "研发硬件", "张三", user_service=self.service))
+        self.assertTrue(can_edit_overview_item(config, "研发硬件", "张三", user_service=self.service))
+        self.assertFalse(can_edit_overview_item(config, "研发结构", "张三", user_service=self.service))
+
+    def test_project_overview_database_mode_uses_label_and_assignment_permissions(self):
+        """数据库模式按 label 授权，审批同时限制为流程快照中的具体人员。"""
+        self.service.migrate_legacy_users()
+        org_unit_id = self.service.save_org_unit(code="org.overview", name="概述测试部")
+        position_id = self.service.save_position(code="overview.hardware", name="硬件概述岗位")
+        self.service.set_primary_membership("张三", org_unit_id=org_unit_id, position_id=position_id)
+        self.service.set_position_permissions(
+            position_id,
+            [
+                project_overview_item_permission("drive_pcb", "edit"),
+                PROJECT_OVERVIEW_BATCH_SUBMIT_PERMISSION,
+                PROJECT_OVERVIEW_BATCH_REVIEW_PERMISSION,
+                PROJECT_OVERVIEW_CORRECTION_REVIEW_PERMISSION,
+            ],
+            actor_username="admin",
+        )
+        hardware = {"role": "硬件", "label": "drive_pcb", "permission": {"read_role": [], "edit_role": []}}
+        software = {
+            "role": "软件",
+            "label": "software_manual",
+            "permission": {"read_role": [], "edit_role": ["研发硬件"]},
+        }
+        self.assertTrue(can_view_overview_item(hardware, "普通岗位", "张三", user_service=self.service))
+        self.assertTrue(can_edit_overview_item(hardware, "普通岗位", "张三", user_service=self.service))
+        self.assertFalse(can_view_overview_item(software, "研发硬件", "张三", user_service=self.service))
+        self.assertTrue(
+            can_submit_batch_overview("普通岗位", "张三", ["其它旧角色"], user_service=self.service)
+        )
+
+        assigned = {"submitter": "李四", "workflow_assignment": {"assignee_usernames": ["张三"]}}
+        not_assigned = {"submitter": "李四", "workflow_assignment": {"assignee_usernames": ["王五"]}}
+        self.assertTrue(can_review_batch_overview(assigned, "普通岗位", "张三", user_service=self.service))
+        self.assertTrue(can_review_overview_correction(assigned, "普通岗位", "张三", user_service=self.service))
+        self.assertFalse(can_review_batch_overview(not_assigned, "研发经理", "张三", user_service=self.service))
+        self.assertFalse(can_review_overview_correction(not_assigned, "研发经理", "张三", user_service=self.service))
+
+    def test_project_overview_label_catalog_detects_new_items_and_preserves_grants(self):
+        """新增 label 自动登记且默认不授权，title 改名不会破坏原权限关系。"""
+        self.service.migrate_legacy_users()
+        org_unit_id = self.service.save_org_unit(code="org.dynamic.overview", name="动态概述部")
+        position_id = self.service.save_position(code="overview.dynamic", name="动态概述岗位")
+        self.service.set_primary_membership("张三", org_unit_id=org_unit_id, position_id=position_id)
+        initial_config = {
+            "硬件": {
+                "测试分组": [
+                    {"label": "alpha_item", "title": "原名称"},
+                ]
+            }
+        }
+        self.service.sync_permission_catalog(strict_overview=True, overview_config=initial_config)
+        alpha_edit = project_overview_item_permission("alpha_item", "edit")
+        self.service.set_position_permissions(position_id, [alpha_edit], actor_username="admin")
+
+        updated_config = {
+            "硬件": {
+                "测试分组": [
+                    {"label": "alpha_item", "title": "修改后的名称"},
+                    {"label": "beta_item", "title": "新增项目"},
+                ]
+            }
+        }
+        self.service.sync_permission_catalog(strict_overview=True, overview_config=updated_config)
+        permission_rows = {
+            item["code"]: item for item in self.service.identity_store.list_permissions()
+        }
+        beta_edit = project_overview_item_permission("beta_item", "edit")
+        self.assertEqual(permission_rows[alpha_edit]["name"], "维护 — 修改后的名称")
+        self.assertIn(beta_edit, permission_rows)
+        self.assertIn(alpha_edit, self.service.get_position_permission_codes(position_id))
+        self.assertNotIn(beta_edit, self.service.get_position_permission_codes(position_id))
+
+    def test_project_overview_label_catalog_rejects_duplicates(self):
+        duplicate_config = {
+            "光学": {"第一组": [{"label": "same_label", "title": "第一项"}]},
+            "硬件": {"第二组": [{"label": "same_label", "title": "第二项"}]},
+        }
+        with self.assertRaisesRegex(ProjectOverviewPermissionCatalogError, "same_label.*重复"):
+            project_overview_permission_definitions(duplicate_config)
+
+    def test_project_overview_dimension_grants_expand_once_to_current_labels(self):
+        """上一版专业级权限升级时展开到当前 label，之后不再重复覆盖管理员调整。"""
+        self.service.migrate_legacy_users()
+        org_unit_id = self.service.save_org_unit(code="org.overview.upgrade", name="概述升级部")
+        position_id = self.service.save_position(code="overview.upgrade", name="概述升级岗位")
+        old_code = project_overview_dimension_permission("hardware", "edit")
+        self.service.identity_store.seed_permission_catalog(
+            [{"code": old_code, "name": "旧硬件维护", "module": "项目概述", "description": ""}],
+            {},
+        )
+        self.service.set_position_permissions(position_id, [old_code], actor_username="admin")
+        self.service.sync_permission_catalog(strict_overview=True)
+
+        current_codes = self.service.get_position_permission_codes(position_id)
+        self.assertNotIn(old_code, current_codes)
+        self.assertIn(project_overview_item_permission("drive_pcb", "edit"), current_codes)
+        self.assertIn(project_overview_item_permission("electronic_testing", "edit"), current_codes)
 
     def test_admin_automatically_has_every_registered_permission(self):
         self.service.migrate_legacy_users()

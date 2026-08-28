@@ -16,6 +16,14 @@ from ..overview_batch_operations import (
 )
 from ..overview_corrections import OVERVIEW_CORRECTION_REQUESTS_KEY, get_correction_pending_count
 from ..overview_warning import get_urgent_overview_projects
+from ..permission_catalog import (
+    PROJECT_OVERVIEW_BATCH_REVIEW_PERMISSION,
+    PROJECT_OVERVIEW_CORRECTION_REVIEW_PERMISSION,
+)
+from ..project_overview_access import (
+    can_review_overview_correction,
+    can_view_any_project_overview,
+)
 from ..project_requirement_access import (
     can_edit_project_requirement,
     can_manage_all_project_requirement_drafts,
@@ -256,9 +264,18 @@ def main_page():
                 or can_revoke_project_requirement_approval(current_role, current_user)
                 or can_manage_all_project_requirement_drafts(current_role, current_user)
             )
-            if not can_access_requirement_workbench and not any(
-                k in str(current_role) for k in ["销售", "研发", "工程", "质量", "boss", "admin"]
-            ):
+            user_service = app.state.user_service
+            database_mode = getattr(user_service, "storage_mode", "legacy_excel") == "database"
+            can_access_overview_workbench = (
+                can_view_any_project_overview(current_role, current_user)
+                or can(user_service, current_user, PROJECT_OVERVIEW_BATCH_REVIEW_PERMISSION)
+                or can(user_service, current_user, PROJECT_OVERVIEW_CORRECTION_REVIEW_PERMISSION)
+            )
+            legacy_access = not database_mode and any(
+                keyword in str(current_role)
+                for keyword in ["销售", "研发", "工程", "质量", "boss", "admin"]
+            )
+            if not can_access_requirement_workbench and not can_access_overview_workbench and not legacy_access:
                 continue
         # 需求结构图只对角色字符串里含有如下关键字的用户展示
         elif items[3] == "/question_tree_tabs" and not any(
@@ -442,31 +459,30 @@ def main_page():
                 str(current_role or ""),
             )
 
-            if current_role == "研发经理":
-                # 经理统计所有待审批(pending)
-                change_task_count = sum(1 for r in change_reqs.values() if r["status"] == "pending")
-            else:
-                # 普通用户统计自己被驳回或撤回需要处理的任务
-                change_task_count = sum(
-                    1
-                    for r in change_reqs.values()
-                    if r["submitter"] == current_user and r["status"] in ["rejected", "withdrawn"]
+            change_task_count = sum(
+                1
+                for request in change_reqs.values()
+                if (
+                    request.get("status") == "pending"
+                    and can_review_overview_correction(request, current_role, current_user)
                 )
+                or (
+                    request.get("submitter") == current_user
+                    and request.get("status") in ["rejected", "withdrawn"]
+                )
+            )
 
             for icon, title, subtitle, target in menu_items:
                 # 1. 预先计算该模块的待办数量 (Logic Pre-calculation)
                 #    这样我们可以根据数量来决定图标的颜色
                 pending_count = 0
                 if target == "/information":
-                    # 需求待办按稳定权限与具体项目工程师责任计算；概述待办暂保留旧模块规则。
-                    overview_pending_count = 0
-                    if current_role not in ["销售", "销售主管", "销售总监"]:
-                        overview_pending_count = (
-                            overview_urgent_count
-                            + change_task_count
-                            + batch_change_task_count
-                            + correction_task_count
-                        )
+                    overview_pending_count = (
+                        overview_urgent_count
+                        + change_task_count
+                        + batch_change_task_count
+                        + correction_task_count
+                    )
                     pending_count = len(requirement_pending_keys) + overview_pending_count
                 elif target == "/ecn_management":
                     # 将算出的 ECN 待办数量赋给这个卡片

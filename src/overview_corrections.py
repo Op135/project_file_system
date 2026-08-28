@@ -17,6 +17,10 @@ from . import db_storage
 from .config import OVER_UPLOADS_FILE_TYPE
 from .overview_batch_operations import validate_overview_content
 from .overview_change_workflow_config import OVERVIEW_CHANGE_WORKFLOW_CONFIG
+from .project_overview_access import (
+    can_edit_overview_item,
+    can_review_overview_correction,
+)
 
 OVERVIEW_CORRECTION_REQUESTS_KEY = "overview_correction_requests"
 OVERVIEW_CORRECTION_ARCHIVES_KEY = "overview_correction_archives"
@@ -47,6 +51,9 @@ def get_correction_reviewer_roles(applicant_role: str) -> list[str]:
 
 
 def can_review_correction_request(request: dict, reviewer: str, reviewer_role: str) -> bool:
+    service = getattr(app.state, "user_service", None)
+    if service is not None and getattr(service, "storage_mode", "legacy_excel") == "database":
+        return can_review_overview_correction(request, reviewer_role, reviewer, user_service=service)
     configured_roles = get_correction_reviewer_roles(str(request.get("submitter_role") or ""))
     return bool(
         reviewer
@@ -310,7 +317,7 @@ async def execute_correction_request(request: dict) -> dict:
     config.update(live_config)
 
     submitter_role = str(request.get("submitter_role") or "")
-    if submitter_role not in config.get("permission", {}).get("edit_role", []):
+    if not can_edit_overview_item(config, submitter_role, str(request.get("submitter") or "")):
         return {"ok": False, "message": "申请人已不再具有该概述项的编辑权限"}
     if not before or chip_snapshot_fingerprint(before) != str(payload.get("before_fingerprint") or ""):
         return {"ok": False, "message": "申请中的原记录快照不完整"}

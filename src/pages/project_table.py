@@ -23,10 +23,11 @@ from ..config import (
 )
 from ..permission_catalog import (
     PROJECT_ALL_STATES_VIEW_PERMISSION,
-    PROJECT_RECORD_MANAGE_PERMISSION,
     PROJECT_VIEW_PERMISSION,
 )
+from ..project_access import can_edit_project_status, can_manage_project_records
 from ..project_requirement_access import can_view_project_requirement
+from ..project_overview_access import can_view_any_project_overview
 from ..utils import (
     find_files_with_prefix_and_version,
     get_cache_busted_path,
@@ -43,9 +44,6 @@ from ..utils import (
 logger = logging.getLogger(__name__)
 
 PROJECT_TABLE_SESSION_STORAGE_KEY = "project_table_view_state"
-PROJECT_TABLE_LEGACY_MANAGE_ROLES = ("研发经理",)
-
-
 def can_view_project_table(
     current_role: object,
     current_user: str,
@@ -77,23 +75,6 @@ def can_view_all_project_states(
         role_text = str(current_role or "")
         return not any(keyword in role_text for keyword in PROJECT_TABLE_STATE_FILTER_ROLE_KEYWORDS)
     return can(service, current_user, PROJECT_ALL_STATES_VIEW_PERMISSION)
-
-
-def can_manage_project_records(
-    current_role: object,
-    current_user: str,
-    *,
-    user_service=None,
-) -> bool:
-    """判断是否可以新增或修改项目基础资料。"""
-    service = user_service or getattr(app.state, "user_service", None)
-    return can(
-        service,
-        current_user,
-        PROJECT_RECORD_MANAGE_PERMISSION,
-        legacy_role=str(current_role or ""),
-        legacy_allowed_roles=PROJECT_TABLE_LEGACY_MANAGE_ROLES,
-    )
 
 
 @ui.page("/project_table")
@@ -282,6 +263,10 @@ def project_table_page():
         """保存前重新同步岗位并复核权限，避免只依赖菜单可见性。"""
         return can_manage_project_records(sync_current_user_role(), current_user)
 
+    def has_project_status_permission() -> bool:
+        """修改项目状态前复核独立的项目状态权限。"""
+        return can_edit_project_status(sync_current_user_role(), current_user)
+
     def reject_project_manage_without_permission() -> bool:
         if has_project_manage_permission():
             return False
@@ -342,8 +327,12 @@ def project_table_page():
         if reject_project_manage_without_permission():
             return False
         try:
+            save_data = copy.deepcopy(new_project_data)
+            if not has_project_status_permission():
+                # 基础资料维护者可以创建项目，但没有状态权限时只能使用安全默认状态。
+                save_data["state"] = "研发"
             # === 性能优化：将文件读写推入后台线程执行 ===
-            success, msg = await asyncio.to_thread(_sync_process_project_save, new_project_data, True)
+            success, msg = await asyncio.to_thread(_sync_process_project_save, save_data, True)
             if not success:
                 ui.notify(msg, type="info", position="bottom", timeout=2000, progress=True, close_button="✖")
                 return False
@@ -376,8 +365,15 @@ def project_table_page():
         if reject_project_manage_without_permission():
             return False
         try:
+            save_data = copy.deepcopy(new_project_data)
+            if not has_project_status_permission():
+                project_name = str(save_data.get("project_name") or "")
+                save_data["state"] = app.storage.general.get("project_summary", {}).get(
+                    project_name,
+                    {},
+                ).get("state", "研发")
             # === 性能优化：将文件读写推入后台线程执行 ===
-            success, msg = await asyncio.to_thread(_sync_process_project_save, new_project_data, False)
+            success, msg = await asyncio.to_thread(_sync_process_project_save, save_data, False)
             if not success:
                 ui.notify(
                     msg,
@@ -496,9 +492,16 @@ def project_table_page():
 
                 with ui.row().classes("w-full gap-2"):
                     # 状态
-                    ui.select(PROJECT_STATE_LIST, value=form_data["state"], label="状态").bind_value(
+                    state_select = ui.select(
+                        PROJECT_STATE_LIST,
+                        value=form_data["state"],
+                        label="状态",
+                    ).bind_value(
                         form_data, "state"
                     ).classes("w-1/3")
+                    if not has_project_status_permission():
+                        state_select.disable()
+                        state_select.tooltip("需要“维护 — 项目状态”权限；新项目默认使用研发状态")
                     # 日期
                     ui.input("立项日期", value=form_data["creation_date"]).bind_value(
                         form_data, "creation_date"
@@ -1049,6 +1052,9 @@ def project_table_page():
                 ui.navigate.to(f"/main/requirement?type=requirement&project_name={row_data['sub_project']}")
 
         elif col_id == "overview":
+            if not can_view_any_project_overview(current_role, current_user):
+                ui.notify("当前账号没有查看任何项目概述专业内容的权限", type="negative")
+                return
             await save_project_table_view_state(aggrid)
             await get_overviow_page(project_name, False)
         elif col_id == "test_summary":

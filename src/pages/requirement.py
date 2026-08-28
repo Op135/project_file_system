@@ -25,6 +25,7 @@ from nicegui.events import (
 )
 
 from .. import db_storage  # 导入我们创建的模块
+from ..access_control import can
 from ..components import (
     ButtonUploader,
     FileThumbnail,
@@ -74,6 +75,17 @@ from ..overview_batch_operations import (
 )
 from ..overview_corrections import get_project_correction_archives
 from ..overview_operation import append_overview_timestamp, get_automatic_overview_reason
+from ..project_access import can_assign_all_project_engineers, can_edit_project_status
+from ..project_overview_access import (
+    can_edit_overview_item,
+    can_manage_all_overview_content,
+    can_submit_batch_overview,
+    can_view_any_project_overview,
+    can_view_inactive_project_overview,
+    can_view_overview_item,
+    overview_workflow_error_message,
+    resolve_project_overview_workflow,
+)
 from ..project_requirement_access import (
     can_edit_project_requirement,
     can_view_project_requirement,
@@ -218,11 +230,32 @@ async def requirement_page(
     current_user = stored_current_user
     current_role = sync_current_user_role()
     is_requirement_mode = type in {"", "requirement"}
+    is_overview_mode = type in {"overview", "temp_overview"}
     requirement_read_only = str(readonly or "").strip().lower() in {"1", "true", "yes"}
     if is_requirement_mode and not can_view_project_requirement(current_role, current_user):
         ui.notify("当前账号没有查看项目需求配置正文的权限", type="negative")
         ui.navigate.to("/project_table")
         return
+    if is_overview_mode and not can_view_any_project_overview(current_role, current_user):
+        ui.notify("当前账号没有查看任何项目概述专业内容的权限", type="negative")
+        ui.navigate.to("/project_table")
+        return
+
+    def has_project_status_edit_permission() -> bool:
+        """概述页修改项目状态前复核独立状态权限。"""
+        return can_edit_project_status(
+            sync_current_user_role(),
+            current_user,
+            user_service=app.state.user_service,
+        )
+
+    def has_project_engineer_assign_permission() -> bool:
+        """指定项目工程师前复核全部项目指定权限。"""
+        return can_assign_all_project_engineers(
+            sync_current_user_role(),
+            current_user,
+            user_service=app.state.user_service,
+        )
     if is_requirement_mode and json_path:
         try:
             Path(json_path).resolve().relative_to(Path(REQ_DIR).resolve())
@@ -351,14 +384,32 @@ async def requirement_page(
         config_files = []
 
     def set_project_engineer_dialog(project_name, engineer_button):
+        if not has_project_engineer_assign_permission():
+            ui.notify("当前账号没有配置项目工程师负责人的权限", type="negative")
+            return
         general_dialog.clear()
         with general_dialog, ui.card().classes("w-[500px]"):
             project_engineer = app.storage.general["project_engineer"].get(project_name, "")
             ui.label("设置项目工程师负责人").classes("text-xl font-bold mb-4")
 
-            ui.input("实时修改", value=project_engineer).props("autofocus outlined").bind_value(
-                app.storage.general["project_engineer"], project_name
-            )
+            engineer_input = ui.input("项目工程师", value=project_engineer).props(
+                "autofocus outlined"
+            ).classes("w-full")
+
+            def save_project_engineer():
+                """保存时再次检查权限，避免弹窗打开后权限变化造成越权。"""
+                if not has_project_engineer_assign_permission():
+                    ui.notify("当前账号没有配置项目工程师负责人的权限", type="negative")
+                    return
+                value = str(engineer_input.value or "").strip() or "未指定"
+                app.storage.general["project_engineer"][project_name] = value
+                engineer_button.set_text(value)
+                general_dialog.close()
+                ui.notify("项目工程师负责人已更新。", type="positive")
+
+            with ui.row().classes("w-full justify-end"):
+                ui.button("取消", on_click=general_dialog.close).props("flat")
+                ui.button("保存", icon="save", on_click=save_project_engineer).props("color=primary")
 
             general_dialog.open()
 
@@ -433,11 +484,14 @@ async def requirement_page(
 
     # 编辑project_summary json文件
     def edit_project_summary(project_name, state, recovery_bool):
+        if not has_project_status_edit_permission():
+            ui.notify("当前账号没有修改项目状态的权限", type="negative")
+            return False
         # 如果是恢复项目的操作附带导致该函数被调取，不用操作，跳过
         if recovery_bool:
             # 复位标记
             app.storage.client["recovery_bool"] = False
-            return
+            return False
         project_data = {}
         with open(f"{BASE_DIR}/data/project_summary.json", "r", encoding="utf-8") as f:
             project_data = json.load(f)
@@ -457,6 +511,7 @@ async def requirement_page(
                 progress=True,
                 close_button="✖",
             )
+            return True
         except Exception as e:
             ui.notify(
                 f"修改项目状态错误错误：{e}",
@@ -466,10 +521,16 @@ async def requirement_page(
                 progress=False,
                 close_button="✖",
             )
+            return False
 
     async def conversion_chip_state(project_name, state):
         # 先编辑json文件
-        edit_project_summary(project_name, state, app.storage.client.get("recovery_bool", False))
+        if not edit_project_summary(
+            project_name,
+            state,
+            app.storage.client.get("recovery_bool", False),
+        ):
+            return
         # 将该项目所有svn类的chip失活
         success = await db_storage.atomic_deep_update(
             [f"{project_name}_over_data"], set_overview_data_not_true, project_name
@@ -549,6 +610,9 @@ async def requirement_page(
 
     # 修改项目状态
     async def set_project_state(project_name, e):
+        if not has_project_status_edit_permission():
+            ui.notify("当前账号没有修改项目状态的权限", type="negative")
+            return
         state = e.value
         # 获取下拉框组件对象，用于后续如果取消了，把值改回去
         select_element = e.sender
@@ -586,7 +650,7 @@ async def requirement_page(
             )
         # 如果是从研发状态改为转产或量产，将所有svn概述全部失活掉，然后进行特殊刷新
         elif previous_state == "研发" and state == "转产":
-            if current_role != "研发经理":
+            if not has_project_status_edit_permission():
                 # 无权限时，也要把界面改回去
                 # 恢复标记打开，防止状态改回时按照正常修改状态操作文件和弹出提示信息
                 app.storage.client["recovery_bool"] = True
@@ -3281,8 +3345,8 @@ async def requirement_page(
         ui.badge(text=text_str, color=color_str).props("rounded").classes("p-1 text-[8px]/[8px]")
 
     async def batch_overview_maintenance_dialog():
-        """研发结构专用：跨项目批量新增概述或修改当前版本的激活状态。"""
-        if current_role not in BATCH_OVERVIEW_TOOL_ROLES:
+        """按稳定权限跨项目批量新增概述或修改当前版本的激活状态。"""
+        if not can_submit_batch_overview(current_role, current_user, BATCH_OVERVIEW_TOOL_ROLES):
             ui.notify("当前角色无权使用批量概述维护工具。", type="negative")
             return
 
@@ -3291,6 +3355,7 @@ async def requirement_page(
             over_config,
             str(current_role or ""),
             OVERVIEW_UI_RENDER_REGISTRY,
+            current_user,
         )
         if not editable_configs:
             ui.notify("当前角色没有可编辑的概述配置。", type="warning")
@@ -3803,13 +3868,25 @@ async def requirement_page(
 
         async def submit_batch_request():
             """完成全部前置校验后提交审批，审批通过前不改动任何概述数据。"""
-            if current_role not in BATCH_OVERVIEW_TOOL_ROLES:
+            if not can_submit_batch_overview(current_role, current_user, BATCH_OVERVIEW_TOOL_ROLES):
                 ui.notify("当前角色无权提交批量概述申请。", type="negative")
                 return
             reviewer_roles = get_batch_overview_reviewer_roles(str(current_role or ""))
-            if not reviewer_roles:
+            database_mode = getattr(app.state.user_service, "storage_mode", "legacy_excel") == "database"
+            if not reviewer_roles and not database_mode:
                 ui.notify("当前角色尚未配置批量概述审批角色，无法提交申请。", type="negative")
                 return
+            workflow_assignment = {}
+            if database_mode:
+                workflow_result = resolve_project_overview_workflow("batch_change", current_user)
+                if workflow_result.get("status") != "matched":
+                    ui.notify(
+                        overview_workflow_error_message(workflow_result, "批量概述申请"),
+                        type="negative",
+                        multi_line=True,
+                    )
+                    return
+                workflow_assignment = workflow_result["assignment"]
             config = get_config()
             if not config:
                 ui.notify("请选择具体概述项。", type="warning")
@@ -3826,7 +3903,7 @@ async def requirement_page(
             if not selected_projects:
                 ui.notify("请至少选择一个符合状态限制的项目。", type="warning")
                 return
-            if current_role not in config.get("permission", {}).get("edit_role", []):
+            if not can_edit_overview_item(config, current_role, current_user):
                 ui.notify("当前角色没有该概述项的编辑权限。", type="negative")
                 return
             if not ensure_complete_table_row_bindings(config, selected_projects):
@@ -3975,6 +4052,7 @@ async def requirement_page(
                     "submitter": current_user,
                     "submitter_role": current_role,
                     "reviewer_roles": reviewer_roles,
+                    "workflow_assignment": workflow_assignment,
                     "status": "pending",
                     "created_at": now_text,
                     "updated_at": now_text,
@@ -4008,7 +4086,7 @@ async def requirement_page(
                 request_saved = True
                 batch_overview_dialog.close()
                 ui.notify(
-                    f"批量概述申请已提交，等待{'、'.join(reviewer_roles)}审批。",
+                    f"批量概述申请已提交，等待{'、'.join(reviewer_roles) if reviewer_roles else '获授权人员'}审批。",
                     type="positive",
                     position="center",
                 )
@@ -4029,7 +4107,7 @@ async def requirement_page(
                     submit_spinner.set_visibility(False)
 
         async def execute_batch():
-            if current_role not in BATCH_OVERVIEW_TOOL_ROLES:
+            if not can_submit_batch_overview(current_role, current_user, BATCH_OVERVIEW_TOOL_ROLES):
                 ui.notify("当前角色无权执行此操作。", type="negative")
                 return
             config = get_config()
@@ -4048,7 +4126,7 @@ async def requirement_page(
             if not selected_projects:
                 ui.notify("请至少选择一个符合状态限制的项目。", type="warning")
                 return
-            if current_role not in config.get("permission", {}).get("edit_role", []):
+            if not can_edit_overview_item(config, current_role, current_user):
                 ui.notify("当前角色没有该概述项的编辑权限。", type="negative")
                 return
             if not ensure_complete_table_row_bindings(config, selected_projects):
@@ -4531,6 +4609,10 @@ async def requirement_page(
         - 特别支持 test 类型的 test_select_data 修改
         - 修改不覆盖原 creator，但记录修改历史
         """
+        if not can_manage_all_overview_content(current_role, current_user):
+            ui.notify("当前账号没有直接修改概述原始内容的权限", type="negative")
+            return
+
         # 1. 准备数据容器
         over_config = app.storage.general.get("over_config_data", {})
 
@@ -4723,6 +4805,9 @@ async def requirement_page(
                 modification_reason = OverviewReasonSelector("create", "修改原因（必选）")
 
                 async def save_modification():
+                    if not can_manage_all_overview_content(current_role, current_user):
+                        ui.notify("当前账号没有直接修改概述原始内容的权限", type="negative")
+                        return
                     # [修复 3] 增加对 current_chip_data 的非空检查，消除 None 类型访问属性的报错
                     if not state["chip_id"] or not state["label"] or state["current_chip_data"] is None:
                         return
@@ -4892,10 +4977,10 @@ async def requirement_page(
                     ui.menu_item("对比需求", on_click=show_comparison_dialog)
                     ui.separator().props("size=1px")
                     ui.menu_item("概述纠错历史", on_click=lambda: show_project_correction_archives(project_name))
-                    if current_role == "研发经理":
+                    if can_manage_all_overview_content(current_role, current_user):
                         ui.separator().props("size=1px")
                         ui.menu_item("修改概述内容", on_click=lambda: modify_overview_content_dialog(project_name))
-                    if current_role in BATCH_OVERVIEW_TOOL_ROLES:
+                    if can_submit_batch_overview(current_role, current_user, BATCH_OVERVIEW_TOOL_ROLES):
                         ui.separator().props("size=1px")
                         ui.menu_item("批量维护概述", on_click=batch_overview_maintenance_dialog)
 
@@ -5401,7 +5486,7 @@ async def requirement_page(
                     with ui.row().classes("relative w-full items-center justify-between px-2 border-gray-200"):
                         # 1. 左侧操作区：状态 + 负责人
                         with ui.row().classes("items-center gap-3"):
-                            if current_role in ["研发经理", "研发助理"]:
+                            if has_project_status_edit_permission():
                                 # 下拉框：移除 absolute，保留 small-select
                                 ui.select(
                                     PROJECT_STATE_LIST,
@@ -5415,7 +5500,7 @@ async def requirement_page(
                                 ui.chip(icon="star", color="amber-7").props("outline dense").classes(
                                     "text-sm m-0"
                                 ).bind_text_from(app.storage.general["project_summary"][project_name], "state")
-                            if current_role == "研发经理":
+                            if has_project_engineer_assign_permission():
                                 project_engineer = app.storage.general["project_engineer"].get(project_name, "未指定")
                                 engineer_button = ui.button(project_engineer)
                                 engineer_button.on_click(
@@ -5442,11 +5527,7 @@ async def requirement_page(
                                 ),
                             ).props("flat dense").classes("text-sm text-blue-800 hover:bg-blue-100 px-2")
 
-                            if (
-                                "研发" in app.storage.user.get("current_role", "")
-                                or app.storage.user.get("current_role", "") == "工程NPI"
-                                or app.storage.user.get("current_role", "") == "admin"
-                            ):
+                            if can_view_inactive_project_overview(current_role, current_user):
                                 app.storage.client.setdefault("record_switch", False)
                                 # 开关：移除 absolute，增加 keep-color 保持颜色鲜艳
                                 ui.switch("查阅失活概述").props("dense").classes("text-sm text-gray-600").bind_value(
@@ -5650,13 +5731,10 @@ async def requirement_page(
                                     render_type = OVERVIEW_UI_RENDER_REGISTRY.get(group_name, "InteractiveButton")
 
                                     # 权限预检：只要分组里有任意一项有权限，就显示这个折叠面板和里面的表格
-                                    user_role = app.storage.user["current_role"]
                                     has_permission = False
                                     for data in chip_data_li:
-                                        if (
-                                            user_role in data["permission"]["read_role"]
-                                            or user_role in data["permission"]["edit_role"]
-                                        ):
+                                        access_config = {**data, "role": role}
+                                        if can_view_overview_item(access_config, current_role, current_user):
                                             has_permission = True
                                             break
                                     if render_type == "OverviewTableGroup":
@@ -5700,11 +5778,8 @@ async def requirement_page(
                                     else:
                                         with exp:
                                             for data in chip_data_li:
-                                                user_role = app.storage.user["current_role"]
-                                                if (
-                                                    user_role in data["permission"]["read_role"]
-                                                    or user_role in data["permission"]["edit_role"]
-                                                ):
+                                                access_config = {**data, "role": role}
+                                                if can_view_overview_item(access_config, current_role, current_user):
                                                     exp.set_visibility(True)
 
                                                     # 提取必填属性

@@ -22,6 +22,7 @@ from nicegui import app, ui
 from nicegui.events import KeyEventArguments
 
 from . import db_storage
+from .permission_catalog import project_overview_permission_definitions
 
 # import config
 from .config import (
@@ -1172,6 +1173,15 @@ def updata_overview_config():
         with open(f"{BASE_DIR}/overview_config.json", "r", encoding="utf-8") as f:
             # 使用 json.load() 读取文件内容并解析
             over_config_data = json.load(f)
+            # 在覆盖内存配置前先校验全部 label，避免重复或非法标识污染运行数据和权限目录。
+            project_overview_permission_definitions(over_config_data)
+            user_service = getattr(app.state, "user_service", None)
+            if user_service is not None and getattr(user_service, "storage_mode", "legacy_excel") == "database":
+                # 先完成数据库目录同步；同步失败时不覆盖当前进程仍在使用的概述配置。
+                user_service.sync_permission_catalog(
+                    strict_overview=True,
+                    overview_config=over_config_data,
+                )
             # 为概述配置文件增加格式固定内容，在存放到app.storage.general
             for role, over_data_dic in over_config_data.items():
                 for group_name, over_data_li in over_data_dic.items():
@@ -1190,8 +1200,10 @@ def updata_overview_config():
             # --- 新增：配置结构变更后，强制进行一次全局待定状态重构 ---
             update_overview_charge_pending_dic("all")
             logger.info("全局概述待定状态已基于最新配置文件重新构建。")
+            ui.notify("概述配置与 label 级权限目录已同步。", type="positive")
     except Exception as e:
         logger.error(f"更新概述项配置失败；{e}")
+        ui.notify(f"概述配置更新失败：{e}", type="negative", multi_line=True)
 
 
 # 传入待判断字符串和正则表达式，输出判断结果

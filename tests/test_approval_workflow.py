@@ -10,12 +10,15 @@ from src.approval_workflow import (
     create_approval_assignments,
     get_workflow_event_definition,
     import_design_knowledge_legacy_workflows,
+    import_project_overview_legacy_workflows,
     is_assigned_approver,
     resolve_approval_workflow,
 )
 from src.permission_catalog import (
     DESIGN_KNOWLEDGE_REVIEW_PERMISSION,
     DESIGN_KNOWLEDGE_TAG_REVIEW_PERMISSION,
+    PROJECT_OVERVIEW_BATCH_REVIEW_PERMISSION,
+    PROJECT_OVERVIEW_CORRECTION_REVIEW_PERMISSION,
     SAMPLE_ISSUE_CLOSE_APPROVE_PERMISSION,
     SAMPLE_ISSUE_LEGACY_CLOSE_ELECTRON_APPROVE_PERMISSION,
 )
@@ -271,6 +274,32 @@ class ApprovalWorkflowTests(unittest.TestCase):
             {"knowledge_review", "tag_review"},
         )
         created_again, _warnings_again = import_design_knowledge_legacy_workflows(
+            self.service,
+            actor_username="admin",
+        )
+        self.assertEqual(created_again, 0)
+
+    def test_project_overview_events_and_legacy_import_are_idempotent(self):
+        """概述两类审批事件可在管理界面配置，旧 JSON 只能单向生成草稿。"""
+        batch_event = get_workflow_event_definition("project_overview", "batch_change")
+        correction_event = get_workflow_event_definition("project_overview", "correction")
+        self.assertIsNotNone(batch_event)
+        self.assertIsNotNone(correction_event)
+        assert batch_event is not None
+        assert correction_event is not None
+        self.assertEqual(batch_event.permission_codes, (PROJECT_OVERVIEW_BATCH_REVIEW_PERMISSION,))
+        self.assertEqual(correction_event.permission_codes, (PROJECT_OVERVIEW_CORRECTION_REVIEW_PERMISSION,))
+
+        created, warnings = import_project_overview_legacy_workflows(
+            self.service,
+            actor_username="admin",
+        )
+        self.assertGreater(created, 0)
+        self.assertTrue(warnings)
+        imported = self.service.list_approval_workflows(module="project_overview")
+        self.assertEqual(len(imported), created)
+        self.assertEqual({item["event"] for item in imported}, {"batch_change", "correction"})
+        created_again, _warnings_again = import_project_overview_legacy_workflows(
             self.service,
             actor_username="admin",
         )

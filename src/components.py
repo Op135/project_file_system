@@ -57,6 +57,12 @@ from .overview_corrections import (
     update_correction_request,
     validate_test_correction,
 )
+from .project_overview_access import (
+    can_edit_overview_item,
+    can_view_overview_item,
+    overview_workflow_error_message,
+    resolve_project_overview_workflow,
+)
 from .overview_operation import (
     append_overview_timestamp,
     get_automatic_overview_reason,
@@ -1734,13 +1740,26 @@ class InteractiveButton:
         self.chip_dialog.clear()
         current_user = str(app.storage.user.get("current_user") or "匿名用户")
         current_role = str(app.storage.user.get("current_role") or "")
-        if current_role not in self.permission.get("edit_role", []):
+        access_config = {"role": self.role, "label": self.label, "permission": self.permission}
+        if not can_edit_overview_item(access_config, current_role, current_user):
             ui.notify("当前角色没有该概述项的纠错申请权限。", type="negative")
             return
         reviewer_roles = get_correction_reviewer_roles(current_role)
-        if not reviewer_roles:
+        database_mode = getattr(app.state.user_service, "storage_mode", "legacy_excel") == "database"
+        if not reviewer_roles and not database_mode:
             ui.notify("当前角色尚未配置纠错审批角色。", type="negative")
             return
+        workflow_assignment = {}
+        if database_mode:
+            workflow_result = resolve_project_overview_workflow("correction", current_user)
+            if workflow_result.get("status") != "matched":
+                ui.notify(
+                    overview_workflow_error_message(workflow_result, "概述纠错申请"),
+                    type="negative",
+                    multi_line=True,
+                )
+                return
+            workflow_assignment = workflow_result["assignment"]
 
         requests = db_storage.get_item(OVERVIEW_CORRECTION_REQUESTS_KEY, {}) or {}
         existing = find_active_correction_for_chip(requests, self.project, self.label, str(chip_info.get("id") or ""))
@@ -2008,6 +2027,7 @@ class InteractiveButton:
                     "submitter": current_user,
                     "submitter_role": current_role,
                     "reviewer_roles": reviewer_roles,
+                    "workflow_assignment": workflow_assignment,
                     "status": "pending",
                     "reject_reason": "",
                     "created_at": str(existing_req.get("created_at") or now_text) if existing_req else now_text,
@@ -2026,7 +2046,8 @@ class InteractiveButton:
                     cleanup_correction_staged_files([str(self.last_temp_upload_path or ""), stored_staged_path])
                 elif self.last_temp_upload_path and stored_staged_path != self.last_temp_upload_path:
                     cleanup_correction_staged_files([stored_staged_path])
-                ui.notify(f"纠错申请已提交，等待{'、'.join(reviewer_roles)}审批。", type="positive")
+                approver_names = workflow_assignment.get("assignee_names", []) or reviewer_roles
+                ui.notify(f"纠错申请已提交，等待{'、'.join(approver_names)}审批。", type="positive")
                 self.chip_dialog.close()
 
             def cancel_request_dialog():
@@ -3781,7 +3802,11 @@ class InteractiveButton:
     def _edit_permission_judge(self):
         if (
             not self.temp_bool
-            and app.storage.user["current_role"] in self.permission["edit_role"]
+            and can_edit_overview_item(
+                {"role": self.role, "label": self.label, "permission": self.permission},
+                app.storage.user.get("current_role", ""),
+                str(app.storage.user.get("current_user") or ""),
+            )
             and app.storage.general["project_summary"][self.project]["state"] in self.allowed_state
         ):
             return True
@@ -3796,7 +3821,11 @@ class InteractiveButton:
                 close_button="✖",
             )
             return False
-        elif app.storage.user["current_role"] not in self.permission["edit_role"]:
+        elif not can_edit_overview_item(
+            {"role": self.role, "label": self.label, "permission": self.permission},
+            app.storage.user.get("current_role", ""),
+            str(app.storage.user.get("current_user") or ""),
+        ):
             ui.notify(
                 "当前用户无该项编辑权限，请联系管理员申请!",
                 type="info",
@@ -4632,9 +4661,12 @@ class OverviewTableGroup:
         user_role = app.storage.user.get("current_role", "")
         for config in self.configs:
             # 只有当用户具备读取或编辑权限时，该列才会被加入最终渲染和监控的列表中
-            if user_role in config.get("permission", {}).get("read_role", []) or user_role in config.get(
-                "permission", {}
-            ).get("edit_role", []):
+            access_config = {**config, "role": self.role}
+            if can_view_overview_item(
+                access_config,
+                user_role,
+                str(app.storage.user.get("current_user") or ""),
+            ):
                 self.permitted_configs[config.get("title")] = config
 
         self.offset = (0, 0)
@@ -5622,7 +5654,11 @@ class OverviewTableGroup:
         allowed_state = config.get("allowed_state", ["研发", "转产"])
         if (
             not self.temp_bool
-            and app.storage.user["current_role"] in config.get("permission", {}).get("edit_role", [])
+            and can_edit_overview_item(
+                {**config, "role": self.role},
+                app.storage.user.get("current_role", ""),
+                str(app.storage.user.get("current_user") or ""),
+            )
             and app.storage.general["project_summary"][self.project]["state"] in allowed_state
         ):
             return True
@@ -5630,7 +5666,11 @@ class OverviewTableGroup:
         if notify:
             if self.temp_bool:
                 msg = "当前处于需求审核界面，概述内容锁定不可编辑!"
-            elif app.storage.user["current_role"] not in config.get("permission", {}).get("edit_role", []):
+            elif not can_edit_overview_item(
+                {**config, "role": self.role},
+                app.storage.user.get("current_role", ""),
+                str(app.storage.user.get("current_user") or ""),
+            ):
                 msg = "当前用户无该项编辑权限，请联系管理员申请!"
             else:
                 msg = "项目当前状态禁止编辑概述!"
@@ -8014,13 +8054,26 @@ class OverviewTableGroup:
         self.chip_dialog.clear()
         current_user = str(app.storage.user.get("current_user") or "匿名用户")
         current_role = str(app.storage.user.get("current_role") or "")
-        if current_role not in config.get("permission", {}).get("edit_role", []):
+        access_config = {**config, "role": self.role}
+        if not can_edit_overview_item(access_config, current_role, current_user):
             ui.notify("当前角色没有该概述项的纠错申请权限。", type="negative")
             return
         reviewer_roles = get_correction_reviewer_roles(current_role)
-        if not reviewer_roles:
+        database_mode = getattr(app.state.user_service, "storage_mode", "legacy_excel") == "database"
+        if not reviewer_roles and not database_mode:
             ui.notify("当前角色尚未配置纠错审批角色。", type="negative")
             return
+        workflow_assignment = {}
+        if database_mode:
+            workflow_result = resolve_project_overview_workflow("correction", current_user)
+            if workflow_result.get("status") != "matched":
+                ui.notify(
+                    overview_workflow_error_message(workflow_result, "概述纠错申请"),
+                    type="negative",
+                    multi_line=True,
+                )
+                return
+            workflow_assignment = workflow_result["assignment"]
 
         label = str(config.get("label") or "")
         chip_id = str(chip_info.get("id") or "")
@@ -8296,6 +8349,7 @@ class OverviewTableGroup:
                     "submitter": current_user,
                     "submitter_role": current_role,
                     "reviewer_roles": reviewer_roles,
+                    "workflow_assignment": workflow_assignment,
                     "status": "pending",
                     "reject_reason": "",
                     "created_at": str(existing_req.get("created_at") or now_text) if existing_req else now_text,
@@ -8314,7 +8368,8 @@ class OverviewTableGroup:
                     cleanup_correction_staged_files([str(self.last_temp_upload_path or ""), stored_staged_path])
                 elif self.last_temp_upload_path and stored_staged_path != self.last_temp_upload_path:
                     cleanup_correction_staged_files([stored_staged_path])
-                ui.notify(f"纠错申请已提交，等待{'、'.join(reviewer_roles)}审批。", type="positive")
+                approver_names = workflow_assignment.get("assignee_names", []) or reviewer_roles
+                ui.notify(f"纠错申请已提交，等待{'、'.join(approver_names)}审批。", type="positive")
                 self.chip_dialog.close()
 
             def cancel_request_dialog():

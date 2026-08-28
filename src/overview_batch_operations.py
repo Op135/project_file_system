@@ -14,6 +14,10 @@ from nicegui import app
 from . import db_storage
 from .overview_change_workflow_config import OVERVIEW_CHANGE_WORKFLOW_CONFIG
 from .overview_operation import append_overview_timestamp, get_automatic_overview_reason
+from .project_overview_access import (
+    can_edit_overview_item,
+    can_review_batch_overview as has_batch_overview_review_access,
+)
 
 BATCH_OVERVIEW_CONFIG = OVERVIEW_CHANGE_WORKFLOW_CONFIG["batch_overview"]
 BATCH_OVERVIEW_TOOL_ROLES = BATCH_OVERVIEW_CONFIG["tool_roles"]
@@ -37,6 +41,9 @@ def get_batch_overview_reviewer_roles(applicant_role: str) -> list[str]:
 
 def can_review_batch_overview_request(request: dict, reviewer: str, reviewer_role: str) -> bool:
     """判断当前用户能否审核申请；同一用户不能自审。"""
+    service = getattr(app.state, "user_service", None)
+    if service is not None and getattr(service, "storage_mode", "legacy_excel") == "database":
+        return has_batch_overview_review_access(request, reviewer_role, reviewer, user_service=service)
     configured_roles = get_batch_overview_reviewer_roles(str(request.get("submitter_role") or ""))
     return bool(
         reviewer
@@ -195,7 +202,12 @@ def find_projects_without_row_anchors(
     return [str(project) for project in projects if not row_anchors.get(project)]
 
 
-def collect_editable_overview_configs(over_config: dict, user_role: str, render_registry: dict) -> list[dict]:
+def collect_editable_overview_configs(
+    over_config: dict,
+    user_role: str,
+    render_registry: dict,
+    current_user: str = "",
+) -> list[dict]:
     """展平当前角色有编辑权限的概述配置，并补齐分组/基准列元数据。"""
     result = []
     for role, groups in over_config.items():
@@ -205,7 +217,8 @@ def collect_editable_overview_configs(over_config: dict, user_role: str, render_
             first_col_label = items[0].get("label", "")
             is_table_group = render_registry.get(group_name) == "OverviewTableGroup"
             for item in items:
-                if user_role not in item.get("permission", {}).get("edit_role", []):
+                access_config = {**item, "role": role}
+                if not can_edit_overview_item(access_config, user_role, current_user):
                     continue
                 normalized = copy.deepcopy(item)
                 normalized.update(
@@ -652,7 +665,7 @@ async def execute_batch_overview_request(request: dict) -> dict:
     ]
     if not config or action not in {"add", "state"}:
         return {"ok": False, "message": "申请数据不完整，无法执行", "successes": [], "skipped": [], "failed": []}
-    if submitter_role not in config.get("permission", {}).get("edit_role", []):
+    if not can_edit_overview_item(config, submitter_role, str(request.get("submitter") or "")):
         return {
             "ok": False,
             "message": "申请人已不再具有该概述项的编辑权限",

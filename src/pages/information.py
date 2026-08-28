@@ -43,6 +43,7 @@ from ..project_requirement_access import (
     can_revoke_project_requirement_approval,
     has_assigned_requirement_review_permission,
 )
+from ..project_overview_access import can_review_overview_correction
 from ..requirement_overview_impact import RequirementOverviewImpactConfigError
 from ..utils import (
     delete_file,
@@ -211,7 +212,8 @@ def status_badge(text: str | None, color_name: str = "gray"):
 @ui.page("/information")
 def information_page():
     # 1. 权限与基础数据获取
-    if not app.storage.user.get("current_user"):
+    stored_current_user = app.storage.user.get("current_user")
+    if not isinstance(stored_current_user, str) or not stored_current_user:
         ui.navigate.to("/login")
         return
 
@@ -261,7 +263,7 @@ def information_page():
     """)
 
     dialog = ui.dialog().props("persistent").classes("")
-    current_user = app.storage.user.get("current_user", "匿名用户")
+    current_user = stored_current_user
     current_role = sync_current_user_role()
 
     def current_project_engineers() -> dict:
@@ -826,12 +828,21 @@ def information_page():
 
     # 1. 撤回逻辑 (不归档，转为 withdrawn 状态留给用户修改)
     async def handle_withdraw(req_id):
+        request = app.storage.general.get("overview_change_requests", {}).get(req_id, {})
+        if request.get("submitter") != current_user:
+            ui.notify("只有申请人本人可以撤回概述变更申请", type="negative")
+            return
         app.storage.general["overview_change_requests"][req_id]["status"] = "withdrawn"
         ui.notify("申请已撤回")
         ui.navigate.reload()
 
     # 2. 审批通过 (执行物理动作 + 数据更新 + 归档)
     async def handle_approve(req_id, req_data):
+        live_request = app.storage.general.get("overview_change_requests", {}).get(req_id, {})
+        if not live_request or not can_review_overview_correction(live_request, current_role, current_user):
+            ui.notify("当前账号没有审批该概述变更申请的权限", type="negative")
+            return
+        req_data = live_request
         # --- 业务校验逻辑 ---
         config = req_data["config"]
         project = req_data["project_name"]
@@ -890,6 +901,10 @@ def information_page():
 
     def open_reject_modal(req_id):
         """弹出驳回理由填写对话框"""
+        request = app.storage.general.get("overview_change_requests", {}).get(req_id, {})
+        if not request or not can_review_overview_correction(request, current_role, current_user):
+            ui.notify("当前账号没有审批该概述变更申请的权限", type="negative")
+            return
         dialog.clear()
         with dialog, ui.card().classes("w-[400px]"):
             ui.label("驳回变更申请").classes("text-lg font-bold text-red-600 mb-2")
@@ -902,6 +917,10 @@ def information_page():
             )
 
             async def confirm_reject():
+                live_request = app.storage.general.get("overview_change_requests", {}).get(req_id, {})
+                if not live_request or not can_review_overview_correction(live_request, current_role, current_user):
+                    ui.notify("当前账号没有审批该概述变更申请的权限", type="negative")
+                    return
                 reason = reason_input.value
                 if not reason or not reason.strip():
                     ui.notify("请填写驳回理由！", type="warning", position="top")
@@ -1629,9 +1648,10 @@ def information_page():
                 # =========================================================
                 with ui.column().classes("col-span-12 lg:col-span-6 gap-4"):
                     # A. 待判断概述 (Priority Task)
-                    if current_role in module_show_data.get("overview_charge_pending_module", []):
-                        my_pending = app.storage.general["overview_charge_pending"].get(current_user, {})
-                        if my_pending:
+                    my_pending = app.storage.general["overview_charge_pending"].get(current_user, {})
+                    if my_pending:
+                        # 待办已按具体用户名分配，不再额外依赖旧角色名单控制显示。
+                        if isinstance(my_pending, dict):
                             with ui.card().classes("w-full rounded-xl shadow-sm border border-red-100 bg-white"):
                                 ui_card_header("待处理：项目概述", "edit_document", "red-600")
                                 with ui.column().classes(
@@ -1905,14 +1925,16 @@ def information_page():
                             and can_review_batch_overview_request(request, current_user, str(current_role or ""))
                         )
                     }
-                    can_show_single_requests = current_role in module_show_data.get("overview_change_requests", [])
                     visible_single_requests = {
                         rid: request
                         for rid, request in all_requests.items()
-                        if (current_role == "研发经理" and request.get("status") == "pending")
+                        if (
+                            request.get("status") == "pending"
+                            and can_review_overview_correction(request, current_role, current_user)
+                        )
                         or request.get("submitter") == current_user
                     }
-                    if can_show_single_requests or visible_correction_requests or visible_batch_requests:
+                    if visible_single_requests or visible_correction_requests or visible_batch_requests:
                         with ui.card().classes("w-full rounded-xl shadow-sm border border-gray-100 bg-white"):
                             ui_card_header("概述变更审批", "fact_check", "orange-600")
                             batch_todo_count = get_batch_overview_pending_count(
@@ -1942,7 +1964,7 @@ def information_page():
                                 if visible_single_requests:
                                     ui.label("旧版单项目概述变更申请").classes("font-bold text-gray-800")
                                     for rid, req in visible_single_requests.items():
-                                        is_manager = current_role == "研发经理"
+                                        is_manager = can_review_overview_correction(req, current_role, current_user)
                                         is_mine = req.get("submitter") == current_user
 
                                         with ui.row().classes(
