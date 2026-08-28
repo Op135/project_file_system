@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass
 from typing import Any
 
@@ -209,6 +210,60 @@ def _resolve_approver_candidates(
     return eligible, excluded
 
 
+def _version_approval_nodes(version: dict[str, Any]) -> list[dict[str, Any]]:
+    """把旧单节点版本和新串行版本统一转换为运行时节点。"""
+    approval_mode = str(version.get("approval_mode") or "any").strip().lower()
+    approver = version.get("approver", {})
+    if not isinstance(approver, dict):
+        raise ValueError("审批人规则不是有效对象")
+    if approval_mode == "sequential":
+        raw_nodes = approver.get("nodes")
+        if not isinstance(raw_nodes, list) or not raw_nodes:
+            raise ValueError("串行流程没有审批节点")
+        nodes: list[dict[str, Any]] = []
+        seen_keys: set[str] = set()
+        for index, raw_node in enumerate(raw_nodes):
+            if not isinstance(raw_node, dict):
+                raise ValueError(f"第 {index + 1} 个审批节点无效")
+            node_key = str(raw_node.get("node_key") or "").strip().lower()
+            if not node_key or node_key in seen_keys:
+                raise ValueError("审批节点编码为空或重复")
+            seen_keys.add(node_key)
+            node_approver = raw_node.get("approver")
+            if not isinstance(node_approver, dict):
+                raise ValueError(f"节点 {node_key} 的审批人规则无效")
+            node_mode = str(raw_node.get("approval_mode") or "any").strip().lower()
+            if node_mode not in {"any", "all"}:
+                raise ValueError(f"节点 {node_key} 的审批方式无效")
+            nodes.append(
+                {
+                    "node_key": node_key,
+                    "name": str(raw_node.get("name") or f"审批节点 {index + 1}").strip(),
+                    "approval_mode": node_mode,
+                    "approver": node_approver,
+                    "required_permission_code": str(
+                        raw_node.get("required_permission_code")
+                        or version.get("required_permission_code")
+                        or ""
+                    ).strip().lower(),
+                }
+            )
+        return nodes
+    if approval_mode not in {"any", "all"}:
+        raise ValueError("审批方式无效")
+    return [
+        {
+            "node_key": "approval",
+            "name": "审批",
+            "approval_mode": approval_mode,
+            "approver": approver,
+            "required_permission_code": str(
+                version.get("required_permission_code") or ""
+            ).strip().lower(),
+        }
+    ]
+
+
 def resolve_approval_workflow(
     user_service,
     *,
@@ -255,49 +310,84 @@ def resolve_approval_workflow(
         }
 
     workflow, version = matched[0]
-    required_permission_code = str(version.get("required_permission_code", ""))
-    if required_permission_code not in event_definition.permission_codes:
+    workflow_summary = {
+        "workflow_id": workflow["workflow_id"],
+        "code": workflow["code"],
+        "name": workflow["name"],
+        "module": workflow["module"],
+        "event": workflow["event"],
+    }
+    try:
+        approval_nodes = _version_approval_nodes(version)
+    except ValueError as exc:
         return {
             "status": "invalid_policy",
-            "message": "流程使用了当前业务事件不支持的审批权限",
+            "message": str(exc),
             "requester_membership": requester_membership,
-            "workflow": {
-                "workflow_id": workflow["workflow_id"],
-                "code": workflow["code"],
-                "name": workflow["name"],
-                "module": workflow["module"],
-                "event": workflow["event"],
-            },
+            "workflow": workflow_summary,
             "version": version,
         }
-    eligible, excluded = _resolve_approver_candidates(
-        user_service,
-        version.get("approver", {}),
-        requester_membership,
-        required_permission_code,
-    )
+
     warnings: list[str] = []
-    if excluded:
-        warnings.append("部分候选人缺少流程要求的审批权限")
-    if eligible and any(not item.get("wecom_bound") for item in eligible):
-        warnings.append("部分实际审批人尚未绑定企业微信账号")
-    status = "matched" if eligible else "no_approver"
-    message = "流程匹配成功" if eligible else "流程已命中，但没有符合条件且拥有权限的在职审批人"
+    resolved_nodes: list[dict[str, Any]] = []
+    all_excluded: list[dict[str, Any]] = []
+    for index, node in enumerate(approval_nodes):
+        required_permission_code = str(node["required_permission_code"])
+        if required_permission_code not in event_definition.permission_codes:
+            return {
+                "status": "invalid_policy",
+                "message": f"{node['name']}使用了当前业务事件不支持的审批权限",
+                "requester_membership": requester_membership,
+                "workflow": workflow_summary,
+                "version": version,
+            }
+        eligible, excluded = _resolve_approver_candidates(
+            user_service,
+            node["approver"],
+            requester_membership,
+            required_permission_code,
+        )
+        for item in excluded:
+            excluded_item = dict(item)
+            excluded_item["node_key"] = node["node_key"]
+            all_excluded.append(excluded_item)
+        if excluded:
+            warnings.append(f"{node['name']}有候选人缺少流程要求的审批权限")
+        if eligible and any(not item.get("wecom_bound") for item in eligible):
+            warnings.append(f"{node['name']}有审批人尚未绑定企业微信账号")
+        if not eligible:
+            return {
+                "status": "no_approver",
+                "message": f"流程已命中，但{node['name']}没有符合条件且拥有权限的在职审批人",
+                "requester_membership": requester_membership,
+                "workflow": workflow_summary,
+                "version": version,
+                "approval_nodes": resolved_nodes,
+                "excluded_approvers": all_excluded,
+                "warnings": list(dict.fromkeys(warnings)),
+            }
+        resolved_nodes.append(
+            {
+                "node_key": node["node_key"],
+                "name": node["name"],
+                "node_index": index,
+                "approval_mode": node["approval_mode"],
+                "required_permission_code": required_permission_code,
+                "approvers": eligible,
+            }
+        )
+    first_approvers = resolved_nodes[0]["approvers"] if resolved_nodes else []
     return {
-        "status": status,
-        "message": message,
+        "status": "matched",
+        "message": "流程匹配成功",
         "requester_membership": requester_membership,
-        "workflow": {
-            "workflow_id": workflow["workflow_id"],
-            "code": workflow["code"],
-            "name": workflow["name"],
-            "module": workflow["module"],
-            "event": workflow["event"],
-        },
+        "workflow": workflow_summary,
         "version": version,
-        "approvers": eligible,
-        "excluded_approvers": excluded,
-        "warnings": warnings,
+        # 兼容现有单节点业务：顶层审批人仍表示首节点审批人。
+        "approvers": first_approvers,
+        "approval_nodes": resolved_nodes,
+        "excluded_approvers": all_excluded,
+        "warnings": list(dict.fromkeys(warnings)),
     }
 
 
@@ -320,6 +410,12 @@ def create_approval_assignments(
     if result.get("status") != "matched":
         return result
     version = result["version"]
+    if str(version.get("approval_mode") or "any").strip().lower() == "sequential":
+        return {
+            **result,
+            "status": "sequence_api_required",
+            "message": "该流程包含多个审批节点，业务模块必须使用多节点待办接口",
+        }
     workflow = result["workflow"]
     usernames = [item["username"] for item in result["approvers"]]
     source_policy_code = f"{workflow['code']}@{version['version_number']}"
@@ -338,6 +434,177 @@ def create_approval_assignments(
         "approval_mode": version.get("approval_mode", "any"),
     }
     return result
+
+
+def _sequence_node_task_key(base_task_key: str, node: dict[str, Any]) -> str:
+    """生成不会与其它节点冲突的具体待办键。"""
+    return (
+        f"{str(base_task_key)}:node:{int(node.get('node_index', 0)) + 1}:"
+        f"{str(node.get('node_key') or 'approval')}"
+    )
+
+
+def create_approval_sequence_assignments(
+    user_service,
+    *,
+    module: str,
+    event: str,
+    entity_id: str,
+    task_key: str,
+    requester_username: str,
+) -> dict[str, Any]:
+    """解析全部节点并固化审批人快照，只激活第一个节点的具体待办。"""
+    result = resolve_approval_workflow(
+        user_service,
+        module=module,
+        event=event,
+        requester_username=requester_username,
+    )
+    if result.get("status") != "matched":
+        return result
+    workflow = result["workflow"]
+    version = result["version"]
+    resolved_nodes = result.get("approval_nodes", [])
+    if not isinstance(resolved_nodes, list) or not resolved_nodes:
+        return {**result, "status": "invalid_policy", "message": "流程没有可执行的审批节点"}
+
+    source_policy_code = f"{workflow['code']}@{version['version_number']}"
+    snapshot_nodes: list[dict[str, Any]] = []
+    for node in resolved_nodes:
+        approvers = node.get("approvers", [])
+        usernames = [
+            str(item.get("username"))
+            for item in approvers
+            if isinstance(item, dict) and str(item.get("username") or "")
+        ]
+        snapshot_nodes.append(
+            {
+                "node_key": str(node.get("node_key") or "approval"),
+                "name": str(node.get("name") or "审批"),
+                "node_index": int(node.get("node_index", len(snapshot_nodes))),
+                "approval_mode": str(node.get("approval_mode") or "any"),
+                "required_permission_code": str(node.get("required_permission_code") or ""),
+                "assignee_usernames": usernames,
+                "approved_usernames": [],
+                "status": "waiting" if snapshot_nodes else "pending",
+            }
+        )
+
+    assignment = {
+        "workflow_id": workflow["workflow_id"],
+        "workflow_code": workflow["code"],
+        "workflow_name": workflow["name"],
+        "version_id": version["version_id"],
+        "version_number": version["version_number"],
+        "source_policy_code": source_policy_code,
+        "base_task_key": str(task_key),
+        "current_node_index": 0,
+        "status": "pending",
+        "nodes": snapshot_nodes,
+    }
+    first_node = snapshot_nodes[0]
+    current_task_key = _sequence_node_task_key(task_key, first_node)
+    user_service.replace_work_assignments(
+        module=module,
+        entity_id=entity_id,
+        task_key=current_task_key,
+        assignee_usernames=first_node["assignee_usernames"],
+        source_policy_code=source_policy_code,
+    )
+    assignment["current_task_key"] = current_task_key
+    result["assignment"] = assignment
+    return result
+
+
+def advance_approval_sequence(
+    user_service,
+    *,
+    module: str,
+    entity_id: str,
+    assignment: dict[str, Any],
+    username: str,
+) -> dict[str, Any]:
+    """完成当前人的节点待办，并在节点完成后串行激活下一节点。"""
+    snapshot = copy.deepcopy(assignment)
+    if snapshot.get("status") != "pending":
+        return {"status": "not_pending", "message": "审批流程已经结束", "assignment": snapshot}
+    nodes = snapshot.get("nodes")
+    if not isinstance(nodes, list) or not nodes:
+        return {"status": "invalid_assignment", "message": "审批节点快照无效", "assignment": snapshot}
+    try:
+        current_index = int(snapshot.get("current_node_index", 0))
+        current_node = nodes[current_index]
+    except (TypeError, ValueError, IndexError):
+        return {"status": "invalid_assignment", "message": "当前审批节点无效", "assignment": snapshot}
+    if not isinstance(current_node, dict):
+        return {"status": "invalid_assignment", "message": "当前审批节点无效", "assignment": snapshot}
+
+    required_permission_code = str(current_node.get("required_permission_code") or "")
+    if not user_service.has_permission(username, required_permission_code):
+        return {
+            "status": "forbidden",
+            "message": "当前用户缺少该节点要求的审批权限",
+            "assignment": snapshot,
+        }
+    base_task_key = str(snapshot.get("base_task_key") or "approval")
+    current_task_key = _sequence_node_task_key(base_task_key, current_node)
+    completed = user_service.complete_work_assignment(
+        module=module,
+        entity_id=entity_id,
+        task_key=current_task_key,
+        username=username,
+        approval_mode=str(current_node.get("approval_mode") or "any"),
+    )
+    if not completed:
+        return {
+            "status": "not_assigned",
+            "message": "当前用户没有该节点的有效待办",
+            "assignment": snapshot,
+        }
+    approved_usernames = current_node.setdefault("approved_usernames", [])
+    if username not in approved_usernames:
+        approved_usernames.append(username)
+    remaining = user_service.list_pending_assignment_usernames(
+        module=module,
+        entity_id=entity_id,
+        task_key=current_task_key,
+    )
+    if remaining:
+        snapshot["current_task_key"] = current_task_key
+        return {
+            "status": "node_pending",
+            "message": "当前会签节点仍有审批人未处理",
+            "remaining_usernames": remaining,
+            "assignment": snapshot,
+        }
+
+    current_node["status"] = "completed"
+    next_index = current_index + 1
+    if next_index >= len(nodes):
+        snapshot["status"] = "completed"
+        snapshot["current_node_index"] = next_index
+        snapshot.pop("current_task_key", None)
+        return {"status": "completed", "message": "全部审批节点已经完成", "assignment": snapshot}
+
+    next_node = nodes[next_index]
+    if not isinstance(next_node, dict):
+        return {"status": "invalid_assignment", "message": "下一审批节点无效", "assignment": snapshot}
+    next_node["status"] = "pending"
+    next_task_key = _sequence_node_task_key(base_task_key, next_node)
+    user_service.replace_work_assignments(
+        module=module,
+        entity_id=entity_id,
+        task_key=next_task_key,
+        assignee_usernames=next_node.get("assignee_usernames", []),
+        source_policy_code=str(snapshot.get("source_policy_code") or ""),
+    )
+    snapshot["current_node_index"] = next_index
+    snapshot["current_task_key"] = next_task_key
+    return {
+        "status": "advanced",
+        "message": f"已进入下一审批节点：{next_node.get('name', '')}",
+        "assignment": snapshot,
+    }
 
 
 def is_assigned_approver(

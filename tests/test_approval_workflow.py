@@ -7,7 +7,9 @@ from unittest.mock import AsyncMock
 import pandas as pd
 
 from src.approval_workflow import (
+    advance_approval_sequence,
     create_approval_assignments,
+    create_approval_sequence_assignments,
     get_workflow_event_definition,
     import_design_knowledge_legacy_workflows,
     import_project_overview_legacy_workflows,
@@ -194,6 +196,122 @@ class ApprovalWorkflowTests(unittest.TestCase):
             ),
             [],
         )
+
+    def test_sequential_nodes_support_any_then_all_approval(self):
+        """串行流程应先完成任意一人节点，再等待下一节点全部人员会签。"""
+        users = self.service.load_users()
+        workflow_id, _version_id = self.service.save_approval_workflow_draft(
+            code="sample_issue.close.sequence_test",
+            module="sample_issue",
+            event="close_request",
+            name="样品关闭多节点测试流程",
+            priority=5,
+            condition={
+                "requester_org_unit_ids": [self.org_unit_id],
+                "requester_position_ids": [self.requester_position_id],
+                "include_child_org_units": True,
+            },
+            approver={
+                "nodes": [
+                    {
+                        "node_key": "technical_review",
+                        "name": "技术审核",
+                        "approval_mode": "any",
+                        "required_permission_code": SAMPLE_ISSUE_CLOSE_APPROVE_PERMISSION,
+                        "approver": {
+                            "strategy": "users",
+                            "user_ids": [users["李四"]["user_id"], users["王五"]["user_id"]],
+                        },
+                    },
+                    {
+                        "node_key": "joint_review",
+                        "name": "联合会签",
+                        "approval_mode": "all",
+                        "required_permission_code": SAMPLE_ISSUE_CLOSE_APPROVE_PERMISSION,
+                        "approver": {
+                            "strategy": "users",
+                            "user_ids": [users["李四"]["user_id"], users["王五"]["user_id"]],
+                        },
+                    },
+                ]
+            },
+            required_permission_code=SAMPLE_ISSUE_CLOSE_APPROVE_PERMISSION,
+            approval_mode="sequential",
+            actor_username="admin",
+        )
+        self.service.publish_approval_workflow(workflow_id, actor_username="admin")
+
+        created = create_approval_sequence_assignments(
+            self.service,
+            module="sample_issue",
+            event="close_request",
+            entity_id="sample-sequence-001",
+            task_key="close_approval:req-sequence-001",
+            requester_username="张三",
+        )
+        self.assertEqual(created["status"], "matched")
+        assignment = created["assignment"]
+        self.assertEqual(len(assignment["nodes"]), 2)
+        self.assertEqual(assignment["current_node_index"], 0)
+
+        first = advance_approval_sequence(
+            self.service,
+            module="sample_issue",
+            entity_id="sample-sequence-001",
+            assignment=assignment,
+            username="李四",
+        )
+        self.assertEqual(first["status"], "advanced")
+        assignment = first["assignment"]
+        self.assertEqual(assignment["current_node_index"], 1)
+
+        second = advance_approval_sequence(
+            self.service,
+            module="sample_issue",
+            entity_id="sample-sequence-001",
+            assignment=assignment,
+            username="李四",
+        )
+        self.assertEqual(second["status"], "node_pending")
+        self.assertEqual(second["remaining_usernames"], ["王五"])
+
+        final = advance_approval_sequence(
+            self.service,
+            module="sample_issue",
+            entity_id="sample-sequence-001",
+            assignment=second["assignment"],
+            username="王五",
+        )
+        self.assertEqual(final["status"], "completed")
+        self.assertEqual(final["assignment"]["status"], "completed")
+
+    def test_sequential_workflow_rejects_duplicate_node_codes(self):
+        """节点编码用于稳定待办键，同一版本内不允许重复。"""
+        node = {
+            "node_key": "review",
+            "name": "审批",
+            "approval_mode": "any",
+            "required_permission_code": SAMPLE_ISSUE_CLOSE_APPROVE_PERMISSION,
+            "approver": {
+                "strategy": "position",
+                "position_ids": [self.approver_position_id],
+                "org_scope": "any",
+                "org_unit_ids": [],
+            },
+        }
+        with self.assertRaisesRegex(ValueError, "审批节点编码重复"):
+            self.service.save_approval_workflow_draft(
+                code="sample_issue.close.invalid_sequence",
+                module="sample_issue",
+                event="close_request",
+                name="重复节点测试",
+                priority=10,
+                condition={},
+                approver={"nodes": [node, copy.deepcopy(node)]},
+                required_permission_code=SAMPLE_ISSUE_CLOSE_APPROVE_PERMISSION,
+                approval_mode="sequential",
+                actor_username="admin",
+            )
 
     def test_same_priority_match_is_rejected_as_ambiguous(self):
         self.create_position_workflow(code="sample_issue.close.first", priority=10)

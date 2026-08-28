@@ -1288,6 +1288,67 @@ class IdentityStore:
             return {}
         return parsed if isinstance(parsed, dict) else {}
 
+    @staticmethod
+    def _workflow_approval_nodes(
+        approver: dict[str, Any],
+        required_permission_code: str,
+        approval_mode: str,
+    ) -> list[dict[str, Any]]:
+        """把新多节点配置和旧单节点配置统一为节点列表。"""
+        normalized_mode = str(approval_mode or "any").strip().lower()
+        raw_nodes = approver.get("nodes") if isinstance(approver, dict) else None
+        if normalized_mode == "sequential":
+            if not isinstance(raw_nodes, list) or not raw_nodes:
+                raise ValueError("串行审批至少需要配置一个审批节点")
+            nodes: list[dict[str, Any]] = []
+            seen_keys: set[str] = set()
+            for index, raw_node in enumerate(raw_nodes):
+                if not isinstance(raw_node, dict):
+                    raise ValueError(f"第 {index + 1} 个审批节点配置无效")
+                node_key = normalize_stable_code(raw_node.get("node_key", ""))
+                key_error = validate_stable_code(node_key)
+                if key_error:
+                    raise ValueError(f"第 {index + 1} 个审批节点编码无效：{key_error}")
+                if node_key in seen_keys:
+                    raise ValueError(f"审批节点编码重复：{node_key}")
+                seen_keys.add(node_key)
+                node_name = str(raw_node.get("name") or f"审批节点 {index + 1}").strip()
+                node_mode = str(raw_node.get("approval_mode") or "any").strip().lower()
+                if node_mode not in {"any", "all"}:
+                    raise ValueError(f"{node_name}的审批方式只支持任意一人或全部会签")
+                node_approver = raw_node.get("approver")
+                if not isinstance(node_approver, dict):
+                    raise ValueError(f"{node_name}的审批人规则无效")
+                permission_code = str(
+                    raw_node.get("required_permission_code") or required_permission_code
+                ).strip().lower()
+                if not permission_code:
+                    raise ValueError(f"{node_name}未配置审批所需权限")
+                nodes.append(
+                    {
+                        "node_key": node_key,
+                        "name": node_name,
+                        "approval_mode": node_mode,
+                        "approver": node_approver,
+                        "required_permission_code": permission_code,
+                    }
+                )
+            return nodes
+
+        if normalized_mode not in {"any", "all"}:
+            raise ValueError("审批方式只支持任意一人、全部会签或多节点串行")
+        if not isinstance(approver, dict):
+            raise ValueError("审批人规则必须是对象")
+        return [
+            {
+                "node_key": "approval",
+                "name": "审批",
+                "approval_mode": normalized_mode,
+                "approver": approver,
+                "required_permission_code": str(required_permission_code or "").strip().lower(),
+            }
+        ]
+
     @classmethod
     def _workflow_version_row_to_dict(cls, row: sqlite3.Row | dict[str, Any]) -> dict[str, Any]:
         item = dict(row)
@@ -1371,10 +1432,15 @@ class IdentityStore:
         normalized_mode = str(approval_mode or "any").strip().lower()
         if not normalized_module or not normalized_event or not normalized_name:
             raise ValueError("模块、业务事件和流程名称不能为空")
-        if normalized_mode != "any":
-            raise ValueError("第一版审批方式只支持任意一人处理")
         if not isinstance(condition, dict) or not isinstance(approver, dict):
             raise ValueError("触发条件和审批人规则必须是对象")
+        approval_nodes = self._workflow_approval_nodes(
+            approver,
+            permission_code,
+            normalized_mode,
+        )
+        # 版本表保留首节点权限作为兼容摘要；每个节点的真实权限仍以节点快照为准。
+        permission_code = str(approval_nodes[0]["required_permission_code"])
         try:
             normalized_priority = int(priority)
         except (TypeError, ValueError) as exc:
@@ -1383,12 +1449,13 @@ class IdentityStore:
         now = _now_text()
         with self._lock, self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
-            permission = connection.execute(
-                "SELECT permission_id FROM iam_permissions WHERE code=? COLLATE NOCASE",
-                (permission_code,),
-            ).fetchone()
-            if not permission:
-                raise ValueError("流程要求的稳定权限不存在")
+            for node in approval_nodes:
+                permission = connection.execute(
+                    "SELECT permission_id FROM iam_permissions WHERE code=? COLLATE NOCASE",
+                    (node["required_permission_code"],),
+                ).fetchone()
+                if not permission:
+                    raise ValueError(f"{node['name']}要求的稳定权限不存在")
 
             workflow = None
             if workflow_id:
@@ -1520,13 +1587,11 @@ class IdentityStore:
             approver = self._decode_workflow_json(draft["approver_json"])
             if condition.get("migration_requires_review"):
                 raise ValueError("旧配置没有匹配到申请岗位，请先检查并保存草稿后再发布")
-            strategy = str(approver.get("strategy", "")).strip().lower()
-            if strategy not in {"position", "direct_manager", "users", "permission"}:
-                raise ValueError("审批人来源无效")
-            if strategy == "position" and not approver.get("position_ids"):
-                raise ValueError("指定岗位审批至少需要选择一个岗位")
-            if strategy == "users" and not approver.get("user_ids"):
-                raise ValueError("指定人员审批至少需要选择一个人员")
+            approval_nodes = self._workflow_approval_nodes(
+                approver,
+                str(draft["required_permission_code"] or ""),
+                str(draft["approval_mode"] or "any"),
+            )
             reference_checks = [
                 ("requester_position_ids", "iam_positions", "position_id"),
                 ("requester_org_unit_ids", "org_units", "org_unit_id"),
@@ -1547,44 +1612,60 @@ class IdentityStore:
                 ).fetchone()["total"]
                 if int(count) != len(values):
                     raise ValueError("流程触发条件包含不存在或已停用的组织岗位")
-            approver_reference_checks: list[tuple[list[str], str, str, str]] = []
-            if strategy == "position":
-                approver_reference_checks.append(
-                    (
-                        list(approver.get("position_ids", [])),
-                        "iam_positions",
-                        "position_id",
-                        "审批岗位",
-                    )
-                )
-                org_scope = str(approver.get("org_scope", "any")).strip().lower()
-                if org_scope not in {"any", "requester", "fixed"}:
-                    raise ValueError("审批岗位的部门范围无效")
-                if org_scope == "fixed":
-                    if not approver.get("org_unit_ids"):
-                        raise ValueError("限定指定部门时至少需要选择一个部门")
+            for node in approval_nodes:
+                node_name = str(node["name"])
+                node_approver = node["approver"]
+                strategy = str(node_approver.get("strategy", "")).strip().lower()
+                if strategy not in {"position", "direct_manager", "users", "permission"}:
+                    raise ValueError(f"{node_name}的审批人来源无效")
+                if strategy == "position" and not node_approver.get("position_ids"):
+                    raise ValueError(f"{node_name}至少需要选择一个审批岗位")
+                if strategy == "users" and not node_approver.get("user_ids"):
+                    raise ValueError(f"{node_name}至少需要选择一个审批人员")
+
+                approver_reference_checks: list[tuple[list[str], str, str, str]] = []
+                if strategy == "position":
                     approver_reference_checks.append(
                         (
-                            list(approver.get("org_unit_ids", [])),
-                            "org_units",
-                            "org_unit_id",
-                            "审批部门",
+                            list(node_approver.get("position_ids", [])),
+                            "iam_positions",
+                            "position_id",
+                            f"{node_name}的审批岗位",
                         )
                     )
-            elif strategy == "users":
-                approver_reference_checks.append(
-                    (list(approver.get("user_ids", [])), "iam_users", "user_id", "审批人员")
-                )
-            for raw_values, table_name, id_column, label in approver_reference_checks:
-                values = list(dict.fromkeys(str(value) for value in raw_values if str(value)))
-                placeholders = ",".join("?" for _ in values)
-                count = connection.execute(
-                    f"SELECT COUNT(*) AS total FROM {table_name} "
-                    f"WHERE {id_column} IN ({placeholders}) AND status='active'",
-                    values,
-                ).fetchone()["total"]
-                if int(count) != len(values):
-                    raise ValueError(f"{label}包含不存在或已停用的记录")
+                    org_scope = str(node_approver.get("org_scope", "any")).strip().lower()
+                    if org_scope not in {"any", "requester", "fixed"}:
+                        raise ValueError(f"{node_name}的审批岗位部门范围无效")
+                    if org_scope == "fixed":
+                        if not node_approver.get("org_unit_ids"):
+                            raise ValueError(f"{node_name}限定指定部门时至少需要选择一个部门")
+                        approver_reference_checks.append(
+                            (
+                                list(node_approver.get("org_unit_ids", [])),
+                                "org_units",
+                                "org_unit_id",
+                                f"{node_name}的审批部门",
+                            )
+                        )
+                elif strategy == "users":
+                    approver_reference_checks.append(
+                        (
+                            list(node_approver.get("user_ids", [])),
+                            "iam_users",
+                            "user_id",
+                            f"{node_name}的审批人员",
+                        )
+                    )
+                for raw_values, table_name, id_column, label in approver_reference_checks:
+                    values = list(dict.fromkeys(str(value) for value in raw_values if str(value)))
+                    placeholders = ",".join("?" for _ in values)
+                    count = connection.execute(
+                        f"SELECT COUNT(*) AS total FROM {table_name} "
+                        f"WHERE {id_column} IN ({placeholders}) AND status='active'",
+                        values,
+                    ).fetchone()["total"]
+                    if int(count) != len(values):
+                        raise ValueError(f"{label}包含不存在或已停用的记录")
             connection.execute(
                 "UPDATE approval_workflow_versions SET state='retired' "
                 "WHERE workflow_id=? AND state='published'",
