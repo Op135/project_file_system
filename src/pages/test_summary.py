@@ -10,9 +10,11 @@ from ..config import (
     IMG_DIR,
 )
 from ..overview_operation import get_latest_overview_reason
+from ..project_test_summary_access import can_view_project_test_summary
 from ..utils import (
     generate_watermark_css,
     setup_global_activity_tracking,
+    sync_current_user_role,
 )
 
 # 获取一个以此模块命名的 logger
@@ -23,9 +25,14 @@ logger = logging.getLogger(__name__)
 # --- 新增代码：独立的测试汇总报告页面 ---
 @ui.page("/report/test_summary/{project_name}")
 def test_summary_report(project_name: str):
-    # 1. 权限检查 (可选，建议保留)
-    if not app.storage.user.get("current_user"):
+    # 报表可通过地址直接打开，因此必须独立复核权限，不能只依赖上游按钮。
+    stored_current_user = app.storage.user.get("current_user")
+    if not isinstance(stored_current_user, str) or not stored_current_user:
         ui.navigate.to("/login")
+        return
+    if not can_view_project_test_summary(sync_current_user_role(), stored_current_user):
+        ui.notify("当前账号没有查看生产测试项汇总表的权限", type="negative")
+        ui.navigate.to("/main")
         return
 
     # --- 调用全局活跃跟踪组件 ---

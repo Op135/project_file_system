@@ -90,6 +90,7 @@ from ..project_requirement_access import (
     can_edit_project_requirement,
     can_view_project_requirement,
 )
+from ..project_test_summary_access import can_view_project_test_summary
 from ..requirement_overview_impact import RequirementOverviewImpactConfigError
 from ..utils import (
     compare_configs_by_id,
@@ -256,6 +257,20 @@ async def requirement_page(
             current_user,
             user_service=app.state.user_service,
         )
+
+    def has_project_test_summary_permission() -> bool:
+        """打开生产测试项汇总前实时复核查看权限。"""
+        return can_view_project_test_summary(
+            sync_current_user_role(),
+            current_user,
+            user_service=app.state.user_service,
+        )
+
+    def open_project_test_summary() -> None:
+        if not has_project_test_summary_permission():
+            ui.notify("当前账号没有查看生产测试项汇总表的权限", type="negative")
+            return
+        ui.run_javascript(f'window.open("/report/test_summary/{project_name}", "_blank")')
     if is_requirement_mode and json_path:
         try:
             Path(json_path).resolve().relative_to(Path(REQ_DIR).resolve())
@@ -5519,13 +5534,12 @@ async def requirement_page(
 
                         # 3. 右侧操作区：打印按钮 + 开关
                         with ui.row().classes("items-center gap-4"):
-                            ui.button(
-                                "测试项",
-                                icon="print",
-                                on_click=lambda: ui.run_javascript(
-                                    f'window.open("/report/test_summary/{project_name}", "_blank")'
-                                ),
-                            ).props("flat dense").classes("text-sm text-blue-800 hover:bg-blue-100 px-2")
+                            if has_project_test_summary_permission():
+                                ui.button(
+                                    "测试项",
+                                    icon="print",
+                                    on_click=open_project_test_summary,
+                                ).props("flat dense").classes("text-sm text-blue-800 hover:bg-blue-100 px-2")
 
                             if can_view_inactive_project_overview(current_role, current_user):
                                 app.storage.client.setdefault("record_switch", False)

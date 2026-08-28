@@ -29,6 +29,7 @@ from src.permission_catalog import (
     PROJECT_REQUIREMENT_REVOKE_PERMISSION,
     PROJECT_REQUIREMENT_VIEW_PERMISSION,
     PROJECT_TODO_VIEW_PERMISSION,
+    PROJECT_TEST_SUMMARY_VIEW_PERMISSION,
     PROJECT_VIEW_PERMISSION,
     ProjectOverviewPermissionCatalogError,
     QUESTION_TREE_VIEW_PERMISSION,
@@ -69,6 +70,7 @@ from src.project_todo_access import (
     can_view_project_todo,
     filter_actionable_overview_pending,
 )
+from src.project_test_summary_access import can_view_project_test_summary
 from src.question_tree_access import can_view_question_tree
 from src.project_overview_access import (
     can_edit_overview_item,
@@ -308,6 +310,33 @@ class AccessControlTests(unittest.TestCase):
             actor_username="admin",
         )
         self.assertTrue(can_view_question_tree("普通岗位", "张三", user_service=self.service))
+
+    def test_project_test_summary_legacy_mode_keeps_login_user_access(self):
+        """旧 Excel 模式保持原有登录用户均可查看测试项汇总的行为。"""
+        self.assertTrue(can_view_project_test_summary("行政专员", "张三", user_service=self.service))
+
+    def test_project_test_summary_database_mode_requires_stable_view_permission(self):
+        """数据库模式必须明确授权，旧角色和登录状态本身不再开放报表。"""
+        self.service.migrate_legacy_users()
+        org_unit_id = self.service.save_org_unit(code="org.test_summary", name="测试汇总部")
+        position_id = self.service.save_position(code="test_summary.viewer", name="测试汇总查看岗位")
+        self.service.set_primary_membership(
+            "张三",
+            org_unit_id=org_unit_id,
+            position_id=position_id,
+        )
+
+        self.assertFalse(
+            can_view_project_test_summary("研发经理", "张三", user_service=self.service)
+        )
+        self.service.set_position_permissions(
+            position_id,
+            [PROJECT_TEST_SUMMARY_VIEW_PERMISSION],
+            actor_username="admin",
+        )
+        self.assertTrue(
+            can_view_project_test_summary("普通岗位", "张三", user_service=self.service)
+        )
 
     def test_project_table_legacy_mode_keeps_original_role_behavior(self):
         """旧 Excel 模式仍允许登录用户查看，并保留原项目维护和状态范围规则。"""

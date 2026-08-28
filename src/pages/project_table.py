@@ -28,6 +28,7 @@ from ..permission_catalog import (
 from ..project_access import can_edit_project_status, can_manage_project_records
 from ..project_requirement_access import can_view_project_requirement
 from ..project_overview_access import can_view_any_project_overview
+from ..project_test_summary_access import can_view_project_test_summary
 from ..utils import (
     find_files_with_prefix_and_version,
     get_cache_busted_path,
@@ -266,6 +267,10 @@ def project_table_page():
     def has_project_status_permission() -> bool:
         """修改项目状态前复核独立的项目状态权限。"""
         return can_edit_project_status(sync_current_user_role(), current_user)
+
+    def has_project_test_summary_permission() -> bool:
+        """打开生产测试项汇总前实时复核查看权限。"""
+        return can_view_project_test_summary(sync_current_user_role(), current_user)
 
     def reject_project_manage_without_permission() -> bool:
         if has_project_manage_permission():
@@ -1058,6 +1063,9 @@ def project_table_page():
             await save_project_table_view_state(aggrid)
             await get_overviow_page(project_name, False)
         elif col_id == "test_summary":
+            if not has_project_test_summary_permission():
+                ui.notify("当前账号没有查看生产测试项汇总表的权限", type="negative")
+                return
             await save_project_table_view_state(aggrid)
             ui.run_javascript(f'window.open("/report/test_summary/{project_name}", "_blank")')
 
@@ -1288,6 +1296,10 @@ def project_table_page():
             "filter": "agTextColumnFilter",
         },
     ]
+    if not has_project_test_summary_permission():
+        project_summary_columns = [
+            column for column in project_summary_columns if column.get("field") != "test_summary"
+        ]
     for col in project_summary_columns:
         if "width" in col:
             col["minWidth"] = col["width"]
