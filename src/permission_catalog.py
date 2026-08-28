@@ -48,43 +48,43 @@ SAMPLE_ORDER_AVERAGE_SCORE_VIEW_PERMISSION = "sample_order.average_score.view"
 SAMPLE_ORDER_PERMISSIONS = (
     PermissionDefinition(
         SAMPLE_ORDER_VIEW_PERMISSION,
-        "查看样品单执行看板",
+        "查看 — 执行看板",
         "样品单执行看板",
         "允许从主页进入并查看样品单执行看板",
     ),
     PermissionDefinition(
         SAMPLE_ORDER_BASE_EDIT_PERMISSION,
-        "维护样品单基础与执行信息",
+        "维护 — 基础与执行信息",
         "样品单执行看板",
         "允许新建、导入并维护样品单基础信息和执行信息",
     ),
     PermissionDefinition(
         SAMPLE_ORDER_DELAY_EDIT_PERMISSION,
-        "维护样品单延期信息",
+        "维护 — 延期信息",
         "样品单执行看板",
         "允许新增和维护样品单延期记录",
     ),
     PermissionDefinition(
         SAMPLE_ORDER_SPECIAL_STATUS_EDIT_PERMISSION,
-        "维护样品单特殊状态",
+        "维护 — 特殊状态",
         "样品单执行看板",
         "允许设置样品单暂停、作废等特殊状态",
     ),
     PermissionDefinition(
         SAMPLE_ORDER_DELAY_NATURE_EDIT_PERMISSION,
-        "标记样品单延期性质",
+        "标记 — 延期性质",
         "样品单执行看板",
         "允许为已完成的延期样品单标记延期性质",
     ),
     PermissionDefinition(
         SAMPLE_ORDER_DELETE_PERMISSION,
-        "删除样品单",
+        "删除 — 样品单",
         "样品单执行看板",
         "允许永久删除样品单记录",
     ),
     PermissionDefinition(
         SAMPLE_ORDER_AVERAGE_SCORE_VIEW_PERMISSION,
-        "查看样品单平均考核分",
+        "查看 — 平均考核分",
         "样品单执行看板",
         "允许查看样品单看板中的平均考核分统计",
     ),
@@ -102,37 +102,37 @@ ERROR_REMINDER_CHECK_PERMISSION = "error.reminder.check"
 ERROR_PERMISSIONS = (
     PermissionDefinition(
         ERROR_VIEW_PERMISSION,
-        "查看异常单跟进",
+        "查看 — 异常单",
         "异常单跟进",
         "允许从主页进入并查看生产异常单",
     ),
     PermissionDefinition(
         ERROR_RECORD_EDIT_PERMISSION,
-        "维护异常单",
+        "维护 — 整单信息",
         "异常单跟进",
         "允许新建并维护异常单整单内容",
     ),
     PermissionDefinition(
         ERROR_REQUEST_APPROVE_PERMISSION,
-        "审批异常措施申请",
+        "审批 — 延期/关闭申请",
         "异常单跟进",
         "允许审批纠正预防措施的延期申请和关闭申请",
     ),
     PermissionDefinition(
         ERROR_RECORD_RENAME_PERMISSION,
-        "修改异常单号",
+        "修改 — 异常单号",
         "异常单跟进",
         "允许修改已有异常单的单号",
     ),
     PermissionDefinition(
         ERROR_RECORD_DELETE_PERMISSION,
-        "删除异常单",
+        "删除 — 异常单",
         "异常单跟进",
         "允许永久删除整张异常单",
     ),
     PermissionDefinition(
         ERROR_REMINDER_CHECK_PERMISSION,
-        "人工检查异常提醒",
+        "触发 — 人工检查提醒",
         "异常单跟进",
         "允许手动触发异常措施到期提醒检查",
     ),
@@ -144,45 +144,43 @@ SAMPLE_ISSUE_CREATE_PERMISSION = "sample_issue.record.create"
 SAMPLE_ISSUE_EDIT_ALL_PERMISSION = "sample_issue.record.edit_all"
 SAMPLE_ISSUE_EXTENSION_APPROVE_PERMISSION = "sample_issue.extension.approve"
 SAMPLE_ISSUE_CLOSE_DEFAULT_APPROVE_PERMISSION = "sample_issue.close.approve.default"
-SAMPLE_ISSUE_CLOSE_ELECTRON_APPROVE_PERMISSION = (
-    "sample_issue.close.approve.electron_to_electron"
-)
+SAMPLE_ISSUE_CLOSE_ELECTRON_APPROVE_PERMISSION = "sample_issue.close.approve.electron_to_electron"
 SAMPLE_ISSUE_REMINDER_CHECK_PERMISSION = "sample_issue.reminder.check"
 SAMPLE_ISSUE_DELETE_PERMISSION = "sample_issue.delete"
 
 
 SAMPLE_ISSUE_PERMISSIONS = (
-    PermissionDefinition(SAMPLE_ISSUE_VIEW_PERMISSION, "查看样品问题跟进", "样品问题跟进"),
-    PermissionDefinition(SAMPLE_ISSUE_CREATE_PERMISSION, "录入样品问题", "样品问题跟进"),
+    PermissionDefinition(SAMPLE_ISSUE_VIEW_PERMISSION, "查看 — 样品问题", "样品问题跟进"),
+    PermissionDefinition(SAMPLE_ISSUE_CREATE_PERMISSION, "录入 — 样品问题", "样品问题跟进"),
     PermissionDefinition(
         SAMPLE_ISSUE_EDIT_ALL_PERMISSION,
-        "协助维护全部样品问题",
+        "维护 — 非本人录入/对策区块",
         "样品问题跟进",
         "允许维护非本人创建的录入区块，并协助维护非本人负责的对策区块",
     ),
     PermissionDefinition(
         SAMPLE_ISSUE_EXTENSION_APPROVE_PERMISSION,
-        "审批样品问题延期申请",
+        "审批 — 延期申请",
         "样品问题跟进",
     ),
     PermissionDefinition(
         SAMPLE_ISSUE_CLOSE_DEFAULT_APPROVE_PERMISSION,
-        "审批样品问题默认关闭申请",
+        "审批 — 非特殊组别关闭申请",
         "样品问题跟进",
         "审批未命中特殊路由的关闭申请",
     ),
     PermissionDefinition(
         SAMPLE_ISSUE_CLOSE_ELECTRON_APPROVE_PERMISSION,
-        "审批研发电子类样品问题关闭申请",
+        "审批 — 电子组关闭申请",
         "样品问题跟进",
-        "审批研发硬件、研发软件岗位人员发起的关闭申请",
+        "审批研发电子组岗位人员发起的关闭申请",
     ),
     PermissionDefinition(
         SAMPLE_ISSUE_REMINDER_CHECK_PERMISSION,
-        "人工检查样品问题提醒",
+        "触发 — 人工检查提醒",
         "样品问题跟进",
     ),
-    PermissionDefinition(SAMPLE_ISSUE_DELETE_PERMISSION, "删除样品问题", "样品问题跟进"),
+    PermissionDefinition(SAMPLE_ISSUE_DELETE_PERMISSION, "删除 — 样品问题", "样品问题跟进"),
 )
 
 
@@ -213,107 +211,117 @@ SAMPLE_ISSUE_NOTIFICATION_MODULE = "样品问题跟进 · 通知接收"
 NOTIFICATION_PERMISSIONS = (
     PermissionDefinition(
         SAMPLE_ORDER_EXTENSION_NOTIFY_PERMISSION,
-        "接收样品单延期关注通知",
+        "告知 — 样品单 — 延期关注",
         SAMPLE_ORDER_NOTIFICATION_MODULE,
         "接收样品单超过延期次数阈值的关注通知；调试转发开启时也接收申请人延期通知",
     ),
     PermissionDefinition(
         SAMPLE_ORDER_SPECIAL_STATUS_NOTIFY_PERMISSION,
-        "接收样品单特殊状态通知",
+        "告知 — 样品单 — 特殊状态",
         SAMPLE_ORDER_NOTIFICATION_MODULE,
         "接收样品单暂停、作废等特殊状态变更通知",
     ),
     PermissionDefinition(
         ERROR_EXTENSION_REQUEST_NOTIFY_PERMISSION,
-        "接收异常措施延期申请通知",
+        "审批 — 异常措施 — 延期申请",
         ERROR_NOTIFICATION_MODULE,
         "负责人提交纠正预防措施延期申请时接收通知",
     ),
     PermissionDefinition(
         ERROR_EXTENSION_RESULT_NOTIFY_PERMISSION,
-        "接收异常措施延期审批结果通知",
+        "告知 — 异常措施 — 全局延期审批结果（通/驳）",
         ERROR_NOTIFICATION_MODULE,
         "纠正预防措施延期申请通过或驳回后接收审批结果通知",
     ),
     PermissionDefinition(
         ERROR_EXTENSION_APPROVED_NOTIFY_PERMISSION,
-        "接收异常措施延期通过追加通知",
+        "抄送 — 异常措施 — 全局延期（通过）",
         ERROR_NOTIFICATION_MODULE,
-        "仅在纠正预防措施延期申请审批通过后接收追加通知",
+        "仅在纠正预防措施延期申请审批通过后除申请人外增加的通知",
     ),
     PermissionDefinition(
         ERROR_CLOSE_REQUEST_NOTIFY_PERMISSION,
-        "接收异常措施关闭申请通知",
+        "审批 — 异常措施 — 关闭申请",
         ERROR_NOTIFICATION_MODULE,
         "负责人提交纠正预防措施关闭申请时接收通知",
     ),
     PermissionDefinition(
         ERROR_CLOSE_RESULT_NOTIFY_PERMISSION,
-        "接收异常措施关闭审批结果通知",
+        "告知 — 异常措施 — 全局关闭审批结果（通/驳）",
         ERROR_NOTIFICATION_MODULE,
         "纠正预防措施关闭申请通过或驳回后接收审批结果通知",
     ),
     PermissionDefinition(
         ERROR_CLOSE_APPROVED_NOTIFY_PERMISSION,
-        "接收异常措施关闭通过追加通知",
+        "抄送 — 异常措施 — 全局关闭（通过）",
         ERROR_NOTIFICATION_MODULE,
-        "仅在纠正预防措施关闭申请审批通过后接收追加通知",
+        "仅在纠正预防措施关闭申请审批通过后除申请人外增加的通知",
     ),
     PermissionDefinition(
         ERROR_OWNER_MISSING_REMINDER_PERMISSION,
-        "接收异常措施无负责人兜底提醒",
+        "提醒 — 异常措施 — 无负责人兜底",
         ERROR_NOTIFICATION_MODULE,
         "异常措施未填写负责人时，作为到期提醒的兜底接收人",
     ),
     PermissionDefinition(
         SAMPLE_ISSUE_EXTENSION_REQUEST_NOTIFY_PERMISSION,
-        "接收样品问题延期申请通知",
+        "审批 — 样品问题 — 延期申请",
         SAMPLE_ISSUE_NOTIFICATION_MODULE,
+        "负责人提交样品问题延期申请时接收通知",
     ),
     PermissionDefinition(
         SAMPLE_ISSUE_EXTENSION_RESULT_NOTIFY_PERMISSION,
-        "接收样品问题延期审批结果通知",
+        "告知 — 样品问题 — 全局延期审批结果（通/驳）",
         SAMPLE_ISSUE_NOTIFICATION_MODULE,
+        "样品问题延期申请通过或驳回后接收审批结果通知",
     ),
     PermissionDefinition(
         SAMPLE_ISSUE_EXTENSION_APPROVED_NOTIFY_PERMISSION,
-        "接收样品问题延期通过追加通知",
+        "抄送 — 样品问题 — 全局延期（通过）",
         SAMPLE_ISSUE_NOTIFICATION_MODULE,
+        "仅在样品问题延期申请审批通过后除申请人外增加的通知",
     ),
     PermissionDefinition(
         SAMPLE_ISSUE_CLOSE_DEFAULT_REQUEST_NOTIFY_PERMISSION,
-        "接收样品问题默认关闭申请通知",
+        "审批 — 样品问题 — 非特殊组别关闭申请",
         SAMPLE_ISSUE_NOTIFICATION_MODULE,
+        "未命中特殊路由的关闭申请审批通知",
     ),
     PermissionDefinition(
         SAMPLE_ISSUE_CLOSE_DEFAULT_RESULT_NOTIFY_PERMISSION,
-        "接收样品问题默认关闭审批结果通知",
+        "告知 — 样品问题 — 非特殊组别全局关闭审批结果（通/驳）",
         SAMPLE_ISSUE_NOTIFICATION_MODULE,
+        "样品问题关闭申请通过或驳回后接收审批结果通知",
     ),
     PermissionDefinition(
         SAMPLE_ISSUE_CLOSE_DEFAULT_APPROVED_NOTIFY_PERMISSION,
-        "接收样品问题默认关闭通过追加通知",
+        "抄送 — 样品问题 — 非特殊组别全局关闭（通过）",
         SAMPLE_ISSUE_NOTIFICATION_MODULE,
+        "仅在样品问题关闭申请审批通过后除申请人外增加的通知",
     ),
     PermissionDefinition(
         SAMPLE_ISSUE_CLOSE_ELECTRON_REQUEST_NOTIFY_PERMISSION,
-        "接收研发电子类样品问题关闭申请通知",
+        "审批 — 样品问题 — 电子组关闭申请",
         SAMPLE_ISSUE_NOTIFICATION_MODULE,
+        "电子组岗位人员发起的关闭申请审批通知",
     ),
     PermissionDefinition(
         SAMPLE_ISSUE_CLOSE_ELECTRON_RESULT_NOTIFY_PERMISSION,
-        "接收研发电子类样品问题关闭审批结果通知",
+        "告知 — 样品问题 — 电子组全局关闭审批结果（通/驳）",
         SAMPLE_ISSUE_NOTIFICATION_MODULE,
+        "电子组样品问题关闭申请通过或驳回后接收审批结果通知",
     ),
     PermissionDefinition(
         SAMPLE_ISSUE_CLOSE_ELECTRON_APPROVED_NOTIFY_PERMISSION,
-        "接收研发电子类样品问题关闭通过追加通知",
+        "抄送 — 样品问题 — 电子组全局关闭（通过）",
         SAMPLE_ISSUE_NOTIFICATION_MODULE,
+        "仅在电子组样品问题关闭申请审批通过后除申请人外增加的通知",
     ),
     PermissionDefinition(
         SAMPLE_ISSUE_FALLBACK_REMINDER_PERMISSION,
-        "接收样品问题无人员兜底提醒",
+        "提醒 — 样品问题 — 无人员兜底",
         SAMPLE_ISSUE_NOTIFICATION_MODULE,
+        "样品问题未填写负责人时，作为到期提醒的兜底接收人",
     ),
 )
 
@@ -334,9 +342,7 @@ DEPRECATED_PERMISSION_REPLACEMENTS = {
         ERROR_EXTENSION_APPROVED_NOTIFY_PERMISSION,
         ERROR_CLOSE_APPROVED_NOTIFY_PERMISSION,
     ),
-    "notifications.error.fallback.receive": (
-        ERROR_OWNER_MISSING_REMINDER_PERMISSION,
-    ),
+    "notifications.error.fallback.receive": (ERROR_OWNER_MISSING_REMINDER_PERMISSION,),
 }
 
 

@@ -728,8 +728,32 @@ def manage_page():
                     units = user_svc.list_org_units()
                     if not units:
                         ui.label("尚无部门，可手工新增或从企业微信通讯录导入。").classes("text-gray-500 p-4")
+                    unit_by_id = {
+                        str(item["org_unit_id"]): item for item in units
+                    }
+                    children_by_parent: dict[str, list[dict]] = {}
+                    root_units: list[dict] = []
                     for item in units:
+                        parent_id = str(item.get("parent_org_unit_id") or "")
+                        if parent_id and parent_id in unit_by_id:
+                            children_by_parent.setdefault(parent_id, []).append(item)
+                        else:
+                            root_units.append(item)
+                    rendered_unit_ids: set[str] = set()
+
+                    def render_org_branch(item, depth=0):
+                        """递归展示部门层级，异常循环数据只展示一次。"""
+                        department_key = str(item["org_unit_id"])
+                        if department_key in rendered_unit_ids:
+                            return
+                        rendered_unit_ids.add(department_key)
                         with ui.row().classes("w-full items-center border-b p-2 hover:bg-blue-50"):
+                            if depth:
+                                ui.icon("subdirectory_arrow_right", size="18px").classes(
+                                    "text-blue-400"
+                                ).style(f"margin-left: {depth * 18}px")
+                            else:
+                                ui.icon("account_tree", size="18px").classes("text-blue-600")
                             with ui.column().classes("gap-0 flex-grow"):
                                 ui.label(item.get("name", "")).classes("font-semibold")
                                 ui.label(
@@ -743,6 +767,14 @@ def manage_page():
                                 "编辑",
                                 on_click=lambda current=item: open_org_form(current),
                             ).props("flat dense color=primary")
+                        for child in children_by_parent.get(department_key, []):
+                            render_org_branch(child, depth + 1)
+
+                    for item in root_units:
+                        render_org_branch(item)
+                    for item in units:
+                        if str(item["org_unit_id"]) not in rendered_unit_ids:
+                            render_org_branch(item)
 
             def open_org_form(current=None):
                 current = current or {}
@@ -833,25 +865,85 @@ def manage_page():
                                 on_click=lambda current=item: open_position_form(current),
                             ).props("flat dense color=primary")
 
+                    unit_by_id = {
+                        str(unit["org_unit_id"]): unit for unit in units
+                    }
+                    children_by_parent: dict[str, list[dict]] = {}
+                    root_units: list[dict] = []
                     for unit in units:
-                        scoped_positions = [
-                            item
-                            for item in positions
-                            if unit["org_unit_id"] in item.get("org_unit_ids", [])
-                        ]
-                        if not scoped_positions:
-                            continue
+                        parent_id = str(unit.get("parent_org_unit_id") or "")
+                        if parent_id and parent_id in unit_by_id:
+                            children_by_parent.setdefault(parent_id, []).append(unit)
+                        else:
+                            root_units.append(unit)
+                    positions_by_unit: dict[str, list[dict]] = {}
+                    for position in positions:
+                        for org_unit_id in position.get("org_unit_ids", []):
+                            positions_by_unit.setdefault(str(org_unit_id), []).append(position)
+                    branch_visibility_cache: dict[str, bool] = {}
+
+                    def department_branch_has_positions(department_key, visiting=None):
+                        """只保留自身或下级实际包含岗位的部门分支。"""
+                        if department_key in branch_visibility_cache:
+                            return branch_visibility_cache[department_key]
+                        visiting = set(visiting or ())
+                        if department_key in visiting:
+                            return bool(positions_by_unit.get(department_key))
+                        visiting.add(department_key)
+                        visible = bool(positions_by_unit.get(department_key)) or any(
+                            department_branch_has_positions(
+                                str(child["org_unit_id"]),
+                                visiting,
+                            )
+                            for child in children_by_parent.get(department_key, [])
+                        )
+                        branch_visibility_cache[department_key] = visible
+                        return visible
+
+                    rendered_unit_ids: set[str] = set()
+
+                    def render_position_department_branch(unit, depth=0):
+                        """按照组织树递归展示各部门的岗位。"""
                         department_key = str(unit["org_unit_id"])
+                        if department_key in rendered_unit_ids:
+                            return
+                        rendered_unit_ids.add(department_key)
+                        scoped_positions = positions_by_unit.get(department_key, [])
+                        child_units = [
+                            child
+                            for child in children_by_parent.get(department_key, [])
+                            if department_branch_has_positions(str(child["org_unit_id"]))
+                        ]
+                        if not scoped_positions and not child_units:
+                            return
+                        child_summary = (
+                            f" / {len(child_units)} 个下级部门" if child_units else ""
+                        )
+                        indentation = "ml-3" if depth else ""
                         with ui.expansion(
-                            f"{unit['name']}（{len(scoped_positions)} 个岗位）",
-                            icon="business",
+                            f"{unit['name']}（{len(scoped_positions)} 个岗位{child_summary}）",
+                            icon="account_tree" if child_units else "business",
                             value=department_key in expanded_position_departments,
-                        ).classes("w-full bg-blue-50 border border-blue-100 rounded mt-2") as expansion:
+                        ).classes(
+                            "w-full bg-blue-50 border border-blue-100 rounded mt-2 "
+                            f"{indentation}"
+                        ) as expansion:
                             for item in scoped_positions:
                                 render_position_item(item)
+                            for child_unit in child_units:
+                                render_position_department_branch(child_unit, depth + 1)
                         expansion.on_value_change(
-                            lambda event, key=department_key: remember_position_department(event, key)
+                            lambda event, key=department_key: remember_position_department(
+                                event,
+                                key,
+                            )
                         )
+
+                    for unit in root_units:
+                        render_position_department_branch(unit)
+                    for unit in units:
+                        if str(unit["org_unit_id"]) not in rendered_unit_ids:
+                            render_position_department_branch(unit)
                     unscoped_positions = [
                         item for item in positions if not item.get("org_unit_ids")
                     ]
@@ -932,41 +1024,418 @@ def manage_page():
                         except Exception as exc:
                             ui.notify(f"岗位保存失败：{exc}", type="negative")
 
+                    def request_delete_position():
+                        """删除前先给出明确确认，最终占用检查仍由数据库事务执行。"""
+                        if not current:
+                            return
+                        member_count = int(current.get("member_count", 0) or 0)
+                        if member_count:
+                            ui.notify(
+                                f"该岗位仍有 {member_count} 名用户任职，请先调整用户岗位。",
+                                type="warning",
+                            )
+                            return
+                        with ui.dialog() as confirm_dialog, ui.card().classes(
+                            "w-[30rem] max-w-[95vw] p-6"
+                        ):
+                            ui.label("确认删除岗位").classes("text-lg font-bold text-red-700")
+                            ui.label(
+                                f"将删除岗位“{current.get('name', '')}”及其部门归属和默认权限。"
+                            ).classes("text-sm")
+                            ui.label(
+                                "系统会在删除瞬间再次检查用户任职；企业微信中仍存在的职务以后重新导入时可能再次生成岗位。"
+                            ).classes("text-xs text-gray-500 leading-5")
+
+                            def confirm_delete():
+                                try:
+                                    user_svc.delete_position(
+                                        current["position_id"],
+                                        actor_username=current_user,
+                                    )
+                                except Exception as exc:
+                                    ui.notify(
+                                        f"岗位删除失败：{exc}",
+                                        type="negative",
+                                        multi_line=True,
+                                    )
+                                    return
+                                ui.notify("岗位已删除。", type="positive")
+                                confirm_dialog.close()
+                                form_dialog.close()
+                                render_positions()
+
+                            with ui.row().classes("w-full justify-end gap-3"):
+                                ui.button("取消", on_click=confirm_dialog.close).props("flat")
+                                ui.button(
+                                    "确认删除",
+                                    on_click=confirm_delete,
+                                    icon="delete_forever",
+                                ).props("color=negative")
+                        confirm_dialog.open()
+
                     with ui.row().classes("w-full justify-end gap-3"):
+                        if current:
+                            ui.button(
+                                "删除岗位",
+                                on_click=request_delete_position,
+                                icon="delete",
+                            ).props("outline color=negative")
+                            ui.space()
                         ui.button("取消", on_click=form_dialog.close).props("flat")
                         ui.button("保存", on_click=save_position).props("color=primary")
                 form_dialog.open()
 
             def import_wecom_org():
                 cache_data = load_wecom_contacts_cache()
-                departments = cache_data.get("departments", [])
+                departments = [
+                    item
+                    for item in cache_data.get("departments", [])
+                    if str(item.get("id", "")).strip()
+                ]
                 if not departments:
                     ui.notify("企业微信通讯录缓存中没有部门，请先同步通讯录。", type="warning")
                     return
-                try:
-                    inserted, updated = user_svc.import_wecom_departments(departments)
-                    render_org_units()
-                    ui.notify(f"部门导入完成：新增 {inserted}，更新 {updated}。", type="positive")
-                except Exception as exc:
-                    ui.notify(f"部门导入失败：{exc}", type="negative", multi_line=True)
+                department_by_id = {
+                    str(item["id"]): item for item in departments
+                }
+                children_by_parent: dict[str, list[dict]] = {}
+                root_departments: list[dict] = []
+                for item in departments:
+                    parent_id = str(item.get("parentid") or "")
+                    if parent_id and parent_id in department_by_id:
+                        children_by_parent.setdefault(parent_id, []).append(item)
+                    else:
+                        root_departments.append(item)
+                existing_department_ids = {
+                    str(item.get("wecom_department_id"))
+                    for item in user_svc.list_org_units()
+                    if str(item.get("wecom_department_id") or "")
+                }
+                selected_department_ids: set[str] = set()
+                department_checkboxes = {}
+
+                with ui.dialog() as selection_dialog, ui.card().classes(
+                    "w-[64rem] max-w-[95vw] h-[82vh] p-5 flex flex-col no-wrap"
+                ):
+                    with ui.row().classes("w-full items-center justify-between shrink-0"):
+                        with ui.column().classes("gap-0"):
+                            ui.label("选择要导入的企业微信部门").classes("text-xl font-bold")
+                            ui.label(
+                                "默认不选择；重复导入已存在部门时仍遵循本地编辑保护。"
+                            ).classes("text-xs text-gray-500")
+                        ui.button(icon="close", on_click=selection_dialog.close).props(
+                            "flat round dense"
+                        )
+                    with ui.row().classes("w-full items-center gap-2 shrink-0"):
+                        selected_count_label = ui.label("已选择 0 个部门").classes(
+                            "text-sm font-semibold text-blue-700"
+                        )
+                        ui.space()
+                        select_all_button = ui.button("全选", icon="done_all").props(
+                            "flat dense"
+                        )
+                        clear_all_button = ui.button("清空", icon="clear_all").props(
+                            "flat dense"
+                        )
+                    department_selection_container = ui.column().classes(
+                        "w-full flex-grow min-h-0 overflow-y-auto gap-0 border rounded p-2 bg-gray-50"
+                    )
+
+                    def update_department_selection(department_id, checked):
+                        if checked:
+                            selected_department_ids.add(department_id)
+                        else:
+                            selected_department_ids.discard(department_id)
+                        selected_count_label.set_text(
+                            f"已选择 {len(selected_department_ids)} 个部门"
+                        )
+
+                    with department_selection_container:
+                        rendered_department_ids: set[str] = set()
+
+                        def render_department_choice(item, depth=0):
+                            department_id = str(item["id"])
+                            if department_id in rendered_department_ids:
+                                return
+                            rendered_department_ids.add(department_id)
+                            with ui.row().classes(
+                                "w-full items-center border-b border-gray-200 py-1"
+                            ):
+                                checkbox = ui.checkbox(
+                                    str(item.get("name") or f"企业微信部门 {department_id}"),
+                                    value=False,
+                                ).style(f"margin-left: {depth * 22}px")
+                                department_checkboxes[department_id] = checkbox
+                                checkbox.on_value_change(
+                                    lambda event, current_id=department_id: (
+                                        update_department_selection(current_id, event.value)
+                                    )
+                                )
+                                ui.label(f"ID：{department_id}").classes(
+                                    "text-xs text-gray-400"
+                                )
+                                if department_id in existing_department_ids:
+                                    ui.chip("系统中已存在", color="positive").props("dense outline")
+                            for child in children_by_parent.get(department_id, []):
+                                render_department_choice(child, depth + 1)
+
+                        for item in root_departments:
+                            render_department_choice(item)
+                        for item in departments:
+                            if str(item["id"]) not in rendered_department_ids:
+                                render_department_choice(item)
+
+                    def set_all_departments(checked):
+                        selected_department_ids.clear()
+                        if checked:
+                            selected_department_ids.update(department_checkboxes)
+                        for checkbox in department_checkboxes.values():
+                            checkbox.set_value(checked)
+                        selected_count_label.set_text(
+                            f"已选择 {len(selected_department_ids)} 个部门"
+                        )
+
+                    def import_selected_departments():
+                        if not selected_department_ids:
+                            ui.notify("请至少勾选一个部门。", type="warning")
+                            return
+                        missing_parents = []
+                        for department_id in selected_department_ids:
+                            department = department_by_id[department_id]
+                            parent_id = str(department.get("parentid") or "")
+                            if (
+                                parent_id
+                                and parent_id != "0"
+                                and parent_id in department_by_id
+                                and parent_id not in selected_department_ids
+                                and parent_id not in existing_department_ids
+                            ):
+                                missing_parents.append(
+                                    f"{department.get('name', department_id)} → "
+                                    f"{department_by_id[parent_id].get('name', parent_id)}"
+                                )
+                        if missing_parents:
+                            ui.notify(
+                                "以下下级部门的上级尚未导入，请同时勾选上级部门：\n"
+                                + "\n".join(missing_parents[:10]),
+                                type="warning",
+                                multi_line=True,
+                            )
+                            return
+                        selected_departments = [
+                            item
+                            for item in departments
+                            if str(item["id"]) in selected_department_ids
+                        ]
+                        try:
+                            inserted, updated = user_svc.import_wecom_departments(
+                                selected_departments
+                            )
+                        except Exception as exc:
+                            ui.notify(
+                                f"部门导入失败：{exc}",
+                                type="negative",
+                                multi_line=True,
+                            )
+                            return
+                        ui.notify(
+                            f"所选部门导入完成：新增 {inserted}，更新 {updated}。",
+                            type="positive",
+                        )
+                        selection_dialog.close()
+                        render_org_units()
+                        render_positions()
+
+                    select_all_button.on_click(lambda: set_all_departments(True))
+                    clear_all_button.on_click(lambda: set_all_departments(False))
+                    with ui.row().classes("w-full justify-end gap-3 shrink-0"):
+                        ui.button("取消", on_click=selection_dialog.close).props("flat")
+                        ui.button(
+                            "导入已勾选部门",
+                            on_click=import_selected_departments,
+                            icon="cloud_download",
+                        ).props("color=primary")
+                selection_dialog.open()
 
             def import_wecom_position_catalog():
                 cache_data = load_wecom_contacts_cache()
-                contacts = cache_data.get("contacts", [])
+                contacts = [
+                    item
+                    for item in cache_data.get("contacts", [])
+                    if item.get("is_active", True) and str(item.get("position", "")).strip()
+                ]
                 if not contacts:
-                    ui.notify("企业微信通讯录缓存中没有成员，请先同步通讯录。", type="warning")
+                    ui.notify("企业微信通讯录缓存中没有有效职务，请先同步通讯录。", type="warning")
                     return
-                try:
-                    departments = cache_data.get("departments", [])
-                    if departments:
-                        # 岗位需要按部门归类，导入职务前先确保企业微信部门映射已经存在。
-                        user_svc.import_wecom_departments(departments)
-                    inserted, updated = user_svc.import_wecom_positions(contacts)
-                    render_org_units()
-                    render_positions()
-                    ui.notify(f"岗位导入完成：新增 {inserted}，已存在 {updated}。", type="positive")
-                except Exception as exc:
-                    ui.notify(f"岗位导入失败：{exc}", type="negative", multi_line=True)
+                department_names = {
+                    str(item.get("id", "")): str(item.get("name", ""))
+                    for item in cache_data.get("departments", [])
+                }
+                position_summaries: dict[str, dict] = {}
+                for contact in contacts:
+                    position_name = str(contact.get("position", "")).strip()
+                    summary = position_summaries.setdefault(
+                        position_name,
+                        {"member_count": 0, "department_names": set(), "department_ids": set()},
+                    )
+                    summary["member_count"] += 1
+                    contact_department_ids = {
+                        str(value)
+                        for value in contact.get("department_ids", [])
+                        if str(value)
+                    }
+                    main_department_id = str(contact.get("main_department_id", "")).strip()
+                    if main_department_id:
+                        contact_department_ids.add(main_department_id)
+                    summary["department_ids"].update(contact_department_ids)
+                    summary["department_names"].update(
+                        department_names.get(value, value)
+                        for value in contact_department_ids
+                    )
+                existing_positions = user_svc.list_positions()
+                existing_external_names = {
+                    str(item.get("external_name_snapshot", "")).strip()
+                    for item in existing_positions
+                    if str(item.get("external_name_snapshot", "")).strip()
+                }
+                existing_position_names = {
+                    str(item.get("name", "")).strip() for item in existing_positions
+                }
+                imported_department_ids = {
+                    str(item.get("wecom_department_id", "")).strip()
+                    for item in user_svc.list_org_units()
+                    if str(item.get("wecom_department_id", "")).strip()
+                }
+                selected_position_names: set[str] = set()
+                position_checkboxes = {}
+
+                with ui.dialog() as selection_dialog, ui.card().classes(
+                    "w-[64rem] max-w-[95vw] h-[82vh] p-5 flex flex-col no-wrap"
+                ):
+                    with ui.row().classes("w-full items-center justify-between shrink-0"):
+                        with ui.column().classes("gap-0"):
+                            ui.label("选择要导入的企业微信岗位").classes("text-xl font-bold")
+                            ui.label(
+                                "默认不选择；岗位只关联已经导入系统的企业微信部门。"
+                            ).classes("text-xs text-gray-500")
+                        ui.button(icon="close", on_click=selection_dialog.close).props(
+                            "flat round dense"
+                        )
+                    with ui.row().classes("w-full items-center gap-2 shrink-0"):
+                        selected_count_label = ui.label("已选择 0 个岗位").classes(
+                            "text-sm font-semibold text-blue-700"
+                        )
+                        ui.space()
+                        select_all_button = ui.button("全选", icon="done_all").props(
+                            "flat dense"
+                        )
+                        clear_all_button = ui.button("清空", icon="clear_all").props(
+                            "flat dense"
+                        )
+                    position_selection_container = ui.column().classes(
+                        "w-full flex-grow min-h-0 overflow-y-auto gap-0 border rounded p-2 bg-gray-50"
+                    )
+
+                    def update_position_selection(position_name, checked):
+                        if checked:
+                            selected_position_names.add(position_name)
+                        else:
+                            selected_position_names.discard(position_name)
+                        selected_count_label.set_text(
+                            f"已选择 {len(selected_position_names)} 个岗位"
+                        )
+
+                    with position_selection_container:
+                        for position_name in sorted(
+                            position_summaries,
+                            key=lambda value: value.casefold(),
+                        ):
+                            summary = position_summaries[position_name]
+                            with ui.row().classes(
+                                "w-full items-center border-b border-gray-200 py-2"
+                            ):
+                                checkbox = ui.checkbox(position_name, value=False).classes(
+                                    "min-w-[14rem]"
+                                )
+                                position_checkboxes[position_name] = checkbox
+                                checkbox.on_value_change(
+                                    lambda event, current_name=position_name: (
+                                        update_position_selection(current_name, event.value)
+                                    )
+                                )
+                                ui.label(
+                                    f"{summary['member_count']} 人 ｜ "
+                                    f"{'、'.join(sorted(summary['department_names'])) or '未提供部门'}"
+                                ).classes("text-xs text-gray-500 flex-grow")
+                                if (
+                                    position_name in existing_external_names
+                                    or position_name in existing_position_names
+                                ):
+                                    ui.chip("系统中已存在", color="positive").props("dense outline")
+
+                    def set_all_positions(checked):
+                        selected_position_names.clear()
+                        if checked:
+                            selected_position_names.update(position_checkboxes)
+                        for checkbox in position_checkboxes.values():
+                            checkbox.set_value(checked)
+                        selected_count_label.set_text(
+                            f"已选择 {len(selected_position_names)} 个岗位"
+                        )
+
+                    def import_selected_positions():
+                        if not selected_position_names:
+                            ui.notify("请至少勾选一个岗位。", type="warning")
+                            return
+                        selected_contacts = [
+                            contact
+                            for contact in contacts
+                            if str(contact.get("position", "")).strip()
+                            in selected_position_names
+                        ]
+                        unscoped_positions = [
+                            position_name
+                            for position_name in selected_position_names
+                            if not (
+                                position_summaries[position_name]["department_ids"]
+                                & imported_department_ids
+                            )
+                        ]
+                        try:
+                            inserted, updated = user_svc.import_wecom_positions(
+                                selected_contacts
+                            )
+                        except Exception as exc:
+                            ui.notify(
+                                f"岗位导入失败：{exc}",
+                                type="negative",
+                                multi_line=True,
+                            )
+                            return
+                        message = f"所选岗位导入完成：新增 {inserted}，已存在 {updated}。"
+                        if unscoped_positions:
+                            message += (
+                                "\n以下岗位没有已导入的所属部门，暂归入未划分部门："
+                                + "、".join(sorted(unscoped_positions))
+                            )
+                        ui.notify(
+                            message,
+                            type="warning" if unscoped_positions else "positive",
+                            multi_line=True,
+                        )
+                        selection_dialog.close()
+                        render_positions()
+
+                    select_all_button.on_click(lambda: set_all_positions(True))
+                    clear_all_button.on_click(lambda: set_all_positions(False))
+                    with ui.row().classes("w-full justify-end gap-3 shrink-0"):
+                        ui.button("取消", on_click=selection_dialog.close).props("flat")
+                        ui.button(
+                            "导入已勾选岗位",
+                            on_click=import_selected_positions,
+                            icon="cloud_download",
+                        ).props("color=primary")
+                selection_dialog.open()
 
             add_org_button.on_click(lambda: open_org_form())
             add_position_button.on_click(lambda: open_position_form())
@@ -1082,30 +1551,88 @@ def manage_page():
                                         f"{position.get('member_count', 0)} 人"
                                     ).classes("text-xs text-gray-500")
 
+                            unit_by_id = {
+                                str(unit["org_unit_id"]): unit for unit in units
+                            }
+                            children_by_parent: dict[str, list[dict]] = {}
+                            root_units: list[dict] = []
                             for unit in units:
-                                scoped_positions = [
-                                    position
-                                    for position in positions
-                                    if unit["org_unit_id"] in position.get("org_unit_ids", [])
-                                ]
-                                if not scoped_positions:
-                                    continue
+                                parent_id = str(unit.get("parent_org_unit_id") or "")
+                                if parent_id and parent_id in unit_by_id:
+                                    children_by_parent.setdefault(parent_id, []).append(unit)
+                                else:
+                                    root_units.append(unit)
+                            positions_by_unit: dict[str, list[dict]] = {}
+                            for position in positions:
+                                for org_unit_id in position.get("org_unit_ids", []):
+                                    positions_by_unit.setdefault(str(org_unit_id), []).append(position)
+                            branch_visibility_cache: dict[str, bool] = {}
+
+                            def department_branch_has_positions(department_key, visiting=None):
+                                """判断部门自身或任一下级部门是否配置了岗位。"""
+                                if department_key in branch_visibility_cache:
+                                    return branch_visibility_cache[department_key]
+                                visiting = set(visiting or ())
+                                if department_key in visiting:
+                                    return bool(positions_by_unit.get(department_key))
+                                visiting.add(department_key)
+                                visible = bool(positions_by_unit.get(department_key)) or any(
+                                    department_branch_has_positions(
+                                        str(child["org_unit_id"]),
+                                        visiting,
+                                    )
+                                    for child in children_by_parent.get(department_key, [])
+                                )
+                                branch_visibility_cache[department_key] = visible
+                                return visible
+
+                            rendered_unit_ids: set[str] = set()
+
+                            def render_department_branch(unit, depth=0):
+                                """按部门父子关系递归展示岗位分组。"""
                                 department_key = str(unit["org_unit_id"])
+                                if department_key in rendered_unit_ids:
+                                    return
+                                rendered_unit_ids.add(department_key)
+                                scoped_positions = positions_by_unit.get(department_key, [])
+                                child_units = [
+                                    child
+                                    for child in children_by_parent.get(department_key, [])
+                                    if department_branch_has_positions(
+                                        str(child["org_unit_id"])
+                                    )
+                                ]
+                                if not scoped_positions and not child_units:
+                                    return
+                                child_summary = (
+                                    f" / {len(child_units)} 个下级部门" if child_units else ""
+                                )
+                                indentation = "ml-3" if depth else ""
                                 with ui.expansion(
-                                    f"{unit['name']}（{len(scoped_positions)} 个岗位）",
-                                    icon="business",
+                                    f"{unit['name']}（{len(scoped_positions)} 个岗位{child_summary}）",
+                                    icon="account_tree" if child_units else "business",
                                     value=department_key in expanded_permission_departments,
                                 ).classes(
-                                    "w-full bg-blue-50 border border-blue-100 rounded mt-2"
+                                    "w-full bg-blue-50 border border-blue-100 rounded mt-2 "
+                                    f"{indentation}"
                                 ) as expansion:
                                     for position in scoped_positions:
                                         render_permission_position_item(position)
+                                    for child_unit in child_units:
+                                        render_department_branch(child_unit, depth + 1)
                                 expansion.on_value_change(
                                     lambda event, key=department_key: remember_permission_department(
                                         event,
                                         key,
                                     )
                                 )
+
+                            for unit in root_units:
+                                render_department_branch(unit)
+                            # 异常的循环层级或孤立数据仍要显示，避免岗位在管理界面彻底消失。
+                            for unit in units:
+                                if str(unit["org_unit_id"]) not in rendered_unit_ids:
+                                    render_department_branch(unit)
                             unscoped_positions = [
                                 position
                                 for position in positions
@@ -1214,7 +1741,8 @@ def manage_page():
                             with ui.row().classes("w-full items-center justify-between shrink-0"):
                                 with ui.column().classes("gap-0"):
                                     ui.label("附加权限组").classes("text-lg font-bold")
-                                    ui.label("只处理岗位之外的兼任或专项权限").classes("text-xs text-gray-500")
+                                    ui.label("只处理岗位之外的兼任或专项权限，修改后自动保存") \
+                                        .classes("text-xs text-gray-500")
                                 add_role_button = ui.button("新增权限组", icon="add").props("color=primary")
                             role_list_container = ui.column().classes(
                                 "w-full flex-grow min-h-0 overflow-y-auto gap-1"
@@ -1288,10 +1816,16 @@ def manage_page():
                             ui.label("权限组配置").classes("text-lg font-bold")
                             code_input = ui.input("稳定编码", value=selected["code"]).classes("w-full")
                             code_input.disable()
-                            name_input = ui.input("显示名称", value=selected["name"]).classes("w-full")
+                            name_input = ui.input(
+                                "显示名称",
+                                value=selected["name"],
+                            ).props("debounce=500").classes("w-full")
                             active_switch = ui.switch(
                                 "权限组启用",
                                 value=selected.get("status") == "active",
+                            )
+                            auto_save_status = ui.label("内容变化后自动保存").classes(
+                                "text-xs text-green-700"
                             )
                             ui.separator()
                             ui.label("权限清单").classes("font-bold")
@@ -1315,11 +1849,25 @@ def manage_page():
                                         )
                                         checkbox_by_code[permission["code"]] = checkbox
 
-                            def save_role():
+                            def auto_save_role(_event=None):
+                                """名称、启停或权限变化后立即保存整个附加权限组。"""
+                                normalized_name = str(name_input.value or "").strip()
+                                if not normalized_name:
+                                    auto_save_status.set_text("显示名称不能为空，当前修改尚未保存")
+                                    auto_save_status.classes(
+                                        remove="text-green-700 text-gray-500",
+                                        add="text-red-600",
+                                    )
+                                    return
+                                auto_save_status.set_text("正在自动保存…")
+                                auto_save_status.classes(
+                                    remove="text-red-600 text-green-700",
+                                    add="text-gray-500",
+                                )
                                 try:
                                     user_svc.update_security_role(
                                         selected["role_id"],
-                                        name=name_input.value,
+                                        name=normalized_name,
                                         status="active" if active_switch.value else "disabled",
                                         permission_codes=[
                                             code for code, checkbox in checkbox_by_code.items() if checkbox.value
@@ -1327,17 +1875,26 @@ def manage_page():
                                         actor_username=current_user,
                                     )
                                 except Exception as exc:
-                                    ui.notify(f"权限组保存失败：{exc}", type="negative", multi_line=True)
+                                    # 失败时先提示，再恢复数据库里的真实状态。
+                                    ui.notify(
+                                        f"权限组自动保存失败：{exc}",
+                                        type="negative",
+                                        multi_line=True,
+                                    )
+                                    render_role_editor()
                                     return
-                                # 当前编辑器会被重建，通知必须先使用仍然有效的事件槽位。
-                                ui.notify("附加权限组已保存。", type="positive")
-                                render_role_list()
-                                render_role_editor()
-
-                            with ui.row().classes("w-full justify-end pt-2"):
-                                ui.button("保存权限组", on_click=save_role, icon="save").props(
-                                    "color=primary"
+                                auto_save_status.set_text("已自动保存")
+                                auto_save_status.classes(
+                                    remove="text-red-600 text-gray-500",
+                                    add="text-green-700",
                                 )
+                                # 只刷新左侧摘要，避免右侧编辑区和滚动位置复位。
+                                render_role_list()
+
+                            name_input.on_value_change(auto_save_role)
+                            active_switch.on_value_change(auto_save_role)
+                            for checkbox in checkbox_by_code.values():
+                                checkbox.on_value_change(auto_save_role)
 
                     def open_add_role_form():
                         with ui.dialog() as add_dialog, ui.card().classes("w-[30rem] max-w-[95vw] p-6"):
@@ -2192,7 +2749,7 @@ def manage_page():
 
                 with ui.dialog() as binding_dialog, ui.card().classes("w-[44rem] max-w-[95vw] p-6"):
                     ui.label(f"绑定企业微信：{target_user}").classes("text-lg font-bold")
-                    ui.label("同一企业微信账号只能绑定一个系统用户；保存会记录为手工绑定。").classes(
+                    ui.label("同一企业微信账号只能绑定一个系统用户；绑定不会自动导入部门或岗位字典。").classes(
                         "text-xs text-gray-500"
                     )
                     binding_select = (
@@ -2215,8 +2772,6 @@ def manage_page():
                     async def save_binding():
                         try:
                             if binding_select.value:
-                                app.state.user_service.import_wecom_departments(cache_data.get("departments", []))
-                                app.state.user_service.import_wecom_positions(contacts)
                                 selected_contact = contact_map[str(binding_select.value)]
                                 app.state.user_service.bind_wecom_user(
                                     target_user,
@@ -2229,6 +2784,8 @@ def manage_page():
                                 message = "企业微信账号绑定成功。"
                                 if org_assigned:
                                     message += " 已自动补齐部门和可匹配岗位。"
+                                else:
+                                    message += " 如需自动补齐任职，请先在组织架构中勾选导入对应部门和岗位。"
                                 ui.notify(message, type="positive")
                             else:
                                 app.state.user_service.unbind_wecom_user(target_user)
@@ -2395,6 +2952,8 @@ def manage_page():
                             ui.label(f"可自动绑定 {matched_count} 人；重名、冲突和未匹配人员不会自动处理。").classes(
                                 "text-sm text-gray-600"
                             )
+                            ui.label("应用匹配不会自动导入部门或岗位，只使用系统中已有字典补齐任职。") \
+                                .classes("text-xs text-blue-700")
                         ui.button(icon="close", on_click=match_dialog.close).props("flat round")
                     ui.table(
                         columns=columns,
@@ -2405,8 +2964,6 @@ def manage_page():
 
                     async def apply_matches():
                         try:
-                            app.state.user_service.import_wecom_departments(cache_data.get("departments", []))
-                            app.state.user_service.import_wecom_positions(contacts)
                             bound_count, org_count = app.state.user_service.apply_wecom_match_plan(plan)
                             await refresh_user_list_preserving_scroll()
                             match_dialog.close()

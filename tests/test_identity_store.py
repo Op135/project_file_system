@@ -174,6 +174,47 @@ class IdentityStoreMigrationTests(unittest.TestCase):
         )
         self.assertEqual(position["org_unit_ids"], [rd_unit["org_unit_id"]])
 
+    def test_wecom_departments_and_positions_support_selected_batch_import(self):
+        """管理员分批勾选时只导入所选项，并复用系统中已有的父部门。"""
+        self.service.migrate_legacy_users()
+        departments = [
+            {"id": "1", "name": "公司", "parentid": "0", "order": 1},
+            {"id": "2", "name": "研发部", "parentid": "1", "order": 2},
+        ]
+        self.assertEqual(self.service.import_wecom_departments([departments[0]]), (1, 0))
+        self.assertEqual(self.service.import_wecom_departments([departments[1]]), (1, 0))
+        units = self.service.list_org_units()
+        root = next(item for item in units if item["wecom_department_id"] == "1")
+        child = next(item for item in units if item["wecom_department_id"] == "2")
+        self.assertEqual(child["parent_org_unit_id"], root["org_unit_id"])
+
+        contacts = [
+            {
+                "userid": "selected-user",
+                "position": "已选择岗位",
+                "department_ids": ["2"],
+                "main_department_id": "2",
+                "is_active": True,
+            },
+            {
+                "userid": "unselected-user",
+                "position": "未选择岗位",
+                "department_ids": ["2"],
+                "main_department_id": "2",
+                "is_active": True,
+            },
+        ]
+        self.assertEqual(self.service.import_wecom_positions([contacts[0]]), (1, 0))
+        imported_positions = {
+            item["name"]: item for item in self.service.list_positions()
+        }
+        self.assertIn("已选择岗位", imported_positions)
+        self.assertNotIn("未选择岗位", imported_positions)
+        self.assertEqual(
+            imported_positions["已选择岗位"]["org_unit_ids"],
+            [child["org_unit_id"]],
+        )
+
     def test_positions_are_scoped_and_filtered_by_department(self):
         """岗位支持多部门归属，任职时不能选择其他部门的岗位。"""
         self.service.migrate_legacy_users()
@@ -212,6 +253,110 @@ class IdentityStoreMigrationTests(unittest.TestCase):
                 name="共用工程师",
                 org_unit_ids=[engineering_unit_id],
             )
+
+    def test_position_can_only_be_deleted_without_active_members(self):
+        """有有效任职用户时拒绝删除，无人任职时清理岗位及关联配置。"""
+        self.service.migrate_legacy_users()
+        org_unit_id = self.service.save_org_unit(code="org.position.delete", name="删除测试部")
+        assigned_position_id = self.service.save_position(
+            code="position.delete.assigned",
+            name="仍在任职岗位",
+            org_unit_ids=[org_unit_id],
+        )
+        self.service.set_primary_membership(
+            "张三",
+            org_unit_id=org_unit_id,
+            position_id=assigned_position_id,
+        )
+
+        with self.assertRaisesRegex(ValueError, "仍有 1 名用户任职"):
+            self.service.delete_position(assigned_position_id, actor_username="admin")
+        self.assertTrue(
+            any(
+                item["position_id"] == assigned_position_id
+                for item in self.service.list_positions()
+            )
+        )
+
+        unused_position_id = self.service.save_position(
+            code="position.delete.unused",
+            name="无人任职岗位",
+            org_unit_ids=[org_unit_id],
+        )
+        self.service.set_position_permissions(
+            unused_position_id,
+            ["system.manage"],
+            actor_username="admin",
+        )
+        self.assertTrue(
+            self.service.delete_position(unused_position_id, actor_username="admin")
+        )
+        self.assertFalse(
+            any(
+                item["position_id"] == unused_position_id
+                for item in self.service.list_positions()
+            )
+        )
+        connection = sqlite3.connect(self.db_path)
+        try:
+            scope_count = connection.execute(
+                "SELECT COUNT(*) FROM org_position_scopes WHERE position_id=?",
+                (unused_position_id,),
+            ).fetchone()[0]
+            permission_count = connection.execute(
+                "SELECT COUNT(*) FROM iam_position_permissions WHERE position_id=?",
+                (unused_position_id,),
+            ).fetchone()[0]
+            audit_count = connection.execute(
+                "SELECT COUNT(*) FROM iam_audit_logs "
+                "WHERE action='position_deleted' AND target_id=?",
+                (unused_position_id,),
+            ).fetchone()[0]
+        finally:
+            connection.close()
+        self.assertEqual(scope_count, 0)
+        self.assertEqual(permission_count, 0)
+        self.assertEqual(audit_count, 1)
+
+    def test_old_position_can_be_deleted_after_user_changes_primary_position(self):
+        """用户更换主岗位后，旧关系应结束且不再阻止岗位删除。"""
+        self.service.migrate_legacy_users()
+        org_unit_id = self.service.save_org_unit(code="org.position.change", name="换岗测试部")
+        old_position_id = self.service.save_position(
+            code="position.change.old",
+            name="原岗位",
+            org_unit_ids=[org_unit_id],
+        )
+        new_position_id = self.service.save_position(
+            code="position.change.new",
+            name="新岗位",
+            org_unit_ids=[org_unit_id],
+        )
+        self.service.set_primary_membership(
+            "张三",
+            org_unit_id=org_unit_id,
+            position_id=old_position_id,
+        )
+        self.service.set_primary_membership(
+            "张三",
+            org_unit_id=org_unit_id,
+            position_id=new_position_id,
+        )
+
+        positions = {
+            item["position_id"]: item for item in self.service.list_positions()
+        }
+        self.assertEqual(positions[old_position_id]["member_count"], 0)
+        self.assertEqual(positions[new_position_id]["member_count"], 1)
+        self.assertTrue(
+            self.service.delete_position(old_position_id, actor_username="admin")
+        )
+        self.assertFalse(
+            any(
+                item["position_id"] == old_position_id
+                for item in self.service.list_positions()
+            )
+        )
 
     def test_wecom_position_import_is_sorted_deduplicated_and_preserves_manual_edit(self):
         self.service.migrate_legacy_users()

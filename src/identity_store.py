@@ -820,7 +820,15 @@ class IdentityStore:
         inserted = 0
         with self._lock, self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
-            id_map: dict[str, str] = {}
+            # 支持管理员分批勾选导入：未在本批次选择但已存在于系统的父部门仍可参与层级映射。
+            existing_unit_rows = connection.execute(
+                "SELECT org_unit_id, wecom_department_id FROM org_units "
+                "WHERE wecom_department_id IS NOT NULL AND wecom_department_id<>''"
+            ).fetchall()
+            id_map: dict[str, str] = {
+                str(row["wecom_department_id"]): str(row["org_unit_id"])
+                for row in existing_unit_rows
+            }
             for item in normalized:
                 wecom_id = str(item.get("id", "")).strip()
                 row = connection.execute(
@@ -878,7 +886,8 @@ class IdentityStore:
         """列出岗位及其可用部门；指定部门时只返回该部门岗位。"""
         with self._lock, self._connect() as connection:
             rows = connection.execute(
-                "SELECT p.*, COUNT(DISTINCT CASE WHEN m.status='active' AND u.status='active' "
+                "SELECT p.*, COUNT(DISTINCT CASE WHEN m.status='active' AND m.is_primary=1 "
+                "AND u.status='active' "
                 "THEN m.user_id END) AS member_count "
                 "FROM iam_positions p LEFT JOIN org_memberships m ON m.position_id=p.position_id "
                 "LEFT JOIN iam_users u ON u.user_id=m.user_id "
@@ -980,7 +989,7 @@ class IdentityStore:
                     str(item["org_unit_id"])
                     for item in connection.execute(
                         "SELECT DISTINCT org_unit_id FROM org_memberships "
-                        "WHERE position_id=? AND status='active'",
+                        "WHERE position_id=? AND status='active' AND is_primary=1",
                         (position_id,),
                     ).fetchall()
                 }
@@ -1000,6 +1009,69 @@ class IdentityStore:
                     ],
                 )
         return position_id
+
+    def delete_position(
+        self,
+        position_id: str,
+        *,
+        actor_username: str | None = None,
+    ) -> bool:
+        """删除没有任何有效任职用户的岗位。"""
+        normalized_position_id = str(position_id or "").strip()
+        if not normalized_position_id:
+            raise ValueError("岗位 ID 不能为空")
+        with self._lock, self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            position = connection.execute(
+                "SELECT position_id, code, name FROM iam_positions WHERE position_id=?",
+                (normalized_position_id,),
+            ).fetchone()
+            if not position:
+                raise ValueError("岗位不存在或已被删除")
+            member_rows = connection.execute(
+                "SELECT DISTINCT u.username, u.display_name FROM org_memberships m "
+                "JOIN iam_users u ON u.user_id=m.user_id "
+                "WHERE m.position_id=? AND m.status='active' AND m.is_primary=1 "
+                "ORDER BY u.display_name, u.username",
+                (normalized_position_id,),
+            ).fetchall()
+            if member_rows:
+                member_names = [
+                    str(row["display_name"] or row["username"])
+                    for row in member_rows[:8]
+                ]
+                suffix = "等" if len(member_rows) > len(member_names) else ""
+                raise ValueError(
+                    f"岗位仍有 {len(member_rows)} 名用户任职："
+                    f"{'、'.join(member_names)}{suffix}；请先调整这些用户的岗位"
+                )
+
+            # 非主岗位旧关系和已结束记录不再代表当前占用，只解除即将删除的岗位外键。
+            connection.execute(
+                "UPDATE org_memberships SET position_id=NULL WHERE position_id=?",
+                (normalized_position_id,),
+            )
+            connection.execute(
+                "DELETE FROM iam_position_permissions WHERE position_id=?",
+                (normalized_position_id,),
+            )
+            connection.execute(
+                "DELETE FROM org_position_scopes WHERE position_id=?",
+                (normalized_position_id,),
+            )
+            self._audit(
+                connection,
+                actor_username=actor_username,
+                action="position_deleted",
+                target_type="position",
+                target_id=normalized_position_id,
+                detail={"code": position["code"], "name": position["name"]},
+            )
+            connection.execute(
+                "DELETE FROM iam_positions WHERE position_id=?",
+                (normalized_position_id,),
+            )
+        return True
 
     def import_wecom_positions(self, contacts: Iterable[dict[str, Any]]) -> tuple[int, int]:
         """导入不重复的企业微信职务文本，同时保留本地覆盖内容。
@@ -1163,8 +1235,9 @@ class IdentityStore:
                         (position_id, org_unit_id, now),
                     )
             connection.execute(
-                "UPDATE org_memberships SET is_primary=0, updated_at=? WHERE user_id=? AND status='active'",
-                (now, user["user_id"]),
+                "UPDATE org_memberships SET is_primary=0, status='ended', ended_at=?, updated_at=? "
+                "WHERE user_id=? AND status='active'",
+                (now, now, user["user_id"]),
             )
             existing = connection.execute(
                 "SELECT membership_id FROM org_memberships WHERE user_id=? AND org_unit_id=? "

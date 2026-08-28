@@ -492,6 +492,11 @@ class UserService:
             raise RuntimeError("请先迁移用户，再维护岗位")
         return self.identity_store.save_position(**values)
 
+    def delete_position(self, position_id: str, **values) -> bool:
+        if self.storage_mode != "database":
+            raise RuntimeError("请先迁移用户，再删除岗位")
+        return self.identity_store.delete_position(position_id, **values)
+
     def get_primary_membership(self, username: str) -> dict[str, Any]:
         if self.storage_mode != "database":
             return {}
