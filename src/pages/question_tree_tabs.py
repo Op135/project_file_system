@@ -9,7 +9,8 @@ from nicegui import app, ui
 
 # --- 严格按照项目结构导入 ---
 from ..config import BASE_DIR, IMG_DIR, PRESET_AVATARS
-from ..utils import get_cache_busted_path, logout, setup_global_activity_tracking
+from ..question_tree_access import can_view_question_tree
+from ..utils import get_cache_busted_path, logout, setup_global_activity_tracking, sync_current_user_role
 
 logger = logging.getLogger(__name__)
 
@@ -448,8 +449,13 @@ def layout_columns_container():
 # --- 新增：打印清单页面 (背景色分组优化版) ---
 @ui.page("/print_list")
 def print_list_page():
-    if not app.storage.user.get("current_user"):
+    stored_current_user = app.storage.user.get("current_user")
+    if not isinstance(stored_current_user, str) or not stored_current_user:
         ui.navigate.to("/login")
+        return
+    if not can_view_question_tree(sync_current_user_role(), stored_current_user):
+        ui.notify("当前账号没有查看需求项结构的权限", type="negative")
+        ui.navigate.to("/main")
         return
 
     # --- 调用全局活跃跟踪组件 ---
@@ -561,6 +567,15 @@ def print_list_page():
 
 @ui.page("/question_tree_tabs")
 def question_tree_page():
+    stored_current_user = app.storage.user.get("current_user")
+    if not isinstance(stored_current_user, str) or not stored_current_user:
+        ui.navigate.to("/login")
+        return
+    if not can_view_question_tree(sync_current_user_role(), stored_current_user):
+        ui.notify("当前账号没有查看需求项结构的权限", type="negative")
+        ui.navigate.to("/main")
+        return
+
     # >>> [颜色配置] 搜索定位动画 (CSS)
     # node-shake 动画颜色配置
     # border-color: #f97316 (red-500) - 晃动时的边框色
@@ -623,13 +638,9 @@ def question_tree_page():
     selected_path.clear()
     active_ancestors.clear()
 
-    if not app.storage.user.get("current_user"):
-        ui.navigate.to("/login")
-        return
-
     setup_global_activity_tracking()
 
-    current_user = app.storage.user.get("current_user")
+    current_user = stored_current_user
     user_prefs = app.storage.general.get("user_preferences", {}).get(current_user, {})
     current_avatar_path = user_prefs.get("avatar", PRESET_AVATARS[0])
     current_display_path = get_cache_busted_path(current_avatar_path)

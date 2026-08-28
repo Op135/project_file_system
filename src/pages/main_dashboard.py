@@ -23,6 +23,7 @@ from ..project_requirement_access import (
     has_assigned_requirement_review_permission,
 )
 from ..project_todo_access import can_view_project_todo, filter_actionable_overview_pending
+from ..question_tree_access import can_view_question_tree
 from ..statistics_access import can_view_statistics
 from ..utils import (
     get_cache_busted_path,
@@ -249,9 +250,10 @@ def main_page():
             current_user,
         ):
             continue
-        # 需求结构图只对角色字符串里含有如下关键字的用户展示
-        elif items[3] == "/question_tree_tabs" and not any(
-            k in str(current_role) for k in ["销售", "研发", "boss", "admin"]
+        # 需求项结构使用稳定权限控制入口，旧 Excel 模式继续兼容原角色关键词。
+        elif items[3] == "/question_tree_tabs" and not can_view_question_tree(
+            current_role,
+            current_user,
         ):
             continue
         # 统计信息入口使用稳定权限，旧 Excel 模式继续沿用原角色关键词。

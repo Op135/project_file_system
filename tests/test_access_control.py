@@ -31,6 +31,7 @@ from src.permission_catalog import (
     PROJECT_TODO_VIEW_PERMISSION,
     PROJECT_VIEW_PERMISSION,
     ProjectOverviewPermissionCatalogError,
+    QUESTION_TREE_VIEW_PERMISSION,
     SAMPLE_ISSUE_CREATE_PERMISSION,
     SAMPLE_ISSUE_CLOSE_APPROVE_PERMISSION,
     SAMPLE_ISSUE_LEGACY_CLOSE_DEFAULT_APPROVE_PERMISSION,
@@ -68,6 +69,7 @@ from src.project_todo_access import (
     can_view_project_todo,
     filter_actionable_overview_pending,
 )
+from src.question_tree_access import can_view_question_tree
 from src.project_overview_access import (
     can_edit_overview_item,
     can_review_batch_overview,
@@ -281,6 +283,31 @@ class AccessControlTests(unittest.TestCase):
             ),
             {"P100": {"hardware_summary": "缺必填"}},
         )
+
+    def test_question_tree_legacy_mode_keeps_original_role_keywords(self):
+        """旧 Excel 模式继续按原关键词开放需求项结构及打印清单。"""
+        self.assertTrue(can_view_question_tree("销售主管", "张三", user_service=self.service))
+        self.assertTrue(can_view_question_tree("研发硬件", "张三", user_service=self.service))
+        self.assertFalse(can_view_question_tree("质量经理", "张三", user_service=self.service))
+
+    def test_question_tree_database_mode_requires_stable_view_permission(self):
+        """数据库模式不得因岗位名称包含旧关键词而开放需求项结构。"""
+        self.service.migrate_legacy_users()
+        org_unit_id = self.service.save_org_unit(code="org.question_tree", name="需求结构测试部")
+        position_id = self.service.save_position(code="question_tree.viewer", name="研发结构查看岗位")
+        self.service.set_primary_membership(
+            "张三",
+            org_unit_id=org_unit_id,
+            position_id=position_id,
+        )
+
+        self.assertFalse(can_view_question_tree("研发经理", "张三", user_service=self.service))
+        self.service.set_position_permissions(
+            position_id,
+            [QUESTION_TREE_VIEW_PERMISSION],
+            actor_username="admin",
+        )
+        self.assertTrue(can_view_question_tree("普通岗位", "张三", user_service=self.service))
 
     def test_project_table_legacy_mode_keeps_original_role_behavior(self):
         """旧 Excel 模式仍允许登录用户查看，并保留原项目维护和状态范围规则。"""

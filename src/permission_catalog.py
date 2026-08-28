@@ -140,6 +140,19 @@ PROJECT_TODO_PERMISSIONS = (
 )
 
 
+QUESTION_TREE_VIEW_PERMISSION = "question_tree.view"
+
+
+QUESTION_TREE_PERMISSIONS = (
+    PermissionDefinition(
+        QUESTION_TREE_VIEW_PERMISSION,
+        "查看 — 需求项结构",
+        "需求项结构",
+        "允许进入需求项结构页面、搜索问题节点并查看或打印完整问题清单",
+    ),
+)
+
+
 PROJECT_OVERVIEW_DIMENSIONS = (
     ("optical", "光学"),
     ("structure", "结构"),
@@ -683,6 +696,7 @@ STATIC_PERMISSION_CATALOG = (
     + PROJECT_PERMISSIONS
     + PROJECT_REQUIREMENT_PERMISSIONS
     + PROJECT_TODO_PERMISSIONS
+    + QUESTION_TREE_PERMISSIONS
     + PROJECT_OVERVIEW_PERMISSIONS
     + SAMPLE_ORDER_PERMISSIONS
     + ERROR_PERMISSIONS
@@ -722,6 +736,7 @@ def ignores_legacy_role_grants(permission_code: str) -> bool:
         or normalized.startswith("project.")
         or normalized.startswith("project_requirement.")
         or normalized.startswith("project_todo.")
+        or normalized.startswith("question_tree.")
         or normalized.startswith("project_overview.")
         or normalized.startswith("sample_order.")
         or normalized.startswith("error.")
