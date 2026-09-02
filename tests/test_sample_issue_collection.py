@@ -526,7 +526,9 @@ class SampleIssueNotificationTests(unittest.IsolatedAsyncioTestCase):
                 sample_issue.SAMPLE_ISSUE_EXTENSION_APPROVED_NOTIFY_PERMISSION,
             ],
         )
-        self.assertEqual(sender.await_args.args[1], "result_user|approved_user")
+        sender_call = sender.await_args
+        assert sender_call is not None
+        self.assertEqual(sender_call.args[1], "result_user|approved_user")
 
     async def test_electron_close_request_uses_route_specific_notification_permission(self):
         """研发电子类关闭申请不能落入默认关闭通知权限。"""
@@ -547,8 +549,10 @@ class SampleIssueNotificationTests(unittest.IsolatedAsyncioTestCase):
                 route_key="electron_to_electron",
             )
 
+        resolver_call = resolver.await_args
+        assert resolver_call is not None
         self.assertEqual(
-            resolver.await_args.args[0],
+            resolver_call.args[0],
             sample_issue.SAMPLE_ISSUE_CLOSE_ELECTRON_REQUEST_NOTIFY_PERMISSION,
         )
 

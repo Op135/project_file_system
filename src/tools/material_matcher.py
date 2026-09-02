@@ -16,6 +16,13 @@ from .. import db_storage  # 本地项目的数据库/存储操作模块
 # 控制是否在界面上插入“品名/规格/封装”三个提取关键词列（用于核对算法拆词准确性）
 SHOW_EXTRACTED_KEYWORDS = False
 
+
+class ExcelBytesBuffer(io.BytesIO):
+    """为 pandas ExcelWriter 提供支持关键字参数的内存缓冲区协议。"""
+
+    def truncate(self, size: int | None = None) -> int:
+        return super().truncate(size)
+
 # ==========================================
 # 1. 全局解析规则管控区（符号提纯）
 # ==========================================
@@ -495,14 +502,16 @@ class MaterialMatcherTool:
         # pandas (强大的第三方数据分析处理库): 将组装好的字典列表转化为DataFrame表格对象
         df = pd.DataFrame(export_data)
 
+        status_order = {"🔴 需请购": 0, "🔴 需请购(未匹配)": 1, "⚪ 直接请购": 2, "🟢 库存满足": 3}
         df["_sort_status"] = df["状态"].map(
-            {"🔴 需请购": 0, "🔴 需请购(未匹配)": 1, "⚪ 直接请购": 2, "🟢 库存满足": 3}
+            lambda value: status_order.get(str(value), 99)
         )
         df = df.sort_values(by=["_sort_status", "商品分类", "ERP料号"]).drop(columns=["_sort_status"])
 
         # io.BytesIO (Python内置的内存流I/O操作库): 在内存中创建二进制流，避免产生本地磁盘垃圾文件
-        output = io.BytesIO()
-        df.to_excel(output, index=False, sheet_name="智能核算请购单")
+        output = ExcelBytesBuffer()
+        with pd.ExcelWriter(output, engine="openpyxl") as writer:
+            df.to_excel(writer, index=False, sheet_name="智能核算请购单")
         output.seek(0)
 
         ui.download(output.getvalue(), filename=f"智能物料聚合请购单_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx")

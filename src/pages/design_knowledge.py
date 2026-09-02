@@ -968,11 +968,17 @@ async def submit_tag_request(
             workflow_result,
             f"tag_review:{uuid.uuid4().hex[:12]}",
         )
-    review_route = get_review_route(current_role) if workflow_result is None else {
-        "key": workflow_result["workflow"]["code"],
-        "label": workflow_result["workflow"]["name"],
-        "approver_roles": copy.deepcopy(workflow_assignment["assignee_names"]),
-    }
+    if workflow_result is None:
+        review_route = get_review_route(current_role)
+    else:
+        # 流程匹配成功时上方必然已经生成具体审批人快照，这里显式收窄供运行时和类型检查共同验证。
+        if workflow_assignment is None:
+            return False, "新标签申请审批人快照生成失败"
+        review_route = {
+            "key": workflow_result["workflow"]["code"],
+            "label": workflow_result["workflow"]["name"],
+            "approver_roles": copy.deepcopy(workflow_assignment["assignee_names"]),
+        }
     saved_request: dict[str, Any] = {}
 
     def update_requests(all_requests: Any) -> Any:
@@ -1247,7 +1253,8 @@ def design_knowledge_page():
                 RECORD_STATUS_PUBLISHED: {RECORD_STATUS_INACTIVE},
                 RECORD_STATUS_INACTIVE: {RECORD_STATUS_PUBLISHED},
             }
-            if target_status not in allowed_targets.get(record_data.get("status"), set()):
+            current_status = str(record_data.get("status") or "")
+            if target_status not in allowed_targets.get(current_status, set()):
                 result["code"] = "invalid_transition"
                 return db_storage.ATOMIC_NO_UPDATE
             if not can_manage_record_status(record_data, current_user, current_role):

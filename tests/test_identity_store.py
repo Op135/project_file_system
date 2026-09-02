@@ -45,6 +45,8 @@ class IdentityStoreMigrationTests(unittest.TestCase):
 
         self.assertEqual(result.imported, 2)
         self.assertEqual(result.total, 2)
+        self.assertIsNotNone(result.backup_path)
+        assert result.backup_path is not None
         self.assertTrue(Path(result.backup_path).exists())
         self.assertEqual(self.service.storage_mode, "database")
         self.assertTrue(self.service.authenticate("admin", "server-admin-pass"))

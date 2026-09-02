@@ -2,7 +2,7 @@
 
 > 用途：为后续开发、排查和代码审查保存项目级背景。本文是持续更新的“活文档”，不是用户操作手册。
 >
-> 最近更新：2026-08-28；生产测试项汇总表已完成项目资料、项目概述入口和报表直达的统一查看权限迁移。
+> 最近更新：2026-09-02；补充全仓静态类型检查约束，并清理页面登录态、审批快照和异步测试中的可空值诊断。
 
 ## 1. 项目概览
 
@@ -239,7 +239,7 @@
 9. 上传文件使用原始文件名拼接到上传目录；需进一步核实同名覆盖、文件名净化、类型/大小限制和孤儿文件清理策略。
 10. 执行勾选同时校验流程阶段与JSON责任角色并采用原子更新；若未来允许配置具体用户名而不是角色关键字，需要扩展当前责任映射结构和提醒口径。
 11. 方案关联区虽然标注“必填”，保存时只校验方案内容、项目和概述数据有效性；要求序号及关联资料/物料可为空。整体覆盖率能拦截遗漏的强制资料/物料，却不能保证每条方案都关联某条 ECR 要求。
-12. 2026-08-18 使用真实 Pyright CLI 对完整 `src/`、`tests/` 扫描时，仍有 27 条既有诊断，集中在 `src/pages/statistics.py`、`src/tools/material_matcher.py` 和 `src/user_service.py` 的 pandas 类型推断与缓冲区协议；它们不属于本次概述配置改动，后续修改这些模块时应优先清理，不能把当前基线误报为全工作区零诊断。
+12. 2026-09-02 已使用真实 Pyright CLI 清理完整 `src/`、`tests/` 的历史诊断：pandas 表格列统一通过 `pd.Index`、明确的 `Series`/`DataFrame` 收窄及分步聚合消除错误重载，内存 Excel 导出使用满足 `WriteExcelBuffer` 协议的缓冲区实现；全仓静态类型基线为 0 错误，后续改动不得重新引入诊断。
 
 ## 5. 像素数据统计分析工具
 
@@ -382,7 +382,7 @@
 - `tests/test_error_management_concurrency.py`、`tests/test_error_management_config.py`：异常单原子更新和配置解析。
 - `tests/test_sample_issue_collection.py`：样品问题状态、责任人、延期/关闭和权限边界。
 - `tests/test_design_knowledge_config.py`、`tests/test_design_knowledge_workflow.py`：设计知识旧模式兼容、稳定权限、两个审批事件和具体审批人隔离。
-- `tests/test_statistics.py`：统计分类和负责人完成度聚合；统计入口及细权限的旧模式和数据库模式隔离由 `tests/test_access_control.py` 覆盖。该文件当前仍有两个历史中文乱码断言待单独修复。
+- `tests/test_statistics.py`：统计分类和负责人完成度聚合；统计入口及细权限的旧模式和数据库模式隔离由 `tests/test_access_control.py` 覆盖。分类断言必须与图表当前使用的“概述无负责人”“有待定”等数据键保持一致。
 - `tests/test_utils_overview_config.py`：概述配置在后台启动时禁止创建 UI 通知，以及通知 slot 消失时不影响核心同步结果。
 
 ### 6.5 旧 JSON、角色常量和历史字段的当前处理原则
@@ -419,10 +419,12 @@
 - VS Code Pylance 扩展中的 `dist/pyright.bundle.js` 是语言服务器构件，不可当作 Pyright CLI。命令无输出且退出码为 0 不代表类型检查通过；必须以编辑器 Problems 的工作区诊断或真正可执行的 Pyright CLI 结果为准，并实际确认诊断数量为零。
 - 不用宽泛的联合类型字典向参数类型更严格的数据类或函数做 `**kwargs` 展开；统计结果等固定结构应优先使用数据类或 `TypedDict`，让每个字段的可空性准确表达。
 - `T | None` 值在访问属性或传给要求 `T` 的参数前必须显式判空或收窄。由列表筛选、外部框架装饰器等产生的隐含条件，不假定静态分析器能自动推断。
+- 相关变量之间存在业务上的联动关系时，也必须分别完成类型收窄。例如“流程结果非空意味着审批快照已生成”不能只依赖前一段赋值，应在读取快照前显式判空并返回可理解的业务错误；从异构 JSON 字典取得的状态值用作 `dict[str, ...]` 的键之前，应先规范化为 `str`。
 - NiceGUI 的 `app.storage.user.get()` 在 Pylance 中可能被推断为 `Unknown | None`；登录页校验不能只写成“先判断一次、再重新调用 `get()`”。应把结果保存到局部变量，通过 `isinstance(value, str)` 和非空判断完成收窄，再将该局部变量传给要求 `str` 用户名的权限函数，避免再次出现 `reportArgumentType`。
 - 异构 JSON 根字典不能只靠第一个字面量推断类型。例如先以 `{"0": {"file_dic": {}}}` 初始化、后续又写入字符串或布尔值时，应显式标注为 `dict[str, object]`（结构固定时优先 `TypedDict`），并在调用嵌套字典方法前用 `isinstance` 收窄。避免再次出现 Pylance 将整个字典误推断为 `dict[str, dict[...]]` 后拒绝写入 `str` / `bool` 的问题。
 - 从 `dict[str, object]` 或外部JSON读取的值不能直接传给 `int()`、`float()` 等只接受可转换类型的构造函数；应先用 `isinstance` 收窄到受支持的标量类型，再捕获格式及溢出异常。ECN追溯负责人节点的 `stage_index` 统一通过 `get_ecn_stage_index()` 解析，无效值回退为首节点，避免再次产生 Pylance 的 `object`/`ConvertibleToInt` 类型错误。
 - NiceGUI 类实例中的可刷新方法必须使用框架专用的 `@ui.refreshable_method`，首次渲染用 `self.method()`，后续用 `self.method.refresh()`。不能用 `@ui.refreshable` 配合 `ClassName.method(self)` 绕过类型提示：这种写法会把刷新目标登记到空实例，导致后续文件列表、结果区等实例 UI 无法刷新。
+- 测试代码同样必须通过静态检查。`TemporaryDirectory.name`、迁移结果中的可空路径等值，在传给 `Path()` 前先用断言收窄；`AsyncMock.await_args` 的类型是可空调用记录，即使前面已经断言调用次数，也要先保存到局部变量并断言非空，再读取 `.args` 或 `.kwargs`。
 - 不使用 `type: ignore`、关闭诊断或把类型扩大成 `Any` 来掩盖本可建模的问题；确需例外时必须记录框架限制和运行验证依据。
 
 不要在本文记录密码、密钥、个人信息、真实业务单内容或其他敏感数据。

@@ -40,7 +40,8 @@ def tool_page():
     """)
     # 检查用户是否已登录
     # {'current_user': '用户名', 'is_admin': False}
-    if not app.storage.user.get("current_user"):
+    stored_current_user = app.storage.user.get("current_user")
+    if not isinstance(stored_current_user, str) or not stored_current_user:
         ui.navigate.to("/login")  # 如果未登录，跳转到登录页
         return
     # dialog = ui.dialog().props("persistent").classes("")
@@ -49,7 +50,7 @@ def tool_page():
     setup_global_activity_tracking()
 
     # 获取用户信息
-    current_user = app.storage.user.get("current_user")
+    current_user = stored_current_user
     current_role = sync_current_user_role()
 
     # 从全局存储中获取用户当前的头像设置

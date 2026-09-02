@@ -1306,8 +1306,10 @@ class SampleOrderNotificationTests(unittest.IsolatedAsyncioTestCase):
         third_recipients = send_message.await_args_list[1].args[1]
         self.assertEqual(first_recipients, "manager_userid")
         self.assertEqual(third_recipients, "manager_userid")
+        permission_call = permission_resolver.await_args
+        assert permission_call is not None
         self.assertEqual(
-            permission_resolver.await_args.args[0],
+            permission_call.args[0],
             dashboard.SAMPLE_ORDER_EXTENSION_NOTIFY_PERMISSION,
         )
 
@@ -1341,8 +1343,10 @@ class SampleOrderNotificationTests(unittest.IsolatedAsyncioTestCase):
         assert awaited_call is not None
         recipients = awaited_call.args[1]
         self.assertEqual(recipients, "manager_userid")
+        permission_call = permission_resolver.await_args
+        assert permission_call is not None
         self.assertEqual(
-            permission_resolver.await_args.args[0],
+            permission_call.args[0],
             dashboard.SAMPLE_ORDER_SPECIAL_STATUS_NOTIFY_PERMISSION,
         )
 

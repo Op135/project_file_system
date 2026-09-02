@@ -5,6 +5,7 @@ import logging
 import os
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import cast
 
 import pandas as pd
 from nicegui import app, ui
@@ -444,7 +445,7 @@ def statistics_page():
 
                 # 两个历史卡片共用一次 Excel 读取，避免在同一页面重复加载和解析。
                 statistics_history_df = pd.DataFrame(
-                    columns=["日期", "用户", "项目状态", "缺必填数", "有待定数", "缺需填数"]
+                    columns=pd.Index(["日期", "用户", "项目状态", "缺必填数", "有待定数", "缺需填数"])
                 )
                 if can_view_overview_stats and os.path.exists(STATS_FILE):
                     try:
@@ -454,7 +455,7 @@ def statistics_page():
                     except Exception as e:
                         logger.error(f"数据加载失败: {e}")
                         statistics_history_df = pd.DataFrame(
-                            columns=["日期", "用户", "项目状态", "缺必填数", "有待定数", "缺需填数"]
+                            columns=pd.Index(["日期", "用户", "项目状态", "缺必填数", "有待定数", "缺需填数"])
                         )
 
                 def show_project_list_dialog(title, projects, show_state=True):
@@ -1065,9 +1066,13 @@ def statistics_page():
                             ui_card_header("近30日待办状态趋势（项目数）", "history", "amber-600")
 
                             cutoff_date = datetime.now() - timedelta(days=30)
-                            df = statistics_history_df[statistics_history_df["日期"] >= cutoff_date].copy()
+                            history_dates = cast(pd.Series, statistics_history_df["日期"])
+                            df = cast(
+                                pd.DataFrame,
+                                statistics_history_df.loc[history_dates >= cutoff_date],
+                            ).copy()
                             if not df.empty:
-                                df["日期_str"] = df["日期"].dt.strftime("%m-%d")
+                                df["日期_str"] = cast(pd.Series, df["日期"]).dt.strftime("%m-%d")
 
                             if df.empty:
                                 ui.label("暂无历史统计数据，数据将在每日工作日 18:00 自动累积生成。").classes(
@@ -1075,29 +1080,43 @@ def statistics_page():
                                 )
                             else:
                                 # 计算转产阶段总积压最多的前三人作为默认项
-                                recent_date = df["日期"].max()
-                                latest_data = df[df["日期"] == recent_date]
-                                top_users_df = latest_data[latest_data["项目状态"] == "转产"].copy()
+                                recent_date = cast(pd.Series, df["日期"]).max()
+                                latest_data = cast(
+                                    pd.DataFrame,
+                                    df.loc[cast(pd.Series, df["日期"]) == recent_date],
+                                )
+                                top_users_df = cast(
+                                    pd.DataFrame,
+                                    latest_data.loc[
+                                        cast(pd.Series, latest_data["项目状态"]) == "转产"
+                                    ],
+                                ).copy()
                                 top_users_df["total_issues"] = (
                                     top_users_df["缺必填数"] + top_users_df["有待定数"] + top_users_df["缺需填数"]
                                 )
-                                default_top_users = (
-                                    top_users_df.groupby("用户")["total_issues"].sum().nlargest(3).index.tolist()
+                                grouped_top_users = cast(
+                                    pd.DataFrame,
+                                    top_users_df.groupby("用户").sum(numeric_only=True),
                                 )
+                                top_user_totals = cast(
+                                    pd.Series,
+                                    grouped_top_users.loc[:, "total_issues"],
+                                )
+                                default_top_users = top_user_totals.nlargest(3).index.tolist()
 
                                 if not default_top_users:
-                                    default_top_users = df["用户"].unique()[:3].tolist()
+                                    default_top_users = cast(pd.Series, df["用户"]).unique()[:3].tolist()
 
                                 with ui.row().classes("w-full px-4 gap-4 items-center justify-between"):
                                     sel_users = ui.select(
-                                        options=df["用户"].unique().tolist(),
+                                        options=cast(pd.Series, df["用户"]).unique().tolist(),
                                         value=default_top_users,
                                         multiple=True,
                                         label="人员选择",
                                     ).classes("w-1/3 min-w-[150px]")
 
                                     sel_states = ui.select(
-                                        options=df["项目状态"].unique().tolist(),
+                                        options=cast(pd.Series, df["项目状态"]).unique().tolist(),
                                         value=["转产"],
                                         multiple=True,
                                         label="阶段过滤",
@@ -1119,9 +1138,15 @@ def statistics_page():
                                         ui.label("请至少选择一名人员和一个阶段。").classes("p-4 text-gray-400")
                                         return
 
-                                    mask = df["用户"].isin(users) & df["项目状态"].isin(states)
+                                    mask = cast(pd.Series, df["用户"]).isin(users) & cast(
+                                        pd.Series, df["项目状态"]
+                                    ).isin(states)
                                     filtered_df = (
-                                        df[mask].groupby(["日期_str", "用户"])[metric].sum().unstack().fillna(0)
+                                        cast(pd.DataFrame, df.loc[mask])
+                                        .groupby(["日期_str", "用户"])[metric]
+                                        .sum()
+                                        .unstack()
+                                        .fillna(0)
                                     )
 
                                     dates = filtered_df.index.tolist()
@@ -1548,37 +1573,41 @@ def statistics_page():
 
                             required_history_columns = {"日期", "用户", "负责项目数", "填写完成项目数"}
                             if required_history_columns.issubset(statistics_history_df.columns):
-                                management_history_df = statistics_history_df[
-                                    ["日期", "用户", "负责项目数", "填写完成项目数"]
-                                ].copy()
+                                management_history_df = statistics_history_df.filter(
+                                    items=["日期", "用户", "负责项目数", "填写完成项目数"]
+                                ).copy()
                                 management_history_df["负责项目数"] = pd.to_numeric(
                                     management_history_df["负责项目数"], errors="coerce"
                                 )
                                 management_history_df["填写完成项目数"] = pd.to_numeric(
                                     management_history_df["填写完成项目数"], errors="coerce"
                                 )
-                                management_history_df = management_history_df.dropna(
-                                    subset=["日期", "用户", "负责项目数", "填写完成项目数"]
-                                )
-                                management_history_df = (
+                                # 当前表已经只保留四个必需列，直接清理任意空值即可。
+                                management_history_df = management_history_df.dropna()
+                                grouped_management_history = cast(
+                                    pd.DataFrame,
                                     management_history_df.groupby(["日期", "用户"], as_index=False)[
                                         ["负责项目数", "填写完成项目数"]
                                     ]
-                                    .sum()
-                                    .sort_values("日期")
+                                    .sum(),
                                 )
+                                management_history_df = grouped_management_history.sort_values(by="日期")
                             else:
                                 management_history_df = pd.DataFrame(
-                                    columns=["日期", "用户", "负责项目数", "填写完成项目数"]
+                                    columns=pd.Index(["日期", "用户", "负责项目数", "填写完成项目数"])
                                 )
 
-                            history_users = set(management_history_df["用户"].tolist())
+                            history_users = set(cast(pd.Series, management_history_df["用户"]).tolist())
                             all_management_users = sorted(set(current_users) | history_users)
-                            today_timestamp = pd.Timestamp(datetime.now().date())
+                            today_timestamp = cast(pd.Timestamp, pd.Timestamp(datetime.now().date()))
                             if not management_history_df.empty:
-                                management_history_df = management_history_df[
-                                    management_history_df["日期"].dt.normalize() != today_timestamp
-                                ]
+                                history_date_series = cast(pd.Series, management_history_df["日期"])
+                                management_history_df = cast(
+                                    pd.DataFrame,
+                                    management_history_df.loc[
+                                        history_date_series.dt.normalize() != today_timestamp
+                                    ],
+                                )
                             live_rows = []
                             for user in all_management_users:
                                 user_snapshot = management_snapshot.get(user, {})
@@ -1591,9 +1620,14 @@ def statistics_page():
                                     }
                                 )
                             if live_rows:
-                                management_history_df = pd.concat(
-                                    [management_history_df, pd.DataFrame(live_rows)], ignore_index=True
-                                ).sort_values("日期")
+                                combined_management_history = cast(
+                                    pd.DataFrame,
+                                    pd.concat(
+                                        [management_history_df, pd.DataFrame(live_rows)],
+                                        ignore_index=True,
+                                    ),
+                                )
+                                management_history_df = combined_management_history.sort_values(by="日期")
 
                             if all_management_users:
                                 default_management_user = current_users[0] if current_users else all_management_users[0]
@@ -1630,24 +1664,41 @@ def statistics_page():
                                                 ui.label(str(value)).classes(f"text-xl font-bold {color}")
                                                 ui.label(label).classes("text-xs text-gray-500")
 
-                                    person_df = management_history_df[
-                                        management_history_df["用户"] == selected_user
-                                    ].copy()
+                                    person_df = cast(
+                                        pd.DataFrame,
+                                        management_history_df.loc[
+                                            cast(pd.Series, management_history_df["用户"])
+                                            == selected_user
+                                        ],
+                                    ).copy()
                                     if person_df.empty:
                                         ui.label("该人员暂无可用快照。").classes("p-8 text-gray-400 text-center w-full")
                                         return
 
                                     if period == "monthly":
-                                        cutoff = (today_timestamp.to_period("M") - 11).start_time
-                                        person_df = person_df[person_df["日期"] >= cutoff].sort_values("日期")
-                                        person_df["周期"] = person_df["日期"].dt.to_period("M")
+                                        current_period = cast(pd.Period, today_timestamp.to_period("M"))
+                                        cutoff = cast(pd.Period, current_period - 11).start_time
+                                        person_df = cast(
+                                            pd.DataFrame,
+                                            person_df.loc[
+                                                cast(pd.Series, person_df["日期"]) >= cutoff
+                                            ],
+                                        ).sort_values(by="日期")
+                                        person_df["周期"] = cast(
+                                            pd.Series, person_df["日期"]
+                                        ).dt.to_period("M")
                                         chart_df = person_df.groupby("周期", as_index=False).tail(1)
-                                        x_axis = chart_df["周期"].astype(str).tolist()
+                                        x_axis = cast(pd.Series, chart_df["周期"]).astype(str).tolist()
                                         period_note = "每月采用当月最后一份快照，本月为实时数据"
                                     else:
                                         cutoff = today_timestamp - timedelta(days=29)
-                                        chart_df = person_df[person_df["日期"] >= cutoff].sort_values("日期")
-                                        x_axis = chart_df["日期"].dt.strftime("%m-%d").tolist()
+                                        chart_df = cast(
+                                            pd.DataFrame,
+                                            person_df.loc[
+                                                cast(pd.Series, person_df["日期"]) >= cutoff
+                                            ],
+                                        ).sort_values(by="日期")
+                                        x_axis = cast(pd.Series, chart_df["日期"]).dt.strftime("%m-%d").tolist()
                                         period_note = "每日快照，今天为实时数据"
 
                                     if chart_df.empty:
