@@ -3,8 +3,10 @@ import copy
 import json
 import logging
 import os
+from datetime import datetime
 
 from nicegui import app, run, ui
+from nicegui.events import UploadEventArguments
 
 from ..access_control import can
 from ..approval_workflow import (
@@ -4253,6 +4255,234 @@ def manage_page():
 
         dialog.open()
 
+    def open_identity_config_transfer_dialog():
+        """导出本地身份配置，或在服务器预检并合并配置包。"""
+        user_svc = app.state.user_service
+        if user_svc.storage_mode != "database":
+            ui.notify("请先完成当前环境的身份数据库迁移。", type="warning")
+            return
+
+        state = {"package": None, "preview": None, "file_name": ""}
+        with ui.dialog() as dialog, ui.card().classes("w-full max-w-5xl max-h-[92vh] p-5"):
+            with ui.row().classes("w-full items-start justify-between"):
+                with ui.column().classes("gap-0"):
+                    ui.label("配置迁移").classes("text-xl font-bold text-slate-800")
+                    ui.label(
+                        "在本地导出，在服务器预检后导入；不会包含或覆盖密码、业务记录、待办和审计日志。"
+                    ).classes("text-sm text-slate-500")
+                ui.button(icon="close", on_click=dialog.close).props("flat round dense")
+            ui.separator().classes("my-3")
+
+            with ui.grid().classes("w-full grid-cols-1 md:grid-cols-2 gap-4"):
+                with ui.card().classes("w-full p-4 border-l-4 border-blue-500"):
+                    ui.label("1. 从已配置环境导出").classes("font-bold text-blue-900")
+                    ui.label(
+                        "部门、岗位、岗位权限、附加权限组、用户关联、企业微信绑定和审批流程，"
+                        "均按稳定编码或用户名写入 JSON。"
+                    ).classes("text-sm text-slate-600 leading-6")
+
+                    def export_configuration():
+                        try:
+                            package = user_svc.export_identity_configuration()
+                            content = json.dumps(package, ensure_ascii=False, indent=2).encode("utf-8")
+                            filename = (
+                                "identity_configuration_"
+                                f"{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+                            )
+                            ui.download(content, filename=filename)
+                            ui.notify("配置包已生成，请妥善保存并上传到服务器。", type="positive")
+                        except Exception as exc:
+                            logger.exception("导出身份配置失败")
+                            ui.notify(f"配置导出失败：{exc}", type="negative", multi_line=True)
+
+                    ui.button("导出配置包", icon="download", on_click=export_configuration).props(
+                        "color=primary"
+                    )
+
+                with ui.card().classes("w-full p-4 border-l-4 border-indigo-500"):
+                    ui.label("2. 在目标服务器上传预检").classes("font-bold text-indigo-900")
+                    include_user_links = ui.switch(
+                        "同步匹配用户的任职和附加权限", value=True
+                    ).classes("text-sm")
+                    include_wecom_bindings = ui.switch(
+                        "同步匹配用户的企业微信绑定", value=True
+                    ).classes("text-sm")
+                    ui.label(
+                        "用户仅按用户名匹配；服务器不存在的用户会跳过，服务器密码始终保留。"
+                    ).classes("text-xs text-orange-700")
+
+                    def pick_file():
+                        uploader.reset()
+                        uploader.run_method("pickFiles")
+
+                    ui.button("选择配置包", icon="upload_file", on_click=pick_file).props(
+                        "outline color=indigo"
+                    )
+                    uploader = ui.upload(
+                        auto_upload=True,
+                        max_file_size=10_485_760,
+                    ).props('accept=".json"').classes("hidden")
+
+            preview_container = ui.column().classes("w-full gap-2 overflow-y-auto")
+            with ui.row().classes("w-full justify-end gap-2 mt-3"):
+                ui.button("关闭", on_click=dialog.close).props("flat")
+                import_button = ui.button("确认导入", icon="publish").props("color=positive")
+                import_button.disable()
+
+            def render_preview():
+                preview_container.clear()
+                preview = state.get("preview")
+                with preview_container:
+                    if preview is None:
+                        ui.label("上传配置包后，这里会显示新增项、用户匹配和冲突检查结果。") \
+                            .classes("text-sm text-slate-500 border border-dashed rounded p-4 w-full")
+                        return
+                    summary = preview.summary
+                    with ui.row().classes("w-full gap-2 flex-wrap"):
+                        ui.chip(
+                            f"部门 {summary.get('departments_total', 0)}，新增 {summary.get('departments_new', 0)}",
+                            icon="account_tree",
+                        ).props("outline")
+                        ui.chip(
+                            f"岗位 {summary.get('positions_total', 0)}，新增 {summary.get('positions_new', 0)}",
+                            icon="badge",
+                        ).props("outline")
+                        ui.chip(
+                            f"权限组 {summary.get('permission_groups_total', 0)}",
+                            icon="shield",
+                        ).props("outline")
+                        ui.chip(
+                            f"流程 {summary.get('workflows_total', 0)}",
+                            icon="account_tree",
+                        ).props("outline")
+                        ui.chip(
+                            f"用户匹配 {summary.get('users_matched', 0)}/{summary.get('users_total', 0)}",
+                            icon="person_search",
+                        ).props("outline")
+                    if preview.errors:
+                        with ui.expansion(
+                            f"必须处理的错误（{len(preview.errors)}）",
+                            icon="error",
+                            value=True,
+                        ).classes("w-full border border-red-200 rounded bg-red-50"):
+                            for error in preview.errors:
+                                ui.label(error).classes("text-sm text-red-700")
+                    if preview.warnings:
+                        with ui.expansion(
+                            f"将跳过或留空的项目（{len(preview.warnings)}）",
+                            icon="warning_amber",
+                            value=True,
+                        ).classes("w-full border border-orange-200 rounded bg-orange-50"):
+                            for warning in preview.warnings:
+                                ui.label(warning).classes("text-sm text-orange-700")
+                    if preview.can_import:
+                        ui.label(
+                            "预检通过。导入前会自动备份服务器数据库；同编码配置合并，服务器独有配置保留。"
+                        ).classes("text-sm text-green-700 bg-green-50 rounded p-3 w-full")
+
+            def refresh_preview():
+                package = state.get("package")
+                if not isinstance(package, dict):
+                    state["preview"] = None
+                    import_button.disable()
+                    render_preview()
+                    return
+                try:
+                    preview = user_svc.preview_identity_configuration(
+                        package,
+                        include_user_links=bool(include_user_links.value),
+                        include_wecom_bindings=bool(include_wecom_bindings.value),
+                    )
+                    state["preview"] = preview
+                    if preview.can_import:
+                        import_button.enable()
+                    else:
+                        import_button.disable()
+                    render_preview()
+                except Exception as exc:
+                    logger.exception("预检身份配置包失败")
+                    state["preview"] = None
+                    import_button.disable()
+                    preview_container.clear()
+                    with preview_container:
+                        ui.label(f"预检失败：{exc}").classes("text-sm text-red-700")
+
+            async def handle_package_upload(event: UploadEventArguments):
+                try:
+                    raw_content = await event.file.read()
+                    package = json.loads(raw_content.decode("utf-8-sig"))
+                    if not isinstance(package, dict):
+                        raise ValueError("配置包根节点必须是对象")
+                    state["package"] = package
+                    state["file_name"] = str(event.file.name)
+                    refresh_preview()
+                    ui.notify("配置包解析完成，请检查预检结果。", type="positive")
+                except Exception as exc:
+                    logger.exception("读取身份配置包失败")
+                    state["package"] = None
+                    state["preview"] = None
+                    import_button.disable()
+                    render_preview()
+                    ui.notify(f"配置包读取失败：{exc}", type="negative", multi_line=True)
+
+            uploader.on_upload(handle_package_upload)
+            include_user_links.on_value_change(lambda _event: refresh_preview())
+            include_wecom_bindings.on_value_change(lambda _event: refresh_preview())
+
+            async def execute_import(confirm_dialog):
+                package = state.get("package")
+                preview = state.get("preview")
+                if not isinstance(package, dict) or preview is None or not preview.can_import:
+                    ui.notify("请先上传并通过配置预检。", type="warning")
+                    return
+                confirm_dialog.close()
+                import_button.disable()
+                notice = ui.notification("正在备份并导入配置……", timeout=None, spinner=True)
+                try:
+                    result = await run.io_bound(
+                        user_svc.import_identity_configuration,
+                        package,
+                        actor_username=current_user,
+                        include_user_links=bool(include_user_links.value),
+                        include_wecom_bindings=bool(include_wecom_bindings.value),
+                    )
+                    update_users_data()
+                    notice.dismiss()
+                    ui.notify(
+                        "配置导入完成。已自动备份到：" + result.backup_path,
+                        type="positive",
+                        multi_line=True,
+                        timeout=12_000,
+                    )
+                    dialog.close()
+                except Exception as exc:
+                    notice.dismiss()
+                    logger.exception("导入身份配置失败")
+                    ui.notify(f"配置导入失败，数据库事务已回滚：{exc}", type="negative", multi_line=True)
+                    refresh_preview()
+
+            def confirm_import():
+                with ui.dialog() as confirm_dialog, ui.card().classes("w-full max-w-xl p-5"):
+                    ui.label("确认合并配置？").classes("text-lg font-bold")
+                    ui.label(
+                        "同编码部门、岗位、权限组和流程将按配置包更新；匹配用户的任职与授权按当前开关同步。"
+                    ).classes("text-sm text-slate-600")
+                    ui.label("系统会先生成完整 SQLite 备份，任何写入失败都会整体回滚。") \
+                        .classes("text-sm text-green-700")
+                    with ui.row().classes("w-full justify-end gap-2"):
+                        ui.button("取消", on_click=confirm_dialog.close).props("flat")
+                        ui.button(
+                            "开始导入",
+                            icon="publish",
+                            on_click=lambda: execute_import(confirm_dialog),
+                        ).props("color=positive")
+                confirm_dialog.open()
+
+            import_button.on_click(confirm_import)
+            render_preview()
+
+        dialog.open()
+
     def open_identity_management_center():
         """以单一入口汇总用户、组织、权限、企业微信与迁移维护。"""
         user_svc = app.state.user_service
@@ -4343,6 +4573,14 @@ def manage_page():
                     "indigo",
                     lambda: open_user_migration_dialog(),
                     "已迁移" if database_mode else "待迁移",
+                )
+                management_card(
+                    "配置迁移",
+                    "导出或预检导入部门、岗位、权限、用户关联和审批流程，不迁移密码及业务数据。",
+                    "move_to_inbox",
+                    "orange",
+                    open_identity_config_transfer_dialog,
+                    "部署工具" if database_mode else "迁移后可用",
                 )
 
                 def refresh_users():

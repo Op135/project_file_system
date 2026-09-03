@@ -84,7 +84,8 @@ class UserService:
             users: Dict[str, dict] = {}
             for _, row in frame.iterrows():
                 # 先转为普通字典，避免 pandas 的 Series 联合类型污染标量判空判断。
-                record: dict[str, Any] = row.to_dict()
+                # pandas 将列名声明为 Hashable，这里显式收窄为系统实际使用的字符串列名。
+                record = {str(key): value for key, value in row.to_dict().items()}
                 username_value = record.get("用户名")
                 if not bool(pd.notna(username_value)) or not str(username_value).strip():
                     continue
@@ -569,6 +570,30 @@ class UserService:
         if self.storage_mode != "database":
             return []
         return self.identity_store.list_approval_workflows(**values)
+
+    def export_identity_configuration(self) -> dict[str, Any]:
+        """导出不含密码和业务数据的身份配置包。"""
+        if self.storage_mode != "database":
+            raise RuntimeError("请先迁移用户，再导出身份配置")
+        from .identity_config_transfer import IdentityConfigurationTransfer
+
+        return IdentityConfigurationTransfer(self.identity_store).export_package()
+
+    def preview_identity_configuration(self, package: dict[str, Any], **values):
+        """在不写入数据库的前提下预检身份配置包。"""
+        if self.storage_mode != "database":
+            raise RuntimeError("请先迁移服务器用户，再预检身份配置")
+        from .identity_config_transfer import IdentityConfigurationTransfer
+
+        return IdentityConfigurationTransfer(self.identity_store).preview_package(package, **values)
+
+    def import_identity_configuration(self, package: dict[str, Any], **values):
+        """自动备份后，以事务方式合并身份配置包。"""
+        if self.storage_mode != "database":
+            raise RuntimeError("请先迁移服务器用户，再导入身份配置")
+        from .identity_config_transfer import IdentityConfigurationTransfer
+
+        return IdentityConfigurationTransfer(self.identity_store).import_package(package, **values)
 
     def save_approval_workflow_draft(self, **values) -> tuple[str, str]:
         if self.storage_mode != "database":

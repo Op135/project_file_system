@@ -1,4 +1,6 @@
 import json
+import argparse
+from pathlib import Path
 
 import pandas as pd
 
@@ -50,17 +52,17 @@ def convert_excel_to_json(excel_path, json_path, sheet_name=0):
         print(f"处理过程中发生了一个错误：{e}")
 
 
-# --- 使用方法 ---
+def main() -> int:
+    """解析命令行参数并执行一次转换。"""
+    parser = argparse.ArgumentParser(description="将 Excel 第一列转为 JSON 对象键")
+    parser.add_argument("excel_path", type=Path, help="源 Excel 文件路径")
+    parser.add_argument("json_path", type=Path, help="目标 JSON 文件路径")
+    parser.add_argument("--sheet", default=0, help="工作表名称或从 0 开始的序号")
+    args = parser.parse_args()
+    sheet_name = int(args.sheet) if str(args.sheet).isdigit() else str(args.sheet)
+    convert_excel_to_json(args.excel_path, args.json_path, sheet_name=sheet_name)
+    return 0
+
+
 if __name__ == "__main__":
-    # 1. 设置您的 Excel 文件路径
-    excel_file_path = "project_summary.xlsx"  # <--- 修改这里
-
-    # 2. 设置您希望生成的 JSON 文件路径
-    json_file_path = "project_summary.json"  # <--- 修改这里
-
-    # (可选) 如果您的数据不在第一个工作表，可以修改 sheet_name
-    # sheet_to_process = 'Sheet1'
-
-    # 3. 调用转换函数
-    # convert_excel_to_json(excel_file_path, json_file_path, sheet_name=sheet_to_process)
-    convert_excel_to_json(excel_file_path, json_file_path)
+    raise SystemExit(main())

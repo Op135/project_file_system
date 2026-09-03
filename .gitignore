@@ -10,6 +10,10 @@ data/*
 uploads/
 .overview_batch_staging/
 .overview_correction_staging/
+.pytest_cache/
+.ruff_cache/
+.agents/
+.codex/
 *.pyc
 # 忽略 Python 字节码缓存
 __pycache__/

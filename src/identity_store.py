@@ -479,7 +479,8 @@ class IdentityStore:
         seen_usernames: set[str] = set()
         for _, row in frame.iterrows():
             # 转成普通字典后再处理单元格，避免 pandas 类型定义把标量推断成 Series。
-            record: dict[str, Any] = row.to_dict()
+            # pandas 将列名声明为 Hashable，这里显式收窄为系统实际使用的字符串列名。
+            record = {str(key): value for key, value in row.to_dict().items()}
             raw_username = record.get("用户名")
             username = "" if bool(pd.isna(raw_username)) else str(raw_username).strip()
             if not username:
