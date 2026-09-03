@@ -18,7 +18,13 @@ from src.approval_workflow import (
     is_assigned_approver,
     resolve_approval_workflow,
 )
-from src.ecn_workflow import finish_ecr_approval, start_ecr_approval
+from src.ecn_management_config import ECNState
+from src.ecn_workflow import (
+    finish_ecr_approval,
+    is_ecr_assigned_approver,
+    reconcile_ecn_work_assignments,
+    start_ecr_approval,
+)
 from src.permission_catalog import (
     DESIGN_KNOWLEDGE_REVIEW_PERMISSION,
     DESIGN_KNOWLEDGE_TAG_REVIEW_PERMISSION,
@@ -375,6 +381,131 @@ class ApprovalWorkflowTests(unittest.TestCase):
             user_service=self.service,
         )
         self.assertEqual(final["status"], "completed")
+
+    def test_ecn_assignment_reconciliation_restores_json_snapshot(self):
+        """身份库提前推进而业务快照未落盘时，应恢复快照节点并关闭后续待办。"""
+        self.service.set_position_permissions(
+            self.approver_position_id,
+            [ECN_ECR_APPROVE_PERMISSION],
+        )
+        self.service.set_position_permissions(
+            self.observer_position_id,
+            [ECN_ECR_APPROVE_PERMISSION],
+        )
+        users = self.service.load_users()
+        workflow_id, _version_id = self.service.save_approval_workflow_draft(
+            code="ecn.ecr.reconcile_test",
+            module="ecn",
+            event="ecr_review",
+            name="ECR待办自愈测试流程",
+            priority=5,
+            condition={
+                "requester_org_unit_ids": [self.org_unit_id],
+                "requester_position_ids": [self.requester_position_id],
+                "include_child_org_units": True,
+            },
+            approver={
+                "nodes": [
+                    {
+                        "node_key": "technical_review",
+                        "name": "技术审批",
+                        "approval_mode": "any",
+                        "required_permission_code": ECN_ECR_APPROVE_PERMISSION,
+                        "approver": {
+                            "strategy": "users",
+                            "user_ids": [users["李四"]["user_id"]],
+                        },
+                    },
+                    {
+                        "node_key": "business_review",
+                        "name": "业务审批",
+                        "approval_mode": "any",
+                        "required_permission_code": ECN_ECR_APPROVE_PERMISSION,
+                        "approver": {
+                            "strategy": "users",
+                            "user_ids": [users["王五"]["user_id"]],
+                        },
+                    },
+                ]
+            },
+            required_permission_code=ECN_ECR_APPROVE_PERMISSION,
+            approval_mode="sequential",
+            actor_username="admin",
+        )
+        self.service.publish_approval_workflow(workflow_id, actor_username="admin")
+
+        started = start_ecr_approval(
+            "ecn-reconcile-001",
+            "张三",
+            user_service=self.service,
+        )
+        self.assertEqual(started["status"], "matched")
+        original_assignment = copy.deepcopy(started["assignment"])
+        ecn_data = {
+            "ecn_id": "ecn-reconcile-001",
+            "workflow": {
+                "current_phase": "ECR_PHASE",
+                "current_state": ECNState.ECR_REVIEWING,
+                "ecr_workflow_assignment": original_assignment,
+            },
+        }
+
+        # 模拟身份库已经推进到下一节点，但进程在 ECN JSON 快照落盘前中断。
+        advanced = finish_ecr_approval(
+            ecn_data,
+            "李四",
+            rejected=False,
+            user_service=self.service,
+        )
+        self.assertEqual(advanced["status"], "advanced")
+        advanced_task_key = advanced["assignment"]["current_task_key"]
+        self.assertEqual(
+            self.service.list_pending_assignment_usernames(
+                module="ecn",
+                entity_id="ecn-reconcile-001",
+                task_key=advanced_task_key,
+            ),
+            ["王五"],
+        )
+
+        repaired = reconcile_ecn_work_assignments(
+            {"ecn-reconcile-001": ecn_data},
+            user_service=self.service,
+        )
+        self.assertEqual(repaired["status"], "repaired")
+        self.assertEqual(repaired["repaired"], 2)
+        self.assertTrue(
+            is_ecr_assigned_approver(
+                ecn_data,
+                "李四",
+                user_service=self.service,
+            )
+        )
+        self.assertEqual(
+            self.service.list_pending_assignment_usernames(
+                module="ecn",
+                entity_id="ecn-reconcile-001",
+                task_key=advanced_task_key,
+            ),
+            [],
+        )
+
+        unchanged = reconcile_ecn_work_assignments(
+            {"ecn-reconcile-001": ecn_data},
+            user_service=self.service,
+        )
+        self.assertEqual(unchanged["status"], "unchanged")
+        self.assertEqual(unchanged["repaired"], 0)
+
+        malformed_ecn = copy.deepcopy(ecn_data)
+        malformed_ecn["workflow"]["ecr_workflow_assignment"]["nodes"][0][
+            "node_index"
+        ] = "invalid"
+        malformed_result = reconcile_ecn_work_assignments(
+            {"ecn-reconcile-001": malformed_ecn},
+            user_service=self.service,
+        )
+        self.assertTrue(malformed_result["warnings"])
 
     def test_ecn_legacy_routes_generate_reviewable_drafts_idempotently(self):
         """ECN 旧路线应一次生成两条 ECR 和一条方案评审草稿。"""

@@ -24,6 +24,7 @@ from .error_management_config import (
     ERROR_BACKGROUND_REMINDER_INTERVAL_SECONDS,
     ERROR_REMINDER_CHECK_WINDOW,
 )
+from .ecn_workflow import reconcile_ecn_work_assignments
 from .issue_workflow_utils import is_time_in_window
 from .pages.sample_order_dashboard import initialize_sample_order_storage
 from .sample_issue_config import (
@@ -299,6 +300,20 @@ async def master_startup():
     # 此时可以100%确定数据库已经就绪
     # 启动钩子没有浏览器客户端与 UI slot，只执行同步并写日志，不能调用界面通知。
     updata_overview_config(show_notification=False)
+
+    # ECN 单据快照是审批待办的恢复依据；启动时校准分步写入可能遗留的不一致。
+    ecn_reconcile_result = reconcile_ecn_work_assignments(
+        db_storage.get_item("ecn_management_data", {}),
+        user_service=app.state.user_service,
+    )
+    if ecn_reconcile_result.get("repaired"):
+        logger.warning(
+            "ECN审批待办自愈完成：扫描 %s 张单据，修复 %s 个节点。",
+            ecn_reconcile_result.get("scanned", 0),
+            ecn_reconcile_result.get("repaired", 0),
+        )
+    for warning in ecn_reconcile_result.get("warnings", []):
+        logger.warning("ECN审批待办自愈提醒：%s", warning)
     # 第三顺位：满足需求，在系统启动时仅执行一次业务字典更新
     # update_overview_charge_pending_dic("all") 上面updata_overview_config()里已经包含
 

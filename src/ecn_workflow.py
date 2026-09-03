@@ -9,9 +9,11 @@ from nicegui import app
 
 from .approval_workflow import (
     advance_approval_sequence,
+    approval_sequence_node_task_key,
     create_approval_sequence_assignments,
     is_assigned_approver,
 )
+from .ecn_management_config import ECNState
 
 ECN_WORKFLOW_MODULE = "ecn"
 ECN_ECR_REVIEW_EVENT = "ecr_review"
@@ -94,6 +96,172 @@ def _assignment(ecn_data: Any, assignment_key: str = ECN_ECR_ASSIGNMENT_KEY) -> 
         return {}
     assignment = workflow.get(assignment_key, {})
     return assignment if isinstance(assignment, dict) else {}
+
+
+def _snapshot_node_index(assignment: dict[str, Any]) -> int | None:
+    """安全读取审批快照的当前节点序号。"""
+    value = assignment.get("current_node_index", 0)
+    if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
+def _unique_usernames(values: Any) -> list[str]:
+    """清理审批快照中的用户名并按原顺序去重。"""
+    if not isinstance(values, (list, tuple, set)):
+        return []
+    result: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        username = str(value or "").strip()
+        normalized = username.casefold()
+        if not username or normalized in seen:
+            continue
+        seen.add(normalized)
+        result.append(username)
+    return result
+
+
+def _reconcile_assignment_tasks(
+    service,
+    *,
+    ecn_id: str,
+    assignment: dict[str, Any],
+    active: bool,
+) -> tuple[int, list[str]]:
+    """按一份 ECN 审批快照恢复当前节点，并关闭被意外激活的其它节点。"""
+    nodes = assignment.get("nodes")
+    if not isinstance(nodes, list) or not nodes:
+        return 0, [f"{ecn_id} 的审批快照没有有效节点"]
+    current_index = _snapshot_node_index(assignment)
+    if active and (current_index is None or not 0 <= current_index < len(nodes)):
+        return 0, [f"{ecn_id} 的审批快照当前节点序号无效"]
+    if active and assignment.get("status") != "pending":
+        return 0, [f"{ecn_id} 正在审批，但审批快照状态不是 pending"]
+
+    users = service.load_users()
+    active_usernames = {
+        str(username).casefold(): str(username)
+        for username, info in users.items()
+        if isinstance(info, dict) and info.get("status", "active") == "active"
+    }
+    base_task_key = str(assignment.get("base_task_key") or "").strip()
+    source_policy_code = str(assignment.get("source_policy_code") or "").strip()
+    if not base_task_key:
+        return 0, [f"{ecn_id} 的审批快照缺少基础待办编码"]
+
+    repaired = 0
+    warnings: list[str] = []
+    for index, raw_node in enumerate(nodes):
+        if not isinstance(raw_node, dict):
+            warnings.append(f"{ecn_id} 的第 {index + 1} 个审批节点无效")
+            continue
+        try:
+            task_key = approval_sequence_node_task_key(base_task_key, raw_node)
+        except (TypeError, ValueError, OverflowError):
+            warnings.append(f"{ecn_id} 的第 {index + 1} 个审批节点序号无效")
+            continue
+        expected_usernames: list[str] = []
+        inactive_usernames: list[str] = []
+        if active and index == current_index and assignment.get("status") == "pending":
+            approved = {
+                username.casefold()
+                for username in _unique_usernames(raw_node.get("approved_usernames"))
+            }
+            for username in _unique_usernames(raw_node.get("assignee_usernames")):
+                normalized = username.casefold()
+                if normalized in approved:
+                    continue
+                canonical_username = active_usernames.get(normalized)
+                if canonical_username:
+                    expected_usernames.append(canonical_username)
+                else:
+                    inactive_usernames.append(username)
+            if inactive_usernames:
+                warnings.append(
+                    f"{ecn_id} 当前审批节点包含已停用人员：{'、'.join(inactive_usernames)}"
+                )
+
+        actual_usernames = service.list_pending_assignment_usernames(
+            module=ECN_WORKFLOW_MODULE,
+            entity_id=ecn_id,
+            task_key=task_key,
+        )
+        actual_set = {username.casefold() for username in actual_usernames}
+        expected_set = {username.casefold() for username in expected_usernames}
+        if actual_set == expected_set and not inactive_usernames:
+            continue
+        service.replace_work_assignments(
+            module=ECN_WORKFLOW_MODULE,
+            entity_id=ecn_id,
+            task_key=task_key,
+            assignee_usernames=expected_usernames,
+            source_policy_code=source_policy_code,
+        )
+        repaired += 1
+    return repaired, warnings
+
+
+def reconcile_ecn_work_assignments(
+    all_ecns: Any,
+    *,
+    user_service=None,
+) -> dict[str, Any]:
+    """以 ECN 单据快照为准校准审批待办，修复两套存储分步写入造成的不一致。"""
+    service = _service(user_service)
+    if not is_ecn_database_workflow_enabled(user_service=service):
+        return {"status": "skipped", "scanned": 0, "repaired": 0, "warnings": []}
+    if not isinstance(all_ecns, dict):
+        return {"status": "invalid_data", "scanned": 0, "repaired": 0, "warnings": []}
+
+    repaired = 0
+    scanned = 0
+    warnings: list[str] = []
+    for source_ecn_id, ecn_data in all_ecns.items():
+        if not isinstance(ecn_data, dict):
+            continue
+        ecn_id = str(ecn_data.get("ecn_id") or source_ecn_id).strip()
+        workflow = ecn_data.get("workflow")
+        if not ecn_id or not isinstance(workflow, dict):
+            continue
+        scanned += 1
+        current_phase = str(workflow.get("current_phase") or "")
+        current_state = str(workflow.get("current_state") or "")
+        active_assignment_key = ""
+        if current_phase == "ECR_PHASE" and current_state == ECNState.ECR_REVIEWING:
+            active_assignment_key = ECN_ECR_ASSIGNMENT_KEY
+        elif (
+            current_phase == "ECN_SCHEME_REVIEW_PHASE"
+            and current_state == ECNState.ECN_REVIEWING
+        ):
+            active_assignment_key = ECN_SCHEME_ASSIGNMENT_KEY
+
+        for assignment_key in (ECN_ECR_ASSIGNMENT_KEY, ECN_SCHEME_ASSIGNMENT_KEY):
+            assignment = workflow.get(assignment_key)
+            if not isinstance(assignment, dict) or not assignment:
+                continue
+            try:
+                repaired_count, assignment_warnings = _reconcile_assignment_tasks(
+                    service,
+                    ecn_id=ecn_id,
+                    assignment=assignment,
+                    active=assignment_key == active_assignment_key,
+                )
+            except Exception as exc:
+                warnings.append(f"{ecn_id} 的审批待办校准失败：{exc}")
+                continue
+            repaired += repaired_count
+            warnings.extend(assignment_warnings)
+
+    return {
+        "status": "repaired" if repaired else "unchanged",
+        "scanned": scanned,
+        "repaired": repaired,
+        "warnings": warnings,
+    }
 
 
 def get_ecr_pending_usernames(ecn_data: Any, *, user_service=None) -> list[str]:

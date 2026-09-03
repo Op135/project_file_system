@@ -458,7 +458,7 @@ def create_approval_assignments(
     return result
 
 
-def _sequence_node_task_key(base_task_key: str, node: dict[str, Any]) -> str:
+def approval_sequence_node_task_key(base_task_key: str, node: dict[str, Any]) -> str:
     """生成不会与其它节点冲突的具体待办键。"""
     return (
         f"{str(base_task_key)}:node:{int(node.get('node_index', 0)) + 1}:"
@@ -525,7 +525,7 @@ def create_approval_sequence_assignments(
         "nodes": snapshot_nodes,
     }
     first_node = snapshot_nodes[0]
-    current_task_key = _sequence_node_task_key(task_key, first_node)
+    current_task_key = approval_sequence_node_task_key(task_key, first_node)
     user_service.replace_work_assignments(
         module=module,
         entity_id=entity_id,
@@ -569,7 +569,7 @@ def advance_approval_sequence(
             "assignment": snapshot,
         }
     base_task_key = str(snapshot.get("base_task_key") or "approval")
-    current_task_key = _sequence_node_task_key(base_task_key, current_node)
+    current_task_key = approval_sequence_node_task_key(base_task_key, current_node)
     completed = user_service.complete_work_assignment(
         module=module,
         entity_id=entity_id,
@@ -612,7 +612,7 @@ def advance_approval_sequence(
     if not isinstance(next_node, dict):
         return {"status": "invalid_assignment", "message": "下一审批节点无效", "assignment": snapshot}
     next_node["status"] = "pending"
-    next_task_key = _sequence_node_task_key(base_task_key, next_node)
+    next_task_key = approval_sequence_node_task_key(base_task_key, next_node)
     user_service.replace_work_assignments(
         module=module,
         entity_id=entity_id,
