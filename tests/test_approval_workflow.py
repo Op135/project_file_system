@@ -467,6 +467,13 @@ class ApprovalWorkflowTests(unittest.TestCase):
             ),
             ["王五"],
         )
+        self.service.replace_work_assignments(
+            module="ecn",
+            entity_id="ecn-orphan-001",
+            task_key="ecr_review:node:1:orphan",
+            assignee_usernames=["李四"],
+            source_policy_code="ecn.orphan@1",
+        )
 
         repaired = reconcile_ecn_work_assignments(
             {"ecn-reconcile-001": ecn_data},
@@ -474,6 +481,7 @@ class ApprovalWorkflowTests(unittest.TestCase):
         )
         self.assertEqual(repaired["status"], "repaired")
         self.assertEqual(repaired["repaired"], 2)
+        self.assertEqual(repaired["orphaned"], 1)
         self.assertTrue(
             is_ecr_assigned_approver(
                 ecn_data,
@@ -489,6 +497,14 @@ class ApprovalWorkflowTests(unittest.TestCase):
             ),
             [],
         )
+        self.assertEqual(
+            self.service.list_pending_assignment_usernames(
+                module="ecn",
+                entity_id="ecn-orphan-001",
+                task_key="ecr_review:node:1:orphan",
+            ),
+            [],
+        )
 
         unchanged = reconcile_ecn_work_assignments(
             {"ecn-reconcile-001": ecn_data},
@@ -496,6 +512,7 @@ class ApprovalWorkflowTests(unittest.TestCase):
         )
         self.assertEqual(unchanged["status"], "unchanged")
         self.assertEqual(unchanged["repaired"], 0)
+        self.assertEqual(unchanged["orphaned"], 0)
 
         malformed_ecn = copy.deepcopy(ecn_data)
         malformed_ecn["workflow"]["ecr_workflow_assignment"]["nodes"][0][

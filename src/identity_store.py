@@ -1799,6 +1799,35 @@ class IdentityStore:
             ).fetchall()
         return [str(row["username"]) for row in rows]
 
+    def list_pending_work_assignment_refs(self, *, module: str) -> list[dict[str, Any]]:
+        """列出模块内全部待办引用，包含已停用用户产生的遗留记录。"""
+        with self._lock, self._connect() as connection:
+            rows = connection.execute(
+                "SELECT entity_id, task_key, COUNT(*) AS assignment_count "
+                "FROM work_assignments WHERE module=? AND status='pending' "
+                "GROUP BY entity_id, task_key ORDER BY entity_id, task_key",
+                (str(module),),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def supersede_pending_work_assignments(
+        self,
+        *,
+        module: str,
+        entity_id: str,
+        task_key: str,
+    ) -> int:
+        """把明确模块、单据和任务键下的待办统一标记为已失效。"""
+        now = _now_text()
+        with self._lock, self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            cursor = connection.execute(
+                "UPDATE work_assignments SET status='superseded', updated_at=? "
+                "WHERE module=? AND entity_id=? AND task_key=? AND status='pending'",
+                (now, str(module), str(entity_id), str(task_key)),
+            )
+        return max(int(cursor.rowcount), 0)
+
     def complete_work_assignment(
         self,
         *,

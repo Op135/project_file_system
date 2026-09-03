@@ -595,6 +595,16 @@ class UserService:
             return []
         return self.identity_store.list_pending_assignment_usernames(**values)
 
+    def list_pending_work_assignment_refs(self, **values) -> list[dict[str, Any]]:
+        if self.storage_mode != "database":
+            return []
+        return self.identity_store.list_pending_work_assignment_refs(**values)
+
+    def supersede_pending_work_assignments(self, **values) -> int:
+        if self.storage_mode != "database":
+            return 0
+        return self.identity_store.supersede_pending_work_assignments(**values)
+
     def complete_work_assignment(self, **values) -> bool:
         if self.storage_mode != "database":
             return False

@@ -306,11 +306,13 @@ async def master_startup():
         db_storage.get_item("ecn_management_data", {}),
         user_service=app.state.user_service,
     )
-    if ecn_reconcile_result.get("repaired"):
+    if ecn_reconcile_result.get("repaired") or ecn_reconcile_result.get("orphaned"):
         logger.warning(
-            "ECN审批待办自愈完成：扫描 %s 张单据，修复 %s 个节点。",
+            "ECN审批待办自愈完成：扫描 %s 张单据，修复 %s 个节点，"
+            "清理 %s 条孤立待办。",
             ecn_reconcile_result.get("scanned", 0),
             ecn_reconcile_result.get("repaired", 0),
+            ecn_reconcile_result.get("orphaned", 0),
         )
     for warning in ecn_reconcile_result.get("warnings", []):
         logger.warning("ECN审批待办自愈提醒：%s", warning)

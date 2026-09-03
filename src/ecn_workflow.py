@@ -212,18 +212,34 @@ def reconcile_ecn_work_assignments(
 ) -> dict[str, Any]:
     """以 ECN 单据快照为准校准审批待办，修复两套存储分步写入造成的不一致。"""
     service = _service(user_service)
-    if not is_ecn_database_workflow_enabled(user_service=service):
-        return {"status": "skipped", "scanned": 0, "repaired": 0, "warnings": []}
+    if service is None or not is_ecn_database_workflow_enabled(user_service=service):
+        return {
+            "status": "skipped",
+            "scanned": 0,
+            "repaired": 0,
+            "orphaned": 0,
+            "warnings": [],
+        }
     if not isinstance(all_ecns, dict):
-        return {"status": "invalid_data", "scanned": 0, "repaired": 0, "warnings": []}
+        return {
+            "status": "invalid_data",
+            "scanned": 0,
+            "repaired": 0,
+            "orphaned": 0,
+            "warnings": [],
+        }
 
     repaired = 0
+    orphaned = 0
     scanned = 0
     warnings: list[str] = []
+    existing_ecn_ids: set[str] = set()
     for source_ecn_id, ecn_data in all_ecns.items():
         if not isinstance(ecn_data, dict):
             continue
         ecn_id = str(ecn_data.get("ecn_id") or source_ecn_id).strip()
+        if ecn_id:
+            existing_ecn_ids.add(ecn_id)
         workflow = ecn_data.get("workflow")
         if not ecn_id or not isinstance(workflow, dict):
             continue
@@ -256,10 +272,29 @@ def reconcile_ecn_work_assignments(
             repaired += repaired_count
             warnings.extend(assignment_warnings)
 
+    # 首次创建单据时若进程在待办生成后、ECN落盘前中断，会留下没有业务实体的孤儿待办。
+    try:
+        pending_refs = service.list_pending_work_assignment_refs(
+            module=ECN_WORKFLOW_MODULE,
+        )
+        for reference in pending_refs:
+            entity_id = str(reference.get("entity_id") or "").strip()
+            task_key = str(reference.get("task_key") or "").strip()
+            if not entity_id or not task_key or entity_id in existing_ecn_ids:
+                continue
+            orphaned += service.supersede_pending_work_assignments(
+                module=ECN_WORKFLOW_MODULE,
+                entity_id=entity_id,
+                task_key=task_key,
+            )
+    except Exception as exc:
+        warnings.append(f"ECN孤立审批待办扫描失败：{exc}")
+
     return {
-        "status": "repaired" if repaired else "unchanged",
+        "status": "repaired" if repaired or orphaned else "unchanged",
         "scanned": scanned,
         "repaired": repaired,
+        "orphaned": orphaned,
         "warnings": warnings,
     }
 
