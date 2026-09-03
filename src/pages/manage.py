@@ -1003,9 +1003,16 @@ def manage_page():
                         multiple=True,
                         with_input=True,
                     ).props("use-chips").classes("w-full")
-                    ui.label(
-                        "岗位会在所选部门下显示；同一岗位跨部门共用默认权限。"
-                    ).classes("text-xs text-gray-500")
+                    with ui.row().classes("w-full items-center gap-1"):
+                        ui.label(
+                            "岗位会在所选部门下显示；同一岗位跨部门共用默认权限。"
+                        ).classes("text-xs text-gray-500")
+                        ui.icon("warning_amber", color="orange", size="xs").tooltip(
+                            "调整已有员工使用的岗位部门时，请按顺序操作："
+                            "①岗位暂时同时保留原部门和新部门；"
+                            "②到“用户与微信账号管理”将相关员工的主部门迁到新部门，岗位保持不变；"
+                            "③确认所有在职员工迁移完成后，再从岗位适用部门中移除原部门。"
+                        )
                     level_input = ui.number(
                         "职级数字",
                         value=current.get("level", 0),
@@ -2037,11 +2044,139 @@ def manage_page():
                             if not selected:
                                 ui.label("请选择一个岗位。").classes("text-gray-500 p-4")
                                 return
-                            ui.label(f"{selected['name']} · 默认权限").classes("text-lg font-bold")
-                            ui.label(
-                                f"稳定编码：{selected['code']} ｜ 当前任职："
-                                f"{selected.get('member_count', 0)} 人"
-                            ).classes("text-xs text-gray-500")
+
+                            def open_copy_position_permissions_dialog():
+                                """把另一岗位当前的整套默认权限复制到所选岗位。"""
+                                source_positions = sorted(
+                                    (
+                                        position
+                                        for position in user_svc.list_positions()
+                                        if position["position_id"] != selected["position_id"]
+                                    ),
+                                    key=lambda position: (
+                                        str(position.get("name", "")).casefold(),
+                                        str(position.get("code", "")).casefold(),
+                                    ),
+                                )
+                                if not source_positions:
+                                    ui.notify("没有其他岗位可供复制。", type="warning")
+                                    return
+                                source_by_id = {
+                                    str(position["position_id"]): position
+                                    for position in source_positions
+                                }
+                                source_options = {
+                                    position_id: (
+                                        f"{position.get('name', '')} ｜ "
+                                        f"{'、'.join(position.get('org_names', [])) or '未划分部门'} ｜ "
+                                        f"{len(position.get('permission_codes', []))} 项权限"
+                                    )
+                                    for position_id, position in source_by_id.items()
+                                }
+                                with ui.dialog() as copy_dialog, ui.card().classes(
+                                    "w-[38rem] max-w-[95vw] p-6 gap-4"
+                                ):
+                                    with ui.row().classes("w-full items-center gap-2"):
+                                        ui.icon("content_copy", color="primary")
+                                        ui.label("复制岗位默认权限").classes("text-lg font-bold")
+                                    ui.label(
+                                        "复制会用来源岗位的当前权限完整覆盖目标岗位；"
+                                        "复制完成后两者互不关联，可以继续单独调整。"
+                                    ).classes("text-sm text-gray-600")
+                                    with ui.row().classes(
+                                        "w-full items-center no-wrap gap-3 rounded-lg bg-blue-50 p-3"
+                                    ):
+                                        with ui.column().classes("gap-0 flex-grow min-w-0"):
+                                            ui.label("目标岗位").classes("text-xs text-gray-500")
+                                            ui.label(selected["name"]).classes(
+                                                "font-semibold text-blue-900 truncate"
+                                            )
+                                            ui.label(
+                                                f"当前 {len(selected.get('permission_codes', []))} 项权限"
+                                            ).classes("text-xs text-blue-700")
+                                        ui.icon("arrow_back", color="primary")
+                                        with ui.column().classes("gap-0 flex-grow min-w-0"):
+                                            ui.label("来源岗位").classes("text-xs text-gray-500")
+                                            source_summary = ui.label("请选择岗位").classes(
+                                                "font-semibold text-blue-900 truncate"
+                                            )
+                                            source_permission_summary = ui.label(
+                                                "选择后将显示权限数量"
+                                            ).classes("text-xs text-blue-700")
+                                    source_select = ui.select(
+                                        source_options,
+                                        label="选择要复制的岗位",
+                                        with_input=True,
+                                    ).props("outlined options-dense").classes("w-full")
+
+                                    def refresh_source_summary():
+                                        source = source_by_id.get(str(source_select.value or ""))
+                                        if not source:
+                                            source_summary.set_text("请选择岗位")
+                                            source_permission_summary.set_text(
+                                                "选择后将显示权限数量"
+                                            )
+                                            return
+                                        source_summary.set_text(str(source.get("name", "")))
+                                        source_permission_summary.set_text(
+                                            f"将复制 {len(source.get('permission_codes', []))} 项权限"
+                                        )
+
+                                    def copy_position_permissions():
+                                        source = source_by_id.get(str(source_select.value or ""))
+                                        if not source:
+                                            ui.notify("请先选择来源岗位。", type="warning")
+                                            return
+                                        permission_codes = list(source.get("permission_codes", []))
+                                        try:
+                                            user_svc.set_position_permissions(
+                                                selected["position_id"],
+                                                permission_codes,
+                                                actor_username=current_user,
+                                            )
+                                        except Exception as exc:
+                                            ui.notify(
+                                                f"岗位权限复制失败：{exc}",
+                                                type="negative",
+                                                multi_line=True,
+                                            )
+                                            return
+                                        # 先反馈结果，再刷新会删除的权限编辑区域，避免通知丢失 UI 槽位。
+                                        ui.notify(
+                                            f"已从“{source.get('name', '')}”复制 "
+                                            f"{len(permission_codes)} 项权限。",
+                                            type="positive",
+                                        )
+                                        copy_dialog.close()
+                                        render_permission_positions()
+                                        render_position_permissions()
+
+                                    source_select.on_value_change(
+                                        lambda _event: refresh_source_summary()
+                                    )
+                                    with ui.row().classes("w-full justify-end gap-3"):
+                                        ui.button("取消", on_click=copy_dialog.close).props("flat")
+                                        ui.button(
+                                            "确认覆盖并复制",
+                                            icon="content_copy",
+                                            on_click=copy_position_permissions,
+                                        ).props("color=primary")
+                                copy_dialog.open()
+
+                            with ui.row().classes("w-full items-start justify-between gap-3"):
+                                with ui.column().classes("gap-0 min-w-0"):
+                                    ui.label(f"{selected['name']} · 默认权限").classes(
+                                        "text-lg font-bold"
+                                    )
+                                    ui.label(
+                                        f"稳定编码：{selected['code']} ｜ 当前任职："
+                                        f"{selected.get('member_count', 0)} 人"
+                                    ).classes("text-xs text-gray-500")
+                                ui.button(
+                                    "复制其他岗位权限",
+                                    icon="content_copy",
+                                    on_click=open_copy_position_permissions_dialog,
+                                ).props("outline dense color=primary").classes("shrink-0")
                             ui.label(
                                 "权限会自动授予所有以该岗位作为主岗位的在职用户；企业微信职务文本本身不会自动授权。"
                             ).classes("text-xs text-blue-800 bg-blue-50 rounded p-2")

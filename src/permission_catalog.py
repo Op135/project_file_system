@@ -667,15 +667,15 @@ SAMPLE_ISSUE_NOTIFICATION_MODULE = "样品问题跟进 · 通知接收"
 NOTIFICATION_PERMISSIONS = (
     PermissionDefinition(
         SAMPLE_ORDER_EXTENSION_NOTIFY_PERMISSION,
-        "告知 — 样品单 — 延期关注",
+        "告知 — 所有样品单 — 延期关注",
         SAMPLE_ORDER_NOTIFICATION_MODULE,
         "接收样品单超过延期次数阈值的关注通知；调试转发开启时也接收申请人延期通知",
     ),
     PermissionDefinition(
         SAMPLE_ORDER_SPECIAL_STATUS_NOTIFY_PERMISSION,
-        "告知 — 样品单 — 特殊状态",
+        "告知 — 所有样品单 — 特殊状态",
         SAMPLE_ORDER_NOTIFICATION_MODULE,
-        "接收样品单暂停、作废等特殊状态变更通知",
+        "接收所有样品单暂停、作废等特殊状态变更通知",
     ),
     PermissionDefinition(
         ERROR_EXTENSION_REQUEST_NOTIFY_PERMISSION,
