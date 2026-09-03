@@ -9,7 +9,8 @@ from nicegui import app, ui
 from .. import db_storage  # 导入我们创建的模块
 from ..access_control import can
 from ..config import IMG_DIR, PRESET_AVATARS
-from ..ecn_management_config import ECN_DATA_KEY, get_ecn_dashboard_pending_count
+from ..ecn_access import can_view_ecn, get_ecn_dashboard_pending_count
+from ..ecn_management_config import ECN_DATA_KEY
 from ..overview_batch_operations import (
     BATCH_OVERVIEW_REQUESTS_KEY,
     get_batch_overview_pending_count,
@@ -286,8 +287,12 @@ def main_page():
             current_user,
         ):
             continue
-        # elif items[3] == "/ecn_management" and not any(k in str(current_role) for k in ["研发经理", "admin"]):
-        #     continue
+        # ECN 工程变更入口使用稳定权限控制，旧 Excel 环境继续允许登录用户进入。
+        elif items[3] == "/ecn_management" and not can_view_ecn(
+            current_role,
+            current_user,
+        ):
+            continue
         menu_items.append(items)
 
     # 主界面

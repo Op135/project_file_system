@@ -19,8 +19,6 @@ from ..components import FileThumbnail
 from ..config import (
     ECN_ALLOWED_PROJECT_STATES,
     ECN_SCHEMA_CONFIG,
-    ECN_SCHEME_INITIATOR_ROLES,
-    ECN_SCHEME_WRITER_ROLES,
     ECN_WORKFLOW_ROUTES,
     FILES_URL_DIR,
     IMG_DIR,
@@ -32,10 +30,21 @@ from ..config import (
     ECNState,
 )
 from ..custom_ui import custom_upload
+from ..ecn_access import (
+    can_create_ecn_request,
+    can_confirm_ecn_material_spec,
+    can_delete_ecn,
+    can_edit_ecn_impact,
+    can_edit_ecn_scheme,
+    can_execute_ecn_assistant_stage,
+    can_submit_ecn_scheme_review,
+    can_view_ecn,
+    can_view_ecn_scheme_non_image_file,
+    is_ecn_pending_for_user,
+)
 from ..ecn_management_config import (
     ECN_DISPOSITION_MEASURES,
     ECN_DOCUMENT_CHANGE_TYPES,
-    ECN_EXECUTION_ASSISTANT_ROLES,
     ECN_EXECUTION_RESULT_FAILED,
     ECN_EXECUTION_RESULT_PENDING,
     ECN_EXECUTION_RESULT_RUNNING,
@@ -56,7 +65,6 @@ from ..ecn_management_config import (
     ECN_MATERIAL_CHANGE_TYPE_REPLACE,
     ECN_MATERIAL_CHANGE_TYPES,
     ECN_MATERIAL_DEFAULT_UNIT,
-    ECN_ORDINARY_DOCUMENT_FILE_VIEW_ROLES_BY_TYPE,
     ECN_OVERVIEW_ACTION_ADD,
     ECN_OVERVIEW_ACTION_DEACTIVATE,
     ECN_OVERVIEW_ACTION_LABELS,
@@ -75,7 +83,6 @@ from ..ecn_management_config import (
     ECN_TRACEABILITY_LEVELS,
     build_ecn_execution_info,
     build_overview_validation_signature,
-    can_view_ecn_scheme_non_image_file,
     classify_ecn_change_item,
     collect_ecn_pending_overview_overrides,
     confirm_revised_scheme_items,
@@ -99,17 +106,29 @@ from ..ecn_management_config import (
     is_ecn_disposition_condition_required,
     is_ecn_material_disposition_required,
     is_ecn_material_execution_closed,
-    is_ecn_pending_for_user,
     is_ecn_review_info_blank,
     mark_rejected_scheme_item_revised,
     merge_ecn_impact_audit_log,
     register_ecn_impact_handler,
     reject_ecn_scheme_items,
     resolve_ecn_overview_parameter_config,
-    role_matches_keywords,
+)
+from ..ecn_workflow import (
+    cancel_ecr_approval,
+    cancel_scheme_approval,
+    ecn_workflow_error_message,
+    finish_ecr_approval,
+    finish_scheme_approval,
+    get_ecr_pending_usernames,
+    get_scheme_pending_usernames,
+    is_ecr_assigned_approver,
+    is_ecn_database_workflow_enabled,
+    is_scheme_assigned_approver,
+    start_ecr_approval,
+    start_scheme_approval,
 )
 from ..overview_operation import append_overview_timestamp, get_automatic_overview_reason
-from ..utils import get_cache_busted_path, logout, setup_global_activity_tracking
+from ..utils import get_cache_busted_path, logout, setup_global_activity_tracking, sync_current_user_role
 
 logger = logging.getLogger(__name__)
 
@@ -221,13 +240,26 @@ def generate_ecn_id(all_ecns: dict) -> str:
     return f"{prefix}{str(max_count + 1).zfill(2)}"
 
 
-def generate_initial_ecn_data(applicant: str, role: str, all_ecns: dict) -> dict:
+def generate_initial_ecn_data(
+    applicant: str,
+    role: str,
+    all_ecns: dict,
+    *,
+    user_service=None,
+) -> dict:
     """
     在模板基础上，初始化运行时强相关的动态ECN数据（如单号、时间、申请人）
     """
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     ecn_id = generate_ecn_id(all_ecns)
-    applicant_dept = get_dept_from_role(role)
+    applicant_dept = ""
+    if user_service is not None and getattr(user_service, "storage_mode", "legacy_excel") == "database":
+        membership = user_service.get_primary_membership(applicant)
+        if isinstance(membership, dict):
+            applicant_dept = str(membership.get("org_name") or "").strip()
+    # 旧 Excel 模式没有组织架构，继续用原角色关键词推导显示部门。
+    if not applicant_dept:
+        applicant_dept = get_dept_from_role(role)
 
     new_data = get_ecn_template()
     new_data["ecn_id"] = ecn_id  # 初始化ECN编号
@@ -824,7 +856,18 @@ async def ecn_management_page():
         return
 
     current_user = app.storage.user.get("current_user", "未知用户")
-    current_role = app.storage.user.get("current_role", "未知角色")
+    # 会话可能跨服务重启保留，进入页面时同步岗位显示文本；数据库权限不依赖该文本。
+    current_role = sync_current_user_role()
+    if not can_view_ecn(current_role, current_user):
+        ui.notify("当前用户没有查看ECN工程变更的权限", type="warning")
+        ui.navigate.to("/main")
+        return
+    can_create_request = can_create_ecn_request(current_role, current_user)
+    can_edit_impact = can_edit_ecn_impact(current_role, current_user)
+    can_edit_scheme = can_edit_ecn_scheme(current_role, current_user)
+    can_submit_scheme_review = can_submit_ecn_scheme_review(current_role, current_user)
+    can_execute_assistant = can_execute_ecn_assistant_stage(current_role, current_user)
+    can_delete_record = can_delete_ecn(current_role, current_user)
     current_display_path = get_cache_busted_path(
         app.storage.general.get("user_preferences", {}).get(current_user, {}).get("avatar", PRESET_AVATARS[0])
     )
@@ -2215,6 +2258,8 @@ async def ecn_management_page():
     # ------------------------------------------
     async def open_ecn_detail_dialog(ecn_id=None):
         is_new = ecn_id is None
+        if is_new and not can_create_request:
+            return ui.notify("当前用户没有新建ECR申请的权限", type="warning")
         all_ecns = db_storage.get_item("ecn_management_data", {})
 
         # 数据结构为：{"RFFM":{"1519":{"RFFM-1519-A":"A"}}}
@@ -2235,7 +2280,12 @@ async def ecn_management_page():
         if is_new:
             if not proj_dict_mass and not proj_dict_non:
                 return ui.notify("当前没有可供变更的转产项目。", type="warning")
-            ecn_data = generate_initial_ecn_data(current_user, current_role, all_ecns)
+            ecn_data = generate_initial_ecn_data(
+                current_user,
+                current_role,
+                all_ecns,
+                user_service=getattr(app.state, "user_service", None),
+            )
         else:
             ecn_data = all_ecns[ecn_id]
 
@@ -2249,14 +2299,15 @@ async def ecn_management_page():
         is_draft_or_reject = is_new or wf["current_state"] in [ECNState.DRAFT, ECNState.REJECTED]
         # 是否处于编写方案阶段
         is_scheming_phase = wf["current_state"] == ECNState.ECN_SCHEMING
-        # 综合权限判断：既要是编写阶段，当前角色又必须在允许的常量白名单中
-        is_scheme_writer = is_scheming_phase and any(role in current_role for role in ECN_SCHEME_WRITER_ROLES)
+        # 影响评估与方案编写是两个独立权限，避免为了填写方案而放开全部影响范围。
+        is_impact_editor = is_scheming_phase and can_edit_impact
+        is_scheme_writer = is_scheming_phase and can_edit_scheme
 
         # === 建立一个跨 Tab 刷新的引用桥梁 ===
         dashboard_updater = {"refresh": lambda: None}  # 初始值为一个空函数，后续会被覆盖为真正的刷新函数
 
         def record_impact_change(field, target, action, before, after):
-            if not is_scheme_writer:
+            if not is_impact_editor:
                 return
             review.setdefault("impact_change_log", []).append(
                 {
@@ -2273,7 +2324,7 @@ async def ecn_management_page():
             )
 
         async def auto_save_review(e=None):
-            if ecn_id and is_scheme_writer:
+            if ecn_id and is_scheming_phase and can_edit_ecn_impact(current_role, current_user):
 
                 def merge_review_data(current_ecn, local_review, handler):
                     if not current_ecn:
@@ -2694,7 +2745,7 @@ async def ecn_management_page():
                                                                 ui.notify("未选择、已存在或已被ECR涵盖", type="warning")
 
                                                         ui.button(icon="add", on_click=add_exp_proj).props(
-                                                            f"outline dense {'disable' if not is_scheme_writer else ''}"
+                                                            f"outline dense {'disable' if not is_impact_editor else ''}"
                                                         ).classes("mt-0")
 
                                                 chip_container = ui.row().classes("gap-1")
@@ -2708,7 +2759,7 @@ async def ecn_management_page():
                                                             with ui.chip(p, color=color, text_color="white").props(
                                                                 "dense"
                                                             ):
-                                                                if is_scheme_writer:
+                                                                if is_impact_editor:
 
                                                                     def remove_expanded_project(
                                                                         _=None,
@@ -2775,7 +2826,7 @@ async def ecn_management_page():
                                             await auto_save_review(e)
 
                                         ui.checkbox(imp_key).bind_value(review["impacts"], imp_key).props(
-                                            f"{'disable' if not is_scheme_writer else ''} dense"
+                                            f"{'disable' if not is_impact_editor else ''} dense"
                                         ).on_value_change(on_impact_change)
 
                             with ui.column().classes("w-full p-2 pdf-border-b gap-2 hover:bg-gray-50"):
@@ -2786,14 +2837,14 @@ async def ecn_management_page():
                                     # 动态读取配置遍历
                                     for doc_key in ECN_SCHEMA_CONFIG["document_types"]:
                                         ui.checkbox(doc_key).bind_value(review["involved_docs"], doc_key).props(
-                                            f"{'disable' if not is_scheme_writer else ''} dense"
+                                            f"{'disable' if not is_impact_editor else ''} dense"
                                         ).on_value_change(auto_save_review)
 
                                 # bind_visibility_from: 实现“其它”项仅在勾选后显示
                                 ui.input("其它:").bind_value(review, "other_docs_desc").bind_visibility_from(
                                     review["involved_docs"], "其它"
                                 ).props(
-                                    f"outlined dense {'readonly bg-gray-100' if not is_scheme_writer else 'bg-white'}"
+                                    f"outlined dense {'readonly bg-gray-100' if not is_impact_editor else 'bg-white'}"
                                 ).classes("w-full ml-4 mt-2 max-w-[500px] transition-all duration-300").on(
                                     "blur", auto_save_review
                                 )
@@ -2822,7 +2873,7 @@ async def ecn_management_page():
                                                     ui.checkbox("").bind_value(
                                                         review["involved_materials"][mat_key], act
                                                     ).props(
-                                                        f"{'disable' if not is_scheme_writer else ''} dense"
+                                                        f"{'disable' if not is_impact_editor else ''} dense"
                                                     ).on_value_change(auto_save_review)
 
                 # --- [TAB 3] ECN 方案表单 ---
@@ -3034,6 +3085,8 @@ async def ecn_management_page():
 
                                     # 切换参与者状态的显示与数据库对应状态数据
                                     async def toggle_part_status(new_status):
+                                        if not is_scheming_phase or not can_edit_ecn_scheme(current_role, current_user):
+                                            return ui.notify("当前用户没有编写或确认ECN方案的权限", type="warning")
                                         if (
                                             new_status == ECN_PARTICIPANT_STATUS_CONFIRMED
                                             and ECN_REQUIRE_REVISION_BEFORE_RECONFIRMATION
@@ -3102,6 +3155,19 @@ async def ecn_management_page():
 
                                 async def handle_save_item(item_data, is_edit=False):
                                     """保存方案 (原子化重构)"""
+                                    if not is_scheming_phase or not can_edit_ecn_scheme(current_role, current_user):
+                                        return ui.notify("当前用户没有编写ECN方案的权限", type="warning")
+                                    if is_edit:
+                                        existing_item = next(
+                                            (
+                                                item
+                                                for item in local_data.get("change_items", [])
+                                                if item.get("item_id") == item_data.get("item_id")
+                                            ),
+                                            None,
+                                        )
+                                        if not isinstance(existing_item, dict) or existing_item.get("author") != current_user:
+                                            return ui.notify("只能修改本人编写的ECN方案", type="warning")
 
                                     # ==== 添加方案时的核心逻辑 ====
                                     def update_ecn_scheme(current_ecn, new_item, edit_mode, user):
@@ -3594,8 +3660,8 @@ async def ecn_management_page():
                                                 can_view_file = can_view_ecn_scheme_non_image_file(
                                                     item,
                                                     current_role,
+                                                    current_user,
                                                     app.storage.general.get("over_config_data_flat", {}),
-                                                    ECN_ORDINARY_DOCUMENT_FILE_VIEW_ROLES_BY_TYPE,
                                                 )
                                                 if not can_view_file:
                                                     with (
@@ -4421,6 +4487,12 @@ async def ecn_management_page():
 
                                 async def remove_item(item_to_remove):
                                     """删除方案 (原子化重构)"""
+                                    if (
+                                        not is_scheming_phase
+                                        or not can_edit_ecn_scheme(current_role, current_user)
+                                        or item_to_remove.get("author") != current_user
+                                    ):
+                                        return ui.notify("只能删除本人编写的ECN方案", type="warning")
                                     target_item_id = item_to_remove["item_id"]
 
                                     def delete_ecn_scheme(current_ecn, item_id):
@@ -4724,24 +4796,23 @@ async def ecn_management_page():
                                 confirmation = confirmation if isinstance(confirmation, dict) else {}
                                 checked = confirmation.get("confirmed") is True
                                 available = spec.get("available") is True
-                                responsible_roles = normalize_execution_roles(spec.get("roles"))
-                                responsible_users = normalize_execution_roles(spec.get("users"))
                                 can_confirm = (
                                     material_is_active
                                     and not item_closed
                                     and not checked
                                     and available
-                                    and (
-                                        current_user in responsible_users
-                                        or role_matches_keywords(current_role, responsible_roles)
-                                    )
+                                    and can_confirm_ecn_material_spec(spec, current_role, current_user)
                                 )
-                                can_cancel = material_is_active and can_cancel_material_confirmation(
-                                    spec,
-                                    confirmation,
-                                    specs,
-                                    tasks,
-                                    item_closed,
+                                can_cancel = (
+                                    material_is_active
+                                    and can_confirm_ecn_material_spec(spec, current_role, current_user)
+                                    and can_cancel_material_confirmation(
+                                        spec,
+                                        confirmation,
+                                        specs,
+                                        tasks,
+                                        item_closed,
+                                    )
                                 )
                                 checkbox = controls.get("checkbox")
                                 tooltip = controls.get("tooltip")
@@ -4820,8 +4891,8 @@ async def ecn_management_page():
                             ):
                                 blocked["reason"] = "当前执行阶段已发生变化，请刷新后查看。"
                                 return db_storage.ATOMIC_NO_UPDATE
-                            if not role_matches_keywords(current_role, ECN_EXECUTION_ASSISTANT_ROLES):
-                                blocked["reason"] = "当前角色无权确认研发助理执行清单。"
+                            if not can_execute_ecn_assistant_stage(current_role, current_user):
+                                blocked["reason"] = "当前用户无权确认资料准备执行清单。"
                                 return db_storage.ATOMIC_NO_UPDATE
 
                             if confirmation_kind == "erp":
@@ -4881,8 +4952,8 @@ async def ecn_management_page():
                             if current_wf.get("current_state") != ECNState.ECN_EXECUTING:
                                 blocked["reason"] = "当前ECN已不在执行确认状态。"
                                 return db_storage.ATOMIC_NO_UPDATE
-                            if not role_matches_keywords(current_role, ECN_EXECUTION_ASSISTANT_ROLES):
-                                blocked["reason"] = "仅配置的研发助理角色可触发系统内资料执行。"
+                            if not can_execute_ecn_assistant_stage(current_role, current_user):
+                                blocked["reason"] = "当前用户无权触发系统内资料执行。"
                                 return db_storage.ATOMIC_NO_UPDATE
                             allowed_stages = [
                                 ECN_EXECUTION_STAGE_ASSISTANT,
@@ -5158,13 +5229,8 @@ async def ecn_management_page():
                                 if spec.get("available") is not True:
                                     blocked["reason"] = "该责任项尚未进入所属追溯范围的当前负责人节点。"
                                     return db_storage.ATOMIC_NO_UPDATE
-                                responsible_roles = normalize_execution_roles(spec.get("roles"))
-                                responsible_users = normalize_execution_roles(spec.get("users"))
-                                if current_user not in responsible_users and not role_matches_keywords(
-                                    current_role,
-                                    responsible_roles,
-                                ):
-                                    blocked["reason"] = "当前用户或角色不负责该物料追溯执行项。"
+                                if not can_confirm_ecn_material_spec(spec, current_role, current_user):
+                                    blocked["reason"] = "当前用户没有该物料追溯责任项的执行权限。"
                                     return db_storage.ATOMIC_NO_UPDATE
                                 pending_task_count = sum(
                                     1
@@ -5182,6 +5248,9 @@ async def ecn_management_page():
                                     blocked["reason"] = "这是最后一个待确认项，需要二次确认。"
                                     return db_storage.ATOMIC_NO_UPDATE
                             else:
+                                if not can_confirm_ecn_material_spec(spec, current_role, current_user):
+                                    blocked["reason"] = "当前用户没有该物料追溯责任项的执行权限。"
+                                    return db_storage.ATOMIC_NO_UPDATE
                                 if target.get("confirmed") is not True:
                                     blocked["reason"] = "该物料责任项尚未确认，无需取消。"
                                     return db_storage.ATOMIC_NO_UPDATE
@@ -5361,7 +5430,7 @@ async def ecn_management_page():
                             assistant_can_operate = (
                                 stage == ECN_EXECUTION_STAGE_ASSISTANT
                                 and wf.get("current_state") == ECNState.ECN_EXECUTING
-                                and role_matches_keywords(current_role, ECN_EXECUTION_ASSISTANT_ROLES)
+                                and can_execute_assistant
                             )
                             with ui.card().classes(
                                 "w-full p-0 gap-0 border border-slate-300 shadow-sm overflow-hidden"
@@ -5656,10 +5725,7 @@ async def ecn_management_page():
                                             icon="play_arrow",
                                             on_click=run_overview_execution,
                                         ).props("color=primary no-caps")
-                                        if not ready or not role_matches_keywords(
-                                            current_role,
-                                            ECN_EXECUTION_ASSISTANT_ROLES,
-                                        ):
+                                        if not ready or not can_execute_assistant:
                                             action_button.props("disable")
 
                             material_is_active = (
@@ -5856,28 +5922,25 @@ async def ecn_management_page():
                                                                         else {}
                                                                     )
                                                                     checked = confirmation.get("confirmed") is True
-                                                                    responsible_roles = normalize_execution_roles(
-                                                                        spec.get("roles")
-                                                                    )
-                                                                    responsible_users = normalize_execution_roles(
-                                                                        spec.get("users")
-                                                                    )
                                                                     available = spec.get("available") is True
                                                                     can_confirm = (
                                                                         material_is_active
                                                                         and not item_closed
                                                                         and not checked
                                                                         and available
-                                                                        and (
-                                                                            current_user in responsible_users
-                                                                            or role_matches_keywords(
-                                                                                current_role,
-                                                                                responsible_roles,
-                                                                            )
+                                                                        and can_confirm_ecn_material_spec(
+                                                                            spec,
+                                                                            current_role,
+                                                                            current_user,
                                                                         )
                                                                     )
                                                                     can_cancel = (
                                                                         material_is_active
+                                                                        and can_confirm_ecn_material_spec(
+                                                                            spec,
+                                                                            current_role,
+                                                                            current_user,
+                                                                        )
                                                                         and can_cancel_material_confirmation(
                                                                             spec,
                                                                             confirmation,
@@ -6151,13 +6214,20 @@ async def ecn_management_page():
                 "w-full bg-white p-4 border-t border-gray-300 justify-end items-center shrink-0 gap-4 shadow-[0_-5px_15px_rgba(0,0,0,0.05)]"
             ):
                 if is_draft_or_reject:
-                    if basic["applicant"] == current_user or is_new:
+                    if can_create_request and (basic["applicant"] == current_user or is_new):
                         ui.button("保存为草稿", on_click=lambda: execute_db_action("save_draft")).props("color=grey-7")
                         ui.button("发起/重新发起 ECR", on_click=lambda: execute_db_action("submit_ecr")).props(
                             "color=primary"
                         )
                 else:
-                    is_pending_user = current_role in get_ecn_pending_approval_roles(wf)
+                    database_workflow_enabled = is_ecn_database_workflow_enabled()
+                    current_phase = wf.get("current_phase")
+                    if database_workflow_enabled and current_phase == "ECR_PHASE":
+                        is_pending_user = is_ecr_assigned_approver(local_data, current_user)
+                    elif database_workflow_enabled and current_phase == "ECN_SCHEME_REVIEW_PHASE":
+                        is_pending_user = is_scheme_assigned_approver(local_data, current_user)
+                    else:
+                        is_pending_user = current_role in get_ecn_pending_approval_roles(wf)
                     if wf["current_state"] == ECNState.ECR_REVIEWING and basic["applicant"] == current_user:
                         ui.button("撤回修改", icon="undo", on_click=lambda: execute_db_action("withdraw")).props(
                             "color=orange"
@@ -6165,7 +6235,7 @@ async def ecn_management_page():
                         ui.button("作废", icon="delete_forever", on_click=lambda: execute_db_action("cancel")).props(
                             "color=red"
                         )
-                    if is_scheming_phase and any(r in current_role for r in ECN_SCHEME_INITIATOR_ROLES):
+                    if is_scheming_phase and can_submit_scheme_review:
                         all_confirmed = len(participants) > 0 and all(
                             status == ECN_PARTICIPANT_STATUS_CONFIRMED for status in participants.values()
                         )
@@ -6217,9 +6287,33 @@ async def ecn_management_page():
             async def execute_db_action(action_type, note="", rejected_item_ids=None):
                 now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 rejected_item_ids = list(rejected_item_ids or [])
+                database_approval_phase = str(wf.get("current_phase") or "")
+                uses_database_approval = (
+                    is_ecn_database_workflow_enabled()
+                    and database_approval_phase in {"ECR_PHASE", "ECN_SCHEME_REVIEW_PHASE"}
+                    and action_type in ["approve", "reject"]
+                )
 
-                if action_type in ["approve", "reject"] and current_role not in get_ecn_pending_approval_roles(wf):
-                    return ui.notify("当前角色已完成审批或不属于当前待审批角色，请刷新后查看。", type="warning")
+                if action_type in ["save_draft", "submit_ecr", "withdraw", "cancel"] and (
+                    not can_create_ecn_request(current_role, current_user)
+                    or (not is_new and basic.get("applicant") != current_user)
+                ):
+                    return ui.notify("当前用户无权维护该ECR申请", type="warning")
+                if action_type == "initiate_scheme_review" and not can_submit_ecn_scheme_review(
+                    current_role,
+                    current_user,
+                ):
+                    return ui.notify("当前用户没有发起ECN方案评审的权限", type="warning")
+
+                if action_type in ["approve", "reject"]:
+                    if uses_database_approval and database_approval_phase == "ECR_PHASE":
+                        has_pending_approval = is_ecr_assigned_approver(local_data, current_user)
+                    elif uses_database_approval:
+                        has_pending_approval = is_scheme_assigned_approver(local_data, current_user)
+                    else:
+                        has_pending_approval = current_role in get_ecn_pending_approval_roles(wf)
+                    if not has_pending_approval:
+                        return ui.notify("当前用户已完成审批或没有该单据的有效审批待办。", type="warning")
 
                 if (
                     action_type == "reject"
@@ -6243,14 +6337,32 @@ async def ecn_management_page():
                     if not basic.get("reason_desc", "").strip():
                         return ui.notify("请填写原因说明", type="warning")
 
+                    if is_ecn_database_workflow_enabled():
+                        workflow_result = start_ecr_approval(local_data["ecn_id"], current_user)
+                        if workflow_result.get("status") != "matched":
+                            return ui.notify(
+                                ecn_workflow_error_message(workflow_result, "ECR申请"),
+                                type="negative",
+                                multi_line=True,
+                            )
+                        wf["ecr_workflow_assignment"] = copy.deepcopy(workflow_result["assignment"])
+
                     basic["title"] = (
                         f"{','.join(local_data['target_projects'][:2])}等 - {'/'.join([k for k, v in basic['reasons'].items() if v])}变更"
                     )
                     wf["current_state"] = ECNState.ECR_REVIEWING
                     wf["current_phase"] = "ECR_PHASE"
-                    wf["route_type"] = "SALES_INITIATED" if "销售" in current_role else "RD_INITIATED"
+                    wf["route_type"] = (
+                        "CONFIGURED_WORKFLOW"
+                        if is_ecn_database_workflow_enabled()
+                        else "SALES_INITIATED" if "销售" in current_role else "RD_INITIATED"
+                    )
                     wf["current_step_index"] = 0
-                    wf["pending_roles"] = ECN_WORKFLOW_ROUTES["ECR_PHASE"][wf["route_type"]][0]
+                    wf["pending_roles"] = (
+                        get_ecr_pending_usernames(local_data)
+                        if is_ecn_database_workflow_enabled()
+                        else ECN_WORKFLOW_ROUTES["ECR_PHASE"][wf["route_type"]][0]
+                    )
                     wf["step_approvals"] = {}
                     local_data["approval_log"].append(
                         {"user": current_user, "role": current_role, "action": "发起申请", "time": now_str}
@@ -6291,12 +6403,30 @@ async def ecn_management_page():
                             )
                         return ui.notify("\n".join(msg), type="negative", multi_line=True)
 
+                    if is_ecn_database_workflow_enabled():
+                        # 方案评审沿用原 ECR 申请人的组织条件，发起评审者只负责触发流程。
+                        workflow_result = start_scheme_approval(
+                            local_data["ecn_id"],
+                            str(basic.get("applicant") or current_user),
+                        )
+                        if workflow_result.get("status") != "matched":
+                            return ui.notify(
+                                ecn_workflow_error_message(workflow_result, "ECN方案评审"),
+                                type="negative",
+                                multi_line=True,
+                            )
+                        wf["scheme_workflow_assignment"] = copy.deepcopy(workflow_result["assignment"])
+
                     wf["current_state"], wf["current_phase"], wf["current_step_index"] = (
                         ECNState.ECN_REVIEWING,
                         "ECN_SCHEME_REVIEW_PHASE",
                         0,
                     )
-                    wf["pending_roles"] = ECN_WORKFLOW_ROUTES["ECN_SCHEME_REVIEW_PHASE"][0]
+                    wf["pending_roles"] = (
+                        get_scheme_pending_usernames(local_data)
+                        if is_ecn_database_workflow_enabled()
+                        else ECN_WORKFLOW_ROUTES["ECN_SCHEME_REVIEW_PHASE"][0]
+                    )
                     wf["step_approvals"] = {}
                     local_data["approval_log"].append(
                         {"user": current_user, "role": current_role, "action": "发起方案评审", "time": now_str}
@@ -6314,7 +6444,75 @@ async def ecn_management_page():
                     if action_type == "reject" and rejected_item_ids:
                         local_log_entry["rejected_item_ids"] = rejected_item_ids
                     local_data["approval_log"].append(local_log_entry)
-                    if action_type == "reject":
+                    if uses_database_approval:
+                        approval_result = (
+                            finish_ecr_approval(
+                                local_data,
+                                current_user,
+                                rejected=action_type == "reject",
+                            )
+                            if database_approval_phase == "ECR_PHASE"
+                            else finish_scheme_approval(
+                                local_data,
+                                current_user,
+                                rejected=action_type == "reject",
+                            )
+                        )
+                        if approval_result.get("status") not in {
+                            "node_pending",
+                            "advanced",
+                            "completed",
+                            "rejected",
+                        }:
+                            return ui.notify(
+                                str(approval_result.get("message") or "ECR审批失败"),
+                                type="warning",
+                            )
+                        assignment_key = (
+                            "ecr_workflow_assignment"
+                            if database_approval_phase == "ECR_PHASE"
+                            else "scheme_workflow_assignment"
+                        )
+                        wf[assignment_key] = copy.deepcopy(approval_result["assignment"])
+                        wf["current_step_index"] = int(
+                            approval_result["assignment"].get("current_node_index", 0)
+                        )
+                        wf["step_approvals"] = {}
+                        wf["pending_roles"] = (
+                            get_ecr_pending_usernames(local_data)
+                            if database_approval_phase == "ECR_PHASE"
+                            else get_scheme_pending_usernames(local_data)
+                        )
+                        if approval_result["status"] == "rejected":
+                            if database_approval_phase == "ECR_PHASE":
+                                wf["current_state"] = ECNState.REJECTED
+                            else:
+                                wf["current_phase"] = "ECN_SCHEME_PHASE"
+                                wf["current_state"] = ECNState.ECN_SCHEMING
+                                wf["step_approvals"] = {}
+                                reject_ecn_scheme_items(
+                                    local_data,
+                                    rejected_item_ids,
+                                    current_user,
+                                    current_role,
+                                    note,
+                                    now_str,
+                                )
+                            wf["pending_roles"] = []
+                        elif approval_result["status"] == "completed":
+                            if database_approval_phase == "ECR_PHASE":
+                                wf["current_phase"] = "ECN_SCHEME_PHASE"
+                                wf["current_state"] = ECNState.ECN_SCHEMING
+                            else:
+                                wf["current_phase"] = "ECN_EXECUTION_PHASE"
+                                wf["current_state"] = ECNState.ECN_EXECUTING
+                                wf["current_step_index"] = 0
+                                local_data["execution_info"] = build_ecn_execution_info(
+                                    local_data.get("change_items", []),
+                                    app.storage.general.get("project_sale", {}),
+                                )
+                            wf["pending_roles"] = []
+                    elif action_type == "reject":
                         if wf["current_phase"] == "ECR_PHASE":
                             wf["current_state"], wf["pending_roles"] = ECNState.REJECTED, []
                         else:
@@ -6376,6 +6574,7 @@ async def ecn_management_page():
                     time_str,
                     rejected_ids,
                     local_full_data,
+                    database_workflow_action,
                 ):
                     # 【核心修复】：如果是新建的 ECN，数据库里还没有数据（current_ecn 为 None），
                     # 则直接使用前端传入的完整本地数据作为基底。
@@ -6394,10 +6593,17 @@ async def ecn_management_page():
                     if act_type == "submit_ecr":
                         c_wf["current_state"] = ECNState.ECR_REVIEWING
                         c_wf["current_phase"] = "ECR_PHASE"
-                        c_wf["route_type"] = "SALES_INITIATED" if "销售" in role else "RD_INITIATED"
+                        c_wf["route_type"] = local_full_data["workflow"].get("route_type")
                         c_wf["current_step_index"] = 0
-                        c_wf["pending_roles"] = ECN_WORKFLOW_ROUTES["ECR_PHASE"][c_wf["route_type"]][0]
+                        c_wf["pending_roles"] = copy.deepcopy(
+                            local_full_data["workflow"].get("pending_roles", [])
+                        )
                         c_wf["step_approvals"] = {}
+                        for assignment_key in ["ecr_workflow_assignment", "scheme_workflow_assignment"]:
+                            if local_full_data["workflow"].get(assignment_key):
+                                c_wf[assignment_key] = copy.deepcopy(
+                                    local_full_data["workflow"][assignment_key]
+                                )
                         append_ecn_approval_log_once(
                             c_log,
                             {"user": user, "role": role, "action": "发起申请", "time": time_str},
@@ -6423,12 +6629,51 @@ async def ecn_management_page():
                         c_wf["current_step_index"] = 0
                         c_wf["pending_roles"] = ECN_WORKFLOW_ROUTES["ECN_SCHEME_REVIEW_PHASE"][0]
                         c_wf["step_approvals"] = {}
+                        if local_full_data["workflow"].get("scheme_workflow_assignment"):
+                            c_wf["pending_roles"] = copy.deepcopy(
+                                local_full_data["workflow"].get("pending_roles", [])
+                            )
+                            c_wf["scheme_workflow_assignment"] = copy.deepcopy(
+                                local_full_data["workflow"]["scheme_workflow_assignment"]
+                            )
                         append_ecn_approval_log_once(
                             c_log,
                             {"user": user, "role": role, "action": "发起方案评审", "time": time_str},
                         )
 
                     elif act_type in ["approve", "reject"]:
+                        if database_workflow_action:
+                            source_workflow = local_full_data.get("workflow", {})
+                            c_wf["current_state"] = source_workflow.get("current_state")
+                            c_wf["current_phase"] = source_workflow.get("current_phase")
+                            c_wf["current_step_index"] = source_workflow.get("current_step_index", 0)
+                            c_wf["pending_roles"] = copy.deepcopy(source_workflow.get("pending_roles", []))
+                            c_wf["step_approvals"] = {}
+                            for assignment_key in ["ecr_workflow_assignment", "scheme_workflow_assignment"]:
+                                if source_workflow.get(assignment_key):
+                                    c_wf[assignment_key] = copy.deepcopy(source_workflow[assignment_key])
+                            if database_approval_phase == "ECN_SCHEME_REVIEW_PHASE":
+                                c_wf["scheme_participants"] = copy.deepcopy(
+                                    source_workflow.get("scheme_participants", {})
+                                )
+                                current_ecn["change_items"] = copy.deepcopy(
+                                    local_full_data.get("change_items", [])
+                                )
+                                if "execution_info" in local_full_data:
+                                    current_ecn["execution_info"] = copy.deepcopy(
+                                        local_full_data["execution_info"]
+                                    )
+                            append_ecn_approval_log_once(
+                                c_log,
+                                {
+                                    "user": user,
+                                    "role": role,
+                                    "action": "同意" if act_type == "approve" else "驳回",
+                                    "note": comment,
+                                    "time": time_str,
+                                },
+                            )
+                            return current_ecn
                         if role not in get_ecn_pending_approval_roles(c_wf):
                             transition_blocked["reason"] = "当前角色已完成审批或不属于当前待审批角色。"
                             return db_storage.ATOMIC_NO_UPDATE
@@ -6511,9 +6756,12 @@ async def ecn_management_page():
                     now_str,
                     rejected_item_ids,
                     copy.deepcopy(local_data),  # 【核心修复】：传入完整的本地数据副本供初始化兜底
+                    uses_database_approval,
                 )
 
                 if success and not transition_blocked["reason"]:
+                    if action_type in ["withdraw", "cancel"] and is_ecn_database_workflow_enabled():
+                        cancel_ecr_approval(local_data)
                     ui.notify("操作成功！", type="positive")
                     root_dialog.close()
                     refresh_list()
@@ -6522,6 +6770,10 @@ async def ecn_management_page():
                     root_dialog.close()
                     refresh_list()
                 else:
+                    if action_type == "submit_ecr" and is_ecn_database_workflow_enabled():
+                        cancel_ecr_approval(local_data)
+                    elif action_type == "initiate_scheme_review" and is_ecn_database_workflow_enabled():
+                        cancel_scheme_approval(local_data)
                     ui.notify("状态流转异常，请刷新重试。", type="negative")
 
             # --- 协同同步定时器 ---
@@ -6537,22 +6789,43 @@ async def ecn_management_page():
 
                     # 1. 同步工作流状态
                     fresh_wf = fresh.get("workflow", {})
-                    was_current_role_pending = current_role in get_ecn_pending_approval_roles(wf)
+                    was_current_role_pending = (
+                        current_user in get_ecn_pending_approval_roles(wf)
+                        if is_ecn_database_workflow_enabled()
+                        and wf.get("current_phase") in {"ECR_PHASE", "ECN_SCHEME_REVIEW_PHASE"}
+                        else current_role in get_ecn_pending_approval_roles(wf)
+                    )
                     if (
                         fresh_wf.get("current_state") != wf["current_state"]
                         or fresh_wf.get("pending_roles") != wf["pending_roles"]
                         or fresh_wf.get("current_phase") != wf.get("current_phase")
                         or fresh_wf.get("current_step_index") != wf.get("current_step_index")
                         or fresh_wf.get("step_approvals", {}) != wf.get("step_approvals", {})
+                        or fresh_wf.get("ecr_workflow_assignment", {})
+                        != wf.get("ecr_workflow_assignment", {})
+                        or fresh_wf.get("scheme_workflow_assignment", {})
+                        != wf.get("scheme_workflow_assignment", {})
                     ):
                         wf["current_state"] = fresh_wf.get("current_state")
                         wf["current_phase"] = fresh_wf.get("current_phase")
                         wf["current_step_index"] = fresh_wf.get("current_step_index", 0)
                         wf["pending_roles"] = copy.deepcopy(fresh_wf.get("pending_roles", []))
                         wf["step_approvals"] = copy.deepcopy(fresh_wf.get("step_approvals", {}))
+                        wf["ecr_workflow_assignment"] = copy.deepcopy(
+                            fresh_wf.get("ecr_workflow_assignment", {})
+                        )
+                        wf["scheme_workflow_assignment"] = copy.deepcopy(
+                            fresh_wf.get("scheme_workflow_assignment", {})
+                        )
                         local_data["approval_log"] = copy.deepcopy(fresh.get("approval_log", []))
                         render_workflow_tab()  # 触发刷新流转页面
-                        if was_current_role_pending and current_role not in get_ecn_pending_approval_roles(wf):
+                        current_identity_still_pending = (
+                            current_user in get_ecn_pending_approval_roles(wf)
+                            if is_ecn_database_workflow_enabled()
+                            and wf.get("current_phase") in {"ECR_PHASE", "ECN_SCHEME_REVIEW_PHASE"}
+                            else current_role in get_ecn_pending_approval_roles(wf)
+                        )
+                        if was_current_role_pending and not current_identity_still_pending:
                             root_dialog.close()
                             refresh_list()
                             ui.notify("当前角色的审批已完成，待办状态已同步。", type="info")
@@ -6637,6 +6910,8 @@ async def ecn_management_page():
     # 管理员功能：删除确认与执行
     # ==========================================
     async def confirm_delete(ecn_id):
+        if not can_delete_ecn(current_role, current_user):
+            return ui.notify("当前用户没有删除ECN单据的权限", type="warning")
         dialog.clear()
         with dialog, ui.card().classes("p-6"):
             ui.label("删除确认 (仅管理员)").classes("text-xl font-bold text-red-600 border-b pb-2 mb-4 w-full")
@@ -6646,6 +6921,10 @@ async def ecn_management_page():
                 ui.button("取消", on_click=dialog.close).props("outline color=grey")
 
                 async def do_delete():
+                    if not can_delete_ecn(current_role, current_user):
+                        ui.notify("当前用户没有删除ECN单据的权限", type="warning")
+                        dialog.close()
+                        return
                     # 采用代理的原子化深层删除，避免并发读写并触发全局刷新
                     success = await del_ecn_deep_item(["ecn_management_data", ecn_id])
 
@@ -6726,14 +7005,14 @@ async def ecn_management_page():
                 )
             with ui.row().classes("gap-2 items-center"):
                 ui.label("点击“详情”打开ECN").classes("text-xs text-gray-500")
-                ui.button("新建 ECR 申请", icon="add_box", on_click=lambda: open_ecn_detail_dialog()).props(
-                    "color=red-7"
-                )
+                if can_create_request:
+                    ui.button("新建 ECR 申请", icon="add_box", on_click=lambda: open_ecn_detail_dialog()).props(
+                        "color=red-7"
+                    )
         with ui.element("div").classes("w-full flex-1 min-h-0 p-4 md:p-6"):
-            is_admin_user = current_user.lower() == "admin"
             ecn_grid = ui.aggrid(
                 {
-                    "columnDefs": get_ecn_management_grid_columns(is_admin_user),
+                    "columnDefs": get_ecn_management_grid_columns(can_delete_record),
                     "rowData": [],
                     "defaultColDef": {
                         "sortable": True,
@@ -6788,7 +7067,7 @@ async def ecn_management_page():
                 column_id = str(event_args.get("colId") or "")
                 if column_id == "detail_action":
                     await open_ecn_detail_dialog(ecn_id)
-                elif column_id == "delete_action" and is_admin_user:
+                elif column_id == "delete_action" and can_delete_record:
                     await confirm_delete(ecn_id)
 
             async def open_ecn_grid_record(event: Any) -> None:
@@ -6845,7 +7124,7 @@ async def ecn_management_page():
                             ecn,
                             current_user,
                             current_role,
-                            include_delete=is_admin_user,
+                            include_delete=can_delete_record,
                         )
                     )
                 ecn_grid.options["rowData"] = rows

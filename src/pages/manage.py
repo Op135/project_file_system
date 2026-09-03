@@ -12,6 +12,7 @@ from ..approval_workflow import (
     APPROVER_STRATEGY_NAMES,
     get_approval_workflow_editor_nodes,
     import_design_knowledge_legacy_workflows,
+    import_ecn_legacy_workflows,
     import_project_overview_legacy_workflows,
     import_sample_issue_legacy_workflows,
     resolve_approval_workflow,
@@ -2378,8 +2379,12 @@ def manage_page():
                         render_user_assignment()
 
                 with ui.tab_panel(workflow_tab).classes("w-full h-full p-0 pt-3"):
-                    with ui.grid(columns=2).classes("w-full h-full min-h-0 gap-4"):
-                        with ui.card().classes("w-full h-full min-h-0 flex flex-col no-wrap"):
+                    with ui.element("div").classes("w-full h-full min-h-0 grid gap-4").style(
+                        "grid-template-columns: minmax(280px, 3fr) minmax(0, 7fr);"
+                    ):
+                        with ui.card().classes(
+                            "w-full h-full min-h-0 flex flex-col no-wrap p-3 shadow-sm"
+                        ):
                             with ui.row().classes("w-full items-center justify-between shrink-0"):
                                 with ui.column().classes("gap-0"):
                                     ui.label("流程策略").classes("text-lg font-bold")
@@ -2388,23 +2393,45 @@ def manage_page():
                                 add_workflow_button = ui.button("新增", icon="add").props(
                                     "outline dense"
                                 )
-                            with ui.row().classes("w-full gap-2 shrink-0"):
-                                import_sample_workflow_button = ui.button(
-                                    "从样品旧配置生成草稿",
-                                    icon="move_to_inbox",
-                                ).props("outline dense")
-                                import_design_workflow_button = ui.button(
-                                    "从设计知识旧配置生成草稿",
-                                    icon="move_to_inbox",
-                                ).props("outline dense")
-                                import_overview_workflow_button = ui.button(
-                                    "从项目概述旧配置生成草稿",
-                                    icon="move_to_inbox",
-                                ).props("outline dense")
+                            with ui.button(
+                                "从旧配置生成草稿",
+                                icon="move_to_inbox",
+                            ).props("outline dense no-caps").classes("self-start shrink-0"):
+                                with ui.menu().props("auto-close"):
+                                    ui.menu_item(
+                                        "样品问题旧配置",
+                                        on_click=lambda: import_legacy_workflows(
+                                            import_sample_issue_legacy_workflows,
+                                            "样品问题",
+                                        ),
+                                    )
+                                    ui.menu_item(
+                                        "设计知识旧配置",
+                                        on_click=lambda: import_legacy_workflows(
+                                            import_design_knowledge_legacy_workflows,
+                                            "设计知识",
+                                        ),
+                                    )
+                                    ui.menu_item(
+                                        "项目概述旧配置",
+                                        on_click=lambda: import_legacy_workflows(
+                                            import_project_overview_legacy_workflows,
+                                            "项目概述",
+                                        ),
+                                    )
+                                    ui.menu_item(
+                                        "ECN旧配置",
+                                        on_click=lambda: import_legacy_workflows(
+                                            import_ecn_legacy_workflows,
+                                            "ECN",
+                                        ),
+                                    )
                             workflow_list_container = ui.column().classes(
                                 "w-full flex-grow min-h-0 overflow-y-auto gap-2 pt-2"
                             )
-                        with ui.card().classes("w-full h-full min-h-0 flex flex-col no-wrap"):
+                        with ui.card().classes(
+                            "w-full h-full min-h-0 flex flex-col no-wrap p-3 shadow-sm"
+                        ):
                             workflow_editor_container = ui.column().classes(
                                 "w-full flex-grow min-h-0 overflow-y-auto gap-3"
                             )
@@ -2490,7 +2517,7 @@ def manage_page():
                                     if selected else "bg-white border-gray-200"
                                 )
                                 with ui.row().classes(
-                                    f"w-full items-center border rounded p-3 cursor-pointer {background}"
+                                    f"w-full items-center border rounded-lg p-2 cursor-pointer {background}"
                                 ).on(
                                     "click",
                                     lambda _event, workflow_id=workflow["workflow_id"]: (
@@ -2556,68 +2583,6 @@ def manage_page():
                                 workflow_reference_options()
                             )
 
-                            with ui.row().classes("w-full items-center justify-between"):
-                                with ui.column().classes("gap-0"):
-                                    ui.label(selected["name"]).classes("text-lg font-bold")
-                                    active_version = selected.get("active_version")
-                                    ui.label(
-                                        f"稳定编码：{selected['code']} ｜ "
-                                        f"当前版本：{active_version.get('version_number') if active_version else '未发布'}"
-                                    ).classes("text-xs text-gray-500")
-                                if selected.get("draft_version"):
-                                    ui.chip(
-                                        f"草稿 v{selected['draft_version']['version_number']}",
-                                        color="orange",
-                                    ).props("dense")
-
-                            ui.label(
-                                "运行顺序：先按申请人的主部门/主岗位匹配优先级最高的流程，"
-                                "再解析具体审批人，并校验其审批权限。"
-                            ).classes("text-xs text-blue-800 bg-blue-50 rounded p-2")
-                            name_input = ui.input("流程名称", value=selected["name"]).classes("w-full")
-                            with ui.row().classes("w-full gap-3"):
-                                ui.select(
-                                    workflow_event_options(),
-                                    value=event_key,
-                                    label="业务事件",
-                                ).props("outlined disable").classes("flex-grow")
-                                priority_input = ui.number(
-                                    "优先级（数字越小越优先）",
-                                    value=version.get("priority", 100),
-                                    min=0,
-                                    step=1,
-                                ).classes("w-64")
-
-                            ui.separator()
-                            ui.label("触发条件").classes("font-bold")
-                            requester_org_select = ui.select(
-                                unit_options,
-                                value=condition.get("requester_org_unit_ids", []),
-                                label="申请人所属部门（不选表示全部）",
-                                multiple=True,
-                                with_input=True,
-                            ).props("outlined use-chips options-dense").classes("w-full")
-                            include_children_switch = ui.switch(
-                                "包含所选部门的全部下级部门",
-                                value=condition.get("include_child_org_units", True),
-                            )
-                            requester_position_select = ui.select(
-                                position_options,
-                                value=condition.get("requester_position_ids", []),
-                                label="申请人岗位（不选表示全部）",
-                                multiple=True,
-                                with_input=True,
-                            ).props("outlined use-chips options-dense").classes("w-full")
-
-                            ui.separator()
-                            ui.label("审批节点").classes("font-bold")
-                            ui.label(
-                                "多节点按界面顺序依次执行；每个节点可以选择任意一人处理或全部人员会签。"
-                            ).classes("text-xs text-blue-800 bg-blue-50 rounded p-2")
-                            ui.label(
-                                f"节点编码格式：{STABLE_CODE_HINT}；同一流程内不得重复，保存时会自动查重。"
-                            ).classes("text-xs text-gray-500")
-
                             initial_mode = (
                                 "sequential"
                                 if str(version.get("approval_mode") or "any").lower() == "sequential"
@@ -2634,21 +2599,154 @@ def manage_page():
                                 "mode": initial_mode,
                                 "nodes": initial_nodes,
                             }
-                            workflow_mode_select = ui.select(
-                                {
-                                    "single": "单节点审批",
-                                    "sequential": "多节点串行审批",
-                                },
-                                value=initial_mode,
-                                label="流程执行方式",
-                            ).props("outlined options-dense").classes("w-full")
-                            node_editor_container = ui.column().classes("w-full gap-3")
+
+                            active_version = selected.get("active_version")
+                            with ui.card().classes(
+                                "w-full shadow-none border border-gray-200 rounded-lg p-3 gap-3"
+                            ):
+                                with ui.row().classes("w-full items-start justify-between gap-3"):
+                                    with ui.column().classes("gap-0 min-w-0"):
+                                        ui.label(selected["name"]).classes(
+                                            "text-lg font-bold truncate"
+                                        )
+                                        ui.label(
+                                            f"稳定编码：{selected['code']} ｜ "
+                                            f"当前版本：{active_version.get('version_number') if active_version else '未发布'}"
+                                        ).classes("text-xs text-gray-500")
+                                    if selected.get("draft_version"):
+                                        ui.chip(
+                                            f"草稿 v{selected['draft_version']['version_number']}",
+                                            color="orange",
+                                        ).props("dense").classes("shrink-0")
+
+                                with ui.element("div").classes("w-full grid gap-3").style(
+                                    "grid-template-columns: minmax(240px, 2fr) minmax(220px, 1.25fr) 150px;"
+                                ):
+                                    name_input = ui.input(
+                                        "流程名称",
+                                        value=selected["name"],
+                                    ).props("outlined dense")
+                                    ui.select(
+                                        workflow_event_options(),
+                                        value=event_key,
+                                        label="业务事件",
+                                    ).props("outlined dense disable options-dense")
+                                    priority_input = ui.number(
+                                        "优先级",
+                                        value=version.get("priority", 100),
+                                        min=0,
+                                        step=1,
+                                    ).props("outlined dense").tooltip("数字越小，匹配优先级越高")
+
+                            # 用一条简洁路线表达实际运行顺序，降低配置表单的阅读负担。
+                            with ui.element("div").classes(
+                                "w-full grid items-stretch gap-2"
+                            ).style(
+                                "grid-template-columns: minmax(120px, 1fr) 22px minmax(120px, 1fr) "
+                                "22px minmax(120px, 1fr) 22px minmax(120px, 1fr);"
+                            ):
+                                with ui.row().classes(
+                                    "items-center no-wrap gap-2 rounded-lg bg-slate-50 border px-3 py-2"
+                                ):
+                                    ui.icon("description", color="blue-grey", size="sm")
+                                    with ui.column().classes("gap-0"):
+                                        ui.label("提交申请").classes("text-sm font-semibold")
+                                        ui.label("业务事件进入流程").classes("text-xs text-gray-500")
+                                ui.icon("arrow_forward", color="blue-grey").classes("self-center")
+                                with ui.row().classes(
+                                    "items-center no-wrap gap-2 rounded-lg bg-blue-50 border border-blue-100 px-3 py-2"
+                                ):
+                                    ui.icon("filter_alt", color="primary", size="sm")
+                                    with ui.column().classes("gap-0"):
+                                        ui.label("条件匹配").classes("text-sm font-semibold text-blue-900")
+                                        ui.label("部门、岗位、优先级").classes("text-xs text-blue-700")
+                                ui.icon("arrow_forward", color="primary").classes("self-center")
+                                with ui.row().classes(
+                                    "items-center no-wrap gap-2 rounded-lg bg-indigo-50 border border-indigo-100 px-3 py-2"
+                                ):
+                                    ui.icon("account_tree", color="indigo", size="sm")
+                                    with ui.column().classes("gap-0"):
+                                        ui.label("审批节点").classes("text-sm font-semibold text-indigo-900")
+                                        flow_node_summary = ui.label(
+                                            f"{len(initial_nodes)} 个节点 · "
+                                            f"{'依次审批' if initial_mode == 'sequential' else '单节点'}"
+                                        ).classes("text-xs text-indigo-700")
+                                ui.icon("arrow_forward", color="positive").classes("self-center")
+                                with ui.row().classes(
+                                    "items-center no-wrap gap-2 rounded-lg bg-green-50 border border-green-100 px-3 py-2"
+                                ):
+                                    ui.icon("task_alt", color="positive", size="sm")
+                                    with ui.column().classes("gap-0"):
+                                        ui.label("流程完成").classes("text-sm font-semibold text-green-900")
+                                        ui.label("通过或驳回").classes("text-xs text-green-700")
+
+                            with ui.card().classes(
+                                "w-full shadow-none border border-gray-200 rounded-lg p-3 gap-3"
+                            ):
+                                with ui.row().classes("w-full items-center gap-2"):
+                                    ui.icon("filter_alt", color="primary", size="sm")
+                                    ui.label("触发条件").classes("font-bold")
+                                    ui.badge("留空表示全部", color="grey").props("outline")
+                                    ui.space()
+                                    include_children_switch = ui.switch(
+                                        "包含下级部门",
+                                        value=condition.get("include_child_org_units", True),
+                                    ).props("dense")
+                                with ui.element("div").classes("w-full grid gap-3").style(
+                                    "grid-template-columns: repeat(2, minmax(260px, 1fr));"
+                                ):
+                                    requester_org_select = ui.select(
+                                        unit_options,
+                                        value=condition.get("requester_org_unit_ids", []),
+                                        label="申请人所属部门",
+                                        multiple=True,
+                                        with_input=True,
+                                    ).props("outlined dense use-chips options-dense")
+                                    requester_position_select = ui.select(
+                                        position_options,
+                                        value=condition.get("requester_position_ids", []),
+                                        label="申请人岗位",
+                                        multiple=True,
+                                        with_input=True,
+                                    ).props("outlined dense use-chips options-dense")
+
+                            with ui.row().classes("w-full items-center gap-3 pt-1"):
+                                with ui.row().classes("items-center gap-2"):
+                                    ui.icon("account_tree", color="indigo", size="sm")
+                                    ui.label("审批路线").classes("font-bold")
+                                    ui.icon("help_outline", color="grey", size="xs").tooltip(
+                                        f"节点编码格式：{STABLE_CODE_HINT}；同一流程内不能重复。"
+                                    )
+                                ui.space()
+                                workflow_mode_select = ui.select(
+                                    {
+                                        "single": "单节点审批",
+                                        "sequential": "多节点串行审批",
+                                    },
+                                    value=initial_mode,
+                                    label="执行方式",
+                                ).props("outlined dense options-dense").classes("w-52")
+                            node_editor_container = ui.column().classes("w-full gap-0")
 
                             def update_node_value(node, key, value):
                                 node[key] = value
 
                             def update_node_approver(node, key, value):
                                 node.setdefault("approver", {})[key] = value
+
+                            def update_flow_node_summary():
+                                """同步顶部流程概览，避免编辑中的节点数量和模式显示滞后。"""
+                                node_count = (
+                                    len(editor_state["nodes"])
+                                    if editor_state["mode"] == "sequential"
+                                    else min(len(editor_state["nodes"]), 1)
+                                )
+                                mode_name = (
+                                    "依次审批"
+                                    if editor_state["mode"] == "sequential"
+                                    else "单节点"
+                                )
+                                flow_node_summary.text = f"{node_count} 个节点 · {mode_name}"
 
                             def move_approval_node(index, offset):
                                 nodes = editor_state["nodes"]
@@ -2671,6 +2769,7 @@ def manage_page():
                                     return
                                 nodes.pop(index)
                                 # 先更新界面，再由新槽位承接后续操作，避免引用已删除的节点容器。
+                                update_flow_node_summary()
                                 render_approval_nodes()
 
                             def next_node_key():
@@ -2698,6 +2797,7 @@ def manage_page():
                                         },
                                     }
                                 )
+                                update_flow_node_summary()
                                 render_approval_nodes()
 
                             def render_approval_nodes():
@@ -2708,12 +2808,25 @@ def manage_page():
                                     for index, node in enumerate(visible_nodes):
                                         node_approver = node.setdefault("approver", {})
                                         with ui.card().classes(
-                                            "w-full border border-blue-100 shadow-none bg-white p-4 gap-3"
-                                        ):
+                                            "relative border border-indigo-100 shadow-none bg-white "
+                                            "rounded-lg p-3 gap-3 mb-3"
+                                        ).style("margin-left: 2rem; width: calc(100% - 2rem); overflow: visible;"):
+                                            ui.label(str(index + 1)).classes(
+                                                "absolute w-8 h-8 rounded-full bg-indigo-600 text-white "
+                                                "font-bold flex items-center justify-center shadow-sm"
+                                            ).style("left: -2.55rem; top: 0.65rem;")
+                                            if index < len(visible_nodes) - 1:
+                                                ui.element("div").classes(
+                                                    "absolute w-0.5 bg-indigo-200"
+                                                ).style(
+                                                    "left: -1.6rem; top: 2.65rem; bottom: -1.1rem;"
+                                                )
                                             with ui.row().classes("w-full items-center justify-between"):
-                                                ui.label(
-                                                    f"第 {index + 1} 步｜{node.get('name') or '未命名节点'}"
-                                                ).classes("font-semibold text-blue-900")
+                                                with ui.row().classes("items-center gap-2"):
+                                                    ui.label(
+                                                        node.get("name") or "未命名节点"
+                                                    ).classes("font-semibold text-indigo-900")
+                                                    ui.badge("审批节点", color="indigo").props("outline")
                                                 if editor_state["mode"] == "sequential":
                                                     with ui.row().classes("gap-1"):
                                                         ui.button(
@@ -2735,21 +2848,23 @@ def manage_page():
                                                             on_click=lambda idx=index: remove_approval_node(idx),
                                                         ).props("flat round dense color=negative").tooltip("删除节点")
 
-                                            with ui.row().classes("w-full gap-3"):
+                                            with ui.element("div").classes("w-full grid gap-3").style(
+                                                "grid-template-columns: 190px minmax(230px, 1fr) 180px;"
+                                            ):
                                                 ui.input(
                                                     "节点编码",
                                                     value=node.get("node_key", ""),
                                                     on_change=lambda event, target=node: update_node_value(
                                                         target, "node_key", event.value
                                                     ),
-                                                ).props("outlined dense").classes("w-64").tooltip(STABLE_CODE_HINT)
+                                                ).props("outlined dense").tooltip(STABLE_CODE_HINT)
                                                 ui.input(
                                                     "节点名称",
                                                     value=node.get("name", ""),
                                                     on_change=lambda event, target=node: update_node_value(
                                                         target, "name", event.value
                                                     ),
-                                                ).props("outlined dense").classes("flex-grow")
+                                                ).props("outlined dense")
                                                 ui.select(
                                                     {
                                                         "any": "任意一人处理",
@@ -2760,27 +2875,35 @@ def manage_page():
                                                     on_change=lambda event, target=node: update_node_value(
                                                         target, "approval_mode", event.value
                                                     ),
-                                                ).props("outlined dense options-dense").classes("w-48")
+                                                ).props("outlined dense options-dense")
 
-                                            node_permission_select = ui.select(
-                                                permission_options,
-                                                value=node.get("required_permission_code"),
-                                                label="该节点审批所需权限",
-                                            ).props("outlined options-dense").classes("w-full")
-                                            node_strategy_select = ui.select(
-                                                APPROVER_STRATEGY_NAMES,
-                                                value=node_approver.get("strategy", "permission"),
-                                                label="该节点审批人来源",
-                                            ).props("outlined options-dense").classes("w-full")
+                                            with ui.element("div").classes("w-full grid gap-3").style(
+                                                "grid-template-columns: minmax(260px, 1.25fr) minmax(230px, 1fr);"
+                                            ):
+                                                node_permission_select = ui.select(
+                                                    permission_options,
+                                                    value=node.get("required_permission_code"),
+                                                    label="审批所需权限",
+                                                ).props("outlined dense options-dense")
+                                                node_strategy_select = ui.select(
+                                                    APPROVER_STRATEGY_NAMES,
+                                                    value=node_approver.get("strategy", "permission"),
+                                                    label="审批人来源",
+                                                ).props("outlined dense options-dense")
 
-                                            with ui.column().classes("w-full gap-2") as node_position_settings:
+                                            with ui.element("div").classes(
+                                                "w-full grid gap-3 items-start"
+                                            ).style(
+                                                "grid-template-columns: minmax(260px, 1.35fr) "
+                                                "minmax(190px, 0.8fr) minmax(260px, 1.2fr);"
+                                            ) as node_position_settings:
                                                 node_position_select = ui.select(
                                                     position_options,
                                                     value=node_approver.get("position_ids", []),
                                                     label="审批岗位",
                                                     multiple=True,
                                                     with_input=True,
-                                                ).props("outlined use-chips options-dense").classes("w-full")
+                                                ).props("outlined dense use-chips options-dense")
                                                 node_org_scope_select = ui.select(
                                                     {
                                                         "any": "不限部门",
@@ -2788,31 +2911,41 @@ def manage_page():
                                                         "fixed": "限定到指定部门",
                                                     },
                                                     value=node_approver.get("org_scope", "any"),
-                                                    label="审批岗位的部门范围",
-                                                ).props("outlined options-dense").classes("w-full")
+                                                    label="部门范围",
+                                                ).props("outlined dense options-dense")
                                                 node_org_select = ui.select(
                                                     unit_options,
                                                     value=node_approver.get("org_unit_ids", []),
                                                     label="指定审批部门",
                                                     multiple=True,
                                                     with_input=True,
-                                                ).props("outlined use-chips options-dense").classes("w-full")
-                                            with ui.column().classes("w-full") as node_user_settings:
+                                                ).props("outlined dense use-chips options-dense")
+                                            with ui.element("div").classes(
+                                                "grid gap-3"
+                                            ).style(
+                                                "grid-template-columns: minmax(320px, 640px);"
+                                            ) as node_user_settings:
                                                 node_user_select = ui.select(
                                                     user_options,
                                                     value=node_approver.get("user_ids", []),
                                                     label="指定审批人员",
                                                     multiple=True,
                                                     with_input=True,
-                                                ).props("outlined use-chips options-dense").classes("w-full")
-                                            with ui.column().classes("w-full") as node_manager_hint:
+                                                ).props("outlined dense use-chips options-dense")
+                                            with ui.row().classes(
+                                                "items-center gap-2 self-start bg-blue-50 rounded px-3 py-2"
+                                            ) as node_manager_hint:
+                                                ui.icon("info", color="primary", size="xs")
                                                 ui.label(
-                                                    "读取申请人的直属上级；直属上级仍须拥有本节点要求的审批权限。"
-                                                ).classes("text-xs text-blue-800 bg-blue-50 rounded p-2")
-                                            with ui.column().classes("w-full") as node_permission_hint:
+                                                    "读取申请人的直属上级，并复核该节点审批权限。"
+                                                ).classes("text-xs text-blue-800")
+                                            with ui.row().classes(
+                                                "items-center gap-2 self-start bg-blue-50 rounded px-3 py-2"
+                                            ) as node_permission_hint:
+                                                ui.icon("info", color="primary", size="xs")
                                                 ui.label(
-                                                    "选择所有拥有本节点审批权限的在职用户；admin 不会仅凭管理员身份成为审批人。"
-                                                ).classes("text-xs text-blue-800 bg-blue-50 rounded p-2")
+                                                    "匹配拥有该权限的在职用户；admin 不因管理员身份自动入选。"
+                                                ).classes("text-xs text-blue-800")
 
                                             def update_permission(
                                                 _event=None,
@@ -2878,13 +3011,17 @@ def manage_page():
                             def update_workflow_mode():
                                 editor_state["mode"] = workflow_mode_select.value or "single"
                                 add_node_button.visible = editor_state["mode"] == "sequential"
-                                multi_node_warning.visible = editor_state["mode"] == "sequential"
+                                multi_node_warning.visible = (
+                                    editor_state["mode"] == "sequential"
+                                    and not bool(event_definition and event_definition.supports_sequential)
+                                )
+                                update_flow_node_summary()
                                 render_approval_nodes()
 
                             workflow_mode_select.on_value_change(lambda _event: update_workflow_mode())
                             with ui.row().classes("w-full items-center justify-between"):
                                 multi_node_warning = ui.label(
-                                    "当前业务模块尚未接入多节点执行接口：可以保存草稿，但暂不能发布。"
+                                    "当前业务事件尚未接入多节点执行接口：可以保存草稿，但暂不能发布。"
                                 ).classes("text-xs text-orange-700 bg-orange-50 rounded p-2")
                                 add_node_button = ui.button(
                                     "添加审批节点",
@@ -2892,7 +3029,10 @@ def manage_page():
                                     on_click=add_approval_node,
                                 ).props("outline dense color=primary")
                             add_node_button.visible = initial_mode == "sequential"
-                            multi_node_warning.visible = initial_mode == "sequential"
+                            multi_node_warning.visible = (
+                                initial_mode == "sequential"
+                                and not bool(event_definition and event_definition.supports_sequential)
+                            )
                             render_approval_nodes()
 
                             def build_node_payload(node, index):
@@ -3011,7 +3151,10 @@ def manage_page():
 
                             def publish_workflow():
                                 draft_version = selected.get("draft_version") or {}
-                                if str(draft_version.get("approval_mode") or "any") == "sequential":
+                                if (
+                                    str(draft_version.get("approval_mode") or "any") == "sequential"
+                                    and not bool(event_definition and event_definition.supports_sequential)
+                                ):
                                     ui.notify(
                                         "该业务事件尚未接入多节点执行接口，多节点草稿暂不能发布。",
                                         type="warning",
@@ -3076,19 +3219,26 @@ def manage_page():
                                         icon="publish",
                                     ).props("color=primary")
 
-                            ui.separator()
-                            ui.label("发布结果模拟").classes("font-bold")
-                            ui.label(
-                                "模拟只读取已发布且启用的版本，不会产生待办或修改业务数据。"
-                            ).classes("text-xs text-gray-500")
-                            simulation_user_select = ui.select(
-                                simulation_options,
-                                label="选择申请人",
-                                with_input=True,
-                            ).props("outlined options-dense").classes("w-full")
-                            simulation_result = ui.column().classes(
-                                "w-full gap-1 bg-gray-50 border rounded p-3"
-                            )
+                            with ui.card().classes(
+                                "w-full shadow-none border border-gray-200 rounded-lg p-3 gap-3"
+                            ):
+                                with ui.row().classes("w-full items-center gap-3"):
+                                    with ui.column().classes("gap-0 mr-2"):
+                                        ui.label("发布结果模拟").classes("font-bold")
+                                        ui.label("仅读取已发布版本，不生成待办。") \
+                                            .classes("text-xs text-gray-500")
+                                    simulation_user_select = ui.select(
+                                        simulation_options,
+                                        label="选择申请人",
+                                        with_input=True,
+                                    ).props("outlined dense options-dense").classes("w-80")
+                                    simulate_button = ui.button(
+                                        "模拟匹配",
+                                        icon="science",
+                                    ).props("outline dense")
+                                simulation_result = ui.column().classes(
+                                    "w-full gap-1 bg-gray-50 border rounded p-3"
+                                )
 
                             def simulate_workflow():
                                 simulation_result.clear()
@@ -3146,11 +3296,7 @@ def manage_page():
                                             "text-xs text-orange-700"
                                         )
 
-                            ui.button(
-                                "模拟匹配",
-                                on_click=simulate_workflow,
-                                icon="science",
-                            ).props("outline")
+                            simulate_button.on_click(simulate_workflow)
 
                     def open_add_workflow_form():
                         event_options = workflow_event_options()
@@ -3263,24 +3409,6 @@ def manage_page():
                         render_workflow_editor()
 
                     add_workflow_button.on_click(open_add_workflow_form)
-                    import_sample_workflow_button.on_click(
-                        lambda: import_legacy_workflows(
-                            import_sample_issue_legacy_workflows,
-                            "样品问题",
-                        )
-                    )
-                    import_design_workflow_button.on_click(
-                        lambda: import_legacy_workflows(
-                            import_design_knowledge_legacy_workflows,
-                            "设计知识",
-                        )
-                    )
-                    import_overview_workflow_button.on_click(
-                        lambda: import_legacy_workflows(
-                            import_project_overview_legacy_workflows,
-                            "项目概述",
-                        )
-                    )
                     render_workflow_list()
                     render_workflow_editor()
 

@@ -506,6 +506,140 @@ STATISTICS_PERMISSIONS = (
 )
 
 
+# ECN 工程变更权限按业务动作拆分，审批权限只表示候选资格，不能代替具体流程待办。
+ECN_VIEW_PERMISSION = "ecn.view"
+ECN_CREATE_PERMISSION = "ecn.request.create"
+ECN_IMPACT_EDIT_PERMISSION = "ecn.impact.edit"
+ECN_SCHEME_EDIT_PERMISSION = "ecn.scheme.edit"
+ECN_SCHEME_REVIEW_SUBMIT_PERMISSION = "ecn.scheme.review.submit"
+ECN_IMPACT_INITIAL_REMINDER_PERMISSION = "ecn.impact.initial_reminder"
+ECN_ECR_APPROVE_PERMISSION = "ecn.ecr.approve"
+ECN_SCHEME_APPROVE_PERMISSION = "ecn.scheme.approve"
+ECN_EXECUTION_ASSISTANT_PERMISSION = "ecn.execution.assistant"
+ECN_EXECUTION_MATERIAL_CONFIRM_PERMISSION = "ecn.execution.material.confirm"
+ECN_EXECUTION_PURCHASE_CONFIRM_PERMISSION = "ecn.execution.purchase.confirm"
+ECN_EXECUTION_PMC_CONFIRM_PERMISSION = "ecn.execution.pmc.confirm"
+ECN_EXECUTION_PRODUCTION_CONFIRM_PERMISSION = "ecn.execution.production.confirm"
+ECN_EXECUTION_SALES_SUPERVISOR_CONFIRM_PERMISSION = "ecn.execution.sales_supervisor.confirm"
+ECN_DELETE_PERMISSION = "ecn.delete"
+
+ECN_ORDINARY_FILE_CHANGE_TYPE_KEYS = {
+    "图纸更新": "drawing",
+    "SOP修改": "sop",
+    "测试报告内容格式": "test_report",
+    "其它": "other",
+}
+
+
+def ecn_ordinary_file_view_permission(change_type: object) -> str:
+    """返回特定事项/资料分类对应的 ECN 非图片附件查看权限。"""
+    key = ECN_ORDINARY_FILE_CHANGE_TYPE_KEYS.get(str(change_type or "").strip(), "")
+    return f"ecn.file.ordinary.{key}.view" if key else ""
+
+
+ECN_PERMISSIONS = (
+    PermissionDefinition(
+        ECN_VIEW_PERMISSION,
+        "查看 — ECN工程变更",
+        "工程变更 · 入口与申请",
+        "允许从主页进入并查看ECN工程变更列表及单据详情",
+    ),
+    PermissionDefinition(
+        ECN_CREATE_PERMISSION,
+        "申请 — 新建/提交ECR",
+        "工程变更 · 入口与申请",
+        "允许新建ECR、保存本人草稿、提交、撤回和作废本人尚未完成的申请",
+    ),
+    PermissionDefinition(
+        ECN_IMPACT_EDIT_PERMISSION,
+        "维护 — ECN影响评估",
+        "工程变更 · 影响与方案",
+        "允许在方案编写阶段维护扩大影响范围、涉及资料和物料等影响信息",
+    ),
+    PermissionDefinition(
+        ECN_SCHEME_EDIT_PERMISSION,
+        "编写 — ECN变更方案",
+        "工程变更 · 影响与方案",
+        "允许在方案编写阶段新增、维护并确认本人编写的变更方案",
+    ),
+    PermissionDefinition(
+        ECN_SCHEME_REVIEW_SUBMIT_PERMISSION,
+        "发起 — ECN方案评审",
+        "工程变更 · 影响与方案",
+        "允许在所有方案参与人确认完成后发起ECN方案评审",
+    ),
+    PermissionDefinition(
+        ECN_IMPACT_INITIAL_REMINDER_PERMISSION,
+        "提醒 — ECN影响评估尚未认领",
+        "工程变更 · 影响与方案",
+        "ECR通过后影响评估仍为空且无人认领时，在主页接收全局兜底待办提醒",
+    ),
+    PermissionDefinition(
+        ECN_ECR_APPROVE_PERMISSION,
+        "审批 — ECR申请",
+        "工程变更 · 审批",
+        "作为ECR审批候选人；实际可审批单据由已发布流程产生的具体待办决定",
+    ),
+    PermissionDefinition(
+        ECN_SCHEME_APPROVE_PERMISSION,
+        "审批 — ECN方案",
+        "工程变更 · 审批",
+        "作为ECN方案评审候选人；实际可审批单据由已发布流程产生的具体待办决定",
+    ),
+    PermissionDefinition(
+        ECN_EXECUTION_ASSISTANT_PERMISSION,
+        "执行 — 资料准备与系统内资料落盘",
+        "工程变更 · 执行",
+        "允许确认第一阶段资料和ERP状态，并触发或恢复系统内资料执行",
+    ),
+    PermissionDefinition(
+        ECN_EXECUTION_MATERIAL_CONFIRM_PERMISSION,
+        "执行 — 本人负责项目的销售追溯确认",
+        "工程变更 · 执行",
+        "允许项目销售确认单据中明确分配给本人的客户/在途追溯责任项",
+    ),
+    PermissionDefinition(
+        ECN_EXECUTION_PURCHASE_CONFIRM_PERMISSION,
+        "执行 — 采购追溯责任项",
+        "工程变更 · 执行",
+        "允许确认ECN物料执行清单中的采购责任节点",
+    ),
+    PermissionDefinition(
+        ECN_EXECUTION_PMC_CONFIRM_PERMISSION,
+        "执行 — PMC追溯责任项",
+        "工程变更 · 执行",
+        "允许确认ECN物料执行清单中的PMC责任节点",
+    ),
+    PermissionDefinition(
+        ECN_EXECUTION_PRODUCTION_CONFIRM_PERMISSION,
+        "执行 — 生产追溯责任项",
+        "工程变更 · 执行",
+        "允许确认ECN物料执行清单中的生产管理责任节点",
+    ),
+    PermissionDefinition(
+        ECN_EXECUTION_SALES_SUPERVISOR_CONFIRM_PERMISSION,
+        "执行 — 销售管理追溯责任项",
+        "工程变更 · 执行",
+        "允许确认客户/在途范围的销售管理责任节点，并在项目销售未识别时兜底确认",
+    ),
+    *(
+        PermissionDefinition(
+            f"ecn.file.ordinary.{permission_key}.view",
+            f"查看附件 — {change_type}",
+            "工程变更 · 附件",
+            f"允许查看或下载ECN中“{change_type}”类特定事项/资料方案的非图片附件",
+        )
+        for change_type, permission_key in ECN_ORDINARY_FILE_CHANGE_TYPE_KEYS.items()
+    ),
+    PermissionDefinition(
+        ECN_DELETE_PERMISSION,
+        "删除 — ECN单据",
+        "工程变更 · 高风险操作",
+        "允许永久删除ECN单据及其流程记录；此权限不会自动授予普通岗位",
+    ),
+)
+
+
 SAMPLE_ORDER_EXTENSION_NOTIFY_PERMISSION = "notifications.sample_order.extension.receive"
 SAMPLE_ORDER_SPECIAL_STATUS_NOTIFY_PERMISSION = "notifications.sample_order.special_status.receive"
 ERROR_EXTENSION_REQUEST_NOTIFY_PERMISSION = "notifications.error.extension.request.receive"
@@ -717,6 +851,7 @@ STATIC_PERMISSION_CATALOG = (
     + SAMPLE_ISSUE_PERMISSIONS
     + DESIGN_KNOWLEDGE_PERMISSIONS
     + STATISTICS_PERMISSIONS
+    + ECN_PERMISSIONS
     + NOTIFICATION_PERMISSIONS
 )
 try:
@@ -758,6 +893,7 @@ def ignores_legacy_role_grants(permission_code: str) -> bool:
         or normalized.startswith("sample_issue.")
         or normalized.startswith("design_knowledge.")
         or normalized.startswith("statistics.")
+        or normalized.startswith("ecn.")
         or normalized.startswith("notifications.")
     )
 

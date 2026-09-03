@@ -7,10 +7,30 @@ from pathlib import Path
 import pandas as pd
 
 from src.access_control import can_use_tool
+from src.ecn_access import (
+    can_create_ecn_request,
+    can_confirm_ecn_material_spec,
+    can_delete_ecn,
+    can_edit_ecn_impact,
+    can_edit_ecn_scheme,
+    can_execute_ecn_assistant_stage,
+    can_submit_ecn_scheme_review,
+    can_view_ecn,
+    can_view_ecn_scheme_non_image_file,
+    has_ecn_material_execution_qualification,
+)
 from src.permission_catalog import (
     DESIGN_KNOWLEDGE_CREATE_PERMISSION,
     DESIGN_KNOWLEDGE_REVIEW_PERMISSION,
     DESIGN_KNOWLEDGE_VIEW_PERMISSION,
+    ECN_CREATE_PERMISSION,
+    ECN_EXECUTION_ASSISTANT_PERMISSION,
+    ECN_EXECUTION_MATERIAL_CONFIRM_PERMISSION,
+    ECN_EXECUTION_PMC_CONFIRM_PERMISSION,
+    ECN_IMPACT_EDIT_PERMISSION,
+    ECN_SCHEME_EDIT_PERMISSION,
+    ECN_SCHEME_REVIEW_SUBMIT_PERMISSION,
+    ECN_VIEW_PERMISSION,
     ERROR_NOTIFICATION_MODULE,
     ERROR_RECORD_EDIT_PERMISSION,
     ERROR_VIEW_PERMISSION,
@@ -175,6 +195,178 @@ class AccessControlTests(unittest.TestCase):
                 "system.manage",
                 legacy_role="admin",
                 legacy_allowed_roles=["admin"],
+            )
+        )
+
+    def test_ecn_legacy_mode_keeps_existing_role_rules(self):
+        """旧 Excel 模式继续兼容 ECN 原有入口、编写、发起和执行角色规则。"""
+        self.assertTrue(can_view_ecn("行政专员", "张三", user_service=self.service))
+        self.assertTrue(can_create_ecn_request("行政专员", "张三", user_service=self.service))
+        self.assertTrue(can_edit_ecn_impact("研发硬件", "张三", user_service=self.service))
+        self.assertTrue(can_edit_ecn_scheme("质量工程师", "张三", user_service=self.service))
+        self.assertTrue(
+            can_submit_ecn_scheme_review("研发经理", "张三", user_service=self.service)
+        )
+        self.assertTrue(
+            can_execute_ecn_assistant_stage("研发助理", "张三", user_service=self.service)
+        )
+        self.assertTrue(
+            has_ecn_material_execution_qualification(
+                "任意执行岗位",
+                "张三",
+                user_service=self.service,
+            )
+        )
+        self.assertFalse(can_delete_ecn("研发经理", "张三", user_service=self.service))
+
+    def test_ecn_database_mode_uses_independent_stable_permissions(self):
+        """数据库模式不再因旧角色文本命中 ECN 权限，并允许逐项授权。"""
+        self.service.migrate_legacy_users()
+        org_unit_id = self.service.save_org_unit(code="org.ecn", name="ECN测试部")
+        position_id = self.service.save_position(code="ecn.tester", name="ECN测试岗位")
+        self.service.set_primary_membership(
+            "张三",
+            org_unit_id=org_unit_id,
+            position_id=position_id,
+        )
+
+        self.assertFalse(can_view_ecn("研发经理", "张三", user_service=self.service))
+        self.assertFalse(can_edit_ecn_scheme("研发硬件", "张三", user_service=self.service))
+        self.service.set_position_permissions(
+            position_id,
+            [
+                ECN_VIEW_PERMISSION,
+                ECN_CREATE_PERMISSION,
+                ECN_IMPACT_EDIT_PERMISSION,
+                ECN_SCHEME_EDIT_PERMISSION,
+                ECN_SCHEME_REVIEW_SUBMIT_PERMISSION,
+                ECN_EXECUTION_ASSISTANT_PERMISSION,
+                ECN_EXECUTION_MATERIAL_CONFIRM_PERMISSION,
+            ],
+            actor_username="admin",
+        )
+
+        self.assertTrue(can_view_ecn("普通岗位", "张三", user_service=self.service))
+        self.assertTrue(can_create_ecn_request("普通岗位", "张三", user_service=self.service))
+        self.assertTrue(can_edit_ecn_impact("普通岗位", "张三", user_service=self.service))
+        self.assertTrue(can_edit_ecn_scheme("普通岗位", "张三", user_service=self.service))
+        self.assertTrue(
+            can_submit_ecn_scheme_review("普通岗位", "张三", user_service=self.service)
+        )
+        self.assertTrue(
+            can_execute_ecn_assistant_stage("普通岗位", "张三", user_service=self.service)
+        )
+        self.assertTrue(
+            has_ecn_material_execution_qualification(
+                "普通岗位",
+                "张三",
+                user_service=self.service,
+            )
+        )
+        self.assertFalse(can_delete_ecn("admin", "张三", user_service=self.service))
+
+    def test_ecn_database_mode_uses_attachment_category_permission(self):
+        """ECN 特定事项附件按变更分类独立授权。"""
+        self.service.migrate_legacy_users()
+        org_unit_id = self.service.save_org_unit(code="org.ecn.files", name="ECN附件测试部")
+        position_id = self.service.save_position(code="ecn.file.viewer", name="ECN附件查看岗位")
+        self.service.set_primary_membership(
+            "张三",
+            org_unit_id=org_unit_id,
+            position_id=position_id,
+        )
+        drawing_item = {
+            "scheme_category": "ordinary_document",
+            "change_type": "图纸更新",
+        }
+        self.assertFalse(
+            can_view_ecn_scheme_non_image_file(
+                drawing_item,
+                "研发硬件",
+                "张三",
+                user_service=self.service,
+            )
+        )
+        self.service.set_position_permissions(
+            position_id,
+            ["ecn.file.ordinary.drawing.view"],
+            actor_username="admin",
+        )
+        self.assertTrue(
+            can_view_ecn_scheme_non_image_file(
+                drawing_item,
+                "普通岗位",
+                "张三",
+                user_service=self.service,
+            )
+        )
+
+    def test_ecn_material_responsibility_uses_permissions_in_database_mode(self):
+        """数据库模式按稳定责任权限和明确项目销售判断，不读取岗位显示名称。"""
+        self.service.migrate_legacy_users()
+        org_unit_id = self.service.save_org_unit(code="org.ecn.execution", name="ECN执行部")
+        position_id = self.service.save_position(code="ecn.execution", name="普通执行岗位")
+        self.service.set_primary_membership(
+            "张三",
+            org_unit_id=org_unit_id,
+            position_id=position_id,
+        )
+        pmc_spec = {
+            "responsible_type": "role",
+            "responsible_key": "PMC",
+            "roles": ["PMC"],
+            "users": [],
+        }
+        self.assertFalse(
+            can_confirm_ecn_material_spec(
+                pmc_spec,
+                "PMC经理",
+                "张三",
+                user_service=self.service,
+            )
+        )
+        self.service.set_position_permissions(
+            position_id,
+            [ECN_EXECUTION_PMC_CONFIRM_PERMISSION],
+            actor_username="admin",
+        )
+        self.assertTrue(
+            can_confirm_ecn_material_spec(
+                pmc_spec,
+                "普通岗位",
+                "张三",
+                user_service=self.service,
+            )
+        )
+
+        project_sales_spec = {
+            "responsible_type": "project_sales",
+            "responsible_key": "项目销售",
+            "roles": [],
+            "users": ["张三"],
+        }
+        self.assertFalse(
+            can_confirm_ecn_material_spec(
+                project_sales_spec,
+                "普通岗位",
+                "张三",
+                user_service=self.service,
+            )
+        )
+        self.service.set_position_permissions(
+            position_id,
+            [
+                ECN_EXECUTION_PMC_CONFIRM_PERMISSION,
+                ECN_EXECUTION_MATERIAL_CONFIRM_PERMISSION,
+            ],
+            actor_username="admin",
+        )
+        self.assertTrue(
+            can_confirm_ecn_material_spec(
+                project_sales_spec,
+                "普通岗位",
+                "张三",
+                user_service=self.service,
             )
         )
 

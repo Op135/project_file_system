@@ -12,6 +12,8 @@ from .permission_catalog import (
     PROJECT_OVERVIEW_BATCH_REVIEW_PERMISSION,
     PROJECT_OVERVIEW_CORRECTION_REVIEW_PERMISSION,
     SAMPLE_ISSUE_CLOSE_APPROVE_PERMISSION,
+    ECN_ECR_APPROVE_PERMISSION,
+    ECN_SCHEME_APPROVE_PERMISSION,
 )
 
 
@@ -21,6 +23,7 @@ class ApprovalWorkflowEventDefinition:
     event: str
     name: str
     permission_codes: tuple[str, ...]
+    supports_sequential: bool = False
 
     @property
     def key(self) -> str:
@@ -57,6 +60,20 @@ APPROVAL_WORKFLOW_EVENTS = (
         event="correction",
         name="项目概述原记录纠错",
         permission_codes=(PROJECT_OVERVIEW_CORRECTION_REVIEW_PERMISSION,),
+    ),
+    ApprovalWorkflowEventDefinition(
+        module="ecn",
+        event="ecr_review",
+        name="ECR申请审批",
+        permission_codes=(ECN_ECR_APPROVE_PERMISSION,),
+        supports_sequential=True,
+    ),
+    ApprovalWorkflowEventDefinition(
+        module="ecn",
+        event="scheme_review",
+        name="ECN方案评审",
+        permission_codes=(ECN_SCHEME_APPROVE_PERMISSION,),
+        supports_sequential=True,
     ),
 )
 
@@ -712,6 +729,134 @@ def import_sample_issue_legacy_workflows(user_service, *, actor_username: str) -
             },
             required_permission_code=rule["permission_code"],
             approval_mode="any",
+            notification={"notify_assignees": True, "notify_requester_on_result": True},
+            actor_username=actor_username,
+        )
+        created += 1
+    return created, warnings
+
+
+def import_ecn_legacy_workflows(user_service, *, actor_username: str) -> tuple[int, list[str]]:
+    """把 ECN 旧审批路线转换为三个可检查的多节点流程草稿。"""
+    from .ecn_management_config import ECN_WORKFLOW_ROUTES
+
+    positions = user_service.list_positions()
+    org_units = user_service.list_org_units()
+    existing_codes = {
+        str(item.get("code", "")).casefold()
+        for item in user_service.list_approval_workflows(module="ecn")
+    }
+    warnings: list[str] = []
+    created = 0
+
+    def matching_position_ids(keywords: list[str]) -> list[str]:
+        return list(
+            dict.fromkeys(
+                str(position["position_id"])
+                for position in positions
+                if any(
+                    str(keyword).strip().casefold()
+                    in str(position.get("name", "")).strip().casefold()
+                    for keyword in keywords
+                    if str(keyword).strip()
+                )
+            )
+        )
+
+    sales_org_ids = [
+        str(unit["org_unit_id"])
+        for unit in org_units
+        if "销售" in str(unit.get("name", ""))
+    ]
+
+    def build_nodes(route: Any, workflow_name: str, permission_code: str) -> list[dict[str, Any]]:
+        nodes: list[dict[str, Any]] = []
+        stages = route if isinstance(route, list) else []
+        for index, stage in enumerate(stages):
+            keywords = [str(value) for value in stage if str(value)] if isinstance(stage, list) else []
+            position_ids = matching_position_ids(keywords)
+            node_name = " / ".join(keywords) or f"审批节点 {index + 1}"
+            if not position_ids:
+                warnings.append(f"{workflow_name} · {node_name}：未匹配到审批岗位，请手工选择")
+            nodes.append(
+                {
+                    "node_key": f"approval_{index + 1}",
+                    "name": node_name,
+                    "approval_mode": "all" if len(keywords) > 1 else "any",
+                    "required_permission_code": permission_code,
+                    "approver": {
+                        "strategy": "position",
+                        "position_ids": position_ids,
+                        "org_scope": "any",
+                        "org_unit_ids": [],
+                    },
+                }
+            )
+        return nodes
+
+    ecr_routes = ECN_WORKFLOW_ROUTES.get("ECR_PHASE", {})
+    route_specs = [
+        (
+            "ecn.ecr.sales_initiated",
+            "ECR审批 · 销售部门发起",
+            10,
+            sales_org_ids,
+            ecr_routes.get("SALES_INITIATED", []),
+        ),
+        (
+            "ecn.ecr.default",
+            "ECR审批 · 默认路线",
+            1000,
+            [],
+            ecr_routes.get("RD_INITIATED", []),
+        ),
+    ]
+    if not sales_org_ids:
+        warnings.append("ECR审批 · 销售部门发起：未匹配到销售部门，请手工选择")
+    for code, name, priority, requester_org_ids, route in route_specs:
+        if code.casefold() in existing_codes:
+            continue
+        nodes = build_nodes(route, name, ECN_ECR_APPROVE_PERMISSION)
+        user_service.save_approval_workflow_draft(
+            code=code,
+            module="ecn",
+            event="ecr_review",
+            name=name,
+            priority=priority,
+            condition={
+                "requester_org_unit_ids": requester_org_ids,
+                "requester_position_ids": [],
+                "include_child_org_units": True,
+                "migration_requires_review": bool(code.endswith("sales_initiated") and not sales_org_ids),
+            },
+            approver={"nodes": nodes},
+            required_permission_code=ECN_ECR_APPROVE_PERMISSION,
+            approval_mode="sequential",
+            notification={"notify_assignees": True, "notify_requester_on_result": True},
+            actor_username=actor_username,
+        )
+        existing_codes.add(code.casefold())
+        created += 1
+
+    scheme_code = "ecn.scheme.default"
+    if scheme_code.casefold() not in existing_codes:
+        scheme_name = "ECN方案评审 · 默认路线"
+        scheme_route = ECN_WORKFLOW_ROUTES.get("ECN_SCHEME_REVIEW_PHASE", [])
+        nodes = build_nodes(scheme_route, scheme_name, ECN_SCHEME_APPROVE_PERMISSION)
+        user_service.save_approval_workflow_draft(
+            code=scheme_code,
+            module="ecn",
+            event="scheme_review",
+            name=scheme_name,
+            priority=100,
+            condition={
+                "requester_org_unit_ids": [],
+                "requester_position_ids": [],
+                "include_child_org_units": True,
+            },
+            approver={"nodes": nodes},
+            required_permission_code=ECN_SCHEME_APPROVE_PERMISSION,
+            approval_mode="sequential",
             notification={"notify_assignees": True, "notify_requester_on_result": True},
             actor_username=actor_username,
         )

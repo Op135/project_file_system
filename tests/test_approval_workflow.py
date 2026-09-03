@@ -13,13 +13,16 @@ from src.approval_workflow import (
     get_workflow_event_definition,
     get_approval_workflow_editor_nodes,
     import_design_knowledge_legacy_workflows,
+    import_ecn_legacy_workflows,
     import_project_overview_legacy_workflows,
     is_assigned_approver,
     resolve_approval_workflow,
 )
+from src.ecn_workflow import finish_ecr_approval, start_ecr_approval
 from src.permission_catalog import (
     DESIGN_KNOWLEDGE_REVIEW_PERMISSION,
     DESIGN_KNOWLEDGE_TAG_REVIEW_PERMISSION,
+    ECN_ECR_APPROVE_PERMISSION,
     PROJECT_OVERVIEW_BATCH_REVIEW_PERMISSION,
     PROJECT_OVERVIEW_CORRECTION_REVIEW_PERMISSION,
     SAMPLE_ISSUE_CLOSE_APPROVE_PERMISSION,
@@ -285,6 +288,116 @@ class ApprovalWorkflowTests(unittest.TestCase):
         )
         self.assertEqual(final["status"], "completed")
         self.assertEqual(final["assignment"]["status"], "completed")
+
+    def test_ecn_ecr_event_supports_configured_sequential_workflow(self):
+        """ECR 应按管理员发布的节点顺序生成并推进具体人员待办。"""
+        event = get_workflow_event_definition("ecn", "ecr_review")
+        self.assertIsNotNone(event)
+        assert event is not None
+        self.assertTrue(event.supports_sequential)
+        scheme_event = get_workflow_event_definition("ecn", "scheme_review")
+        self.assertIsNotNone(scheme_event)
+        assert scheme_event is not None
+        self.assertTrue(scheme_event.supports_sequential)
+
+        self.service.set_position_permissions(
+            self.approver_position_id,
+            [ECN_ECR_APPROVE_PERMISSION],
+        )
+        self.service.set_position_permissions(
+            self.observer_position_id,
+            [ECN_ECR_APPROVE_PERMISSION],
+        )
+        users = self.service.load_users()
+        workflow_id, _version_id = self.service.save_approval_workflow_draft(
+            code="ecn.ecr.sequence_test",
+            module="ecn",
+            event="ecr_review",
+            name="ECR多节点测试流程",
+            priority=5,
+            condition={
+                "requester_org_unit_ids": [self.org_unit_id],
+                "requester_position_ids": [self.requester_position_id],
+                "include_child_org_units": True,
+            },
+            approver={
+                "nodes": [
+                    {
+                        "node_key": "technical_review",
+                        "name": "技术审批",
+                        "approval_mode": "any",
+                        "required_permission_code": ECN_ECR_APPROVE_PERMISSION,
+                        "approver": {
+                            "strategy": "users",
+                            "user_ids": [users["李四"]["user_id"]],
+                        },
+                    },
+                    {
+                        "node_key": "business_review",
+                        "name": "业务审批",
+                        "approval_mode": "any",
+                        "required_permission_code": ECN_ECR_APPROVE_PERMISSION,
+                        "approver": {
+                            "strategy": "users",
+                            "user_ids": [users["王五"]["user_id"]],
+                        },
+                    },
+                ]
+            },
+            required_permission_code=ECN_ECR_APPROVE_PERMISSION,
+            approval_mode="sequential",
+            actor_username="admin",
+        )
+        self.service.publish_approval_workflow(workflow_id, actor_username="admin")
+
+        started = start_ecr_approval(
+            "ecn-001",
+            "张三",
+            user_service=self.service,
+        )
+        self.assertEqual(started["status"], "matched")
+        ecn_data = {
+            "ecn_id": "ecn-001",
+            "workflow": {"ecr_workflow_assignment": started["assignment"]},
+        }
+        first = finish_ecr_approval(
+            ecn_data,
+            "李四",
+            rejected=False,
+            user_service=self.service,
+        )
+        self.assertEqual(first["status"], "advanced")
+        ecn_data["workflow"]["ecr_workflow_assignment"] = first["assignment"]
+        final = finish_ecr_approval(
+            ecn_data,
+            "王五",
+            rejected=False,
+            user_service=self.service,
+        )
+        self.assertEqual(final["status"], "completed")
+
+    def test_ecn_legacy_routes_generate_reviewable_drafts_idempotently(self):
+        """ECN 旧路线应一次生成两条 ECR 和一条方案评审草稿。"""
+        created, warnings = import_ecn_legacy_workflows(
+            self.service,
+            actor_username="admin",
+        )
+        self.assertEqual(created, 3)
+        self.assertTrue(warnings)
+        workflows = self.service.list_approval_workflows(module="ecn")
+        self.assertEqual(len(workflows), 3)
+        self.assertTrue(
+            all(
+                workflow.get("draft_version", {}).get("approval_mode") == "sequential"
+                for workflow in workflows
+            )
+        )
+
+        created_again, _warnings_again = import_ecn_legacy_workflows(
+            self.service,
+            actor_username="admin",
+        )
+        self.assertEqual(created_again, 0)
 
     def test_workflow_editor_nodes_support_old_single_and_new_sequence_versions(self):
         """管理界面应把旧单节点与新串行版本统一转换成可编辑节点。"""
