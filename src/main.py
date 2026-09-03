@@ -18,13 +18,13 @@ from . import (
 from .components import StorageBackupManager
 from .config import BASE_DIR, IMG_DIR, PDF_PREVIEW_CACHE, ST, WECOM_CONTACT_CACHE_TTL_SECONDS
 from .config_service import ConfigService
+from .ecn_workflow import reconcile_ecn_work_assignments
 from .error_management_config import (
     ERROR_BACKGROUND_REMINDER_ENABLED,
     ERROR_BACKGROUND_REMINDER_INITIAL_DELAY_SECONDS,
     ERROR_BACKGROUND_REMINDER_INTERVAL_SECONDS,
     ERROR_REMINDER_CHECK_WINDOW,
 )
-from .ecn_workflow import reconcile_ecn_work_assignments
 from .issue_workflow_utils import is_time_in_window
 from .pages.sample_order_dashboard import initialize_sample_order_storage
 from .sample_issue_config import (
@@ -308,8 +308,7 @@ async def master_startup():
     )
     if ecn_reconcile_result.get("repaired") or ecn_reconcile_result.get("orphaned"):
         logger.warning(
-            "ECN审批待办自愈完成：扫描 %s 张单据，修复 %s 个节点，"
-            "清理 %s 条孤立待办。",
+            "ECN审批待办自愈完成：扫描 %s 张单据，修复 %s 个节点，清理 %s 条孤立待办。",
             ecn_reconcile_result.get("scanned", 0),
             ecn_reconcile_result.get("repaired", 0),
             ecn_reconcile_result.get("orphaned", 0),
