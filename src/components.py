@@ -42,7 +42,11 @@ from .config import (
     UPLOADS_DIR,
 )
 from .custom_ui import custom_upload
-from .overview_batch_operations import is_table_child_state_allowed, validate_overview_content
+from .overview_batch_operations import (
+    get_table_child_state_violations,
+    is_table_child_state_allowed,
+    validate_overview_content,
+)
 from .overview_corrections import (
     OVERVIEW_CORRECTION_REQUESTS_KEY,
     OVERVIEW_CORRECTION_STAGING_DIR,
@@ -90,6 +94,57 @@ from .utils import (
 # 获取一个以此模块命名的 logger
 # 比如：如果你的文件是 src/components.py，这个 logger 的名字就会是 "src.components"
 logger = logging.getLogger(__name__)
+
+
+def _prepare_overview_state_draft(project: str, chip_id: str, current_states: dict) -> dict:
+    """创建或复用状态编辑草稿，并返回不受广播条目后续删除影响的字典引用。"""
+    broadcast_root = app.storage.general.setdefault("over_change_broadcast", {})
+    project_broadcast = broadcast_root.setdefault(project, {})
+    broadcast_entry = project_broadcast.get(chip_id)
+    current_user = str(app.storage.user.get("current_user") or "匿名用户")
+
+    if isinstance(broadcast_entry, dict) and isinstance(broadcast_entry.get("select_activ_dic"), dict):
+        draft_states = broadcast_entry["select_activ_dic"]
+        if set(draft_states) == set(current_states):
+            editors = broadcast_entry.setdefault("editor", [])
+            if not isinstance(editors, list):
+                editors = []
+            if current_user not in editors:
+                editors.append(current_user)
+            broadcast_entry["editor"] = editors
+            return draft_states
+
+    draft_states = copy.deepcopy(current_states)
+    project_broadcast[chip_id] = {
+        "editor": [current_user],
+        "select_activ_dic": draft_states,
+    }
+    return draft_states
+
+
+def _release_overview_state_draft(project: str, chip_id: str) -> None:
+    """安全释放当前用户的状态草稿登记；条目已被其它流程清理时直接忽略。"""
+    broadcast_root = app.storage.general.get("over_change_broadcast", {})
+    if not isinstance(broadcast_root, dict):
+        return
+    project_broadcast = broadcast_root.get(project)
+    if not isinstance(project_broadcast, dict):
+        return
+    broadcast_entry = project_broadcast.get(chip_id)
+    if not isinstance(broadcast_entry, dict):
+        return
+
+    editors = broadcast_entry.get("editor")
+    current_user = str(app.storage.user.get("current_user") or "匿名用户")
+    if isinstance(editors, list):
+        try:
+            editors.remove(current_user)
+        except ValueError:
+            pass
+    if not editors:
+        project_broadcast.pop(chip_id, None)
+    if not project_broadcast:
+        broadcast_root.pop(project, None)
 
 
 class OverviewReasonSelector:
@@ -3402,7 +3457,7 @@ class InteractiveButton:
             [f"{self.project}_over_data", self.label, chip_id, "select_activ_dic"], {}
         )
 
-        if len(new_select_activ_dic) != len(SELECT_ACTIV_DIC):
+        if set(new_select_activ_dic) != set(SELECT_ACTIV_DIC):
             ui.notify(
                 "需求刚刚升级了，各项概述的激活配置需要重新确定！",
                 type="warning",
@@ -3412,19 +3467,11 @@ class InteractiveButton:
                 # multi_line=True,
                 close_button="✖",
             )
-            self._select_set_activ_dialog(chip_id, chip_text)
             return True
         return False
 
     def cancel_checkbox_change(self, chip_id):
-        try:
-            app.storage.general["over_change_broadcast"][self.project][chip_id]["editor"].remove(
-                app.storage.user.get("current_user", "匿名用户")
-            )
-        except ValueError:
-            pass
-        if not app.storage.general["over_change_broadcast"][self.project].get(chip_id, {}).get("editor", []):
-            app.storage.general["over_change_broadcast"][self.project].pop(chip_id, None)
+        _release_overview_state_draft(self.project, chip_id)
 
     async def _set_related_chip_state(
         self, chip_text, chip_state, all_related_bool, related_select_dic, type, record_time=""
@@ -3627,16 +3674,22 @@ class InteractiveButton:
 
         self.activ_dialog.open()
 
-    async def handle_checkbox_change(self, ui_spinner, chip_id, chip_text, reason_selector):
+    async def handle_checkbox_change(
+        self,
+        ui_spinner,
+        chip_id,
+        chip_text,
+        reason_selector,
+        draft_select_activ_dic,
+    ):
         reason = reason_selector.value.strip()
         if not reason:
             ui.notify("请选择操作原因；选择“其他”时需填写具体原因。", type="warning")
             return
-        new_select_activ_dic = copy.deepcopy(
-            app.storage.general["over_change_broadcast"][self.project][chip_id]["select_activ_dic"]
-        )
+        new_select_activ_dic = copy.deepcopy(draft_select_activ_dic)
         if self._check_version_updated(chip_id, new_select_activ_dic, chip_text):
             self.cancel_checkbox_change(chip_id)
+            self._select_set_activ_dialog(chip_id, chip_text)
             return
 
         try:
@@ -3724,32 +3777,18 @@ class InteractiveButton:
                 [f"{self.project}_over_data", self.label, chip_id, "select_activ_dic"], {}
             )
 
-            app.storage.general["over_change_broadcast"].setdefault(self.project, {})
-            app.storage.general["over_change_broadcast"][self.project].setdefault(chip_id, {})
-
-            if app.storage.general["over_change_broadcast"][self.project][chip_id] and len(
-                app.storage.general["over_change_broadcast"][self.project][chip_id]["select_activ_dic"]
-            ) == len(SELECT_ACTIV_DIC):
-                editor_list = app.storage.general["over_change_broadcast"][self.project][chip_id]["editor"]
-                editor_list.append(app.storage.user.get("current_user", "匿名用户"))
-                app.storage.general["over_change_broadcast"][self.project][chip_id]["editor"] = list(set(editor_list))
-            else:
-                app.storage.general["over_change_broadcast"][self.project][chip_id] = {
-                    "editor": [app.storage.user.get("current_user", "匿名用户")],
-                    "select_activ_dic": copy.deepcopy(SELECT_ACTIV_DIC),
-                }
+            draft_select_activ_dic = _prepare_overview_state_draft(
+                self.project,
+                chip_id,
+                SELECT_ACTIV_DIC,
+            )
 
             ui_spinner = ui.spinner(type="hourglass", size="md", color="amber-8", thickness=8.0)
             ui_spinner.set_visibility(False)
 
             with ui.grid(columns=6).classes("w-full gap-0"):
-                for select_label, val in app.storage.general["over_change_broadcast"][self.project][chip_id][
-                    "select_activ_dic"
-                ].items():
-                    ui.checkbox(text=select_label, value=val).bind_value(
-                        app.storage.general["over_change_broadcast"][self.project][chip_id]["select_activ_dic"],
-                        select_label,
-                    )
+                for select_label, val in draft_select_activ_dic.items():
+                    ui.checkbox(text=select_label, value=val).bind_value(draft_select_activ_dic, select_label)
 
             reason_selector = OverviewReasonSelector("state_change", "本次状态修改原因（必选）")
 
@@ -3787,7 +3826,13 @@ class InteractiveButton:
                 ui.button(
                     "确定",
                     color="green",
-                    on_click=lambda: self.handle_checkbox_change(ui_spinner, chip_id, chip_text, reason_selector),
+                    on_click=lambda: self.handle_checkbox_change(
+                        ui_spinner,
+                        chip_id,
+                        chip_text,
+                        reason_selector,
+                        draft_select_activ_dic,
+                    ),
                 )
                 ui.button("取消", on_click=lambda: self.cancel_checkbox_change(chip_id)).on(
                     "click", self.activ_dialog.close
@@ -7144,33 +7189,19 @@ class OverviewTableGroup:
                 [f"{self.project}_over_data", label, chip_id, "select_activ_dic"], {}
             )
 
-            app.storage.general["over_change_broadcast"].setdefault(self.project, {})
-            app.storage.general["over_change_broadcast"][self.project].setdefault(chip_id, {})
-
-            if app.storage.general["over_change_broadcast"][self.project][chip_id] and len(
-                app.storage.general["over_change_broadcast"][self.project][chip_id]["select_activ_dic"]
-            ) == len(SELECT_ACTIV_DIC):
-                editor_list = app.storage.general["over_change_broadcast"][self.project][chip_id]["editor"]
-                editor_list.append(app.storage.user.get("current_user", "匿名用户"))
-                app.storage.general["over_change_broadcast"][self.project][chip_id]["editor"] = list(set(editor_list))
-            else:
-                app.storage.general["over_change_broadcast"][self.project][chip_id] = {
-                    "editor": [app.storage.user.get("current_user", "匿名用户")],
-                    "select_activ_dic": copy.deepcopy(SELECT_ACTIV_DIC),
-                }
+            draft_select_activ_dic = _prepare_overview_state_draft(
+                self.project,
+                chip_id,
+                SELECT_ACTIV_DIC,
+            )
 
             ui_spinner = ui.spinner(type="hourglass", size="md", color="amber-8", thickness=8.0)
             ui_spinner.set_visibility(False)
 
             with ui.grid(columns=6).classes("w-full gap-0"):
-                for select_label, val in app.storage.general["over_change_broadcast"][self.project][chip_id][
-                    "select_activ_dic"
-                ].items():
+                for select_label, val in draft_select_activ_dic.items():
                     select_box = ui.checkbox(text=select_label, value=val)
-                    select_box.bind_value(
-                        app.storage.general["over_change_broadcast"][self.project][chip_id]["select_activ_dic"],
-                        select_label,
-                    )
+                    select_box.bind_value(draft_select_activ_dic, select_label)
 
             reason_selector = OverviewReasonSelector("state_change", "本次状态修改原因（必选）")
 
@@ -7207,7 +7238,12 @@ class OverviewTableGroup:
                     "确定",
                     color="green",
                     on_click=lambda: self.handle_checkbox_change(
-                        ui_spinner, chip_id, chip_text, config, reason_selector
+                        ui_spinner,
+                        chip_id,
+                        chip_text,
+                        config,
+                        reason_selector,
+                        draft_select_activ_dic,
                     ),
                 )
                 ui.button("取消", on_click=lambda: self.cancel_checkbox_change(chip_id)).on(
@@ -7217,21 +7253,14 @@ class OverviewTableGroup:
         self.activ_dialog.open()
 
     def cancel_checkbox_change(self, chip_id):
-        broadcast_data = app.storage.general.get("over_change_broadcast", {}).get(self.project, {}).get(chip_id)
-        if broadcast_data and "editor" in broadcast_data:
-            try:
-                broadcast_data["editor"].remove(app.storage.user.get("current_user", "匿名用户"))
-            except ValueError:
-                pass
-        if not app.storage.general["over_change_broadcast"][self.project].get(chip_id, {}).get("editor"):
-            app.storage.general["over_change_broadcast"][self.project].pop(chip_id, None)
+        _release_overview_state_draft(self.project, chip_id)
 
     def _check_version_updated(self, chip_id, new_select_activ_dic, chip_text, config) -> bool:
         SELECT_ACTIV_DIC = db_storage.get_deep_item(
             [f"{self.project}_over_data", config["label"], chip_id, "select_activ_dic"], {}
         )
 
-        if len(new_select_activ_dic) != len(SELECT_ACTIV_DIC):
+        if set(new_select_activ_dic) != set(SELECT_ACTIV_DIC):
             ui.notify(
                 "需求刚刚升级了，各项概述的激活配置需要重新确定！",
                 type="warning",
@@ -7241,7 +7270,6 @@ class OverviewTableGroup:
                 # multi_line=True,
                 close_button="✖",
             )
-            self._select_set_activ_dialog(chip_id, chip_text, config)
             return True
         return False
 
@@ -7336,17 +7364,24 @@ class OverviewTableGroup:
             True,
         )
 
-    async def handle_checkbox_change(self, ui_spinner, chip_id, chip_text, config, reason_selector):
+    async def handle_checkbox_change(
+        self,
+        ui_spinner,
+        chip_id,
+        chip_text,
+        config,
+        reason_selector,
+        draft_select_activ_dic,
+    ):
         reason = reason_selector.value.strip()
         if not reason:
             ui.notify("请选择操作原因；选择“其他”时需填写具体原因。", type="warning")
             return
         label = config["label"]
-        new_select_activ_dic = copy.deepcopy(
-            app.storage.general["over_change_broadcast"][self.project][chip_id]["select_activ_dic"]
-        )
+        new_select_activ_dic = copy.deepcopy(draft_select_activ_dic)
         if self._check_version_updated(chip_id, new_select_activ_dic, chip_text, config):
             self.cancel_checkbox_change(chip_id)
+            self._select_set_activ_dialog(chip_id, chip_text, config)
             return
 
         try:
@@ -7354,33 +7389,28 @@ class OverviewTableGroup:
                 [f"{self.project}_over_data", label, chip_id, "select_activ_dic"], {}
             )
 
+            first_col_label = self.configs[0]["label"]
+            if label != first_col_label:
+                row_id = db_storage.get_deep_item([f"{self.project}_over_data", label, chip_id, "row_id"])
+                blocked_versions = get_table_child_state_violations(
+                    self.project,
+                    first_col_label,
+                    row_id,
+                    new_select_activ_dic,
+                )
+                if blocked_versions:
+                    ui.notify(
+                        f"首列概述状态需先行更新！受限需求版本：{', '.join(blocked_versions)}",
+                        type="warning",
+                        position="bottom",
+                        timeout=4000,
+                        progress=True,
+                        close_button="✖",
+                    )
+                    self.cancel_checkbox_change(chip_id)
+                    return
+
             if new_select_activ_dic != OLD_CHIP_SELECT_DIC:
-                first_col_label = self.configs[0]["label"]
-                if label != first_col_label:
-                    row_id = db_storage.get_deep_item([f"{self.project}_over_data", label, chip_id, "row_id"])
-                    blocked_versions = [
-                        str(version)
-                        for version, target_state in new_select_activ_dic.items()
-                        if target_state is not OLD_CHIP_SELECT_DIC.get(version)
-                        and not is_table_child_state_allowed(
-                            self.project,
-                            first_col_label,
-                            row_id,
-                            str(version),
-                            target_state,
-                        )
-                    ]
-                    if blocked_versions:
-                        ui.notify(
-                            f"首列概述状态需先行更新！受限需求版本：{', '.join(blocked_versions)}",
-                            type="warning",
-                            position="bottom",
-                            timeout=4000,
-                            progress=True,
-                            close_button="✖",
-                        )
-                        self.cancel_checkbox_change(chip_id)
-                        return
 
                 req_max_ver = f"{str(max([int(float(v)) for v in new_select_activ_dic.keys()]))}.0"
                 ui_spinner.set_visibility(True)

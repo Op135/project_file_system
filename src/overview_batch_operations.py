@@ -7,7 +7,7 @@ import shutil
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Iterable, Optional
+from typing import Iterable, Mapping, Optional
 
 from nicegui import app
 
@@ -304,6 +304,26 @@ def is_table_child_state_allowed(
     """非首列目标状态不得高于同行首列状态。"""
     found, first_col_state = get_first_column_row_state(project, first_col_label, row_id, req_ver)
     return found and is_overview_state_at_or_below(target_state, first_col_state)
+
+
+def get_table_child_state_violations(
+    project: str,
+    first_col_label: str,
+    row_id: Optional[str],
+    states_by_version: Mapping[str, Optional[bool]],
+) -> list[str]:
+    """返回修改后状态高于同行首列状态的全部需求版本。"""
+    return [
+        str(version)
+        for version, target_state in states_by_version.items()
+        if not is_table_child_state_allowed(
+            project,
+            first_col_label,
+            row_id,
+            str(version),
+            target_state,
+        )
+    ]
 
 
 def validate_overview_content(content: str, config: dict) -> bool:

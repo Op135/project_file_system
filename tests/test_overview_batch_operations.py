@@ -2,9 +2,11 @@ import asyncio
 import copy
 import unittest
 from datetime import datetime
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from src import db_storage
+from src.components import _prepare_overview_state_draft, _release_overview_state_draft
 from src.overview_batch_operations import (
     apply_related_overview_impacts,
     build_batch_result_lines,
@@ -19,6 +21,7 @@ from src.overview_batch_operations import (
     get_batch_overview_pending_count,
     get_batch_overview_reviewer_roles,
     get_chip_state_visuals,
+    get_table_child_state_violations,
     insert_overview_chip,
     is_overview_state_at_or_below,
     is_table_child_state_allowed,
@@ -28,6 +31,26 @@ from src.utils import format_overview_timestamp, parse_overview_timestamp
 
 
 class OverviewBatchOperationTests(unittest.TestCase):
+    def test_state_dialog_keeps_local_draft_when_broadcast_entry_disappears(self):
+        fake_app = SimpleNamespace(
+            storage=SimpleNamespace(
+                general={"over_change_broadcast": {}},
+                user={"current_user": "张三"},
+            )
+        )
+
+        with patch("src.components.app", fake_app):
+            draft = _prepare_overview_state_draft(
+                "P1",
+                "chip-1",
+                {"3.0": False, "4.0": True},
+            )
+            fake_app.storage.general["over_change_broadcast"]["P1"].pop("chip-1")
+            draft["3.0"] = None
+            _release_overview_state_draft("P1", "chip-1")
+
+        self.assertEqual(draft, {"3.0": None, "4.0": True})
+
     def test_batch_approval_roles_are_separate_from_tool_roles(self):
         self.assertEqual(get_batch_overview_reviewer_roles("研发结构"), ["研发经理"])
         self.assertEqual(get_batch_overview_reviewer_roles("研发经理"), ["admin"])
@@ -70,6 +93,25 @@ class OverviewBatchOperationTests(unittest.TestCase):
         self.assertFalse(is_overview_state_at_or_below(True, False))
         self.assertFalse(is_overview_state_at_or_below(None, False))
         self.assertTrue(is_overview_state_at_or_below(False, False))
+
+    def test_table_child_submission_checks_unchanged_invalid_versions_too(self):
+        first_column = {
+            "first": {
+                "row_id": "row-1",
+                "select_activ_dic": {"3.0": False, "4.0": True},
+                "enabled": True,
+            }
+        }
+
+        with patch("src.overview_batch_operations.db_storage.get_deep_item", return_value=first_column):
+            blocked_versions = get_table_child_state_violations(
+                "P1",
+                "first-label",
+                "row-1",
+                {"3.0": None, "4.0": True},
+            )
+
+        self.assertEqual(blocked_versions, ["3.0"])
 
     def test_table_child_rule_reads_matching_first_column_row_and_version(self):
         first_column = {
