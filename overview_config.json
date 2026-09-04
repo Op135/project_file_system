@@ -3,6 +3,13 @@
         "光源": [
             {
                 "label": "light_source",
+                "row_state_follow_excluded_labels": [
+                    "light_if",
+                    "light_vf",
+                    "light_heat",
+                    "light_max_temperature",
+                    "light_pcb_note"
+                ],
                 "nature": "必填",
                 "title": "光源选型",
                 "processing_type": "text",
@@ -258,7 +265,7 @@
                     "^无$",
                     "\\S*W"
                 ],
-                "dialog_placeholder": "_W（Vf最大情况）",
+                "dialog_placeholder": "_W@_A（Vf最大情况）",
                 "allowed_state": [
                     "研发",
                     "转产",
@@ -1097,6 +1104,10 @@
         "产品图纸": [
             {
                 "label": "product_simplify_diagram",
+                "row_state_follow_excluded_labels": [
+                    "product_size_diagram",
+                    "product_complete_diagram"
+                ],
                 "nature": "必填",
                 "title": "产品简化3D图（stp）",
                 "processing_type": "file",
@@ -1228,6 +1239,9 @@
         "PCB图纸": [
             {
                 "label": "drive_simplify_diagram",
+                "row_state_follow_excluded_labels": [
+                    "drive_size_diagram"
+                ],
                 "nature": "必填",
                 "title": "PCBA简化3D图（stp）",
                 "processing_type": "file",
@@ -2526,6 +2540,9 @@
         "驱动板资料": [
             {
                 "label": "drive_pcb",
+                "row_state_follow_excluded_labels": [
+                    "drive_electronic_bom"
+                ],
                 "nature": "必填",
                 "title": "驱动PCB裸板规格",
                 "processing_type": "text",
@@ -2847,6 +2864,9 @@
         "控制板资料": [
             {
                 "label": "control_pcb",
+                "row_state_follow_excluded_labels": [
+                    "control_electronic_bom"
+                ],
                 "nature": "选填",
                 "title": "控制PCB裸板规格",
                 "processing_type": "text",
@@ -3162,6 +3182,9 @@
         "光源基板资料": [
             {
                 "label": "light_pcb",
+                "row_state_follow_excluded_labels": [
+                    "light_electronic_bom"
+                ],
                 "nature": "必填",
                 "title": "光源PCB裸板规格",
                 "processing_type": "text",
@@ -3462,6 +3485,9 @@
         "其它类型PCB资料": [
             {
                 "label": "other_pcb",
+                "row_state_follow_excluded_labels": [
+                    "other_electronic_bom"
+                ],
                 "nature": "选填",
                 "title": "其它PCB裸板规格",
                 "processing_type": "text",
@@ -4184,6 +4210,11 @@
         "软件文档": [
             {
                 "label": "software_executable_file",
+                "row_state_follow_excluded_labels": [
+                    "software_manual",
+                    "software_protocol",
+                    "software_xml"
+                ],
                 "nature": "必填",
                 "title": "固件执行文件",
                 "processing_type": "svn",
@@ -4467,6 +4498,7 @@
         "UI文档": [
             {
                 "label": "ui_execute_file",
+                "row_state_follow_excluded_labels": [],
                 "nature": "必填",
                 "title": "UI执行文件压缩包",
                 "processing_type": "svn",

@@ -268,6 +268,14 @@ def overview_state_rank(state: Optional[bool]) -> int:
     return 0
 
 
+def _overview_version_sort_key(version: object) -> tuple[int, float, str]:
+    text = str(version)
+    try:
+        return 1, float(text), text
+    except ValueError:
+        return 0, 0.0, text
+
+
 def is_overview_state_at_or_below(
     target_state: Optional[bool],
     reference_state: Optional[bool],
@@ -324,6 +332,17 @@ def get_table_child_state_violations(
             target_state,
         )
     ]
+
+
+def get_table_state_follow_excluded_labels(group_configs: Iterable[dict]) -> set[str]:
+    """读取表格首列配置中的状态升级跟随排除项。"""
+    first_config = next(iter(group_configs), {})
+    configured = first_config.get("row_state_follow_excluded_labels", [])
+    if not isinstance(configured, list):
+        raise ValueError("row_state_follow_excluded_labels 必须是 label 字符串列表")
+    if any(not isinstance(label, str) or not label.strip() for label in configured):
+        raise ValueError("row_state_follow_excluded_labels 只能包含非空 label 字符串")
+    return {label.strip() for label in configured}
 
 
 def validate_overview_content(content: str, config: dict) -> bool:
@@ -430,10 +449,12 @@ async def update_overview_chip_state(
             outcome["chip"] = copy.deepcopy(chip)
             return db_storage.ATOMIC_NO_UPDATE
         chip.setdefault("select_activ_dic", {})[req_max_ver] = target_state
-        icon, enabled, bg_color = get_chip_state_visuals(chip.get("type", "text"), target_state)
-        chip["icon"] = icon
-        chip["enabled"] = enabled
-        chip["bg_color"] = bg_color
+        latest_version = max(chip["select_activ_dic"], key=_overview_version_sort_key)
+        if str(req_max_ver) == str(latest_version):
+            icon, enabled, bg_color = get_chip_state_visuals(chip.get("type", "text"), target_state)
+            chip["icon"] = icon
+            chip["enabled"] = enabled
+            chip["bg_color"] = bg_color
         chip.setdefault("timestamp", {})[now_str] = {
             "creator": creator,
             "reason": reason,
@@ -484,6 +505,42 @@ async def cascade_deactivate_table_row(
                 False,
                 creator,
                 get_automatic_overview_reason("row_cascade_inactive"),
+            )
+            if changed:
+                changed_labels.add(label)
+    return changed_labels
+
+
+async def cascade_promote_table_row(
+    project: str,
+    group_configs: Iterable[dict],
+    source_label: str,
+    row_id: str,
+    req_ver: str,
+    target_state: Optional[bool],
+    creator: str,
+) -> set[str]:
+    """首列状态升级时，让未排除的同行概述跟随到相同状态。"""
+    configs = list(group_configs)
+    excluded_labels = get_table_state_follow_excluded_labels(configs)
+    changed_labels: set[str] = set()
+    reason = get_automatic_overview_reason("row_cascade_promoted", "随首列状态升级")
+    for config in configs:
+        label = str(config.get("label") or "")
+        if not label or label == source_label or label in excluded_labels:
+            continue
+        chips = db_storage.get_deep_item([f"{project}_over_data", label], {})
+        for chip_id, chip in chips.items():
+            if chip.get("row_id") != row_id:
+                continue
+            changed, _, _ = await update_overview_chip_state(
+                project,
+                label,
+                chip_id,
+                req_ver,
+                target_state,
+                creator,
+                reason,
             )
             if changed:
                 changed_labels.add(label)
@@ -792,9 +849,11 @@ async def execute_batch_overview_request(request: dict) -> dict:
         target_state = payload.get("target_state")
         live_groups = app.storage.general.get("over_config_data", {}).get(config.get("role", ""), {})
         live_group_items = live_groups.get(config.get("group_name", ""), [])
+        group_configs = [item for item in live_group_items if isinstance(item, dict)]
         group_labels = [str(item.get("label")) for item in live_group_items if item.get("label")]
         if not group_labels:
             group_labels = [str(item) for item in payload.get("group_labels", []) if item]
+            group_configs = [{"label": item} for item in group_labels]
         for target in payload.get("chip_targets", []):
             project = str(target.get("project") or "")
             chip_id = str(target.get("chip_id") or "")
@@ -808,6 +867,10 @@ async def execute_batch_overview_request(request: dict) -> dict:
                     skipped.append(f"{project}：概述条目已不存在")
                     continue
                 row_id = current_chip.get("row_id")
+                previous_state = current_chip.get("select_activ_dic", {}).get(
+                    req_max_ver,
+                    current_chip.get("enabled"),
+                )
                 if (
                     config.get("is_table_group")
                     and label != config.get("first_col_label")
@@ -855,10 +918,28 @@ async def execute_batch_overview_request(request: dict) -> dict:
                     }
                 )
                 changed_pairs.add((project, label))
-                if target_state is False and config.get("is_table_group") and label == config.get("first_col_label") and row_id:
-                    cascaded = await cascade_deactivate_table_row(
-                        project, group_labels, label, row_id, req_max_ver, submitter
-                    )
+                if config.get("is_table_group") and label == config.get("first_col_label") and row_id:
+                    if target_state is False:
+                        cascaded = await cascade_deactivate_table_row(
+                            project,
+                            group_labels,
+                            label,
+                            row_id,
+                            req_max_ver,
+                            submitter,
+                        )
+                    elif overview_state_rank(target_state) > overview_state_rank(previous_state):
+                        cascaded = await cascade_promote_table_row(
+                            project,
+                            group_configs,
+                            label,
+                            row_id,
+                            req_max_ver,
+                            target_state,
+                            submitter,
+                        )
+                    else:
+                        cascaded = set()
                     changed_pairs.update((project, changed_label) for changed_label in cascaded)
             except Exception as exc:
                 failed.append(f"{project}：{exc}")

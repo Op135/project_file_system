@@ -254,6 +254,36 @@ def project_overview_permission_definitions(
             group = str(raw_group).strip()
             if not group or not isinstance(raw_items, list):
                 raise ProjectOverviewPermissionCatalogError(f"{dimension} / {group or '<空>'} 必须是列表")
+            group_labels = {
+                str(item.get("label") or "").strip()
+                for item in raw_items
+                if isinstance(item, dict)
+            }
+            if raw_items and isinstance(raw_items[0], dict):
+                first_label = str(raw_items[0].get("label") or "").strip()
+                excluded_labels = raw_items[0].get("row_state_follow_excluded_labels", [])
+                if not isinstance(excluded_labels, list) or any(
+                    not isinstance(label, str) or not label.strip() for label in excluded_labels
+                ):
+                    raise ProjectOverviewPermissionCatalogError(
+                        f"{dimension} / {group} 首列的 row_state_follow_excluded_labels "
+                        "必须是非空 label 字符串组成的列表"
+                    )
+                normalized_exclusions = [label.strip() for label in excluded_labels]
+                if len(normalized_exclusions) != len(set(normalized_exclusions)):
+                    raise ProjectOverviewPermissionCatalogError(
+                        f"{dimension} / {group} 首列的状态跟随排除项存在重复 label"
+                    )
+                invalid_exclusions = set(normalized_exclusions) - group_labels
+                if invalid_exclusions:
+                    raise ProjectOverviewPermissionCatalogError(
+                        f"{dimension} / {group} 的状态跟随排除项不属于本组："
+                        f"{', '.join(sorted(invalid_exclusions))}"
+                    )
+                if first_label and first_label in normalized_exclusions:
+                    raise ProjectOverviewPermissionCatalogError(
+                        f"{dimension} / {group} 的首列 label“{first_label}”不能排除自身"
+                    )
             for index, item in enumerate(raw_items, start=1):
                 if not isinstance(item, dict):
                     raise ProjectOverviewPermissionCatalogError(f"{dimension} / {group} 第 {index} 项必须是对象")

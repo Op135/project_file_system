@@ -898,6 +898,22 @@ class AccessControlTests(unittest.TestCase):
         with self.assertRaisesRegex(ProjectOverviewPermissionCatalogError, "same_label.*重复"):
             project_overview_permission_definitions(duplicate_config)
 
+    def test_project_overview_catalog_rejects_unknown_state_follow_exclusion(self):
+        invalid_config = {
+            "光学": {
+                "光源": [
+                    {
+                        "label": "light_source",
+                        "title": "光源选型",
+                        "row_state_follow_excluded_labels": ["missing_label"],
+                    },
+                    {"label": "light_if", "title": "光源驱动If"},
+                ]
+            }
+        }
+        with self.assertRaisesRegex(ProjectOverviewPermissionCatalogError, "missing_label"):
+            project_overview_permission_definitions(invalid_config)
+
     def test_project_overview_dimension_grants_expand_once_to_current_labels(self):
         """上一版专业级权限升级时展开到当前 label，之后不再重复覆盖管理员调整。"""
         self.service.migrate_legacy_users()

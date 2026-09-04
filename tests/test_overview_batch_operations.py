@@ -13,6 +13,7 @@ from src.overview_batch_operations import (
     build_new_overview_chip,
     build_project_category_map,
     build_project_model_range_options,
+    cascade_promote_table_row,
     collect_editable_overview_configs,
     can_review_batch_overview_request,
     filter_batch_projects,
@@ -112,6 +113,71 @@ class OverviewBatchOperationTests(unittest.TestCase):
             )
 
         self.assertEqual(blocked_versions, ["3.0"])
+
+    def test_first_column_promotion_follows_non_excluded_columns_and_preserves_latest_visual(self):
+        stored = {
+            "follow-label": {
+                "follow-chip": {
+                    "id": "follow-chip",
+                    "type": "image",
+                    "row_id": "row-1",
+                    "select_activ_dic": {"3.0": False, "4.0": False},
+                    "enabled": False,
+                    "icon": "block",
+                    "bg_color": "bg-grey-5",
+                    "timestamp": {},
+                }
+            },
+            "excluded-label": {
+                "excluded-chip": {
+                    "id": "excluded-chip",
+                    "type": "text",
+                    "row_id": "row-1",
+                    "select_activ_dic": {"3.0": False, "4.0": False},
+                    "enabled": False,
+                    "timestamp": {},
+                }
+            },
+        }
+        configs = [
+            {
+                "label": "first-label",
+                "row_state_follow_excluded_labels": ["excluded-label"],
+            },
+            {"label": "follow-label"},
+            {"label": "excluded-label"},
+        ]
+
+        def fake_get_deep_item(path, _default=None):
+            return copy.deepcopy(stored.get(path[1], {}))
+
+        async def fake_atomic(path, updater, *args, **kwargs):
+            label, chip_id = path[1], path[2]
+            result = updater(copy.deepcopy(stored[label][chip_id]), *args, **kwargs)
+            if result is not db_storage.ATOMIC_NO_UPDATE:
+                stored[label][chip_id] = result
+            return True
+
+        with (
+            patch("src.overview_batch_operations.db_storage.get_deep_item", new=fake_get_deep_item),
+            patch("src.overview_batch_operations.db_storage.atomic_deep_update", new=fake_atomic),
+        ):
+            changed_labels = asyncio.run(
+                cascade_promote_table_row(
+                    "P1",
+                    configs,
+                    "first-label",
+                    "row-1",
+                    "3.0",
+                    None,
+                    "张三",
+                )
+            )
+
+        self.assertEqual(changed_labels, {"follow-label"})
+        self.assertIsNone(stored["follow-label"]["follow-chip"]["select_activ_dic"]["3.0"])
+        self.assertFalse(stored["follow-label"]["follow-chip"]["enabled"])
+        self.assertFalse(stored["excluded-label"]["excluded-chip"]["select_activ_dic"]["3.0"])
 
     def test_table_child_rule_reads_matching_first_column_row_and_version(self):
         first_column = {

@@ -43,8 +43,10 @@ from .config import (
 )
 from .custom_ui import custom_upload
 from .overview_batch_operations import (
+    cascade_promote_table_row,
     get_table_child_state_violations,
     is_table_child_state_allowed,
+    overview_state_rank,
     validate_overview_content,
 )
 from .overview_corrections import (
@@ -5029,7 +5031,7 @@ class OverviewTableGroup:
             chip_texts[chip_id] = chip_text
 
         creator = app.storage.user.get("current_user", "匿名用户")
-        first_col_label = list(self.permitted_configs.values())[0]["label"]
+        first_col_label = self.configs[0]["label"]
         applied_states = 0
         applied_chips = 0
         skipped_states = 0
@@ -5062,8 +5064,8 @@ class OverviewTableGroup:
                 select_activ_dic[version] = state
                 chip_applied_states += 1
                 applied_versions.add(version)
-                if label == first_col_label and state is False and chip_data.get("row_id"):
-                    cascade_requests.append((chip_data["row_id"], version))
+                if label == first_col_label and chip_data.get("row_id"):
+                    cascade_requests.append((chip_data["row_id"], version, state))
 
             if not chip_applied_states:
                 continue
@@ -5108,8 +5110,21 @@ class OverviewTableGroup:
 
         if applied_chips:
             OverviewVersionManager.bump(self.project, label)
-            for row_id, version in set(cascade_requests):
-                await self._cascade_deactivate_row(row_id, version, creator)
+            for row_id, version, state in set(cascade_requests):
+                if state is False:
+                    await self._cascade_deactivate_row(row_id, version, creator)
+                elif state is True:
+                    promoted_labels = await cascade_promote_table_row(
+                        self.project,
+                        self.configs,
+                        first_col_label,
+                        row_id,
+                        version,
+                        state,
+                        creator,
+                    )
+                    for promoted_label in promoted_labels:
+                        OverviewVersionManager.bump(self.project, promoted_label)
             self._update_local_pending(label)
             await self._update_display()
 
@@ -7278,10 +7293,10 @@ class OverviewTableGroup:
         处理第一列失活时的连带失活逻辑，包含标准历史记录生成
         【重构：内存聚合，单次原子级写入，杜绝并发撕裂】
         """
-        first_col_label = list(self.permitted_configs.values())[0]["label"]
+        first_col_label = self.configs[0]["label"]
         time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        for config in self.permitted_configs.values():
+        for config in self.configs:
             label = config["label"]
             # 排除第一列自身
             if label == first_col_label:
@@ -7390,8 +7405,8 @@ class OverviewTableGroup:
             )
 
             first_col_label = self.configs[0]["label"]
+            row_id = db_storage.get_deep_item([f"{self.project}_over_data", label, chip_id, "row_id"])
             if label != first_col_label:
-                row_id = db_storage.get_deep_item([f"{self.project}_over_data", label, chip_id, "row_id"])
                 blocked_versions = get_table_child_state_violations(
                     self.project,
                     first_col_label,
@@ -7442,11 +7457,6 @@ class OverviewTableGroup:
                 )
                 # 数据写入完毕后，推高全局版本号
                 OverviewVersionManager.bump(self.project, config["label"])
-                # 这一行是关键：主动调用更新函数，而不是等 1.0s 的 timer
-                await self._update_display()
-
-                self.cancel_checkbox_change(chip_id)
-                ui_spinner.set_visibility(False)
 
                 time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -7468,16 +7478,32 @@ class OverviewTableGroup:
                     [f"{self.project}_over_related_record", label, chip_id], process_close_record
                 )
 
+                if label == first_col_label and row_id:
+                    for version, target_state in new_select_activ_dic.items():
+                        old_state = OLD_CHIP_SELECT_DIC.get(version)
+                        if target_state is old_state:
+                            continue
+                        if target_state is False:
+                            await self._cascade_deactivate_row(row_id, str(version), creator)
+                        elif overview_state_rank(target_state) > overview_state_rank(old_state):
+                            promoted_labels = await cascade_promote_table_row(
+                                self.project,
+                                self.configs,
+                                first_col_label,
+                                row_id,
+                                str(version),
+                                target_state,
+                                creator,
+                            )
+                            for promoted_label in promoted_labels:
+                                OverviewVersionManager.bump(self.project, promoted_label)
+                # 级联修改完成后一次性刷新，避免先显示首列、随后才显示同行的短暂不一致。
+                await self._update_display()
+                self.cancel_checkbox_change(chip_id)
+                ui_spinner.set_visibility(False)
+                # 必须放在本次处理的最后：该方法会 clear 当前状态弹窗，
+                # 之后再访问 app.storage.client 或旧弹窗控件会触发 deleted slot 异常。
                 self._show_related_chip_select_dialog(chip_text, chip_state, "activ_change", config)
-                # 💡 核心新增：级联失活判断逻辑
-                first_col_label = list(self.permitted_configs.values())[0]["label"]
-                if label == first_col_label and chip_state is False:
-                    # 获取当前操作行的 row_id
-                    current_row_id = db_storage.get_deep_item([f"{self.project}_over_data", label, chip_id, "row_id"])
-                    if current_row_id:
-                        await self._cascade_deactivate_row(current_row_id, req_max_ver, creator)
-                # self.last_state_hashes = {}  # 触发整体重绘
-                # await self._update_display()
             else:
                 ui.notify("激活状态没有发生变化，无需提交。", type="info", position="bottom", timeout=2500)
 

@@ -63,6 +63,7 @@ from ..overview_batch_operations import (
     build_project_category_map,
     build_project_model_range_options,
     cascade_deactivate_table_row,
+    cascade_promote_table_row,
     collect_editable_overview_configs,
     create_batch_overview_request,
     filter_batch_projects,
@@ -70,6 +71,7 @@ from ..overview_batch_operations import (
     get_batch_overview_reviewer_roles,
     insert_overview_chip,
     is_table_child_state_allowed,
+    overview_state_rank,
     update_overview_chip_state,
     validate_overview_content,
 )
@@ -3455,7 +3457,7 @@ async def requirement_page(
             "row_anchors": {},
             "chip_targets": [],
             "target_state": "active",
-            "impact_mode": "none",
+            "impact_mode": None,
             "impact_selected": {},
             "test_data": {
                 "test_nature_select": None,
@@ -3566,10 +3568,10 @@ async def requirement_page(
         def reset_operation_selection(clear_inputs=False):
             state["row_anchors"] = {}
             state["chip_targets"] = []
+            state["impact_mode"] = None
             state["impact_selected"] = {}
             state["file_data"] = None
             if clear_inputs:
-                state["impact_mode"] = "none"
                 state["content"] = ""
                 state["reason"] = ""
                 state["test_data"] = {
@@ -3933,6 +3935,9 @@ async def requirement_page(
                 return
             related_config = list(dict.fromkeys(label for label in config.get("impact_list", []) if label))
             related_labels = selected_related_labels(config)
+            if related_config and state["impact_mode"] not in {"none", "selected", "all"}:
+                ui.notify("请选择本次操作的关联影响范围。", type="warning")
+                return
             if state["impact_mode"] == "selected" and related_config and not related_labels:
                 ui.notify("请至少勾选一个确实受影响的概述项。", type="warning")
                 return
@@ -4107,12 +4112,14 @@ async def requirement_page(
                     ui.notify("批量概述申请保存失败，请稍后重试。", type="negative")
                     return
                 request_saved = True
-                batch_overview_dialog.close()
                 ui.notify(
                     f"批量概述申请已提交，等待{'、'.join(reviewer_roles) if reviewer_roles else '获授权人员'}审批。",
                     type="positive",
                     position="center",
                 )
+                # 保留项目筛选与当前专业/分组，清空刚提交申请的操作内容，
+                # 让用户可以继续选择其它概述项并提交下一份申请。
+                reset_operation_selection(clear_inputs=True)
             except Exception as ex:
                 logger.error("提交批量概述申请失败", exc_info=True)
                 ui.notify(f"提交申请失败：{ex}", type="negative", timeout=0, close_button="✖")
@@ -4155,6 +4162,9 @@ async def requirement_page(
             if not ensure_complete_table_row_bindings(config, selected_projects):
                 return
             related_config = list(dict.fromkeys(label for label in config.get("impact_list", []) if label))
+            if related_config and state["impact_mode"] not in {"none", "selected", "all"}:
+                ui.notify("请选择本次操作的关联影响范围。", type="warning")
+                return
             if state["impact_mode"] == "selected" and related_config and not selected_related_labels(config):
                 ui.notify("请至少勾选一个确实受影响的概述项。", type="warning")
                 return
@@ -4275,9 +4285,8 @@ async def requirement_page(
                         ui.notify("请至少选择一条需要修改状态的概述。", type="warning")
                         return
                     target_state = {"active": True, "pending": None, "inactive": False}[state["target_state"]]
-                    group_labels = [
-                        item.get("label") for item in over_config.get(config["role"], {}).get(config["group_name"], [])
-                    ]
+                    group_configs = over_config.get(config["role"], {}).get(config["group_name"], [])
+                    group_labels = [item.get("label") for item in group_configs]
                     for encoded_target in state["chip_targets"]:
                         try:
                             project, chip_id = json.loads(encoded_target)
@@ -4292,6 +4301,10 @@ async def requirement_page(
                                 skipped.append(f"{project}：概述条目已不存在")
                                 continue
                             row_id = current_chip.get("row_id")
+                            previous_state = current_chip.get("select_activ_dic", {}).get(
+                                req_max_ver,
+                                current_chip.get("enabled"),
+                            )
                             if (
                                 config.get("is_table_group")
                                 and config["label"] != config.get("first_col_label")
@@ -4344,19 +4357,31 @@ async def requirement_page(
                             )
                             changed_pairs.add((project, config["label"]))
                             if (
-                                target_state is False
-                                and config.get("is_table_group")
+                                config.get("is_table_group")
                                 and config["label"] == config.get("first_col_label")
                                 and row_id
                             ):
-                                cascaded_labels = await cascade_deactivate_table_row(
-                                    project,
-                                    group_labels,
-                                    config["label"],
-                                    row_id,
-                                    req_max_ver,
-                                    creator,
-                                )
+                                if target_state is False:
+                                    cascaded_labels = await cascade_deactivate_table_row(
+                                        project,
+                                        group_labels,
+                                        config["label"],
+                                        row_id,
+                                        req_max_ver,
+                                        creator,
+                                    )
+                                elif overview_state_rank(target_state) > overview_state_rank(previous_state):
+                                    cascaded_labels = await cascade_promote_table_row(
+                                        project,
+                                        group_configs,
+                                        config["label"],
+                                        row_id,
+                                        req_max_ver,
+                                        target_state,
+                                        creator,
+                                    )
+                                else:
+                                    cascaded_labels = set()
                                 changed_pairs.update((project, label) for label in cascaded_labels)
                         except Exception as ex:
                             logger.error("批量修改概述状态单条处理失败", exc_info=True)

@@ -51,6 +51,7 @@
     "related_pending": "关联影响待确认",
     "row_auto_fill": "随首列自动填充",
     "row_cascade_inactive": "随首列失活",
+    "row_cascade_promoted": "随首列状态升级",
     "ecn_add": "ECN新增",
     "ecn_replace_old": "ECN替换失效",
     "ecn_replace_new": "ECN替换新增",
