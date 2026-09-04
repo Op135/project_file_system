@@ -129,14 +129,21 @@ def can_submit_batch_overview(current_role: object, current_user: str, legacy_ro
 
 
 def can_review_batch_overview(request: dict, current_role: object, current_user: str, *, user_service=None) -> bool:
-    """判断是否可以审批批量概述申请；数据库模式不再读取角色快照。"""
-    if not current_user or current_user == request.get("submitter"):
+    """判断是否可以审批批量概述申请；数据库模式以流程明确指派为准。"""
+    if not current_user:
         return False
     service = _service(user_service)
     if not _database_mode(service):
-        return str(current_role or "") in request.get("reviewer_roles", [])
+        return (
+            current_user != request.get("submitter")
+            and str(current_role or "") in request.get("reviewer_roles", [])
+        )
     assignment = request.get("workflow_assignment", {})
     assignees = assignment.get("assignee_usernames", []) if isinstance(assignment, dict) else []
+    # 数据库审批流允许管理员明确把申请人本人配置为审批人；
+    # 若流程没有明确指派到本人，仍不能仅凭审批权限进行自审。
+    if current_user == request.get("submitter") and current_user not in assignees:
+        return False
     return (
         (not assignees or current_user in assignees)
         and can(service, current_user, PROJECT_OVERVIEW_BATCH_REVIEW_PERMISSION)

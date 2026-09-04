@@ -850,7 +850,26 @@ class AccessControlTests(unittest.TestCase):
 
         assigned = {"submitter": "李四", "workflow_assignment": {"assignee_usernames": ["张三"]}}
         not_assigned = {"submitter": "李四", "workflow_assignment": {"assignee_usernames": ["王五"]}}
+        assigned_to_submitter = {
+            "submitter": "张三",
+            "workflow_assignment": {"assignee_usernames": ["张三"]},
+        }
+        submitter_not_explicitly_assigned = {
+            "submitter": "张三",
+            "workflow_assignment": {"assignee_usernames": []},
+        }
         self.assertTrue(can_review_batch_overview(assigned, "普通岗位", "张三", user_service=self.service))
+        self.assertTrue(
+            can_review_batch_overview(assigned_to_submitter, "普通岗位", "张三", user_service=self.service)
+        )
+        self.assertFalse(
+            can_review_batch_overview(
+                submitter_not_explicitly_assigned,
+                "普通岗位",
+                "张三",
+                user_service=self.service,
+            )
+        )
         self.assertTrue(can_review_overview_correction(assigned, "普通岗位", "张三", user_service=self.service))
         self.assertFalse(can_review_batch_overview(not_assigned, "研发经理", "张三", user_service=self.service))
         self.assertFalse(can_review_overview_correction(not_assigned, "研发经理", "张三", user_service=self.service))
