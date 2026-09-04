@@ -31,8 +31,8 @@ from ..config import (
 )
 from ..custom_ui import custom_upload
 from ..ecn_access import (
-    can_create_ecn_request,
     can_confirm_ecn_material_spec,
+    can_create_ecn_request,
     can_delete_ecn,
     can_edit_ecn_impact,
     can_edit_ecn_scheme,
@@ -121,8 +121,8 @@ from ..ecn_workflow import (
     finish_scheme_approval,
     get_ecr_pending_usernames,
     get_scheme_pending_usernames,
-    is_ecr_assigned_approver,
     is_ecn_database_workflow_enabled,
+    is_ecr_assigned_approver,
     is_scheme_assigned_approver,
     start_ecr_approval,
     start_scheme_approval,
@@ -3166,7 +3166,10 @@ async def ecn_management_page():
                                             ),
                                             None,
                                         )
-                                        if not isinstance(existing_item, dict) or existing_item.get("author") != current_user:
+                                        if (
+                                            not isinstance(existing_item, dict)
+                                            or existing_item.get("author") != current_user
+                                        ):
                                             return ui.notify("只能修改本人编写的ECN方案", type="warning")
 
                                     # ==== 添加方案时的核心逻辑 ====
@@ -6216,9 +6219,7 @@ async def ecn_management_page():
                 if is_draft_or_reject:
                     if can_create_request and (basic["applicant"] == current_user or is_new):
                         ui.button("保存为草稿", on_click=lambda: execute_db_action("save_draft")).props("color=grey-7")
-                        ui.button("发起/重新发起 ECR", on_click=lambda: execute_db_action("submit_ecr")).props(
-                            "color=primary"
-                        )
+                        ui.button("发起 ECR", on_click=lambda: execute_db_action("submit_ecr")).props("color=primary")
                 else:
                     database_workflow_enabled = is_ecn_database_workflow_enabled()
                     current_phase = wf.get("current_phase")
@@ -6355,7 +6356,9 @@ async def ecn_management_page():
                     wf["route_type"] = (
                         "CONFIGURED_WORKFLOW"
                         if is_ecn_database_workflow_enabled()
-                        else "SALES_INITIATED" if "销售" in current_role else "RD_INITIATED"
+                        else "SALES_INITIATED"
+                        if "销售" in current_role
+                        else "RD_INITIATED"
                     )
                     wf["current_step_index"] = 0
                     wf["pending_roles"] = (
@@ -6474,9 +6477,7 @@ async def ecn_management_page():
                             else "scheme_workflow_assignment"
                         )
                         wf[assignment_key] = copy.deepcopy(approval_result["assignment"])
-                        wf["current_step_index"] = int(
-                            approval_result["assignment"].get("current_node_index", 0)
-                        )
+                        wf["current_step_index"] = int(approval_result["assignment"].get("current_node_index", 0))
                         wf["step_approvals"] = {}
                         wf["pending_roles"] = (
                             get_ecr_pending_usernames(local_data)
@@ -6595,15 +6596,11 @@ async def ecn_management_page():
                         c_wf["current_phase"] = "ECR_PHASE"
                         c_wf["route_type"] = local_full_data["workflow"].get("route_type")
                         c_wf["current_step_index"] = 0
-                        c_wf["pending_roles"] = copy.deepcopy(
-                            local_full_data["workflow"].get("pending_roles", [])
-                        )
+                        c_wf["pending_roles"] = copy.deepcopy(local_full_data["workflow"].get("pending_roles", []))
                         c_wf["step_approvals"] = {}
                         for assignment_key in ["ecr_workflow_assignment", "scheme_workflow_assignment"]:
                             if local_full_data["workflow"].get(assignment_key):
-                                c_wf[assignment_key] = copy.deepcopy(
-                                    local_full_data["workflow"][assignment_key]
-                                )
+                                c_wf[assignment_key] = copy.deepcopy(local_full_data["workflow"][assignment_key])
                         append_ecn_approval_log_once(
                             c_log,
                             {"user": user, "role": role, "action": "发起申请", "time": time_str},
@@ -6630,9 +6627,7 @@ async def ecn_management_page():
                         c_wf["pending_roles"] = ECN_WORKFLOW_ROUTES["ECN_SCHEME_REVIEW_PHASE"][0]
                         c_wf["step_approvals"] = {}
                         if local_full_data["workflow"].get("scheme_workflow_assignment"):
-                            c_wf["pending_roles"] = copy.deepcopy(
-                                local_full_data["workflow"].get("pending_roles", [])
-                            )
+                            c_wf["pending_roles"] = copy.deepcopy(local_full_data["workflow"].get("pending_roles", []))
                             c_wf["scheme_workflow_assignment"] = copy.deepcopy(
                                 local_full_data["workflow"]["scheme_workflow_assignment"]
                             )
@@ -6656,13 +6651,9 @@ async def ecn_management_page():
                                 c_wf["scheme_participants"] = copy.deepcopy(
                                     source_workflow.get("scheme_participants", {})
                                 )
-                                current_ecn["change_items"] = copy.deepcopy(
-                                    local_full_data.get("change_items", [])
-                                )
+                                current_ecn["change_items"] = copy.deepcopy(local_full_data.get("change_items", []))
                                 if "execution_info" in local_full_data:
-                                    current_ecn["execution_info"] = copy.deepcopy(
-                                        local_full_data["execution_info"]
-                                    )
+                                    current_ecn["execution_info"] = copy.deepcopy(local_full_data["execution_info"])
                             append_ecn_approval_log_once(
                                 c_log,
                                 {
@@ -6801,22 +6792,16 @@ async def ecn_management_page():
                         or fresh_wf.get("current_phase") != wf.get("current_phase")
                         or fresh_wf.get("current_step_index") != wf.get("current_step_index")
                         or fresh_wf.get("step_approvals", {}) != wf.get("step_approvals", {})
-                        or fresh_wf.get("ecr_workflow_assignment", {})
-                        != wf.get("ecr_workflow_assignment", {})
-                        or fresh_wf.get("scheme_workflow_assignment", {})
-                        != wf.get("scheme_workflow_assignment", {})
+                        or fresh_wf.get("ecr_workflow_assignment", {}) != wf.get("ecr_workflow_assignment", {})
+                        or fresh_wf.get("scheme_workflow_assignment", {}) != wf.get("scheme_workflow_assignment", {})
                     ):
                         wf["current_state"] = fresh_wf.get("current_state")
                         wf["current_phase"] = fresh_wf.get("current_phase")
                         wf["current_step_index"] = fresh_wf.get("current_step_index", 0)
                         wf["pending_roles"] = copy.deepcopy(fresh_wf.get("pending_roles", []))
                         wf["step_approvals"] = copy.deepcopy(fresh_wf.get("step_approvals", {}))
-                        wf["ecr_workflow_assignment"] = copy.deepcopy(
-                            fresh_wf.get("ecr_workflow_assignment", {})
-                        )
-                        wf["scheme_workflow_assignment"] = copy.deepcopy(
-                            fresh_wf.get("scheme_workflow_assignment", {})
-                        )
+                        wf["ecr_workflow_assignment"] = copy.deepcopy(fresh_wf.get("ecr_workflow_assignment", {}))
+                        wf["scheme_workflow_assignment"] = copy.deepcopy(fresh_wf.get("scheme_workflow_assignment", {}))
                         local_data["approval_log"] = copy.deepcopy(fresh.get("approval_log", []))
                         render_workflow_tab()  # 触发刷新流转页面
                         current_identity_still_pending = (
