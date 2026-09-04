@@ -65,3 +65,23 @@
 
 至少准备以下四类非管理员账号进行冒烟测试：普通只读用户、业务维护用户、审批人、通知接收人。
 `admin` 自动拥有已注册系统权限，只适合检查管理入口，不能替代普通用户的权限验证。
+
+## 七、旧兼容分支观察
+
+系统只在旧兼容逻辑实际放行或被采用时写入带 `LEGACY_COMPAT_HIT` 标记的警告日志。同一类别、功能和用户首次命中立即记录，之后默认每三十分钟汇总一次，避免高频页面检查刷满日志。
+
+可在服务器项目根目录执行：
+
+```powershell
+Select-String -Path logs\app.log* -Pattern "LEGACY_COMPAT_HIT"
+```
+
+日志类别含义：
+
+- `excel_user_store`：仍从 `data/users.xlsx` 加载用户或完成登录认证；
+- `legacy_role_grant`：旧角色名称或关键词规则实际授予了权限；
+- `legacy_notification_route`：固定通知仍采用旧 JSON 职位目标；
+- `legacy_workflow_route`：新申请仍采用旧 JSON 审批路由；
+- `legacy_approval_snapshot`：迁移前待审记录仍按旧角色快照收尾。
+
+建议至少观察一个覆盖月度提醒、审批和低频业务的完整周期，并结合轮转文件 `app.log.1` 至 `app.log.5` 检查。零命中只是清理依据之一；正式删除前仍需做全仓引用检查、业务回归和可回滚备份。需要调整限频时，可在服务器环境中设置 `LEGACY_COMPAT_LOG_INTERVAL_SECONDS`，单位为秒，默认 `1800`。

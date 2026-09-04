@@ -31,6 +31,7 @@ from ..issue_workflow_utils import (
     split_people,
     unique_nonempty_texts,
 )
+from ..legacy_compatibility import record_legacy_compatibility_hit
 from ..notification_recipients import resolve_permission_wecom_recipients
 from ..permission_catalog import (
     SAMPLE_ISSUE_CLOSE_APPROVE_PERMISSION,
@@ -599,10 +600,24 @@ def is_sample_close_approver(
             ):
                 return False
             if str(username or "").strip().casefold() == "admin":
+                record_legacy_compatibility_hit(
+                    "legacy_approval_snapshot",
+                    "sample_issue.close_request.missing_assignment",
+                    username=username,
+                    detail="数据库模式旧申请缺少审批待办，admin 按历史快照收尾",
+                )
                 return True
             membership = user_service.get_primary_membership(username)
             effective_role = str(membership.get("position_name") or role or "")
-            return _sample_role_matches(effective_role, route.get("approver_roles", []))
+            allowed = _sample_role_matches(effective_role, route.get("approver_roles", []))
+            if allowed:
+                record_legacy_compatibility_hit(
+                    "legacy_approval_snapshot",
+                    "sample_issue.close_request.missing_assignment",
+                    username=username,
+                    detail=f"position={effective_role or '-'}; 使用历史审批角色快照",
+                )
+            return allowed
         return _has_sample_permission(
             username,
             role,
@@ -1784,6 +1799,13 @@ async def submit_sample_close_request(
                 for item in workflow_result["approvers"]
             ],
         }
+    else:
+        record_legacy_compatibility_hit(
+            "legacy_workflow_route",
+            "sample_issue.close_request",
+            username=user,
+            detail="旧 Excel 模式使用 sample_issue_config.json 关闭审批路由",
+        )
     request_id = f"close_{uuid.uuid4().hex[:8]}"
     task_key = f"close_approval:{request_id}"
     close_request = {

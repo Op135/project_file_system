@@ -6,6 +6,7 @@ from nicegui import app
 
 from .access_control import can
 from .approval_workflow import resolve_approval_workflow
+from .legacy_compatibility import record_legacy_compatibility_hit
 from .permission_catalog import (
     PROJECT_OVERVIEW_BATCH_REVIEW_PERMISSION,
     PROJECT_OVERVIEW_BATCH_SUBMIT_PERMISSION,
@@ -52,7 +53,15 @@ def can_view_overview_item(
     service = _service(user_service)
     if not current_user or not _item_permission(config, "view") or not _database_mode(service):
         role = str(current_role or "")
-        return role in _permission_roles(config, "read") or role in _permission_roles(config, "edit")
+        allowed = role in _permission_roles(config, "read") or role in _permission_roles(config, "edit")
+        if current_user and allowed:
+            record_legacy_compatibility_hit(
+                "legacy_role_grant",
+                _item_permission(config, "view") or "project_overview.item.view",
+                username=current_user,
+                detail=f"role={role or '-'}; source=overview_config.json",
+            )
+        return allowed
     view_code = _item_permission(config, "view")
     edit_code = _item_permission(config, "edit")
     return bool(view_code and (can(service, current_user, view_code) or can(service, current_user, edit_code)))
@@ -69,7 +78,16 @@ def can_edit_overview_item(
     service = _service(user_service)
     edit_code = _item_permission(config, "edit")
     if not current_user or not _database_mode(service):
-        return str(current_role or "") in _permission_roles(config, "edit")
+        role = str(current_role or "")
+        allowed = role in _permission_roles(config, "edit")
+        if current_user and allowed:
+            record_legacy_compatibility_hit(
+                "legacy_role_grant",
+                edit_code or "project_overview.item.edit",
+                username=current_user,
+                detail=f"role={role or '-'}; source=overview_config.json",
+            )
+        return allowed
     return bool(
         edit_code
         and can(
@@ -86,7 +104,15 @@ def can_view_any_project_overview(current_role: object, current_user: str, *, us
     """判断用户是否至少能查看一个概述 label。"""
     service = _service(user_service)
     if service is None or not _database_mode(service):
-        return bool(current_user)
+        allowed = bool(current_user)
+        if allowed:
+            record_legacy_compatibility_hit(
+                "legacy_role_grant",
+                "project_overview.any.view",
+                username=current_user,
+                detail="旧模式允许登录用户查看至少一个概述项",
+            )
+        return allowed
     active_item_codes = {
         str(item["code"])
         for item in permission_catalog_rows(strict_overview=False)
@@ -102,6 +128,13 @@ def can_view_inactive_project_overview(current_role: object, current_user: str, 
         keyword in role for keyword in OVERVIEW_LEGACY_INACTIVE_ROLE_KEYWORDS
     )
     if not _database_mode(user_service):
+        if legacy_allowed:
+            record_legacy_compatibility_hit(
+                "legacy_role_grant",
+                PROJECT_OVERVIEW_INACTIVE_VIEW_PERMISSION,
+                username=current_user,
+                detail=f"role={role or '-'}; source=legacy_role_constants",
+            )
         return legacy_allowed
     return can(_service(user_service), current_user, PROJECT_OVERVIEW_INACTIVE_VIEW_PERMISSION)
 
@@ -134,20 +167,36 @@ def can_review_batch_overview(request: dict, current_role: object, current_user:
         return False
     service = _service(user_service)
     if not _database_mode(service):
-        return (
+        allowed = (
             current_user != request.get("submitter")
             and str(current_role or "") in request.get("reviewer_roles", [])
         )
+        if allowed:
+            record_legacy_compatibility_hit(
+                "legacy_approval_snapshot",
+                "project_overview.batch_change.review",
+                username=current_user,
+                detail=f"role={str(current_role or '') or '-'}",
+            )
+        return allowed
     assignment = request.get("workflow_assignment", {})
     assignees = assignment.get("assignee_usernames", []) if isinstance(assignment, dict) else []
     # 数据库审批流允许管理员明确把申请人本人配置为审批人；
     # 若流程没有明确指派到本人，仍不能仅凭审批权限进行自审。
     if current_user == request.get("submitter") and current_user not in assignees:
         return False
-    return (
+    allowed = (
         (not assignees or current_user in assignees)
         and can(service, current_user, PROJECT_OVERVIEW_BATCH_REVIEW_PERMISSION)
     )
+    if allowed and not assignees:
+        record_legacy_compatibility_hit(
+            "legacy_approval_snapshot",
+            "project_overview.batch_change.missing_assignees",
+            username=current_user,
+            detail="数据库模式旧申请缺少具体审批人快照",
+        )
+    return allowed
 
 
 def can_review_overview_correction(request: dict, current_role: object, current_user: str, *, user_service=None) -> bool:
@@ -158,21 +207,51 @@ def can_review_overview_correction(request: dict, current_role: object, current_
     if not _database_mode(service):
         reviewer_roles = request.get("reviewer_roles", [])
         if reviewer_roles:
-            return str(current_role or "") in reviewer_roles
+            allowed = str(current_role or "") in reviewer_roles
+            if allowed:
+                record_legacy_compatibility_hit(
+                    "legacy_approval_snapshot",
+                    "project_overview.correction.review",
+                    username=current_user,
+                    detail=f"role={str(current_role or '') or '-'}",
+                )
+            return allowed
         # 兼容早期没有审批角色快照的单项目概述变更记录。
-        return str(current_role or "") == "研发经理"
+        allowed = str(current_role or "") == "研发经理"
+        if allowed:
+            record_legacy_compatibility_hit(
+                "legacy_approval_snapshot",
+                "project_overview.correction.default_role",
+                username=current_user,
+                detail="旧记录缺少审批角色快照，回退研发经理",
+            )
+        return allowed
     assignment = request.get("workflow_assignment", {})
     assignees = assignment.get("assignee_usernames", []) if isinstance(assignment, dict) else []
-    return (
+    allowed = (
         (not assignees or current_user in assignees)
         and can(service, current_user, PROJECT_OVERVIEW_CORRECTION_REVIEW_PERMISSION)
     )
+    if allowed and not assignees:
+        record_legacy_compatibility_hit(
+            "legacy_approval_snapshot",
+            "project_overview.correction.missing_assignees",
+            username=current_user,
+            detail="数据库模式旧申请缺少具体审批人快照",
+        )
+    return allowed
 
 
 def resolve_project_overview_workflow(event: str, requester_username: str, *, user_service=None) -> dict:
     """数据库模式解析并固化概述审批人；旧模式返回兼容标记。"""
     service = _service(user_service)
     if not _database_mode(service):
+        record_legacy_compatibility_hit(
+            "legacy_workflow_route",
+            f"project_overview.{str(event or 'unknown')}",
+            username=requester_username,
+            detail="旧 Excel 模式使用 JSON 审批路由",
+        )
         return {"status": "legacy_mode", "assignment": {}}
     result = resolve_approval_workflow(
         service,

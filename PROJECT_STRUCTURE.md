@@ -30,6 +30,7 @@
 | `db_storage.py` | 通用业务 JSON/实体的异步 SQLite 存储 |
 | `identity_store.py` | 用户、组织、岗位、权限、流程和具体待办的同步 SQLite 数据层 |
 | `user_service.py` | 旧 Excel 与身份数据库之间的统一服务门面 |
+| `legacy_compatibility.py` | 旧身份、角色授权、通知和审批路由实际命中的统一限频日志 |
 | `identity_config_transfer.py` | 跨环境配置包导出、预检、备份和事务导入 |
 | `permission_catalog.py` | 全系统稳定权限编码目录 |
 | `access_control.py` 及 `*_access.py` | 公共和各业务模块权限判断 |

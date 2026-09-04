@@ -41,6 +41,7 @@ from ..design_knowledge_config import (
     is_design_knowledge_review_approver_role as is_review_approver_role,
     resolve_design_knowledge_review_route as get_review_route,
 )
+from ..legacy_compatibility import record_legacy_compatibility_hit
 from ..permission_catalog import (
     DESIGN_KNOWLEDGE_CREATE_PERMISSION,
     DESIGN_KNOWLEDGE_DELETE_PERMISSION,
@@ -581,6 +582,13 @@ def can_review_submission(
     assignment = submission.get("workflow_assignment", {})
     if not isinstance(assignment, dict) or not assignment.get("task_key"):
         # 只有迁移前已经处于待审核状态的记录才允许按原审批角色快照收尾。
+        if legacy_allowed:
+            record_legacy_compatibility_hit(
+                "legacy_approval_snapshot",
+                f"design_knowledge.{submission_type}.review",
+                username=current_user,
+                detail="数据库模式旧记录缺少具体审批待办，使用固化角色快照",
+            )
         return legacy_allowed
     _restore_pending_assignment(submission)
     entity_id = str(submission.get("request_id") or submission.get("knowledge_id") or "")
@@ -862,6 +870,12 @@ async def save_knowledge_record(
                 record["workflow_assignment"] = copy.deepcopy(workflow_assignment)
             elif not record.get("workflow_assignment"):
                 # 旧 Excel 模式仍按原 JSON 路由固化审核角色。
+                record_legacy_compatibility_hit(
+                    "legacy_workflow_route",
+                    f"design_knowledge.{DESIGN_KNOWLEDGE_REVIEW_EVENT}",
+                    username=current_user,
+                    detail="旧 Excel 模式使用 design_knowledge_config.json 审批路由",
+                )
                 route = get_review_route(record.get("created_role", current_role))
                 record["review_route_key"] = route["key"]
                 record["review_route_label"] = route["label"]
@@ -969,6 +983,12 @@ async def submit_tag_request(
             f"tag_review:{uuid.uuid4().hex[:12]}",
         )
     if workflow_result is None:
+        record_legacy_compatibility_hit(
+            "legacy_workflow_route",
+            f"design_knowledge.{DESIGN_TAG_REVIEW_EVENT}",
+            username=current_user,
+            detail="旧 Excel 模式使用 design_knowledge_config.json 审批路由",
+        )
         review_route = get_review_route(current_role)
     else:
         # 流程匹配成功时上方必然已经生成具体审批人快照，这里显式收窄供运行时和类型检查共同验证。

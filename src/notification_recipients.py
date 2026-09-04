@@ -7,6 +7,7 @@ from typing import Any, Iterable
 
 from nicegui import app
 
+from .legacy_compatibility import record_legacy_compatibility_hit
 from .wecom_service import resolve_wecom_recipients
 
 logger = logging.getLogger(__name__)
@@ -39,6 +40,12 @@ async def resolve_permission_wecom_recipients(
     """
     service = user_service or getattr(app.state, "user_service", None)
     if service is None or getattr(service, "storage_mode", "legacy_excel") != "database":
+        target_count = len(legacy_targets) if isinstance(legacy_targets, (list, tuple, set)) else 0
+        record_legacy_compatibility_hit(
+            "legacy_notification_route",
+            str(permission_code or "unknown").strip().lower(),
+            detail=f"legacy_targets={target_count}; fallback={bool(fallback_touser)}",
+        )
         return await resolve_wecom_recipients(
             legacy_targets or [],
             fallback_touser=fallback_touser,

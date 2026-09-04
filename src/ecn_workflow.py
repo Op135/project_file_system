@@ -14,6 +14,7 @@ from .approval_workflow import (
     is_assigned_approver,
 )
 from .ecn_management_config import ECNState
+from .legacy_compatibility import record_legacy_compatibility_hit
 
 ECN_WORKFLOW_MODULE = "ecn"
 ECN_ECR_REVIEW_EVENT = "ecr_review"
@@ -57,6 +58,12 @@ def start_ecr_approval(
     """解析 ECR 流程，固化全部节点快照并激活首节点待办。"""
     service = _service(user_service)
     if not is_ecn_database_workflow_enabled(user_service=service):
+        record_legacy_compatibility_hit(
+            "legacy_workflow_route",
+            "ecn.ecr_review",
+            username=requester_username,
+            detail="旧 Excel 模式使用 ECN 原审批角色路由",
+        )
         return {"status": "legacy_mode", "assignment": {}}
     return create_approval_sequence_assignments(
         service,
@@ -77,6 +84,12 @@ def start_scheme_approval(
     """解析 ECN 方案评审流程并激活首节点待办。"""
     service = _service(user_service)
     if not is_ecn_database_workflow_enabled(user_service=service):
+        record_legacy_compatibility_hit(
+            "legacy_workflow_route",
+            "ecn.scheme_review",
+            username=requester_username,
+            detail="旧 Excel 模式使用 ECN 原方案评审角色路由",
+        )
         return {"status": "legacy_mode", "assignment": {}}
     return create_approval_sequence_assignments(
         service,

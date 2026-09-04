@@ -11,6 +11,7 @@ import pandas as pd
 
 from .identity_store import IdentityStore, UserMigrationResult
 from .identity_matching import build_wecom_user_match_plan, suggest_contact_for_user
+from .legacy_compatibility import record_legacy_compatibility_hit
 from .permission_catalog import (
     DEPRECATED_PERMISSION_REPLACEMENTS,
     PERMISSION_CODES,
@@ -103,6 +104,11 @@ class UserService:
                     "user_id": None,
                     "must_change_password": False,
                 }
+            record_legacy_compatibility_hit(
+                "excel_user_store",
+                "load_users",
+                detail=f"source={self.excel_path}",
+            )
             return users
         except Exception as exc:
             raise RuntimeError(f"用户数据加载失败: {exc}") from exc
@@ -122,11 +128,19 @@ class UserService:
         if self.storage_mode == "database":
             return self.identity_store.authenticate(username, password)
         user = self.get_user(username)
-        return bool(
+        authenticated = bool(
             user
             and user.get("status", "active") == "active"
             and str(user.get("password", "")) == str(password)
         )
+        if authenticated:
+            record_legacy_compatibility_hit(
+                "excel_user_store",
+                "authenticate",
+                username=username,
+                detail="使用 users.xlsx 明文兼容认证",
+            )
+        return authenticated
 
     def needs_password_setup(self, username: str) -> bool:
         if self.storage_mode == "database":
@@ -264,11 +278,33 @@ class UserService:
             and str(permission_code).strip().lower() in PERMISSION_CODES
         ):
             user = self.get_user(username)
-            return bool(user and user.get("status", "active") == "active")
+            allowed = bool(user and user.get("status", "active") == "active")
+            if allowed:
+                record_legacy_compatibility_hit(
+                    "legacy_role_grant",
+                    str(permission_code).strip().lower(),
+                    username=username,
+                    detail="旧 Excel 模式 admin 紧急授权",
+                )
+            return allowed
         if legacy_allowed_roles is None:
+            record_legacy_compatibility_hit(
+                "legacy_role_grant",
+                str(permission_code).strip().lower(),
+                username=username,
+                detail=f"role={str(legacy_role or '').strip() or '-'}; rule=unrestricted",
+            )
             return True
         allowed = {str(role).strip() for role in legacy_allowed_roles if str(role).strip()}
-        return str(legacy_role or "").strip() in allowed
+        matched = str(legacy_role or "").strip() in allowed
+        if matched:
+            record_legacy_compatibility_hit(
+                "legacy_role_grant",
+                str(permission_code).strip().lower(),
+                username=username,
+                detail=f"role={str(legacy_role or '').strip() or '-'}; rule=role_match",
+            )
+        return matched
 
     def list_permissions(self) -> list[dict[str, Any]]:
         if self.storage_mode != "database":
