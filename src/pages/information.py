@@ -1884,13 +1884,17 @@ def information_page():
                                             drafts.append((project_name, version, user, saved_timestamp))
                             drafts.sort(key=lambda draft: (draft[0], draft[3]), reverse=True)
 
-                            with ui.scroll_area().classes("h-64 w-full pr-2"):
+                            with ui.scroll_area().classes("h-90 w-full pr-2"):
                                 for project_name, version, user, saved_timestamp in drafts:
-                                    row = ui.element("div").classes(
-                                        "w-full items-center gap-3 py-2 border-b border-gray-100 last:border-0"
-                                    ).style(
-                                        "display: grid; grid-template-columns: minmax(140px, 1fr) 64px 96px 220px 64px; "
-                                        "min-width: 632px"
+                                    row = (
+                                        ui.element("div")
+                                        .classes(
+                                            "w-full items-center gap-3 py-2 border-b border-gray-100 last:border-0"
+                                        )
+                                        .style(
+                                            "display: grid; grid-template-columns: minmax(140px, 1fr) 64px 96px 220px 64px; "
+                                            "min-width: 632px"
+                                        )
                                     )
                                     with row:
                                         ui.label(project_name).classes(
