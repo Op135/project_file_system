@@ -35,6 +35,7 @@ from ..overview_corrections import (
     validate_staged_path,
 )
 from ..overview_warning import get_overview_counts, get_overview_warning, sort_overview_pending_items
+from ..project_overview_access import can_review_overview_correction
 from ..project_requirement_access import (
     can_edit_project_requirement,
     can_manage_all_project_requirement_drafts,
@@ -44,7 +45,6 @@ from ..project_requirement_access import (
     has_assigned_requirement_review_permission,
 )
 from ..project_todo_access import can_view_project_todo, filter_actionable_overview_pending
-from ..project_overview_access import can_review_overview_correction
 from ..requirement_overview_impact import RequirementOverviewImpactConfigError
 from ..utils import (
     delete_file,
@@ -76,6 +76,23 @@ _requirement_review_locks = defaultdict(asyncio.Lock)
 _batch_overview_review_locks = defaultdict(asyncio.Lock)
 _overview_correction_review_locks = defaultdict(asyncio.Lock)
 _correction_preview_routes: set[str] = set()
+
+
+def _get_draft_saved_timestamp(project_name, version, owner) -> float:
+    """读取草稿保存时间；旧草稿没有时间戳时使用文件修改时间。"""
+    file_path = Path(REQ_DIR) / "temp" / owner / f"{project_name}_需求配置_V{version}.json"
+    try:
+        with file_path.open(encoding="utf-8") as draft_file:
+            draft = json.load(draft_file)
+        saved_at = draft.get("req_timestamp") if isinstance(draft, dict) else None
+        if saved_at:
+            return datetime.fromisoformat(str(saved_at)).timestamp()
+    except (OSError, ValueError, OverflowError):
+        pass
+    try:
+        return file_path.stat().st_mtime
+    except OSError:
+        return float("-inf")
 
 
 def _reload_after_dialog_transition(delay: float = 0.4) -> None:
@@ -1858,46 +1875,60 @@ def information_page():
                             ui_card_header("需求草稿箱", "save_as", "amber-600")
 
                             temp_req_dic = app.storage.general.get("temp_req", {})
-                            has_drafts = False
+                            drafts = []
+                            for user, project_dic in temp_req_dic.items():
+                                if user == current_user or can_manage_all_drafts:
+                                    for project_name, version_li in project_dic.items():
+                                        for version in version_li:
+                                            saved_timestamp = _get_draft_saved_timestamp(project_name, version, user)
+                                            drafts.append((project_name, version, user, saved_timestamp))
+                            drafts.sort(key=lambda draft: (draft[0], draft[3]), reverse=True)
 
                             with ui.scroll_area().classes("h-64 w-full pr-2"):
-                                for user, project_dic in temp_req_dic.items():
-                                    if user == current_user or can_manage_all_drafts:
-                                        for project_name, version_li in project_dic.items():
-                                            for version in version_li:
-                                                has_drafts = True
-                                                row = ui.row().classes(
-                                                    "w-full items-center justify-between py-2 border-b border-gray-100 last:border-0"
-                                                )
-                                                with row:
-                                                    with ui.column().classes("gap-0"):
-                                                        ui.label(project_name).classes(
-                                                            "font-medium text-sm text-gray-700"
-                                                        )
-                                                        ui.label(f"V{version} • {user}").classes(
-                                                            "text-xs text-gray-400"
-                                                        )
+                                for project_name, version, user, saved_timestamp in drafts:
+                                    row = ui.element("div").classes(
+                                        "w-full items-center gap-3 py-2 border-b border-gray-100 last:border-0"
+                                    ).style(
+                                        "display: grid; grid-template-columns: minmax(140px, 1fr) 64px 96px 220px 64px; "
+                                        "min-width: 632px"
+                                    )
+                                    with row:
+                                        ui.label(project_name).classes(
+                                            "min-w-0 truncate font-medium text-sm text-gray-700"
+                                        ).tooltip(project_name)
+                                        ui.label(f"V{version}").classes(
+                                            "min-w-0 truncate text-xs text-gray-400"
+                                        ).tooltip(f"V{version}")
+                                        ui.label(user).classes("min-w-0 truncate text-xs text-gray-400").tooltip(user)
+                                        saved_time = (
+                                            datetime.fromtimestamp(saved_timestamp).strftime("%Y-%m-%d %H:%M:%S")
+                                            if saved_timestamp != float("-inf")
+                                            else "未知"
+                                        )
+                                        ui.label(f"保存时间：{saved_time}").classes(
+                                            "whitespace-nowrap tabular-nums text-xs text-gray-400"
+                                        )
 
-                                                    with ui.row().classes("gap-1"):
-                                                        # 跨用户草稿管理权限只允许查看，草稿本人仍可继续编辑。
-                                                        btn_icon = "visibility" if user != current_user else "edit"
-                                                        ui.button(
-                                                            icon=btn_icon,
-                                                            on_click=lambda pn=project_name, v=version, owner=user: (
-                                                                get_req_page(pn, v, owner)
-                                                            ),
-                                                        ).props("flat dense size=sm color=amber").tooltip("查看/编辑")
+                                        with ui.row().classes("gap-1 flex-nowrap justify-end"):
+                                            # 跨用户草稿管理权限只允许查看，草稿本人仍可继续编辑。
+                                            btn_icon = "visibility" if user != current_user else "edit"
+                                            ui.button(
+                                                icon=btn_icon,
+                                                on_click=lambda pn=project_name, v=version, owner=user: get_req_page(
+                                                    pn, v, owner
+                                                ),
+                                            ).props("flat dense size=sm color=amber").tooltip("查看/编辑")
 
-                                                        if user == current_user:
-                                                            ui.button(
-                                                                icon="close",
-                                                                color="red",
-                                                                on_click=lambda r=row, pn=project_name, v=version: (
-                                                                    dele_temp_req_row(r, pn, v)
-                                                                ),
-                                                            ).props("flat dense size=sm").tooltip("丢弃草稿")
+                                            if user == current_user:
+                                                ui.button(
+                                                    icon="close",
+                                                    color="red",
+                                                    on_click=lambda r=row, pn=project_name, v=version: (
+                                                        dele_temp_req_row(r, pn, v)
+                                                    ),
+                                                ).props("flat dense size=sm").tooltip("丢弃草稿")
 
-                            if not has_drafts:
+                            if not drafts:
                                 ui.label("暂无草稿记录").classes("text-sm text-gray-400 p-2")
                     # 概述修改申请审批（单项目内容修改 + 跨项目批量变更）
                     all_requests = app.storage.general.get("overview_change_requests", {})
