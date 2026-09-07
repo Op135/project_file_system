@@ -21,6 +21,7 @@
 import asyncio
 import copy
 import datetime
+import inspect
 import json
 import logging
 import time
@@ -1302,6 +1303,8 @@ async def atomic_deep_update(path: List[str], update_function: Callable, *args, 
                 # 执行业务方提供的修改函数，并把附加参数一起传进去。
                 # new_data 就是业务函数希望保存的新顶层值。
                 new_data = update_function(data_to_process, *args, **kwargs)
+                if inspect.isawaitable(new_data):
+                    new_data = await new_data
 
                 # ATOMIC_NO_UPDATE 是特殊哨兵值，表示业务检查已正常完成，但决定不修改数据库。
                 if new_data is ATOMIC_NO_UPDATE:
@@ -1366,6 +1369,8 @@ async def atomic_deep_update(path: List[str], update_function: Callable, *args, 
 
                     # 执行业务更新函数；返回值将作为目标键的新值。
                     new_deep_value = update_function(value_to_process, *args, **kwargs)
+                    if inspect.isawaitable(new_deep_value):
+                        new_deep_value = await new_deep_value
 
                     # 业务函数可以通过返回 ATOMIC_NO_UPDATE 主动取消本次写入。
                     if new_deep_value is ATOMIC_NO_UPDATE:
@@ -1445,6 +1450,18 @@ async def atomic_deep_update(path: List[str], update_function: Callable, *args, 
 # ---------------------------------------------------------------------------
 # SQLite 在线备份与过期文件轮转
 # ---------------------------------------------------------------------------
+async def atomic_deep_update_transaction(path: List[str], update_function: Callable) -> bool:
+    """把业务 JSON 与同库关联表放入同一事务；回调接收最新值和当前连接。
+
+    回调不得自行提交、关闭连接或嵌套调用存储写接口。业务拒绝返回 ATOMIC_NO_UPDATE
+    会回滚关联表写入；回调异常、取消和提交失败同样由 atomic_deep_update 统一回滚。
+    """
+    async def update(value):
+        return await update_function(value, _require_db())
+
+    return await atomic_deep_update(path, update)
+
+
 async def backup_db(backup_dir: str = "backups", retention_days: int = 30) -> str:
     """
     执行数据库热备份 (Hot Backup)。
