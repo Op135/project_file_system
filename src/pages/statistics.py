@@ -823,10 +823,38 @@ def statistics_page():
                                                 # 面板二：按项目跟进
                                                 # ==========================================
                                                 with ui.tab_panel(project_tab).classes("p-4"):
+                                                    # 与项目表一致：横线前为大类，第二段前两位为小类。
+                                                    project_categories = {"所有": ["所有"], "RFTS": ["所有"]}
+                                                    project_groups = {}
+                                                    for project in sorted(project_list):
+                                                        if "-" in project:
+                                                            parts = project.split("-")
+                                                            major, sub = parts[0], parts[1][:2]
+                                                        else:
+                                                            major, sub = "其它", project
+                                                        project_groups[project] = (major, sub)
+                                                        sub_options = project_categories.setdefault(major, ["所有"])
+                                                        if sub not in sub_options:
+                                                            sub_options.append(sub)
+                                                            sub_options.sort(reverse=True)
+
+                                                    with ui.row().classes("w-full gap-4 mb-4"):
+                                                        project_major_select = ui.select(
+                                                            options=list(project_categories),
+                                                            value="所有",
+                                                            label="项目大类",
+                                                        ).classes("flex-1 min-w-32 bg-white")
+                                                        project_sub_select = ui.select(
+                                                            options=["所有"],
+                                                            value="所有",
+                                                            label="项目小类",
+                                                        ).classes("flex-1 min-w-32 bg-white")
+
                                                     project_select = ui.select(
-                                                        options=project_list,
-                                                        value=project_list[0] if project_list else None,
+                                                        options=sorted(project_list),
+                                                        value=min(project_list) if project_list else None,
                                                         label="请选择具体项目",
+                                                        with_input=True,
                                                     ).classes("w-full bg-white mb-4")
 
                                                     @ui.refreshable
@@ -885,6 +913,32 @@ def statistics_page():
                                                     project_select.on_value_change(
                                                         lambda e: render_project_tab_content.refresh(e.value)
                                                     )
+
+                                                    def update_project_options():
+                                                        major = project_major_select.value
+                                                        sub = project_sub_select.value
+                                                        matching_projects = [
+                                                            project
+                                                            for project, group in project_groups.items()
+                                                            if major == "所有"
+                                                            or (group[0] == major and (sub == "所有" or group[1] == sub))
+                                                        ]
+                                                        selected = project_select.value
+                                                        if selected not in matching_projects:
+                                                            selected = matching_projects[0] if matching_projects else None
+                                                        project_select.set_options(matching_projects, value=selected)
+
+                                                    def update_project_sub_options():
+                                                        major = project_major_select.value
+                                                        if not isinstance(major, str) or major not in project_categories:
+                                                            major = "所有"
+                                                        project_sub_select.set_options(
+                                                            project_categories[major], value="所有"
+                                                        )
+                                                        update_project_options()
+
+                                                    project_major_select.on_value_change(update_project_sub_options)
+                                                    project_sub_select.on_value_change(update_project_options)
                                 else:
                                     ui.label("当前筛选状态下暂无积压数据").classes("p-4 text-gray-400 text-sm mt-4")
 
