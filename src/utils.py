@@ -19,6 +19,7 @@ from urllib.parse import urlencode
 import httpx
 from httpx import BasicAuth
 from nicegui import app, ui
+from nicegui.client import Client
 from nicegui.events import KeyEventArguments
 
 from . import db_storage
@@ -143,8 +144,17 @@ def setup_global_activity_tracking():
     async def report_heartbeat() -> None:
         if client is None or client_id is None:
             return
+        # 定时器已排队的异步回调可能在页面删除后才开始执行。
+        if Client.instances.get(client_id) is not client:
+            heartbeat_timer.cancel()
+            return
+        # 临时断线时跳过，保留定时器以便重连后继续上报。
+        if not client.has_socket_connection:
+            return
         try:
             last_activity_ms = await client.run_javascript("return window.lastActivityTime;", timeout=2.0)
+            if Client.instances.get(client_id) is not client or not client.has_socket_connection:
+                return
             if last_activity_ms is not None:
                 if client_id in online_users:
                     online_users[client_id]["username"] = username
@@ -155,7 +165,15 @@ def setup_global_activity_tracking():
             logger.debug("活跃心跳上报失败: %r", exc)
 
     # 每 10 秒向后端同步一次
-    ui.timer(10.0, report_heartbeat)
+    heartbeat_timer = ui.timer(10.0, report_heartbeat)
+
+    def cleanup_heartbeat() -> None:
+        # 同时取消正在等待 JS 响应的回调，避免继续使用已销毁的页面。
+        heartbeat_timer.cancel(with_current_invocation=True)
+        online_users.pop(client_id, None)
+
+    if client is not None:
+        client.on_delete(cleanup_heartbeat)
 
 
 async def async_path_exists(path_str: str) -> bool:
