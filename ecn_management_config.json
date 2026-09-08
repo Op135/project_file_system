@@ -26,7 +26,15 @@
         "scheme_options.disposition_condition_required_measures": "选择后必须填写具体处置条件的旧料处置措施。",
         "ui.overview_conflict_auto_close_seconds": "概述新增数据与同格已有数据冲突时，警告浮层首次自动弹出的停留秒数。",
         "workflow_routes": "ECR和ECN方案评审的角色审批路由。一个内层数组表示同一节点并行会签。执行阶段责任角色由execution_workflow配置。",
-        "schema": "ECN申请与影响表单使用的原因、影响、资料类型和物料选项。"
+        "schema": "ECN申请与影响表单使用的原因、影响、资料类型和物料选项。",
+        "wecom.enabled": "ECN企业微信待办提醒总开关；关闭不影响首页角标。",
+        "wecom.test_mode": "true为调试模式，只发送给test_notify_targets；false按与首页角标一致的实际待办人员发送。修改后重启生效。",
+        "wecom.test_notify_targets": "调试收件人，默认精确匹配企业微信通讯录职务“研发经理”；没有匹配对象则跳过，不回退给其它人员。",
+        "wecom.public_base_url": "员工浏览器可访问的系统地址，与样品问题模块相同；为空时不附跳转链接。",
+        "wecom.initial_delay_seconds": "启动后首次检查的延迟秒数。",
+        "wecom.check_interval_seconds": "后台检查间隔，不依赖用户打开ECN页面。",
+        "wecom.repeat_hours": "相同待办重复提醒间隔小时数；状态、当前节点或待办人员变化会产生新提醒。",
+        "wecom.retry_seconds": "发送失败后的重试间隔秒数；每次重试重新核对待办和收件人，不发送过期待办。"
     },
     "allowed_project_states": [
         "试产",
@@ -347,5 +355,19 @@
             "永久变更",
             "临时变更"
         ]
+    },
+    "wecom": {
+        "enabled": true,
+        "test_mode": true,
+        "test_notify_targets": [
+            {
+                "position": "研发经理"
+            }
+        ],
+        "public_base_url": "http://192.168.1.102:8080",
+        "initial_delay_seconds": 30,
+        "check_interval_seconds": 60,
+        "repeat_hours": 24,
+        "retry_seconds": 300
     }
 }

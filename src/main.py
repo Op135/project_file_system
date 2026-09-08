@@ -26,6 +26,7 @@ from .error_management_config import (
     ERROR_REMINDER_CHECK_WINDOW,
 )
 from .issue_workflow_utils import is_time_in_window
+from .modules.ecn.notifications import init_ecn_reminder_task
 from .pages.sample_order_dashboard import initialize_sample_order_storage
 from .sample_issue_config import (
     SAMPLE_BACKGROUND_REMINDER_ENABLED,
@@ -335,6 +336,7 @@ async def master_startup():
 
     # 第八顺位：启动样品问题后台提醒检查任务
     init_sample_issue_reminder_task()
+    init_ecn_reminder_task()
 
     logger.info("系统启动序列全部执行完毕。")
 

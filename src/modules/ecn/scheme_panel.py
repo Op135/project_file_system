@@ -16,6 +16,7 @@ from nicegui import (
     ui,
 )
 
+from ... import db_storage
 from ...components import (
     FileThumbnail,
 )
@@ -47,6 +48,7 @@ from ...ecn_management_config import (
     ECN_SCHEME_GROUP_UNKNOWN,
     classify_ecn_change_item,
     get_ecn_material_change_display,
+    get_ecn_overview_deactivation_remaining_contents,
     get_ecn_overview_project_new_data,
     get_ecn_scheme_coverage,
     is_ecn_disposition_condition_required,
@@ -967,9 +969,36 @@ def build_scheme_panel(
                                                     project_state,
                                                 )
                                                 if action == ECN_OVERVIEW_ACTION_DEACTIVATE:
-                                                    ui.label("—").classes(
-                                                        "text-sm font-semibold text-slate-400 cursor-help"
-                                                    ).tooltip("原内容失效；不生成新内容")
+                                                    parameter = str(item.get("label") or "")
+                                                    req_ver = str(
+                                                        app.storage.general.get("project_req_max_ver", {}).get(
+                                                            project, "0.0"
+                                                        )
+                                                    )
+                                                    remaining = get_ecn_overview_deactivation_remaining_contents(
+                                                        db_storage.get_deep_item(
+                                                            [f"{project}_over_data", parameter], {}
+                                                        ),
+                                                        project_state.get("chip_id"),
+                                                        req_ver,
+                                                    )
+                                                    tooltip_lines = [
+                                                        f"{project} ",
+                                                        "本条概述失效后，",
+                                                    ]
+                                                    if remaining:
+                                                        hint = "仍有其它有效内容"
+                                                        tooltip_lines.append("该参数剩余的有效内容：")
+                                                        tooltip_lines.extend(
+                                                            f"{index}. {content}"
+                                                            for index, content in enumerate(remaining, start=1)
+                                                        )
+                                                    else:
+                                                        hint = "该参数将为空"
+                                                        tooltip_lines.append("该参数将没有任何有效概述内容。")
+                                                    ui.label(hint).classes(
+                                                        "w-full text-sm font-normal text-slate-400 cursor-help"
+                                                    ).tooltip("\n".join(tooltip_lines))
                                                 else:
                                                     result_note = (
                                                         (

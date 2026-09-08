@@ -117,6 +117,16 @@ class ECNState:
 
 
 _DEFAULT_CONFIG: dict[str, Any] = {
+    "wecom": {
+        "enabled": True,
+        "test_mode": True,
+        "test_notify_targets": [{"position": "研发经理"}],
+        "public_base_url": "",
+        "initial_delay_seconds": 30,
+        "check_interval_seconds": 60,
+        "repeat_hours": 24,
+        "retry_seconds": 300,
+    },
     "allowed_project_states": ["试产", "量产"],
     "permissions": {
         "scheme_initiator_roles": ["研发经理", "admin"],
@@ -437,6 +447,19 @@ def load_ecn_config(raw_config: dict | None = None) -> dict:
         raw = {}
 
     result = copy.deepcopy(_DEFAULT_CONFIG)
+    raw_wecom = raw.get("wecom", {})
+    if not isinstance(raw_wecom, dict):
+        raw_wecom = {}
+    for key in ("enabled", "test_mode"):
+        result["wecom"][key] = _bool_value(raw_wecom.get(key), _DEFAULT_CONFIG["wecom"][key], f"wecom.{key}")
+    for key in ("initial_delay_seconds", "check_interval_seconds", "repeat_hours", "retry_seconds"):
+        result["wecom"][key] = _positive_number(raw_wecom.get(key), _DEFAULT_CONFIG["wecom"][key], f"wecom.{key}")
+    raw_url = raw_wecom.get("public_base_url")
+    if isinstance(raw_url, str):
+        result["wecom"]["public_base_url"] = raw_url.strip().rstrip("/")
+    targets = raw_wecom.get("test_notify_targets")
+    if isinstance(targets, list) and targets and all(isinstance(target, (str, dict)) and target for target in targets):
+        result["wecom"]["test_notify_targets"] = copy.deepcopy(targets)
     result["allowed_project_states"] = _string_list(
         raw.get("allowed_project_states"),
         _DEFAULT_CONFIG["allowed_project_states"],
@@ -588,6 +611,7 @@ def load_ecn_config(raw_config: dict | None = None) -> dict:
 
 
 ECN_CONFIG = load_ecn_config()
+ECN_WECOM_CONFIG = ECN_CONFIG["wecom"]
 ECN_SCHEMA_CONFIG = ECN_CONFIG["schema"]
 ECN_ALLOWED_PROJECT_STATES = ECN_CONFIG["allowed_project_states"]
 ECN_SCHEME_INITIATOR_ROLES = ECN_CONFIG["permissions"]["scheme_initiator_roles"]
@@ -807,6 +831,23 @@ def get_active_overview_row_contents(raw_data: Any, row_id: Any, req_max_ver: st
         if not isinstance(active_versions, dict) or active_versions.get(req_max_ver) is not True:
             continue
         content = str(chip.get("content", "")).strip() or "（空内容）"
+        if content not in contents:
+            contents.append(content)
+    return contents
+
+
+def get_ecn_overview_deactivation_remaining_contents(raw_data: Any, chip_id: Any, req_max_ver: str) -> list[str]:
+    """预览本条失效操作后，同一具体参数在当前需求版本下剩余的有效内容。"""
+    if not isinstance(raw_data, dict):
+        return []
+    contents: list[str] = []
+    for current_id, chip in raw_data.items():
+        if current_id == chip_id or not isinstance(chip, dict):
+            continue
+        active_versions = chip.get("select_activ_dic", {})
+        if not isinstance(active_versions, dict) or active_versions.get(req_max_ver) is not True:
+            continue
+        content = str(chip.get("content") or "").strip() or "（空内容）"
         if content not in contents:
             contents.append(content)
     return contents

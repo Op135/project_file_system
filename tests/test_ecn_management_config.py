@@ -24,6 +24,7 @@ from src.ecn_management_config import (
     classify_ecn_change_item,
     collect_ecn_pending_overview_overrides,
     get_active_overview_row_contents,
+    get_ecn_overview_deactivation_remaining_contents,
     get_ecn_overview_project_new_data,
     get_ecn_pending_approval_roles,
     get_ecn_scheme_target_projects,
@@ -1043,6 +1044,27 @@ def test_active_overview_row_contents_only_returns_current_cell_active_data():
     }
 
     assert get_active_overview_row_contents(raw_data, "ROW-1", "2.0") == ["已有参数A", "已有参数B"]
+
+
+def test_deactivation_preview_excludes_target_and_inactive_versions_but_keeps_other_rows():
+    raw_data = {
+        "target": {"content": "旧图纸", "row_id": "row1", "select_activ_dic": {"2.0": True}},
+        "remaining": {"content": "新图纸", "row_id": "row2", "select_activ_dic": {"2.0": True}},
+        "same_text": {"content": "旧图纸", "row_id": "row3", "select_activ_dic": {"2.0": True}},
+        "inactive": {"content": "已失效", "select_activ_dic": {"2.0": False}},
+        "old_version": {"content": "历史内容", "select_activ_dic": {"1.0": True}},
+    }
+    assert get_ecn_overview_deactivation_remaining_contents(raw_data, "target", "2.0") == ["新图纸", "旧图纸"]
+    assert raw_data["target"]["select_activ_dic"]["2.0"] is True
+
+
+def test_deactivation_preview_reports_empty_when_last_active_item_is_removed():
+    raw_data = {
+        "target": {"content": "唯一内容", "select_activ_dic": {"0.0": True}},
+        "old": {"content": "历史内容", "select_activ_dic": {"0.0": False}},
+    }
+    assert get_ecn_overview_deactivation_remaining_contents(raw_data, "target", "0.0") == []
+    assert get_ecn_overview_deactivation_remaining_contents(None, "target", "0.0") == []
 
 
 def test_overview_validation_signature_changes_with_content_or_context():
