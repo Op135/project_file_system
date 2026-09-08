@@ -15,6 +15,7 @@
 | `execution_panel.py` | 执行阶段 UI、助理/物料责任项确认、概述执行调度 |
 | `overview_execution.py` | 系统内资料逐项目新增、更换、失效及执行结果 |
 | `list_view.py` | 主列表列定义、单据行和进度显示 |
+| `notifications.py` | 与首页角标同口径的企业微信待办检查、调试转发、去重及重试 |
 
 ## 写入约定
 
@@ -32,6 +33,11 @@
 
 ## 验证
 
+企业微信配置位于根目录 `ecn_management_config.json` 的 `wecom`：默认 `enabled=true`、`test_mode=true`，只发给通讯录职务为“研发经理”的 `test_notify_targets`，正文列出原应通知人员。正式上线时将 `test_mode` 改为 `false` 并重启服务，收件人由首页实际待办判断与企业微信绑定决定；不会更改首页角标或审批权限。未匹配调试人或正式人员未绑定微信时跳过，不回退给其它人员。
+
+系统启动30秒后首次检查，随后每60秒检查；同一待办每24小时最多重复提醒一次，当前节点/人员变化产生新提醒。通知状态独立保存在 `ecn_wecom_notification_state`，不修改单据；数据库中的发送占用标记避免重复执行。失败默认300秒后重新检查当前待办再重试，避免公共重试队列发送已处理任务或绕过调试转发。链接打开 ECN 列表，正文提供单号便于查询。上述时间均可由 JSON 调整，重启生效。
+
+- `tests/test_ecn_notifications.py`：调试隔离、正式绑定、未匹配跳过、关闭开关、去重和过期待办/失败重试；外部发送全部模拟。
 - `tests/test_ecn_concurrency.py`：独立连接并发创建、字段合并/冲突、过期编辑、评审竞争、真实身份库会签和事务回滚。
 - `tests/test_ecn_management_config.py`：覆盖率、配置、待办、追溯、驳回和执行清单。
 - `tests/test_ecn_management_records.py`：审批日志与概述审计。

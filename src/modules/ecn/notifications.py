@@ -12,10 +12,15 @@ from nicegui import app
 from ... import db_storage
 from ...ecn_access import can_confirm_ecn_material_spec, can_view_ecn, is_ecn_pending_for_user
 from ...ecn_management_config import (
-    ECN_DATA_KEY, ECN_WECOM_CONFIG, ECNState,
-    ECN_EXECUTION_STAGE_ASSISTANT, ECN_EXECUTION_STAGE_MATERIAL,
-    ECN_EXECUTION_STAGE_OVERVIEW_FAILED, ECN_EXECUTION_STAGE_OVERVIEW_RUNNING,
-    get_ecn_material_execution_specs, is_ecn_scheme_ready_for_review,
+    ECN_DATA_KEY,
+    ECN_WECOM_CONFIG,
+    ECNState,
+    ECN_EXECUTION_STAGE_ASSISTANT,
+    ECN_EXECUTION_STAGE_MATERIAL,
+    ECN_EXECUTION_STAGE_OVERVIEW_FAILED,
+    ECN_EXECUTION_STAGE_OVERVIEW_RUNNING,
+    get_ecn_material_execution_specs,
+    is_ecn_scheme_ready_for_review,
 )
 from ...wecom_service import resolve_wecom_recipients, send_wecom_text_message
 
@@ -32,7 +37,10 @@ def collect_pending_users(record: dict, service) -> dict[str, str]:
             continue
         role = str(info.get("role") or "")
         if can_view_ecn(role, username, user_service=service) and is_ecn_pending_for_user(
-            record, username, role, user_service=service,
+            record,
+            username,
+            role,
+            user_service=service,
         ):
             pending[username] = role
     return pending
@@ -74,10 +82,13 @@ def pending_task_details(record: dict, pending: dict[str, str], service) -> dict
 def build_notification_fingerprint(record: dict, tasks: dict, config: dict) -> str:
     workflow = record.get("workflow", {})
     payload = {
-        "state": workflow.get("current_state"), "phase": workflow.get("current_phase"),
-        "round": workflow.get("approval_round"), "step": workflow.get("current_step_index"),
+        "state": workflow.get("current_state"),
+        "phase": workflow.get("current_phase"),
+        "round": workflow.get("approval_round"),
+        "step": workflow.get("current_step_index"),
         "stage": record.get("execution_info", {}).get("stage"),
-        "participants": workflow.get("scheme_participants", {}), "tasks": tasks,
+        "participants": workflow.get("scheme_participants", {}),
+        "tasks": tasks,
         "test_mode": config["test_mode"],
         "test_notify_targets": config["test_notify_targets"] if config["test_mode"] else [],
     }
@@ -171,7 +182,12 @@ async def check_and_send_ecn_reminders(*, config=None, user_service=None, storag
                         return storage.ATOMIC_NO_UPDATE
                     if delivery.get("attempted_at", 0) > now - settings["retry_seconds"]:
                         return storage.ATOMIC_NO_UPDATE
-                    entry["recipients"][recipient] = {**delivery, "token": token, "lease_until": now + 300, "attempted_at": now}
+                    entry["recipients"][recipient] = {
+                        **delivery,
+                        "token": token,
+                        "lease_until": now + 300,
+                        "attempted_at": now,
+                    }
                     claimed = True
                     return entry
 
@@ -187,11 +203,15 @@ async def check_and_send_ecn_reminders(*, config=None, user_service=None, storag
                     if not fresh_pending or build_notification_fingerprint(fresh, fresh_tasks, settings) != fingerprint:
                         continue
                     success, message = await send_wecom_text_message(
-                        build_notification_content(fresh, fresh_tasks, names, settings), recipient,
-                        module="ecn_management", business_key=f"{ecn_id}:{fingerprint}", message_type="pending",
+                        build_notification_content(fresh, fresh_tasks, names, settings),
+                        recipient,
+                        module="ecn_management",
+                        business_key=f"{ecn_id}:{fingerprint}",
+                        message_type="pending",
                         link_url=f"{settings['public_base_url']}/ecn_management" if settings["public_base_url"] else "",
                         # ECN自身重试会重新检查待办/调试开关，避免全局重试发送旧任务或通知其它人员。
-                        retry_tracking=False, alert_on_max_failure=False,
+                        retry_tracking=False,
+                        alert_on_max_failure=False,
                     )
                     sent += int(success)
                     failed += int(not success)
@@ -201,6 +221,7 @@ async def check_and_send_ecn_reminders(*, config=None, user_service=None, storag
                     failed += 1
                     logger.exception("ECN微信发送异常：%s", ecn_id)
                 finally:
+
                     def finish(current):
                         if not isinstance(current, dict) or current.get("fingerprint") != fingerprint:
                             return storage.ATOMIC_NO_UPDATE
@@ -211,6 +232,7 @@ async def check_and_send_ecn_reminders(*, config=None, user_service=None, storag
                         if success:
                             delivery["sent_at"] = time.time()
                         return current
+
                     await storage.atomic_deep_update([NOTIFICATION_STATE_KEY, ecn_id], finish)
     return sent, failed
 

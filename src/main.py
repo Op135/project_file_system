@@ -13,7 +13,7 @@ from starlette.responses import Response
 # 导入新的配置和工具模块
 from . import (
     db_storage,
-    pages,  # 这将执行 src/pages/__init__.py
+    pages as pages,  # 导入页面以注册路由；显式保留副作用导入
 )
 from .components import StorageBackupManager
 from .config import BASE_DIR, IMG_DIR, PDF_PREVIEW_CACHE, ST, WECOM_CONTACT_CACHE_TTL_SECONDS
