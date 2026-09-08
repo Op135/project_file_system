@@ -120,6 +120,7 @@ _DEFAULT_CONFIG: dict[str, Any] = {
     "wecom": {
         "enabled": True,
         "test_mode": True,
+        "cc_manager_enabled": True,
         "test_notify_targets": [{"position": "研发经理"}],
         "public_base_url": "",
         "initial_delay_seconds": 30,
@@ -450,7 +451,7 @@ def load_ecn_config(raw_config: dict | None = None) -> dict:
     raw_wecom = raw.get("wecom", {})
     if not isinstance(raw_wecom, dict):
         raw_wecom = {}
-    for key in ("enabled", "test_mode"):
+    for key in ("enabled", "test_mode", "cc_manager_enabled"):
         result["wecom"][key] = _bool_value(raw_wecom.get(key), _DEFAULT_CONFIG["wecom"][key], f"wecom.{key}")
     for key in ("initial_delay_seconds", "check_interval_seconds", "repeat_hours", "retry_seconds"):
         result["wecom"][key] = _positive_number(raw_wecom.get(key), _DEFAULT_CONFIG["wecom"][key], f"wecom.{key}")

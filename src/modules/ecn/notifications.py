@@ -116,10 +116,14 @@ async def resolve_delivery_targets(pending: dict[str, str], config: dict, servic
     return result
 
 
-def build_notification_content(record: dict, tasks: dict[str, list[str]], names: list[str], config: dict) -> str:
+def build_notification_content(
+    record: dict, tasks: dict[str, list[str]], names: list[str], config: dict, *, is_cc: bool = False
+) -> str:
     basic = record.get("basic_info", {})
     lines = [
-        "【ECN待办提醒 · 调试转发】" if config["test_mode"] else "【ECN待办提醒】",
+        "【ECN待办提醒 · 调试转发】" if config["test_mode"] else (
+            "【ECN待办提醒 · 研发经理抄送】" if is_cc else "【ECN待办提醒】"
+        ),
         f"单号：{record.get('ecn_id', '')}",
         f"主题：{basic.get('title') or '工程变更申请'}",
         f"申请人：{basic.get('applicant', '')}",
@@ -130,6 +134,8 @@ def build_notification_content(record: dict, tasks: dict[str, list[str]], names:
         lines.append(f"{name}：{'；'.join(tasks.get(name, []))}")
     if config["test_mode"]:
         lines.append("调试模式：本消息仅发给配置的调试收件人，未发给上述实际待办人员。")
+    elif is_cc:
+        lines.append("观察抄送：汇总上述人员的待办提醒，便于观察提醒内容及频度；如含本人待办，请按原职责处理。")
     text = "\n".join(lines)
     # 企业微信文本有长度限制；完整责任项可从系统列表查看。
     if len(text.encode("utf-8")) > 1700:
@@ -165,6 +171,20 @@ async def check_and_send_ecn_reminders(*, config=None, user_service=None, storag
             if not targets:
                 logger.warning("ECN通知没有可用收件人，未发送：%s（test_mode=%s）", ecn_id, settings["test_mode"])
                 continue
+            cc_recipients: set[str] = set()
+            if not settings["test_mode"] and settings["cc_manager_enabled"]:
+                # 抄送失败不阻断正式通知；按账号合并，经理本人有待办时也只发一条。
+                try:
+                    cc_users = await resolve_wecom_recipients([{"position": "研发经理"}], fallback_touser="")
+                    cc_recipients = {userid for userid in cc_users.split("|") if userid and userid != "@all"}
+                    if not cc_recipients:
+                        logger.warning("ECN研发经理抄送未匹配到微信账号：%s", ecn_id)
+                except Exception:
+                    logger.exception("ECN研发经理抄送解析失败：%s", ecn_id)
+                names_to_copy = list(dict.fromkeys(name for names in targets.values() for name in names))
+                for userid in sorted(cc_recipients):
+                    targets[userid] = names_to_copy.copy()
+            # 抄送开关不参与业务指纹，避免切换时向实际处理人重发同一待办。
             for recipient, names in targets.items():
                 now = time.time()
                 token = uuid.uuid4().hex
@@ -203,7 +223,7 @@ async def check_and_send_ecn_reminders(*, config=None, user_service=None, storag
                     if not fresh_pending or build_notification_fingerprint(fresh, fresh_tasks, settings) != fingerprint:
                         continue
                     success, message = await send_wecom_text_message(
-                        build_notification_content(fresh, fresh_tasks, names, settings),
+                        build_notification_content(fresh, fresh_tasks, names, settings, is_cc=recipient in cc_recipients),
                         recipient,
                         module="ecn_management",
                         business_key=f"{ecn_id}:{fingerprint}",

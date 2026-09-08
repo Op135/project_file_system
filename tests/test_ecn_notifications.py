@@ -88,10 +88,79 @@ class ECNNotificationTests(unittest.IsolatedAsyncioTestCase):
         self.sender.reset_mock()
         self.resolver.reset_mock()
         self.settings["test_mode"] = False
+        self.settings["cc_manager_enabled"] = False
         self.assertEqual(await self.check(), (1, 0))
         self.assertEqual(self.sender.call_args.args[1], "writer_wx")
         self.assertNotIn("调试转发", self.sender.call_args.args[0])
         self.resolver.assert_not_awaited()
+
+    async def test_production_copies_manager_without_duplicate_scans(self):
+        self.settings["test_mode"] = False
+        self.resolver.return_value = "manager_wx|manager_wx|@all"
+        self.assertEqual(await self.check(), (2, 0))
+        messages = {call.args[1]: call.args[0] for call in self.sender.await_args_list}
+        self.assertEqual(set(messages), {"writer_wx", "manager_wx"})
+        self.assertIn("研发经理抄送", messages["manager_wx"])
+        self.assertIn("待处理人员：writer", messages["manager_wx"])
+        self.assertNotIn("抄送", messages["writer_wx"])
+        self.assertEqual(await self.check(), (0, 0))
+
+    async def test_manager_with_own_task_receives_one_combined_notification(self):
+        self.settings["test_mode"] = False
+        self.resolver.return_value = "manager_wx"
+        self.record["workflow"]["scheme_participants"] = {"writer": "editing", "manager": "editing"}
+        await self.save_record()
+        self.assertEqual(await self.check(), (2, 0))
+        copies = [call.args[0] for call in self.sender.await_args_list if call.args[1] == "manager_wx"]
+        self.assertEqual(len(copies), 1)
+        self.assertIn("待处理人员：writer、manager", copies[0])
+
+    async def test_cc_switch_does_not_resend_actual_notification(self):
+        self.settings.update(test_mode=False, cc_manager_enabled=False)
+        self.resolver.return_value = "manager_wx"
+        self.assertEqual(await self.check(), (1, 0))
+        self.sender.reset_mock()
+        self.settings["cc_manager_enabled"] = True
+        self.assertEqual(await self.check(), (1, 0))
+        self.assertEqual(self.sender.call_args.args[1], "manager_wx")
+        self.settings["cc_manager_enabled"] = False
+        self.assertEqual(await self.check(), (0, 0))
+
+    async def test_cc_failure_retries_only_manager_and_disable_stops_retry(self):
+        self.settings["test_mode"] = False
+        self.resolver.return_value = "manager_wx"
+        self.sender.side_effect = [(True, "ok"), (False, "模拟失败")]
+        with self.assertLogs(level="WARNING"):
+            self.assertEqual(await self.check(), (1, 1))
+        await self.storage.atomic_deep_update(
+            [notifications.NOTIFICATION_STATE_KEY, "ECN-test"],
+            lambda entry: {
+                **entry,
+                "recipients": {key: {**value, "attempted_at": 0} for key, value in entry["recipients"].items()},
+            },
+        )
+        self.sender.reset_mock(side_effect=True)
+        self.sender.return_value = (True, "ok")
+        self.settings["cc_manager_enabled"] = False
+        self.assertEqual(await self.check(), (0, 0))
+        self.settings["cc_manager_enabled"] = True
+        self.assertEqual(await self.check(), (1, 0))
+        self.sender.assert_awaited_once()
+        self.assertEqual(self.sender.call_args.args[1], "manager_wx")
+
+    async def test_missing_cc_recipient_does_not_block_actual_notification(self):
+        self.settings["test_mode"] = False
+        self.resolver.return_value = ""
+        with self.assertLogs(level="WARNING"):
+            self.assertEqual(await self.check(), (1, 0))
+        self.assertEqual(self.sender.call_args.args[1], "writer_wx")
+
+    async def test_cc_resolution_error_does_not_block_actual_notification(self):
+        self.settings["test_mode"] = False
+        self.resolver.side_effect = RuntimeError("模拟通讯录失败")
+        with self.assertLogs(level="ERROR"):
+            self.assertEqual(await self.check(), (1, 0))
+        self.assertEqual(self.sender.call_args.args[1], "writer_wx")
 
     async def test_unbound_real_recipient_is_skipped(self):
         self.settings["test_mode"] = False
@@ -162,9 +231,15 @@ class ECNWecomConfigTests(unittest.TestCase):
             "wecom"
         ]
         self.assertTrue(config["test_mode"])
+        self.assertTrue(config["cc_manager_enabled"])
         self.assertFalse(config["enabled"])
         self.assertEqual(config["check_interval_seconds"], 60)
         self.assertEqual(config["test_notify_targets"], [{"position": "研发经理"}])
+
+    def test_cc_switch_can_be_disabled_independently(self):
+        config = load_ecn_config({"wecom": {"cc_manager_enabled": False}})["wecom"]
+        self.assertFalse(config["cc_manager_enabled"])
+        self.assertTrue(config["test_mode"])
 
 
 if __name__ == "__main__":
