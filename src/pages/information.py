@@ -24,6 +24,7 @@ from ..overview_batch_operations import (
     update_batch_overview_request,
 )
 from ..overview_corrections import (
+    TEST_FIELD_DEFINITIONS,
     OVERVIEW_CORRECTION_REQUESTS_KEY,
     archive_correction_request,
     build_correction_changes,
@@ -1492,6 +1493,20 @@ def information_page():
                             content_input.tooltip("已上传文件名不能在审批单中修改；可撤回后重新发起。")
                         if not editable:
                             content_input.disable()
+                        config = payload.get("config") or {}
+                        if (payload.get("actual_type") or config.get("processing_type")) == "test":
+                            extra_data = payload.get("extra_data")
+                            test_data = extra_data.get("test_select_data") if isinstance(extra_data, dict) else None
+                            if not isinstance(test_data, dict):
+                                test_data = {}
+                            with ui.grid(columns=2).classes("w-full gap-3"):
+                                for prefix, title, _ in TEST_FIELD_DEFINITIONS:
+                                    selected = str(test_data.get(f"{prefix}_select") or "").strip()
+                                    other_text = str(test_data.get(f"{prefix}_other_text") or "").strip()
+                                    value = " / ".join(part for part in (selected, other_text) if part) or "未填写"
+                                    with ui.column().classes("min-w-0 gap-1"):
+                                        ui.label(title).classes("text-sm font-medium text-gray-700")
+                                        ui.label(value).classes("whitespace-pre-wrap break-all text-sm text-gray-600")
                     else:
                         ui.label(f"已选概述条目：{len(payload.get('chip_targets', []))} 条").classes("text-sm")
                         target_radio = (
