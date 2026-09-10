@@ -1295,7 +1295,7 @@ def information_page():
                 pass
         batch_request_dialog.close()
         ui.notify("批量概述申请已撤销删除。", type="positive")
-        ui.navigate.reload()
+        refresh_batch_request_sections()
 
     async def approve_batch_request(request_id: str) -> None:
         # 批量执行可能包含多个项目和文件操作，先收起弹窗避免界面等待执行完成。
@@ -1321,7 +1321,7 @@ def information_page():
             request = claimed["request"]
             if claimed["value"] is not True or not isinstance(request, dict):
                 ui.notify("申请已被处理或当前账号无审核权限。", type="warning")
-                _reload_after_dialog_transition()
+                refresh_batch_request_sections()
                 return
 
             processing_notice = ui.notification("正在执行批量概述审批…", timeout=None, spinner=True)
@@ -1369,7 +1369,7 @@ def information_page():
                 ui.notify(f"审批执行失败：{exc}", type="negative", timeout=0)
             finally:
                 processing_notice.dismiss()
-            _reload_after_dialog_transition()
+            refresh_batch_request_sections()
 
     def reject_batch_request(request_id: str) -> None:
         reject_dialog = ui.dialog().props("persistent")
@@ -1413,7 +1413,7 @@ def information_page():
                 reject_dialog.close()
                 batch_request_dialog.close()
                 ui.notify("批量概述申请已驳回，申请人将在待办中收到提示。", type="positive")
-                ui.navigate.reload()
+                refresh_batch_request_sections()
 
             with ui.row().classes("w-full justify-end gap-2"):
                 ui.button("取消", on_click=reject_dialog.close).props("flat color=grey")
@@ -1619,7 +1619,7 @@ def information_page():
                 )
                 batch_request_dialog.close()
                 ui.notify("申请已修改并重新提交审批。", type="positive")
-                ui.navigate.reload()
+                refresh_batch_request_sections()
 
             with ui.row().classes("w-full justify-end gap-2 pt-2 border-t"):
                 if can_review and request.get("status") == "pending":
@@ -1639,6 +1639,365 @@ def information_page():
                     ui.button("修改并重新提交", on_click=resubmit_batch_request).props("color=primary")
                 ui.button("关闭", on_click=batch_request_dialog.close).props("flat color=grey")
         batch_request_dialog.open()
+
+    @ui.refreshable
+    def render_overview_pending() -> None:
+        # A. 待判断概述 (Priority Task)
+        over_flat = app.storage.general.get("over_config_data_flat", {})
+        my_pending = filter_actionable_overview_pending(
+            app.storage.general["overview_charge_pending"].get(current_user, {}),
+            over_flat,
+            current_role,
+            current_user,
+        )
+        if my_pending:
+            # 待办已按具体用户名分配，不再额外依赖旧角色名单控制显示。
+            if isinstance(my_pending, dict):
+                with ui.card().classes("w-full rounded-xl shadow-sm border border-red-100 bg-white"):
+                    ui_card_header("待处理：项目概述", "edit_document", "red-600")
+                    with ui.column().classes(
+                        "w-full gap-2 px-1 pr-2 max-h-[60vh] overflow-y-auto overflow-x-hidden"
+                    ):
+                        project_summary = app.storage.general.get("project_summary", {})
+
+                        project_states = {
+                            project_name: project_summary.get(project_name, {}).get("state", "未知")
+                            for project_name in my_pending
+                        }
+                        visible_pending_items = [
+                            (project_name, state_dic)
+                            for project_name, state_dic in my_pending.items()
+                            if project_states[project_name] not in ["作废", "待定"]
+                        ]
+                        sorted_pending_items = sort_overview_pending_items(
+                            visible_pending_items, project_states
+                        )
+
+                        for project_name, state_dic in sorted_pending_items:
+                            # 1. 获取已经过滤过的当前项目状态
+                            proj_state = project_states[project_name]
+                            counts = get_overview_counts(state_dic)
+                            labels_map = {
+                                "false": "项必填概述无内容",
+                                "none": "项概述待确认",
+                                "need": "项需填概述无内容",
+                            }
+
+                            # 2. 综合项目阶段与概述问题，选出当前最高警示项
+                            warning = get_overview_warning(proj_state, counts)
+                            if warning is None:
+                                continue  # 没有任何积压，跳过渲染
+
+                            active_key, warning_level = warning
+
+                            # 3. 根据综合警示级别决定当前行的视觉色彩与动画表现
+                            if warning_level == 4:
+                                # 4级警示：紫色行，数字闪烁
+                                row_bg = "bg-violet-200 border-violet-400 hover:bg-violet-300"
+                                base_color = "violet"
+                                is_flash = True
+                            elif warning_level == 3:
+                                # 3级警示：红色行，数字闪烁
+                                row_bg = "bg-red-50 border-red-200 hover:bg-red-100"
+                                base_color = "red"
+                                is_flash = True
+                            elif warning_level == 2:
+                                # 2级警示：橙色行，数字闪烁
+                                row_bg = "bg-orange-50 border-orange-200 hover:bg-orange-100"
+                                base_color = "orange"
+                                is_flash = True
+                            elif warning_level == 1:
+                                # 1级警示：黄色行，数字闪烁
+                                row_bg = "bg-amber-50 border-amber-200 hover:bg-amber-100"
+                                base_color = "amber"
+                                is_flash = False
+                            else:
+                                # 0级示：蓝色行，仅加粗不闪烁
+                                row_bg = "bg-blue-50 border-blue-200 hover:bg-blue-100"
+                                base_color = "blue"
+                                is_flash = False
+
+                            # --- 提取并构建 HTML 格式的 Tooltip 内容 ---
+                            false_items = [k for k, v in state_dic.items() if v == "缺必填"]
+                            need_items = [k for k, v in state_dic.items() if v == "缺需填"]
+                            none_items = [k for k, v in state_dic.items() if v == "有待定"]
+
+                            tooltip_html = ""
+                            if false_items:
+                                tooltip_html += "<b>【必填无内容】</b><br>" + "<br>".join(
+                                    [
+                                        f"• {over_flat.get(item, {}).get('title', '未知概述项')}"
+                                        for item in false_items
+                                    ]
+                                )
+                            if need_items:
+                                if tooltip_html:
+                                    tooltip_html += "<br><br>"
+                                tooltip_html += "<b>【需填无内容】</b><br>" + "<br>".join(
+                                    [
+                                        f"• {over_flat.get(item, {}).get('title', '未知概述项')}"
+                                        for item in need_items
+                                    ]
+                                )
+                            if none_items:
+                                if tooltip_html:
+                                    tooltip_html += "<br><br>"
+                                tooltip_html += "<b>【待确认】</b><br>" + "<br>".join(
+                                    [
+                                        f"• {over_flat.get(item, {}).get('title', '未知概述项')}"
+                                        for item in none_items
+                                    ]
+                                )
+                            # ------------------------------------
+
+                            # 4. 渲染最终容器
+                            row_animation = "overview-warning-shake" if warning_level >= 3 else ""
+                            row_container = ui.row().classes(
+                                f"w-full items-center justify-between p-3 rounded-lg border "
+                                f"transition-colors {row_bg} {row_animation}"
+                            )
+
+                            with row_container:
+                                # 构造富文本标题（保持原有的中文阅读排版顺序：必填 -> 需填 -> 待确认）
+                                parts_html = []
+                                display_order = ["false", "need", "none"]
+
+                                for k in display_order:
+                                    num = counts[k]
+                                    text = labels_map[k]
+                                    # 如果当前项正是触发最高优先级的项，实施视觉凸显
+                                    if k == active_key:
+                                        if is_flash:
+                                            # 缩放、明暗和发光同时变化，使数字警示更醒目
+                                            num_html = (
+                                                '<span class="overview-warning-flash overview-warning-number '
+                                                f'font-black text-lg text-{base_color}-600">{num}</span>'
+                                            )
+                                        else:
+                                            # 仅加粗高亮
+                                            num_html = f'<span class="font-black text-lg text-{base_color}-600">{num}</span>'
+                                    else:
+                                        num_html = str(num)
+                                    parts_html.append(f"{num_html}{text}")
+
+                                title_html = f'<span class="font-medium text-gray-800">{project_name}（{"，".join(parts_html)}）</span>'
+
+                                # ui.element: 创建基础 DOM 元素作为包裹层，避开 v-html 的内部覆盖效应
+                                title_wrapper = ui.element("div").classes(
+                                    "cursor-help flex items-center gap-2"
+                                )
+
+                                with title_wrapper:
+                                    ui.html(title_html, sanitize=False)
+                                    if warning_level >= 3:
+                                        ui.badge("尽快处理", color=base_color).classes(
+                                            "overview-warning-flash font-bold"
+                                        )
+                                    with ui.tooltip().classes("text-xs bg-gray-600/90 text-white p-2"):
+                                        ui.html(tooltip_html, sanitize=False)
+
+                                # 侧边按钮的颜色与该行代表的优先级颜色基调保持一致
+                                ui.button(
+                                    "去处理",
+                                    icon="arrow_forward",
+                                    on_click=lambda _=None, pn=project_name: get_overviow_page(pn, False),
+                                ).props(f"flat dense color={base_color} size=sm")
+
+    @ui.refreshable
+    def render_overview_requests() -> None:
+        # 概述修改申请审批（单项目内容修改 + 跨项目批量变更）
+        all_requests = app.storage.general.get("overview_change_requests", {})
+        correction_requests = db_storage.get_item(OVERVIEW_CORRECTION_REQUESTS_KEY, {}) or {}
+        visible_correction_requests = {
+            rid: request
+            for rid, request in correction_requests.items()
+            if (
+                request.get("submitter") == current_user
+                and request.get("status") in {"pending", "rejected", "failed"}
+            )
+            or (
+                request.get("status") == "pending"
+                and can_review_correction_request(request, current_user, str(current_role or ""))
+            )
+        }
+        batch_requests = db_storage.get_item(BATCH_OVERVIEW_REQUESTS_KEY, {}) or {}
+        visible_batch_requests = {
+            rid: request
+            for rid, request in batch_requests.items()
+            if (
+                request.get("submitter") == current_user
+                and request.get("status") in {"pending", "rejected", "failed", "withdrawn"}
+            )
+            or (
+                request.get("status") == "pending"
+                and can_review_batch_overview_request(request, current_user, str(current_role or ""))
+            )
+        }
+        visible_single_requests = {
+            rid: request
+            for rid, request in all_requests.items()
+            if (
+                request.get("status") == "pending"
+                and can_review_overview_correction(request, current_role, current_user)
+            )
+            or request.get("submitter") == current_user
+        }
+        if visible_single_requests or visible_correction_requests or visible_batch_requests:
+            with ui.card().classes("w-full rounded-xl shadow-sm border border-gray-100 bg-white"):
+                ui_card_header("概述变更审批", "fact_check", "orange-600")
+                batch_todo_count = get_batch_overview_pending_count(
+                    batch_requests,
+                    current_user,
+                    str(current_role or ""),
+                )
+                if batch_todo_count:
+                    ui.badge(f"批量申请待办 {batch_todo_count}", color="red").classes("mb-2")
+                correction_todo_count = get_correction_pending_count(
+                    correction_requests,
+                    current_user,
+                    str(current_role or ""),
+                )
+                if correction_todo_count:
+                    ui.badge(f"原记录纠错待办 {correction_todo_count}", color="red").classes("mb-2")
+                with ui.column().classes("w-full gap-2"):
+                    if (
+                        not visible_single_requests
+                        and not visible_correction_requests
+                        and not visible_batch_requests
+                    ):
+                        with ui.column().classes("w-full items-center py-8 text-gray-400"):
+                            ui.icon("task_alt", size="4em").classes("mb-2 opacity-50")
+                            ui.label("当前没有待处理的概述变更申请").classes("text-sm")
+
+                    if visible_single_requests:
+                        ui.label("旧版单项目概述变更申请").classes("font-bold text-gray-800")
+                        for rid, req in visible_single_requests.items():
+                            is_manager = can_review_overview_correction(req, current_role, current_user)
+                            is_mine = req.get("submitter") == current_user
+
+                            with ui.row().classes(
+                                "w-full items-center justify-between p-3 bg-gray-50 rounded border"
+                            ):
+                                with ui.column().classes("gap-1"):
+                                    ui.label(
+                                        f"{req.get('project_name', '')} | {req.get('action', '')}"
+                                    ).classes("font-bold")
+                                    ui.label(
+                                        f"{req.get('old_content', '')} → {req.get('new_content', '')}"
+                                    ).classes("text-sm text-gray-600")
+                                    status_badge(req.get("status", ""))
+
+                                with ui.row().classes("gap-2"):
+                                    if is_manager and req.get("status") == "pending":
+                                        ui.button(
+                                            "通过",
+                                            color="green",
+                                            on_click=lambda r=rid, d=req: handle_approve(r, d),
+                                        ).props("dense size=sm")
+                                        ui.button(
+                                            "驳回",
+                                            color="red",
+                                            on_click=lambda r=rid: open_reject_modal(r),
+                                        ).props("dense size=sm")
+
+                                    if is_mine:
+                                        if req.get("status") in ["rejected", "withdrawn"]:
+                                            ui.button(
+                                                "修改再提",
+                                                color="blue",
+                                                on_click=lambda d=req: trigger_edit(d),
+                                            ).props("dense size=sm")
+                                            ui.button(
+                                                "放弃申请",
+                                                color="grey",
+                                                on_click=lambda r=rid: handle_archive(r, "cancelled"),
+                                            ).props("dense size=sm")
+                                        if req.get("status") == "pending":
+                                            ui.button(
+                                                "撤销",
+                                                color="orange",
+                                                on_click=lambda r=rid: handle_withdraw(r),
+                                            ).props("dense size=sm")
+
+                    if visible_correction_requests:
+                        ui.separator().classes("my-1")
+                        ui.label("原记录纠错申请").classes("font-bold text-purple-900")
+                        for rid, request in sorted(
+                            visible_correction_requests.items(),
+                            key=lambda item: item[1].get("updated_at", ""),
+                            reverse=True,
+                        ):
+                            with ui.row().classes(
+                                "w-full items-center justify-between p-3 bg-purple-50/40 "
+                                "rounded border border-purple-100"
+                            ):
+                                with ui.column().classes("gap-1 min-w-0"):
+                                    ui.label(
+                                        f"{request.get('project', '')} ｜ "
+                                        f"{request.get('title', request.get('label', '未命名'))} ｜ "
+                                        f"{'纠正原记录' if request.get('action') == 'correct' else '删除错误记录'}"
+                                    ).classes("font-bold")
+                                    ui.label(
+                                        f"申请人：{request.get('submitter', '')} ｜ "
+                                        f"{request.get('updated_at', '')}"
+                                    ).classes("text-xs text-gray-600")
+                                    status_badge(str(request.get("status") or ""))
+                                    if request.get("status") in {"rejected", "failed"}:
+                                        ui.label(
+                                            f"处理信息：{request.get('reject_reason') or request.get('result', {}).get('message', '')}"
+                                        ).classes("text-xs font-bold text-red-700")
+                                ui.button(
+                                    "查看详情",
+                                    icon="open_in_new",
+                                    on_click=lambda _=None, request_id=rid: open_correction_request_detail(
+                                        request_id
+                                    ),
+                                ).props("flat dense color=purple size=sm")
+
+                    if visible_batch_requests:
+                        ui.separator().classes("my-1")
+                        ui.label("跨项目批量概述申请").classes("font-bold text-blue-900")
+                        for rid, request in sorted(
+                            visible_batch_requests.items(),
+                            key=lambda item: item[1].get("updated_at", ""),
+                            reverse=True,
+                        ):
+                            payload = request.get("payload") or {}
+                            with ui.row().classes(
+                                "w-full items-center justify-between p-3 bg-blue-50/40 rounded border border-blue-100"
+                            ):
+                                with ui.column().classes("gap-1 min-w-0"):
+                                    ui.label(
+                                        f"{payload.get('title', payload.get('label', '未命名'))} ｜ "
+                                        f"{'批量新增' if payload.get('action') == 'add' else '批量改状态'}"
+                                    ).classes("font-bold")
+                                    ui.label(
+                                        f"申请人：{request.get('submitter', '')} ｜ "
+                                        f"目标项目：{len(payload.get('projects', []))} 个 ｜ "
+                                        f"{request.get('updated_at', '')}"
+                                    ).classes("text-xs text-gray-600")
+                                    status_badge(str(request.get("status") or ""))
+                                    if (
+                                        request.get("status") == "rejected"
+                                        and request.get("submitter") == current_user
+                                    ):
+                                        ui.label(f"驳回理由：{request.get('reject_reason', '')}").classes(
+                                            "text-xs font-bold text-red-700"
+                                        )
+                                ui.button(
+                                    "查看详情",
+                                    icon="open_in_new",
+                                    on_click=lambda _=None, request_id=rid: open_batch_request_detail(
+                                        request_id
+                                    ),
+                                ).props("flat dense color=primary size=sm")
+        else:
+            ui.label("暂无概述变更申请").classes("text-sm text-gray-400 p-2")
+
+    def refresh_batch_request_sections() -> None:
+        """批量申请变化后仅更新审批列表和受影响的概述待办。"""
+        render_overview_requests.refresh()
+        render_overview_pending.refresh()
 
     # -------------------------------------------------------------------------
     # 页面整体布局
@@ -1676,166 +2035,8 @@ def information_page():
                 # 左侧列 (主要工作流)
                 # =========================================================
                 with ui.column().classes("col-span-12 lg:col-span-6 gap-4"):
-                    # A. 待判断概述 (Priority Task)
-                    over_flat = app.storage.general.get("over_config_data_flat", {})
-                    my_pending = filter_actionable_overview_pending(
-                        app.storage.general["overview_charge_pending"].get(current_user, {}),
-                        over_flat,
-                        current_role,
-                        current_user,
-                    )
-                    if my_pending:
-                        # 待办已按具体用户名分配，不再额外依赖旧角色名单控制显示。
-                        if isinstance(my_pending, dict):
-                            with ui.card().classes("w-full rounded-xl shadow-sm border border-red-100 bg-white"):
-                                ui_card_header("待处理：项目概述", "edit_document", "red-600")
-                                with ui.column().classes(
-                                    "w-full gap-2 px-1 pr-2 max-h-[60vh] overflow-y-auto overflow-x-hidden"
-                                ):
-                                    project_summary = app.storage.general.get("project_summary", {})
-
-                                    project_states = {
-                                        project_name: project_summary.get(project_name, {}).get("state", "未知")
-                                        for project_name in my_pending
-                                    }
-                                    visible_pending_items = [
-                                        (project_name, state_dic)
-                                        for project_name, state_dic in my_pending.items()
-                                        if project_states[project_name] not in ["作废", "待定"]
-                                    ]
-                                    sorted_pending_items = sort_overview_pending_items(
-                                        visible_pending_items, project_states
-                                    )
-
-                                    for project_name, state_dic in sorted_pending_items:
-                                        # 1. 获取已经过滤过的当前项目状态
-                                        proj_state = project_states[project_name]
-                                        counts = get_overview_counts(state_dic)
-                                        labels_map = {
-                                            "false": "项必填概述无内容",
-                                            "none": "项概述待确认",
-                                            "need": "项需填概述无内容",
-                                        }
-
-                                        # 2. 综合项目阶段与概述问题，选出当前最高警示项
-                                        warning = get_overview_warning(proj_state, counts)
-                                        if warning is None:
-                                            continue  # 没有任何积压，跳过渲染
-
-                                        active_key, warning_level = warning
-
-                                        # 3. 根据综合警示级别决定当前行的视觉色彩与动画表现
-                                        if warning_level == 4:
-                                            # 4级警示：紫色行，数字闪烁
-                                            row_bg = "bg-violet-200 border-violet-400 hover:bg-violet-300"
-                                            base_color = "violet"
-                                            is_flash = True
-                                        elif warning_level == 3:
-                                            # 3级警示：红色行，数字闪烁
-                                            row_bg = "bg-red-50 border-red-200 hover:bg-red-100"
-                                            base_color = "red"
-                                            is_flash = True
-                                        elif warning_level == 2:
-                                            # 2级警示：橙色行，数字闪烁
-                                            row_bg = "bg-orange-50 border-orange-200 hover:bg-orange-100"
-                                            base_color = "orange"
-                                            is_flash = True
-                                        elif warning_level == 1:
-                                            # 1级警示：黄色行，数字闪烁
-                                            row_bg = "bg-amber-50 border-amber-200 hover:bg-amber-100"
-                                            base_color = "amber"
-                                            is_flash = False
-                                        else:
-                                            # 0级示：蓝色行，仅加粗不闪烁
-                                            row_bg = "bg-blue-50 border-blue-200 hover:bg-blue-100"
-                                            base_color = "blue"
-                                            is_flash = False
-
-                                        # --- 提取并构建 HTML 格式的 Tooltip 内容 ---
-                                        false_items = [k for k, v in state_dic.items() if v == "缺必填"]
-                                        need_items = [k for k, v in state_dic.items() if v == "缺需填"]
-                                        none_items = [k for k, v in state_dic.items() if v == "有待定"]
-
-                                        tooltip_html = ""
-                                        if false_items:
-                                            tooltip_html += "<b>【必填无内容】</b><br>" + "<br>".join(
-                                                [
-                                                    f"• {over_flat.get(item, {}).get('title', '未知概述项')}"
-                                                    for item in false_items
-                                                ]
-                                            )
-                                        if need_items:
-                                            if tooltip_html:
-                                                tooltip_html += "<br><br>"
-                                            tooltip_html += "<b>【需填无内容】</b><br>" + "<br>".join(
-                                                [
-                                                    f"• {over_flat.get(item, {}).get('title', '未知概述项')}"
-                                                    for item in need_items
-                                                ]
-                                            )
-                                        if none_items:
-                                            if tooltip_html:
-                                                tooltip_html += "<br><br>"
-                                            tooltip_html += "<b>【待确认】</b><br>" + "<br>".join(
-                                                [
-                                                    f"• {over_flat.get(item, {}).get('title', '未知概述项')}"
-                                                    for item in none_items
-                                                ]
-                                            )
-                                        # ------------------------------------
-
-                                        # 4. 渲染最终容器
-                                        row_animation = "overview-warning-shake" if warning_level >= 3 else ""
-                                        row_container = ui.row().classes(
-                                            f"w-full items-center justify-between p-3 rounded-lg border "
-                                            f"transition-colors {row_bg} {row_animation}"
-                                        )
-
-                                        with row_container:
-                                            # 构造富文本标题（保持原有的中文阅读排版顺序：必填 -> 需填 -> 待确认）
-                                            parts_html = []
-                                            display_order = ["false", "need", "none"]
-
-                                            for k in display_order:
-                                                num = counts[k]
-                                                text = labels_map[k]
-                                                # 如果当前项正是触发最高优先级的项，实施视觉凸显
-                                                if k == active_key:
-                                                    if is_flash:
-                                                        # 缩放、明暗和发光同时变化，使数字警示更醒目
-                                                        num_html = (
-                                                            '<span class="overview-warning-flash overview-warning-number '
-                                                            f'font-black text-lg text-{base_color}-600">{num}</span>'
-                                                        )
-                                                    else:
-                                                        # 仅加粗高亮
-                                                        num_html = f'<span class="font-black text-lg text-{base_color}-600">{num}</span>'
-                                                else:
-                                                    num_html = str(num)
-                                                parts_html.append(f"{num_html}{text}")
-
-                                            title_html = f'<span class="font-medium text-gray-800">{project_name}（{"，".join(parts_html)}）</span>'
-
-                                            # ui.element: 创建基础 DOM 元素作为包裹层，避开 v-html 的内部覆盖效应
-                                            title_wrapper = ui.element("div").classes(
-                                                "cursor-help flex items-center gap-2"
-                                            )
-
-                                            with title_wrapper:
-                                                ui.html(title_html, sanitize=False)
-                                                if warning_level >= 3:
-                                                    ui.badge("尽快处理", color=base_color).classes(
-                                                        "overview-warning-flash font-bold"
-                                                    )
-                                                with ui.tooltip().classes("text-xs bg-gray-600/90 text-white p-2"):
-                                                    ui.html(tooltip_html, sanitize=False)
-
-                                            # 侧边按钮的颜色与该行代表的优先级颜色基调保持一致
-                                            ui.button(
-                                                "去处理",
-                                                icon="arrow_forward",
-                                                on_click=lambda _=None, pn=project_name: get_overviow_page(pn, False),
-                                            ).props(f"flat dense color={base_color} size=sm")
+                    with ui.column().classes("w-full gap-0"):
+                        render_overview_pending()
 
                     # B. 需求评审队列 (Review Queue)
                     has_assigned_projects = bool(project_engineer_dic.get(current_user)) and (
@@ -1949,191 +2150,5 @@ def information_page():
 
                             if not drafts:
                                 ui.label("暂无草稿记录").classes("text-sm text-gray-400 p-2")
-                    # 概述修改申请审批（单项目内容修改 + 跨项目批量变更）
-                    all_requests = app.storage.general.get("overview_change_requests", {})
-                    correction_requests = db_storage.get_item(OVERVIEW_CORRECTION_REQUESTS_KEY, {}) or {}
-                    visible_correction_requests = {
-                        rid: request
-                        for rid, request in correction_requests.items()
-                        if (
-                            request.get("submitter") == current_user
-                            and request.get("status") in {"pending", "rejected", "failed"}
-                        )
-                        or (
-                            request.get("status") == "pending"
-                            and can_review_correction_request(request, current_user, str(current_role or ""))
-                        )
-                    }
-                    batch_requests = db_storage.get_item(BATCH_OVERVIEW_REQUESTS_KEY, {}) or {}
-                    visible_batch_requests = {
-                        rid: request
-                        for rid, request in batch_requests.items()
-                        if (
-                            request.get("submitter") == current_user
-                            and request.get("status") in {"pending", "rejected", "failed", "withdrawn"}
-                        )
-                        or (
-                            request.get("status") == "pending"
-                            and can_review_batch_overview_request(request, current_user, str(current_role or ""))
-                        )
-                    }
-                    visible_single_requests = {
-                        rid: request
-                        for rid, request in all_requests.items()
-                        if (
-                            request.get("status") == "pending"
-                            and can_review_overview_correction(request, current_role, current_user)
-                        )
-                        or request.get("submitter") == current_user
-                    }
-                    if visible_single_requests or visible_correction_requests or visible_batch_requests:
-                        with ui.card().classes("w-full rounded-xl shadow-sm border border-gray-100 bg-white"):
-                            ui_card_header("概述变更审批", "fact_check", "orange-600")
-                            batch_todo_count = get_batch_overview_pending_count(
-                                batch_requests,
-                                current_user,
-                                str(current_role or ""),
-                            )
-                            if batch_todo_count:
-                                ui.badge(f"批量申请待办 {batch_todo_count}", color="red").classes("mb-2")
-                            correction_todo_count = get_correction_pending_count(
-                                correction_requests,
-                                current_user,
-                                str(current_role or ""),
-                            )
-                            if correction_todo_count:
-                                ui.badge(f"原记录纠错待办 {correction_todo_count}", color="red").classes("mb-2")
-                            with ui.column().classes("w-full gap-2"):
-                                if (
-                                    not visible_single_requests
-                                    and not visible_correction_requests
-                                    and not visible_batch_requests
-                                ):
-                                    with ui.column().classes("w-full items-center py-8 text-gray-400"):
-                                        ui.icon("task_alt", size="4em").classes("mb-2 opacity-50")
-                                        ui.label("当前没有待处理的概述变更申请").classes("text-sm")
-
-                                if visible_single_requests:
-                                    ui.label("旧版单项目概述变更申请").classes("font-bold text-gray-800")
-                                    for rid, req in visible_single_requests.items():
-                                        is_manager = can_review_overview_correction(req, current_role, current_user)
-                                        is_mine = req.get("submitter") == current_user
-
-                                        with ui.row().classes(
-                                            "w-full items-center justify-between p-3 bg-gray-50 rounded border"
-                                        ):
-                                            with ui.column().classes("gap-1"):
-                                                ui.label(
-                                                    f"{req.get('project_name', '')} | {req.get('action', '')}"
-                                                ).classes("font-bold")
-                                                ui.label(
-                                                    f"{req.get('old_content', '')} → {req.get('new_content', '')}"
-                                                ).classes("text-sm text-gray-600")
-                                                status_badge(req.get("status", ""))
-
-                                            with ui.row().classes("gap-2"):
-                                                if is_manager and req.get("status") == "pending":
-                                                    ui.button(
-                                                        "通过",
-                                                        color="green",
-                                                        on_click=lambda r=rid, d=req: handle_approve(r, d),
-                                                    ).props("dense size=sm")
-                                                    ui.button(
-                                                        "驳回",
-                                                        color="red",
-                                                        on_click=lambda r=rid: open_reject_modal(r),
-                                                    ).props("dense size=sm")
-
-                                                if is_mine:
-                                                    if req.get("status") in ["rejected", "withdrawn"]:
-                                                        ui.button(
-                                                            "修改再提",
-                                                            color="blue",
-                                                            on_click=lambda d=req: trigger_edit(d),
-                                                        ).props("dense size=sm")
-                                                        ui.button(
-                                                            "放弃申请",
-                                                            color="grey",
-                                                            on_click=lambda r=rid: handle_archive(r, "cancelled"),
-                                                        ).props("dense size=sm")
-                                                    if req.get("status") == "pending":
-                                                        ui.button(
-                                                            "撤销",
-                                                            color="orange",
-                                                            on_click=lambda r=rid: handle_withdraw(r),
-                                                        ).props("dense size=sm")
-
-                                if visible_correction_requests:
-                                    ui.separator().classes("my-1")
-                                    ui.label("原记录纠错申请").classes("font-bold text-purple-900")
-                                    for rid, request in sorted(
-                                        visible_correction_requests.items(),
-                                        key=lambda item: item[1].get("updated_at", ""),
-                                        reverse=True,
-                                    ):
-                                        with ui.row().classes(
-                                            "w-full items-center justify-between p-3 bg-purple-50/40 "
-                                            "rounded border border-purple-100"
-                                        ):
-                                            with ui.column().classes("gap-1 min-w-0"):
-                                                ui.label(
-                                                    f"{request.get('project', '')} ｜ "
-                                                    f"{request.get('title', request.get('label', '未命名'))} ｜ "
-                                                    f"{'纠正原记录' if request.get('action') == 'correct' else '删除错误记录'}"
-                                                ).classes("font-bold")
-                                                ui.label(
-                                                    f"申请人：{request.get('submitter', '')} ｜ "
-                                                    f"{request.get('updated_at', '')}"
-                                                ).classes("text-xs text-gray-600")
-                                                status_badge(str(request.get("status") or ""))
-                                                if request.get("status") in {"rejected", "failed"}:
-                                                    ui.label(
-                                                        f"处理信息：{request.get('reject_reason') or request.get('result', {}).get('message', '')}"
-                                                    ).classes("text-xs font-bold text-red-700")
-                                            ui.button(
-                                                "查看详情",
-                                                icon="open_in_new",
-                                                on_click=lambda _=None, request_id=rid: open_correction_request_detail(
-                                                    request_id
-                                                ),
-                                            ).props("flat dense color=purple size=sm")
-
-                                if visible_batch_requests:
-                                    ui.separator().classes("my-1")
-                                    ui.label("跨项目批量概述申请").classes("font-bold text-blue-900")
-                                    for rid, request in sorted(
-                                        visible_batch_requests.items(),
-                                        key=lambda item: item[1].get("updated_at", ""),
-                                        reverse=True,
-                                    ):
-                                        payload = request.get("payload") or {}
-                                        with ui.row().classes(
-                                            "w-full items-center justify-between p-3 bg-blue-50/40 rounded border border-blue-100"
-                                        ):
-                                            with ui.column().classes("gap-1 min-w-0"):
-                                                ui.label(
-                                                    f"{payload.get('title', payload.get('label', '未命名'))} ｜ "
-                                                    f"{'批量新增' if payload.get('action') == 'add' else '批量改状态'}"
-                                                ).classes("font-bold")
-                                                ui.label(
-                                                    f"申请人：{request.get('submitter', '')} ｜ "
-                                                    f"目标项目：{len(payload.get('projects', []))} 个 ｜ "
-                                                    f"{request.get('updated_at', '')}"
-                                                ).classes("text-xs text-gray-600")
-                                                status_badge(str(request.get("status") or ""))
-                                                if (
-                                                    request.get("status") == "rejected"
-                                                    and request.get("submitter") == current_user
-                                                ):
-                                                    ui.label(f"驳回理由：{request.get('reject_reason', '')}").classes(
-                                                        "text-xs font-bold text-red-700"
-                                                    )
-                                            ui.button(
-                                                "查看详情",
-                                                icon="open_in_new",
-                                                on_click=lambda _=None, request_id=rid: open_batch_request_detail(
-                                                    request_id
-                                                ),
-                                            ).props("flat dense color=primary size=sm")
-                    else:
-                        ui.label("暂无概述变更申请").classes("text-sm text-gray-400 p-2")
+                    with ui.column().classes("w-full gap-0"):
+                        render_overview_requests()
