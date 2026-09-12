@@ -7,6 +7,7 @@ import os
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -239,11 +240,7 @@ async def sync_wecom_contacts() -> tuple[bool, str]:
 
     departments = [_normalize_wecom_department(item) for item in department_data.get("department", [])]
     department_map = {item["id"]: item["name"] for item in departments if item.get("id")}
-    contacts = [
-        _normalize_wecom_contact(item, department_map)
-        for item in raw_user_map.values()
-        if item.get("userid")
-    ]
+    contacts = [_normalize_wecom_contact(item, department_map) for item in raw_user_map.values() if item.get("userid")]
     if not contacts and user_list_errors:
         return False, f"企业微信成员列表获取失败：{'；'.join(user_list_errors)}"
 
@@ -350,9 +347,13 @@ def _target_matches_contact(target: dict, contact: dict) -> bool:
         target.get("department"),
     ):
         return False
-    if "department_id" in target and not _contact_matches_exact(contact.get("department_ids", []), target.get("department_id")):
+    if "department_id" in target and not _contact_matches_exact(
+        contact.get("department_ids", []), target.get("department_id")
+    ):
         return False
-    if "department_ids" in target and not _contact_matches_exact(contact.get("department_ids", []), target.get("department_ids")):
+    if "department_ids" in target and not _contact_matches_exact(
+        contact.get("department_ids", []), target.get("department_ids")
+    ):
         return False
     if "department_contains" in target and not _contact_matches_contains(
         contact.get("departments", []),
@@ -524,6 +525,10 @@ async def _mark_retry_alerted(key: str) -> None:
 
 
 async def _send_one_text_message(content: str, recipient: str) -> tuple[bool, str]:
+    return await _send_one_application_message("text", {"content": content}, recipient)
+
+
+async def _send_one_application_message(msgtype: str, body: dict, recipient: str) -> tuple[bool, str]:
     token_success, token_or_message = await _get_wecom_access_token(WECOM_CORP_SECRET)
     if not token_success:
         return False, token_or_message
@@ -535,9 +540,9 @@ async def _send_one_text_message(content: str, recipient: str) -> tuple[bool, st
                 params={"access_token": token_or_message},
                 json={
                     "touser": recipient,
-                    "msgtype": "text",
+                    "msgtype": msgtype,
                     "agentid": int(WECOM_AGENT_ID),
-                    "text": {"content": content},
+                    msgtype: body,
                     "safe": 0,
                 },
             )
@@ -556,6 +561,54 @@ async def _send_one_text_message(content: str, recipient: str) -> tuple[bool, st
     except Exception as exc:
         logger.exception("企业微信消息发送异常")
         return False, f"企业微信通知发送异常：{exc}"
+
+
+async def send_wecom_textcard_message(
+    description: str,
+    touser: str,
+    *,
+    title: str,
+    link_url: str,
+    module: str,
+    business_key: str,
+    message_type: str = "pending",
+) -> tuple[bool, str]:
+    """发送文本卡片并记录日志；调用方负责按最新业务状态重试，不进入公共重试队列。"""
+    url = urlsplit(link_url)
+    if url.scheme not in {"http", "https"} or not url.netloc:
+        return False, "企业微信卡片需要有效的系统 HTTP/HTTPS 地址"
+    if (
+        len(title.encode("utf-8")) > 128
+        or len(description.encode("utf-8")) > 512
+        or len(link_url.encode("utf-8")) > 2048
+    ):
+        return False, "企业微信卡片标题、摘要或链接超出长度限制"
+    recipients = split_wecom_users(touser)
+    if not recipients:
+        return False, "企业微信卡片没有收件人"
+    body = {"title": title, "description": description, "url": link_url, "btntxt": "查看详情"}
+    results = []
+    overall_success = True
+    for recipient in recipients:
+        success, message = await _send_one_application_message("textcard", body, recipient)
+        overall_success = overall_success and success
+        await _append_log(
+            {
+                "log_id": uuid.uuid4().hex,
+                "time": _now_str(),
+                "module": module,
+                "business_key": business_key,
+                "message_type": message_type,
+                "recipient": recipient,
+                "content": description,
+                "content_hash": _content_hash(description),
+                "textcard": body,
+                "success": success,
+                "message": message,
+            }
+        )
+        results.append(f"{recipient}: {message}")
+    return overall_success, "；".join(results)
 
 
 async def send_wecom_text_message(
@@ -648,11 +701,7 @@ async def _send_retry_failure_alert(
 
 async def retry_failed_wecom_messages() -> tuple[int, int]:
     state = await _read_retry_state()
-    retry_items = [
-        (key, item)
-        for key, item in state.items()
-        if int(item.get("attempts", 0)) < WECOM_MAX_RETRY_COUNT
-    ]
+    retry_items = [(key, item) for key, item in state.items() if int(item.get("attempts", 0)) < WECOM_MAX_RETRY_COUNT]
     success_count = 0
     fail_count = 0
 

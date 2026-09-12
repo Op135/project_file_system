@@ -31,7 +31,7 @@
         "wecom.test_mode": "true为调试模式，只发送给test_notify_targets；false按与首页角标一致的实际待办人员发送。修改后重启生效。",
         "wecom.cc_manager_enabled": "正式模式下是否同时抄送通讯录职务为研发经理的人员，默认true；观察结束改false并重启。每个ECN汇总一条抄送，经理本人有待办时合并；调试模式不额外抄送。仅切换抄送不触发实际处理人重复提醒。",
         "wecom.test_notify_targets": "调试收件人，默认精确匹配企业微信通讯录职务“研发经理”；没有匹配对象则跳过，不回退给其它人员。",
-        "wecom.public_base_url": "员工浏览器可访问的系统地址，与样品问题模块相同；为空时不附跳转链接。",
+        "wecom.public_base_url": "员工浏览器可访问的HTTP/HTTPS系统地址；ECN卡片底部查看详情打开ECN列表。为空时回退文字提醒且不附跳转链接。",
         "wecom.initial_delay_seconds": "启动后首次检查的延迟秒数。",
         "wecom.check_interval_seconds": "后台检查间隔，不依赖用户打开ECN页面。",
         "wecom.repeat_hours": "相同待办重复提醒间隔小时数；状态、当前节点或待办人员变化会产生新提醒。",

@@ -1,5 +1,6 @@
 # -*- encoding: utf-8 -*-
 import logging
+from urllib.parse import unquote, urlsplit
 
 from nicegui import app, ui
 
@@ -64,8 +65,46 @@ def create_password_dialog(target_username: str):
     dialog.open()
 
 
+def _safe_login_target(redirect_to: str) -> str:
+    """登录后仅允许跳转站内路径，拒绝协议相对地址、反斜杠和控制字符。"""
+    decoded = unquote(redirect_to)
+    if (
+        not decoded.startswith("/")
+        or decoded.startswith("//")
+        or "\\" in decoded
+        or any(ord(char) < 32 or ord(char) == 127 for char in decoded)
+    ):
+        return "/main"
+    try:
+        if urlsplit(decoded).path.rstrip("/") == "/login":
+            return "/main"
+    except ValueError:
+        return "/main"
+    return redirect_to
+
+
+def _resume_existing_session(redirect_to: str) -> bool:
+    """同一浏览器会话已登录且账号仍在职时，直接返回目标页面。"""
+    username = app.storage.user.get("current_user")
+    if not isinstance(username, str) or not username:
+        return False
+    user_info = app.state.user_service.get_user(username)
+    if not isinstance(user_info, dict) or user_info.get("status", "active") != "active":
+        for key in ("current_user", "current_user_id", "current_role", "is_admin"):
+            app.storage.user.pop(key, None)
+        return False
+    role = str(user_info.get("role") or "anonymous")
+    app.storage.user.update(
+        current_user_id=user_info.get("user_id"), current_role=role, is_admin=role.lower() == "admin"
+    )
+    ui.navigate.to(_safe_login_target(redirect_to))
+    return True
+
+
 @ui.page("/login")
 def login_page(redirect_to: str = ""):
+    if _resume_existing_session(redirect_to):
+        return
     # 用于记录键盘按键状态
     app.storage.client.setdefault("key_state", {})
 
@@ -107,11 +146,7 @@ def login_page(redirect_to: str = ""):
                         "current_role": user_info.get("role", "anonymous"),
                     }
                 )
-                target_path = (
-                    redirect_to
-                    if redirect_to.startswith("/") and not redirect_to.startswith("//")
-                    else "/main"
-                )
+                target_path = _safe_login_target(redirect_to)
                 ui.navigate.to(target_path)
             else:
                 ui.notify(

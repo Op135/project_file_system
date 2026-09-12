@@ -34,6 +34,7 @@ class ECNNotificationTests(unittest.IsolatedAsyncioTestCase):
         self.storage = load_isolated_db_storage("ecn_notification_test_db", Path(self.temp.name) / "ecn.db")
         await self.storage.init_db()
         self.settings = load_ecn_config()["wecom"]
+        self.settings["public_base_url"] = "https://example.test"
         self.service = Users()
         self.record = get_ecn_template()
         self.record["ecn_id"] = "ECN-test"
@@ -46,7 +47,7 @@ class ECNNotificationTests(unittest.IsolatedAsyncioTestCase):
         await self.save_record()
         self.sender = AsyncMock(return_value=(True, "ok"))
         self.resolver = AsyncMock(return_value="debug_manager_wx")
-        self.sender_patch = patch.object(notifications, "send_wecom_text_message", self.sender)
+        self.sender_patch = patch.object(notifications, "send_wecom_textcard_message", self.sender)
         self.resolver_patch = patch.object(notifications, "resolve_wecom_recipients", self.resolver)
         self.sender_patch.start()
         self.resolver_patch.start()
@@ -73,8 +74,9 @@ class ECNNotificationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(args[1], "debug_manager_wx")
         self.assertIn("原应通知人员：writer", args[0])
         self.assertNotIn("inactive", args[0])
-        self.assertFalse(kwargs["retry_tracking"])
-        self.assertFalse(kwargs["alert_on_max_failure"])
+        self.assertIn("【ECN工程变更】", kwargs["title"])
+        self.assertEqual(kwargs["link_url"], "https://example.test/ecn_management")
+        self.assertIn('<div class="gray">调试转发', args[0])
         self.resolver.assert_awaited_once_with([{"position": "研发经理"}], fallback_touser="")
 
     async def test_missing_debug_recipient_does_not_fallback_to_real_people(self):
@@ -82,6 +84,42 @@ class ECNNotificationTests(unittest.IsolatedAsyncioTestCase):
         with self.assertLogs(level="WARNING"):
             self.assertEqual(await self.check(), (0, 0))
         self.sender.assert_not_awaited()
+
+    async def test_missing_url_uses_text_with_business_owned_retry(self):
+        self.settings["public_base_url"] = ""
+        with patch.object(notifications, "send_wecom_text_message", new_callable=AsyncMock) as sender:
+            sender.return_value = (True, "ok")
+            self.assertEqual(await self.check(), (1, 0))
+            self.assertFalse(sender.call_args.kwargs["retry_tracking"])
+            self.assertFalse(sender.call_args.kwargs["alert_on_max_failure"])
+        self.sender.assert_not_awaited()
+
+    async def test_card_escapes_user_content_and_limits_utf8_bytes(self):
+        self.record["basic_info"]["title"] = '<script>&"测试' * 100
+        title, description = notifications.build_notification_card(
+            self.record,
+            {"writer": ["待办" * 200]},
+            ["writer"],
+            self.settings,
+        )
+        self.assertLessEqual(len(title.encode("utf-8")), 128)
+        self.assertLessEqual(len(description.encode("utf-8")), 512)
+        self.assertNotIn("<script>", description)
+        self.assertIn("&lt;script&gt;", description)
+        self.assertTrue(description.endswith("</div>"))
+        self.assertIn("进入系统查看完整待办", description)
+
+    async def test_card_uses_separate_blocks_and_combines_identical_tasks(self):
+        _, description = notifications.build_notification_card(
+            self.record,
+            {"writer": ["请发起评审"], "manager": ["请发起评审"]},
+            ["writer", "manager"],
+            self.settings,
+        )
+        self.assertNotIn("<br", description)
+        self.assertIn('</div><div class="normal">主题：', description)
+        self.assertIn('</div><div class="normal">原应通知人员：writer、manager</div>', description)
+        self.assertEqual(description.count("请发起评审"), 1)
 
     async def test_switch_to_production_notifies_real_binding_without_debug_route(self):
         await self.check()

@@ -115,7 +115,7 @@ async def ecn_management_page():
         </style>
     """)
     if not app.storage.user.get("current_user"):
-        ui.navigate.to("/login")
+        ui.navigate.to("/login?redirect_to=%2Fecn_management")
         return
 
     current_user = app.storage.user.get("current_user", "未知用户")

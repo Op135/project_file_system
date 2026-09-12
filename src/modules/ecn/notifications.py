@@ -6,6 +6,7 @@ import json
 import logging
 import time
 import uuid
+from html import escape
 
 from nicegui import app
 
@@ -22,7 +23,7 @@ from ...ecn_management_config import (
     get_ecn_material_execution_specs,
     is_ecn_scheme_ready_for_review,
 )
-from ...wecom_service import resolve_wecom_recipients, send_wecom_text_message
+from ...wecom_service import resolve_wecom_recipients, send_wecom_text_message, send_wecom_textcard_message
 
 logger = logging.getLogger(__name__)
 NOTIFICATION_STATE_KEY = "ecn_wecom_notification_state"
@@ -121,9 +122,9 @@ def build_notification_content(
 ) -> str:
     basic = record.get("basic_info", {})
     lines = [
-        "【ECN待办提醒 · 调试转发】" if config["test_mode"] else (
-            "【ECN待办提醒 · 研发经理抄送】" if is_cc else "【ECN待办提醒】"
-        ),
+        "【ECN待办提醒 · 调试转发】"
+        if config["test_mode"]
+        else ("【ECN待办提醒 · 研发经理抄送】" if is_cc else "【ECN待办提醒】"),
         f"单号：{record.get('ecn_id', '')}",
         f"主题：{basic.get('title') or '工程变更申请'}",
         f"申请人：{basic.get('applicant', '')}",
@@ -141,6 +142,54 @@ def build_notification_content(
     if len(text.encode("utf-8")) > 1700:
         text = text.encode("utf-8")[:1600].decode("utf-8", errors="ignore") + "\n更多待办请进入系统查看。"
     return text
+
+
+def build_notification_card(
+    record: dict, tasks: dict[str, list[str]], names: list[str], config: dict, *, is_cc: bool = False
+) -> tuple[str, str]:
+    """用户内容先转义再按字节裁剪，保留完整HTML标签及实体。"""
+    state = record.get("workflow", {}).get("current_state", "")
+    event = (
+        "待发起方案评审"
+        if is_ecn_scheme_ready_for_review(record)
+        else {
+            ECNState.DRAFT: "申请待提交",
+            ECNState.REJECTED: "申请待修改",
+            ECNState.ECR_REVIEWING: "ECR待审批",
+            ECNState.ECN_REVIEWING: "方案待审批",
+            ECNState.ECN_SCHEMING: "方案待完善与确认",
+            ECNState.ECN_EXECUTING: "执行待办",
+        }.get(state, "待办提醒")
+    )
+    title = f"🔧【ECN工程变更】{event}"
+    nature = (
+        "调试转发 · 未通知实际处理人"
+        if config["test_mode"]
+        else ("研发经理抄送 · 含本人待办时请处理" if is_cc else "待办提醒")
+    )
+    basic = record.get("basic_info", {})
+    lines = [
+        f"单号：{record.get('ecn_id', '')}",
+        f"主题：{str(basic.get('title') or '工程变更申请')[:45]}",
+        f"{'原应通知人员' if config['test_mode'] else '待处理人员'}：{'、'.join(names)}",
+        *[f"待办：{task}" for task in dict.fromkeys(task for name in names for task in tasks.get(name, []))],
+    ]
+    prefix = f'<div class="gray">{escape(nature)}</div><div class="normal">'
+    suffix = "</div>"
+    hint = "…（进入系统查看完整待办）"
+    budget = 512 - len((prefix + suffix + hint).encode("utf-8"))
+    parts: list[str] = []
+    used = 0
+    for char in "\n".join(lines):
+        # 客户端会忽略正文中的br，使用与灰色说明相同的独立div分行。
+        part = '</div><div class="normal">' if char == "\n" else escape(char)
+        size = len(part.encode("utf-8"))
+        if used + size > budget:
+            parts.append(hint)
+            break
+        parts.append(part)
+        used += size
+    return title, prefix + "".join(parts) + suffix
 
 
 async def check_and_send_ecn_reminders(*, config=None, user_service=None, storage=None) -> tuple[int, int]:
@@ -222,17 +271,35 @@ async def check_and_send_ecn_reminders(*, config=None, user_service=None, storag
                     fresh_tasks = pending_task_details(fresh, fresh_pending, service)
                     if not fresh_pending or build_notification_fingerprint(fresh, fresh_tasks, settings) != fingerprint:
                         continue
-                    success, message = await send_wecom_text_message(
-                        build_notification_content(fresh, fresh_tasks, names, settings, is_cc=recipient in cc_recipients),
-                        recipient,
-                        module="ecn_management",
-                        business_key=f"{ecn_id}:{fingerprint}",
-                        message_type="pending",
-                        link_url=f"{settings['public_base_url']}/ecn_management" if settings["public_base_url"] else "",
-                        # ECN自身重试会重新检查待办/调试开关，避免全局重试发送旧任务或通知其它人员。
-                        retry_tracking=False,
-                        alert_on_max_failure=False,
-                    )
+                    if settings["public_base_url"]:
+                        title, description = build_notification_card(
+                            fresh, fresh_tasks, names, settings, is_cc=recipient in cc_recipients
+                        )
+                        success, message = await send_wecom_textcard_message(
+                            description,
+                            recipient,
+                            title=title,
+                            link_url=f"{settings['public_base_url']}/ecn_management",
+                            module="ecn_management",
+                            business_key=f"{ecn_id}:{fingerprint}",
+                        )
+                    else:
+                        # 卡片必须带有效链接；未配置系统地址时保留文字提醒。
+                        success, message = await send_wecom_text_message(
+                            build_notification_content(
+                                fresh, fresh_tasks, names, settings, is_cc=recipient in cc_recipients
+                            ),
+                            recipient,
+                            module="ecn_management",
+                            business_key=f"{ecn_id}:{fingerprint}",
+                            message_type="pending",
+                            link_url=f"{settings['public_base_url']}/ecn_management"
+                            if settings["public_base_url"]
+                            else "",
+                            # ECN自身重试会重新检查待办/调试开关，避免全局重试发送旧任务或通知其它人员。
+                            retry_tracking=False,
+                            alert_on_max_failure=False,
+                        )
                     sent += int(success)
                     failed += int(not success)
                     if not success:
