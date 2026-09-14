@@ -850,6 +850,7 @@ _TOOL_NAMES = {
     "spectral_analyzer": "光谱色度与显色分析",
     "operand_lookup": "Zemax 操作数查询",
     "pixel_statistics": "光斑均匀性计算",
+    "intensity_distribution": "照度/辐照度转强度分布",
 }
 
 

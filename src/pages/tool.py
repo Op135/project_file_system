@@ -5,6 +5,7 @@ from datetime import datetime
 from nicegui import app, ui
 
 from src.tools.etendue_calculator import EtendueCalculator
+from src.tools.intensity_distribution import IntensityDistributionTool
 from src.tools.material_matcher import MaterialMatcherTool
 from src.tools.microlens_calculator import MicrolensCalculator
 from src.tools.mode_calculator import ModeCalculator
@@ -144,6 +145,14 @@ def tool_page():
             "color": "blue",
             "cls": PixelStatisticsTool,
         },
+        {
+            "key": "intensity_distribution",
+            "title": "平面分布转空间分布",
+            "subtitle": "强度/辐射强度分布与角度计算",
+            "icon": "ssid_chart",
+            "color": "orange",
+            "cls": IntensityDistributionTool,
+        },
     ]
 
     # --- 新增：加载权限配置的函数 ---
@@ -171,9 +180,7 @@ def tool_page():
 
     # --- 通用 Dialog 打开器 ---
     def has_tool_permission(tool_key, role):
-        legacy_allowed_roles = (
-            None if permissions_config is None else permissions_config.get(tool_key, [])
-        )
+        legacy_allowed_roles = None if permissions_config is None else permissions_config.get(tool_key, [])
         return can_use_tool(
             app.state.user_service,
             current_user,
