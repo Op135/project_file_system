@@ -11,7 +11,12 @@ from html import escape
 from nicegui import app
 
 from ... import db_storage
-from ...ecn_access import can_confirm_ecn_material_spec, can_view_ecn, is_ecn_pending_for_user
+from ...ecn_access import (
+    can_confirm_ecn_material_spec,
+    can_execute_ecn_assistant_stage,
+    can_view_ecn,
+    is_ecn_pending_for_user,
+)
 from ...ecn_management_config import (
     ECN_DATA_KEY,
     ECN_WECOM_CONFIG,
@@ -22,8 +27,10 @@ from ...ecn_management_config import (
     ECN_EXECUTION_STAGE_OVERVIEW_RUNNING,
     get_ecn_material_execution_specs,
     is_ecn_scheme_ready_for_review,
+    get_ecn_special_confirmations,
 )
 from ...wecom_service import resolve_wecom_recipients, send_wecom_text_message, send_wecom_textcard_message
+from .special_task_messages import get_special_message_items, build_special_card
 
 logger = logging.getLogger(__name__)
 NOTIFICATION_STATE_KEY = "ecn_wecom_notification_state"
@@ -52,9 +59,15 @@ def pending_task_details(record: dict, pending: dict[str, str], service) -> dict
     state = record.get("workflow", {}).get("current_state")
     execution = record.get("execution_info", {})
     stage = execution.get("stage")
+    special_tasks: dict[str, list[str]] = {name: [] for name in pending}
+    if state == ECNState.ECN_EXECUTING:
+        for item in get_special_message_items(record, list(pending)):
+            special_tasks[item["assignee"]].append(
+                f"特定事项\n事项/方案：{item['subject']}\n项目：{item['projects']}\n应执行内容：{item['content']}"
+            )
     if state == ECNState.ECN_EXECUTING and stage == ECN_EXECUTION_STAGE_MATERIAL:
         items = {str(item.get("item_id")): item for item in record.get("change_items", []) if isinstance(item, dict)}
-        tasks: dict[str, list[str]] = {name: [] for name in pending}
+        tasks = special_tasks
         for item_id, entry in execution.get("material_confirmations", {}).items():
             for spec in get_ecn_material_execution_specs(items.get(str(item_id), {}), entry):
                 if spec.get("available") is not True:
@@ -77,7 +90,30 @@ def pending_task_details(record: dict, pending: dict[str, str], service) -> dict
         description = "所有参与人已确认且方案覆盖完整，请发起方案评审"
     else:
         description = "完善影响评估或本人方案；被驳回方案请整改后重新确认"
-    return {name: [description] for name in pending}
+
+    def needs_assistant_reminder(name: str, role: str) -> bool:
+        if state != ECNState.ECN_EXECUTING:
+            return True
+        if not can_execute_ecn_assistant_stage(role, name, user_service=service):
+            return False
+        entries = list(get_ecn_special_confirmations(execution).values())
+        self_returned = any(
+            item.get("suppress_assignment_notice_for") == name and item.get("confirmed") is not True for item in entries
+        )
+        if self_returned and stage == ECN_EXECUTION_STAGE_ASSISTANT:
+            # 仅免去自己回收事项的提醒；其他未移交事项仍按原流程通知。
+            return any(
+                not item.get("assignee")
+                and item.get("confirmed") is not True
+                and item.get("suppress_assignment_notice_for") != name
+                for item in entries
+            )
+        return True
+
+    return {
+        name: special_tasks[name] + ([description] if needs_assistant_reminder(name, role) else [])
+        for name, role in pending.items()
+    }
 
 
 def build_notification_fingerprint(record: dict, tasks: dict, config: dict) -> str:
@@ -90,6 +126,11 @@ def build_notification_fingerprint(record: dict, tasks: dict, config: dict) -> s
         "stage": record.get("execution_info", {}).get("stage"),
         "participants": workflow.get("scheme_participants", {}),
         "tasks": tasks,
+        "special_assignments": {
+            key: item.get("assignment_revision")
+            for key, item in get_ecn_special_confirmations(record.get("execution_info")).items()
+            if item.get("assignee") and item.get("confirmed") is not True
+        },
         "test_mode": config["test_mode"],
         "test_notify_targets": config["test_notify_targets"] if config["test_mode"] else [],
     }
@@ -145,9 +186,18 @@ def build_notification_content(
 
 
 def build_notification_card(
-    record: dict, tasks: dict[str, list[str]], names: list[str], config: dict, *, is_cc: bool = False
+    record: dict,
+    tasks: dict[str, list[str]],
+    names: list[str],
+    config: dict,
+    *,
+    is_cc: bool = False,
+    include_special: bool = True,
 ) -> tuple[str, str]:
     """用户内容先转义再按字节裁剪，保留完整HTML标签及实体。"""
+    special = get_special_message_items(record, names) if include_special else []
+    if special:
+        return build_special_card(record, special, test_mode=config["test_mode"], is_cc=is_cc)
     state = record.get("workflow", {}).get("current_state", "")
     event = (
         "待发起方案评审"
@@ -161,6 +211,10 @@ def build_notification_card(
             ECNState.ECN_EXECUTING: "执行待办",
         }.get(state, "待办提醒")
     )
+    if state == ECNState.ECN_EXECUTING and any(
+        task.startswith("特定事项") for name in names for task in tasks.get(name, [])
+    ):
+        event = "特定事项待确认"
     title = f"🔧【ECN工程变更】{event}"
     nature = (
         "调试转发 · 未通知实际处理人"
@@ -209,12 +263,26 @@ async def check_and_send_ecn_reminders(*, config=None, user_service=None, storag
         for ecn_id, record in all_records.items():
             if not isinstance(record, dict):
                 continue
+            from .transfer_notifications import send_transfer_cancellations
+
+            try:
+                notice_sent, notice_failed = await send_transfer_cancellations(
+                    ecn_id, record, settings, service, storage
+                )
+                sent += notice_sent
+                failed += notice_failed
+            except Exception:
+                logger.exception("特定事项取消告知检查失败，下次重试：%s", ecn_id)
+                failed += 1
             pending = collect_pending_users(record, service)
             if not pending:
                 # 清除已解决待办的去重状态，后续重新出现同一待办时可以再次通知。
                 await storage.del_deep_item([NOTIFICATION_STATE_KEY, ecn_id])
                 continue
             tasks = pending_task_details(record, pending, service)
+            pending = {name: role for name, role in pending.items() if tasks.get(name)}
+            if not pending:
+                continue
             fingerprint = build_notification_fingerprint(record, tasks, settings)
             targets = await resolve_delivery_targets(pending, settings, service)
             if not targets:

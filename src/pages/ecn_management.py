@@ -81,6 +81,7 @@ from ..utils import (
     setup_global_activity_tracking,
     sync_current_user_role,
 )
+from ..modules.ecn.special_tasks_ui import open_special_tasks_dialog
 
 
 @ui.page("/ecn_management")
@@ -300,6 +301,8 @@ async def ecn_management_page():
                 column_id = str(event_args.get("colId") or "")
                 if column_id == "detail_action":
                     await open_ecn_detail_dialog(ecn_id)
+                elif column_id == "special_tasks":
+                    await open_special_tasks_dialog(ecn_id, current_user, current_role, refresh_list)
                 elif column_id == "delete_action" and can_delete_record:
                     await confirm_delete(ecn_id)
 

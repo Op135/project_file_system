@@ -22,6 +22,7 @@ from ...ecn_management_config import (
     get_ecn_scheme_coverage,
     get_ecn_scheme_target_projects,
     get_ecn_traceability_closure_summary,
+    get_ecn_special_confirmations,
 )
 
 
@@ -136,6 +137,18 @@ def build_ecn_management_grid_row(
     }
     for index, level in enumerate(ECN_TRACEABILITY_LEVELS):
         row[f"traceability_{index}"] = traceability_summary[level]
+    special = [
+        item
+        for item in get_ecn_special_confirmations(execution_info).values()
+        if item.get("assignee") or item.get("assignment_history")
+    ]
+    done = sum(item.get("confirmed") is True for item in special)
+    row["special_tasks"] = f"{'已完成' if done == len(special) else '待确认'} {done}/{len(special)}" if special else "—"
+    row["special_tasks_detail"] = "；".join(
+        f"{key}：{item.get('assignee') or '执行助理'}（{'已完成' if item.get('confirmed') else '待确认'}）"
+        for key, item in get_ecn_special_confirmations(execution_info).items()
+        if item.get("assignee") or item.get("assignment_history")
+    )
     return row
 
 
@@ -225,6 +238,16 @@ def get_ecn_management_grid_columns(include_delete: bool = False) -> list[dict[s
                 "cellStyle": {"textAlign": "left"},
             },
         ]
+    )
+    columns.append(
+        {
+            "headerName": "特定事项",
+            "field": "special_tasks",
+            "filter": text_filter,
+            "width": 135,
+            "tooltipField": "special_tasks_detail",
+            "cellStyle": {"color": "#2563eb", "cursor": "pointer"},
+        }
     )
     for index, level in enumerate(ECN_TRACEABILITY_LEVELS):
         columns.append(

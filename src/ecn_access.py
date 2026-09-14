@@ -25,6 +25,7 @@ from .ecn_management_config import (
     is_ecn_impact_blank,
     role_matches_keywords,
     is_ecn_scheme_ready_for_review,
+    get_ecn_special_confirmations,
     ECNState,
     ECN_SCHEME_GROUP_ORDINARY_DOCUMENT,
     ECN_SCHEME_GROUP_OVERVIEW_DOCUMENT,
@@ -210,16 +211,8 @@ def can_confirm_ecn_material_spec(
     """判断用户能否处理一条已经固化到 ECN 的物料追溯责任项。"""
     if not isinstance(spec, dict):
         return False
-    responsible_users = {
-        str(value).strip()
-        for value in spec.get("users", [])
-        if str(value).strip()
-    }
-    responsible_roles = [
-        str(value).strip()
-        for value in spec.get("roles", [])
-        if str(value).strip()
-    ]
+    responsible_users = {str(value).strip() for value in spec.get("users", []) if str(value).strip()}
+    responsible_roles = [str(value).strip() for value in spec.get("roles", []) if str(value).strip()]
     if not _database_mode(user_service):
         return current_user in responsible_users or role_matches_keywords(
             str(current_role or ""),
@@ -302,23 +295,22 @@ def is_ecn_pending_for_user(
     basic_info = ecn_data.get("basic_info", {})
     if not isinstance(workflow, dict) or not isinstance(basic_info, dict):
         return False
+    if workflow.get("current_state") == ECNState.ECN_EXECUTING and any(
+        item.get("assignee") == current_user and item.get("confirmed") is not True
+        for item in get_ecn_special_confirmations(ecn_data.get("execution_info")).values()
+    ):
+        return can_view_ecn(current_role, current_user, user_service=user_service)
     if not _database_mode(user_service):
         return is_legacy_ecn_pending_for_user(ecn_data, current_user, current_role)
 
     current_state = workflow.get("current_state")
-    if (
-        workflow.get("current_phase") == "ECR_PHASE"
-        and current_state == ECNState.ECR_REVIEWING
-    ):
+    if workflow.get("current_phase") == "ECR_PHASE" and current_state == ECNState.ECR_REVIEWING:
         return is_ecr_assigned_approver(
             ecn_data,
             current_user,
             user_service=_service(user_service),
         )
-    if (
-        workflow.get("current_phase") == "ECN_SCHEME_REVIEW_PHASE"
-        and current_state == ECNState.ECN_REVIEWING
-    ):
+    if workflow.get("current_phase") == "ECN_SCHEME_REVIEW_PHASE" and current_state == ECNState.ECN_REVIEWING:
         return is_scheme_assigned_approver(
             ecn_data,
             current_user,
@@ -361,9 +353,8 @@ def is_ecn_pending_for_user(
             return False
 
     if current_state in {ECNState.REJECTED, ECNState.DRAFT}:
-        return (
-            basic_info.get("applicant") == current_user
-            and can_create_ecn_request(current_role, current_user, user_service=user_service)
+        return basic_info.get("applicant") == current_user and can_create_ecn_request(
+            current_role, current_user, user_service=user_service
         )
     if is_ecn_scheme_ready_for_review(ecn_data):
         return can_submit_ecn_scheme_review(current_role, current_user, user_service=user_service)
@@ -386,9 +377,8 @@ def is_ecn_pending_for_user(
             current_user,
             user_service=user_service,
         )
-    return (
-        current_user in get_ecn_impact_handlers(ecn_data)
-        and can_edit_ecn_impact(current_role, current_user, user_service=user_service)
+    return current_user in get_ecn_impact_handlers(ecn_data) and can_edit_ecn_impact(
+        current_role, current_user, user_service=user_service
     )
 
 

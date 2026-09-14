@@ -632,17 +632,13 @@ ECN_ITEM_STATUS_NORMAL = "normal"
 ECN_ITEM_STATUS_NEEDS_IMPROVEMENT = ECN_SCHEME_STATUS_TRANSITIONS["item_after_rejection"]
 ECN_ITEM_STATUS_REVISED_PENDING_CONFIRMATION = ECN_SCHEME_STATUS_TRANSITIONS["item_after_revision"]
 ECN_ITEM_STATUS_REVISED_CONFIRMED = ECN_SCHEME_STATUS_TRANSITIONS["item_after_reconfirmation"]
-ECN_TRACEABILITY_LEVELS: list[str] = [
-    str(level) for level in ECN_CONFIG["scheme_tracking"]["traceability_levels"]
-]
+ECN_TRACEABILITY_LEVELS: list[str] = [str(level) for level in ECN_CONFIG["scheme_tracking"]["traceability_levels"]]
 ECN_DISPOSITION_MEASURES = ECN_CONFIG["scheme_tracking"]["disposition_measures"]
 ECN_EXECUTION_ASSISTANT_ROLES = ECN_CONFIG["execution_workflow"]["assistant_roles"]
 ECN_TRACEABILITY_RESPONSIBLE_ROUTES: dict[str, list[list[str]]] = copy.deepcopy(
     ECN_CONFIG["execution_workflow"]["traceability_responsible_routes"]
 )
-ECN_CUSTOMER_IN_TRANSIT_CONFIG: dict[str, object] = dict(
-    ECN_CONFIG["execution_workflow"]["customer_in_transit"]
-)
+ECN_CUSTOMER_IN_TRANSIT_CONFIG: dict[str, object] = dict(ECN_CONFIG["execution_workflow"]["customer_in_transit"])
 ECN_DOCUMENT_CHANGE_TYPES = ECN_CONFIG["scheme_options"]["document_change_types"]
 ECN_OVERVIEW_ACTION_LABELS = ECN_CONFIG["scheme_options"]["overview_actions"]
 ECN_OVERVIEW_ACTION_ADD = "add"
@@ -1052,7 +1048,7 @@ def ensure_ecn_material_execution_tasks(
 
 
 def is_ecn_assistant_execution_ready(execution_info: Any) -> bool:
-    """普通资料事项与ERP均确认后，第一阶段才允许触发系统内资料落盘。"""
+    """未移交的事项及ERP确认后即可执行；移交项独立跟进。"""
     if not isinstance(execution_info, dict):
         return False
     ordinary_confirmations = execution_info.get("ordinary_confirmations", {})
@@ -1060,12 +1056,32 @@ def is_ecn_assistant_execution_ready(execution_info: Any) -> bool:
     return (
         isinstance(ordinary_confirmations, dict)
         and all(
-            isinstance(confirmation, dict) and confirmation.get("confirmed") is True
+            isinstance(confirmation, dict)
+            and (confirmation.get("confirmed") is True or bool(confirmation.get("assignee")))
             for confirmation in ordinary_confirmations.values()
         )
         and isinstance(erp_confirmation, dict)
-        and erp_confirmation.get("confirmed") is True
+        and (erp_confirmation.get("confirmed") is True or bool(erp_confirmation.get("assignee")))
     )
+
+
+def get_ecn_special_confirmations(execution_info: Any) -> dict[str, dict]:
+    """特定事项包含普通资料及ERP行，返回真实确认对象供事务服务修改。"""
+    if not isinstance(execution_info, dict):
+        return {}
+    result = {
+        str(key): value
+        for key, value in execution_info.get("ordinary_confirmations", {}).items()
+        if isinstance(value, dict)
+    }
+    erp = execution_info.get("erp_confirmation")
+    if isinstance(erp, dict):
+        result["__erp__"] = erp
+    return result
+
+
+def is_ecn_special_execution_complete(execution_info: Any) -> bool:
+    return all(item.get("confirmed") is True for item in get_ecn_special_confirmations(execution_info).values())
 
 
 def get_ecn_material_execution_specs(
@@ -1114,10 +1130,7 @@ def get_ecn_material_execution_specs(
                 "users": copy.deepcopy(task.get("users", [])),
                 "stage_index": task_stage,
                 "parallel": stage_sizes.get((level, task_stage), 0) > 1,
-                "available": (
-                    task.get("confirmed") is not True
-                    and task_stage == current_stage_by_level.get(level)
-                ),
+                "available": (task.get("confirmed") is not True and task_stage == current_stage_by_level.get(level)),
                 "disposition_instruction": str(task.get("disposition_instruction") or ""),
             }
         )
@@ -1132,8 +1145,7 @@ def is_ecn_material_execution_closed(material_entry: Any) -> bool:
     if not isinstance(tasks, dict) or not tasks:
         return False
     return all(
-        isinstance(confirmation, dict) and confirmation.get("confirmed") is True
-        for confirmation in tasks.values()
+        isinstance(confirmation, dict) and confirmation.get("confirmed") is True for confirmation in tasks.values()
     )
 
 
@@ -1151,9 +1163,7 @@ def get_ecn_traceability_closure_summary(ecn_data: Any) -> dict[str, str]:
                 continue
             raw_levels = item.get("traceability_levels", [])
             if isinstance(raw_levels, (list, tuple)):
-                selected_levels.update(
-                    str(level) for level in raw_levels if str(level) in ECN_TRACEABILITY_LEVELS
-                )
+                selected_levels.update(str(level) for level in raw_levels if str(level) in ECN_TRACEABILITY_LEVELS)
 
     execution_info = ecn_data.get("execution_info", {})
     execution_info = execution_info if isinstance(execution_info, dict) else {}
@@ -1207,6 +1217,13 @@ def get_ecn_execution_pending_assignees(ecn_data: Any) -> dict[str, list[str]]:
         or not isinstance(execution_info, dict)
     ):
         return result
+    result["users"] = list(
+        dict.fromkeys(
+            str(item["assignee"])
+            for item in get_ecn_special_confirmations(execution_info).values()
+            if item.get("assignee") and item.get("confirmed") is not True
+        )
+    )
     stage = execution_info.get("stage")
     if stage in [
         ECN_EXECUTION_STAGE_ASSISTANT,
@@ -1572,9 +1589,7 @@ def get_ecn_pending_approval_roles(workflow: Any) -> list[str]:
     if not isinstance(step_approvals, dict):
         step_approvals = {}
     return [
-        str(role)
-        for role in pending_roles
-        if role not in [None, ""] and not bool(step_approvals.get(str(role), False))
+        str(role) for role in pending_roles if role not in [None, ""] and not bool(step_approvals.get(str(role), False))
     ]
 
 

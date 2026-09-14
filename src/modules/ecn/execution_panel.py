@@ -47,6 +47,7 @@ from ...ecn_management_config import (
     get_ecn_scheme_target_projects,
     get_ecn_stage_index,
     is_ecn_assistant_execution_ready,
+    is_ecn_special_execution_complete,
     is_ecn_material_disposition_required,
     is_ecn_material_execution_closed,
 )
@@ -61,6 +62,9 @@ from .overview_execution import (
 from .repository import (
     atomic_ecn_deep_update,
 )
+
+from .special_tasks import update_special_task
+from .special_tasks_ui import render_transfer_button
 
 logger = logging.getLogger(__name__)
 ACTIVE_ECN_OVERVIEW_EXECUTIONS: set[str] = set()
@@ -354,6 +358,8 @@ def build_execution_panel(tab_exec, local_data, wf, current_user, current_role, 
 
         def is_last_pending_material_confirmation(item_id: str, confirmation_key: str) -> bool:
             execution_info = local_data.get("execution_info", {})
+            if not is_ecn_special_execution_complete(execution_info):
+                return False
             material_confirmations = (
                 execution_info.get("material_confirmations", {}) if isinstance(execution_info, dict) else {}
             )
@@ -382,55 +388,22 @@ def build_execution_panel(tab_exec, local_data, wf, current_user, current_role, 
             confirmation_kind: str,
             item_id: str | None,
             confirmed: bool,
+            baseline: dict,
         ):
             event_client = ui.context.client
             scroll_state = await capture_execution_scroll_state(event_client)
-            blocked = {"reason": ""}
-            operation_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-            def update_confirmation(current_ecn):
-                if not isinstance(current_ecn, dict):
-                    blocked["reason"] = "ECN数据不存在。"
-                    return db_storage.ATOMIC_NO_UPDATE
-                current_wf = current_ecn.get("workflow", {})
-                execution_info = current_ecn.get("execution_info", {})
-                if (
-                    current_wf.get("current_state") != ECNState.ECN_EXECUTING
-                    or execution_info.get("stage") != ECN_EXECUTION_STAGE_ASSISTANT
-                ):
-                    blocked["reason"] = "当前执行阶段已发生变化，请刷新后查看。"
-                    return db_storage.ATOMIC_NO_UPDATE
-                if not can_execute_ecn_assistant_stage(current_role, current_user):
-                    blocked["reason"] = "当前用户无权确认资料准备执行清单。"
-                    return db_storage.ATOMIC_NO_UPDATE
-
-                if confirmation_kind == "erp":
-                    confirmation = execution_info.setdefault("erp_confirmation", {})
-                else:
-                    ordinary_confirmations = execution_info.setdefault("ordinary_confirmations", {})
-                    confirmation = ordinary_confirmations.get(str(item_id))
-                    if not isinstance(confirmation, dict):
-                        blocked["reason"] = "该事项已不在当前执行清单中。"
-                        return db_storage.ATOMIC_NO_UPDATE
-
-                confirmation["confirmed"] = bool(confirmed)
-                confirmation["user"] = current_user
-                confirmation["role"] = current_role
-                confirmation["time"] = operation_time
-                confirmation.setdefault("history", []).append(
-                    {
-                        "confirmed": bool(confirmed),
-                        "user": current_user,
-                        "role": current_role,
-                        "time": operation_time,
-                    }
-                )
-                return current_ecn
-
-            success = await atomic_ecn_deep_update(
-                ["ecn_management_data", local_data["ecn_id"]],
-                update_confirmation,
+            key = "__erp__" if confirmation_kind == "erp" else str(item_id)
+            result = await update_special_task(
+                str(local_data["ecn_id"]),
+                key,
+                baseline,
+                username=current_user,
+                role=current_role,
+                service=app.state.user_service,
+                confirmed=confirmed,
             )
+            success = result.ok and result.record is not None
+            blocked = {"reason": result.message}
             if success and not blocked["reason"]:
                 sync_execution_local_data()
                 render_execution_tab()
@@ -476,7 +449,7 @@ def build_execution_panel(tab_exec, local_data, wf, current_user, current_role, 
                     blocked["reason"] = "系统内资料仍在执行，请勿重复操作。"
                     return db_storage.ATOMIC_NO_UPDATE
                 if stage == ECN_EXECUTION_STAGE_ASSISTANT and not is_ecn_assistant_execution_ready(execution_info):
-                    blocked["reason"] = "请先确认全部事项/资料及ERP均已执行完毕。"
+                    blocked["reason"] = "请先确认所有未移交的事项/资料及ERP。"
                     return db_storage.ATOMIC_NO_UPDATE
 
                 execution_info["stage"] = ECN_EXECUTION_STAGE_OVERVIEW_RUNNING
@@ -555,9 +528,11 @@ def build_execution_panel(tab_exec, local_data, wf, current_user, current_role, 
                 approval_log = current_ecn.setdefault("approval_log", [])
                 if all_overview_succeeded:
                     material_confirmations = execution_info.get("material_confirmations", {})
-                    if isinstance(material_confirmations, dict) and material_confirmations:
+                    if (
+                        isinstance(material_confirmations, dict) and material_confirmations
+                    ) or not is_ecn_special_execution_complete(execution_info):
                         execution_info["stage"] = ECN_EXECUTION_STAGE_MATERIAL
-                        action_text = "系统内资料执行完成，进入物料执行确认"
+                        action_text = "系统内资料执行完成，继续跟进物料及移交事项"
                     else:
                         execution_info["stage"] = ECN_EXECUTION_STAGE_COMPLETED
                         execution_info["completed_time"] = operation_time
@@ -789,7 +764,11 @@ def build_execution_panel(tab_exec, local_data, wf, current_user, current_role, 
                     )
 
                 active_entries = [entry for entry in material_confirmations.values() if isinstance(entry, dict)]
-                if active_entries and all(entry.get("status") == "closed" for entry in active_entries):
+                if (
+                    active_entries
+                    and all(entry.get("status") == "closed" for entry in active_entries)
+                    and is_ecn_special_execution_complete(execution_info)
+                ):
                     execution_info["stage"] = ECN_EXECUTION_STAGE_COMPLETED
                     execution_info["completed_time"] = operation_time
                     current_wf["current_state"] = ECNState.CLOSED
@@ -930,7 +909,7 @@ def build_execution_panel(tab_exec, local_data, wf, current_user, current_role, 
                     erp_checked = isinstance(erp_confirmation, dict) and erp_confirmation.get("confirmed") is True
                     assistant_table_grid = (
                         "grid grid-cols-[64px_72px_minmax(140px,0.5fr)_minmax(200px,1fr)_"
-                        "minmax(200px,1fr)_minmax(200px,1fr)_minmax(130px,0.5fr)]"
+                        "minmax(200px,1fr)_minmax(200px,1fr)_minmax(130px,0.5fr)_140px]"
                     )
                     with ui.column().classes("w-full gap-0 border-t border-slate-300"):
                         ui.label("1.1 特定事项/资料执行结果").classes(
@@ -950,6 +929,7 @@ def build_execution_panel(tab_exec, local_data, wf, current_user, current_role, 
                                         "执行前",
                                         "应执行内容",
                                         "确认记录",
+                                        "移交负责人",
                                     ]:
                                         ui.label(header).classes(
                                             "px-3 py-2 border-r border-slate-300 last:border-r-0 "
@@ -976,15 +956,23 @@ def build_execution_panel(tab_exec, local_data, wf, current_user, current_role, 
                                         ):
                                             checkbox = ui.checkbox(
                                                 value=checked,
-                                                on_change=lambda e, current_id=str(item_id): (
+                                                on_change=lambda e, current_id=str(item_id), snapshot=copy.deepcopy(confirmation): (
                                                     update_assistant_execution_confirmation(
                                                         "ordinary",
                                                         current_id,
                                                         bool(e.value),
+                                                        snapshot,
                                                     )
                                                 ),
                                             ).props("dense color=green")
-                                            if not assistant_can_operate:
+                                            if not (
+                                                wf.get("current_state") == ECNState.ECN_EXECUTING
+                                                and (
+                                                    confirmation.get("assignee") == current_user
+                                                    if confirmation.get("assignee")
+                                                    else assistant_can_operate
+                                                )
+                                            ):
                                                 checkbox.props("disable")
                                         ui.label(execution_scheme_no(str(item_id))).classes(
                                             "px-3 py-2 border-r border-slate-200 font-mono font-bold "
@@ -1020,6 +1008,20 @@ def build_execution_panel(tab_exec, local_data, wf, current_user, current_role, 
                                             + ("text-emerald-700" if checked else "text-slate-400")
                                         )
 
+                                        render_transfer_button(
+                                            str(local_data["ecn_id"]),
+                                            str(item_id),
+                                            confirmation,
+                                            current_user,
+                                            current_role,
+                                            wf.get("current_state") == ECNState.ECN_EXECUTING,
+                                            lambda: (
+                                                sync_execution_local_data(),
+                                                render_execution_tab(),
+                                                refresh_list(),
+                                            ),
+                                        )
+
                                 erp_row_bg = "bg-white" if len(assistant_rows) % 2 == 0 else "bg-slate-50/70"
                                 with ui.element("div").classes(
                                     f"{assistant_table_grid} {erp_row_bg} border-t border-slate-200 "
@@ -1031,13 +1033,23 @@ def build_execution_panel(tab_exec, local_data, wf, current_user, current_role, 
                                     ):
                                         erp_checkbox = ui.checkbox(
                                             value=erp_checked,
-                                            on_change=lambda e: update_assistant_execution_confirmation(
-                                                "erp",
-                                                None,
-                                                bool(e.value),
+                                            on_change=lambda e, snapshot=copy.deepcopy(erp_confirmation): (
+                                                update_assistant_execution_confirmation(
+                                                    "erp",
+                                                    None,
+                                                    bool(e.value),
+                                                    snapshot,
+                                                )
                                             ),
                                         ).props("dense color=green")
-                                        if not assistant_can_operate:
+                                        if not (
+                                            wf.get("current_state") == ECNState.ECN_EXECUTING
+                                            and (
+                                                erp_confirmation.get("assignee") == current_user
+                                                if erp_confirmation.get("assignee")
+                                                else assistant_can_operate
+                                            )
+                                        ):
                                             erp_checkbox.props("disable")
                                     ui.label("ERP").classes(
                                         "px-3 py-2 border-r border-slate-200 font-mono font-bold "
@@ -1071,6 +1083,16 @@ def build_execution_panel(tab_exec, local_data, wf, current_user, current_role, 
                                         + execution_column_alignment("assistant", "确认记录")
                                         + " "
                                         + ("text-emerald-700" if erp_checked else "text-slate-400")
+                                    )
+
+                                    render_transfer_button(
+                                        str(local_data["ecn_id"]),
+                                        "__erp__",
+                                        erp_confirmation,
+                                        current_user,
+                                        current_role,
+                                        wf.get("current_state") == ECNState.ECN_EXECUTING,
+                                        lambda: (sync_execution_local_data(), render_execution_tab(), refresh_list()),
                                     )
 
                     overview_results = execution_info.get("overview_results", {})
@@ -1172,11 +1194,11 @@ def build_execution_panel(tab_exec, local_data, wf, current_user, current_role, 
                             if stage == ECN_EXECUTION_STAGE_ASSISTANT:
                                 ready = is_ecn_assistant_execution_ready(execution_info)
                                 ui.label(
-                                    "全部勾选后才能进入系统内资料执行。"
+                                    "所有未移交事项勾选后即可执行；移交事项独立跟进。"
                                     if not ready
-                                    else "事项与ERP已确认，可执行系统内资料方案。"
+                                    else "未移交事项已确认，可执行系统内资料；移交事项独立跟进。"
                                 ).classes("text-xs text-slate-500")
-                                action_label = "确认第一阶段并执行系统内资料"
+                                action_label = "执行系统内资料"
                             elif stage == ECN_EXECUTION_STAGE_OVERVIEW_FAILED:
                                 ready = True
                                 ui.label("仅重试失败项目；已经成功的项目不会重复执行。 ").classes(
@@ -1470,7 +1492,7 @@ def build_execution_panel(tab_exec, local_data, wf, current_user, current_role, 
                                                 "progress": progress_label,
                                             }
                     else:
-                        ui.label("本单没有物料变更方案，第一阶段完成后将自动关闭ECN。 ").classes(
+                        ui.label("本单没有物料变更方案；系统内资料和所有特定事项完成后自动关闭ECN。 ").classes(
                             "w-full px-4 py-4 text-sm text-slate-400 bg-white"
                         )
 
