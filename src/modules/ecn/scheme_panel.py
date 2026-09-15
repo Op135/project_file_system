@@ -650,7 +650,27 @@ def build_scheme_panel(
                                     return
 
                                 if is_pdf:
-                                    ui.navigate.to(file_url, new_tab=True)
+                                    if not os.path.isfile(local_file_path):
+                                        ui.notify("PDF 文件不存在。", type="warning")
+                                        return
+                                    try:
+                                        with open(local_file_path, "rb") as pdf_file:
+                                            file_content = pdf_file.read()
+                                    except OSError as exc:
+                                        logger.error("ECN读取本地PDF失败：%s", local_file_path, exc_info=True)
+                                        ui.notify(f"PDF 文件读取失败：{exc}", type="negative")
+                                        return
+                                    client = ui.context.client
+                                    cache_key = f"{client.id}-{uuid.uuid4()}"
+                                    PDF_PREVIEW_CACHE[cache_key] = file_content
+
+                                    def cleanup_local_pdf_cache(key=cache_key):
+                                        PDF_PREVIEW_CACHE.pop(key, None)
+
+                                    client.on_disconnect(cleanup_local_pdf_cache)
+                                    ui.run_javascript(
+                                        f'window.open("/view/svn_pdf?id={cache_key}&v={int(time.time())}", "_blank");'
+                                    )
                                 elif os.path.isfile(local_file_path):
                                     ui.download(local_file_path, file_name)
                                 else:
@@ -803,7 +823,7 @@ def build_scheme_panel(
                                         )
                                         ui.label(f"{file_name}（文件不存在）").classes("text-xs  min-w-0")
                                     return True
-                                if not is_remote_svn:
+                                if not is_remote_svn and is_uploaded_image:
                                     try:
                                         app.add_static_file(
                                             local_file=local_file_path,

@@ -1,6 +1,8 @@
 # -*- encoding: utf-8 -*-
 import copy
 import logging
+import time
+import uuid
 from datetime import (
     datetime,
 )
@@ -27,6 +29,7 @@ from ...ecn_access import (
     build_ecn_access_snapshot,
     can_confirm_ecn_material_spec,
     can_execute_ecn_assistant_stage,
+    get_active_ecn_actor_role,
     is_ecn_material_spec_orphaned,
     resolve_ecn_material_spec_responsibility,
 )
@@ -70,6 +73,7 @@ from .task_labels import compact_material_confirmation_label, material_confirmat
 
 logger = logging.getLogger(__name__)
 ACTIVE_ECN_OVERVIEW_EXECUTIONS: set[str] = set()
+ECN_OVERVIEW_EXECUTION_LEASE_SECONDS = 600
 
 
 def build_execution_panel(
@@ -404,7 +408,6 @@ def build_execution_panel(
             if success and not blocked["reason"]:
                 sync_execution_local_data()
                 render_execution_tab()
-                refresh_list()
             else:
                 notify_execution_safely(
                     event_client,
@@ -420,6 +423,8 @@ def build_execution_panel(
             execution_ecn_id = str(local_data.get("ecn_id") or "")
             blocked = {"reason": ""}
             operation_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            operation_epoch = time.time()
+            operation_id = uuid.uuid4().hex
 
             def claim_execution(current_ecn):
                 if not isinstance(current_ecn, dict):
@@ -428,10 +433,19 @@ def build_execution_panel(
                 current_wf = current_ecn.get("workflow", {})
                 execution_info = current_ecn.get("execution_info", {})
                 stage = execution_info.get("stage")
+                actor_role = get_active_ecn_actor_role(
+                    current_user,
+                    current_role,
+                    user_service=app.state.user_service,
+                )
                 if current_wf.get("current_state") != ECNState.ECN_EXECUTING:
                     blocked["reason"] = "当前ECN已不在执行确认状态。"
                     return db_storage.ATOMIC_NO_UPDATE
-                if not can_execute_ecn_assistant_stage(current_role, current_user):
+                if actor_role is None or not can_execute_ecn_assistant_stage(
+                    actor_role,
+                    current_user,
+                    user_service=app.state.user_service,
+                ):
                     blocked["reason"] = "当前用户无权触发系统内资料执行。"
                     return db_storage.ATOMIC_NO_UPDATE
                 allowed_stages = [
@@ -442,17 +456,25 @@ def build_execution_panel(
                 if stage not in allowed_stages:
                     blocked["reason"] = "系统内资料正在执行或已经执行完成，请勿重复操作。"
                     return db_storage.ATOMIC_NO_UPDATE
-                if stage == ECN_EXECUTION_STAGE_OVERVIEW_RUNNING and execution_ecn_id in ACTIVE_ECN_OVERVIEW_EXECUTIONS:
-                    blocked["reason"] = "系统内资料仍在执行，请勿重复操作。"
-                    return db_storage.ATOMIC_NO_UPDATE
+                if stage == ECN_EXECUTION_STAGE_OVERVIEW_RUNNING:
+                    started_epoch = execution_info.get("overview_started_epoch")
+                    lease_active = (
+                        isinstance(started_epoch, (int, float))
+                        and operation_epoch - float(started_epoch) < ECN_OVERVIEW_EXECUTION_LEASE_SECONDS
+                    )
+                    if execution_ecn_id in ACTIVE_ECN_OVERVIEW_EXECUTIONS or lease_active:
+                        blocked["reason"] = "系统内资料仍在执行，请勿重复操作。"
+                        return db_storage.ATOMIC_NO_UPDATE
                 if stage == ECN_EXECUTION_STAGE_ASSISTANT and not is_ecn_assistant_execution_ready(execution_info):
                     blocked["reason"] = "请先确认所有未移交的事项/资料及ERP。"
                     return db_storage.ATOMIC_NO_UPDATE
 
                 execution_info["stage"] = ECN_EXECUTION_STAGE_OVERVIEW_RUNNING
                 execution_info["overview_started_by"] = current_user
-                execution_info["overview_started_role"] = current_role
+                execution_info["overview_started_role"] = actor_role
                 execution_info["overview_started_time"] = operation_time
+                execution_info["overview_started_epoch"] = operation_epoch
+                execution_info["overview_run_id"] = operation_id
                 for result in execution_info.get("overview_results", {}).values():
                     if isinstance(result, dict) and result.get("status") != ECN_EXECUTION_RESULT_SUCCESS:
                         result["status"] = ECN_EXECUTION_RESULT_RUNNING
@@ -510,13 +532,18 @@ def build_execution_panel(
                 isinstance(result, dict) and result.get("status") == ECN_EXECUTION_RESULT_SUCCESS
                 for result in overview_results.values()
             )
+            finish_state = {"applied": False}
 
             def finish_execution(current_ecn):
                 if not isinstance(current_ecn, dict):
                     return db_storage.ATOMIC_NO_UPDATE
                 execution_info = current_ecn.setdefault("execution_info", {})
-                if execution_info.get("stage") != ECN_EXECUTION_STAGE_OVERVIEW_RUNNING:
+                if (
+                    execution_info.get("stage") != ECN_EXECUTION_STAGE_OVERVIEW_RUNNING
+                    or execution_info.get("overview_run_id") != operation_id
+                ):
                     return db_storage.ATOMIC_NO_UPDATE
+                finish_state["applied"] = True
                 execution_info["overview_results"] = copy.deepcopy(overview_results)
                 for item in current_ecn.get("change_items", []):
                     if isinstance(item, dict) and str(item.get("item_id")) in executed_item_statuses:
@@ -543,7 +570,7 @@ def build_execution_panel(
                     approval_log,
                     {
                         "user": current_user,
-                        "role": current_role,
+                        "role": execution_info.get("overview_started_role") or current_role,
                         "action": action_text,
                         "time": operation_time,
                     },
@@ -551,9 +578,12 @@ def build_execution_panel(
                 return current_ecn
 
             try:
-                finished = await atomic_ecn_deep_update(
-                    ["ecn_management_data", local_data["ecn_id"]],
-                    finish_execution,
+                finished = bool(
+                    await atomic_ecn_deep_update(
+                        ["ecn_management_data", local_data["ecn_id"]],
+                        finish_execution,
+                    )
+                    and finish_state["applied"]
                 )
             except Exception:
                 logger.exception("ECN系统内资料执行结果保存异常：%s", execution_ecn_id)
@@ -562,7 +592,6 @@ def build_execution_panel(
                 ACTIVE_ECN_OVERVIEW_EXECUTIONS.discard(execution_ecn_id)
             sync_execution_local_data()
             render_execution_tab()
-            refresh_list()
             if finished and all_overview_succeeded:
                 notify_execution_safely(
                     event_client,
@@ -628,6 +657,14 @@ def build_execution_panel(
                     return db_storage.ATOMIC_NO_UPDATE
                 current_wf = current_ecn.get("workflow", {})
                 execution_info = current_ecn.get("execution_info", {})
+                actor_role = get_active_ecn_actor_role(
+                    current_user,
+                    current_role,
+                    user_service=app.state.user_service,
+                )
+                if actor_role is None:
+                    blocked["reason"] = "当前账号已停用或不存在，不能确认执行项。"
+                    return db_storage.ATOMIC_NO_UPDATE
                 if (
                     current_wf.get("current_state") != ECNState.ECN_EXECUTING
                     or execution_info.get("stage") != ECN_EXECUTION_STAGE_MATERIAL
@@ -674,7 +711,12 @@ def build_execution_panel(
                     if spec.get("available") is not True:
                         blocked["reason"] = "该责任项尚未进入所属追溯范围的当前负责人节点。"
                         return db_storage.ATOMIC_NO_UPDATE
-                    if not can_confirm_ecn_material_spec(spec, current_role, current_user):
+                    if not can_confirm_ecn_material_spec(
+                        spec,
+                        actor_role,
+                        current_user,
+                        user_service=app.state.user_service,
+                    ):
                         blocked["reason"] = "当前用户没有该物料追溯责任项的执行权限。"
                         return db_storage.ATOMIC_NO_UPDATE
                     pending_task_count = sum(
@@ -693,7 +735,12 @@ def build_execution_panel(
                         blocked["reason"] = "这是最后一个待确认项，需要二次确认。"
                         return db_storage.ATOMIC_NO_UPDATE
                 else:
-                    if not can_confirm_ecn_material_spec(spec, current_role, current_user):
+                    if not can_confirm_ecn_material_spec(
+                        spec,
+                        actor_role,
+                        current_user,
+                        user_service=app.state.user_service,
+                    ):
                         blocked["reason"] = "当前用户没有该物料追溯责任项的执行权限。"
                         return db_storage.ATOMIC_NO_UPDATE
                     if target.get("confirmed") is not True:
@@ -717,13 +764,13 @@ def build_execution_panel(
 
                 target["confirmed"] = bool(confirmed)
                 target["user"] = current_user
-                target["role"] = current_role
+                target["role"] = actor_role
                 target["time"] = operation_time
                 target.setdefault("history", []).append(
                     {
                         "confirmed": bool(confirmed),
                         "user": current_user,
-                        "role": current_role,
+                        "role": actor_role,
                         "time": operation_time,
                     }
                 )
@@ -736,7 +783,7 @@ def build_execution_panel(
                         approval_log,
                         {
                             "user": current_user,
-                            "role": current_role,
+                            "role": actor_role,
                             "action": f"物料方案 {execution_scheme_no(item_id)} 执行确认关闭",
                             "time": operation_time,
                         },
@@ -756,7 +803,7 @@ def build_execution_panel(
                         approval_log,
                         {
                             "user": current_user,
-                            "role": current_role,
+                            "role": actor_role,
                             "action": "全部物料方案执行确认完成，ECN关闭",
                             "time": operation_time,
                         },
@@ -778,7 +825,6 @@ def build_execution_panel(
                     refresh_material_execution_controls([str(item_id)])
                 else:
                     render_execution_tab()
-                refresh_list()
             elif blocked.get("requires_final_confirmation"):
                 sync_execution_local_data()
                 refresh_material_execution_controls([str(item_id)])
@@ -999,7 +1045,6 @@ def build_execution_panel(
                                             lambda: (
                                                 sync_execution_local_data(),
                                                 render_execution_tab(),
-                                                refresh_list(),
                                             ),
                                             access_snapshot=access_snapshot,
                                         )
@@ -1074,7 +1119,7 @@ def build_execution_panel(
                                         current_user,
                                         current_role,
                                         wf.get("current_state") == ECNState.ECN_EXECUTING,
-                                        lambda: (sync_execution_local_data(), render_execution_tab(), refresh_list()),
+                                        lambda: (sync_execution_local_data(), render_execution_tab()),
                                         access_snapshot=access_snapshot,
                                     )
 
@@ -1476,7 +1521,6 @@ def build_execution_panel(
                                                                 def refresh_after_transfer():
                                                                     if sync_execution_local_data():
                                                                         render_execution_tab()
-                                                                        refresh_list()
 
                                                                 ui.button(
                                                                     "立即改派",

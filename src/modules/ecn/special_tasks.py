@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from ...ecn_access import can_execute_ecn_assistant_stage, can_view_ecn
+from ...ecn_access import can_execute_ecn_assistant_stage, can_view_ecn, get_active_ecn_actor_role
 from ...ecn_management_config import (
     ECNState,
     ECN_EXECUTION_STAGE_ASSISTANT,
@@ -51,10 +51,10 @@ async def update_special_task(
         if record.get("workflow", {}).get("current_state") != ECNState.ECN_EXECUTING:
             raise ECNConflict("ECN已不在执行中，请刷新。")
         actor = service.get_user(username)
-        actor_role = str(actor.get("role") or "") if isinstance(actor, dict) else ""
+        actor_role = get_active_ecn_actor_role(username, role, user_service=service)
         if (
-            not actor
-            or actor.get("status", "active") != "active"
+            not isinstance(actor, dict)
+            or actor_role is None
             or not can_view_ecn(actor_role, username, user_service=service)
         ):
             raise ECNConflict("当前用户无权处理该事项。")
@@ -83,6 +83,7 @@ async def update_special_task(
                 if (
                     not target
                     or target.get("status", "active") != "active"
+                    or get_active_ecn_actor_role(assignee, target.get("role"), user_service=service) is None
                     or not can_view_ecn(str(target.get("role") or ""), assignee, user_service=service)
                 ):
                     raise ECNConflict("接收人必须在职且拥有ECN查看权限。")

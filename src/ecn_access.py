@@ -61,6 +61,32 @@ def _database_mode(user_service=None) -> bool:
     return service is not None and getattr(service, "storage_mode", "legacy_excel") == "database"
 
 
+def get_active_ecn_actor_role(
+    username: str,
+    fallback_role: object = "",
+    *,
+    user_service=None,
+) -> str | None:
+    """提交操作时重新确认账号在职，并返回当前主任职名称用于审计留痕。"""
+    service = _service(user_service)
+    if service is None:
+        return str(fallback_role or "").strip() or None
+    user_loader = getattr(service, "get_user", None)
+    if not callable(user_loader):
+        return str(fallback_role or "").strip() or None
+    actor = user_loader(username)
+    if not isinstance(actor, dict) or actor.get("status", "active") != "active":
+        return None
+    if _database_mode(service):
+        membership_loader = getattr(service, "get_primary_membership", None)
+        membership = membership_loader(username) if callable(membership_loader) else {}
+        if isinstance(membership, dict):
+            position_name = str(membership.get("position_name") or "").strip()
+            if position_name:
+                return position_name
+    return str(actor.get("role") or fallback_role or "").strip() or None
+
+
 def build_ecn_access_snapshot(user_service=None) -> dict[str, Any]:
     """一次读取当前用户及权限，供同一轮列表或通知扫描复用。"""
     service = _service(user_service)

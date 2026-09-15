@@ -19,6 +19,7 @@ from src.modules.ecn import actions
 from src.modules.ecn.approval_transaction import ApprovalTransaction
 from src.modules.ecn.editing import ECNConflict, merge_fields, sync_review_snapshot
 from src.modules.ecn.models import get_ecn_template
+from src.modules.ecn.repository import delete_record
 from tests.test_error_management_concurrency import load_isolated_db_storage
 
 
@@ -323,6 +324,50 @@ class ECNDatabaseApprovalTests(unittest.IsolatedAsyncioTestCase):
             is_new=True,
             user_service=self.service,
             storage=storage or self.left,
+        )
+
+    async def test_disabled_user_cannot_submit_from_an_already_open_page(self):
+        value = record(ECNState.DRAFT)
+        value["workflow"]["current_phase"] = "ECR_PHASE"
+        await self.left.set_item("ecn_management_data", {value["ecn_id"]: value})
+        self.service.modify_user("deactivate", "张三")
+        try:
+            result = await actions.execute_action(
+                value,
+                copy.deepcopy(value),
+                "save_draft",
+                "张三",
+                "申请岗位",
+                user_service=self.service,
+                storage=self.left,
+            )
+            self.assertFalse(result.ok)
+            self.assertIn("停用", result.message)
+        finally:
+            self.service.modify_user("activate", "张三")
+
+    async def test_delete_closes_pending_approval_in_the_same_transaction(self):
+        created = await self.create()
+        self.assertTrue(created.ok)
+        assert created.record is not None
+        ecn_id = str(created.record["ecn_id"])
+        self.assertTrue(self.pending(created.record))
+        deleted, message = await delete_record(
+            ecn_id,
+            username="admin",
+            user_service=self.service,
+            storage=self.left,
+        )
+        self.assertTrue(deleted, message)
+        self.assertNotIn(ecn_id, await self.left.get_fresh_item("ecn_management_data", {}))
+        assignment = created.record["workflow"]["ecr_workflow_assignment"]
+        self.assertEqual(
+            self.service.list_pending_assignment_usernames(
+                module="ecn",
+                entity_id=ecn_id,
+                task_key=assignment["current_task_key"],
+            ),
+            [],
         )
 
     async def approve(self, value, user, storage=None):

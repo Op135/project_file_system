@@ -67,9 +67,7 @@ from ..modules.ecn.overview_execution import (
 from ..modules.ecn.repository import (
     atomic_ecn_deep_update as atomic_ecn_deep_update,
 )
-from ..modules.ecn.repository import (
-    del_ecn_deep_item as del_ecn_deep_item,
-)
+from ..modules.ecn.repository import delete_record
 from ..modules.ecn.repository import (
     save_ecn_deep_item as save_ecn_deep_item,
 )
@@ -160,14 +158,17 @@ async def ecn_management_page():
                         ui.notify("当前用户没有删除ECN单据的权限", type="warning")
                         dialog.close()
                         return
-                    # 采用代理的原子化深层删除，避免并发读写并触发全局刷新
-                    success = await del_ecn_deep_item(["ecn_management_data", ecn_id])
+                    success, message = await delete_record(
+                        ecn_id,
+                        username=current_user,
+                        user_service=app.state.user_service,
+                    )
 
                     if success:
                         ui.notify(f"单号 {ecn_id} 已被彻底删除", type="positive")
                         refresh_list()
                     else:
-                        ui.notify(f"删除失败，单据 {ecn_id} 可能已不存在或发生异常", type="negative")
+                        ui.notify(message, type="negative")
                     dialog.close()
 
                 ui.button("确认删除", color="red", on_click=do_delete)
@@ -209,6 +210,18 @@ async def ecn_management_page():
 
     # ui.timer: NiceGUI第三方Web框架中用于周期性执行异步或同步函数的类
     ui.timer(5.0, check_and_refresh_list)
+
+    def recheck_page_permission() -> None:
+        if can_view_ecn(
+            current_role,
+            current_user,
+            user_service=app.state.user_service,
+        ):
+            return
+        ui.notify("您的ECN查看权限已被停用。", type="warning")
+        ui.navigate.to("/main")
+
+    ui.timer(15.0, recheck_page_permission)
 
     # 将滚动限制在 header 下方的内容区内，避免浏览器主滚动条覆盖到顶部导航栏
     with ui.element("div").classes("fixed top-12 bottom-0 left-0 right-0 overflow-hidden bg-slate-50 flex flex-col"):
@@ -320,6 +333,11 @@ async def ecn_management_page():
             ecn_grid.on("rowDoubleClicked", open_ecn_grid_record)
 
             def refresh_list():
+                # 手动刷新和详情操作刷新后同步版本戳，避免轮询在数秒后重复重建同一张表。
+                last_ecn_state_tracker["version_stamp"] = db_storage.get_item(
+                    "ecn_global_version_stamp",
+                    0.0,
+                )
                 all_ecns = db_storage.get_item("ecn_management_data", {})
                 access_snapshot = build_ecn_access_snapshot(app.state.user_service)
                 keyword = str(page_state.get("search_keyword") or "").lower().strip()

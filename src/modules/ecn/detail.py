@@ -30,6 +30,7 @@ from ...ecn_access import (
     can_view_ecn,
 )
 from ...ecn_management_config import (
+    ECN_VERSION_KEY,
     ECN_EXECUTION_STAGE_MATERIAL,
     ECN_OVERVIEW_ACTION_DEACTIVATE,
     ECN_REQUIRE_REJECTED_ITEM_SELECTION,
@@ -116,6 +117,9 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
             return
 
     local_data = copy.deepcopy(ecn_data)
+    detail_version_tracker = {
+        "stamp": db_storage.get_item(ECN_VERSION_KEY, 0.0) if ecn_id else 0.0
+    }
     form_baseline = copy.deepcopy(ecn_data)
     review_baseline = copy.deepcopy(ecn_data["review_info"])
     review_save_lock = asyncio.Lock()
@@ -1061,6 +1065,10 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
             协同同步方案编写阶段的核心函数，定期从数据库拉取最新数据并对比当前本地数据，智能更新界面以反映其他用户的修改
             """
             if ecn_id:
+                current_stamp = db_storage.get_item(ECN_VERSION_KEY, 0.0)
+                if current_stamp == detail_version_tracker["stamp"]:
+                    return
+                detail_version_tracker["stamp"] = current_stamp
                 # copy.deepcopy: Python标准库函数，用于递归复制对象，防止内存引用导致的数据污染
                 fresh = db_storage.get_deep_item(["ecn_management_data", ecn_id])
                 if not fresh:
@@ -1163,5 +1171,19 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
             sync_timer = ui.timer(3.0, sync_schemes)
             root_dialog.on("close", sync_timer.cancel)
 
+        def recheck_view_permission() -> None:
+            if can_view_ecn(
+                current_role,
+                current_user,
+                user_service=app.state.user_service,
+            ):
+                return
+            ui.notify("您的ECN查看权限已被停用，当前窗口已关闭。", type="warning")
+            root_dialog.close()
+
+        permission_timer = ui.timer(15.0, recheck_view_permission)
+        root_dialog.on("close", permission_timer.cancel)
+
+    root_dialog.on("close", refresh_list)
     root_dialog.on("close", root_dialog.delete)
     root_dialog.open()

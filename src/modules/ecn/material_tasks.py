@@ -6,6 +6,7 @@ from datetime import datetime
 from ...ecn_access import (
     can_execute_ecn_assistant_stage,
     can_view_ecn,
+    get_active_ecn_actor_role,
     is_active_ecn_user,
 )
 from ...ecn_management_config import (
@@ -36,10 +37,10 @@ async def update_material_task_assignee(
         if record.get("workflow", {}).get("current_state") != ECNState.ECN_EXECUTING:
             raise ECNConflict("ECN已不在执行中，请刷新。")
         actor = service.get_user(username)
-        actor_role = str(actor.get("role") or "") if isinstance(actor, dict) else ""
+        actor_role = get_active_ecn_actor_role(username, role, user_service=service)
         if (
             not isinstance(actor, dict)
-            or actor.get("status", "active") != "active"
+            or actor_role is None
             or not can_view_ecn(actor_role, username, user_service=service)
             or not can_execute_ecn_assistant_stage(actor_role, username, user_service=service)
         ):

@@ -95,3 +95,49 @@ async def mutate_record(ecn_id, operation, *, new_record=None, storage=None):
     if not result.ok:
         result.record = None
     return result
+
+
+async def delete_record(ecn_id: str, *, username: str, user_service, storage=None) -> tuple[bool, str]:
+    """删除单据，并在同一个数据库事务里关闭它遗留的审批待办。"""
+    from ...ecn_access import can_delete_ecn, get_active_ecn_actor_role
+    from ...ecn_workflow import ECN_WORKFLOW_MODULE
+
+    storage = storage or db_storage
+    deleted = False
+    message = ""
+
+    async def apply(current, connection):
+        nonlocal deleted, message
+        try:
+            actor = user_service.get_user(username) if user_service is not None else None
+            actor_role = get_active_ecn_actor_role(
+                username,
+                actor.get("role") if isinstance(actor, dict) else "",
+                user_service=user_service,
+            )
+            if (
+                not isinstance(actor, dict)
+                or actor_role is None
+                or not can_delete_ecn(actor_role, username, user_service=user_service)
+            ):
+                raise ECNConflict("当前用户没有删除ECN单据的权限。")
+            if not isinstance(current, dict) or ecn_id not in current:
+                raise ECNConflict("单据已不存在，请刷新列表。")
+            updated = copy.deepcopy(current)
+            updated.pop(ecn_id)
+            await connection.execute(
+                "UPDATE work_assignments SET status='superseded', updated_at=? "
+                "WHERE module=? AND entity_id=? AND status='pending'",
+                (str(time.time()), ECN_WORKFLOW_MODULE, ecn_id),
+            )
+            deleted = True
+            return updated
+        except ECNConflict as exc:
+            message = str(exc)
+            return storage.ATOMIC_NO_UPDATE
+
+    success = await storage.atomic_deep_update_transaction([ECN_DATA_KEY], apply)
+    if success and deleted:
+        await storage.set_item(ECN_VERSION_KEY, time.time())
+        return True, ""
+    return False, message or "删除失败，请重试。"

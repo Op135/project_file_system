@@ -21,6 +21,7 @@ from ...ecn_access import (
     can_edit_ecn_impact,
     can_edit_ecn_scheme,
     can_submit_ecn_scheme_review,
+    get_active_ecn_actor_role,
 )
 from ...ecn_management_config import (
     ECN_REQUIRE_REJECTED_ITEM_SELECTION,
@@ -69,9 +70,17 @@ def require_permission(check, role, user, service):
         raise ECNConflict("当前用户没有执行此操作的权限。")
 
 
+def require_active_actor_role(user: str, role: str, service) -> str:
+    actor_role = get_active_ecn_actor_role(user, role, user_service=service)
+    if actor_role is None:
+        raise ECNConflict("当前账号已停用或不存在，不能执行此操作。")
+    return actor_role
+
+
 async def save_review(ecn_id, expected, baseline, submitted, user, role, *, user_service=None, storage=None):
     async def operation(current, connection):
-        require_permission(can_edit_ecn_impact, role, user, user_service)
+        actor_role = require_active_actor_role(user, role, user_service)
+        require_permission(can_edit_ecn_impact, actor_role, user, user_service)
         return update_review(current, expected, baseline, submitted, user)
 
     return await mutate_record(ecn_id, operation, storage=storage)
@@ -79,7 +88,8 @@ async def save_review(ecn_id, expected, baseline, submitted, user, role, *, user
 
 async def edit_scheme(ecn_id, expected, item, original, user, role, *, delete=False, user_service=None, storage=None):
     async def operation(current, connection):
-        require_permission(can_edit_ecn_scheme, role, user, user_service)
+        actor_role = require_active_actor_role(user, role, user_service)
+        require_permission(can_edit_ecn_scheme, actor_role, user, user_service)
         if delete:
             return delete_scheme(current, expected, original, user)
         return save_scheme(current, expected, item, original, user)
@@ -89,7 +99,8 @@ async def edit_scheme(ecn_id, expected, item, original, user, role, *, delete=Fa
 
 async def set_participant_status(ecn_id, expected, user, role, status, *, user_service=None, storage=None):
     async def operation(current, connection):
-        require_permission(can_edit_ecn_scheme, role, user, user_service)
+        actor_role = require_active_actor_role(user, role, user_service)
+        require_permission(can_edit_ecn_scheme, actor_role, user, user_service)
         return confirm_participant(current, expected, user, status)
 
     return await mutate_record(ecn_id, operation, storage=storage)
@@ -300,6 +311,7 @@ async def execute_action(
         new_record["timestamp"] = copy.deepcopy(expected.get("timestamp", {}))
 
     async def operation(current, connection):
+        actor_role = require_active_actor_role(user, role, service)
         proxy = None
         if service is not None and is_ecn_database_workflow_enabled(user_service=service):
             # 当前部署的身份与业务数据必须共库，保证下面的待办SQL与单据一同提交。
@@ -320,7 +332,7 @@ async def execute_action(
             original,
             action,
             user,
-            role,
+            actor_role,
             note,
             list(rejected_ids or []),
             proxy or service,
