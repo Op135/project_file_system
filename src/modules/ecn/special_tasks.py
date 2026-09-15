@@ -16,6 +16,7 @@ from ...ecn_management_config import (
 )
 from .editing import ECNConflict
 from .repository import mutate_record
+from .task_labels import special_task_label
 
 
 def finish_if_complete(record: dict, username: str, role: str, now: str) -> bool:
@@ -100,7 +101,7 @@ async def update_special_task(
                     "new_assignee": assignee,
                     "time": now,
                 }
-            action = f"特定事项 {key} 移交：{old or '执行助理'} → {assignee or '执行助理'}"
+            action = f"{special_task_label(record, key)} 移交：{old or '执行助理'} → {assignee or '执行助理'}"
         else:
             if confirmed is None:
                 raise ECNConflict("缺少确认操作。")
@@ -115,7 +116,7 @@ async def update_special_task(
             item.setdefault("history", []).append(
                 {"confirmed": confirmed, "user": username, "role": actor_role, "time": now}
             )
-            action = f"特定事项 {key} {'确认完成' if confirmed else '取消确认'}"
+            action = f"{special_task_label(record, key)} {'确认完成' if confirmed else '取消确认'}"
         record.setdefault("approval_log", []).append(
             {"user": username, "role": actor_role, "time": now, "action": action}
         )

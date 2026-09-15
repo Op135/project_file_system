@@ -14,6 +14,7 @@ from ...ecn_management_config import (
 )
 from .editing import ECNConflict
 from .repository import mutate_record
+from .task_labels import material_task_label
 
 
 async def update_material_task_assignee(
@@ -75,7 +76,7 @@ async def update_material_task_assignee(
                 "user": username,
                 "role": actor_role,
                 "time": now,
-                "action": f"物料责任项 {item_id} / {key} 改派：{original} → {target}",
+                "action": f"{material_task_label(record, item_id, task)} 改派：{original} → {target}",
             }
         )
         return record

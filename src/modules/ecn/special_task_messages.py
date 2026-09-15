@@ -51,7 +51,13 @@ def _escaped_summary(value: str, budget: int) -> str:
 
 
 def build_special_card(
-    record: dict, items: list[dict[str, str]], *, test_mode: bool, is_cc: bool, cancelled: bool = False
+    record: dict,
+    items: list[dict[str, str]],
+    *,
+    test_mode: bool,
+    is_cc: bool,
+    cancelled: bool = False,
+    observer_names: list[str] | None = None,
 ) -> tuple[str, str]:
     """优先分配三项业务字段的空间，接收人和单号放在后面。"""
     first = items[0]
@@ -61,7 +67,12 @@ def build_special_card(
     prefix = f'<div class="gray">{nature}</div>'
     if cancelled:
         prefix += '<div class="normal">已取消，无需继续处理</div>'
-    footer = (
+    observer_footer = ""
+    if test_mode or is_cc:
+        names = list(dict.fromkeys(observer_names or [item["assignee"] for item in items]))
+        names_label = "原应通知人员" if test_mode else "待处理人员"
+        observer_footer = f'<div class="gray">{names_label}：{escape("、".join(names))}</div>'
+    footer = observer_footer + (
         f'<div class="gray">{"原负责人" if cancelled else "接收人"}：{_escaped_summary(first["assignee"], 30)}</div>'
         f'<div class="gray">单号：{_escaped_summary(str(record.get("ecn_id") or ""), 40)}</div>'
     )

@@ -10,6 +10,7 @@ from nicegui import (
     app,
     ui,
 )
+from nicegui.client import Client
 
 from ... import (
     db_storage,
@@ -20,6 +21,7 @@ from ...config import (
     ECNState,
 )
 from ...ecn_access import (
+    build_ecn_access_snapshot,
     can_create_ecn_request,
     can_edit_ecn_impact,
     can_edit_ecn_scheme,
@@ -41,7 +43,6 @@ from ...ecn_management_config import (
     is_ecn_scheme_ready_for_review,
 )
 from ...ecn_workflow import (
-    is_ecn_database_workflow_enabled,
     is_ecr_assigned_approver,
     is_scheme_assigned_approver,
 )
@@ -61,18 +62,24 @@ from .models import (
 from .scheme_panel import (
     build_scheme_panel,
 )
+from .task_labels import humanize_ecn_log_action
 
 
 async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, refresh_list):
-    if not can_view_ecn(current_role, current_user):
+    access_snapshot = build_ecn_access_snapshot()
+    if not can_view_ecn(current_role, current_user, access_snapshot=access_snapshot):
         ui.notify("当前用户没有查看ECN工程变更的权限", type="warning")
         return
     root_dialog = ui.dialog().props("maximized persistent")
-    can_create_request = can_create_ecn_request(current_role, current_user)
-    can_edit_impact = can_edit_ecn_impact(current_role, current_user)
-    can_edit_scheme = can_edit_ecn_scheme(current_role, current_user)
-    can_submit_scheme_review = can_submit_ecn_scheme_review(current_role, current_user)
-    can_execute_assistant = can_execute_ecn_assistant_stage(current_role, current_user)
+    can_create_request = can_create_ecn_request(current_role, current_user, access_snapshot=access_snapshot)
+    can_edit_impact = can_edit_ecn_impact(current_role, current_user, access_snapshot=access_snapshot)
+    can_edit_scheme = can_edit_ecn_scheme(current_role, current_user, access_snapshot=access_snapshot)
+    can_submit_scheme_review = can_submit_ecn_scheme_review(
+        current_role, current_user, access_snapshot=access_snapshot
+    )
+    can_execute_assistant = can_execute_ecn_assistant_stage(
+        current_role, current_user, access_snapshot=access_snapshot
+    )
     is_new = ecn_id is None
     if is_new and not can_create_request:
         return ui.notify("当前用户没有新建ECR申请的权限", type="warning")
@@ -668,29 +675,110 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
                                                     f"{'disable' if not is_impact_editor else ''} dense"
                                                 ).on_value_change(auto_save_review)
 
-            (render_parts, render_my_actions, render_items, render_coverage_dashboard) = build_scheme_panel(
-                tab_scheme,
-                wf,
-                is_new,
-                local_data,
-                current_user,
-                current_role,
-                participants,
-                is_scheming_phase,
-                is_scheme_writer,
-                dashboard_updater,
-            )
+            # 方案和执行页控件最多，延后到用户首次打开相应页签时再创建，避免拖慢详情弹窗和其它点击。
+            with ui.tab_panel(tab_scheme).classes("gap-0 p-0 w-full mx-auto overflow-y-scroll"):
+                scheme_panel_host = ui.column().classes("w-full gap-0")
+            with (
+                ui.tab_panel(tab_exec)
+                .props("id=ecn-execution-tab-panel")
+                .classes("gap-4 p-2 mx-auto overflow-y-auto overflow-x-hidden")
+            ):
+                execution_panel_host = ui.column().classes("w-full gap-4")
 
-            (
-                render_execution_tab,
-                material_task_controls,
-                capture_execution_scroll_state,
-                execution_container,
-                refresh_material_execution_controls,
-                restore_execution_scroll_state,
-            ) = build_execution_panel(
-                tab_exec, local_data, wf, current_user, current_role, can_execute_assistant, refresh_list
-            )
+            render_parts = render_my_actions = render_items = render_coverage_dashboard = lambda: None
+
+            def render_execution_tab():
+                return None
+
+            material_task_controls = {}
+            execution_container = execution_panel_host
+
+            def refresh_material_execution_controls(item_ids: list[str] | None = None) -> None:
+                del item_ids
+                return None
+
+            async def capture_execution_scroll_state(event_client: Client) -> dict[str, float]:
+                del event_client
+                return {}
+
+            async def restore_execution_scroll_state(
+                event_client: Client,
+                scroll_state: dict[str, float],
+            ) -> None:
+                del event_client, scroll_state
+                return None
+
+            lazy_panels = {"scheme": False, "execution": False}
+            lazy_panel_queued = {"scheme": False, "execution": False}
+
+            def load_scheme_panel():
+                nonlocal render_parts, render_my_actions, render_items, render_coverage_dashboard
+                if lazy_panels["scheme"]:
+                    return
+                lazy_panel_queued["scheme"] = False
+                lazy_panels["scheme"] = True
+                scheme_panel_host.clear()
+                (
+                    render_parts,
+                    render_my_actions,
+                    render_items,
+                    render_coverage_dashboard,
+                ) = build_scheme_panel(
+                    tab_scheme,
+                    wf,
+                    is_new,
+                    local_data,
+                    current_user,
+                    current_role,
+                    participants,
+                    is_scheming_phase,
+                    is_scheme_writer,
+                    dashboard_updater,
+                    panel_container=scheme_panel_host,
+                )
+
+            def load_execution_panel():
+                nonlocal render_execution_tab, material_task_controls
+                nonlocal capture_execution_scroll_state, execution_container
+                nonlocal refresh_material_execution_controls, restore_execution_scroll_state
+                if lazy_panels["execution"]:
+                    return
+                lazy_panel_queued["execution"] = False
+                lazy_panels["execution"] = True
+                execution_panel_host.clear()
+                (
+                    render_execution_tab,
+                    material_task_controls,
+                    capture_execution_scroll_state,
+                    execution_container,
+                    refresh_material_execution_controls,
+                    restore_execution_scroll_state,
+                ) = build_execution_panel(
+                    tab_exec,
+                    local_data,
+                    wf,
+                    current_user,
+                    current_role,
+                    can_execute_assistant,
+                    refresh_list,
+                    panel_container=execution_panel_host,
+                )
+
+            def queue_lazy_panel(panel_name: str):
+                if lazy_panels[panel_name] or lazy_panel_queued[panel_name]:
+                    return
+                lazy_panel_queued[panel_name] = True
+                host = scheme_panel_host if panel_name == "scheme" else execution_panel_host
+                host.clear()
+                with host:
+                    with ui.row().classes("w-full items-center justify-center gap-2 py-8 text-slate-500"):
+                        ui.spinner(size="sm")
+                        ui.label("正在加载页签内容…").classes("text-sm")
+                loader = load_scheme_panel if panel_name == "scheme" else load_execution_panel
+                ui.timer(0.01, loader, once=True)
+
+            tab_scheme.on("click", lambda: queue_lazy_panel("scheme"))
+            tab_exec.on("click", lambda: queue_lazy_panel("execution"))
 
             # --- [TAB 4] 审批流转记录 ---
             with ui.tab_panel(tab_workflow).classes("p-2 md:p-3 bg-transparent h-full min-h-0 overflow-hidden"):
@@ -756,7 +844,7 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
                                 "rounded border border-slate-200 bg-white"
                             ):
                                 for log_index, log in enumerate(approval_logs):
-                                    action = str(log.get("action") or "流程记录")
+                                    action = humanize_ecn_log_action(local_data, log.get("action"))
                                     action_class = action_classes.get(
                                         action,
                                         "text-slate-700 bg-slate-50 border-slate-200",
@@ -879,14 +967,13 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
                     ui.button("保存为草稿", on_click=lambda: execute_db_action("save_draft")).props("color=grey-7")
                     ui.button("发起 ECR", on_click=lambda: execute_db_action("submit_ecr")).props("color=primary")
             else:
-                database_workflow_enabled = is_ecn_database_workflow_enabled()
                 current_phase = wf.get("current_phase")
-                if database_workflow_enabled and current_phase == "ECR_PHASE":
+                if current_phase == "ECR_PHASE":
                     is_pending_user = is_ecr_assigned_approver(local_data, current_user)
-                elif database_workflow_enabled and current_phase == "ECN_SCHEME_REVIEW_PHASE":
+                elif current_phase == "ECN_SCHEME_REVIEW_PHASE":
                     is_pending_user = is_scheme_assigned_approver(local_data, current_user)
                 else:
-                    is_pending_user = current_role in get_ecn_pending_approval_roles(wf)
+                    is_pending_user = False
                 if wf["current_state"] == ECNState.ECR_REVIEWING and basic["applicant"] == current_user:
                     ui.button("撤回修改", icon="undo", on_click=lambda: execute_db_action("withdraw")).props(
                         "color=orange"
@@ -981,12 +1068,7 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
 
                 # 1. 同步工作流状态
                 fresh_wf = fresh.get("workflow", {})
-                was_current_role_pending = (
-                    current_user in get_ecn_pending_approval_roles(wf)
-                    if is_ecn_database_workflow_enabled()
-                    and wf.get("current_phase") in {"ECR_PHASE", "ECN_SCHEME_REVIEW_PHASE"}
-                    else current_role in get_ecn_pending_approval_roles(wf)
-                )
+                was_current_role_pending = current_user in get_ecn_pending_approval_roles(wf)
                 if (
                     fresh_wf.get("current_state") != wf["current_state"]
                     or fresh_wf.get("pending_roles") != wf["pending_roles"]
@@ -1007,12 +1089,7 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
                     wf["scheme_workflow_assignment"] = copy.deepcopy(fresh_wf.get("scheme_workflow_assignment", {}))
                     local_data["approval_log"] = copy.deepcopy(fresh.get("approval_log", []))
                     render_workflow_tab()  # 触发刷新流转页面
-                    current_identity_still_pending = (
-                        current_user in get_ecn_pending_approval_roles(wf)
-                        if is_ecn_database_workflow_enabled()
-                        and wf.get("current_phase") in {"ECR_PHASE", "ECN_SCHEME_REVIEW_PHASE"}
-                        else current_role in get_ecn_pending_approval_roles(wf)
-                    )
+                    current_identity_still_pending = current_user in get_ecn_pending_approval_roles(wf)
                     if was_current_role_pending and not current_identity_still_pending:
                         root_dialog.close()
                         refresh_list()

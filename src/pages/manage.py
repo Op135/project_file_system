@@ -14,7 +14,6 @@ from ..approval_workflow import (
     APPROVER_STRATEGY_NAMES,
     get_approval_workflow_editor_nodes,
     import_design_knowledge_legacy_workflows,
-    import_ecn_legacy_workflows,
     import_project_overview_legacy_workflows,
     import_sample_issue_legacy_workflows,
     resolve_approval_workflow,
@@ -2556,13 +2555,6 @@ def manage_page():
                                             "项目概述",
                                         ),
                                     )
-                                    ui.menu_item(
-                                        "ECN旧配置",
-                                        on_click=lambda: import_legacy_workflows(
-                                            import_ecn_legacy_workflows,
-                                            "ECN",
-                                        ),
-                                    )
                             workflow_list_container = ui.column().classes(
                                 "w-full flex-grow min-h-0 overflow-y-auto gap-2 pt-2"
                             )
@@ -2895,7 +2887,14 @@ def manage_page():
 
                             def remove_approval_node(index):
                                 nodes = editor_state["nodes"]
-                                minimum_nodes = 2 if editor_state["mode"] == "sequential" else 1
+                                minimum_nodes = (
+                                    1
+                                    if event_definition
+                                    and event_definition.supports_parallel_stages
+                                    else 2
+                                    if editor_state["mode"] == "sequential"
+                                    else 1
+                                )
                                 if len(nodes) <= minimum_nodes:
                                     message = (
                                         "多节点串行审批至少需要保留两个节点。"
@@ -2985,8 +2984,14 @@ def manage_page():
                                                             on_click=lambda idx=index: remove_approval_node(idx),
                                                         ).props("flat round dense color=negative").tooltip("删除节点")
 
+                                            node_header_columns = (
+                                                "190px minmax(230px, 1fr) 150px 180px"
+                                                if event_definition
+                                                and event_definition.supports_parallel_stages
+                                                else "190px minmax(230px, 1fr) 180px"
+                                            )
                                             with ui.element("div").classes("w-full grid gap-3").style(
-                                                "grid-template-columns: 190px minmax(230px, 1fr) 180px;"
+                                                f"grid-template-columns: {node_header_columns};"
                                             ):
                                                 ui.input(
                                                     "节点编码",
@@ -3002,6 +3007,21 @@ def manage_page():
                                                         target, "name", event.value
                                                     ),
                                                 ).props("outlined dense")
+                                                stage_number = ui.number(
+                                                    "执行阶段",
+                                                    value=int(node.get("stage_index", index)) + 1,
+                                                    min=1,
+                                                    step=1,
+                                                    on_change=lambda event, target=node: update_node_value(
+                                                        target,
+                                                        "stage_index",
+                                                        max(0, int(event.value or 1) - 1),
+                                                    ),
+                                                ).props("outlined dense")
+                                                stage_number.visible = bool(
+                                                    event_definition
+                                                    and event_definition.supports_parallel_stages
+                                                )
                                                 ui.select(
                                                     {
                                                         "any": "任意一人处理",
@@ -3083,6 +3103,26 @@ def manage_page():
                                                 ui.label(
                                                     "匹配拥有该权限的在职用户；admin 不因管理员身份自动入选。"
                                                 ).classes("text-xs text-blue-800")
+                                            with ui.row().classes(
+                                                "items-center gap-2 self-start bg-blue-50 rounded px-3 py-2"
+                                            ) as node_project_sales_hint:
+                                                ui.icon("info", color="primary", size="xs")
+                                                ui.label(
+                                                    "按每个项目读取项目资料中的销售负责人。"
+                                                ).classes("text-xs text-blue-800")
+                                            project_scoped_switch = ui.switch(
+                                                "按项目分别生成执行项",
+                                                value=node.get("project_scoped") is True,
+                                                on_change=lambda event, target=node: update_node_value(
+                                                    target,
+                                                    "project_scoped",
+                                                    bool(event.value),
+                                                ),
+                                            ).props("dense")
+                                            project_scoped_switch.visible = bool(
+                                                event_definition
+                                                and event_definition.event == "execution_customer_transit"
+                                            )
 
                                             def update_permission(
                                                 _event=None,
@@ -3104,6 +3144,7 @@ def manage_page():
                                                 user_container=node_user_settings,
                                                 manager_container=node_manager_hint,
                                                 permission_container=node_permission_hint,
+                                                project_sales_container=node_project_sales_hint,
                                             ):
                                                 strategy = strategy_control.value or "permission"
                                                 target.setdefault("approver", {})["strategy"] = strategy
@@ -3111,6 +3152,7 @@ def manage_page():
                                                 user_container.visible = strategy == "users"
                                                 manager_container.visible = strategy == "direct_manager"
                                                 permission_container.visible = strategy == "permission"
+                                                project_sales_container.visible = strategy == "project_sales"
 
                                             def update_node_org_scope(
                                                 _event=None,
@@ -3209,13 +3251,24 @@ def manage_page():
                                     approver_rule["user_ids"] = user_ids
                                 elif strategy == "permission":
                                     approver_rule["permission_code"] = permission_code
-                                return {
+                                payload = {
                                     "node_key": node_key,
                                     "name": node_name,
                                     "approval_mode": node_mode,
                                     "required_permission_code": permission_code,
                                     "approver": approver_rule,
                                 }
+                                if event_definition and event_definition.supports_parallel_stages:
+                                    payload.update(
+                                        {
+                                            "stage_index": max(0, int(node.get("stage_index", index))),
+                                            "responsible_key": str(
+                                                node.get("responsible_key") or node_name
+                                            ).strip(),
+                                            "project_scoped": node.get("project_scoped") is True,
+                                        }
+                                    )
+                                return payload
 
                             def build_workflow_approval_config():
                                 source_nodes = (
@@ -3225,7 +3278,14 @@ def manage_page():
                                 )
                                 if not source_nodes:
                                     raise ValueError("审批流程至少需要一个审批节点")
-                                if editor_state["mode"] == "sequential" and len(source_nodes) < 2:
+                                if (
+                                    editor_state["mode"] == "sequential"
+                                    and len(source_nodes) < 2
+                                    and not bool(
+                                        event_definition
+                                        and event_definition.supports_parallel_stages
+                                    )
+                                ):
                                     raise ValueError("多节点串行审批至少需要配置两个节点")
                                 nodes = [
                                     build_node_payload(node, index)

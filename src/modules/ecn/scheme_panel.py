@@ -78,6 +78,8 @@ def build_scheme_panel(
     is_scheming_phase,
     is_scheme_writer,
     dashboard_updater,
+    *,
+    panel_container=None,
 ):
     render_parts = render_my_actions = render_items = render_coverage_dashboard = lambda: None
 
@@ -91,7 +93,12 @@ def build_scheme_panel(
         render_coverage_dashboard()
 
     # --- [TAB 3] ECN 方案表单 ---
-    with ui.tab_panel(tab_scheme).classes("gap-0 p-0 w-full mx-auto overflow-y-scroll"):
+    panel = (
+        panel_container
+        if panel_container is not None
+        else ui.tab_panel(tab_scheme).classes("gap-0 p-0 w-full mx-auto overflow-y-scroll")
+    )
+    with panel:
         if wf["current_phase"] == "ECR_PHASE" and not is_new:
             ui.label("当前处于 ECR 申请阶段，ECN 方案将在评审通过后由工程师协同填写。").classes(
                 "text-gray-500 m-8 text-center bg-white p-2 border rounded"

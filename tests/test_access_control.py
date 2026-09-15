@@ -198,8 +198,8 @@ class AccessControlTests(unittest.TestCase):
             )
         )
 
-    def test_ecn_legacy_mode_keeps_existing_role_rules(self):
-        """旧 Excel 模式继续兼容 ECN 原有入口、编写、发起和执行角色规则。"""
+    def test_ecn_legacy_mode_does_not_restore_removed_execution_route(self):
+        """旧身份模式可保留表单权限，但不能靠岗位名恢复已删除的执行路线。"""
         self.assertTrue(can_view_ecn("行政专员", "张三", user_service=self.service))
         self.assertTrue(can_create_ecn_request("行政专员", "张三", user_service=self.service))
         self.assertTrue(can_edit_ecn_impact("研发硬件", "张三", user_service=self.service))
@@ -207,7 +207,7 @@ class AccessControlTests(unittest.TestCase):
         self.assertTrue(
             can_submit_ecn_scheme_review("研发经理", "张三", user_service=self.service)
         )
-        self.assertTrue(
+        self.assertFalse(
             can_execute_ecn_assistant_stage("研发助理", "张三", user_service=self.service)
         )
         self.assertTrue(
@@ -312,10 +312,11 @@ class AccessControlTests(unittest.TestCase):
             position_id=position_id,
         )
         pmc_spec = {
-            "responsible_type": "role",
+            "responsible_type": "workflow_users",
             "responsible_key": "PMC",
-            "roles": ["PMC"],
-            "users": [],
+            "roles": [],
+            "users": ["张三"],
+            "required_permission_code": ECN_EXECUTION_PMC_CONFIRM_PERMISSION,
         }
         self.assertFalse(
             can_confirm_ecn_material_spec(
@@ -327,7 +328,7 @@ class AccessControlTests(unittest.TestCase):
         )
         self.service.set_position_permissions(
             position_id,
-            [ECN_EXECUTION_PMC_CONFIRM_PERMISSION],
+            [ECN_VIEW_PERMISSION, ECN_EXECUTION_PMC_CONFIRM_PERMISSION],
             actor_username="admin",
         )
         self.assertTrue(
@@ -358,6 +359,7 @@ class AccessControlTests(unittest.TestCase):
             [
                 ECN_EXECUTION_PMC_CONFIRM_PERMISSION,
                 ECN_EXECUTION_MATERIAL_CONFIRM_PERMISSION,
+                ECN_VIEW_PERMISSION,
             ],
             actor_username="admin",
         )

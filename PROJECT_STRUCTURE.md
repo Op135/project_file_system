@@ -20,7 +20,7 @@
 | `.overview_*_staging/` | 概述批量操作临时目录 | 临时数据，不进入 Git |
 
 根目录的 `*_config.json`、`overview_config.json`、`tools_permission.json` 等文件仍有运行时读取路径。
-其中既包含有效业务参数，也包含旧 Excel 模式兼容配置，现阶段不能集中移动或删除。
+其中仍包含其它模块的旧 Excel 模式兼容配置，不能集中移动或删除；ECN 配置中的审批与执行路线已经删除。
 
 ## `src/` 主要边界
 

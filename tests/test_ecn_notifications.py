@@ -121,6 +121,24 @@ class ECNNotificationTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('</div><div class="normal">原应通知人员：writer、manager</div>', description)
         self.assertEqual(description.count("请发起评审"), 1)
 
+    async def test_debug_and_cc_cards_keep_every_intended_person_name(self):
+        names = [f"处理人{index}" for index in range(1, 9)]
+        tasks = {name: ["请处理待办"] for name in names}
+        expected = "、".join(names)
+
+        _, debug_description = notifications.build_notification_card(
+            self.record, tasks, names, self.settings
+        )
+        self.assertIn(f"原应通知人员：{expected}", debug_description)
+        self.assertNotIn("等8人", debug_description)
+
+        production = {**self.settings, "test_mode": False}
+        _, cc_description = notifications.build_notification_card(
+            self.record, tasks, names, production, is_cc=True
+        )
+        self.assertIn(f"待处理人员：{expected}", cc_description)
+        self.assertNotIn("等8人", cc_description)
+
     async def test_switch_to_production_notifies_real_binding_without_debug_route(self):
         await self.check()
         self.sender.reset_mock()

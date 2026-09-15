@@ -603,6 +603,11 @@ class UserService:
             return {}
         return self.identity_store.get_primary_membership(username)
 
+    def list_primary_memberships(self) -> dict[str, dict[str, Any]]:
+        if self.storage_mode != "database":
+            return {}
+        return self.identity_store.list_primary_memberships()
+
     def set_primary_membership(self, username: str, **values) -> bool:
         if self.storage_mode != "database":
             raise RuntimeError("请先迁移用户，再分配组织和岗位")

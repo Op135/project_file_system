@@ -14,10 +14,6 @@
         "scheme_review.transitions": "方案编辑、确认、驳回和整改动作分别写入哪个参与人/方案状态。状态值必须存在于对应statuses配置中。",
         "scheme_tracking.traceability_levels": "各类ECN方案可选择的追溯范围；物料方案必填，其它方案选填。",
         "scheme_tracking.disposition_measures": "旧料处置措施的可选项。",
-        "execution_workflow.assistant_roles": "第一阶段核对普通资料事项、ERP状态并触发系统内资料落盘的研发助理角色关键字。",
-        "execution_workflow.traceability_responsible_routes": "每个追溯范围内部的负责人确认路线；外层数组为串行节点，同一内层数组中的负责人并行且均须确认。普通文字按角色关键字处理；客户/在途中的“项目销售”“销售主管”为特殊负责人，分别按项目自动识别销售和生成销售主管确认项。",
-        "execution_workflow.customer_in_transit": "客户/在途的特殊执行配置；项目销售从系统project_sale自动识别，sales_supervisor_roles供销售主管责任项及销售未识别时兜底使用。",
-        "execution_workflow.customer_in_transit.sales_supervisor_roles": "同一个销售管理确认项的可操作角色关键字，属于“或”关系而非多人并行会签。例如同时配置“销售主管、销售总监”时，任意一类角色确认后该项即完成，不要求两者分别确认。",
         "scheme_options.document_change_types": "其它特定事项/资料变更方案的分类选项。",
         "scheme_options.overview_actions": "系统内资料方案的动作显示文案；add、update、deactivate为固定语义键。",
         "scheme_options.material_change_types": "物料变更方案的分类文案映射；add、adjust_quantity、discontinue、replace为固定语义键。",
@@ -25,7 +21,6 @@
         "scheme_options.material_disposition_required_types": "需要选择旧料处置措施的物料方案语义键。",
         "scheme_options.disposition_condition_required_measures": "选择后必须填写具体处置条件的旧料处置措施。",
         "ui.overview_conflict_auto_close_seconds": "概述新增数据与同格已有数据冲突时，警告浮层首次自动弹出的停留秒数。",
-        "workflow_routes": "ECR和ECN方案评审的角色审批路由。一个内层数组表示同一节点并行会签。执行阶段责任角色由execution_workflow配置。",
         "schema": "ECN申请与影响表单使用的原因、影响、资料类型和物料选项。",
         "wecom.enabled": "ECN企业微信待办提醒总开关；关闭不影响首页角标。",
         "wecom.test_mode": "true为调试模式，只发送给test_notify_targets；false按与首页角标一致的实际待办人员发送。修改后重启生效。",
@@ -159,65 +154,6 @@
             "报废"
         ]
     },
-    "execution_workflow": {
-        "assistant_roles": [
-            "研发助理"
-        ],
-        "traceability_responsible_routes": {
-            "文件": [
-                [
-                    "研发助理"
-                ]
-            ],
-            "供应商": [
-                [
-                    "采购"
-                ],
-                [
-                    "PMC"
-                ]
-            ],
-            "零件仓": [
-                [
-                    "PMC"
-                ]
-            ],
-            "生产在线": [
-                [
-                    "生产经理"
-                ],
-                [
-                    "PMC"
-                ]
-            ],
-            "半成品仓": [
-                [
-                    "PMC"
-                ]
-            ],
-            "成品仓": [
-                [
-                    "PMC"
-                ]
-            ],
-            "客户/在途": [
-                [
-                    "项目销售",
-                    "销售主管"
-                ],
-                [
-                    "PMC"
-                ]
-            ]
-        },
-        "customer_in_transit": {
-            "level": "客户/在途",
-            "sales_supervisor_roles": [
-                "销售主管",
-                "销售总监"
-            ]
-        }
-    },
     "scheme_options": {
         "document_change_types": [
             "图纸更新",
@@ -247,39 +183,6 @@
     },
     "ui": {
         "overview_conflict_auto_close_seconds": 5
-    },
-    "workflow_routes": {
-        "ECR_PHASE": {
-            "SALES_INITIATED": [
-                [
-                    "销售总监"
-                ],
-                [
-                    "研发经理"
-                ]
-            ],
-            "RD_INITIATED": [
-                [
-                    "研发经理"
-                ],
-                [
-                    "销售总监"
-                ]
-            ]
-        },
-        "ECN_SCHEME_REVIEW_PHASE": [
-            [
-                "研发经理"
-            ],
-            [
-                "销售总监"
-            ],
-            [
-                "工程NPI",
-                "质量经理",
-                "PMC"
-            ]
-        ]
     },
     "schema": {
         "material_categories": [

@@ -24,15 +24,13 @@ from ...ecn_access import (
 )
 from ...ecn_management_config import (
     ECN_REQUIRE_REJECTED_ITEM_SELECTION,
-    ECN_WORKFLOW_ROUTES,
     ECNState,
-    build_ecn_execution_info,
-    get_ecn_pending_approval_roles,
     get_ecn_scheme_coverage,
     is_ecn_scheme_ready_for_review,
     reject_ecn_scheme_items,
 )
 from ...ecn_workflow import (
+    build_ecn_execution_info_from_workflows,
     cancel_ecr_approval,
     ecn_workflow_error_message,
     finish_ecr_approval,
@@ -128,7 +126,7 @@ def validate_scheme_review(record):
         raise ECNConflict("\n".join(missing) or "需要所有方案参与人确认完成后，才能发起评审。")
 
 
-def enter_next_phase(record, phase, project_sales):
+def enter_next_phase(record, phase, project_sales, service):
     workflow = record["workflow"]
     workflow["pending_roles"] = []
     workflow["step_approvals"] = {}
@@ -139,7 +137,15 @@ def enter_next_phase(record, phase, project_sales):
     else:
         workflow["current_state"] = ECNState.ECN_EXECUTING
         workflow["current_phase"] = "ECN_EXECUTION_PHASE"
-        record["execution_info"] = build_ecn_execution_info(record.get("change_items", []), project_sales)
+        try:
+            record["execution_info"] = build_ecn_execution_info_from_workflows(
+                record.get("change_items", []),
+                project_sales,
+                str(record.get("basic_info", {}).get("applicant") or ""),
+                user_service=service,
+            )
+        except ValueError as exc:
+            raise ECNConflict(str(exc)) from exc
 
 
 def transition(current, expected, baseline, action, user, role, note, rejected_ids, service, project_sales):
@@ -148,7 +154,6 @@ def transition(current, expected, baseline, action, user, role, note, rejected_i
     workflow = current["workflow"]
     state = workflow["current_state"]
     phase = workflow["current_phase"]
-    database_mode = is_ecn_database_workflow_enabled(user_service=service)
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     action_names = {
         "save_draft": "保存草稿",
@@ -190,25 +195,18 @@ def transition(current, expected, baseline, action, user, role, note, rejected_i
             require_permission(can_submit_ecn_scheme_review, role, user, service)
             validate_scheme_review(current)
         workflow["approval_round"] = str(uuid.uuid4())
-        if database_mode:
-            result = (start_ecr_approval if is_ecr else start_scheme_approval)(
-                current["ecn_id"],
-                current["basic_info"]["applicant"],
-                user_service=service,
-            )
-            if result.get("status") != "matched":
-                raise ECNConflict(ecn_workflow_error_message(result, "ECR申请" if is_ecr else "ECN方案评审"))
-            workflow["ecr_workflow_assignment" if is_ecr else "scheme_workflow_assignment"] = result["assignment"]
-            pending = (get_ecr_pending_usernames if is_ecr else get_scheme_pending_usernames)(
-                current, user_service=service
-            )
-            workflow["route_type"] = "CONFIGURED_WORKFLOW"
-        else:
-            if is_ecr:
-                workflow["route_type"] = "SALES_INITIATED" if "销售" in role else "RD_INITIATED"
-                pending = ECN_WORKFLOW_ROUTES["ECR_PHASE"][workflow["route_type"]][0]
-            else:
-                pending = ECN_WORKFLOW_ROUTES["ECN_SCHEME_REVIEW_PHASE"][0]
+        result = (start_ecr_approval if is_ecr else start_scheme_approval)(
+            current["ecn_id"],
+            current["basic_info"]["applicant"],
+            user_service=service,
+        )
+        if result.get("status") != "matched":
+            raise ECNConflict(ecn_workflow_error_message(result, "ECR申请" if is_ecr else "ECN方案评审"))
+        workflow["ecr_workflow_assignment" if is_ecr else "scheme_workflow_assignment"] = result["assignment"]
+        pending = (get_ecr_pending_usernames if is_ecr else get_scheme_pending_usernames)(
+            current, user_service=service
+        )
+        workflow["route_type"] = "CONFIGURED_WORKFLOW"
         workflow.update(
             current_state=ECNState.ECR_REVIEWING if is_ecr else ECNState.ECN_REVIEWING,
             current_phase="ECR_PHASE" if is_ecr else "ECN_SCHEME_REVIEW_PHASE",
@@ -217,8 +215,7 @@ def transition(current, expected, baseline, action, user, role, note, rejected_i
             step_approvals={},
         )
     elif action in {"withdraw", "cancel"}:
-        if database_mode:
-            cancel_ecr_approval(current, user_service=service)
+        cancel_ecr_approval(current, user_service=service)
         workflow.update(
             current_state=ECNState.DRAFT if action == "withdraw" else ECNState.CANCEL,
             current_step_index=0,
@@ -233,12 +230,9 @@ def transition(current, expected, baseline, action, user, role, note, rejected_i
         }:
             raise ECNConflict("当前阶段不允许审批。")
         is_ecr = phase == "ECR_PHASE"
-        if database_mode:
-            checker = is_ecr_assigned_approver if is_ecr else is_scheme_assigned_approver
-            if not checker(current, user, user_service=service):
-                raise ECNConflict("当前用户没有该节点的有效审批待办。")
-        elif role not in get_ecn_pending_approval_roles(workflow):
-            raise ECNConflict("当前角色已完成审批或不属于待审批角色。")
+        checker = is_ecr_assigned_approver if is_ecr else is_scheme_assigned_approver
+        if not checker(current, user, user_service=service):
+            raise ECNConflict("当前用户没有该节点的有效审批待办。")
         if action == "reject" and not is_ecr:
             if ECN_REQUIRE_REJECTED_ITEM_SELECTION and not rejected_ids:
                 raise ECNConflict("请至少选择一个需要改进的方案。")
@@ -247,33 +241,22 @@ def transition(current, expected, baseline, action, user, role, note, rejected_i
                 raise ECNConflict("所选方案已变化，请刷新后重新选择。")
             if not note.strip():
                 raise ECNConflict("请填写驳回意见。")
-        if database_mode:
-            result = (finish_ecr_approval if is_ecr else finish_scheme_approval)(
-                current,
-                user,
-                rejected=action == "reject",
-                user_service=service,
-            )
-            if result.get("status") not in {"node_pending", "advanced", "completed", "rejected"}:
-                raise ECNConflict(str(result.get("message") or "审批失败"))
-            workflow["ecr_workflow_assignment" if is_ecr else "scheme_workflow_assignment"] = result["assignment"]
-            workflow["current_step_index"] = result["assignment"]["current_node_index"]
-            workflow["step_approvals"] = {}
-            workflow["pending_roles"] = (get_ecr_pending_usernames if is_ecr else get_scheme_pending_usernames)(
-                current,
-                user_service=service,
-            )
-            completed = result["status"] == "completed"
-        else:
-            completed = False
-            if action == "approve":
-                workflow.setdefault("step_approvals", {})[role] = True
-                if not get_ecn_pending_approval_roles(workflow):
-                    workflow["current_step_index"] += 1
-                    workflow["step_approvals"] = {}
-                    route = ECN_WORKFLOW_ROUTES[phase][workflow["route_type"]] if is_ecr else ECN_WORKFLOW_ROUTES[phase]
-                    completed = workflow["current_step_index"] >= len(route)
-                    workflow["pending_roles"] = [] if completed else route[workflow["current_step_index"]]
+        result = (finish_ecr_approval if is_ecr else finish_scheme_approval)(
+            current,
+            user,
+            rejected=action == "reject",
+            user_service=service,
+        )
+        if result.get("status") not in {"node_pending", "advanced", "completed", "rejected"}:
+            raise ECNConflict(str(result.get("message") or "审批失败"))
+        workflow["ecr_workflow_assignment" if is_ecr else "scheme_workflow_assignment"] = result["assignment"]
+        workflow["current_step_index"] = result["assignment"]["current_node_index"]
+        workflow["step_approvals"] = {}
+        workflow["pending_roles"] = (get_ecr_pending_usernames if is_ecr else get_scheme_pending_usernames)(
+            current,
+            user_service=service,
+        )
+        completed = result["status"] == "completed"
         if action == "reject":
             workflow["pending_roles"] = []
             workflow["step_approvals"] = {}
@@ -282,7 +265,7 @@ def transition(current, expected, baseline, action, user, role, note, rejected_i
                 workflow["current_phase"] = "ECN_SCHEME_PHASE"
                 reject_ecn_scheme_items(current, rejected_ids, user, role, note, now)
         elif completed:
-            enter_next_phase(current, phase, project_sales)
+            enter_next_phase(current, phase, project_sales, service)
     log = {"user": user, "role": role, "action": action_names[action], "time": now}
     if action in {"approve", "reject"}:
         log["note"] = note

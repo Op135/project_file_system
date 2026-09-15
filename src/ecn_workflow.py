@@ -8,13 +8,20 @@ from typing import Any
 from nicegui import app
 
 from .approval_workflow import (
+    ECN_EXECUTION_EVENT_BY_LEVEL,
     advance_approval_sequence,
     approval_sequence_node_task_key,
     create_approval_sequence_assignments,
     is_assigned_approver,
+    resolve_approval_workflow,
 )
-from .ecn_management_config import ECNState
-from .legacy_compatibility import record_legacy_compatibility_hit
+from .ecn_management_config import (
+    ECN_SCHEME_GROUP_MATERIAL,
+    ECNState,
+    build_ecn_execution_info,
+    classify_ecn_change_item,
+)
+from .permission_catalog import ECN_EXECUTION_ASSISTANT_PERMISSION
 
 ECN_WORKFLOW_MODULE = "ecn"
 ECN_ECR_REVIEW_EVENT = "ecr_review"
@@ -23,6 +30,144 @@ ECN_SCHEME_REVIEW_EVENT = "scheme_review"
 ECN_SCHEME_REVIEW_TASK_KEY = "scheme_review"
 ECN_ECR_ASSIGNMENT_KEY = "ecr_workflow_assignment"
 ECN_SCHEME_ASSIGNMENT_KEY = "scheme_workflow_assignment"
+
+
+def _execution_workflow_task(
+    level: str,
+    node: dict[str, Any],
+    workflow_result: dict[str, Any],
+    *,
+    project: str = "",
+) -> tuple[str, dict[str, Any]]:
+    responsible_key = str(node.get("responsible_key") or node.get("name") or "执行人").strip()
+    approvers = node.get("approvers", [])
+    users = [
+        str(item.get("username") or "").strip()
+        for item in approvers
+        if isinstance(item, dict) and str(item.get("username") or "").strip()
+    ]
+    node_approver = node.get("approver", {})
+    strategy = str(node_approver.get("strategy") or "") if isinstance(node_approver, dict) else ""
+    responsible_type = "project_sales" if strategy == "project_sales" else "workflow_users"
+    suffix = f"::{project}" if project else ""
+    task_key = f"{level}::{responsible_key}{suffix}"
+    workflow = workflow_result.get("workflow", {})
+    version = workflow_result.get("version", {})
+    label = (
+        f"{project} · {users[0]}"
+        if project and users
+        else f"{project} · {responsible_key}"
+        if project
+        else responsible_key
+    )
+    workflow_code = str(workflow.get("code") or "") if isinstance(workflow, dict) else ""
+    version_number = version.get("version_number") if isinstance(version, dict) else None
+    return task_key, {
+        "level": level,
+        "responsible_key": responsible_key,
+        "responsible_type": responsible_type,
+        "label": label,
+        "project": project,
+        "stage_index": int(node.get("stage_index", 0)),
+        "roles": [],
+        "users": list(dict.fromkeys(users)),
+        "required_permission_code": str(node.get("required_permission_code") or ""),
+        "workflow_assignment": {
+            "workflow_id": str(workflow.get("workflow_id") or "") if isinstance(workflow, dict) else "",
+            "workflow_code": workflow_code,
+            "workflow_name": str(workflow.get("name") or "") if isinstance(workflow, dict) else "",
+            "version_id": str(version.get("version_id") or "") if isinstance(version, dict) else "",
+            "version_number": version_number,
+            "node_key": str(node.get("node_key") or ""),
+            "source_policy_code": f"{workflow_code}@{version_number}",
+        },
+        "confirmed": False,
+        "history": [],
+    }
+
+
+def build_ecn_execution_info_from_workflows(
+    change_items: Any,
+    project_sales: Any,
+    requester_username: str,
+    *,
+    user_service,
+) -> dict[str, Any]:
+    """按已发布数据库流程生成执行清单，并把流程版本和具体责任人随单固化。"""
+    execution = build_ecn_execution_info(change_items)
+    execution["assistant_users"] = user_service.list_usernames_with_permission(
+        ECN_EXECUTION_ASSISTANT_PERMISSION
+    )
+    sales_by_project = project_sales if isinstance(project_sales, dict) else {}
+    material_confirmations = execution.get("material_confirmations", {})
+    source_items = change_items if isinstance(change_items, list) else []
+    for item in source_items:
+        if not isinstance(item, dict) or classify_ecn_change_item(item) != ECN_SCHEME_GROUP_MATERIAL:
+            continue
+        item_id = str(item.get("item_id") or "")
+        material_entry = material_confirmations.get(item_id) if isinstance(material_confirmations, dict) else None
+        if not isinstance(material_entry, dict):
+            continue
+        raw_levels = item.get("traceability_levels", [])
+        levels = (
+            [str(value).strip() for value in raw_levels if str(value).strip()]
+            if isinstance(raw_levels, list)
+            else []
+        )
+        raw_projects = item.get("projects", [])
+        projects = (
+            [str(value).strip() for value in raw_projects if str(value).strip()]
+            if isinstance(raw_projects, list)
+            else []
+        )
+        disposition_measure = str(item.get("disposition_measure") or "").strip()
+        disposition_condition = str(item.get("disposition_condition") or "").strip()
+        disposition_instruction = (
+            f"旧料处置：{disposition_measure}"
+            + (f"（条件：{disposition_condition}）" if disposition_condition else "")
+            if disposition_measure
+            else ""
+        )
+        tasks: dict[str, dict[str, Any]] = {}
+        for level in levels:
+            event = ECN_EXECUTION_EVENT_BY_LEVEL.get(level)
+            if not event:
+                raise ValueError(f"追溯范围“{level}”尚未注册数据库执行流程")
+            contexts = projects if level == "客户/在途" and projects else [""]
+            for context_index, project in enumerate(contexts):
+                seller = str(sales_by_project.get(project) or "").strip()
+                result = resolve_approval_workflow(
+                    user_service,
+                    module="ecn",
+                    event=event,
+                    requester_username=requester_username,
+                    context={
+                        "project_sales_usernames": [seller]
+                        if seller and seller != "未指定"
+                        else []
+                    },
+                )
+                if result.get("status") != "matched":
+                    detail = str(result.get("message") or "流程解析失败")
+                    raise ValueError(f"ECN执行“{level}”无法生成：{detail}")
+                nodes = result.get("approval_nodes", [])
+                for node in nodes if isinstance(nodes, list) else []:
+                    if not isinstance(node, dict):
+                        continue
+                    project_scoped = node.get("project_scoped") is True
+                    if context_index > 0 and not project_scoped:
+                        continue
+                    task_key, task = _execution_workflow_task(
+                        level,
+                        node,
+                        result,
+                        project=project if project_scoped else "",
+                    )
+                    task["disposition_instruction"] = disposition_instruction
+                    tasks[task_key] = task
+        material_entry["traceability_tasks"] = tasks
+    execution["workflow_source"] = "approval_workflows"
+    return execution
 
 
 def _service(user_service=None):
@@ -58,13 +203,7 @@ def start_ecr_approval(
     """解析 ECR 流程，固化全部节点快照并激活首节点待办。"""
     service = _service(user_service)
     if not is_ecn_database_workflow_enabled(user_service=service):
-        record_legacy_compatibility_hit(
-            "legacy_workflow_route",
-            "ecn.ecr_review",
-            username=requester_username,
-            detail="旧 Excel 模式使用 ECN 原审批角色路由",
-        )
-        return {"status": "legacy_mode", "assignment": {}}
+        return {"status": "database_required", "message": "ECN审批必须使用数据库身份与已发布流程"}
     return create_approval_sequence_assignments(
         service,
         module=ECN_WORKFLOW_MODULE,
@@ -84,13 +223,7 @@ def start_scheme_approval(
     """解析 ECN 方案评审流程并激活首节点待办。"""
     service = _service(user_service)
     if not is_ecn_database_workflow_enabled(user_service=service):
-        record_legacy_compatibility_hit(
-            "legacy_workflow_route",
-            "ecn.scheme_review",
-            username=requester_username,
-            detail="旧 Excel 模式使用 ECN 原方案评审角色路由",
-        )
-        return {"status": "legacy_mode", "assignment": {}}
+        return {"status": "database_required", "message": "ECN审批必须使用数据库身份与已发布流程"}
     return create_approval_sequence_assignments(
         service,
         module=ECN_WORKFLOW_MODULE,

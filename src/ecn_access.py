@@ -8,7 +8,6 @@ from nicegui import app
 
 from .access_control import can
 from .ecn_management_config import (
-    ECN_EXECUTION_ASSISTANT_ROLES,
     ECN_EXECUTION_STAGE_ASSISTANT,
     ECN_EXECUTION_STAGE_MATERIAL,
     ECN_EXECUTION_STAGE_OVERVIEW_FAILED,
@@ -66,15 +65,21 @@ def build_ecn_access_snapshot(user_service=None) -> dict[str, Any]:
     """一次读取当前用户及权限，供同一轮列表或通知扫描复用。"""
     service = _service(user_service)
     if service is None:
-        return {"database_mode": False, "users": {}, "permissions": {}}
+        return {"database_mode": False, "users": {}, "permissions": {}, "memberships": {}}
     users = service.load_users()
     database_mode = _database_mode(service)
+    membership_loader = getattr(service, "list_primary_memberships", None)
+    memberships = membership_loader() if database_mode and callable(membership_loader) else {}
     permission_loader = getattr(service, "list_active_user_permission_codes", None)
     if database_mode and callable(permission_loader):
         permissions = permission_loader()
     elif database_mode:
         relevant_codes = {
             ECN_VIEW_PERMISSION,
+            ECN_CREATE_PERMISSION,
+            ECN_IMPACT_EDIT_PERMISSION,
+            ECN_SCHEME_EDIT_PERMISSION,
+            ECN_SCHEME_REVIEW_SUBMIT_PERMISSION,
             ECN_EXECUTION_ASSISTANT_PERMISSION,
             ECN_EXECUTION_MATERIAL_CONFIRM_PERMISSION,
             ECN_EXECUTION_PURCHASE_CONFIRM_PERMISSION,
@@ -89,7 +94,12 @@ def build_ecn_access_snapshot(user_service=None) -> dict[str, Any]:
         }
     else:
         permissions = {}
-    return {"database_mode": database_mode, "users": users, "permissions": permissions}
+    return {
+        "database_mode": database_mode,
+        "users": users,
+        "permissions": permissions,
+        "memberships": memberships,
+    }
 
 
 def _snapshot_permission(access_snapshot: dict[str, Any] | None, username: str, permission_code: str) -> bool:
@@ -148,8 +158,16 @@ def can_view_ecn(
     )
 
 
-def can_create_ecn_request(current_role: object, current_user: str, *, user_service=None) -> bool:
+def can_create_ecn_request(
+    current_role: object,
+    current_user: str,
+    *,
+    user_service=None,
+    access_snapshot: dict[str, Any] | None = None,
+) -> bool:
     """判断是否可以新建、保存并提交本人的 ECR 申请。"""
+    if isinstance(access_snapshot, dict) and access_snapshot.get("database_mode") is True:
+        return _snapshot_permission(access_snapshot, current_user, ECN_CREATE_PERMISSION)
     return can(
         _service(user_service),
         current_user,
@@ -159,8 +177,16 @@ def can_create_ecn_request(current_role: object, current_user: str, *, user_serv
     )
 
 
-def can_edit_ecn_impact(current_role: object, current_user: str, *, user_service=None) -> bool:
+def can_edit_ecn_impact(
+    current_role: object,
+    current_user: str,
+    *,
+    user_service=None,
+    access_snapshot: dict[str, Any] | None = None,
+) -> bool:
     """判断是否可以维护 ECN 影响评估。"""
+    if isinstance(access_snapshot, dict) and access_snapshot.get("database_mode") is True:
+        return _snapshot_permission(access_snapshot, current_user, ECN_IMPACT_EDIT_PERMISSION)
     return can(
         _service(user_service),
         current_user,
@@ -188,8 +214,16 @@ def receives_ecn_initial_impact_reminder(
     )
 
 
-def can_edit_ecn_scheme(current_role: object, current_user: str, *, user_service=None) -> bool:
+def can_edit_ecn_scheme(
+    current_role: object,
+    current_user: str,
+    *,
+    user_service=None,
+    access_snapshot: dict[str, Any] | None = None,
+) -> bool:
     """判断是否可以编写并确认本人负责的 ECN 方案。"""
+    if isinstance(access_snapshot, dict) and access_snapshot.get("database_mode") is True:
+        return _snapshot_permission(access_snapshot, current_user, ECN_SCHEME_EDIT_PERMISSION)
     return can(
         _service(user_service),
         current_user,
@@ -199,8 +233,16 @@ def can_edit_ecn_scheme(current_role: object, current_user: str, *, user_service
     )
 
 
-def can_submit_ecn_scheme_review(current_role: object, current_user: str, *, user_service=None) -> bool:
+def can_submit_ecn_scheme_review(
+    current_role: object,
+    current_user: str,
+    *,
+    user_service=None,
+    access_snapshot: dict[str, Any] | None = None,
+) -> bool:
     """判断是否可以发起 ECN 方案评审。"""
+    if isinstance(access_snapshot, dict) and access_snapshot.get("database_mode") is True:
+        return _snapshot_permission(access_snapshot, current_user, ECN_SCHEME_REVIEW_SUBMIT_PERMISSION)
     return can(
         _service(user_service),
         current_user,
@@ -247,7 +289,7 @@ def can_execute_ecn_assistant_stage(
         current_user,
         ECN_EXECUTION_ASSISTANT_PERMISSION,
         legacy_role=str(current_role or ""),
-        legacy_allowed_roles=_matched_legacy_role(current_role, ECN_EXECUTION_ASSISTANT_ROLES),
+        legacy_allowed_roles=(),
     )
 
 
@@ -272,10 +314,237 @@ def has_ecn_material_execution_qualification(
 ECN_EXECUTION_RESPONSIBILITY_PERMISSIONS = {
     "研发助理": ECN_EXECUTION_ASSISTANT_PERMISSION,
     "采购": ECN_EXECUTION_PURCHASE_CONFIRM_PERMISSION,
+    "采购（量产）": ECN_EXECUTION_PURCHASE_CONFIRM_PERMISSION,
     "PMC": ECN_EXECUTION_PMC_CONFIRM_PERMISSION,
     "生产经理": ECN_EXECUTION_PRODUCTION_CONFIRM_PERMISSION,
     "销售主管": ECN_EXECUTION_SALES_SUPERVISOR_CONFIRM_PERMISSION,
 }
+
+
+def _ecn_identity_title(access_snapshot: dict[str, Any], username: str) -> str:
+    users = access_snapshot.get("users", {})
+    memberships = access_snapshot.get("memberships", {})
+    user = users.get(username, {}) if isinstance(users, dict) else {}
+    membership = memberships.get(username, {}) if isinstance(memberships, dict) else {}
+    values = [
+        str(user.get("role") or "") if isinstance(user, dict) else "",
+        str(membership.get("position_name") or "") if isinstance(membership, dict) else "",
+    ]
+    return " / ".join(dict.fromkeys(value for value in values if value))
+
+
+def _ecn_identity_levels(access_snapshot: dict[str, Any], username: str) -> set[str]:
+    users = access_snapshot.get("users", {})
+    memberships = access_snapshot.get("memberships", {})
+    user = users.get(username, {}) if isinstance(users, dict) else {}
+    membership = memberships.get(username, {}) if isinstance(memberships, dict) else {}
+    return {
+        value
+        for value in (
+            str(user.get("role") or "").strip() if isinstance(user, dict) else "",
+            str(membership.get("position_name") or "").strip() if isinstance(membership, dict) else "",
+        )
+        if value
+    }
+
+
+def _is_available_material_manager(access_snapshot: dict[str, Any], username: str) -> bool:
+    return bool(
+        _snapshot_active_user(access_snapshot, username)
+        and _snapshot_permission(access_snapshot, username, ECN_VIEW_PERMISSION)
+        and has_ecn_material_execution_permission(username, access_snapshot=access_snapshot)
+    )
+
+
+def _walk_ecn_direct_managers(
+    access_snapshot: dict[str, Any],
+    seed_usernames: list[str],
+) -> list[str]:
+    """逐级查找第一层可处理的直属上级，不跨过可用的当前上级继续扩大范围。"""
+    memberships = access_snapshot.get("memberships", {})
+    if not isinstance(memberships, dict):
+        return []
+    frontier = list(dict.fromkeys(name for name in seed_usernames if name))
+    visited = set(frontier)
+    while frontier:
+        managers: list[str] = []
+        for username in frontier:
+            membership = memberships.get(username, {})
+            manager = str(membership.get("manager_username") or "") if isinstance(membership, dict) else ""
+            if manager and manager not in visited:
+                visited.add(manager)
+                managers.append(manager)
+        if not managers:
+            return []
+        available = [name for name in managers if _is_available_material_manager(access_snapshot, name)]
+        if available:
+            return available
+        frontier = managers
+    return []
+
+
+def _matches_responsibility_level(
+    access_snapshot: dict[str, Any],
+    username: str,
+    responsible_key: str,
+    responsible_roles: list[str],
+) -> bool:
+    levels = _ecn_identity_levels(access_snapshot, username)
+    # 销售主管历史任务曾把总监写进 roles；当前责任键必须优先，不能借旧列表越级。
+    expected = (
+        {"销售主管"}
+        if responsible_key == "销售主管"
+        else {value for value in (responsible_roles or [responsible_key]) if value}
+    )
+    # “采购”应能匹配“采购（量产）/采购专员（量产）”等细分岗位；关键词本身仍保持
+    # 层级含义，所以“销售主管”不会误中“销售总监”。
+    return any(keyword in level for keyword in expected for level in levels)
+
+
+def resolve_ecn_material_spec_responsibility(
+    spec: Any,
+    *,
+    user_service=None,
+    access_snapshot: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """按主任职的直属上级链解析当前责任人；只停在首个可处理层级。"""
+    if not isinstance(spec, dict):
+        return {}
+    resolved = dict(spec)
+    if not _database_mode(user_service) or spec.get("manual_assignment") is True:
+        return resolved
+    snapshot = access_snapshot or build_ecn_access_snapshot(user_service)
+    if snapshot.get("database_mode") is not True:
+        return resolved
+    raw_users = [str(value).strip() for value in spec.get("users", []) if str(value).strip()]
+    responsible_type = str(spec.get("responsible_type") or "role")
+    responsible_key = str(spec.get("responsible_key") or "").strip()
+    responsible_roles = [str(value).strip() for value in spec.get("roles", []) if str(value).strip()]
+
+    if responsible_type == "workflow_users":
+        required_permission = str(spec.get("required_permission_code") or "").strip()
+        available_users = [
+            username
+            for username in raw_users
+            if _snapshot_active_user(snapshot, username)
+            and _snapshot_permission(snapshot, username, ECN_VIEW_PERMISSION)
+            and required_permission
+            and _snapshot_permission(snapshot, username, required_permission)
+        ]
+        if available_users:
+            resolved["users"] = available_users
+            return resolved
+        target_users = _walk_ecn_direct_managers(snapshot, raw_users)
+        if not target_users:
+            resolved.update(
+                responsible_type="hierarchy_users",
+                users=[],
+                roles=[],
+                label=f"{responsible_key or '原责任层级'}无人可处理，且未找到可用直属上级",
+                escalated_from=responsible_key or "原责任层级",
+                resolution_mode="manager_escalation",
+            )
+            return resolved
+        target_titles = [
+            f"{name}（{_ecn_identity_title(snapshot, name) or '直属上级'}）" for name in target_users
+        ]
+        resolved.update(
+            responsible_type="hierarchy_users",
+            users=list(dict.fromkeys(target_users)),
+            roles=[],
+            label=(
+                f"{responsible_key or '原责任层级'}不可处理，转上级：{'、'.join(target_titles)}"
+            ),
+            escalated_from=responsible_key or "原责任层级",
+            resolution_mode="manager_escalation",
+        )
+        return resolved
+
+    project_sales_available = responsible_type == "project_sales" and any(
+        _snapshot_active_user(snapshot, username)
+        and _snapshot_permission(snapshot, username, ECN_VIEW_PERMISSION)
+        and _snapshot_permission(snapshot, username, ECN_EXECUTION_MATERIAL_CONFIRM_PERMISSION)
+        for username in raw_users
+    )
+    if project_sales_available:
+        return resolved
+
+    users = snapshot.get("users", {})
+    all_usernames = list(users) if isinstance(users, dict) else []
+    level_users: list[str] = []
+    stayed_at_level = False
+    if responsible_type != "project_sales":
+        permission_code = ECN_EXECUTION_RESPONSIBILITY_PERMISSIONS.get(responsible_key, "")
+        level_users = [
+            username
+            for username in all_usernames
+            if _matches_responsibility_level(snapshot, username, responsible_key, responsible_roles)
+            and _snapshot_active_user(snapshot, username)
+            and _snapshot_permission(snapshot, username, ECN_VIEW_PERMISSION)
+            and (
+                _is_available_material_manager(snapshot, username)
+                if responsible_key == "销售主管"
+                else bool(permission_code) and _snapshot_permission(snapshot, username, permission_code)
+            )
+        ]
+        if level_users:
+            target_users = level_users
+            stayed_at_level = True
+        else:
+            level_seeds = [
+                username
+                for username in all_usernames
+                if _matches_responsibility_level(snapshot, username, responsible_key, responsible_roles)
+            ]
+            target_users = _walk_ecn_direct_managers(snapshot, level_seeds)
+            if not target_users and responsible_key == "销售主管":
+                target_users = [
+                    username
+                    for username in all_usernames
+                    if "销售总监" in _ecn_identity_title(snapshot, username)
+                    and _is_available_material_manager(snapshot, username)
+                ]
+    else:
+        target_users = _walk_ecn_direct_managers(snapshot, raw_users)
+
+    if not target_users and responsible_type == "project_sales":
+        return resolved
+    if not target_users:
+        original = responsible_key or "原责任层级"
+        resolved.update(
+            responsible_type="hierarchy_users",
+            users=[],
+            roles=[],
+            label=f"{original}层级无人可处理，且未找到可用直属上级",
+            escalated_from=original,
+        )
+        return resolved
+    target_users = list(dict.fromkeys(target_users))
+    target_titles = [
+        f"{name}（{_ecn_identity_title(snapshot, name) or '直属上级'}）" for name in target_users
+    ]
+    original = "、".join(raw_users) or responsible_key or "原责任层级"
+    project = str(spec.get("project") or "").strip()
+    prefix = f"{project} · " if project else ""
+    target_text = "、".join(target_users) if stayed_at_level else "、".join(target_titles)
+    missing_project_sales = responsible_key == "销售主管" and "::项目销售::" in str(spec.get("key") or "")
+    if stayed_at_level:
+        label = (
+            f"{prefix}项目销售未识别，转销售主管：{target_text}"
+            if missing_project_sales
+            else f"{prefix}{responsible_key}：{target_text}"
+        )
+    else:
+        label = f"{prefix}{original}不可处理，转上级：{target_text}"
+    resolved.update(
+        responsible_type="hierarchy_users",
+        users=target_users,
+        roles=[],
+        label=label,
+        escalated_from=original,
+        resolution_mode="current_level" if stayed_at_level else "manager_escalation",
+    )
+    return resolved
 
 
 def can_confirm_ecn_material_spec(
@@ -289,6 +558,12 @@ def can_confirm_ecn_material_spec(
     """判断用户能否处理一条已经固化到 ECN 的物料追溯责任项。"""
     if not isinstance(spec, dict):
         return False
+    if _database_mode(user_service) and str(spec.get("responsible_type") or "") != "hierarchy_users":
+        spec = resolve_ecn_material_spec_responsibility(
+            spec,
+            user_service=user_service,
+            access_snapshot=access_snapshot,
+        )
     responsible_users = {str(value).strip() for value in spec.get("users", []) if str(value).strip()}
     responsible_roles = [str(value).strip() for value in spec.get("roles", []) if str(value).strip()]
     if not _database_mode(user_service):
@@ -300,17 +575,29 @@ def can_confirm_ecn_material_spec(
     service = _service(user_service)
     responsible_type = str(spec.get("responsible_type") or "role")
     responsible_key = str(spec.get("responsible_key") or "").strip()
-    if responsible_type in {"project_sales", "assigned_user"} and responsible_users:
+    if responsible_type == "hierarchy_users":
+        return bool(
+            current_user in responsible_users
+            and has_ecn_material_execution_permission(
+                current_user, user_service=service, access_snapshot=access_snapshot
+            )
+        )
+    if responsible_type in {"project_sales", "assigned_user", "workflow_users"} and responsible_users:
         if current_user not in responsible_users:
             return False
         if responsible_type == "assigned_user":
             return has_ecn_material_execution_permission(
                 current_user, user_service=service, access_snapshot=access_snapshot
             )
+        required_permission = (
+            str(spec.get("required_permission_code") or "")
+            if responsible_type == "workflow_users"
+            else ECN_EXECUTION_MATERIAL_CONFIRM_PERMISSION
+        )
         return current_user in responsible_users and (
-            _snapshot_permission(access_snapshot, current_user, ECN_EXECUTION_MATERIAL_CONFIRM_PERMISSION)
+            _snapshot_permission(access_snapshot, current_user, required_permission)
             if access_snapshot is not None
-            else can(service, current_user, ECN_EXECUTION_MATERIAL_CONFIRM_PERMISSION)
+            else can(service, current_user, required_permission)
         )
     permission_code = ECN_EXECUTION_RESPONSIBILITY_PERMISSIONS.get(responsible_key, "")
     return bool(
@@ -437,7 +724,12 @@ def get_ecn_execution_assignment_issues(
     if not isinstance(material_confirmations, dict):
         return issues
     for item_id, entry in material_confirmations.items():
-        for spec in get_ecn_material_execution_specs(change_items.get(str(item_id), {}), entry):
+        for raw_spec in get_ecn_material_execution_specs(change_items.get(str(item_id), {}), entry):
+            spec = resolve_ecn_material_spec_responsibility(
+                raw_spec,
+                user_service=user_service,
+                access_snapshot=snapshot,
+            )
             if is_ecn_material_spec_orphaned(
                 spec, user_service=user_service, access_snapshot=snapshot
             ):

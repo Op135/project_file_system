@@ -13,13 +13,13 @@ from src.approval_workflow import (
     get_workflow_event_definition,
     get_approval_workflow_editor_nodes,
     import_design_knowledge_legacy_workflows,
-    import_ecn_legacy_workflows,
     import_project_overview_legacy_workflows,
     is_assigned_approver,
     resolve_approval_workflow,
 )
-from src.ecn_management_config import ECNState
+from src.ecn_management_config import ECN_SCHEME_GROUP_MATERIAL, ECNState
 from src.ecn_workflow import (
+    build_ecn_execution_info_from_workflows,
     finish_ecr_approval,
     is_ecr_assigned_approver,
     reconcile_ecn_work_assignments,
@@ -29,6 +29,10 @@ from src.permission_catalog import (
     DESIGN_KNOWLEDGE_REVIEW_PERMISSION,
     DESIGN_KNOWLEDGE_TAG_REVIEW_PERMISSION,
     ECN_ECR_APPROVE_PERMISSION,
+    ECN_EXECUTION_MATERIAL_CONFIRM_PERMISSION,
+    ECN_EXECUTION_PMC_CONFIRM_PERMISSION,
+    ECN_EXECUTION_PURCHASE_CONFIRM_PERMISSION,
+    ECN_EXECUTION_SALES_SUPERVISOR_CONFIRM_PERMISSION,
     PROJECT_OVERVIEW_BATCH_REVIEW_PERMISSION,
     PROJECT_OVERVIEW_CORRECTION_REVIEW_PERMISSION,
     SAMPLE_ISSUE_CLOSE_APPROVE_PERMISSION,
@@ -524,28 +528,153 @@ class ApprovalWorkflowTests(unittest.TestCase):
         )
         self.assertTrue(malformed_result["warnings"])
 
-    def test_ecn_legacy_routes_generate_reviewable_drafts_idempotently(self):
-        """ECN 旧路线应一次生成两条 ECR 和一条方案评审草稿。"""
-        created, warnings = import_ecn_legacy_workflows(
-            self.service,
+    def test_published_execution_workflow_builds_concrete_task_snapshot(self):
+        self.service.set_position_permissions(
+            self.approver_position_id,
+            [ECN_EXECUTION_PURCHASE_CONFIRM_PERMISSION],
+        )
+        workflow_id, _ = self.service.save_approval_workflow_draft(
+            code="ecn.execution_supplier.test",
+            module="ecn",
+            event="execution_supplier",
+            name="供应商执行测试",
+            priority=10,
+            condition={"requester_org_unit_ids": []},
+            approver={
+                "nodes": [
+                    {
+                        "node_key": "stage_1_purchase",
+                        "name": "采购",
+                        "approval_mode": "any",
+                        "required_permission_code": ECN_EXECUTION_PURCHASE_CONFIRM_PERMISSION,
+                        "stage_index": 0,
+                        "responsible_key": "采购",
+                        "project_scoped": False,
+                        "approver": {
+                            "strategy": "position",
+                            "position_ids": [self.approver_position_id],
+                            "org_scope": "any",
+                            "org_unit_ids": [],
+                        },
+                    }
+                ]
+            },
+            required_permission_code=ECN_EXECUTION_PURCHASE_CONFIRM_PERMISSION,
+            approval_mode="sequential",
             actor_username="admin",
         )
-        self.assertEqual(created, 3)
-        self.assertTrue(warnings)
-        workflows = self.service.list_approval_workflows(module="ecn")
-        self.assertEqual(len(workflows), 3)
-        self.assertTrue(
-            all(
-                workflow.get("draft_version", {}).get("approval_mode") == "sequential"
-                for workflow in workflows
-            )
-        )
+        self.service.publish_approval_workflow(workflow_id, actor_username="admin")
+        item = {
+            "item_id": "M1",
+            "scheme_category": ECN_SCHEME_GROUP_MATERIAL,
+            "change_type": "更换",
+            "traceability_levels": ["供应商"],
+            "projects": ["P1"],
+        }
 
-        created_again, _warnings_again = import_ecn_legacy_workflows(
-            self.service,
+        execution = build_ecn_execution_info_from_workflows(
+            [item],
+            {},
+            "张三",
+            user_service=self.service,
+        )
+        task = execution["material_confirmations"]["M1"]["traceability_tasks"]["供应商::采购"]
+
+        self.assertEqual(execution["workflow_source"], "approval_workflows")
+        self.assertEqual(task["users"], ["李四"])
+        self.assertEqual(task["responsible_type"], "workflow_users")
+        self.assertEqual(task["workflow_assignment"]["workflow_code"], "ecn.execution_supplier.test")
+
+    def test_customer_execution_workflow_keeps_parallel_project_nodes(self):
+        self.service.set_position_permissions(
+            self.requester_position_id,
+            [ECN_EXECUTION_MATERIAL_CONFIRM_PERMISSION],
+        )
+        self.service.set_position_permissions(
+            self.approver_position_id,
+            [ECN_EXECUTION_SALES_SUPERVISOR_CONFIRM_PERMISSION],
+        )
+        self.service.set_position_permissions(
+            self.observer_position_id,
+            [ECN_EXECUTION_PMC_CONFIRM_PERMISSION],
+        )
+        nodes = [
+            {
+                "node_key": "stage_1_project_sales",
+                "name": "项目销售",
+                "approval_mode": "any",
+                "required_permission_code": ECN_EXECUTION_MATERIAL_CONFIRM_PERMISSION,
+                "stage_index": 0,
+                "responsible_key": "项目销售",
+                "project_scoped": True,
+                "approver": {"strategy": "project_sales"},
+            },
+            {
+                "node_key": "stage_1_sales_supervisor",
+                "name": "销售主管",
+                "approval_mode": "any",
+                "required_permission_code": ECN_EXECUTION_SALES_SUPERVISOR_CONFIRM_PERMISSION,
+                "stage_index": 0,
+                "responsible_key": "销售主管",
+                "project_scoped": True,
+                "approver": {
+                    "strategy": "position",
+                    "position_ids": [self.approver_position_id],
+                    "org_scope": "any",
+                    "org_unit_ids": [],
+                },
+            },
+            {
+                "node_key": "stage_2_pmc",
+                "name": "PMC",
+                "approval_mode": "any",
+                "required_permission_code": ECN_EXECUTION_PMC_CONFIRM_PERMISSION,
+                "stage_index": 1,
+                "responsible_key": "PMC",
+                "project_scoped": False,
+                "approver": {
+                    "strategy": "position",
+                    "position_ids": [self.observer_position_id],
+                    "org_scope": "any",
+                    "org_unit_ids": [],
+                },
+            },
+        ]
+        workflow_id, _ = self.service.save_approval_workflow_draft(
+            code="ecn.execution_customer.test",
+            module="ecn",
+            event="execution_customer_transit",
+            name="客户在途执行测试",
+            priority=10,
+            condition={"requester_org_unit_ids": []},
+            approver={"nodes": nodes},
+            required_permission_code=ECN_EXECUTION_MATERIAL_CONFIRM_PERMISSION,
+            approval_mode="sequential",
             actor_username="admin",
         )
-        self.assertEqual(created_again, 0)
+        self.service.publish_approval_workflow(workflow_id, actor_username="admin")
+        item = {
+            "item_id": "M1",
+            "scheme_category": ECN_SCHEME_GROUP_MATERIAL,
+            "change_type": "更换",
+            "traceability_levels": ["客户/在途"],
+            "projects": ["P1"],
+        }
+
+        execution = build_ecn_execution_info_from_workflows(
+            [item],
+            {"P1": "张三"},
+            "张三",
+            user_service=self.service,
+        )
+        tasks = execution["material_confirmations"]["M1"]["traceability_tasks"]
+
+        self.assertEqual(tasks["客户/在途::项目销售::P1"]["users"], ["张三"])
+        self.assertEqual(tasks["客户/在途::销售主管::P1"]["users"], ["李四"])
+        self.assertEqual(tasks["客户/在途::PMC"]["users"], ["王五"])
+        self.assertEqual(tasks["客户/在途::项目销售::P1"]["stage_index"], 0)
+        self.assertEqual(tasks["客户/在途::销售主管::P1"]["stage_index"], 0)
+        self.assertEqual(tasks["客户/在途::PMC"]["stage_index"], 1)
 
     def test_workflow_editor_nodes_support_old_single_and_new_sequence_versions(self):
         """管理界面应把旧单节点与新串行版本统一转换成可编辑节点。"""

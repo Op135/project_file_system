@@ -78,7 +78,12 @@ async def send_transfer_cancellations(ecn_id: str, record: dict, settings: dict,
                 task = {name: [message]}
                 if settings["public_base_url"]:
                     _, description = build_special_card(
-                        fresh, [item], test_mode=settings["test_mode"], is_cc=recipient in cc_ids, cancelled=True
+                        fresh,
+                        [item],
+                        test_mode=settings["test_mode"],
+                        is_cc=recipient in cc_ids,
+                        cancelled=True,
+                        observer_names=[name],
                     )
                     success, _ = await notify.send_wecom_textcard_message(
                         description,

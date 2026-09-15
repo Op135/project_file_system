@@ -18,6 +18,7 @@ from ...ecn_access import (
     can_view_ecn,
     get_ecn_execution_assignment_issues,
     is_ecn_pending_for_user,
+    resolve_ecn_material_spec_responsibility,
 )
 from ...ecn_management_config import (
     ECN_DATA_KEY,
@@ -34,6 +35,7 @@ from ...ecn_management_config import (
 )
 from ...wecom_service import resolve_wecom_recipients, send_wecom_text_message, send_wecom_textcard_message
 from .special_task_messages import get_special_message_item, get_special_message_items, build_special_card
+from .task_labels import execution_scheme_no
 
 logger = logging.getLogger(__name__)
 NOTIFICATION_STATE_KEY = "ecn_wecom_notification_state"
@@ -44,11 +46,7 @@ def material_task_summary(record: dict, item_id: str, spec: dict) -> str:
     """把内部方案UUID和责任项键转换为通知中可直接理解的业务摘要。"""
     items = [item for item in record.get("change_items", []) if isinstance(item, dict)]
     item = next((item for item in items if str(item.get("item_id")) == str(item_id)), {})
-    scheme_index = next(
-        (index for index, current in enumerate(items, start=1) if str(current.get("item_id")) == str(item_id)),
-        None,
-    )
-    scheme_no = f"#{scheme_index:02d}" if scheme_index is not None else "#--"
+    scheme_no = execution_scheme_no(record, item_id)
     projects = "、".join(get_ecn_scheme_target_projects({"target_projects": item.get("projects", [])})) or "—"
     change_type = str(item.get("change_type") or "物料变更")
     level = str(spec.get("level") or "未指定范围")
@@ -106,7 +104,12 @@ def pending_task_details(
         items = {str(item.get("item_id")): item for item in record.get("change_items", []) if isinstance(item, dict)}
         tasks = special_tasks
         for item_id, entry in execution.get("material_confirmations", {}).items():
-            for spec in get_ecn_material_execution_specs(items.get(str(item_id), {}), entry):
+            for raw_spec in get_ecn_material_execution_specs(items.get(str(item_id), {}), entry):
+                spec = resolve_ecn_material_spec_responsibility(
+                    raw_spec,
+                    user_service=service,
+                    access_snapshot=snapshot,
+                )
                 if spec.get("available") is not True:
                     continue
                 for name, role in pending.items():
@@ -278,7 +281,13 @@ def build_notification_card(
     """用户内容先转义再按字节裁剪，保留完整HTML标签及实体。"""
     special = get_special_message_items(record, names) if include_special else []
     if special:
-        return build_special_card(record, special, test_mode=config["test_mode"], is_cc=is_cc)
+        return build_special_card(
+            record,
+            special,
+            test_mode=config["test_mode"],
+            is_cc=is_cc,
+            observer_names=names,
+        )
     state = record.get("workflow", {}).get("current_state", "")
     event = (
         "待发起方案评审"
@@ -304,9 +313,7 @@ def build_notification_card(
     )
     basic = record.get("basic_info", {})
     display_names = list(dict.fromkeys(names))
-    names_text = "、".join(display_names[:6])
-    if len(display_names) > 6:
-        names_text += f" 等{len(display_names)}人"
+    names_text = "、".join(display_names)
     all_tasks = list(dict.fromkeys(task for name in names for task in tasks.get(name, [])))
     display_tasks = all_tasks[:3]
     lines = [
@@ -391,6 +398,14 @@ async def check_and_send_ecn_reminders(*, config=None, user_service=None, storag
                 names_to_copy = list(dict.fromkeys(name for names in targets.values() for name in names))
                 for userid in sorted(cc_recipients):
                     targets[userid] = names_to_copy.copy()
+            # 同一单据的一轮收件人发送共用一次最新状态和权限快照，避免按收件人重复查库。
+            fresh_records = await storage.get_fresh_item(ECN_DATA_KEY, {})
+            fresh = fresh_records.get(ecn_id, {}) if isinstance(fresh_records, dict) else {}
+            fresh_access_snapshot = build_ecn_access_snapshot(service)
+            fresh_pending = collect_pending_users(fresh, service, fresh_access_snapshot)
+            fresh_tasks = pending_task_details(fresh, fresh_pending, service, fresh_access_snapshot)
+            if not fresh_pending or build_notification_fingerprint(fresh, fresh_tasks, settings) != fingerprint:
+                continue
             # 抄送开关不参与业务指纹，避免切换时向实际处理人重发同一待办。
             for recipient, names in targets.items():
                 now = time.time()
@@ -422,16 +437,6 @@ async def check_and_send_ecn_reminders(*, config=None, user_service=None, storag
                     continue
                 success = False
                 try:
-                    # 发送前再次核对当前单据，避免通讯录解析期间流程已被处理。
-                    fresh_records = await storage.get_fresh_item(ECN_DATA_KEY, {})
-                    fresh = fresh_records.get(ecn_id, {})
-                    fresh_access_snapshot = build_ecn_access_snapshot(service)
-                    fresh_pending = collect_pending_users(fresh, service, fresh_access_snapshot)
-                    fresh_tasks = pending_task_details(
-                        fresh, fresh_pending, service, fresh_access_snapshot
-                    )
-                    if not fresh_pending or build_notification_fingerprint(fresh, fresh_tasks, settings) != fingerprint:
-                        continue
                     if settings["public_base_url"]:
                         title, description = build_notification_card(
                             fresh, fresh_tasks, names, settings, is_cc=recipient in cc_recipients

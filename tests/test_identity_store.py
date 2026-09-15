@@ -179,6 +179,9 @@ class IdentityStoreMigrationTests(unittest.TestCase):
         self.assertEqual(membership["org_name"], "内部研发中心")
         self.assertEqual(membership["position_name"], "研发工程师")
         self.assertEqual(membership["manager_username"], "admin")
+        memberships = self.service.list_primary_memberships()
+        self.assertEqual(memberships["张三"]["manager_username"], "admin")
+        self.assertEqual(memberships["张三"]["position_name"], "研发工程师")
         position = next(
             item for item in self.service.list_positions() if item["position_id"] == position_id
         )

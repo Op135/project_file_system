@@ -1192,6 +1192,25 @@ class IdentityStore:
             ).fetchone()
         return dict(row) if row else {}
 
+    def list_primary_memberships(self) -> dict[str, dict[str, Any]]:
+        """一次返回全部用户的主任职及直属上级，供责任链批量解析。"""
+        with self._lock, self._connect() as connection:
+            rows = connection.execute(
+                "SELECT u.username, m.*, o.name AS org_name, p.name AS position_name, "
+                "manager.username AS manager_username FROM org_memberships m "
+                "JOIN iam_users u ON u.user_id=m.user_id "
+                "JOIN org_units o ON o.org_unit_id=m.org_unit_id "
+                "LEFT JOIN iam_positions p ON p.position_id=m.position_id "
+                "LEFT JOIN iam_users manager ON manager.user_id=m.direct_manager_user_id "
+                "WHERE m.is_primary=1 AND m.status='active' ORDER BY m.updated_at DESC"
+            ).fetchall()
+        result: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            username = str(row["username"])
+            if username not in result:
+                result[username] = dict(row)
+        return result
+
     def set_primary_membership(
         self,
         username: str,
@@ -1332,6 +1351,9 @@ class IdentityStore:
                         "approval_mode": node_mode,
                         "approver": node_approver,
                         "required_permission_code": permission_code,
+                        "stage_index": max(0, int(raw_node.get("stage_index", index))),
+                        "responsible_key": str(raw_node.get("responsible_key") or "").strip(),
+                        "project_scoped": raw_node.get("project_scoped") is True,
                     }
                 )
             return nodes
@@ -1617,7 +1639,10 @@ class IdentityStore:
                 node_name = str(node["name"])
                 node_approver = node["approver"]
                 strategy = str(node_approver.get("strategy", "")).strip().lower()
-                if strategy not in {"position", "direct_manager", "users", "permission"}:
+                allowed_strategies = {"position", "direct_manager", "users", "permission"}
+                if str(workflow["event"]).startswith("execution_"):
+                    allowed_strategies.add("project_sales")
+                if strategy not in allowed_strategies:
                     raise ValueError(f"{node_name}的审批人来源无效")
                 if strategy == "position" and not node_approver.get("position_ids"):
                     raise ValueError(f"{node_name}至少需要选择一个审批岗位")

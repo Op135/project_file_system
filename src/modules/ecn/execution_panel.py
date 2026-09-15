@@ -28,6 +28,7 @@ from ...ecn_access import (
     can_confirm_ecn_material_spec,
     can_execute_ecn_assistant_stage,
     is_ecn_material_spec_orphaned,
+    resolve_ecn_material_spec_responsibility,
 )
 from ...ecn_management_config import (
     ECN_EXECUTION_RESULT_FAILED,
@@ -43,15 +44,14 @@ from ...ecn_management_config import (
     ECN_SCHEME_GROUP_OVERVIEW_DOCUMENT,
     ECN_TRACEABILITY_LEVELS,
     classify_ecn_change_item,
-    ensure_ecn_material_execution_tasks,
     get_ecn_material_change_display,
     get_ecn_material_execution_specs,
     get_ecn_scheme_target_projects,
     get_ecn_stage_index,
     is_ecn_assistant_execution_ready,
-    is_ecn_special_execution_complete,
     is_ecn_material_disposition_required,
     is_ecn_material_execution_closed,
+    is_ecn_special_execution_complete,
 )
 
 # 仅记录当前进程内实际仍在运行的系统内资料任务，用于区分“正在执行”与异常中断后遗留的运行状态。
@@ -64,21 +64,34 @@ from .overview_execution import (
 from .repository import (
     atomic_ecn_deep_update,
 )
-
 from .special_tasks import update_special_task
 from .special_tasks_ui import open_material_transfer_dialog, render_transfer_button
+from .task_labels import compact_material_confirmation_label, material_confirmation_tooltip_text
 
 logger = logging.getLogger(__name__)
 ACTIVE_ECN_OVERVIEW_EXECUTIONS: set[str] = set()
 
 
-def build_execution_panel(tab_exec, local_data, wf, current_user, current_role, can_execute_assistant, refresh_list):
+def build_execution_panel(
+    tab_exec,
+    local_data,
+    wf,
+    current_user,
+    current_role,
+    can_execute_assistant,
+    refresh_list,
+    *,
+    panel_container=None,
+):
     # --- [TAB 4] ECN 分阶段执行 ---
-    with (
-        ui.tab_panel(tab_exec)
+    panel = (
+        panel_container
+        if panel_container is not None
+        else ui.tab_panel(tab_exec)
         .props("id=ecn-execution-tab-panel")
         .classes("gap-4 p-2 mx-auto overflow-y-auto overflow-x-hidden")
-    ):
+    )
+    with panel:
         execution_container = ui.column().classes("w-full gap-4")
         material_task_controls: dict[str, dict[str, dict[str, Any]]] = {}
         material_status_controls: dict[str, dict[str, Any]] = {}
@@ -96,11 +109,6 @@ def build_execution_panel(tab_exec, local_data, wf, current_user, current_role, 
                 if isinstance(item, dict) and str(item.get("item_id")) == str(item_id):
                     return f"#{index:02d}"
             return "#--"
-
-        def normalize_execution_roles(value: object) -> list[str]:
-            if not isinstance(value, (list, tuple, set)):
-                return []
-            return [str(role) for role in value if str(role).strip()]
 
         def notify_execution_safely(
             event_client: Client,
@@ -248,7 +256,6 @@ def build_execution_panel(tab_exec, local_data, wf, current_user, current_role, 
             specs = get_ecn_material_execution_specs(
                 item,
                 material_entry,
-                app.storage.general.get("project_sale", {}),
             )
             tasks = material_entry.get("traceability_tasks", {})
             return item, material_entry, specs, tasks if isinstance(tasks, dict) else {}
@@ -273,28 +280,6 @@ def build_execution_panel(tab_exec, local_data, wf, current_user, current_role, 
                 and tasks[str(other_spec.get("key"))].get("confirmed") is True
                 for other_spec in specs
             )
-
-        def material_confirmation_tooltip(
-            spec: dict,
-            confirmation: dict,
-            available: bool,
-            can_cancel: bool,
-        ) -> str:
-            responsible_users = normalize_execution_roles(spec.get("users"))
-            responsible_roles = normalize_execution_roles(spec.get("roles"))
-            lines = []
-            if responsible_users:
-                lines.append(f"指定人：{'、'.join(responsible_users)}")
-            if responsible_roles:
-                lines.append(f"责任角色：{'、'.join(responsible_roles)}")
-            if confirmation.get("confirmed") is True:
-                lines.append(f"已由 {confirmation.get('user', '未知')}（{confirmation.get('role', '')}）确认")
-                lines.append(str(confirmation.get("time") or ""))
-                if can_cancel:
-                    lines.append("可取消本次确认")
-            elif not available:
-                lines.append("等待本追溯范围的前序负责人")
-            return "\n".join(lines)
 
         def refresh_material_execution_controls(item_ids: list[str] | None = None) -> None:
             execution_info = local_data.get("execution_info", {})
@@ -349,7 +334,7 @@ def build_execution_panel(tab_exec, local_data, wf, current_user, current_role, 
                         checkbox.enable() if can_confirm or can_cancel else checkbox.disable()
                     if tooltip is not None:
                         tooltip.set_text(
-                            material_confirmation_tooltip(
+                            material_confirmation_tooltip_text(
                                 spec,
                                 confirmation,
                                 available,
@@ -386,7 +371,6 @@ def build_execution_panel(tab_exec, local_data, wf, current_user, current_role, 
                 specs = get_ecn_material_execution_specs(
                     item,
                     material_entry,
-                    app.storage.general.get("project_sale", {}),
                 )
                 tasks = material_entry.get("traceability_tasks", {})
                 tasks = tasks if isinstance(tasks, dict) else {}
@@ -666,27 +650,9 @@ def build_execution_panel(tab_exec, local_data, wf, current_user, current_role, 
                 if not isinstance(material_entry, dict) or material_entry.get("status") == "closed":
                     blocked["reason"] = "该物料方案已关闭或不在执行清单中。"
                     return db_storage.ATOMIC_NO_UPDATE
-                ensure_ecn_material_execution_tasks(
-                    item,
-                    material_entry,
-                    app.storage.general.get("project_sale", {}),
-                )
-                change_item_map = {
-                    str(current_item.get("item_id")): current_item
-                    for current_item in current_ecn.get("change_items", [])
-                    if isinstance(current_item, dict) and current_item.get("item_id")
-                }
-                for current_item_id, current_entry in material_confirmations.items():
-                    if isinstance(current_entry, dict):
-                        ensure_ecn_material_execution_tasks(
-                            change_item_map.get(str(current_item_id), {}),
-                            current_entry,
-                            app.storage.general.get("project_sale", {}),
-                        )
                 specs = get_ecn_material_execution_specs(
                     item,
                     material_entry,
-                    app.storage.general.get("project_sale", {}),
                 )
                 spec = next(
                     (current_spec for current_spec in specs if str(current_spec.get("key")) == str(confirmation_key)),
@@ -1261,10 +1227,10 @@ def build_execution_panel(tab_exec, local_data, wf, current_user, current_role, 
                         material_grid_columns = [
                             "72px",
                             "minmax(130px, 0.6fr)",
-                            "minmax(90px, 0.4fr)",
+                            "minmax(90px, 0.3fr)",
                             "minmax(210px, 1fr)",
                             "minmax(210px, 1fr)",
-                            "minmax(100px, 0.5fr)",
+                            "minmax(100px, 0.4fr)",
                             *["minmax(100px, 0.5fr)" for _ in ECN_TRACEABILITY_LEVELS],
                             "100px",
                         ]
@@ -1308,8 +1274,15 @@ def build_execution_panel(tab_exec, local_data, wf, current_user, current_role, 
                                     specs = get_ecn_material_execution_specs(
                                         item,
                                         material_entry,
-                                        app.storage.general.get("project_sale", {}),
                                     )
+                                    specs = [
+                                        resolve_ecn_material_spec_responsibility(
+                                            spec,
+                                            user_service=app.state.user_service,
+                                            access_snapshot=access_snapshot,
+                                        )
+                                        for spec in specs
+                                    ]
                                     traceability_tasks = material_entry.get("traceability_tasks", {})
                                     specs_by_level = {
                                         level: [spec for spec in specs if str(spec.get("level") or "") == level]
@@ -1443,7 +1416,7 @@ def build_execution_panel(tab_exec, local_data, wf, current_user, current_role, 
                                                         )
                                                         checkbox = (
                                                             ui.checkbox(
-                                                                str(spec.get("label") or "待确认负责人"),
+                                                                compact_material_confirmation_label(spec),
                                                                 value=checked,
                                                                 on_change=lambda e, current_id=str(item_id), current_key=key: (
                                                                     handle_material_confirmation_change(
@@ -1466,7 +1439,7 @@ def build_execution_panel(tab_exec, local_data, wf, current_user, current_role, 
                                                             checkbox.props("disable")
                                                         with checkbox:
                                                             tooltip = ui.tooltip(
-                                                                material_confirmation_tooltip(
+                                                                material_confirmation_tooltip_text(
                                                                     spec,
                                                                     confirmation,
                                                                     available,
@@ -1508,9 +1481,7 @@ def build_execution_panel(tab_exec, local_data, wf, current_user, current_role, 
                                                                 ui.button(
                                                                     "立即改派",
                                                                     icon="person_add",
-                                                                    on_click=lambda _, current_id=str(item_id),
-                                                                    current_key=key,
-                                                                    current_confirmation=confirmation: (
+                                                                    on_click=lambda _, current_id=str(item_id), current_key=key, current_confirmation=confirmation: (
                                                                         open_material_transfer_dialog(
                                                                             str(local_data["ecn_id"]),
                                                                             current_id,

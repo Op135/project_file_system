@@ -223,27 +223,6 @@ class ECNConcurrencyTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result.ok)
         self.assertEqual((await self.fresh())["basic_info"]["reason_desc"], "另一窗口已保存")
 
-    async def test_parallel_legacy_approvals_preserve_both_votes_and_ignore_stale_form(self):
-        value = record(ECNState.ECN_REVIEWING)
-        value["workflow"].update(
-            current_phase="ECN_SCHEME_REVIEW_PHASE", current_step_index=2, pending_roles=["工程NPI", "质量经理", "PMC"]
-        )
-        changed = copy.deepcopy(value)
-        changed["basic_info"]["reason_desc"] = "最新申请说明"
-        await self.store(changed)
-        results = await asyncio.gather(
-            self.action(value, "approve", user="工程师", role="工程NPI"),
-            self.action(value, "approve", user="质量", role="质量经理", storage=self.right),
-        )
-        self.assertTrue(all(result.ok for result in results))
-        saved = await self.fresh()
-        self.assertEqual(saved["workflow"]["step_approvals"], {"工程NPI": True, "质量经理": True})
-        self.assertEqual(saved["basic_info"]["reason_desc"], "最新申请说明")
-        last = await self.action(saved, "approve", user="物资", role="PMC")
-        self.assertTrue(last.ok)
-        assert last.record is not None
-        self.assertEqual(last.record["workflow"]["current_state"], ECNState.ECN_EXECUTING)
-
     async def test_old_round_and_late_impact_save_cannot_change_reviewing_record(self):
         expected = record()
         current = copy.deepcopy(expected)
