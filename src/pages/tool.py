@@ -149,7 +149,7 @@ def tool_page():
             "key": "intensity_distribution",
             "title": "平面分布转空间分布",
             "subtitle": "强度/辐射强度分布与角度计算",
-            "icon": "ssid_chart",
+            "icon": "wifi_channel",
             "color": "orange",
             "cls": IntensityDistributionTool,
         },
