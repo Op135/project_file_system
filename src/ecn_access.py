@@ -434,6 +434,36 @@ def resolve_ecn_material_spec_responsibility(
         if available_users:
             resolved["users"] = available_users
             return resolved
+        raw_position_ids = spec.get("position_ids", [])
+        position_ids = {
+            str(value).strip()
+            for value in raw_position_ids
+            if str(value).strip()
+        } if isinstance(raw_position_ids, (list, tuple, set)) else set()
+        memberships = snapshot.get("memberships", {})
+        users = snapshot.get("users", {})
+        current_position_users = [
+            str(username)
+            for username in users
+            if isinstance(users, dict)
+            and isinstance(memberships, dict)
+            and isinstance(memberships.get(username), dict)
+            and str(memberships[username].get("position_id") or "") in position_ids
+            and _snapshot_active_user(snapshot, str(username))
+            and _snapshot_permission(snapshot, str(username), ECN_VIEW_PERMISSION)
+            and required_permission
+            and _snapshot_permission(snapshot, str(username), required_permission)
+        ]
+        if current_position_users:
+            original = "、".join(raw_users) or responsible_key or "原负责人"
+            resolved.update(
+                users=list(dict.fromkeys(current_position_users)),
+                roles=[],
+                label=f"{responsible_key or '流程岗位'}现负责人：{'、'.join(current_position_users)}",
+                escalated_from=original,
+                resolution_mode="position_successor",
+            )
+            return resolved
         target_users = _walk_ecn_direct_managers(snapshot, raw_users)
         if not target_users:
             resolved.update(

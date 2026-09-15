@@ -893,6 +893,7 @@ def get_ecn_material_execution_specs(
                 "available": (task.get("confirmed") is not True and task_stage == current_stage_by_level.get(level)),
                 "disposition_instruction": str(task.get("disposition_instruction") or ""),
                 "required_permission_code": str(task.get("required_permission_code") or ""),
+                "position_ids": copy.deepcopy(task.get("position_ids", [])),
                 "workflow_assignment": copy.deepcopy(task.get("workflow_assignment", {})),
             }
         )

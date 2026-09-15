@@ -48,6 +48,11 @@ def _execution_workflow_task(
     ]
     node_approver = node.get("approver", {})
     strategy = str(node_approver.get("strategy") or "") if isinstance(node_approver, dict) else ""
+    position_ids = (
+        [str(value).strip() for value in node_approver.get("position_ids", []) if str(value).strip()]
+        if isinstance(node_approver, dict) and isinstance(node_approver.get("position_ids"), list)
+        else []
+    )
     responsible_type = "project_sales" if strategy == "project_sales" else "workflow_users"
     suffix = f"::{project}" if project else ""
     task_key = f"{level}::{responsible_key}{suffix}"
@@ -72,6 +77,7 @@ def _execution_workflow_task(
         "roles": [],
         "users": list(dict.fromkeys(users)),
         "required_permission_code": str(node.get("required_permission_code") or ""),
+        "position_ids": list(dict.fromkeys(position_ids)),
         "workflow_assignment": {
             "workflow_id": str(workflow.get("workflow_id") or "") if isinstance(workflow, dict) else "",
             "workflow_code": workflow_code,

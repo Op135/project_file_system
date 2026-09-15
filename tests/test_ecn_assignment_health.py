@@ -295,6 +295,67 @@ class ECNResponsibilityEscalationTests(unittest.TestCase):
         self.assertEqual(resolved["users"], ["mass_buyer"])
         self.assertEqual(resolved["resolution_mode"], "current_level")
 
+    def test_workflow_position_successor_is_used_before_direct_manager(self):
+        service = HierarchyUsers({ECN_VIEW_PERMISSION})
+        service.users.update(
+            {
+                "old_buyer": {"role": "采购（研发）", "status": "active"},
+                "new_buyer": {"role": "采购（量产）", "status": "active"},
+            }
+        )
+        service.permissions.update(
+            {
+                "old_buyer": {ECN_VIEW_PERMISSION},
+                "new_buyer": {
+                    ECN_VIEW_PERMISSION,
+                    ECN_EXECUTION_PURCHASE_CONFIRM_PERMISSION,
+                },
+            }
+        )
+        service.memberships.update(
+            {
+                "old_buyer": {
+                    "position_id": "position.research_purchase",
+                    "position_name": "采购专员（研发）",
+                    "manager_username": "supervisor",
+                },
+                "new_buyer": {
+                    "position_id": "position.mass_purchase",
+                    "position_name": "采购专员（量产）",
+                    "manager_username": "supervisor",
+                },
+            }
+        )
+        snapshot = build_ecn_access_snapshot(service)
+        spec = {
+            "responsible_type": "workflow_users",
+            "responsible_key": "采购（量产）",
+            "roles": [],
+            "users": ["old_buyer"],
+            "position_ids": ["position.mass_purchase"],
+            "required_permission_code": ECN_EXECUTION_PURCHASE_CONFIRM_PERMISSION,
+            "label": "采购（量产）",
+        }
+
+        resolved = resolve_ecn_material_spec_responsibility(
+            spec,
+            user_service=service,
+            access_snapshot=snapshot,
+        )
+
+        self.assertEqual(resolved["users"], ["new_buyer"])
+        self.assertEqual(resolved["resolution_mode"], "position_successor")
+        self.assertNotIn("supervisor", resolved["users"])
+        self.assertTrue(
+            can_confirm_ecn_material_spec(
+                resolved,
+                "采购（量产）",
+                "new_buyer",
+                user_service=service,
+                access_snapshot=snapshot,
+            )
+        )
+
 
 class ECNAssignmentHealthTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
