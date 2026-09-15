@@ -3909,6 +3909,9 @@ def manage_page():
                 with ui.dialog() as confirm_dialog, ui.card().classes("p-6"):
                     ui.label(f"确认停用用户 【{target_user}】 吗？").classes("text-lg font-bold text-red-600")
                     ui.label("账号资料和历史记录会保留，但该用户将无法登录。").classes("text-sm text-gray-500 mb-6")
+                    ui.label(
+                        "如该用户仍有ECN执行待办，系统会标记负责人异常，并提醒研发助理改派。"
+                    ).classes("text-sm text-amber-700 mb-6")
 
                     with ui.row().classes("w-full justify-end gap-4"):
                         ui.button("取消", on_click=confirm_dialog.close).props("flat")

@@ -24,8 +24,10 @@ from ...config import (
     ECNState,
 )
 from ...ecn_access import (
+    build_ecn_access_snapshot,
     can_confirm_ecn_material_spec,
     can_execute_ecn_assistant_stage,
+    is_ecn_material_spec_orphaned,
 )
 from ...ecn_management_config import (
     ECN_EXECUTION_RESULT_FAILED,
@@ -64,7 +66,7 @@ from .repository import (
 )
 
 from .special_tasks import update_special_task
-from .special_tasks_ui import render_transfer_button
+from .special_tasks_ui import open_material_transfer_dialog, render_transfer_button
 
 logger = logging.getLogger(__name__)
 ACTIVE_ECN_OVERVIEW_EXECUTIONS: set[str] = set()
@@ -80,6 +82,7 @@ def build_execution_panel(tab_exec, local_data, wf, current_user, current_role, 
         execution_container = ui.column().classes("w-full gap-4")
         material_task_controls: dict[str, dict[str, dict[str, Any]]] = {}
         material_status_controls: dict[str, dict[str, Any]] = {}
+        execution_access_snapshot = {"value": build_ecn_access_snapshot(app.state.user_service)}
 
         def get_execution_change_items() -> dict[str, dict]:
             return {
@@ -316,11 +319,21 @@ def build_execution_panel(tab_exec, local_data, wf, current_user, current_role, 
                         and not item_closed
                         and not checked
                         and available
-                        and can_confirm_ecn_material_spec(spec, current_role, current_user)
+                        and can_confirm_ecn_material_spec(
+                            spec,
+                            current_role,
+                            current_user,
+                            access_snapshot=execution_access_snapshot["value"],
+                        )
                     )
                     can_cancel = (
                         material_is_active
-                        and can_confirm_ecn_material_spec(spec, current_role, current_user)
+                        and can_confirm_ecn_material_spec(
+                            spec,
+                            current_role,
+                            current_user,
+                            access_snapshot=execution_access_snapshot["value"],
+                        )
                         and can_cancel_material_confirmation(
                             spec,
                             confirmation,
@@ -855,6 +868,8 @@ def build_execution_panel(tab_exec, local_data, wf, current_user, current_role, 
             execution_container.clear()
             material_task_controls.clear()
             material_status_controls.clear()
+            access_snapshot = build_ecn_access_snapshot(app.state.user_service)
+            execution_access_snapshot["value"] = access_snapshot
             with execution_container:
                 execution_info = local_data.get("execution_info", {})
                 if not isinstance(execution_info, dict) or not execution_info.get("stage"):
@@ -1020,6 +1035,7 @@ def build_execution_panel(tab_exec, local_data, wf, current_user, current_role, 
                                                 render_execution_tab(),
                                                 refresh_list(),
                                             ),
+                                            access_snapshot=access_snapshot,
                                         )
 
                                 erp_row_bg = "bg-white" if len(assistant_rows) % 2 == 0 else "bg-slate-50/70"
@@ -1093,6 +1109,7 @@ def build_execution_panel(tab_exec, local_data, wf, current_user, current_role, 
                                         current_role,
                                         wf.get("current_state") == ECNState.ECN_EXECUTING,
                                         lambda: (sync_execution_local_data(), render_execution_tab(), refresh_list()),
+                                        access_snapshot=access_snapshot,
                                     )
 
                     overview_results = execution_info.get("overview_results", {})
@@ -1403,6 +1420,7 @@ def build_execution_panel(tab_exec, local_data, wf, current_user, current_role, 
                                                                 spec,
                                                                 current_role,
                                                                 current_user,
+                                                                access_snapshot=access_snapshot,
                                                             )
                                                         )
                                                         can_cancel = (
@@ -1411,6 +1429,7 @@ def build_execution_panel(tab_exec, local_data, wf, current_user, current_role, 
                                                                 spec,
                                                                 current_role,
                                                                 current_user,
+                                                                access_snapshot=access_snapshot,
                                                             )
                                                             and can_cancel_material_confirmation(
                                                                 spec,
@@ -1461,6 +1480,48 @@ def build_execution_panel(tab_exec, local_data, wf, current_user, current_role, 
                                                             "checkbox": checkbox,
                                                             "tooltip": tooltip,
                                                         }
+                                                        orphaned = (
+                                                            material_is_active
+                                                            and not checked
+                                                            and available
+                                                            and is_ecn_material_spec_orphaned(
+                                                                spec,
+                                                                user_service=app.state.user_service,
+                                                                access_snapshot=access_snapshot,
+                                                            )
+                                                        )
+                                                        if orphaned:
+                                                            ui.label("负责人已停用、离职或无可用权限").classes(
+                                                                "text-[11px] font-semibold text-red-600"
+                                                            )
+                                                            if can_execute_ecn_assistant_stage(
+                                                                current_role,
+                                                                current_user,
+                                                                access_snapshot=access_snapshot,
+                                                            ):
+
+                                                                def refresh_after_transfer():
+                                                                    if sync_execution_local_data():
+                                                                        render_execution_tab()
+                                                                        refresh_list()
+
+                                                                ui.button(
+                                                                    "立即改派",
+                                                                    icon="person_add",
+                                                                    on_click=lambda _, current_id=str(item_id),
+                                                                    current_key=key,
+                                                                    current_confirmation=confirmation: (
+                                                                        open_material_transfer_dialog(
+                                                                            str(local_data["ecn_id"]),
+                                                                            current_id,
+                                                                            current_key,
+                                                                            current_confirmation,
+                                                                            current_user,
+                                                                            current_role,
+                                                                            refresh_after_transfer,
+                                                                        )
+                                                                    ),
+                                                                ).props("flat dense size=sm color=negative")
 
                                         total_count = len(specs)
                                         completed_count = sum(

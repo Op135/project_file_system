@@ -1117,17 +1117,24 @@ def get_ecn_material_execution_specs(
             continue
         level = str(task.get("level") or "")
         task_stage = get_ecn_stage_index(task.get("stage_index", 0))
+        manual_assignee = str(task.get("manual_assignee") or "").strip()
+        label = str(task.get("label") or task_id)
+        if manual_assignee:
+            project = str(task.get("project") or "").strip()
+            label = f"{project} · {manual_assignee}" if project else manual_assignee
         specs.append(
             {
                 "kind": "traceability",
                 "key": str(task_id),
                 "level": level,
                 "responsible_key": str(task.get("responsible_key") or ""),
-                "responsible_type": str(task.get("responsible_type") or "role"),
-                "label": str(task.get("label") or task_id),
+                "responsible_type": "assigned_user"
+                if manual_assignee
+                else str(task.get("responsible_type") or "role"),
+                "label": label,
                 "project": str(task.get("project") or ""),
-                "roles": copy.deepcopy(task.get("roles", [])),
-                "users": copy.deepcopy(task.get("users", [])),
+                "roles": [] if manual_assignee else copy.deepcopy(task.get("roles", [])),
+                "users": [manual_assignee] if manual_assignee else copy.deepcopy(task.get("users", [])),
                 "stage_index": task_stage,
                 "parallel": stage_sizes.get((level, task_stage), 0) > 1,
                 "available": (task.get("confirmed") is not True and task_stage == current_stage_by_level.get(level)),

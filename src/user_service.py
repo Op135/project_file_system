@@ -402,6 +402,12 @@ class UserService:
             return set()
         return self.identity_store.get_user_permission_codes(username)
 
+    def list_active_user_permission_codes(self) -> dict[str, set[str]]:
+        """批量返回在职用户权限，避免列表逐用户重复打开数据库连接。"""
+        if self.storage_mode != "database":
+            return {}
+        return self.identity_store.list_active_user_permission_codes()
+
     def list_usernames_with_permission(
         self,
         permission_code: str,

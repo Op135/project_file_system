@@ -471,7 +471,9 @@ if __name__ in {"__main__", "__mp_main__"}:
 
         run_environment_options = {
             "reload": True,
-            "reconnect_timeout": 3.0,
+            # VS Code/debugpy 跟随热重载子进程时通常需要约15秒；给浏览器足够时间等待新进程，
+            # 避免每次保存源码都先判定断联并反复创建 WebSocket。
+            "reconnect_timeout": 30.0,
             "uvicorn_logging_level": "info",
             "uvicorn_reload_dirs": src_dir,
             "uvicorn_reload_includes": "*.py",

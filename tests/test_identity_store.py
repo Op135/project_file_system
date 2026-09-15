@@ -63,6 +63,14 @@ class IdentityStoreMigrationTests(unittest.TestCase):
         self.assertNotEqual(encoded, "123456")
         self.assertTrue(verify_password("123456", encoded))
 
+    def test_batch_active_permissions_match_single_user_lookup(self):
+        self.service.migrate_legacy_users()
+        batch = self.service.list_active_user_permission_codes()
+        self.assertEqual(batch["admin"], self.service.get_user_permission_codes("admin"))
+        self.assertEqual(batch["张三"], self.service.get_user_permission_codes("张三"))
+        self.service.modify_user("deactivate", "张三")
+        self.assertNotIn("张三", self.service.list_active_user_permission_codes())
+
     def test_safe_repeat_does_not_replace_a_migrated_server_password(self):
         self.service.migrate_legacy_users()
         self._write_users(

@@ -17,6 +17,7 @@ from ..config import (
     ECNState,
 )
 from ..ecn_access import (
+    build_ecn_access_snapshot,
     can_create_ecn_request,
     can_delete_ecn,
     can_view_ecn,
@@ -320,6 +321,7 @@ async def ecn_management_page():
 
             def refresh_list():
                 all_ecns = db_storage.get_item("ecn_management_data", {})
+                access_snapshot = build_ecn_access_snapshot(app.state.user_service)
                 keyword = str(page_state.get("search_keyword") or "").lower().strip()
                 filter_state = str(page_state.get("filter_state") or "全部")
                 raw_ecns = all_ecns.values() if isinstance(all_ecns, dict) else []
@@ -361,6 +363,8 @@ async def ecn_management_page():
                             current_user,
                             current_role,
                             include_delete=can_delete_record,
+                            user_service=app.state.user_service,
+                            access_snapshot=access_snapshot,
                         )
                     )
                 ecn_grid.options["rowData"] = rows

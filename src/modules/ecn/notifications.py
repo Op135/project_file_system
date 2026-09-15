@@ -12,9 +12,11 @@ from nicegui import app
 
 from ... import db_storage
 from ...ecn_access import (
+    build_ecn_access_snapshot,
     can_confirm_ecn_material_spec,
     can_execute_ecn_assistant_stage,
     can_view_ecn,
+    get_ecn_execution_assignment_issues,
     is_ecn_pending_for_user,
 )
 from ...ecn_management_config import (
@@ -25,41 +27,76 @@ from ...ecn_management_config import (
     ECN_EXECUTION_STAGE_MATERIAL,
     ECN_EXECUTION_STAGE_OVERVIEW_FAILED,
     ECN_EXECUTION_STAGE_OVERVIEW_RUNNING,
+    get_ecn_scheme_target_projects,
     get_ecn_material_execution_specs,
     is_ecn_scheme_ready_for_review,
     get_ecn_special_confirmations,
 )
 from ...wecom_service import resolve_wecom_recipients, send_wecom_text_message, send_wecom_textcard_message
-from .special_task_messages import get_special_message_items, build_special_card
+from .special_task_messages import get_special_message_item, get_special_message_items, build_special_card
 
 logger = logging.getLogger(__name__)
 NOTIFICATION_STATE_KEY = "ecn_wecom_notification_state"
 _scan_lock = asyncio.Lock()
 
 
-def collect_pending_users(record: dict, service) -> dict[str, str]:
+def material_task_summary(record: dict, item_id: str, spec: dict) -> str:
+    """把内部方案UUID和责任项键转换为通知中可直接理解的业务摘要。"""
+    items = [item for item in record.get("change_items", []) if isinstance(item, dict)]
+    item = next((item for item in items if str(item.get("item_id")) == str(item_id)), {})
+    scheme_index = next(
+        (index for index, current in enumerate(items, start=1) if str(current.get("item_id")) == str(item_id)),
+        None,
+    )
+    scheme_no = f"#{scheme_index:02d}" if scheme_index is not None else "#--"
+    projects = "、".join(get_ecn_scheme_target_projects({"target_projects": item.get("projects", [])})) or "—"
+    change_type = str(item.get("change_type") or "物料变更")
+    level = str(spec.get("level") or "未指定范围")
+    responsible = str(spec.get("label") or spec.get("responsible_key") or "待确认负责人")
+    return f"物料方案 {scheme_no}｜项目：{projects}｜{change_type}｜追溯：{level}｜确认：{responsible}"
+
+
+def collect_pending_users(record: dict, service, access_snapshot: dict | None = None) -> dict[str, str]:
     """保留首页可见且确有该单待办的在职用户，不按岗位名称额外扩大正式收件范围。"""
+    snapshot = access_snapshot or build_ecn_access_snapshot(service)
+    assignment_issues = get_ecn_execution_assignment_issues(
+        record, user_service=service, access_snapshot=snapshot
+    )
     pending: dict[str, str] = {}
-    for username, info in service.load_users().items():
+    users = snapshot.get("users", {})
+    for username, info in users.items() if isinstance(users, dict) else []:
         if not isinstance(info, dict) or info.get("status", "active") != "active":
             continue
         role = str(info.get("role") or "")
-        if can_view_ecn(role, username, user_service=service) and is_ecn_pending_for_user(
+        if can_view_ecn(
+            role, username, user_service=service, access_snapshot=snapshot
+        ) and is_ecn_pending_for_user(
             record,
             username,
             role,
             user_service=service,
+            access_snapshot=snapshot,
+            assignment_issues=assignment_issues,
         ):
             pending[username] = role
     return pending
 
 
-def pending_task_details(record: dict, pending: dict[str, str], service) -> dict[str, list[str]]:
+def pending_task_details(
+    record: dict,
+    pending: dict[str, str],
+    service,
+    access_snapshot: dict | None = None,
+) -> dict[str, list[str]]:
     """细化当前用户可执行的物料责任项，用于正文和去重指纹。"""
     state = record.get("workflow", {}).get("current_state")
     execution = record.get("execution_info", {})
     stage = execution.get("stage")
     special_tasks: dict[str, list[str]] = {name: [] for name in pending}
+    snapshot = access_snapshot or build_ecn_access_snapshot(service)
+    assignment_issues = get_ecn_execution_assignment_issues(
+        record, user_service=service, access_snapshot=snapshot
+    )
     if state == ECNState.ECN_EXECUTING:
         for item in get_special_message_items(record, list(pending)):
             special_tasks[item["assignee"]].append(
@@ -73,9 +110,51 @@ def pending_task_details(record: dict, pending: dict[str, str], service) -> dict
                 if spec.get("available") is not True:
                     continue
                 for name, role in pending.items():
-                    if can_confirm_ecn_material_spec(spec, role, name, user_service=service):
-                        tasks[name].append(f"{item_id} / {spec.get('key', '')}")
+                    if can_confirm_ecn_material_spec(
+                        spec,
+                        role,
+                        name,
+                        user_service=service,
+                        access_snapshot=snapshot,
+                    ):
+                        tasks[name].append(material_task_summary(record, str(item_id), spec))
+        for issue in assignment_issues:
+            for name, role in pending.items():
+                if not can_execute_ecn_assistant_stage(
+                    role, name, user_service=service, access_snapshot=snapshot
+                ):
+                    continue
+                item = items.get(issue["item_id"], {})
+                entry = execution.get("material_confirmations", {}).get(issue["item_id"], {})
+                spec = next(
+                    (
+                        current
+                        for current in get_ecn_material_execution_specs(item, entry)
+                        if str(current.get("key")) == issue["key"]
+                    ),
+                    {},
+                )
+                tasks[name].append(
+                    f"负责人异常，请改派\n{material_task_summary(record, issue['item_id'], spec)}\n"
+                    f"原负责人：{issue['owner']}"
+                )
         return tasks
+    for issue in assignment_issues:
+        if issue["kind"] == "special":
+            detail = get_special_message_item(record, issue["key"], issue["owner"])
+            issue_text = (
+                f"负责人异常，请改派\n事项/方案：{detail['subject']}\n项目：{detail['projects']}\n"
+                f"应执行内容：{detail['content']}\n原负责人：{issue['owner']}"
+            )
+        else:
+            issue_text = (
+                f"负责人异常，请改派\n责任项：{issue['item_id']} / {issue['key']}\n原负责人：{issue['owner']}"
+            )
+        for name, role in pending.items():
+            if can_execute_ecn_assistant_stage(
+                role, name, user_service=service, access_snapshot=snapshot
+            ):
+                special_tasks[name].append(issue_text)
     if state == ECNState.ECN_EXECUTING:
         description = {
             ECN_EXECUTION_STAGE_ASSISTANT: "核对资料及ERP完成情况，并启动系统内资料执行",
@@ -94,7 +173,9 @@ def pending_task_details(record: dict, pending: dict[str, str], service) -> dict
     def needs_assistant_reminder(name: str, role: str) -> bool:
         if state != ECNState.ECN_EXECUTING:
             return True
-        if not can_execute_ecn_assistant_stage(role, name, user_service=service):
+        if not can_execute_ecn_assistant_stage(
+            role, name, user_service=service, access_snapshot=snapshot
+        ):
             return False
         entries = list(get_ecn_special_confirmations(execution).values())
         self_returned = any(
@@ -222,12 +303,20 @@ def build_notification_card(
         else ("研发经理抄送 · 含本人待办时请处理" if is_cc else "待办提醒")
     )
     basic = record.get("basic_info", {})
+    display_names = list(dict.fromkeys(names))
+    names_text = "、".join(display_names[:6])
+    if len(display_names) > 6:
+        names_text += f" 等{len(display_names)}人"
+    all_tasks = list(dict.fromkeys(task for name in names for task in tasks.get(name, [])))
+    display_tasks = all_tasks[:3]
     lines = [
         f"单号：{record.get('ecn_id', '')}",
         f"主题：{str(basic.get('title') or '工程变更申请')[:45]}",
-        f"{'原应通知人员' if config['test_mode'] else '待处理人员'}：{'、'.join(names)}",
-        *[f"待办：{task}" for task in dict.fromkeys(task for name in names for task in tasks.get(name, []))],
+        f"{'原应通知人员' if config['test_mode'] else '待处理人员'}：{names_text}",
+        *[f"待办：{task}" for task in display_tasks],
     ]
+    if len(all_tasks) > len(display_tasks):
+        lines.append(f"另有{len(all_tasks) - len(display_tasks)}项待办，请进入系统查看")
     prefix = f'<div class="gray">{escape(nature)}</div><div class="normal">'
     suffix = "</div>"
     hint = "…（进入系统查看完整待办）"
@@ -260,6 +349,7 @@ async def check_and_send_ecn_reminders(*, config=None, user_service=None, storag
         all_records = await storage.get_fresh_item(ECN_DATA_KEY, {})
         if not isinstance(all_records, dict):
             return 0, 0
+        access_snapshot = build_ecn_access_snapshot(service)
         for ecn_id, record in all_records.items():
             if not isinstance(record, dict):
                 continue
@@ -274,12 +364,12 @@ async def check_and_send_ecn_reminders(*, config=None, user_service=None, storag
             except Exception:
                 logger.exception("特定事项取消告知检查失败，下次重试：%s", ecn_id)
                 failed += 1
-            pending = collect_pending_users(record, service)
+            pending = collect_pending_users(record, service, access_snapshot)
             if not pending:
                 # 清除已解决待办的去重状态，后续重新出现同一待办时可以再次通知。
                 await storage.del_deep_item([NOTIFICATION_STATE_KEY, ecn_id])
                 continue
-            tasks = pending_task_details(record, pending, service)
+            tasks = pending_task_details(record, pending, service, access_snapshot)
             pending = {name: role for name, role in pending.items() if tasks.get(name)}
             if not pending:
                 continue
@@ -335,8 +425,11 @@ async def check_and_send_ecn_reminders(*, config=None, user_service=None, storag
                     # 发送前再次核对当前单据，避免通讯录解析期间流程已被处理。
                     fresh_records = await storage.get_fresh_item(ECN_DATA_KEY, {})
                     fresh = fresh_records.get(ecn_id, {})
-                    fresh_pending = collect_pending_users(fresh, service)
-                    fresh_tasks = pending_task_details(fresh, fresh_pending, service)
+                    fresh_access_snapshot = build_ecn_access_snapshot(service)
+                    fresh_pending = collect_pending_users(fresh, service, fresh_access_snapshot)
+                    fresh_tasks = pending_task_details(
+                        fresh, fresh_pending, service, fresh_access_snapshot
+                    )
                     if not fresh_pending or build_notification_fingerprint(fresh, fresh_tasks, settings) != fingerprint:
                         continue
                     if settings["public_base_url"]:

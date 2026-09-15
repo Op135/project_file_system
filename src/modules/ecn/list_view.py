@@ -10,6 +10,9 @@ from ...config import (
     ECNState,
 )
 from ...ecn_access import (
+    build_ecn_access_snapshot,
+    can_execute_ecn_assistant_stage,
+    get_ecn_execution_assignment_issues,
     is_ecn_pending_for_user,
 )
 from ...ecn_management_config import (
@@ -91,6 +94,8 @@ def build_ecn_management_grid_row(
     current_role: str,
     *,
     include_delete: bool = False,
+    user_service=None,
+    access_snapshot: dict[str, Any] | None = None,
 ) -> dict[str, object]:
     """把ECN记录整理为首页AG Grid行数据。"""
     if not isinstance(ecn_data, dict):
@@ -102,7 +107,24 @@ def build_ecn_management_grid_row(
     execution_info = ecn_data.get("execution_info", {})
     execution_info = execution_info if isinstance(execution_info, dict) else {}
     current_state = str(workflow.get("current_state") or "")
-    is_my_pending = is_ecn_pending_for_user(ecn_data, current_user, current_role)
+    snapshot = access_snapshot or build_ecn_access_snapshot(user_service)
+    assignment_issues = get_ecn_execution_assignment_issues(
+        ecn_data, user_service=user_service, access_snapshot=snapshot
+    )
+    is_my_pending = is_ecn_pending_for_user(
+        ecn_data,
+        current_user,
+        current_role,
+        user_service=user_service,
+        access_snapshot=snapshot,
+        assignment_issues=assignment_issues,
+    )
+    can_reassign = bool(assignment_issues) and can_execute_ecn_assistant_stage(
+        current_role,
+        current_user,
+        user_service=user_service,
+        access_snapshot=snapshot,
+    )
     traceability_summary = get_ecn_traceability_closure_summary(ecn_data)
     projects = get_ecn_scheme_target_projects(ecn_data)
     summary_text = str(basic_info.get("title") or "").strip()
@@ -114,7 +136,7 @@ def build_ecn_management_grid_row(
         "delete_action": "删除" if include_delete else "",
         "ecn_id": str(ecn_data.get("ecn_id") or ""),
         "current_state": current_state,
-        "attention": "待我处理" if is_my_pending else "",
+        "attention": "负责人异常·待改派" if can_reassign else "待我处理" if is_my_pending else "",
         "summary": summary_text,
         "projects": "、".join(projects) or "—",
         "applicant": str(basic_info.get("applicant") or "—"),
@@ -122,7 +144,11 @@ def build_ecn_management_grid_row(
         "closed_date": (
             format_ecn_list_date(execution_info.get("completed_time")) if current_state == ECNState.CLOSED else "—"
         ),
-        "progress": get_ecn_list_progress_summary(ecn_data),
+        "progress": (
+            f"负责人异常：{len(assignment_issues)}项待改派"
+            if assignment_issues
+            else get_ecn_list_progress_summary(ecn_data)
+        ),
         "row_tone": (
             "pending"
             if is_my_pending

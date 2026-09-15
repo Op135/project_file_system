@@ -2623,6 +2623,46 @@ class IdentityStore:
         }
         return role_codes | {str(row["code"]) for row in position_rows}
 
+    def list_active_user_permission_codes(self) -> dict[str, set[str]]:
+        """一次查询全部在职用户的有效权限，供列表和后台批量判定复用。"""
+        with self._lock, self._connect() as connection:
+            users = connection.execute(
+                "SELECT username FROM iam_users WHERE status='active' ORDER BY username"
+            ).fetchall()
+            role_rows = connection.execute(
+                "SELECT u.username, p.code, r.code AS source_role_code FROM iam_users u "
+                "JOIN iam_user_roles ur ON ur.user_id=u.user_id "
+                "JOIN iam_security_roles r ON r.role_id=ur.role_id AND r.status='active' "
+                "JOIN iam_role_permissions rp ON rp.role_id=r.role_id "
+                "JOIN iam_permissions p ON p.permission_id=rp.permission_id "
+                "WHERE u.status='active'"
+            ).fetchall()
+            position_rows = connection.execute(
+                "SELECT u.username, p.code FROM iam_users u "
+                "JOIN org_memberships m ON m.user_id=u.user_id "
+                "AND m.status='active' AND m.is_primary=1 "
+                "JOIN iam_positions position ON position.position_id=m.position_id "
+                "AND position.status='active' "
+                "JOIN iam_position_permissions pp ON pp.position_id=position.position_id "
+                "JOIN iam_permissions p ON p.permission_id=pp.permission_id "
+                "WHERE u.status='active'"
+            ).fetchall()
+            all_permissions = {
+                str(row["code"]) for row in connection.execute("SELECT code FROM iam_permissions").fetchall()
+            }
+        result = {str(row["username"]): set() for row in users}
+        for row in role_rows:
+            code = str(row["code"])
+            if str(row["source_role_code"]).startswith("legacy.") and ignores_legacy_role_grants(code):
+                continue
+            result.setdefault(str(row["username"]), set()).add(code)
+        for row in position_rows:
+            result.setdefault(str(row["username"]), set()).add(str(row["code"]))
+        for username in result:
+            if username.casefold() == "admin":
+                result[username].update(all_permissions)
+        return result
+
     def has_permission(self, username: str, permission_code: str) -> bool:
         permission_code = str(permission_code or "").strip().lower()
         if not permission_code:

@@ -62,14 +62,83 @@ def _database_mode(user_service=None) -> bool:
     return service is not None and getattr(service, "storage_mode", "legacy_excel") == "database"
 
 
+def build_ecn_access_snapshot(user_service=None) -> dict[str, Any]:
+    """一次读取当前用户及权限，供同一轮列表或通知扫描复用。"""
+    service = _service(user_service)
+    if service is None:
+        return {"database_mode": False, "users": {}, "permissions": {}}
+    users = service.load_users()
+    database_mode = _database_mode(service)
+    permission_loader = getattr(service, "list_active_user_permission_codes", None)
+    if database_mode and callable(permission_loader):
+        permissions = permission_loader()
+    elif database_mode:
+        relevant_codes = {
+            ECN_VIEW_PERMISSION,
+            ECN_EXECUTION_ASSISTANT_PERMISSION,
+            ECN_EXECUTION_MATERIAL_CONFIRM_PERMISSION,
+            ECN_EXECUTION_PURCHASE_CONFIRM_PERMISSION,
+            ECN_EXECUTION_PMC_CONFIRM_PERMISSION,
+            ECN_EXECUTION_PRODUCTION_CONFIRM_PERMISSION,
+            ECN_EXECUTION_SALES_SUPERVISOR_CONFIRM_PERMISSION,
+        }
+        permissions = {
+            username: {code for code in relevant_codes if service.has_permission(username, code)}
+            for username, info in users.items()
+            if isinstance(info, dict) and info.get("status", "active") == "active"
+        }
+    else:
+        permissions = {}
+    return {"database_mode": database_mode, "users": users, "permissions": permissions}
+
+
+def _snapshot_permission(access_snapshot: dict[str, Any] | None, username: str, permission_code: str) -> bool:
+    if not isinstance(access_snapshot, dict) or access_snapshot.get("database_mode") is not True:
+        return False
+    permission_map = access_snapshot.get("permissions", {})
+    codes = permission_map.get(username, set()) if isinstance(permission_map, dict) else set()
+    return permission_code in codes if isinstance(codes, (set, list, tuple)) else False
+
+
+def _snapshot_active_user(access_snapshot: dict[str, Any] | None, username: str) -> dict:
+    if not isinstance(access_snapshot, dict):
+        return {}
+    users = access_snapshot.get("users", {})
+    info = users.get(username, {}) if isinstance(users, dict) else {}
+    return info if isinstance(info, dict) and info.get("status", "active") == "active" else {}
+
+
+def _can_execute_assistant_with_snapshot(
+    current_role: object,
+    current_user: str,
+    *,
+    user_service=None,
+    access_snapshot: dict[str, Any] | None = None,
+) -> bool:
+    return can_execute_ecn_assistant_stage(
+        current_role,
+        current_user,
+        user_service=user_service,
+        access_snapshot=access_snapshot,
+    )
+
+
 def _matched_legacy_role(current_role: object, keywords: list[str] | tuple[str, ...]) -> tuple[str, ...]:
     """把旧关键词命中转换为权限兼容层要求的精确角色集合。"""
     role = str(current_role or "").strip()
     return (role,) if role_matches_keywords(role, list(keywords)) else ()
 
 
-def can_view_ecn(current_role: object, current_user: str, *, user_service=None) -> bool:
+def can_view_ecn(
+    current_role: object,
+    current_user: str,
+    *,
+    user_service=None,
+    access_snapshot: dict[str, Any] | None = None,
+) -> bool:
     """判断是否可以进入并查看 ECN 工程变更。"""
+    if isinstance(access_snapshot, dict) and access_snapshot.get("database_mode") is True:
+        return _snapshot_permission(access_snapshot, current_user, ECN_VIEW_PERMISSION)
     return can(
         _service(user_service),
         current_user,
@@ -163,8 +232,16 @@ def can_approve_ecn_scheme(current_role: object, current_user: str, *, user_serv
     )
 
 
-def can_execute_ecn_assistant_stage(current_role: object, current_user: str, *, user_service=None) -> bool:
+def can_execute_ecn_assistant_stage(
+    current_role: object,
+    current_user: str,
+    *,
+    user_service=None,
+    access_snapshot: dict[str, Any] | None = None,
+) -> bool:
     """判断是否可以处理资料准备和系统内资料落盘阶段。"""
+    if isinstance(access_snapshot, dict) and access_snapshot.get("database_mode") is True:
+        return _snapshot_permission(access_snapshot, current_user, ECN_EXECUTION_ASSISTANT_PERMISSION)
     return can(
         _service(user_service),
         current_user,
@@ -207,6 +284,7 @@ def can_confirm_ecn_material_spec(
     current_user: str,
     *,
     user_service=None,
+    access_snapshot: dict[str, Any] | None = None,
 ) -> bool:
     """判断用户能否处理一条已经固化到 ECN 的物料追溯责任项。"""
     if not isinstance(spec, dict):
@@ -222,14 +300,162 @@ def can_confirm_ecn_material_spec(
     service = _service(user_service)
     responsible_type = str(spec.get("responsible_type") or "role")
     responsible_key = str(spec.get("responsible_key") or "").strip()
-    if responsible_type == "project_sales" and responsible_users:
-        return current_user in responsible_users and can(
-            service,
-            current_user,
-            ECN_EXECUTION_MATERIAL_CONFIRM_PERMISSION,
+    if responsible_type in {"project_sales", "assigned_user"} and responsible_users:
+        if current_user not in responsible_users:
+            return False
+        if responsible_type == "assigned_user":
+            return has_ecn_material_execution_permission(
+                current_user, user_service=service, access_snapshot=access_snapshot
+            )
+        return current_user in responsible_users and (
+            _snapshot_permission(access_snapshot, current_user, ECN_EXECUTION_MATERIAL_CONFIRM_PERMISSION)
+            if access_snapshot is not None
+            else can(service, current_user, ECN_EXECUTION_MATERIAL_CONFIRM_PERMISSION)
         )
     permission_code = ECN_EXECUTION_RESPONSIBILITY_PERMISSIONS.get(responsible_key, "")
-    return bool(permission_code and can(service, current_user, permission_code))
+    return bool(
+        permission_code
+        and (
+            _snapshot_permission(access_snapshot, current_user, permission_code)
+            if access_snapshot is not None
+            else can(service, current_user, permission_code)
+        )
+    )
+
+
+def has_ecn_material_execution_permission(
+    username: str, *, user_service=None, access_snapshot: dict[str, Any] | None = None
+) -> bool:
+    """人工改派仍要求接收人具备一项稳定的ECN执行权限。"""
+    service = _service(user_service)
+    return any(
+        (
+            _snapshot_permission(access_snapshot, username, permission_code)
+            if access_snapshot is not None
+            else can(service, username, permission_code)
+        )
+        for permission_code in (
+            ECN_EXECUTION_ASSISTANT_PERMISSION,
+            ECN_EXECUTION_MATERIAL_CONFIRM_PERMISSION,
+            ECN_EXECUTION_PURCHASE_CONFIRM_PERMISSION,
+            ECN_EXECUTION_PMC_CONFIRM_PERMISSION,
+            ECN_EXECUTION_PRODUCTION_CONFIRM_PERMISSION,
+            ECN_EXECUTION_SALES_SUPERVISOR_CONFIRM_PERMISSION,
+        )
+    )
+
+
+def is_active_ecn_user(
+    username: str,
+    *,
+    user_service=None,
+    require_material_permission: bool = False,
+    access_snapshot: dict[str, Any] | None = None,
+) -> bool:
+    service = _service(user_service)
+    if service is None:
+        return False
+    use_snapshot = isinstance(access_snapshot, dict) and access_snapshot.get("database_mode") is True
+    info = _snapshot_active_user(access_snapshot, username) if use_snapshot else service.get_user(username)
+    if not isinstance(info, dict) or info.get("status", "active") != "active":
+        return False
+    role = str(info.get("role") or "")
+    can_view = (
+        _snapshot_permission(access_snapshot, username, ECN_VIEW_PERMISSION)
+        if use_snapshot
+        else can_view_ecn(role, username, user_service=service)
+    )
+    if not can_view:
+        return False
+    return not require_material_permission or has_ecn_material_execution_permission(
+        username, user_service=service, access_snapshot=access_snapshot
+    )
+
+
+def is_ecn_material_spec_orphaned(
+    spec: Any, *, user_service=None, access_snapshot: dict[str, Any] | None = None
+) -> bool:
+    """当前可执行责任项没有任何在职且具备权限的处理人时返回True。"""
+    if not isinstance(spec, dict) or spec.get("available") is not True:
+        return False
+    service = _service(user_service)
+    if service is None:
+        return False
+    snapshot = access_snapshot or build_ecn_access_snapshot(service)
+    use_snapshot = snapshot.get("database_mode") is True
+    users = snapshot.get("users", {})
+    for username, info in users.items() if isinstance(users, dict) else []:
+        if not isinstance(info, dict) or info.get("status", "active") != "active":
+            continue
+        role = str(info.get("role") or "")
+        can_view = (
+            _snapshot_permission(snapshot, username, ECN_VIEW_PERMISSION)
+            if use_snapshot
+            else can_view_ecn(role, username, user_service=service)
+        )
+        if can_view and can_confirm_ecn_material_spec(
+            spec,
+            role,
+            username,
+            user_service=service,
+            access_snapshot=snapshot if use_snapshot else None,
+        ):
+            return False
+    return True
+
+
+def get_ecn_execution_assignment_issues(
+    ecn_data: Any, *, user_service=None, access_snapshot: dict[str, Any] | None = None
+) -> list[dict[str, str]]:
+    """列出因停用、离职或权限撤销而无人可处理的执行待办。"""
+    if not isinstance(ecn_data, dict):
+        return []
+    workflow = ecn_data.get("workflow", {})
+    execution = ecn_data.get("execution_info", {})
+    if (
+        not isinstance(workflow, dict)
+        or workflow.get("current_state") != ECNState.ECN_EXECUTING
+        or not isinstance(execution, dict)
+    ):
+        return []
+    snapshot = access_snapshot or build_ecn_access_snapshot(user_service)
+    issues: list[dict[str, str]] = []
+    for key, item in get_ecn_special_confirmations(execution).items():
+        assignee = str(item.get("assignee") or "").strip()
+        if assignee and item.get("confirmed") is not True and not is_active_ecn_user(
+            assignee, user_service=user_service, access_snapshot=snapshot
+        ):
+            issues.append({"kind": "special", "item_id": key, "key": key, "owner": assignee})
+    if execution.get("stage") != ECN_EXECUTION_STAGE_MATERIAL:
+        return issues
+    change_items = {
+        str(item.get("item_id")): item
+        for item in ecn_data.get("change_items", [])
+        if isinstance(item, dict) and item.get("item_id")
+    }
+    material_confirmations = execution.get("material_confirmations", {})
+    if not isinstance(material_confirmations, dict):
+        return issues
+    for item_id, entry in material_confirmations.items():
+        for spec in get_ecn_material_execution_specs(change_items.get(str(item_id), {}), entry):
+            if is_ecn_material_spec_orphaned(
+                spec, user_service=user_service, access_snapshot=snapshot
+            ):
+                raw_users = spec.get("users", [])
+                users = (
+                    [str(value) for value in raw_users if str(value).strip()]
+                    if isinstance(raw_users, (list, tuple, set))
+                    else []
+                )
+                issues.append(
+                    {
+                        "kind": "material",
+                        "item_id": str(item_id),
+                        "key": str(spec.get("key") or ""),
+                        "owner": "、".join(users) or str(spec.get("label") or "原责任岗位"),
+                    }
+                )
+    return issues
 
 
 def can_delete_ecn(current_role: object, current_user: str, *, user_service=None) -> bool:
@@ -287,6 +513,8 @@ def is_ecn_pending_for_user(
     current_role: str,
     *,
     user_service=None,
+    access_snapshot: dict[str, Any] | None = None,
+    assignment_issues: list[dict[str, str]] | None = None,
 ) -> bool:
     """返回一张 ECN 是否属于当前用户可实际处理的待办。"""
     if not isinstance(ecn_data, dict):
@@ -299,7 +527,29 @@ def is_ecn_pending_for_user(
         item.get("assignee") == current_user and item.get("confirmed") is not True
         for item in get_ecn_special_confirmations(ecn_data.get("execution_info")).values()
     ):
-        return can_view_ecn(current_role, current_user, user_service=user_service)
+        return (
+            _snapshot_permission(access_snapshot, current_user, ECN_VIEW_PERMISSION)
+            if isinstance(access_snapshot, dict) and access_snapshot.get("database_mode") is True
+            else can_view_ecn(current_role, current_user, user_service=user_service)
+        )
+    current_assignment_issues = (
+        assignment_issues
+        if assignment_issues is not None
+        else get_ecn_execution_assignment_issues(
+            ecn_data, user_service=user_service, access_snapshot=access_snapshot
+        )
+    )
+    if (
+        workflow.get("current_state") == ECNState.ECN_EXECUTING
+        and current_assignment_issues
+        and _can_execute_assistant_with_snapshot(
+            current_role,
+            current_user,
+            user_service=user_service,
+            access_snapshot=access_snapshot,
+        )
+    ):
+        return True
     if not _database_mode(user_service):
         return is_legacy_ecn_pending_for_user(ecn_data, current_user, current_role)
 
@@ -326,10 +576,11 @@ def is_ecn_pending_for_user(
             ECN_EXECUTION_STAGE_OVERVIEW_RUNNING,
             ECN_EXECUTION_STAGE_OVERVIEW_FAILED,
         }:
-            return can_execute_ecn_assistant_stage(
+            return _can_execute_assistant_with_snapshot(
                 current_role,
                 current_user,
                 user_service=user_service,
+                access_snapshot=access_snapshot,
             )
         if stage == ECN_EXECUTION_STAGE_MATERIAL:
             change_items = {
@@ -348,6 +599,7 @@ def is_ecn_pending_for_user(
                         current_role,
                         current_user,
                         user_service=user_service,
+                        access_snapshot=access_snapshot,
                     ):
                         return True
             return False
