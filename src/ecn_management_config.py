@@ -45,17 +45,89 @@ def get_ecn_material_code_field_labels(change_type: Any) -> tuple[tuple[str, str
     return ()
 
 
-def get_ecn_material_code_missing_fields(item: Any) -> list[str]:
-    """返回一条物料方案尚未补齐的料号字段名称。"""
+def _get_ecn_alternative_material_groups(change_type: Any) -> tuple[tuple[str, str], ...]:
+    """返回物料动作允许维护的替换料分组字段及显示名称。"""
+    if change_type == ECN_MATERIAL_CHANGE_TYPE_ADD:
+        return (("alternative_materials", "新增替换料"),)
+    if change_type == ECN_MATERIAL_CHANGE_TYPE_REPLACE:
+        return (
+            ("old_alternative_materials", "更改前替换料"),
+            ("new_alternative_materials", "更改后替换料"),
+        )
+    return ()
+
+
+def get_ecn_material_code_entries(item: Any) -> list[dict[str, str]]:
+    """列出主物料及替换料的全部料号，token 可供专用补录窗口提交。"""
     if not isinstance(item, dict) or classify_ecn_change_item(item) != ECN_SCHEME_GROUP_MATERIAL:
         return []
     material_change = item.get("material_change", {})
     if not isinstance(material_change, dict):
-        material_change = {}
-    return [
-        label
+        return []
+    entries = [
+        {
+            "token": f"main:{key}",
+            "label": label,
+            "value": str(material_change.get(key) or "").strip(),
+        }
         for key, label in get_ecn_material_code_field_labels(item.get("change_type"))
-        if not str(material_change.get(key) or "").strip()
+    ]
+    for group_key, group_label in _get_ecn_alternative_material_groups(item.get("change_type")):
+        group = material_change.get(group_key, [])
+        if not isinstance(group, list):
+            continue
+        for index, alternative in enumerate(group, start=1):
+            if not isinstance(alternative, dict):
+                continue
+            alternative_id = str(alternative.get("alternative_id") or "").strip()
+            if not alternative_id:
+                continue
+            name = str(alternative.get("material_name") or "").strip()
+            name_suffix = f"（{name}）" if name else ""
+            entries.append(
+                {
+                    "token": f"{group_key}:{alternative_id}",
+                    "label": f"{group_label} {index} 料号{name_suffix}",
+                    "value": str(alternative.get("material_code") or "").strip(),
+                }
+            )
+    return entries
+
+
+def apply_ecn_material_code_values(item: dict, values: dict[str, str]) -> bool:
+    """按稳定 token 写入料号；结构变化或未知 token 时拒绝。"""
+    material_change = item.get("material_change", {})
+    if not isinstance(material_change, dict):
+        return False
+    remaining = set(values)
+    for key, _ in get_ecn_material_code_field_labels(item.get("change_type")):
+        token = f"main:{key}"
+        if token in values:
+            material_change[key] = values[token]
+            remaining.discard(token)
+    for group_key, _ in _get_ecn_alternative_material_groups(item.get("change_type")):
+        group = material_change.get(group_key, [])
+        if not isinstance(group, list):
+            return False
+        for alternative in group:
+            if not isinstance(alternative, dict):
+                return False
+            alternative_id = str(alternative.get("alternative_id") or "").strip()
+            token = f"{group_key}:{alternative_id}"
+            if alternative_id and token in values:
+                alternative["material_code"] = values[token]
+                remaining.discard(token)
+    return not remaining
+
+
+def get_ecn_material_code_missing_fields(item: Any) -> list[str]:
+    """返回一条物料方案尚未补齐的料号字段名称。"""
+    if not isinstance(item, dict) or classify_ecn_change_item(item) != ECN_SCHEME_GROUP_MATERIAL:
+        return []
+    return [
+        entry["label"]
+        for entry in get_ecn_material_code_entries(item)
+        if not entry["value"]
     ]
 
 
@@ -89,7 +161,28 @@ def get_ecn_material_change_display(item: Any) -> tuple[str, str]:
     if change_type not in ECN_MATERIAL_CHANGE_TYPES or not isinstance(material_change, dict):
         return "", ""
 
-    def material_text(code_key: str, name_key: str, quantity_key: str, unit_key: str) -> str:
+    def alternative_text(group_key: str | None) -> str:
+        if not group_key:
+            return ""
+        group = material_change.get(group_key, [])
+        if not isinstance(group, list) or not group:
+            return ""
+        lines = ["替换料："]
+        for index, alternative in enumerate(group, start=1):
+            if not isinstance(alternative, dict):
+                continue
+            code = str(alternative.get("material_code") or "").strip() or "待补充"
+            name = str(alternative.get("material_name") or "").strip()
+            lines.extend((f"{index}. 料号：{code}", f"   {name}"))
+        return "\n".join(lines) if len(lines) > 1 else ""
+
+    def material_text(
+        code_key: str,
+        name_key: str,
+        quantity_key: str,
+        unit_key: str,
+        alternative_group_key: str | None = None,
+    ) -> str:
         code = str(material_change.get(code_key) or "").strip() or "待补充"
         name = str(material_change.get(name_key) or "").strip()
         quantity = material_change.get(quantity_key)
@@ -97,10 +190,16 @@ def get_ecn_material_change_display(item: Any) -> tuple[str, str]:
         quantity_text = (
             "" if quantity in [None, ""] else f"{quantity:g}" if isinstance(quantity, (int, float)) else str(quantity)
         )
-        return f"料号：{code}\n{name}\n用量：{quantity_text} {unit}".strip()
+        lines = [f"料号：{code}", name, f"用量：{quantity_text} {unit}"]
+        alternatives = alternative_text(alternative_group_key)
+        if alternatives:
+            lines.extend(("", alternatives))
+        return "\n".join(lines).strip()
 
     if change_type == ECN_MATERIAL_CHANGE_TYPE_ADD:
-        return "无", material_text("material_code", "material_name", "quantity", "unit")
+        return "无", material_text(
+            "material_code", "material_name", "quantity", "unit", "alternative_materials"
+        )
     if change_type == ECN_MATERIAL_CHANGE_TYPE_DISCONTINUE:
         return material_text("material_code", "material_name", "quantity", "unit"), str(change_type)
     if change_type == ECN_MATERIAL_CHANGE_TYPE_ADJUST_QUANTITY:
@@ -116,9 +215,30 @@ def get_ecn_material_change_display(item: Any) -> tuple[str, str]:
             f"料号：{code}\n{name}\n用量：{new_quantity_text} {unit}",
         )
     return (
-        material_text("old_material_code", "old_material_name", "old_quantity", "old_unit"),
-        material_text("new_material_code", "new_material_name", "new_quantity", "new_unit"),
+        material_text(
+            "old_material_code",
+            "old_material_name",
+            "old_quantity",
+            "old_unit",
+            "old_alternative_materials",
+        ),
+        material_text(
+            "new_material_code",
+            "new_material_name",
+            "new_quantity",
+            "new_unit",
+            "new_alternative_materials",
+        ),
     )
+
+
+def split_ecn_material_change_display(value: str) -> tuple[str, str]:
+    """将物料主信息与替换料附加信息拆开，供界面使用不同视觉层级。"""
+    marker = "\n\n替换料：\n"
+    primary, separator, alternatives = str(value or "").partition(marker)
+    if not separator:
+        return primary, ""
+    return primary, f"替换料：\n{alternatives}"
 
 
 def get_ecn_material_change_missing_fields(change_type: Any, material_change: Any) -> list[str]:
@@ -151,11 +271,25 @@ def get_ecn_material_change_missing_fields(change_type: Any, material_change: An
             ("new_unit", "改后单位"),
         ],
     }[change_type]
-    return [
+    missing = [
         label
         for key, label in required_fields
         if material_change.get(key) is None or str(material_change.get(key)).strip() == ""
     ]
+    for group_key, group_label in _get_ecn_alternative_material_groups(change_type):
+        group = material_change.get(group_key, [])
+        if not isinstance(group, list):
+            missing.append(group_label)
+            continue
+        for index, alternative in enumerate(group, start=1):
+            if not isinstance(alternative, dict):
+                missing.append(f"{group_label} {index} 数据")
+                continue
+            if not str(alternative.get("alternative_id") or "").strip():
+                missing.append(f"{group_label} {index} 数据")
+            if not str(alternative.get("material_name") or "").strip():
+                missing.append(f"{group_label} {index} 物料名称")
+    return missing
 
 
 class ECNState:

@@ -38,7 +38,7 @@ from ...ecn_management_config import (
     expand_new_material_traceability_selection,
     get_active_overview_row_contents,
     get_ecn_material_change_missing_fields,
-    get_ecn_material_code_field_labels,
+    get_ecn_material_code_entries,
     get_ecn_scheme_target_projects,
     is_ecn_disposition_condition_required,
     is_ecn_material_disposition_required,
@@ -48,25 +48,28 @@ from ...ecn_management_config import (
 
 def open_material_code_dialog(item: dict, on_save_callback) -> None:
     """打开评审通过后的专用料号录入窗口。"""
-    material_change = item.get("material_change", {})
-    material_change = material_change if isinstance(material_change, dict) else {}
-    fields = get_ecn_material_code_field_labels(item.get("change_type"))
-    values = {key: str(material_change.get(key) or "").strip() for key, _ in fields}
+    entries = get_ecn_material_code_entries(item)
+    values = {entry["token"]: entry["value"] for entry in entries}
     dialog = ui.dialog().props("persistent")
-    with dialog, ui.card().classes("w-[520px] max-w-full p-5 gap-3"):
+    with dialog, ui.card().classes("w-[620px] max-w-full p-5 gap-3"):
         ui.label("补充物料料号").classes("text-lg font-bold text-blue-900")
-        ui.label("料号补齐后才能进入ECN执行；进入执行阶段后将锁定，不能再修改。").classes("text-sm text-slate-500")
-        for key, label in fields:
-            ui.input(f"{label}（必填）").classes("w-full").bind_value(values, key).props(
-                "outlined dense autofocus" if key == fields[0][0] else "outlined dense"
+        ui.label("主物料和替换料的料号全部补齐后才能进入ECN执行；进入执行后将锁定。").classes(
+            "text-sm text-slate-500"
+        )
+        for index, entry in enumerate(entries):
+            token = entry["token"]
+            ui.input(f"{entry['label']}（必填）").classes("w-full").bind_value(values, token).props(
+                "outlined dense autofocus" if index == 0 else "outlined dense"
             )
 
         async def submit() -> None:
-            missing = [label for key, label in fields if not str(values.get(key) or "").strip()]
+            missing = [entry["label"] for entry in entries if not str(values.get(entry["token"]) or "").strip()]
             if missing:
                 ui.notify("请填写：" + "、".join(missing), type="warning")
                 return
-            if await on_save_callback({key: str(values[key]).strip() for key, _ in fields}):
+            if await on_save_callback(
+                {entry["token"]: str(values[entry["token"]]).strip() for entry in entries}
+            ):
                 dialog.close()
 
         with ui.row().classes("w-full justify-end gap-2 mt-2"):
@@ -1164,7 +1167,7 @@ def open_text_change_dialog(
     ]
 
     dialog.clear()
-    with dialog, ui.card().classes("w-[1120px] max-w-full"):
+    with dialog, ui.card().classes("w-[1280px] max-w-full"):
         dialog_title = "其它特定事项/资料变更方案" if is_document_scheme else "物料变更方案"
         ui.label(f"修改{dialog_title}" if is_edit else f"添加{dialog_title}").classes("text-lg font-bold text-blue-900")
 
@@ -1222,14 +1225,77 @@ def open_text_change_dialog(
             material_form_container.clear()
             change_type = sel_state["change_type"]
             material_state = sel_state["material_change"]
+
+            def alternative_rows(group_key: str) -> list[dict]:
+                raw_rows = material_state.get(group_key, [])
+                rows = raw_rows if isinstance(raw_rows, list) else []
+                normalized_rows: list[dict] = []
+                for raw_row in rows:
+                    if not isinstance(raw_row, dict):
+                        continue
+                    if not str(raw_row.get("alternative_id") or "").strip():
+                        raw_row["alternative_id"] = str(uuid.uuid4())
+                    raw_row.setdefault("material_code", "")
+                    raw_row.setdefault("material_name", "")
+                    normalized_rows.append(raw_row)
+                material_state[group_key] = normalized_rows
+                return normalized_rows
+
+            def add_alternative(group_key: str) -> None:
+                alternative_rows(group_key).append(
+                    {
+                        "alternative_id": str(uuid.uuid4()),
+                        "material_code": "",
+                        "material_name": "",
+                    }
+                )
+                render_material_change_form()
+
+            def remove_alternative(group_key: str, alternative_id: str) -> None:
+                material_state[group_key] = [
+                    row
+                    for row in alternative_rows(group_key)
+                    if str(row.get("alternative_id") or "") != alternative_id
+                ]
+                render_material_change_form()
+
+            def render_alternatives(group_key: str, title: str) -> None:
+                rows = alternative_rows(group_key)
+                if not rows:
+                    return
+                with ui.column().classes("w-full gap-2 rounded border border-blue-100 bg-white/70 p-2"):
+                    ui.label(f"{title}（料号可后补）").classes("text-xs font-bold text-blue-800")
+                    for index, row in enumerate(rows, start=1):
+                        alternative_id = str(row.get("alternative_id") or "")
+                        with (
+                            ui.grid(columns=3)
+                            .classes("w-full gap-3 items-center")
+                            .style("grid-template-columns:minmax(190px,.8fr) minmax(360px,1.8fr) 44px")
+                        ):
+                            ui.input(f"替换料 {index} 料号（可后补）").classes("w-full").bind_value(
+                                row, "material_code"
+                            ).props("outlined dense bg-white")
+                            ui.input(f"替换料 {index} 物料名称（必填）").classes("w-full").bind_value(
+                                row, "material_name"
+                            ).props("outlined dense bg-white")
+                            ui.button(
+                                icon="delete_outline",
+                                on_click=lambda _, key=group_key, row_id=alternative_id: remove_alternative(key, row_id),
+                            ).props("flat round dense color=negative").tooltip("删除这行替换料")
+
             with material_form_container:
                 with ui.card().classes("w-full p-3 bg-blue-50/50 border border-blue-200 shadow-none gap-2"):
                     ui.label(f"{change_type}物料信息").classes("text-xs font-bold text-blue-900")
                     if change_type in [ECN_MATERIAL_CHANGE_TYPE_ADD, ECN_MATERIAL_CHANGE_TYPE_DISCONTINUE]:
+                        supports_alternatives = change_type == ECN_MATERIAL_CHANGE_TYPE_ADD
                         with (
-                            ui.grid(columns=4)
+                            ui.grid(columns=5 if supports_alternatives else 4)
                             .classes("w-full gap-3")
-                            .style("grid-template-columns:minmax(180px,.8fr) minmax(300px,1.7fr) 150px 110px")
+                            .style(
+                                "grid-template-columns:minmax(180px,.8fr) minmax(320px,1.7fr) 130px 110px 40px"
+                                if supports_alternatives
+                                else "grid-template-columns:minmax(180px,.8fr) minmax(320px,1.7fr) 130px 110px"
+                            )
                         ):
                             ui.input("料号（可后补）").classes("w-full").bind_value(
                                 material_state, "material_code"
@@ -1243,6 +1309,13 @@ def open_text_change_dialog(
                             ui.input("单位（必填）").classes("w-full").bind_value(material_state, "unit").props(
                                 "outlined dense bg-white"
                             )
+                            if supports_alternatives:
+                                ui.button(
+                                    icon="add",
+                                    on_click=lambda: add_alternative("alternative_materials"),
+                                ).props("outline round dense color=primary size=sm").tooltip("增加一行新增替换料")
+                        if supports_alternatives:
+                            render_alternatives("alternative_materials", "新增替换料")
                     elif change_type == ECN_MATERIAL_CHANGE_TYPE_ADJUST_QUANTITY:
                         with (
                             ui.grid(columns=5)
@@ -1267,9 +1340,11 @@ def open_text_change_dialog(
                     elif change_type == ECN_MATERIAL_CHANGE_TYPE_REPLACE:
                         ui.label("改前物料").classes("text-[11px] font-bold text-slate-500")
                         with (
-                            ui.grid(columns=4)
+                            ui.grid(columns=5)
                             .classes("w-full gap-3")
-                            .style("grid-template-columns:minmax(180px,.8fr) minmax(300px,1.7fr) 150px 110px")
+                            .style(
+                                "grid-template-columns:minmax(180px,.8fr) minmax(300px,1.7fr) 130px 110px 40px"
+                            )
                         ):
                             ui.input("改前料号（可后补）").classes("w-full").bind_value(
                                 material_state, "old_material_code"
@@ -1283,11 +1358,18 @@ def open_text_change_dialog(
                             ui.input("改前单位（必填）").classes("w-full").bind_value(material_state, "old_unit").props(
                                 "outlined dense bg-white"
                             )
+                            ui.button(
+                                icon="add",
+                                on_click=lambda: add_alternative("old_alternative_materials"),
+                            ).props("outline round dense color=primary size=sm").tooltip("增加一行更改前替换料")
+                        render_alternatives("old_alternative_materials", "更改前替换料")
                         ui.label("改后物料").classes("text-[11px] font-bold text-slate-500 mt-1")
                         with (
-                            ui.grid(columns=4)
+                            ui.grid(columns=5)
                             .classes("w-full gap-3")
-                            .style("grid-template-columns:minmax(180px,.8fr) minmax(300px,1.7fr) 150px 110px")
+                            .style(
+                                "grid-template-columns:minmax(180px,.8fr) minmax(300px,1.7fr) 130px 110px 40px"
+                            )
                         ):
                             ui.input("改后料号（可后补）").classes("w-full").bind_value(
                                 material_state, "new_material_code"
@@ -1301,6 +1383,11 @@ def open_text_change_dialog(
                             ui.input("改后单位（必填）").classes("w-full").bind_value(material_state, "new_unit").props(
                                 "outlined dense bg-white"
                             )
+                            ui.button(
+                                icon="add",
+                                on_click=lambda: add_alternative("new_alternative_materials"),
+                            ).props("outline round dense color=primary size=sm").tooltip("增加一行更改后替换料")
+                        render_alternatives("new_alternative_materials", "更改后替换料")
 
         def on_change_type(e):
             sel_state["change_type"] = e.value
@@ -1409,6 +1496,7 @@ def open_text_change_dialog(
         async def save_item():
             old_content = ""
             new_content = ""
+            normalized_material_change: dict | None = None
             if not sel_state["projects"]:
                 return ui.notify("请至少选择一个目标项目", type="warning")
             if is_material_scheme and not sel_state["traceability_levels"]:
@@ -1432,6 +1520,37 @@ def open_text_change_dialog(
                 )
                 if missing_fields:
                     return ui.notify("请填写：" + "、".join(missing_fields), type="warning")
+                material_change_payload = copy.deepcopy(sel_state["material_change"])
+                if not isinstance(material_change_payload, dict):
+                    return ui.notify("物料方案数据异常，请重新打开后填写", type="negative")
+                allowed_alternative_groups = {
+                    ECN_MATERIAL_CHANGE_TYPE_ADD: {"alternative_materials"},
+                    ECN_MATERIAL_CHANGE_TYPE_REPLACE: {
+                        "old_alternative_materials",
+                        "new_alternative_materials",
+                    },
+                }.get(sel_state["change_type"], set())
+                for group_key in (
+                    "alternative_materials",
+                    "old_alternative_materials",
+                    "new_alternative_materials",
+                ):
+                    if group_key not in allowed_alternative_groups:
+                        material_change_payload.pop(group_key, None)
+                        continue
+                    rows = material_change_payload.get(group_key, [])
+                    if not isinstance(rows, list):
+                        rows = []
+                    material_change_payload[group_key] = [
+                        {
+                            "alternative_id": str(row.get("alternative_id") or uuid.uuid4()),
+                            "material_code": str(row.get("material_code") or "").strip(),
+                            "material_name": str(row.get("material_name") or "").strip(),
+                        }
+                        for row in rows
+                        if isinstance(row, dict)
+                    ]
+                normalized_material_change = material_change_payload
             else:
                 assert old_content_ui is not None and new_content_ui is not None
                 if not old_content_ui.value.strip() or not new_content_ui.value.strip():
@@ -1459,7 +1578,8 @@ def open_text_change_dialog(
                 if is_ecn_disposition_condition_required(sel_state["disposition_measure"]):
                     payload["disposition_condition"] = sel_state["disposition_condition"].strip()
             if is_material_scheme:
-                payload["material_change"] = copy.deepcopy(sel_state["material_change"])
+                assert normalized_material_change is not None
+                payload["material_change"] = normalized_material_change
             else:
                 payload["old_content"] = old_content
                 payload["new_content"] = new_content

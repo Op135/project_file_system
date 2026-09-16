@@ -49,6 +49,8 @@ from ...ecn_management_config import (
     ECN_SCHEME_GROUP_UNKNOWN,
     classify_ecn_change_item,
     get_ecn_material_change_display,
+    get_ecn_material_code_entries,
+    split_ecn_material_change_display,
     get_ecn_overview_deactivation_remaining_contents,
     get_ecn_overview_project_new_data,
     get_ecn_scheme_coverage,
@@ -973,9 +975,15 @@ def build_scheme_panel(
                             def render_table_old_value(item):
                                 if classify_ecn_change_item(item) == ECN_SCHEME_GROUP_MATERIAL:
                                     old_value, _ = get_ecn_material_change_display(item)
-                                    ui.label(old_value or "无").classes(
-                                        "text-sm font-bold text-slate-800 break-all whitespace-pre-line"
-                                    )
+                                    primary, alternatives = split_ecn_material_change_display(old_value or "无")
+                                    with ui.column().classes("w-full gap-1"):
+                                        ui.label(primary).classes(
+                                            "text-sm font-bold text-slate-800 break-all whitespace-pre-line"
+                                        )
+                                        if alternatives:
+                                            ui.label(alternatives).classes(
+                                                "text-xs font-normal text-slate-500 break-all whitespace-pre-line"
+                                            )
                                     return
                                 if item.get("type") != "overview_update":
                                     ui.label(item.get("old_content", "")).classes(
@@ -1001,9 +1009,15 @@ def build_scheme_panel(
                             def render_table_new_value(item):
                                 if classify_ecn_change_item(item) == ECN_SCHEME_GROUP_MATERIAL:
                                     _, new_value = get_ecn_material_change_display(item)
-                                    ui.label(new_value or "无").classes(
-                                        "text-sm font-semibold text-slate-900 break-all whitespace-pre-line"
-                                    )
+                                    primary, alternatives = split_ecn_material_change_display(new_value or "无")
+                                    with ui.column().classes("w-full gap-1"):
+                                        ui.label(primary).classes(
+                                            "text-sm font-semibold text-slate-900 break-all whitespace-pre-line"
+                                        )
+                                        if alternatives:
+                                            ui.label(alternatives).classes(
+                                                "text-xs font-normal text-slate-500 break-all whitespace-pre-line"
+                                            )
                                     return
                                 if item.get("type") != "overview_update":
                                     with ui.row().classes("w-full items-center gap-1 flex-nowrap min-w-0"):
@@ -1465,14 +1479,9 @@ def build_scheme_panel(
                                                             "删除方案"
                                                         )
                                                     if can_edit_codes_for_item:
-                                                        material_change = item.get("material_change", {})
-                                                        material_change = (
-                                                            material_change if isinstance(material_change, dict) else {}
-                                                        )
                                                         has_any_code = any(
-                                                            str(value or "").strip()
-                                                            for key, value in material_change.items()
-                                                            if str(key).endswith("material_code")
+                                                            entry["value"]
+                                                            for entry in get_ecn_material_code_entries(item)
                                                         )
                                                         ui.button(
                                                             icon="qr_code_2",

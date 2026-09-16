@@ -48,6 +48,7 @@ from ...ecn_management_config import (
     ECN_TRACEABILITY_LEVELS,
     classify_ecn_change_item,
     get_ecn_material_change_display,
+    split_ecn_material_change_display,
     get_ecn_material_execution_specs,
     get_ecn_scheme_target_projects,
     get_ecn_stage_index,
@@ -1361,16 +1362,27 @@ def build_execution_panel(
                                             + execution_column_alignment("material", "变更类别")
                                         )
                                         old_material, new_material = get_ecn_material_change_display(item)
-                                        ui.label(old_material or "—").classes(
-                                            "px-3 py-3 border-r border-slate-200 font-semibold "
-                                            "break-words whitespace-pre-line "
-                                            + execution_column_alignment("material", "变更前")
-                                        )
-                                        ui.label(new_material or "—").classes(
-                                            "px-3 py-3 border-r border-slate-200 font-semibold "
-                                            "break-words whitespace-pre-line "
-                                            + execution_column_alignment("material", "变更后")
-                                        )
+                                        for material_text, column_name in (
+                                            (old_material or "—", "变更前"),
+                                            (new_material or "—", "变更后"),
+                                        ):
+                                            primary, alternatives = split_ecn_material_change_display(material_text)
+                                            with ui.element("div").classes(
+                                                "px-3 py-3 border-r border-slate-200 min-w-0 gap-1 "
+                                                + execution_column_alignment(
+                                                    "material",
+                                                    column_name,
+                                                    flex_column=True,
+                                                )
+                                            ):
+                                                ui.label(primary).classes(
+                                                    "font-semibold break-words whitespace-pre-line"
+                                                )
+                                                if alternatives:
+                                                    ui.label(alternatives).classes(
+                                                        "text-xs font-normal text-slate-500 "
+                                                        "break-words whitespace-pre-line"
+                                                    )
                                         with ui.element("div").classes(
                                             "px-3 py-3 border-r border-slate-200 min-w-0 "
                                             + execution_column_alignment(

@@ -28,8 +28,9 @@ from ...ecn_management_config import (
     ECN_REQUIRE_REJECTED_ITEM_SELECTION,
     ECNState,
     ECN_SCHEME_GROUP_MATERIAL,
+    apply_ecn_material_code_values,
     classify_ecn_change_item,
-    get_ecn_material_code_field_labels,
+    get_ecn_material_code_entries,
     get_ecn_missing_material_code_items,
     get_ecn_scheme_coverage,
     is_ecn_scheme_ready_for_review,
@@ -209,19 +210,36 @@ async def update_material_codes(
         expected_change = expected_item.get("material_change", {})
         if not isinstance(material_change, dict) or not isinstance(expected_change, dict):
             raise ECNConflict("物料方案数据异常，请刷新后重试。")
-        fields = get_ecn_material_code_field_labels(item.get("change_type"))
-        if not fields:
+        current_entries = get_ecn_material_code_entries(item)
+        expected_entries = get_ecn_material_code_entries(expected_item)
+        if not current_entries:
             raise ECNConflict("当前方案没有可填写的料号字段。")
-        normalized = {key: str(submitted_codes.get(key) or "").strip() for key, _ in fields}
-        missing = [label for key, label in fields if not normalized[key]]
+        current_by_token = {entry["token"]: entry for entry in current_entries}
+        expected_by_token = {entry["token"]: entry for entry in expected_entries}
+        if {
+            token: entry["label"] for token, entry in current_by_token.items()
+        } != {
+            token: entry["label"] for token, entry in expected_by_token.items()
+        }:
+            raise ECNConflict("该方案物料信息已被其他页面修改，请刷新后重新录入。")
+        if set(submitted_codes) != set(expected_by_token):
+            raise ECNConflict("提交的料号字段与当前方案不一致，请刷新后重试。")
+        normalized = {token: str(submitted_codes.get(token) or "").strip() for token in expected_by_token}
+        missing = [
+            entry["label"]
+            for token, entry in expected_by_token.items()
+            if not normalized[token]
+        ]
         if missing:
             raise ECNConflict("请填写：" + "、".join(missing))
-        for key, _ in fields:
-            if str(material_change.get(key) or "").strip() != str(expected_change.get(key) or "").strip():
+        for token, current_entry in current_by_token.items():
+            expected_entry = expected_by_token[token]
+            if current_entry["value"] != expected_entry["value"]:
                 raise ECNConflict("该方案料号已被其他页面修改，请刷新后重新录入。")
-        if all(str(material_change.get(key) or "").strip() == normalized[key] for key, _ in fields):
+        if all(current_by_token[token]["value"] == normalized[token] for token in current_by_token):
             raise ECNConflict("料号未发生变化。")
-        material_change.update(normalized)
+        if not apply_ecn_material_code_values(item, normalized):
+            raise ECNConflict("物料方案结构已变化，请刷新后重新录入。")
         scheme_index = items.index(item) + 1
         append_ecn_approval_log_once(
             current.setdefault("approval_log", []),

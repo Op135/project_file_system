@@ -11,6 +11,8 @@ from src.ecn_access import build_ecn_access_snapshot, is_ecn_pending_for_user
 from src.ecn_management_config import (
     ECNState,
     get_ecn_material_change_display,
+    get_ecn_material_change_missing_fields,
+    get_ecn_material_code_entries,
     get_ecn_material_code_missing_fields,
     get_ecn_missing_material_code_items,
 )
@@ -86,7 +88,7 @@ class ECNMaterialCodeTests(unittest.IsolatedAsyncioTestCase):
             return await actions.update_material_codes(
                 "ECN-code",
                 copy.deepcopy(item),
-                {"material_code": code},
+                {"main:material_code": code},
                 "assistant",
                 "研发助理",
                 user_service=self.service,
@@ -106,6 +108,66 @@ class ECNMaterialCodeTests(unittest.IsolatedAsyncioTestCase):
             get_ecn_material_change_display(item)[1],
             "料号：LED-001\n白光LED\n用量：1 pcs",
         )
+
+    def test_alternative_materials_are_displayed_and_require_codes(self):
+        item = material_item("M1", "白光LED")
+        item["material_change"].update(
+            material_code="LED-001",
+            alternative_materials=[
+                {
+                    "alternative_id": "A1",
+                    "material_code": "",
+                    "material_name": "暖白LED",
+                },
+                {
+                    "alternative_id": "A2",
+                    "material_code": "LED-ALT-002",
+                    "material_name": "中性光LED",
+                },
+            ],
+        )
+        self.assertEqual(
+            get_ecn_material_code_missing_fields(item),
+            ["新增替换料 1 料号（暖白LED）"],
+        )
+        self.assertEqual(
+            get_ecn_material_change_display(item)[1],
+            "料号：LED-001\n白光LED\n用量：1 pcs\n\n替换料：\n"
+            "1. 料号：待补充\n   暖白LED\n2. 料号：LED-ALT-002\n   中性光LED",
+        )
+        self.assertEqual(
+            [entry["token"] for entry in get_ecn_material_code_entries(item)],
+            ["main:material_code", "alternative_materials:A1", "alternative_materials:A2"],
+        )
+        item["material_change"]["alternative_materials"][0]["material_name"] = ""
+        self.assertIn(
+            "新增替换料 1 物料名称",
+            get_ecn_material_change_missing_fields(item["change_type"], item["material_change"]),
+        )
+
+    def test_replace_displays_before_and_after_alternative_materials(self):
+        item = material_item("M1", "unused")
+        item["change_type"] = "更改"
+        item["material_change"] = {
+            "old_material_code": "OLD-1",
+            "old_material_name": "旧主料",
+            "old_quantity": 1,
+            "old_unit": "pcs",
+            "new_material_code": "NEW-1",
+            "new_material_name": "新主料",
+            "new_quantity": 1,
+            "new_unit": "pcs",
+            "old_alternative_materials": [
+                {"alternative_id": "O1", "material_code": "OLD-A", "material_name": "旧替换料"}
+            ],
+            "new_alternative_materials": [
+                {"alternative_id": "N1", "material_code": "", "material_name": "新替换料"}
+            ],
+        }
+        before, after = get_ecn_material_change_display(item)
+        self.assertIn("替换料：\n1. 料号：OLD-A\n   旧替换料", before)
+        self.assertIn("替换料：\n1. 料号：待补充\n   新替换料", after)
+        self.assertEqual(get_ecn_material_code_missing_fields(item), ["更改后替换料 1 料号（新替换料）"])
 
     def test_scheme_review_completion_waits_only_when_material_code_is_missing(self):
         record = copy.deepcopy(self.record)
@@ -206,3 +268,40 @@ class ECNMaterialCodeTests(unittest.IsolatedAsyncioTestCase):
         locked = await self.update(locked_item, "LED-003")
         self.assertFalse(locked.ok)
         self.assertIn("不能修改", locked.message)
+
+    async def test_authorized_user_can_fill_main_and_alternative_codes_together(self):
+        first_item = self.record["change_items"][0]
+        first_item["material_change"]["alternative_materials"] = [
+            {
+                "alternative_id": "A1",
+                "material_code": "",
+                "material_name": "暖白LED",
+            }
+        ]
+        await self.storage.set_item("ecn_management_data", {"ECN-code": self.record})
+        with (
+            patch.object(actions, "can_edit_ecn_material_codes", return_value=True),
+            patch.object(
+                actions,
+                "build_ecn_execution_info_from_workflows",
+                return_value={"stage": "assistant_confirmation"},
+            ),
+        ):
+            result = await actions.update_material_codes(
+                "ECN-code",
+                copy.deepcopy(first_item),
+                {
+                    "main:material_code": "LED-001",
+                    "alternative_materials:A1": "LED-ALT-001",
+                },
+                "assistant",
+                "研发助理",
+                user_service=self.service,
+                storage=self.storage,
+            )
+        self.assertTrue(result.ok, result.message)
+        assert result.record is not None
+        saved = result.record["change_items"][0]["material_change"]
+        self.assertEqual(saved["material_code"], "LED-001")
+        self.assertEqual(saved["alternative_materials"][0]["material_code"], "LED-ALT-001")
+        self.assertEqual(result.record["workflow"]["current_state"], ECNState.MATERIAL_CODE_PENDING)
