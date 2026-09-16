@@ -38,11 +38,42 @@ from ...ecn_management_config import (
     expand_new_material_traceability_selection,
     get_active_overview_row_contents,
     get_ecn_material_change_missing_fields,
+    get_ecn_material_code_field_labels,
     get_ecn_scheme_target_projects,
     is_ecn_disposition_condition_required,
     is_ecn_material_disposition_required,
     resolve_ecn_overview_parameter_config,
 )
+
+
+def open_material_code_dialog(item: dict, on_save_callback) -> None:
+    """打开评审通过后的专用料号录入窗口。"""
+    material_change = item.get("material_change", {})
+    material_change = material_change if isinstance(material_change, dict) else {}
+    fields = get_ecn_material_code_field_labels(item.get("change_type"))
+    values = {key: str(material_change.get(key) or "").strip() for key, _ in fields}
+    dialog = ui.dialog().props("persistent")
+    with dialog, ui.card().classes("w-[520px] max-w-full p-5 gap-3"):
+        ui.label("补充物料料号").classes("text-lg font-bold text-blue-900")
+        ui.label("料号补齐后才能进入ECN执行；进入执行阶段后将锁定，不能再修改。").classes("text-sm text-slate-500")
+        for key, label in fields:
+            ui.input(f"{label}（必填）").classes("w-full").bind_value(values, key).props(
+                "outlined dense autofocus" if key == fields[0][0] else "outlined dense"
+            )
+
+        async def submit() -> None:
+            missing = [label for key, label in fields if not str(values.get(key) or "").strip()]
+            if missing:
+                ui.notify("请填写：" + "、".join(missing), type="warning")
+                return
+            if await on_save_callback({key: str(values[key]).strip() for key, _ in fields}):
+                dialog.close()
+
+        with ui.row().classes("w-full justify-end gap-2 mt-2"):
+            ui.button("取消", on_click=dialog.close).props("flat color=grey")
+            ui.button("保存料号", icon="save", on_click=submit).props("color=primary")
+    dialog.on("close", dialog.delete)
+    dialog.open()
 
 
 def render_association_checkboxes(title, options, state, state_key, on_selection_change=None):
@@ -1133,7 +1164,7 @@ def open_text_change_dialog(
     ]
 
     dialog.clear()
-    with dialog, ui.card().classes("w-[900px] max-w-full"):
+    with dialog, ui.card().classes("w-[1120px] max-w-full"):
         dialog_title = "其它特定事项/资料变更方案" if is_document_scheme else "物料变更方案"
         ui.label(f"修改{dialog_title}" if is_edit else f"添加{dialog_title}").classes("text-lg font-bold text-blue-900")
 
@@ -1195,7 +1226,14 @@ def open_text_change_dialog(
                 with ui.card().classes("w-full p-3 bg-blue-50/50 border border-blue-200 shadow-none gap-2"):
                     ui.label(f"{change_type}物料信息").classes("text-xs font-bold text-blue-900")
                     if change_type in [ECN_MATERIAL_CHANGE_TYPE_ADD, ECN_MATERIAL_CHANGE_TYPE_DISCONTINUE]:
-                        with ui.grid(columns=3).classes("w-full gap-3"):
+                        with (
+                            ui.grid(columns=4)
+                            .classes("w-full gap-3")
+                            .style("grid-template-columns:minmax(180px,.8fr) minmax(300px,1.7fr) 150px 110px")
+                        ):
+                            ui.input("料号（可后补）").classes("w-full").bind_value(
+                                material_state, "material_code"
+                            ).props("outlined dense bg-white")
                             ui.input("物料名称（必填）").classes("w-full").bind_value(
                                 material_state, "material_name"
                             ).props("outlined dense bg-white")
@@ -1206,7 +1244,14 @@ def open_text_change_dialog(
                                 "outlined dense bg-white"
                             )
                     elif change_type == ECN_MATERIAL_CHANGE_TYPE_ADJUST_QUANTITY:
-                        with ui.grid(columns=4).classes("w-full gap-3"):
+                        with (
+                            ui.grid(columns=5)
+                            .classes("w-full gap-3")
+                            .style("grid-template-columns:minmax(170px,.75fr) minmax(250px,1.6fr) 150px 150px 105px")
+                        ):
+                            ui.input("料号（可后补）").classes("w-full").bind_value(
+                                material_state, "material_code"
+                            ).props("outlined dense bg-white")
                             ui.input("物料名称（必填）").classes("w-full").bind_value(
                                 material_state, "material_name"
                             ).props("outlined dense bg-white")
@@ -1221,7 +1266,14 @@ def open_text_change_dialog(
                             )
                     elif change_type == ECN_MATERIAL_CHANGE_TYPE_REPLACE:
                         ui.label("改前物料").classes("text-[11px] font-bold text-slate-500")
-                        with ui.grid(columns=3).classes("w-full gap-3"):
+                        with (
+                            ui.grid(columns=4)
+                            .classes("w-full gap-3")
+                            .style("grid-template-columns:minmax(180px,.8fr) minmax(300px,1.7fr) 150px 110px")
+                        ):
+                            ui.input("改前料号（可后补）").classes("w-full").bind_value(
+                                material_state, "old_material_code"
+                            ).props("outlined dense bg-white")
                             ui.input("改前物料名称（必填）").classes("w-full").bind_value(
                                 material_state, "old_material_name"
                             ).props("outlined dense bg-white")
@@ -1232,7 +1284,14 @@ def open_text_change_dialog(
                                 "outlined dense bg-white"
                             )
                         ui.label("改后物料").classes("text-[11px] font-bold text-slate-500 mt-1")
-                        with ui.grid(columns=3).classes("w-full gap-3"):
+                        with (
+                            ui.grid(columns=4)
+                            .classes("w-full gap-3")
+                            .style("grid-template-columns:minmax(180px,.8fr) minmax(300px,1.7fr) 150px 110px")
+                        ):
+                            ui.input("改后料号（可后补）").classes("w-full").bind_value(
+                                material_state, "new_material_code"
+                            ).props("outlined dense bg-white")
                             ui.input("改后物料名称（必填）").classes("w-full").bind_value(
                                 material_state, "new_material_name"
                             ).props("outlined dense bg-white")

@@ -545,6 +545,8 @@ ECN_SCHEME_REVIEW_SUBMIT_PERMISSION = "ecn.scheme.review.submit"
 ECN_IMPACT_INITIAL_REMINDER_PERMISSION = "ecn.impact.initial_reminder"
 ECN_ECR_APPROVE_PERMISSION = "ecn.ecr.approve"
 ECN_SCHEME_APPROVE_PERMISSION = "ecn.scheme.approve"
+ECN_APPROVAL_REASSIGN_PERMISSION = "ecn.approval.reassign"
+ECN_MATERIAL_CODE_EDIT_PERMISSION = "ecn.material_code.edit"
 ECN_EXECUTION_ASSISTANT_PERMISSION = "ecn.execution.assistant"
 ECN_EXECUTION_MATERIAL_CONFIRM_PERMISSION = "ecn.execution.material.confirm"
 ECN_EXECUTION_PURCHASE_CONFIRM_PERMISSION = "ecn.execution.purchase.confirm"
@@ -615,6 +617,18 @@ ECN_PERMISSIONS = (
         "审批 — ECN方案",
         "工程变更 · 审批",
         "作为ECN方案评审候选人；实际可审批单据由已发布流程产生的具体待办决定",
+    ),
+    PermissionDefinition(
+        ECN_APPROVAL_REASSIGN_PERMISSION,
+        "调整 — ECR/ECN审批人",
+        "工程变更 · 审批",
+        "允许在单据审批期间把当前或后续未完成节点的具体审核人调整为其他合资格在职人员",
+    ),
+    PermissionDefinition(
+        ECN_MATERIAL_CODE_EDIT_PERMISSION,
+        "补充 — ECN物料料号",
+        "工程变更 · 执行",
+        "允许在ECN方案评审通过后补充或修改物料方案料号；进入执行阶段后自动锁定",
     ),
     PermissionDefinition(
         ECN_EXECUTION_ASSISTANT_PERMISSION,
@@ -963,7 +977,11 @@ def build_legacy_default_grants(
     每一组角色与权限关系只初始化一次。该映射不是运行时授权规则，因此不会在已经
     迁移的模块中重新引入角色关键词匹配。
     """
-    grants: dict[str, set[str]] = {"admin": {item.code for item in CORE_PERMISSIONS}}
+    grants: dict[str, set[str]] = {
+        "admin": {item.code for item in CORE_PERMISSIONS},
+        # 新权限首次注册时延续当前业务责任；一次性标记保证管理员后续移除不会被重启恢复。
+        "研发助理": {ECN_MATERIAL_CODE_EDIT_PERMISSION},
+    }
     if tool_role_mapping is None:
         for role_name in known_role_names or []:
             grants.setdefault(role_name, set()).update(item.code for item in TOOL_PERMISSIONS)

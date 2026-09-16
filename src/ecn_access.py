@@ -21,6 +21,7 @@ from .ecn_management_config import (
     classify_ecn_change_item,
     get_ecn_impact_handlers,
     get_ecn_material_execution_specs,
+    get_ecn_missing_material_code_items,
     is_ecn_impact_blank,
     role_matches_keywords,
     is_ecn_scheme_ready_for_review,
@@ -32,6 +33,7 @@ from .ecn_management_config import (
 )
 from .permission_catalog import (
     ECN_CREATE_PERMISSION,
+    ECN_APPROVAL_REASSIGN_PERMISSION,
     ECN_DELETE_PERMISSION,
     ECN_ECR_APPROVE_PERMISSION,
     ECN_EXECUTION_ASSISTANT_PERMISSION,
@@ -42,6 +44,7 @@ from .permission_catalog import (
     ECN_EXECUTION_SALES_SUPERVISOR_CONFIRM_PERMISSION,
     ECN_IMPACT_EDIT_PERMISSION,
     ECN_IMPACT_INITIAL_REMINDER_PERMISSION,
+    ECN_MATERIAL_CODE_EDIT_PERMISSION,
     ECN_SCHEME_APPROVE_PERMISSION,
     ECN_SCHEME_EDIT_PERMISSION,
     ECN_SCHEME_REVIEW_SUBMIT_PERMISSION,
@@ -106,6 +109,8 @@ def build_ecn_access_snapshot(user_service=None) -> dict[str, Any]:
             ECN_IMPACT_EDIT_PERMISSION,
             ECN_SCHEME_EDIT_PERMISSION,
             ECN_SCHEME_REVIEW_SUBMIT_PERMISSION,
+            ECN_APPROVAL_REASSIGN_PERMISSION,
+            ECN_MATERIAL_CODE_EDIT_PERMISSION,
             ECN_EXECUTION_ASSISTANT_PERMISSION,
             ECN_EXECUTION_MATERIAL_CONFIRM_PERMISSION,
             ECN_EXECUTION_PURCHASE_CONFIRM_PERMISSION,
@@ -300,6 +305,25 @@ def can_approve_ecn_scheme(current_role: object, current_user: str, *, user_serv
     )
 
 
+def can_reassign_ecn_approval(
+    current_role: object,
+    current_user: str,
+    *,
+    user_service=None,
+    access_snapshot: dict[str, Any] | None = None,
+) -> bool:
+    """判断是否可以调整一张ECN单据中尚未完成节点的具体审核人。"""
+    if isinstance(access_snapshot, dict) and access_snapshot.get("database_mode") is True:
+        return _snapshot_permission(access_snapshot, current_user, ECN_APPROVAL_REASSIGN_PERMISSION)
+    return can(
+        _service(user_service),
+        current_user,
+        ECN_APPROVAL_REASSIGN_PERMISSION,
+        legacy_role=str(current_role or ""),
+        legacy_allowed_roles=(),
+    )
+
+
 def can_execute_ecn_assistant_stage(
     current_role: object,
     current_user: str,
@@ -314,6 +338,25 @@ def can_execute_ecn_assistant_stage(
         _service(user_service),
         current_user,
         ECN_EXECUTION_ASSISTANT_PERMISSION,
+        legacy_role=str(current_role or ""),
+        legacy_allowed_roles=(),
+    )
+
+
+def can_edit_ecn_material_codes(
+    current_role: object,
+    current_user: str,
+    *,
+    user_service=None,
+    access_snapshot: dict[str, Any] | None = None,
+) -> bool:
+    """判断是否可以在评审通过后的专门阶段补充物料料号。"""
+    if isinstance(access_snapshot, dict) and access_snapshot.get("database_mode") is True:
+        return _snapshot_permission(access_snapshot, current_user, ECN_MATERIAL_CODE_EDIT_PERMISSION)
+    return can(
+        _service(user_service),
+        current_user,
+        ECN_MATERIAL_CODE_EDIT_PERMISSION,
         legacy_role=str(current_role or ""),
         legacy_allowed_roles=(),
     )
@@ -898,6 +941,21 @@ def is_ecn_pending_for_user(
         )
     ):
         return True
+    if (
+        workflow.get("current_state") == ECNState.MATERIAL_CODE_PENDING
+        and get_ecn_missing_material_code_items(ecn_data)
+        and can_edit_ecn_material_codes(
+            current_role,
+            current_user,
+            user_service=user_service,
+            access_snapshot=access_snapshot,
+        )
+    ):
+        return (
+            _snapshot_permission(access_snapshot, current_user, ECN_VIEW_PERMISSION)
+            if isinstance(access_snapshot, dict) and access_snapshot.get("database_mode") is True
+            else can_view_ecn(current_role, current_user, user_service=user_service)
+        )
     if not _database_mode(user_service):
         return is_legacy_ecn_pending_for_user(ecn_data, current_user, current_role)
 

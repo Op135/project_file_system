@@ -24,8 +24,10 @@ from ...ecn_access import (
     build_ecn_access_snapshot,
     can_create_ecn_request,
     can_edit_ecn_impact,
+    can_edit_ecn_material_codes,
     can_edit_ecn_scheme,
     can_execute_ecn_assistant_stage,
+    can_reassign_ecn_approval,
     can_submit_ecn_scheme_review,
     can_view_ecn,
 )
@@ -44,6 +46,8 @@ from ...ecn_management_config import (
     is_ecn_scheme_ready_for_review,
 )
 from ...ecn_workflow import (
+    ECN_ECR_ASSIGNMENT_KEY,
+    ECN_SCHEME_ASSIGNMENT_KEY,
     is_ecr_assigned_approver,
     is_scheme_assigned_approver,
 )
@@ -63,7 +67,25 @@ from .models import (
 from .scheme_panel import (
     build_scheme_panel,
 )
+from .approval_reassignment_ui import open_approval_reassignment_dialog
 from .task_labels import humanize_ecn_log_action
+
+
+def sync_detail_scheme_snapshot(local_data: dict, participants: dict, fresh: dict) -> bool:
+    """同步详情页方案与参与人快照，返回方案区域是否发生变化。"""
+    fresh_items = fresh.get("change_items", [])
+    fresh_items = fresh_items if isinstance(fresh_items, list) else []
+    fresh_workflow = fresh.get("workflow", {})
+    fresh_workflow = fresh_workflow if isinstance(fresh_workflow, dict) else {}
+    fresh_participants = fresh_workflow.get("scheme_participants", {})
+    fresh_participants = fresh_participants if isinstance(fresh_participants, dict) else {}
+    changed = fresh_items != local_data.get("change_items", []) or fresh_participants != participants
+    if not changed:
+        return False
+    local_data["change_items"] = copy.deepcopy(fresh_items)
+    participants.clear()
+    participants.update(copy.deepcopy(fresh_participants))
+    return True
 
 
 async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, refresh_list):
@@ -75,11 +97,21 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
     can_create_request = can_create_ecn_request(current_role, current_user, access_snapshot=access_snapshot)
     can_edit_impact = can_edit_ecn_impact(current_role, current_user, access_snapshot=access_snapshot)
     can_edit_scheme = can_edit_ecn_scheme(current_role, current_user, access_snapshot=access_snapshot)
+    can_edit_material_codes = can_edit_ecn_material_codes(
+        current_role,
+        current_user,
+        access_snapshot=access_snapshot,
+    )
     can_submit_scheme_review = can_submit_ecn_scheme_review(
         current_role, current_user, access_snapshot=access_snapshot
     )
     can_execute_assistant = can_execute_ecn_assistant_stage(
         current_role, current_user, access_snapshot=access_snapshot
+    )
+    can_reassign_approval = can_reassign_ecn_approval(
+        current_role,
+        current_user,
+        access_snapshot=access_snapshot,
     )
     is_new = ecn_id is None
     if is_new and not can_create_request:
@@ -715,6 +747,12 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
             lazy_panels = {"scheme": False, "execution": False}
             lazy_panel_queued = {"scheme": False, "execution": False}
 
+            def handle_material_code_saved() -> None:
+                if lazy_panels["execution"]:
+                    render_execution_tab()
+                render_workflow_tab()
+                refresh_list()
+
             def load_scheme_panel():
                 nonlocal render_parts, render_my_actions, render_items, render_coverage_dashboard
                 if lazy_panels["scheme"]:
@@ -737,6 +775,8 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
                     participants,
                     is_scheming_phase,
                     is_scheme_writer,
+                    can_edit_material_codes,
+                    handle_material_code_saved,
                     dashboard_updater,
                     panel_container=scheme_panel_host,
                 )
@@ -798,6 +838,27 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
                         if is_new:
                             ui.label("暂无审批记录，请先发起申请。").classes("text-gray-500 mt-4 text-center w-full")
                         else:
+                            assignment_key = (
+                                ECN_ECR_ASSIGNMENT_KEY
+                                if wf.get("current_phase") == "ECR_PHASE"
+                                else ECN_SCHEME_ASSIGNMENT_KEY
+                                if wf.get("current_phase") == "ECN_SCHEME_REVIEW_PHASE"
+                                else ""
+                            )
+                            assignment = wf.get(assignment_key, {}) if assignment_key else {}
+                            nodes = assignment.get("nodes", []) if isinstance(assignment, dict) else []
+
+                            def apply_reassignment(updated_record: dict) -> None:
+                                updated_workflow = updated_record.get("workflow", {})
+                                if isinstance(updated_workflow, dict):
+                                    wf.clear()
+                                    wf.update(copy.deepcopy(updated_workflow))
+                                    local_data["workflow"] = wf
+                                local_data["approval_log"] = copy.deepcopy(
+                                    updated_record.get("approval_log", [])
+                                )
+                                render_workflow_tab()
+
                             if wf["pending_roles"]:
                                 pending_list = get_ecn_pending_approval_roles(wf)
                                 approved_list = [role for role in wf["pending_roles"] if role not in pending_list]
@@ -818,6 +879,66 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
                                             ui.label("、".join(approved_list)).classes(
                                                 "text-sm font-medium text-green-700"
                                             )
+
+                            if (
+                                can_reassign_approval
+                                and isinstance(assignment, dict)
+                                and assignment.get("status") == "pending"
+                                and isinstance(nodes, list)
+                            ):
+                                current_node_index = int(assignment.get("current_node_index", 0))
+                                with ui.card().classes(
+                                    "w-full shrink-0 shadow-none border border-slate-200 px-3 py-2 gap-1"
+                                ):
+                                    with ui.row().classes("w-full items-center justify-between"):
+                                        ui.label("审批节点审核人").classes("text-sm font-bold text-slate-700")
+                                        ui.label("可调整当前及后续节点").classes("text-xs text-slate-400")
+                                    for node_index, node in enumerate(nodes):
+                                        if (
+                                            not isinstance(node, dict)
+                                            or node_index < current_node_index
+                                            or node.get("status") == "completed"
+                                        ):
+                                            continue
+                                        approved = {
+                                            str(value)
+                                            for value in node.get("approved_usernames", [])
+                                            if str(value)
+                                        }
+                                        assignees = [
+                                            str(value)
+                                            for value in node.get("assignee_usernames", [])
+                                            if str(value) and str(value) not in approved
+                                        ]
+                                        if not assignees:
+                                            continue
+                                        with ui.row().classes(
+                                            "w-full items-center gap-2 py-1 border-t border-slate-100 first:border-t-0"
+                                        ):
+                                            ui.label(
+                                                f"节点{node_index + 1} · {node.get('name') or '审批'}"
+                                            ).classes("w-44 shrink-0 text-xs font-semibold text-slate-600")
+                                            with ui.row().classes("flex-1 items-center gap-2 flex-wrap"):
+                                                for assignee in assignees:
+                                                    with ui.row().classes(
+                                                        "items-center gap-1 rounded bg-slate-50 border border-slate-200 px-2 py-1"
+                                                    ):
+                                                        ui.label(assignee).classes("text-xs text-slate-700")
+                                                        ui.button(
+                                                            "移交",
+                                                            icon="swap_horiz",
+                                                            on_click=lambda _, key=assignment_key, index=node_index, snapshot=node, source=assignee: (
+                                                                open_approval_reassignment_dialog(
+                                                                    str(local_data.get("ecn_id") or ""),
+                                                                    key,
+                                                                    index,
+                                                                    snapshot,
+                                                                    source,
+                                                                    current_user,
+                                                                    apply_reassignment,
+                                                                )
+                                                            ),
+                                                        ).props("flat dense size=xs color=primary")
 
                             approval_logs = local_data.get("approval_log", [])
                             if not approval_logs:
@@ -1105,21 +1226,15 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
                         return
                     ui.notify("后台流转状态已更新，已为您同步。", type="info")
 
-                # 2. 同步方案内容 (仅在方案编写阶段需要动态重绘卡片)
-                if wf["current_state"] == ECNState.ECN_SCHEMING:
-                    if (
-                        fresh.get("change_items", []) != local_data["change_items"]
-                        or fresh["workflow"].get("scheme_participants", {}) != participants
-                    ):
-                        local_data["change_items"].clear()
-                        local_data["change_items"].extend(copy.deepcopy(fresh.get("change_items", [])))
-                        participants.clear()
-                        participants.update(copy.deepcopy(fresh["workflow"].get("scheme_participants", {})))
-                        render_parts()
-                        render_my_actions()
-                        render_items()
-                        render_coverage_dashboard()  # 同时更新覆盖率看板状态
+                # 2. 任何阶段都同步方案快照。否则从方案阶段切到执行阶段时，已打开的方案页会停留在旧行数。
+                change_items_changed = fresh.get("change_items", []) != local_data.get("change_items", [])
+                if sync_detail_scheme_snapshot(local_data, participants, fresh):
+                    render_parts()
+                    render_my_actions()
+                    render_items()
+                    render_coverage_dashboard()
 
+                if wf["current_state"] == ECNState.ECN_SCHEMING:
                     fresh_rev = fresh.get("review_info", {})
                     if fresh_rev:
                         sync_review_snapshot(review, review_baseline, fresh_rev)
@@ -1144,7 +1259,7 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
                         and isinstance(previous_material, dict)
                         and isinstance(fresh_material, dict)
                         and bool(material_task_controls)
-                        and fresh.get("change_items", []) == local_data.get("change_items", [])
+                        and not change_items_changed
                     )
                     changed_material_ids = [
                         str(item_id)
@@ -1167,7 +1282,11 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
                     if not can_update_controls_only:
                         await restore_execution_scroll_state(execution_container.client, scroll_state)
 
-        if wf["current_state"] in [ECNState.ECN_SCHEMING, ECNState.ECN_EXECUTING] and not is_new:
+        if wf["current_state"] in [
+            ECNState.ECN_SCHEMING,
+            ECNState.MATERIAL_CODE_PENDING,
+            ECNState.ECN_EXECUTING,
+        ] and not is_new:
             sync_timer = ui.timer(3.0, sync_schemes)
             root_dialog.on("close", sync_timer.cancel)
 

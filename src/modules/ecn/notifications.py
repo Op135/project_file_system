@@ -30,6 +30,7 @@ from ...ecn_management_config import (
     ECN_EXECUTION_STAGE_OVERVIEW_RUNNING,
     get_ecn_scheme_target_projects,
     get_ecn_material_execution_specs,
+    get_ecn_missing_material_code_items,
     is_ecn_scheme_ready_for_review,
     get_ecn_special_confirmations,
 )
@@ -142,6 +143,15 @@ def pending_task_details(
                     f"原负责人：{issue['owner']}"
                 )
         return tasks
+    if state == ECNState.MATERIAL_CODE_PENDING:
+        code_tasks = []
+        for item in get_ecn_missing_material_code_items(record):
+            fields = item.get("fields", [])
+            field_names = [str(value) for value in fields] if isinstance(fields, list) else []
+            code_tasks.append(
+                f"补充物料料号\n方案：{item['scheme_no']}\n缺少：{'、'.join(field_names)}"
+            )
+        return {name: list(code_tasks) for name in pending}
     for issue in assignment_issues:
         if issue["kind"] == "special":
             detail = get_special_message_item(record, issue["key"], issue["owner"])
@@ -297,6 +307,7 @@ def build_notification_card(
             ECNState.REJECTED: "申请待修改",
             ECNState.ECR_REVIEWING: "ECR待审批",
             ECNState.ECN_REVIEWING: "方案待审批",
+            ECNState.MATERIAL_CODE_PENDING: "物料料号待补充",
             ECNState.ECN_SCHEMING: "方案待完善与确认",
             ECNState.ECN_EXECUTING: "执行待办",
         }.get(state, "待办提醒")

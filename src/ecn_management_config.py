@@ -32,6 +32,54 @@ def get_ecn_stage_index(value: object) -> int:
         return 0
 
 
+def get_ecn_material_code_field_labels(change_type: Any) -> tuple[tuple[str, str], ...]:
+    """返回各物料动作需要填写的料号字段及界面名称。"""
+    if change_type in {
+        ECN_MATERIAL_CHANGE_TYPE_ADD,
+        ECN_MATERIAL_CHANGE_TYPE_DISCONTINUE,
+        ECN_MATERIAL_CHANGE_TYPE_ADJUST_QUANTITY,
+    }:
+        return (("material_code", "料号"),)
+    if change_type == ECN_MATERIAL_CHANGE_TYPE_REPLACE:
+        return (("old_material_code", "改前料号"), ("new_material_code", "改后料号"))
+    return ()
+
+
+def get_ecn_material_code_missing_fields(item: Any) -> list[str]:
+    """返回一条物料方案尚未补齐的料号字段名称。"""
+    if not isinstance(item, dict) or classify_ecn_change_item(item) != ECN_SCHEME_GROUP_MATERIAL:
+        return []
+    material_change = item.get("material_change", {})
+    if not isinstance(material_change, dict):
+        material_change = {}
+    return [
+        label
+        for key, label in get_ecn_material_code_field_labels(item.get("change_type"))
+        if not str(material_change.get(key) or "").strip()
+    ]
+
+
+def get_ecn_missing_material_code_items(ecn_data: Any) -> list[dict[str, object]]:
+    """按方案显示顺序列出缺少料号的物料方案。"""
+    if not isinstance(ecn_data, dict):
+        return []
+    change_items = ecn_data.get("change_items", [])
+    if not isinstance(change_items, list):
+        return []
+    missing: list[dict[str, object]] = []
+    for index, item in enumerate(change_items, start=1):
+        fields = get_ecn_material_code_missing_fields(item)
+        if fields:
+            missing.append(
+                {
+                    "item_id": str(item.get("item_id") or ""),
+                    "scheme_no": f"#{index:02d}",
+                    "fields": fields,
+                }
+            )
+    return missing
+
+
 def get_ecn_material_change_display(item: Any) -> tuple[str, str]:
     """返回结构化物料方案用于表格/快照展示的“变更前、变更后”文本。"""
     if not isinstance(item, dict):
@@ -41,30 +89,35 @@ def get_ecn_material_change_display(item: Any) -> tuple[str, str]:
     if change_type not in ECN_MATERIAL_CHANGE_TYPES or not isinstance(material_change, dict):
         return "", ""
 
-    def material_text(name_key: str, quantity_key: str, unit_key: str) -> str:
+    def material_text(code_key: str, name_key: str, quantity_key: str, unit_key: str) -> str:
+        code = str(material_change.get(code_key) or "").strip() or "待补充"
         name = str(material_change.get(name_key) or "").strip()
         quantity = material_change.get(quantity_key)
         unit = str(material_change.get(unit_key) or ECN_MATERIAL_DEFAULT_UNIT).strip()
         quantity_text = (
             "" if quantity in [None, ""] else f"{quantity:g}" if isinstance(quantity, (int, float)) else str(quantity)
         )
-        return f"{name}\n用量：{quantity_text} {unit}".strip()
+        return f"料号：{code}\n{name}\n用量：{quantity_text} {unit}".strip()
 
     if change_type == ECN_MATERIAL_CHANGE_TYPE_ADD:
-        return "无", material_text("material_name", "quantity", "unit")
+        return "无", material_text("material_code", "material_name", "quantity", "unit")
     if change_type == ECN_MATERIAL_CHANGE_TYPE_DISCONTINUE:
-        return material_text("material_name", "quantity", "unit"), str(change_type)
+        return material_text("material_code", "material_name", "quantity", "unit"), str(change_type)
     if change_type == ECN_MATERIAL_CHANGE_TYPE_ADJUST_QUANTITY:
+        code = str(material_change.get("material_code") or "").strip() or "待补充"
         name = str(material_change.get("material_name") or "").strip()
         unit = str(material_change.get("unit") or ECN_MATERIAL_DEFAULT_UNIT).strip()
         old_quantity = material_change.get("old_quantity")
         new_quantity = material_change.get("new_quantity")
         old_quantity_text = f"{old_quantity:g}" if isinstance(old_quantity, (int, float)) else str(old_quantity)
         new_quantity_text = f"{new_quantity:g}" if isinstance(new_quantity, (int, float)) else str(new_quantity)
-        return (f"{name}\n用量：{old_quantity_text} {unit}", f"{name}\n用量：{new_quantity_text} {unit}")
+        return (
+            f"料号：{code}\n{name}\n用量：{old_quantity_text} {unit}",
+            f"料号：{code}\n{name}\n用量：{new_quantity_text} {unit}",
+        )
     return (
-        material_text("old_material_name", "old_quantity", "old_unit"),
-        material_text("new_material_name", "new_quantity", "new_unit"),
+        material_text("old_material_code", "old_material_name", "old_quantity", "old_unit"),
+        material_text("new_material_code", "new_material_name", "new_quantity", "new_unit"),
     )
 
 
@@ -110,6 +163,7 @@ class ECNState:
     ECR_REVIEWING = "ECR 审批中"
     ECN_SCHEMING = "ECN 方案编写与确认中"
     ECN_REVIEWING = "ECN 方案评审中"
+    MATERIAL_CODE_PENDING = "ECN 料号补充中"
     ECN_EXECUTING = "ECN 执行确认中"
     CLOSED = "变更已完成"
     CANCEL = "变更已作废"

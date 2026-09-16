@@ -497,7 +497,12 @@ SAMPLE_EXTENSION_APPROVAL_NOTIFY_TARGETS = SAMPLE_ISSUE_CONFIG["wecom"]["extensi
 SAMPLE_EXTENSION_NOTIFY_REQUESTER_ON_APPROVAL = SAMPLE_ISSUE_CONFIG["wecom"]["extension"][
     "notify_requester_on_approval"
 ]
-SAMPLE_CLOSE_APPROVER_ROLES = SAMPLE_ISSUE_CONFIG["wecom"]["close"]["approver_roles"]
+_sample_close_approver_roles = SAMPLE_ISSUE_CONFIG["wecom"]["close"]["approver_roles"]
+SAMPLE_CLOSE_APPROVER_ROLES: list[str] = (
+    [str(value) for value in _sample_close_approver_roles if str(value).strip()]
+    if isinstance(_sample_close_approver_roles, list)
+    else []
+)
 SAMPLE_CLOSE_NOTIFY_TARGETS = SAMPLE_ISSUE_CONFIG["wecom"]["close"]["notify_targets"]
 SAMPLE_CLOSE_APPROVAL_NOTIFY_TARGETS = SAMPLE_ISSUE_CONFIG["wecom"]["close"]["approval_notify_targets"]
 SAMPLE_CLOSE_NOTIFY_REQUESTER_ON_APPROVAL = SAMPLE_ISSUE_CONFIG["wecom"]["close"]["notify_requester_on_approval"]

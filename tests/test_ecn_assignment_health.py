@@ -426,6 +426,7 @@ class ECNAssignmentHealthTests(unittest.IsolatedAsyncioTestCase):
             "研发经理",
             user_service=self.service,
         )
+        self.assertIs(row["is_my_pending"], True)
         self.assertEqual(row["attention"], "负责人异常·待改派")
         self.assertIn("待改派", str(row["progress"]))
         pending = notifications.collect_pending_users(self.record, self.service)

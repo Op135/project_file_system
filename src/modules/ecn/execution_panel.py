@@ -885,7 +885,12 @@ def build_execution_panel(
             with execution_container:
                 execution_info = local_data.get("execution_info", {})
                 if not isinstance(execution_info, dict) or not execution_info.get("stage"):
-                    ui.label("方案评审全部通过后，系统将在这里生成分阶段执行清单。 ").classes(
+                    message = (
+                        "方案评审已通过，请先在“ECN-方案”页签补齐全部物料料号；补齐后自动生成执行清单。"
+                        if wf.get("current_state") == ECNState.MATERIAL_CODE_PENDING
+                        else "方案评审全部通过后，系统将在这里生成分阶段执行清单。"
+                    )
+                    ui.label(message).classes(
                         "text-gray-500 m-8 text-center bg-white p-4 border rounded"
                     )
                     return

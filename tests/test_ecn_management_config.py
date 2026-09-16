@@ -988,9 +988,14 @@ def test_structured_material_change_display_covers_all_change_types():
     assert get_ecn_material_change_display(
         {
             "change_type": "新增",
-            "material_change": {"material_name": "螺钉", "quantity": 2, "unit": "pcs"},
+            "material_change": {
+                "material_code": "MAT-001",
+                "material_name": "螺钉",
+                "quantity": 2,
+                "unit": "pcs",
+            },
         }
-    ) == ("无", "螺钉\n用量：2 pcs")
+    ) == ("无", "料号：MAT-001\n螺钉\n用量：2 pcs")
     assert get_ecn_material_change_display(
         {
             "change_type": "调量",
@@ -1001,13 +1006,16 @@ def test_structured_material_change_display_covers_all_change_types():
                 "unit": "pcs",
             },
         }
-    ) == ("螺钉\n用量：2 pcs", "螺钉\n用量：3.5 pcs")
+    ) == (
+        "料号：待补充\n螺钉\n用量：2 pcs",
+        "料号：待补充\n螺钉\n用量：3.5 pcs",
+    )
     assert get_ecn_material_change_display(
         {
             "change_type": ECN_MATERIAL_CHANGE_TYPE_DISCONTINUE,
             "material_change": {"material_name": "旧线材", "quantity": 1, "unit": "m"},
         }
-    ) == ("旧线材\n用量：1 m", ECN_MATERIAL_CHANGE_TYPE_DISCONTINUE)
+    ) == ("料号：待补充\n旧线材\n用量：1 m", ECN_MATERIAL_CHANGE_TYPE_DISCONTINUE)
     assert get_ecn_material_change_display(
         {
             "change_type": ECN_MATERIAL_CHANGE_TYPE_REPLACE,
@@ -1020,7 +1028,10 @@ def test_structured_material_change_display_covers_all_change_types():
                 "new_unit": "pcs",
             },
         }
-    ) == ("旧螺钉\n用量：2 pcs", "新螺钉\n用量：3 pcs")
+    ) == (
+        "料号：待补充\n旧螺钉\n用量：2 pcs",
+        "料号：待补充\n新螺钉\n用量：3 pcs",
+    )
 
 
 def test_structured_material_change_required_fields_accept_zero_quantity():

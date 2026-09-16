@@ -133,7 +133,20 @@ class SpecialTasksTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_grid_column_and_progress(self):
         await self.update(assignee="writer")
-        row = build_ecn_management_grid_row(self.record, "writer", "研发硬件")
+        row = build_ecn_management_grid_row(
+            self.record,
+            "writer",
+            "研发硬件",
+            user_service=self.service,
+        )
+        self.assertIs(row["is_my_pending"], True)
+        unrelated_row = build_ecn_management_grid_row(
+            self.record,
+            "active",
+            "品质QE",
+            user_service=self.service,
+        )
+        self.assertIs(unrelated_row["is_my_pending"], False)
         self.assertEqual(row["special_tasks"], "待确认 0/1")
         columns = get_ecn_management_grid_columns()
         fields = [column["field"] for column in columns]

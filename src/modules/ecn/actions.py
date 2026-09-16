@@ -18,6 +18,7 @@ from ... import (
 )
 from ...ecn_access import (
     can_create_ecn_request,
+    can_edit_ecn_material_codes,
     can_edit_ecn_impact,
     can_edit_ecn_scheme,
     can_submit_ecn_scheme_review,
@@ -26,6 +27,10 @@ from ...ecn_access import (
 from ...ecn_management_config import (
     ECN_REQUIRE_REJECTED_ITEM_SELECTION,
     ECNState,
+    ECN_SCHEME_GROUP_MATERIAL,
+    classify_ecn_change_item,
+    get_ecn_material_code_field_labels,
+    get_ecn_missing_material_code_items,
     get_ecn_scheme_coverage,
     is_ecn_scheme_ready_for_review,
     reject_ecn_scheme_items,
@@ -146,17 +151,92 @@ def enter_next_phase(record, phase, project_sales, service):
         workflow["current_state"] = ECNState.ECN_SCHEMING
         workflow["current_phase"] = "ECN_SCHEME_PHASE"
     else:
-        workflow["current_state"] = ECNState.ECN_EXECUTING
-        workflow["current_phase"] = "ECN_EXECUTION_PHASE"
-        try:
-            record["execution_info"] = build_ecn_execution_info_from_workflows(
-                record.get("change_items", []),
-                project_sales,
-                str(record.get("basic_info", {}).get("applicant") or ""),
-                user_service=service,
-            )
-        except ValueError as exc:
-            raise ECNConflict(str(exc)) from exc
+        if get_ecn_missing_material_code_items(record):
+            workflow["current_state"] = ECNState.MATERIAL_CODE_PENDING
+            workflow["current_phase"] = "ECN_MATERIAL_CODE_PHASE"
+        else:
+            enter_execution_phase(record, project_sales, service)
+
+
+def enter_execution_phase(record: dict, project_sales, service) -> None:
+    """在料号齐全后生成执行清单；失败时由外层单据事务整体回滚。"""
+    workflow = record["workflow"]
+    workflow["current_state"] = ECNState.ECN_EXECUTING
+    workflow["current_phase"] = "ECN_EXECUTION_PHASE"
+    try:
+        record["execution_info"] = build_ecn_execution_info_from_workflows(
+            record.get("change_items", []),
+            project_sales,
+            str(record.get("basic_info", {}).get("applicant") or ""),
+            user_service=service,
+        )
+    except ValueError as exc:
+        raise ECNConflict(str(exc)) from exc
+
+
+async def update_material_codes(
+    ecn_id: str,
+    expected_item: dict,
+    submitted_codes: dict[str, str],
+    user: str,
+    role: str,
+    *,
+    user_service=None,
+    project_sales=None,
+    storage=None,
+):
+    """补充单条物料方案料号，并在最后一项补齐时原子进入执行阶段。"""
+    service = user_service or getattr(app.state, "user_service", None)
+
+    async def operation(current, connection):
+        del connection
+        actor_role = require_active_actor_role(user, role, service)
+        require_permission(can_edit_ecn_material_codes, actor_role, user, service)
+        workflow = current.get("workflow", {})
+        if not isinstance(workflow, dict) or workflow.get("current_state") != ECNState.MATERIAL_CODE_PENDING:
+            raise ECNConflict("当前已不在料号补充阶段，料号不能修改。")
+        item_id = str(expected_item.get("item_id") or "")
+        items = current.get("change_items", [])
+        if not isinstance(items, list):
+            raise ECNConflict("物料方案数据异常，请刷新后重试。")
+        item = next(
+            (value for value in items if isinstance(value, dict) and str(value.get("item_id") or "") == item_id),
+            None,
+        )
+        if item is None or classify_ecn_change_item(item) != ECN_SCHEME_GROUP_MATERIAL:
+            raise ECNConflict("物料方案已不存在，请刷新后重试。")
+        material_change = item.get("material_change", {})
+        expected_change = expected_item.get("material_change", {})
+        if not isinstance(material_change, dict) or not isinstance(expected_change, dict):
+            raise ECNConflict("物料方案数据异常，请刷新后重试。")
+        fields = get_ecn_material_code_field_labels(item.get("change_type"))
+        if not fields:
+            raise ECNConflict("当前方案没有可填写的料号字段。")
+        normalized = {key: str(submitted_codes.get(key) or "").strip() for key, _ in fields}
+        missing = [label for key, label in fields if not normalized[key]]
+        if missing:
+            raise ECNConflict("请填写：" + "、".join(missing))
+        for key, _ in fields:
+            if str(material_change.get(key) or "").strip() != str(expected_change.get(key) or "").strip():
+                raise ECNConflict("该方案料号已被其他页面修改，请刷新后重新录入。")
+        if all(str(material_change.get(key) or "").strip() == normalized[key] for key, _ in fields):
+            raise ECNConflict("料号未发生变化。")
+        material_change.update(normalized)
+        scheme_index = items.index(item) + 1
+        append_ecn_approval_log_once(
+            current.setdefault("approval_log", []),
+            {
+                "user": user,
+                "role": actor_role,
+                "action": f"补充物料料号（方案 #{scheme_index:02d}）",
+                "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            },
+        )
+        if not get_ecn_missing_material_code_items(current):
+            enter_execution_phase(current, project_sales or {}, service)
+        return current
+
+    return await mutate_record(ecn_id, operation, storage=storage)
 
 
 def transition(current, expected, baseline, action, user, role, note, rejected_ids, service, project_sales):

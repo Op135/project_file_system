@@ -21,12 +21,17 @@ from ...ecn_management_config import (
     ECN_TRACEABILITY_LEVELS,
     get_ecn_execution_pending_role_keywords,
     get_ecn_execution_pending_usernames,
+    get_ecn_missing_material_code_items,
     get_ecn_pending_approval_roles,
     get_ecn_scheme_coverage,
     get_ecn_scheme_target_projects,
     get_ecn_traceability_closure_summary,
     get_ecn_special_confirmations,
 )
+
+
+ECN_ALL_STATUS_FILTER = "全部"
+ECN_MY_PENDING_STATUS_FILTER = "待我处理"
 
 
 def get_ecn_list_progress_summary(ecn_data: Any) -> str:
@@ -51,6 +56,10 @@ def get_ecn_list_progress_summary(ecn_data: Any) -> str:
             *get_ecn_execution_pending_role_keywords(ecn_data),
         ]
         return f"等待执行确认：{'、'.join(execution_assignees)}" if execution_assignees else "执行处理中"
+
+    if current_state == ECNState.MATERIAL_CODE_PENDING:
+        schemes = [str(item["scheme_no"]) for item in get_ecn_missing_material_code_items(ecn_data)]
+        return f"等待补充物料料号：{'、'.join(schemes)}" if schemes else "等待进入执行阶段"
 
     if current_state != ECNState.ECN_SCHEMING:
         return "—"
@@ -136,6 +145,7 @@ def build_ecn_management_grid_row(
         "delete_action": "删除" if include_delete else "",
         "ecn_id": str(ecn_data.get("ecn_id") or ""),
         "current_state": current_state,
+        "is_my_pending": is_my_pending,
         "attention": "负责人异常·待改派" if can_reassign else "待我处理" if is_my_pending else "",
         "summary": summary_text,
         "projects": "、".join(projects) or "—",

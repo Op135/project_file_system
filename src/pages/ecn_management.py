@@ -29,6 +29,8 @@ from ..modules.ecn.detail import (
     open_ecn_detail_dialog as open_detail,
 )
 from ..modules.ecn.list_view import (
+    ECN_ALL_STATUS_FILTER,
+    ECN_MY_PENDING_STATUS_FILTER,
     build_ecn_management_grid_row as build_ecn_management_grid_row,
 )
 from ..modules.ecn.list_view import (
@@ -131,7 +133,7 @@ async def ecn_management_page():
         app.storage.general.get("user_preferences", {}).get(current_user, {}).get("avatar", PRESET_AVATARS[0])
     )
 
-    page_state = {"search_keyword": "", "filter_state": "全部"}
+    page_state = {"search_keyword": "", "filter_state": ECN_ALL_STATUS_FILTER}
 
     # ui.dialog: NiceGUI框架提供的模态对话框组件
     dialog = ui.dialog().props("persistent")
@@ -232,11 +234,13 @@ async def ecn_management_page():
                 ).classes("w-64")
                 ui.select(
                     [
-                        "全部",
+                        ECN_ALL_STATUS_FILTER,
+                        ECN_MY_PENDING_STATUS_FILTER,
                         ECNState.DRAFT,
                         ECNState.ECR_REVIEWING,
                         ECNState.ECN_SCHEMING,
                         ECNState.ECN_REVIEWING,
+                        ECNState.MATERIAL_CODE_PENDING,
                         ECNState.ECN_EXECUTING,
                         ECNState.CLOSED,
                         ECNState.CANCEL,
@@ -341,7 +345,7 @@ async def ecn_management_page():
                 all_ecns = db_storage.get_item("ecn_management_data", {})
                 access_snapshot = build_ecn_access_snapshot(app.state.user_service)
                 keyword = str(page_state.get("search_keyword") or "").lower().strip()
-                filter_state = str(page_state.get("filter_state") or "全部")
+                filter_state = str(page_state.get("filter_state") or ECN_ALL_STATUS_FILTER)
                 raw_ecns = all_ecns.values() if isinstance(all_ecns, dict) else []
                 valid_ecns = [
                     ecn for ecn in raw_ecns if isinstance(ecn, dict) and isinstance(ecn.get("basic_info"), dict)
@@ -373,18 +377,22 @@ async def ecn_management_page():
                     ).lower()
                     if keyword and keyword not in searchable:
                         continue
-                    if filter_state != "全部" and current_state != filter_state:
+                    if filter_state not in {
+                        ECN_ALL_STATUS_FILTER,
+                        ECN_MY_PENDING_STATUS_FILTER,
+                    } and current_state != filter_state:
                         continue
-                    rows.append(
-                        build_ecn_management_grid_row(
-                            ecn,
-                            current_user,
-                            current_role,
-                            include_delete=can_delete_record,
-                            user_service=app.state.user_service,
-                            access_snapshot=access_snapshot,
-                        )
+                    row = build_ecn_management_grid_row(
+                        ecn,
+                        current_user,
+                        current_role,
+                        include_delete=can_delete_record,
+                        user_service=app.state.user_service,
+                        access_snapshot=access_snapshot,
                     )
+                    if filter_state == ECN_MY_PENDING_STATUS_FILTER and row.get("is_my_pending") is not True:
+                        continue
+                    rows.append(row)
                 ecn_grid.options["rowData"] = rows
                 ecn_grid.update()
                 if execution_focus_switch.value:

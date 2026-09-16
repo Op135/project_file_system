@@ -31,6 +31,7 @@ from ...ecn_access import (
     can_view_ecn_scheme_non_image_file,
 )
 from ...ecn_management_config import (
+    ECNState,
     ECN_ITEM_STATUS_NEEDS_IMPROVEMENT,
     ECN_ITEM_STATUS_NORMAL,
     ECN_ITEM_STATUS_REVISED_CONFIRMED,
@@ -58,8 +59,10 @@ from ...ecn_management_config import (
 from .actions import (
     edit_scheme,
     set_participant_status,
+    update_material_codes,
 )
 from .scheme_dialogs import (
+    open_material_code_dialog,
     open_overview_change_dialog,
     open_text_change_dialog,
 )
@@ -77,6 +80,8 @@ def build_scheme_panel(
     participants,
     is_scheming_phase,
     is_scheme_writer,
+    can_edit_material_codes,
+    material_code_saved_callback,
     dashboard_updater,
     *,
     panel_container=None,
@@ -320,6 +325,35 @@ def build_scheme_panel(
                             ui.notify(result.message, type="warning")
                             return False
                         apply_scheme_result(result.record)
+                        return True
+
+                    async def handle_save_material_codes(item: dict, codes: dict[str, str]) -> bool:
+                        result = await update_material_codes(
+                            local_data["ecn_id"],
+                            copy.deepcopy(item),
+                            codes,
+                            current_user,
+                            current_role,
+                            project_sales=app.storage.general.get("project_sale", {}),
+                        )
+                        if not result.ok or result.record is None:
+                            ui.notify(result.message, type="warning")
+                            return False
+                        record = result.record
+                        local_data["change_items"] = copy.deepcopy(record.get("change_items", []))
+                        current_workflow = record.get("workflow", {})
+                        if isinstance(current_workflow, dict):
+                            wf.clear()
+                            wf.update(copy.deepcopy(current_workflow))
+                        local_data["execution_info"] = copy.deepcopy(record.get("execution_info", {}))
+                        local_data["approval_log"] = copy.deepcopy(record.get("approval_log", []))
+                        render_items()
+                        render_coverage_dashboard()
+                        material_code_saved_callback()
+                        if wf.get("current_state") == ECNState.ECN_EXECUTING:
+                            ui.notify("全部料号已补齐，ECN已进入执行阶段。", type="positive")
+                        else:
+                            ui.notify("料号已保存。", type="positive")
                         return True
 
                     def get_item_projects(item):
@@ -1382,8 +1416,13 @@ def build_scheme_panel(
                                                 and item.get("author") == current_user
                                                 and participants.get(current_user) != ECN_PARTICIPANT_STATUS_CONFIRMED
                                             )
+                                            can_edit_codes_for_item = (
+                                                classify_ecn_change_item(item) == ECN_SCHEME_GROUP_MATERIAL
+                                                and wf.get("current_state") == ECNState.MATERIAL_CODE_PENDING
+                                                and can_edit_material_codes
+                                            )
                                             has_rejection_history = bool(get_rejection_history(item))
-                                            if can_edit_item or has_rejection_history:
+                                            if can_edit_item or has_rejection_history or can_edit_codes_for_item:
                                                 with ui.row().classes("gap-0 flex-nowrap"):
                                                     if has_rejection_history:
                                                         ui.button(
@@ -1425,6 +1464,28 @@ def build_scheme_panel(
                                                         ).props("flat round dense text-color=red-5 size=sm").tooltip(
                                                             "删除方案"
                                                         )
+                                                    if can_edit_codes_for_item:
+                                                        material_change = item.get("material_change", {})
+                                                        material_change = (
+                                                            material_change if isinstance(material_change, dict) else {}
+                                                        )
+                                                        has_any_code = any(
+                                                            str(value or "").strip()
+                                                            for key, value in material_change.items()
+                                                            if str(key).endswith("material_code")
+                                                        )
+                                                        ui.button(
+                                                            icon="qr_code_2",
+                                                            on_click=lambda _, i=item: open_material_code_dialog(
+                                                                i,
+                                                                lambda codes, current=i: handle_save_material_codes(
+                                                                    current,
+                                                                    codes,
+                                                                ),
+                                                            ),
+                                                        ).props(
+                                                            "flat round dense text-color=indigo-7 size=sm"
+                                                        ).tooltip("修改料号" if has_any_code else "添加料号")
                                             else:
                                                 ui.icon("more_horiz").classes("text-slate-300")
 

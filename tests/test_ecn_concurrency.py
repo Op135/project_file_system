@@ -17,6 +17,7 @@ from src.ecn_management_config import (
 )
 from src.modules.ecn import actions
 from src.modules.ecn.approval_transaction import ApprovalTransaction
+from src.modules.ecn.approval_reassignment import reassign_ecn_approval_reviewer
 from src.modules.ecn.editing import ECNConflict, merge_fields, sync_review_snapshot
 from src.modules.ecn.models import get_ecn_template
 from src.modules.ecn.repository import delete_record
@@ -270,13 +271,16 @@ class ECNMergeTests(unittest.TestCase):
 
 class ECNDatabaseApprovalTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
-        from src.permission_catalog import ECN_CREATE_PERMISSION, ECN_ECR_APPROVE_PERMISSION
+        from src.permission_catalog import ECN_CREATE_PERMISSION, ECN_ECR_APPROVE_PERMISSION, ECN_VIEW_PERMISSION
         from tests.test_approval_workflow import ApprovalWorkflowTests
 
         self.fixture = ApprovalWorkflowTests()
         self.fixture.setUp()
         self.service = self.fixture.service
-        self.service.set_position_permissions(self.fixture.requester_position_id, [ECN_CREATE_PERMISSION])
+        self.service.set_position_permissions(
+            self.fixture.requester_position_id,
+            [ECN_CREATE_PERMISSION, ECN_ECR_APPROVE_PERMISSION, ECN_VIEW_PERMISSION],
+        )
         self.service.set_position_permissions(self.fixture.approver_position_id, [ECN_ECR_APPROVE_PERMISSION])
         self.service.set_position_permissions(self.fixture.observer_position_id, [ECN_ECR_APPROVE_PERMISSION])
         users = self.service.load_users()
@@ -380,6 +384,140 @@ class ECNDatabaseApprovalTests(unittest.IsolatedAsyncioTestCase):
             user_service=self.service,
             storage=storage or self.left,
         )
+
+    async def test_authorized_admin_can_transfer_current_approval_task(self):
+        created = await self.create()
+        self.assertTrue(created.ok, created.message)
+        assert created.record is not None
+        assignment = created.record["workflow"]["ecr_workflow_assignment"]
+        baseline_node = copy.deepcopy(assignment["nodes"][0])
+        result = await reassign_ecn_approval_reviewer(
+            created.record["ecn_id"],
+            "ecr_workflow_assignment",
+            0,
+            "李四",
+            "张三",
+            baseline_node,
+            actor_username="admin",
+            user_service=self.service,
+            storage=self.left,
+        )
+        self.assertTrue(result.ok, result.message)
+        assert result.record is not None
+        self.assertEqual(set(self.pending(result.record)), {"张三", "王五"})
+        node = result.record["workflow"]["ecr_workflow_assignment"]["nodes"][0]
+        self.assertEqual(set(node["assignee_usernames"]), {"张三", "王五"})
+        self.assertEqual(node["reassignment_history"][-1]["from"], "李四")
+        self.assertFalse((await self.approve(result.record, "李四")).ok)
+        self.assertTrue((await self.approve(result.record, "张三")).ok)
+
+    async def test_disabled_current_reviewer_can_be_replaced(self):
+        created = await self.create()
+        self.assertTrue(created.ok, created.message)
+        assert created.record is not None
+        node = copy.deepcopy(created.record["workflow"]["ecr_workflow_assignment"]["nodes"][0])
+        self.service.modify_user("deactivate", "李四")
+        try:
+            result = await reassign_ecn_approval_reviewer(
+                created.record["ecn_id"],
+                "ecr_workflow_assignment",
+                0,
+                "李四",
+                "张三",
+                node,
+                actor_username="admin",
+                user_service=self.service,
+                storage=self.left,
+            )
+            self.assertTrue(result.ok, result.message)
+            assert result.record is not None
+            self.assertEqual(set(self.pending(result.record)), {"张三", "王五"})
+        finally:
+            self.service.modify_user("activate", "李四")
+
+    async def test_stale_or_ineligible_approval_transfer_is_rejected(self):
+        created = await self.create()
+        self.assertTrue(created.ok, created.message)
+        assert created.record is not None
+        assignment = created.record["workflow"]["ecr_workflow_assignment"]
+        baseline_node = copy.deepcopy(assignment["nodes"][0])
+        first = await reassign_ecn_approval_reviewer(
+            created.record["ecn_id"],
+            "ecr_workflow_assignment",
+            0,
+            "李四",
+            "张三",
+            baseline_node,
+            actor_username="admin",
+            user_service=self.service,
+            storage=self.left,
+        )
+        self.assertTrue(first.ok, first.message)
+        stale = await reassign_ecn_approval_reviewer(
+            created.record["ecn_id"],
+            "ecr_workflow_assignment",
+            0,
+            "王五",
+            "李四",
+            baseline_node,
+            actor_username="admin",
+            user_service=self.service,
+            storage=self.right,
+        )
+        self.assertFalse(stale.ok)
+
+    async def test_user_without_reassignment_permission_is_rejected(self):
+        created = await self.create()
+        self.assertTrue(created.ok, created.message)
+        assert created.record is not None
+        node = copy.deepcopy(created.record["workflow"]["ecr_workflow_assignment"]["nodes"][0])
+        result = await reassign_ecn_approval_reviewer(
+            created.record["ecn_id"],
+            "ecr_workflow_assignment",
+            0,
+            "李四",
+            "张三",
+            node,
+            actor_username="张三",
+            user_service=self.service,
+            storage=self.left,
+        )
+        self.assertFalse(result.ok)
+        self.assertIn("权限", result.message)
+
+    async def test_future_approval_node_can_be_reassigned_without_creating_early_task(self):
+        created = await self.create()
+        self.assertTrue(created.ok, created.message)
+        assert created.record is not None
+        value = copy.deepcopy(created.record)
+        assignment = value["workflow"]["ecr_workflow_assignment"]
+        future_node = copy.deepcopy(assignment["nodes"][0])
+        future_node.update(
+            node_key="future_review",
+            name="后续审批",
+            node_index=1,
+            assignee_usernames=["李四"],
+            approved_usernames=[],
+            status="waiting",
+        )
+        assignment["nodes"].append(future_node)
+        await self.left.set_item("ecn_management_data", {value["ecn_id"]: value})
+        result = await reassign_ecn_approval_reviewer(
+            value["ecn_id"],
+            "ecr_workflow_assignment",
+            1,
+            "李四",
+            "张三",
+            copy.deepcopy(future_node),
+            actor_username="admin",
+            user_service=self.service,
+            storage=self.left,
+        )
+        self.assertTrue(result.ok, result.message)
+        assert result.record is not None
+        updated = result.record["workflow"]["ecr_workflow_assignment"]["nodes"][1]
+        self.assertEqual(updated["assignee_usernames"], ["张三"])
+        self.assertEqual(set(self.pending(result.record)), {"李四", "王五"})
 
     async def test_concurrent_creation_binds_assignments_to_correct_allocated_id(self):
         results = await asyncio.gather(self.create(self.left), self.create(self.right))
