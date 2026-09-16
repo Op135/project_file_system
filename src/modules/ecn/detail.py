@@ -15,6 +15,7 @@ from nicegui.client import Client
 from ... import (
     db_storage,
 )
+from ...custom_ui import custom_upload
 from ...config import (
     ECN_ALLOWED_PROJECT_STATES,
     ECN_SCHEMA_CONFIG,
@@ -32,6 +33,7 @@ from ...ecn_access import (
     can_view_ecn,
 )
 from ...ecn_management_config import (
+    ECN_ATTACHMENT_CONFIG,
     ECN_VERSION_KEY,
     ECN_EXECUTION_STAGE_MATERIAL,
     ECN_OVERVIEW_ACTION_DEACTIVATE,
@@ -69,6 +71,9 @@ from .scheme_panel import (
 )
 from .approval_reassignment_ui import open_approval_reassignment_dialog
 from .task_labels import humanize_ecn_log_action
+from .attachment_preview import attachment_kind, issue_staged_attachment_preview_url
+from .attachment_ui import render_ecn_ecr_attachments, open_staged_ecn_attachment_file
+from .attachments import cleanup_staged, stage_upload
 
 
 def sync_detail_scheme_snapshot(local_data: dict, participants: dict, fresh: dict) -> bool:
@@ -159,6 +164,15 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
 
     wf = local_data["workflow"]
     basic = local_data["basic_info"]
+    basic.setdefault("attachments", [])
+    ecr_upload_busy = {"count": 0}
+    ecr_dialog_closed = {"value": False}
+    if is_new:
+        def cleanup_new_ecr_uploads() -> None:
+            ecr_dialog_closed["value"] = True
+            cleanup_staged(basic.get("attachments", []))
+
+        root_dialog.on("close", cleanup_new_ecr_uploads)
     review = local_data["review_info"]
     participants = wf.setdefault("scheme_participants", {})
 
@@ -468,6 +482,101 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
                         ).classes("w-full flex-1").props(
                             f"outlined auto-grow {'readonly bg-gray-100' if not is_ecr_editable else 'bg-white'}"
                         )
+
+                    with ui.row().classes("w-full p-2 items-start gap-2 pdf-border-b") as ecr_attachment_row:
+                        ui.label("申请附件:").classes("font-bold text-gray-700 w-20 shrink-0 pt-1")
+                        with ui.column().classes("flex-1 min-w-0 gap-1"):
+                            if is_new:
+                                pending_layout = ui.element("div").classes(
+                                    "w-full grid grid-cols-1 md:grid-cols-2 gap-5 items-start"
+                                )
+                                with pending_layout, ui.column().classes("w-full min-w-0 gap-2"):
+                                    ui.label("待保存附件（点击文件名预览或下载）").classes(
+                                        "text-xs font-semibold text-slate-600"
+                                    )
+                                    pending_list = ui.column().classes("w-full gap-3 max-h-[45vh] overflow-y-auto")
+
+                                def render_pending_files() -> None:
+                                    pending_list.clear()
+                                    with pending_list:
+                                        if not basic["attachments"]:
+                                            ui.label("暂无附件").classes("text-xs text-slate-400 py-2")
+                                        for attachment in basic["attachments"]:
+                                            with ui.row().classes(
+                                                "w-full min-h-[56px] items-center gap-2 rounded-lg "
+                                                "border border-slate-200 bg-white px-3 py-2"
+                                            ):
+                                                if attachment_kind(str(attachment.get("name") or "")) == "image":
+                                                    ui.image(issue_staged_attachment_preview_url(
+                                                        attachment, current_user, current_role,
+                                                    )).classes("w-10 h-10 object-cover rounded cursor-pointer shrink-0").on(
+                                                        "click", lambda _, entry=attachment: open_staged_ecn_attachment_file(
+                                                            entry, current_user, current_role,
+                                                        )
+                                                    )
+                                                else:
+                                                    ui.icon("attach_file", size="xs").classes("text-slate-500")
+                                                ui.label(f"{attachment.get('name', '附件')} · 待保存").classes(
+                                                    "text-xs text-indigo-700 break-all cursor-pointer hover:underline"
+                                                ).on("click", lambda _, entry=attachment: open_staged_ecn_attachment_file(
+                                                    entry, current_user, current_role,
+                                                ))
+
+                                async def upload_new_ecr_file(event) -> None:
+                                    ecr_upload_busy["count"] += 1
+                                    try:
+                                        staged = await stage_upload(event.file, current_user)
+                                    except Exception as exc:
+                                        ui.notify(f"附件上传失败：{exc}", type="negative")
+                                        return
+                                    finally:
+                                        ecr_upload_busy["count"] -= 1
+                                    if ecr_dialog_closed["value"]:
+                                        cleanup_staged([staged])
+                                        return
+                                    basic["attachments"].append(staged)
+                                    render_pending_files()
+                                    ui.notify("附件已暂存，保存或提交 ECR 后归档", type="positive")
+
+                                def remove_new_ecr_file(event) -> None:
+                                    removed = []
+                                    for file_info in event.files:
+                                        match = next(
+                                            (
+                                                entry for entry in basic["attachments"]
+                                                if entry not in removed
+                                                and entry.get("name") == file_info.get("name")
+                                                and (
+                                                    file_info.get("size") is None
+                                                    or entry.get("size") == file_info.get("size")
+                                                )
+                                            ),
+                                            None,
+                                        )
+                                        if match is not None:
+                                            removed.append(match)
+                                    cleanup_staged(removed)
+                                    basic["attachments"] = [entry for entry in basic["attachments"] if entry not in removed]
+                                    render_pending_files()
+
+                                with pending_layout, ui.column().classes("w-full min-w-0 gap-2"):
+                                    ui.label("添加申请附件（可选）").classes(
+                                        "text-xs font-semibold text-slate-600"
+                                    )
+                                    custom_upload(
+                                        multiple=True,
+                                        max_file_size=int(ECN_ATTACHMENT_CONFIG["max_file_size_mb"]) * 1024 * 1024,
+                                        on_upload=upload_new_ecr_file,
+                                        on_removed=remove_new_ecr_file,
+                                    ).props("accept=*/*")
+                                render_pending_files()
+                            else:
+                                render_ecn_ecr_attachments(
+                                    str(ecn_id), current_user, current_role,
+                                    can_upload=is_ecr_editable and basic["applicant"] == current_user,
+                                )
+                    if not is_ecr_editable and not basic.get("attachments"):
+                        ecr_attachment_row.set_visibility(False)
 
             # --- [TAB 2] ECN 影响表单 ---
             with ui.tab_panel(tab_impact).classes(
@@ -1153,6 +1262,9 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
         # 提取的数据库与流转控制逻辑中心
         # ------------------------------------------
         async def execute_db_action(action_type, note="", rejected_item_ids=None):
+            if is_new and ecr_upload_busy["count"]:
+                ui.notify("附件仍在上传，请等待上传完成后再保存", type="warning")
+                return
             if action_busy["value"]:
                 return
             action_busy["value"] = True

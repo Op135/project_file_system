@@ -149,6 +149,7 @@ def test_checked_in_config_file_is_valid():
 
     assert "permissions" not in loaded
     assert "permissions" not in raw_config
+    assert loaded["attachments"] == {"storage_path": "uploads/ecn", "max_file_size_mb": 30}
     assert "permissions" not in load_ecn_config(
         {**raw_config, "permissions": {"scheme_writer_roles": ["admin"]}}
     )

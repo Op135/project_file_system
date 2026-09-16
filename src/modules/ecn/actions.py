@@ -1,5 +1,6 @@
 """ECN 应用服务：所有写操作在最新单据上复核权限、阶段及编辑冲突。"""
 
+import asyncio
 import copy
 import uuid
 from datetime import (
@@ -69,6 +70,7 @@ from .models import (
 from .repository import (
     mutate_record,
 )
+from .attachments import cleanup_staged, publish_pending, validate_scheme_attachments
 
 
 def require_permission(check, role, user, service):
@@ -98,6 +100,7 @@ async def edit_scheme(ecn_id, expected, item, original, user, role, *, delete=Fa
         require_permission(can_edit_ecn_scheme, actor_role, user, user_service)
         if delete:
             return delete_scheme(current, expected, original, user)
+        validate_scheme_attachments(current, item, user)
         return save_scheme(current, expected, item, original, user)
 
     return await mutate_record(ecn_id, operation, storage=storage)
@@ -401,6 +404,12 @@ async def execute_action(
     service = user_service or getattr(app.state, "user_service", None)
     storage = storage or db_storage
     new_record = None
+    published_paths: list[Path] = []
+    staged_ecr_attachments = [
+        entry
+        for entry in expected.get("basic_info", {}).get("attachments", [])
+        if isinstance(entry, dict) and entry.get("pending_path")
+    ] if is_new else []
     if is_new:
         new_record = get_ecn_template()
         new_record["basic_info"] = copy.deepcopy(expected["basic_info"])
@@ -421,9 +430,17 @@ async def execute_action(
         if is_new:
             if action not in {"save_draft", "submit_ecr"}:
                 raise ECNConflict("新建单据只能保存草稿或提交申请。")
+            submitted_files = submitted.get("basic_info", {}).get("attachments", [])
+            if not isinstance(submitted_files, list) or len(submitted_files) != len(staged_ecr_attachments):
+                raise ECNConflict("申请附件数据异常，请重新上传")
             submitted["workflow"] = copy.deepcopy(current["workflow"])
             submitted["basic_info"]["file_no"] = current["ecn_id"]
             original["basic_info"]["file_no"] = current["ecn_id"]
+        else:
+            # 已保存单据的附件只允许通过独立的附件事务修改，表单三方合并不得覆盖它们。
+            submitted["basic_info"]["attachments"] = copy.deepcopy(
+                original["basic_info"].get("attachments", [])
+            )
         updated = transition(
             current,
             submitted,
@@ -436,8 +453,31 @@ async def execute_action(
             proxy or service,
             project_sales or {},
         )
+        if is_new and staged_ecr_attachments:
+            basic = updated["basic_info"]
+            finalized = []
+            for attachment in staged_ecr_attachments:
+                if attachment.get("uploaded_by") != user:
+                    raise ECNConflict("暂存附件的上传人不匹配")
+                published, path = await asyncio.to_thread(
+                    publish_pending, attachment, updated["ecn_id"], user, "ecr"
+                )
+                published_paths.append(path)
+                finalized.append(published)
+            basic["attachments"] = finalized
         if proxy is not None:
             await proxy.flush(connection)
         return updated
 
-    return await mutate_record(expected.get("ecn_id"), operation, new_record=new_record, storage=storage)
+    try:
+        result = await mutate_record(expected.get("ecn_id"), operation, new_record=new_record, storage=storage)
+    except Exception:
+        for path in published_paths:
+            path.unlink(missing_ok=True)
+        raise
+    if result.ok:
+        cleanup_staged(staged_ecr_attachments)
+    else:
+        for path in published_paths:
+            path.unlink(missing_ok=True)
+    return result

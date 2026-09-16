@@ -1,4 +1,5 @@
 # -*- encoding: utf-8 -*-
+import asyncio
 import copy
 import os
 import uuid
@@ -15,6 +16,7 @@ from ...custom_ui import (
     custom_upload,
 )
 from ...ecn_management_config import (
+    ECN_ATTACHMENT_CONFIG,
     ECN_DISPOSITION_MEASURES,
     ECN_DOCUMENT_CHANGE_TYPES,
     ECN_MATERIAL_CHANGE_TYPE_ADD,
@@ -44,6 +46,13 @@ from ...ecn_management_config import (
     is_ecn_material_disposition_required,
     resolve_ecn_overview_parameter_config,
 )
+from .attachments import cleanup_staged, publish_pending, stage_upload
+from .attachment_preview import (
+    attachment_kind,
+    issue_attachment_preview_url,
+    issue_staged_attachment_preview_url,
+)
+from .attachment_ui import open_ecn_attachment_file, open_staged_ecn_attachment_file
 
 
 def open_material_code_dialog(item: dict, on_save_callback) -> None:
@@ -1138,6 +1147,10 @@ def open_text_change_dialog(
         initial_change_type = ECN_MATERIAL_CHANGE_TYPE_ADD
 
     initial_file_server_path = str(edit_data.get("file_server_path") or "").strip()
+    existing_attachments = copy.deepcopy(edit_data.get("attachments", [])) if is_document_scheme else []
+    staged_attachments: list[dict] = []
+    attachment_upload_busy = {"count": 0}
+    attachment_dialog_closed = {"value": False}
 
     sel_state = {
         "projects": copy.deepcopy(edit_data.get("projects", [])),
@@ -1493,7 +1506,107 @@ def open_text_change_dialog(
                 provide_server_path_checkbox.on_value_change(on_provide_server_path_change)
                 render_server_path_input()
 
+            with ui.card().classes("w-full p-3 mt-2 bg-slate-50 border border-slate-200 shadow-none gap-1"):
+                attachment_layout = ui.element("div").classes(
+                    "w-full grid grid-cols-1 md:grid-cols-2 gap-5 items-start"
+                )
+                with attachment_layout, ui.column().classes("w-full min-w-0 gap-2"):
+                    ui.label("已上传附件（点击文件名预览或下载）").classes(
+                        "text-xs font-bold text-slate-700"
+                    )
+                    attachment_list = ui.column().classes("w-full gap-3 max-h-[280px] overflow-y-auto")
+
+                def render_attachment_list() -> None:
+                    attachment_list.clear()
+                    actor_role = str(app.storage.user.get("current_role") or "")
+                    with attachment_list:
+                        for attachment in [*existing_attachments, *staged_attachments]:
+                            pending = bool(attachment.get("pending_path"))
+                            file_id = str(attachment.get("id") or "")
+                            name = str(attachment.get("name") or "附件")
+
+                            def open_list_file(entry=attachment, staged=pending, fid=file_id) -> None:
+                                if staged:
+                                    open_staged_ecn_attachment_file(entry, current_user, actor_role)
+                                else:
+                                    open_ecn_attachment_file(
+                                        str(ecn_data["ecn_id"]), "scheme",
+                                        str(edit_data.get("item_id") or ""), "",
+                                        fid, current_user, actor_role,
+                                    )
+
+                            with ui.row().classes(
+                                "w-full min-h-[56px] items-center gap-2 rounded-lg "
+                                "border border-slate-200 bg-white px-3 py-2"
+                            ):
+                                if attachment_kind(name) == "image":
+                                    image_url = (
+                                        issue_staged_attachment_preview_url(attachment, current_user, actor_role)
+                                        if pending else issue_attachment_preview_url(
+                                            str(ecn_data["ecn_id"]), "scheme",
+                                            str(edit_data.get("item_id") or ""), "", file_id,
+                                            current_user, actor_role,
+                                        )
+                                    )
+                                    ui.image(image_url).classes(
+                                        "w-10 h-10 object-cover rounded cursor-pointer shrink-0"
+                                    ).on("click", open_list_file)
+                                else:
+                                    ui.icon("attach_file", size="xs").classes("text-slate-500")
+                                ui.label(f"{name}{' · 待保存' if pending else ''}").classes(
+                                    "text-xs text-indigo-700 break-all cursor-pointer hover:underline"
+                                ).on("click", open_list_file)
+
+                async def handle_document_upload(event) -> None:
+                    attachment_upload_busy["count"] += 1
+                    try:
+                        staged = await stage_upload(event.file, current_user)
+                    except Exception as exc:
+                        ui.notify(f"附件上传失败：{exc}", type="negative")
+                        return
+                    finally:
+                        attachment_upload_busy["count"] -= 1
+                    if attachment_dialog_closed["value"]:
+                        cleanup_staged([staged])
+                        return
+                    staged_attachments.append(staged)
+                    render_attachment_list()
+                    ui.notify("附件已暂存，保存方案后归档", type="positive")
+
+                def remove_document_upload(event) -> None:
+                    removed = []
+                    for file_info in event.files:
+                        match = next(
+                            (
+                                entry for entry in staged_attachments
+                                if entry not in removed
+                                and entry.get("name") == file_info.get("name")
+                                and (
+                                    file_info.get("size") is None
+                                    or entry.get("size") == file_info.get("size")
+                                )
+                            ),
+                            None,
+                        )
+                        if match is not None:
+                            removed.append(match)
+                    cleanup_staged(removed)
+                    staged_attachments[:] = [entry for entry in staged_attachments if entry not in removed]
+                    render_attachment_list()
+
+                with attachment_layout, ui.column().classes("w-full min-w-0 gap-2"):
+                    ui.label("添加附件（可选）").classes("text-xs font-bold text-slate-700")
+                    custom_upload(
+                        multiple=True,
+                        max_file_size=int(ECN_ATTACHMENT_CONFIG["max_file_size_mb"]) * 1024 * 1024,
+                        on_upload=handle_document_upload,
+                        on_removed=remove_document_upload,
+                    ).props("accept=*/*")
+                render_attachment_list()
+
         async def save_item():
+            if attachment_upload_busy["count"]:
+                return ui.notify("附件仍在上传，请等待上传完成后再保存方案", type="warning")
             old_content = ""
             new_content = ""
             normalized_material_change: dict | None = None
@@ -1585,11 +1698,39 @@ def open_text_change_dialog(
                 payload["new_content"] = new_content
                 if sel_state["provide_file_server_path"]:
                     payload["file_server_path"] = sel_state["file_server_path"].strip()
+            published_paths = []
+            if is_document_scheme:
+                payload["attachments"] = copy.deepcopy(existing_attachments)
+                try:
+                    for attachment in staged_attachments:
+                        published, path = await asyncio.to_thread(
+                            publish_pending, attachment, str(ecn_data["ecn_id"]),
+                            current_user, f"scheme_{payload['item_id']}",
+                        )
+                        published_paths.append(path)
+                        payload["attachments"].append(published)
+                    if await on_save_callback(payload, is_edit, expected_item):
+                        cleanup_staged(staged_attachments)
+                        staged_attachments.clear()
+                        dialog.close()
+                        return
+                except Exception as exc:
+                    ui.notify(f"保存方案或附件失败：{exc}", type="negative")
+                finally:
+                    for path in published_paths:
+                        if staged_attachments:
+                            path.unlink(missing_ok=True)
+                return
             if await on_save_callback(payload, is_edit, expected_item):
                 dialog.close()
 
         with ui.row().classes("w-full justify-end mt-4"):
             ui.button("取消", on_click=dialog.close).props("flat color=grey")
             ui.button("确认修改" if is_edit else "确认添加", on_click=save_item).props("color=primary")
+    def cleanup_dialog_uploads() -> None:
+        attachment_dialog_closed["value"] = True
+        cleanup_staged(staged_attachments)
+
+    dialog.on("close", cleanup_dialog_uploads)
     dialog.on("close", dialog.delete)
     dialog.open()

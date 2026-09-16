@@ -316,6 +316,7 @@ _DEFAULT_CONFIG: dict[str, Any] = {
         "repeat_hours": 24,
         "retry_seconds": 300,
     },
+    "attachments": {"storage_path": "uploads/ecn", "max_file_size_mb": 30},
     "allowed_project_states": ["试产", "量产"],
     "reminders": {
         "impact_followup_states": [ECNState.ECN_SCHEMING, ECNState.ECN_REVIEWING],
@@ -541,6 +542,14 @@ def load_ecn_config(raw_config: dict | None = None) -> dict:
     targets = raw_wecom.get("test_notify_targets")
     if isinstance(targets, list) and targets and all(isinstance(target, (str, dict)) and target for target in targets):
         result["wecom"]["test_notify_targets"] = copy.deepcopy(targets)
+    raw_attachments = raw.get("attachments", {})
+    if isinstance(raw_attachments, dict):
+        storage_path = raw_attachments.get("storage_path")
+        if isinstance(storage_path, str) and storage_path.strip():
+            result["attachments"]["storage_path"] = storage_path.strip()
+        max_size = raw_attachments.get("max_file_size_mb")
+        if isinstance(max_size, int) and not isinstance(max_size, bool) and 1 <= max_size <= 1024:
+            result["attachments"]["max_file_size_mb"] = max_size
     result["allowed_project_states"] = _string_list(
         raw.get("allowed_project_states"),
         _DEFAULT_CONFIG["allowed_project_states"],
@@ -634,6 +643,7 @@ def load_ecn_config(raw_config: dict | None = None) -> dict:
 
 ECN_CONFIG = load_ecn_config()
 ECN_WECOM_CONFIG = ECN_CONFIG["wecom"]
+ECN_ATTACHMENT_CONFIG = ECN_CONFIG["attachments"]
 ECN_SCHEMA_CONFIG = ECN_CONFIG["schema"]
 ECN_ALLOWED_PROJECT_STATES = ECN_CONFIG["allowed_project_states"]
 ECN_IMPACT_FOLLOWUP_STATES = ECN_CONFIG["reminders"]["impact_followup_states"]

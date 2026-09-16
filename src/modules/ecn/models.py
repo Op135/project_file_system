@@ -31,6 +31,7 @@ def get_ecn_template() -> dict:
             "other_reason_desc": "",  # 其它原因，用户填写的信息
             "requirements": [],  # 变更要求
             "reason_desc": "",  # 变更原因说明
+            "attachments": [],  # ECR申请附件
         },
         # 变更涉及的项目型号
         "target_projects": [],

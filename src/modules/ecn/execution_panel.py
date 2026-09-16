@@ -71,6 +71,7 @@ from .repository import (
 from .special_tasks import update_special_task
 from .special_tasks_ui import open_material_transfer_dialog, render_transfer_button
 from .task_labels import compact_material_confirmation_label, material_confirmation_tooltip_text
+from .attachment_ui import open_ecn_attachment_dialog
 
 logger = logging.getLogger(__name__)
 ACTIVE_ECN_OVERVIEW_EXECUTIONS: set[str] = set()
@@ -114,6 +115,54 @@ def build_execution_panel(
                 if isinstance(item, dict) and str(item.get("item_id")) == str(item_id):
                     return f"#{index:02d}"
             return "#--"
+
+        def render_attachment_button(
+            scope: str,
+            item_id: str = "",
+            task_key: str = "",
+            *,
+            can_upload: bool = False,
+        ) -> None:
+            attachment_key = f"{scope}|{item_id}|{task_key}"
+
+            def attachment_count() -> int:
+                execution_info = local_data.get("execution_info", {})
+                registry = execution_info.get("attachments", {}) if isinstance(execution_info, dict) else {}
+                files = registry.get(attachment_key, []) if isinstance(registry, dict) else []
+                return len(files) if isinstance(files, list) else 0
+
+            count = attachment_count()
+            labels = {
+                "ordinary": "特定事项执行附件",
+                "erp": "ERP 执行附件",
+                "material": "物料追溯节点附件",
+            }
+            if not can_upload and count == 0:
+                return
+            button = ui.button(
+                icon="upload_file" if can_upload else "attach_file",
+            ).props(
+                f"unelevated round dense size=xs color={'teal-6' if can_upload else 'indigo-6'}"
+            ).classes("shrink-0")
+
+            def tooltip_text() -> str:
+                return f"{'查看/上传' if can_upload else '查看'}附件（{attachment_count()}）"
+
+            with button:
+                count_tooltip = ui.tooltip(tooltip_text())
+
+            def refresh_attachment_count() -> None:
+                if sync_execution_local_data() and not count_tooltip.is_deleted:
+                    count_tooltip.set_text(tooltip_text())
+
+            button.on_click(
+                lambda: open_ecn_attachment_dialog(
+                    str(local_data["ecn_id"]), scope, item_id, task_key,
+                    labels.get(scope, "ECN 执行附件"), current_user, current_role,
+                    can_upload=can_upload,
+                    on_updated=refresh_attachment_count,
+                )
+            )
 
         def notify_execution_safely(
             event_client: Client,
@@ -941,7 +990,7 @@ def build_execution_panel(
                     erp_confirmation = execution_info.get("erp_confirmation", {})
                     erp_checked = isinstance(erp_confirmation, dict) and erp_confirmation.get("confirmed") is True
                     assistant_table_grid = (
-                        "grid grid-cols-[64px_72px_minmax(140px,0.5fr)_minmax(200px,1fr)_"
+                        "grid grid-cols-[96px_72px_minmax(140px,0.5fr)_minmax(200px,1fr)_"
                         "minmax(200px,1fr)_minmax(200px,1fr)_minmax(130px,0.5fr)_140px]"
                     )
                     with ui.column().classes("w-full gap-0 border-t border-slate-300"):
@@ -1007,6 +1056,17 @@ def build_execution_panel(
                                                 )
                                             ):
                                                 checkbox.props("disable")
+                                            render_attachment_button(
+                                                "ordinary", str(item_id),
+                                                can_upload=bool(
+                                                    wf.get("current_state") == ECNState.ECN_EXECUTING
+                                                    and (
+                                                        confirmation.get("assignee") == current_user
+                                                        if confirmation.get("assignee")
+                                                        else can_execute_assistant
+                                                    )
+                                                ),
+                                            )
                                         ui.label(execution_scheme_no(str(item_id))).classes(
                                             "px-3 py-2 border-r border-slate-200 font-mono font-bold "
                                             "flex items-center " + execution_column_alignment("assistant", "编号")
@@ -1084,6 +1144,17 @@ def build_execution_panel(
                                             )
                                         ):
                                             erp_checkbox.props("disable")
+                                        render_attachment_button(
+                                            "erp",
+                                            can_upload=bool(
+                                                wf.get("current_state") == ECNState.ECN_EXECUTING
+                                                and (
+                                                    erp_confirmation.get("assignee") == current_user
+                                                    if erp_confirmation.get("assignee")
+                                                    else can_execute_assistant
+                                                )
+                                            ),
+                                        )
                                     ui.label("ERP").classes(
                                         "px-3 py-2 border-r border-slate-200 font-mono font-bold "
                                         "flex items-center " + execution_column_alignment("assistant", "编号")
@@ -1282,11 +1353,11 @@ def build_execution_panel(
                             "minmax(210px, 1fr)",
                             "minmax(210px, 1fr)",
                             "minmax(100px, 0.4fr)",
-                            *["minmax(100px, 0.5fr)" for _ in ECN_TRACEABILITY_LEVELS],
+                            *["minmax(130px, 0.5fr)" for _ in ECN_TRACEABILITY_LEVELS],
                             "100px",
                         ]
                         material_grid_style = f"grid-template-columns: {' '.join(material_grid_columns)};"
-                        material_table_min_width = 1012 + len(ECN_TRACEABILITY_LEVELS) * 100
+                        material_table_min_width = 1012 + len(ECN_TRACEABILITY_LEVELS) * 130
                         with (
                             ui.element("div")
                             .props("id=ecn-material-execution-scroll")
@@ -1476,29 +1547,44 @@ def build_execution_panel(
                                                                 item_closed,
                                                             )
                                                         )
-                                                        checkbox = (
-                                                            ui.checkbox(
-                                                                compact_material_confirmation_label(spec),
-                                                                value=checked,
-                                                                on_change=lambda e, current_id=str(item_id), current_key=key: (
-                                                                    handle_material_confirmation_change(
-                                                                        e,
-                                                                        current_id,
-                                                                        current_key,
+                                                        attachment_row = ui.row().classes(
+                                                            "w-full items-center gap-1 flex-nowrap min-w-0"
+                                                        )
+                                                        with attachment_row:
+                                                            checkbox = (
+                                                                ui.checkbox(
+                                                                    compact_material_confirmation_label(spec),
+                                                                    value=checked,
+                                                                    on_change=lambda e, current_id=str(item_id), current_key=key: (
+                                                                        handle_material_confirmation_change(
+                                                                            e,
+                                                                            current_id,
+                                                                            current_key,
+                                                                        )
+                                                                    ),
+                                                                )
+                                                                .props("dense color=green")
+                                                                .classes(
+                                                                    "flex-1 min-w-0 text-xs "
+                                                                    + execution_column_alignment(
+                                                                        "material",
+                                                                        level,
+                                                                    )
+                                                                )
+                                                            )
+                                                        if not can_confirm and not can_cancel:
+                                                            checkbox.props("disable")
+                                                        with attachment_row:
+                                                            render_attachment_button(
+                                                                "material", str(item_id), key,
+                                                                can_upload=bool(
+                                                                    material_is_active
+                                                                    and can_confirm_ecn_material_spec(
+                                                                        spec, current_role, current_user,
+                                                                        access_snapshot=access_snapshot,
                                                                     )
                                                                 ),
                                                             )
-                                                            .props("dense color=green")
-                                                            .classes(
-                                                                "w-full text-xs "
-                                                                + execution_column_alignment(
-                                                                    "material",
-                                                                    level,
-                                                                )
-                                                            )
-                                                        )
-                                                        if not can_confirm and not can_cancel:
-                                                            checkbox.props("disable")
                                                         with checkbox:
                                                             tooltip = ui.tooltip(
                                                                 material_confirmation_tooltip_text(

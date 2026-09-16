@@ -68,6 +68,7 @@ from .scheme_dialogs import (
     open_overview_change_dialog,
     open_text_change_dialog,
 )
+from .attachment_ui import open_ecn_attachment_dialog
 
 logger = logging.getLogger(__name__)
 
@@ -1029,6 +1030,30 @@ def build_scheme_panel(
                                             ui.icon("folder_open", size="xs").classes(
                                                 "shrink-0 text-slate-400 cursor-help"
                                             ).tooltip(f"文件服务器存放路径：\n{file_server_path}")
+                                        if classify_ecn_change_item(item) == ECN_SCHEME_GROUP_ORDINARY_DOCUMENT:
+                                            attachments = item.get("attachments", [])
+                                            can_view_uploads = bool(
+                                                item.get("author") == current_user
+                                                or can_view_ecn_scheme_non_image_file(
+                                                    item, current_role, current_user
+                                                )
+                                            )
+                                            if can_view_uploads and attachments:
+                                                ui.button(
+                                                    icon="attach_file",
+                                                    on_click=lambda _, i=item: open_ecn_attachment_dialog(
+                                                        str(local_data["ecn_id"]),
+                                                        "scheme",
+                                                        str(i.get("item_id") or ""),
+                                                        "",
+                                                        "特定事项/资料方案附件",
+                                                        current_user,
+                                                        current_role,
+                                                        can_upload=False,
+                                                    ),
+                                                ).props("unelevated round dense size=xs color=indigo-6").tooltip(
+                                                    f"查看方案附件（{len(attachments) if isinstance(attachments, list) else 0}）"
+                                                )
                                     return
 
                                 new_data = item.get("new_data", {})
