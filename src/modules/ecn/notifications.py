@@ -36,7 +36,7 @@ from ...ecn_management_config import (
 )
 from ...wecom_service import resolve_wecom_recipients, send_wecom_text_message, send_wecom_textcard_message
 from .special_task_messages import get_special_message_item, get_special_message_items, build_special_card
-from .task_labels import execution_scheme_no
+from .task_labels import compact_material_confirmation_label, execution_scheme_no
 
 logger = logging.getLogger(__name__)
 NOTIFICATION_STATE_KEY = "ecn_wecom_notification_state"
@@ -51,7 +51,10 @@ def material_task_summary(record: dict, item_id: str, spec: dict) -> str:
     projects = "、".join(get_ecn_scheme_target_projects({"target_projects": item.get("projects", [])})) or "—"
     change_type = str(item.get("change_type") or "物料变更")
     level = str(spec.get("level") or "未指定范围")
-    responsible = str(spec.get("label") or spec.get("responsible_key") or "待确认负责人")
+    responsible = compact_material_confirmation_label(spec)
+    project = str(spec.get("project") or "").strip()
+    if project and responsible.startswith(f"{project} · "):
+        responsible = responsible[len(project) + 3 :]
     return f"物料方案 {scheme_no}｜项目：{projects}｜{change_type}｜追溯：{level}｜确认：{responsible}"
 
 

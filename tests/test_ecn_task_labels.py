@@ -1,3 +1,4 @@
+from src.modules.ecn.notifications import material_task_summary
 from src.modules.ecn.task_labels import (
     compact_material_confirmation_label,
     humanize_ecn_log_action,
@@ -72,6 +73,51 @@ def test_compact_material_confirmation_label_removes_repeated_responsibility_tex
 
     assert compact_material_confirmation_label(missing_sales) == "RFFM-1009-B · 邓俊豪（代确认）"
     assert compact_material_confirmation_label(supervisor) == "RFFM-1009-A · 销售主管 邓俊豪"
+
+    escalated_project_sales = {
+        "key": "客户/在途::项目销售::RFFM-1108-F",
+        "project": "RFFM-1108-F",
+        "responsible_type": "hierarchy_users",
+        "responsible_key": "项目销售",
+        "users": ["邓俊豪"],
+        "resolution_mode": "manager_escalation",
+    }
+    assert compact_material_confirmation_label(escalated_project_sales) == "RFFM-1108-F · 邓俊豪（代确认）"
+
+    director_for_missing_sales = {
+        **missing_sales,
+        "users": ["销售总监"],
+        "resolution_mode": "manager_escalation",
+    }
+    assert compact_material_confirmation_label(director_for_missing_sales) == (
+        "RFFM-1009-B · 销售总监（代确认）"
+    )
+    assert "销售主管也无法处理" in material_confirmation_tooltip_text(
+        director_for_missing_sales, {}, True, False
+    )
+
+    escalated_purchase = {
+        "key": "供应商::采购",
+        "responsible_type": "hierarchy_users",
+        "responsible_key": "采购",
+        "users": ["采购经理"],
+        "resolution_mode": "manager_escalation",
+    }
+    assert compact_material_confirmation_label(escalated_purchase) == "采购经理（代确认）"
+
+    record = {
+        "change_items": [
+            {
+                "item_id": "M1",
+                "change_type": "更改",
+                "projects": ["RFFM-1108-F"],
+            }
+        ]
+    }
+    notification = material_task_summary(record, "M1", {"level": "客户/在途", **escalated_project_sales})
+    assert "项目：RFFM-1108-F" in notification
+    assert "确认：邓俊豪（代确认）" in notification
+    assert "项目销售" not in notification
 
 
 def test_material_confirmation_tooltip_explains_assignment_instead_of_repeating_name():

@@ -585,7 +585,7 @@ class ApprovalWorkflowTests(unittest.TestCase):
         self.assertEqual(task["responsible_type"], "workflow_users")
         self.assertEqual(task["workflow_assignment"]["workflow_code"], "ecn.execution_supplier.test")
 
-    def test_customer_execution_workflow_keeps_parallel_project_nodes(self):
+    def test_customer_execution_workflow_uses_supervisor_only_as_project_sales_fallback(self):
         self.service.set_position_permissions(
             self.requester_position_id,
             [ECN_EXECUTION_MATERIAL_CONFIRM_PERMISSION],
@@ -670,11 +670,20 @@ class ApprovalWorkflowTests(unittest.TestCase):
         tasks = execution["material_confirmations"]["M1"]["traceability_tasks"]
 
         self.assertEqual(tasks["客户/在途::项目销售::P1"]["users"], ["张三"])
-        self.assertEqual(tasks["客户/在途::销售主管::P1"]["users"], ["李四"])
+        self.assertNotIn("客户/在途::销售主管::P1", tasks)
         self.assertEqual(tasks["客户/在途::PMC"]["users"], ["王五"])
         self.assertEqual(tasks["客户/在途::项目销售::P1"]["stage_index"], 0)
-        self.assertEqual(tasks["客户/在途::销售主管::P1"]["stage_index"], 0)
         self.assertEqual(tasks["客户/在途::PMC"]["stage_index"], 1)
+
+        missing_sales_execution = build_ecn_execution_info_from_workflows(
+            [item],
+            {},
+            "张三",
+            user_service=self.service,
+        )
+        missing_sales_tasks = missing_sales_execution["material_confirmations"]["M1"]["traceability_tasks"]
+        self.assertEqual(missing_sales_tasks["客户/在途::项目销售::P1"]["users"], [])
+        self.assertNotIn("客户/在途::销售主管::P1", missing_sales_tasks)
 
     def test_workflow_editor_nodes_support_old_single_and_new_sequence_versions(self):
         """管理界面应把旧单节点与新串行版本统一转换成可编辑节点。"""

@@ -23,6 +23,7 @@ from src.ecn_management_config import (
 from src.modules.ecn import notifications
 from src.modules.ecn.material_tasks import update_material_task_assignee
 from src.modules.ecn.list_view import build_ecn_management_grid_row
+from src.modules.ecn.task_labels import compact_material_confirmation_label
 from src.permission_catalog import (
     ECN_EXECUTION_MATERIAL_CONFIRM_PERMISSION,
     ECN_EXECUTION_PURCHASE_CONFIRM_PERMISSION,
@@ -108,6 +109,7 @@ class ECNResponsibilityEscalationTests(unittest.TestCase):
 
         self.assertEqual(resolved["users"], ["supervisor"])
         self.assertIn("销售主管", resolved["label"])
+        self.assertEqual(compact_material_confirmation_label(resolved), "P1 · supervisor（代确认）")
         self.assertNotIn("director", resolved["users"])
         self.assertTrue(
             can_confirm_ecn_material_spec(
@@ -145,6 +147,7 @@ class ECNResponsibilityEscalationTests(unittest.TestCase):
 
         self.assertEqual(resolved["users"], ["director"])
         self.assertIn("销售总监", resolved["label"])
+        self.assertEqual(compact_material_confirmation_label(resolved), "P1 · director（代确认）")
 
     def test_direct_manager_can_be_sales_director(self):
         service = HierarchyUsers({ECN_VIEW_PERMISSION})
@@ -175,6 +178,7 @@ class ECNResponsibilityEscalationTests(unittest.TestCase):
         self.assertEqual(resolved["users"], ["supervisor"])
         self.assertIn("项目销售未识别，转销售主管：supervisor", resolved["label"])
         self.assertNotIn("supervisor（销售主管）", resolved["label"])
+        self.assertEqual(compact_material_confirmation_label(resolved), "P1 · supervisor（代确认）")
 
     def test_notification_targets_only_first_available_management_level(self):
         service = HierarchyUsers(

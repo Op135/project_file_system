@@ -92,6 +92,22 @@ def _execution_workflow_task(
     }
 
 
+def _node_uses_project_sales_route(node: dict[str, Any]) -> bool:
+    approver = node.get("approver", {})
+    return bool(
+        node.get("project_scoped") is True
+        and isinstance(approver, dict)
+        and str(approver.get("strategy") or "") == "project_sales"
+    )
+
+
+def _node_is_sales_supervisor_fallback(node: dict[str, Any]) -> bool:
+    return bool(
+        node.get("project_scoped") is True
+        and str(node.get("responsible_key") or node.get("name") or "").strip() == "销售主管"
+    )
+
+
 def build_ecn_execution_info_from_workflows(
     change_items: Any,
     project_sales: Any,
@@ -157,11 +173,17 @@ def build_ecn_execution_info_from_workflows(
                     detail = str(result.get("message") or "流程解析失败")
                     raise ValueError(f"ECN执行“{level}”无法生成：{detail}")
                 nodes = result.get("approval_nodes", [])
-                for node in nodes if isinstance(nodes, list) else []:
+                workflow_nodes = [node for node in nodes if isinstance(node, dict)] if isinstance(nodes, list) else []
+                has_project_sales_route = any(_node_uses_project_sales_route(node) for node in workflow_nodes)
+                for node in workflow_nodes:
                     if not isinstance(node, dict):
                         continue
                     project_scoped = node.get("project_scoped") is True
                     if context_index > 0 and not project_scoped:
+                        continue
+                    # “销售主管”是项目销售任务的上一级兜底，不再并列生成第二个确认项。
+                    # 项目销售缺失、离职或无权限时，责任解析会把同一任务逐级传给主管/总监。
+                    if has_project_sales_route and _node_is_sales_supervisor_fallback(node):
                         continue
                     task_key, task = _execution_workflow_task(
                         level,
