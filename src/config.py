@@ -10,8 +10,6 @@ from . import error_management_config as _error_management_config
 from .ecn_management_config import (
     ECN_ALLOWED_PROJECT_STATES,
     ECN_SCHEMA_CONFIG,
-    ECN_SCHEME_INITIATOR_ROLES,
-    ECN_SCHEME_WRITER_ROLES,
     ECNState,
 )
 

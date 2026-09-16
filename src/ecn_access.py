@@ -13,11 +13,7 @@ from .ecn_management_config import (
     ECN_EXECUTION_STAGE_OVERVIEW_FAILED,
     ECN_EXECUTION_STAGE_OVERVIEW_RUNNING,
     ECN_IMPACT_FOLLOWUP_STATES,
-    ECN_ORDINARY_DOCUMENT_FILE_VIEW_ROLES_BY_TYPE,
     ECN_PARTICIPANT_STATUS_CONFIG,
-    ECN_SCHEME_INITIATOR_ROLES,
-    ECN_SCHEME_WRITER_ROLES,
-    can_view_ecn_scheme_non_image_file as can_view_legacy_ecn_scheme_non_image_file,
     classify_ecn_change_item,
     get_ecn_impact_handlers,
     get_ecn_material_execution_specs,
@@ -29,7 +25,6 @@ from .ecn_management_config import (
     ECNState,
     ECN_SCHEME_GROUP_ORDINARY_DOCUMENT,
     ECN_SCHEME_GROUP_OVERVIEW_DOCUMENT,
-    is_ecn_pending_for_user as is_legacy_ecn_pending_for_user,
 )
 from .permission_catalog import (
     ECN_CREATE_PERMISSION,
@@ -164,12 +159,6 @@ def _can_execute_assistant_with_snapshot(
     )
 
 
-def _matched_legacy_role(current_role: object, keywords: list[str] | tuple[str, ...]) -> tuple[str, ...]:
-    """把旧关键词命中转换为权限兼容层要求的精确角色集合。"""
-    role = str(current_role or "").strip()
-    return (role,) if role_matches_keywords(role, list(keywords)) else ()
-
-
 def can_view_ecn(
     current_role: object,
     current_user: str,
@@ -218,12 +207,12 @@ def can_edit_ecn_impact(
     """判断是否可以维护 ECN 影响评估。"""
     if isinstance(access_snapshot, dict) and access_snapshot.get("database_mode") is True:
         return _snapshot_permission(access_snapshot, current_user, ECN_IMPACT_EDIT_PERMISSION)
+    if not _database_mode(user_service):
+        return False
     return can(
         _service(user_service),
         current_user,
         ECN_IMPACT_EDIT_PERMISSION,
-        legacy_role=str(current_role or ""),
-        legacy_allowed_roles=_matched_legacy_role(current_role, ECN_SCHEME_WRITER_ROLES),
     )
 
 
@@ -234,14 +223,12 @@ def receives_ecn_initial_impact_reminder(
     user_service=None,
 ) -> bool:
     """判断是否接收尚无人认领的 ECN 影响评估兜底提醒。"""
-    from .ecn_management_config import ECN_IMPACT_INITIAL_REMINDER_ROLES
-
+    if not _database_mode(user_service):
+        return False
     return can(
         _service(user_service),
         current_user,
         ECN_IMPACT_INITIAL_REMINDER_PERMISSION,
-        legacy_role=str(current_role or ""),
-        legacy_allowed_roles=_matched_legacy_role(current_role, ECN_IMPACT_INITIAL_REMINDER_ROLES),
     )
 
 
@@ -255,12 +242,12 @@ def can_edit_ecn_scheme(
     """判断是否可以编写并确认本人负责的 ECN 方案。"""
     if isinstance(access_snapshot, dict) and access_snapshot.get("database_mode") is True:
         return _snapshot_permission(access_snapshot, current_user, ECN_SCHEME_EDIT_PERMISSION)
+    if not _database_mode(user_service):
+        return False
     return can(
         _service(user_service),
         current_user,
         ECN_SCHEME_EDIT_PERMISSION,
-        legacy_role=str(current_role or ""),
-        legacy_allowed_roles=_matched_legacy_role(current_role, ECN_SCHEME_WRITER_ROLES),
     )
 
 
@@ -274,12 +261,12 @@ def can_submit_ecn_scheme_review(
     """判断是否可以发起 ECN 方案评审。"""
     if isinstance(access_snapshot, dict) and access_snapshot.get("database_mode") is True:
         return _snapshot_permission(access_snapshot, current_user, ECN_SCHEME_REVIEW_SUBMIT_PERMISSION)
+    if not _database_mode(user_service):
+        return False
     return can(
         _service(user_service),
         current_user,
         ECN_SCHEME_REVIEW_SUBMIT_PERMISSION,
-        legacy_role=str(current_role or ""),
-        legacy_allowed_roles=_matched_legacy_role(current_role, ECN_SCHEME_INITIATOR_ROLES),
     )
 
 
@@ -871,12 +858,7 @@ def can_view_ecn_scheme_non_image_file(
     """按方案分类判断非图片附件查看权限。"""
     service = _service(user_service)
     if not _database_mode(service):
-        return can_view_legacy_ecn_scheme_non_image_file(
-            item,
-            current_role,
-            overview_config_flat,
-            ECN_ORDINARY_DOCUMENT_FILE_VIEW_ROLES_BY_TYPE,
-        )
+        return False
 
     category = classify_ecn_change_item(item)
     if category == ECN_SCHEME_GROUP_OVERVIEW_DOCUMENT:
@@ -909,6 +891,10 @@ def is_ecn_pending_for_user(
 ) -> bool:
     """返回一张 ECN 是否属于当前用户可实际处理的待办。"""
     if not isinstance(ecn_data, dict):
+        return False
+    if not _database_mode(user_service) and not (
+        isinstance(access_snapshot, dict) and access_snapshot.get("database_mode") is True
+    ):
         return False
     workflow = ecn_data.get("workflow", {}) if isinstance(ecn_data, dict) else {}
     basic_info = ecn_data.get("basic_info", {})
@@ -956,9 +942,6 @@ def is_ecn_pending_for_user(
             if isinstance(access_snapshot, dict) and access_snapshot.get("database_mode") is True
             else can_view_ecn(current_role, current_user, user_service=user_service)
         )
-    if not _database_mode(user_service):
-        return is_legacy_ecn_pending_for_user(ecn_data, current_user, current_role)
-
     current_state = workflow.get("current_state")
     if workflow.get("current_phase") == "ECR_PHASE" and current_state == ECNState.ECR_REVIEWING:
         return is_ecr_assigned_approver(

@@ -317,15 +317,6 @@ _DEFAULT_CONFIG: dict[str, Any] = {
         "retry_seconds": 300,
     },
     "allowed_project_states": ["试产", "量产"],
-    "permissions": {
-        "scheme_initiator_roles": ["研发经理", "admin"],
-        "scheme_writer_roles": ["研发", "工程", "质量"],
-        "impact_initial_reminder_roles": ["研发助理"],
-        "ordinary_document_file_view_roles_by_type": {
-            change_type: ["admin", "研发", "工程", "质量", "销售", "生产", "PMC"]
-            for change_type in ["图纸更新", "SOP修改", "测试报告内容格式", "其它"]
-        },
-    },
     "reminders": {
         "impact_followup_states": [ECNState.ECN_SCHEMING, ECNState.ECN_REVIEWING],
     },
@@ -480,33 +471,6 @@ def _string_list(value: Any, default: list[str], field_name: str) -> list[str]:
     return copy.deepcopy(default)
 
 
-def _role_map(value: Any, default: dict[str, list[str]], field_name: str) -> dict[str, list[str]]:
-    if not isinstance(value, dict):
-        logger.warning("ECN配置 %s 无效，已使用默认值", field_name)
-        return copy.deepcopy(default)
-
-    result: dict[str, list[str]] = {}
-    for change_type, default_roles in default.items():
-        roles = value.get(change_type)
-        if isinstance(roles, list) and all(isinstance(role, str) and role.strip() for role in roles):
-            result[change_type] = list(dict.fromkeys(role.strip() for role in roles))
-        else:
-            logger.warning(
-                "ECN配置 %s.%s 无效，已使用默认值",
-                field_name,
-                change_type,
-            )
-            result[change_type] = copy.deepcopy(default_roles)
-    for change_type, roles in value.items():
-        if change_type in result or not isinstance(change_type, str) or not change_type.strip():
-            continue
-        if isinstance(roles, list) and all(isinstance(role, str) and role.strip() for role in roles):
-            result[change_type.strip()] = list(dict.fromkeys(role.strip() for role in roles))
-        else:
-            logger.warning("ECN配置 %s.%s 无效，已忽略", field_name, change_type)
-    return result
-
-
 def _positive_number(value: Any, default: float, field_name: str) -> float:
     if isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0:
         return float(value)
@@ -581,19 +545,6 @@ def load_ecn_config(raw_config: dict | None = None) -> dict:
         raw.get("allowed_project_states"),
         _DEFAULT_CONFIG["allowed_project_states"],
         "allowed_project_states",
-    )
-
-    raw_permissions = raw.get("permissions", {})
-    if not isinstance(raw_permissions, dict):
-        raw_permissions = {}
-    for key, default in _DEFAULT_CONFIG["permissions"].items():
-        if key == "ordinary_document_file_view_roles_by_type":
-            continue
-        result["permissions"][key] = _string_list(raw_permissions.get(key), default, f"permissions.{key}")
-    result["permissions"]["ordinary_document_file_view_roles_by_type"] = _role_map(
-        raw_permissions.get("ordinary_document_file_view_roles_by_type"),
-        _DEFAULT_CONFIG["permissions"]["ordinary_document_file_view_roles_by_type"],
-        "permissions.ordinary_document_file_view_roles_by_type",
     )
 
     raw_reminders = raw.get("reminders", {})
@@ -685,10 +636,6 @@ ECN_CONFIG = load_ecn_config()
 ECN_WECOM_CONFIG = ECN_CONFIG["wecom"]
 ECN_SCHEMA_CONFIG = ECN_CONFIG["schema"]
 ECN_ALLOWED_PROJECT_STATES = ECN_CONFIG["allowed_project_states"]
-ECN_SCHEME_INITIATOR_ROLES = ECN_CONFIG["permissions"]["scheme_initiator_roles"]
-ECN_SCHEME_WRITER_ROLES = ECN_CONFIG["permissions"]["scheme_writer_roles"]
-ECN_IMPACT_INITIAL_REMINDER_ROLES = ECN_CONFIG["permissions"]["impact_initial_reminder_roles"]
-ECN_ORDINARY_DOCUMENT_FILE_VIEW_ROLES_BY_TYPE = ECN_CONFIG["permissions"]["ordinary_document_file_view_roles_by_type"]
 ECN_IMPACT_FOLLOWUP_STATES = ECN_CONFIG["reminders"]["impact_followup_states"]
 ECN_REQUIRE_REJECTED_ITEM_SELECTION = ECN_CONFIG["scheme_review"]["require_rejected_item_selection"]
 ECN_REQUIRE_REVISION_BEFORE_RECONFIRMATION = ECN_CONFIG["scheme_review"]["require_revision_before_reconfirmation"]
@@ -1231,47 +1178,6 @@ def get_ecn_execution_pending_usernames(ecn_data: Any) -> list[str]:
     return get_ecn_execution_pending_assignees(ecn_data)["users"]
 
 
-def is_ecn_execution_pending_for_user(ecn_data: Any, current_user: str, current_role: str) -> bool:
-    assignees = get_ecn_execution_pending_assignees(ecn_data)
-    return current_user in assignees["users"] or role_matches_keywords(current_role, assignees["roles"])
-
-
-def can_view_ecn_scheme_non_image_file(
-    item: Any,
-    current_role: Any,
-    overview_config_flat: Any = None,
-    ordinary_document_roles_by_type: Any = None,
-) -> bool:
-    """判断当前角色能否从ECN方案表格查看或下载非图片文件。"""
-    role = str(current_role or "")
-    category = classify_ecn_change_item(item)
-    if category == ECN_SCHEME_GROUP_OVERVIEW_DOCUMENT:
-        configs = overview_config_flat if isinstance(overview_config_flat, dict) else {}
-        config = configs.get(item.get("label"), {}) if isinstance(item, dict) else {}
-        permission = config.get("permission", {}) if isinstance(config, dict) else {}
-        if not isinstance(permission, dict):
-            return False
-        read_roles = permission.get("read_role", [])
-        edit_roles = permission.get("edit_role", [])
-        allowed_roles = [
-            *(read_roles if isinstance(read_roles, list) else []),
-            *(edit_roles if isinstance(edit_roles, list) else []),
-        ]
-        return role in allowed_roles
-
-    if category == ECN_SCHEME_GROUP_ORDINARY_DOCUMENT:
-        role_map = (
-            ordinary_document_roles_by_type
-            if isinstance(ordinary_document_roles_by_type, dict)
-            else ECN_ORDINARY_DOCUMENT_FILE_VIEW_ROLES_BY_TYPE
-        )
-        change_type = str(item.get("change_type") or "") if isinstance(item, dict) else ""
-        allowed_keywords = role_map.get(change_type, []) if isinstance(role_map.get(change_type, []), list) else []
-        return role_matches_keywords(role, allowed_keywords)
-
-    return False
-
-
 def get_ecn_impact_handlers(ecn_data: Any) -> list[str]:
     if not isinstance(ecn_data, dict):
         return []
@@ -1548,51 +1454,3 @@ def get_ecn_pending_approval_roles(workflow: Any) -> list[str]:
     return [
         str(role) for role in pending_roles if role not in [None, ""] and not bool(step_approvals.get(str(role), False))
     ]
-
-
-def is_ecn_pending_for_user(ecn_data: Any, current_user: str, current_role: str) -> bool:
-    """返回一张 ECN 是否应计入指定用户的主页/列表待办。"""
-    if not isinstance(ecn_data, dict):
-        return False
-
-    workflow = ecn_data.get("workflow", {})
-    basic_info = ecn_data.get("basic_info", {})
-    if not isinstance(workflow, dict) or not isinstance(basic_info, dict):
-        return False
-
-    current_state = workflow.get("current_state")
-    if current_role in get_ecn_pending_approval_roles(workflow):
-        return True
-
-    if current_state == ECNState.ECN_EXECUTING:
-        return is_ecn_execution_pending_for_user(ecn_data, current_user, current_role)
-
-    if current_state in [ECNState.REJECTED, ECNState.DRAFT] and basic_info.get("applicant") == current_user:
-        return True
-
-    if is_ecn_scheme_ready_for_review(ecn_data) and role_matches_keywords(current_role, ECN_SCHEME_INITIATOR_ROLES):
-        return True
-
-    if current_state not in ECN_IMPACT_FOLLOWUP_STATES:
-        return False
-
-    participants = workflow.get("scheme_participants", {})
-    if isinstance(participants, dict) and current_user in participants:
-        participant_status = participants.get(current_user)
-        status_info = ECN_PARTICIPANT_STATUS_CONFIG.get(participant_status, {})
-        return status_info.get("remind") is True
-    if isinstance(participants, dict) and participants:
-        return False
-
-    if is_ecn_impact_blank(ecn_data):
-        return role_matches_keywords(current_role, ECN_IMPACT_INITIAL_REMINDER_ROLES)
-
-    handlers = get_ecn_impact_handlers(ecn_data)
-    # 已经写过影响、但尚未提供方案的人仍需提醒；确认完成的参与人不会再提醒。
-    return current_user in handlers and current_user not in participants
-
-
-def get_ecn_dashboard_pending_count(all_ecns: Any, current_user: str, current_role: str) -> int:
-    if not isinstance(all_ecns, dict):
-        return 0
-    return sum(1 for ecn_data in all_ecns.values() if is_ecn_pending_for_user(ecn_data, current_user, current_role))

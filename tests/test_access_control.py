@@ -7,6 +7,7 @@ from pathlib import Path
 import pandas as pd
 
 from src.access_control import can_use_tool
+from src.ecn_management_config import ECNState
 from src.ecn_access import (
     can_create_ecn_request,
     can_confirm_ecn_material_spec,
@@ -17,7 +18,10 @@ from src.ecn_access import (
     can_submit_ecn_scheme_review,
     can_view_ecn,
     can_view_ecn_scheme_non_image_file,
+    get_ecn_dashboard_pending_count,
     has_ecn_material_execution_qualification,
+    is_ecn_pending_for_user,
+    receives_ecn_initial_impact_reminder,
 )
 from src.permission_catalog import (
     DESIGN_KNOWLEDGE_CREATE_PERMISSION,
@@ -28,6 +32,7 @@ from src.permission_catalog import (
     ECN_EXECUTION_MATERIAL_CONFIRM_PERMISSION,
     ECN_EXECUTION_PMC_CONFIRM_PERMISSION,
     ECN_IMPACT_EDIT_PERMISSION,
+    ECN_IMPACT_INITIAL_REMINDER_PERMISSION,
     ECN_SCHEME_EDIT_PERMISSION,
     ECN_SCHEME_REVIEW_SUBMIT_PERMISSION,
     ECN_VIEW_PERMISSION,
@@ -198,14 +203,23 @@ class AccessControlTests(unittest.TestCase):
             )
         )
 
-    def test_ecn_legacy_mode_does_not_restore_removed_execution_route(self):
-        """旧身份模式可保留表单权限，但不能靠岗位名恢复已删除的执行路线。"""
+    def test_ecn_legacy_mode_does_not_restore_removed_permissions(self):
+        """旧身份模式不能靠岗位名恢复已迁移的方案权限或执行路线。"""
         self.assertTrue(can_view_ecn("行政专员", "张三", user_service=self.service))
         self.assertTrue(can_create_ecn_request("行政专员", "张三", user_service=self.service))
-        self.assertTrue(can_edit_ecn_impact("研发硬件", "张三", user_service=self.service))
-        self.assertTrue(can_edit_ecn_scheme("质量工程师", "张三", user_service=self.service))
-        self.assertTrue(
+        self.assertFalse(can_edit_ecn_impact("研发硬件", "张三", user_service=self.service))
+        self.assertFalse(can_edit_ecn_scheme("质量工程师", "张三", user_service=self.service))
+        self.assertFalse(
             can_submit_ecn_scheme_review("研发经理", "张三", user_service=self.service)
+        )
+        self.assertFalse(receives_ecn_initial_impact_reminder("研发助理", "张三", user_service=self.service))
+        self.assertFalse(
+            can_view_ecn_scheme_non_image_file(
+                {"scheme_category": "ordinary_document", "change_type": "图纸更新"},
+                "研发硬件",
+                "张三",
+                user_service=self.service,
+            )
         )
         self.assertFalse(
             can_execute_ecn_assistant_stage("研发助理", "张三", user_service=self.service)
@@ -299,6 +313,38 @@ class AccessControlTests(unittest.TestCase):
                 "张三",
                 user_service=self.service,
             )
+        )
+
+    def test_ecn_initial_reminder_and_pending_count_use_database_permission(self):
+        self.service.migrate_legacy_users()
+        org_unit_id = self.service.save_org_unit(code="org.ecn.reminder", name="ECN提醒部")
+        position_id = self.service.save_position(code="ecn.reminder", name="普通提醒岗位")
+        self.service.set_primary_membership(
+            "张三", org_unit_id=org_unit_id, position_id=position_id
+        )
+        record = {
+            "basic_info": {"applicant": "申请人"},
+            "review_info": {},
+            "workflow": {"current_state": ECNState.ECN_SCHEMING, "scheme_participants": {}},
+        }
+        self.assertFalse(receives_ecn_initial_impact_reminder("研发助理", "张三", user_service=self.service))
+        self.assertFalse(is_ecn_pending_for_user(record, "张三", "研发助理", user_service=self.service))
+
+        self.service.set_position_permissions(
+            position_id,
+            [ECN_VIEW_PERMISSION, ECN_IMPACT_INITIAL_REMINDER_PERMISSION],
+            actor_username="admin",
+        )
+        self.assertTrue(receives_ecn_initial_impact_reminder("普通岗位", "张三", user_service=self.service))
+        self.assertTrue(is_ecn_pending_for_user(record, "张三", "普通岗位", user_service=self.service))
+        self.assertEqual(
+            get_ecn_dashboard_pending_count(
+                {"ECN1": record, "ECN2": record, "invalid": None},
+                "张三",
+                "普通岗位",
+                user_service=self.service,
+            ),
+            2,
         )
 
     def test_ecn_material_responsibility_uses_permissions_in_database_mode(self):

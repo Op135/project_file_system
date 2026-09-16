@@ -5,7 +5,6 @@ from unittest.mock import patch
 from src.ecn_management_config import (
     ECN_CONFIG_PATH,
     ECN_EXECUTION_STAGE_MATERIAL,
-    ECN_EXECUTION_STAGE_OVERVIEW_RUNNING,
     ECN_SCHEME_GROUP_MATERIAL,
     ECN_SCHEME_GROUP_ORDINARY_DOCUMENT,
     ECN_SCHEME_GROUP_OVERVIEW_DOCUMENT,
@@ -20,7 +19,6 @@ from src.ecn_management_config import (
     ECNState,
     build_ecn_execution_info,
     build_overview_validation_signature,
-    can_view_ecn_scheme_non_image_file,
     classify_ecn_change_item,
     collect_ecn_pending_overview_overrides,
     get_active_overview_row_contents,
@@ -32,13 +30,11 @@ from src.ecn_management_config import (
     get_ecn_material_change_missing_fields,
     get_ecn_scheme_coverage,
     get_ecn_traceability_closure_summary,
-    get_ecn_dashboard_pending_count,
     get_ecn_execution_pending_role_keywords,
     get_ecn_execution_pending_usernames,
     get_ecn_material_execution_specs,
     get_ecn_stage_index,
     has_unrevised_rejected_scheme_items,
-    is_ecn_pending_for_user,
     is_ecn_assistant_execution_ready,
     is_ecn_material_execution_closed,
     is_ecn_review_info_blank,
@@ -151,10 +147,11 @@ def test_checked_in_config_file_is_valid():
 
     loaded = load_ecn_config(raw_config)
 
-    assert loaded["permissions"]["impact_initial_reminder_roles"] == ["研发助理"]
-    assert loaded["permissions"]["ordinary_document_file_view_roles_by_type"] == raw_config[
-        "permissions"
-    ]["ordinary_document_file_view_roles_by_type"]
+    assert "permissions" not in loaded
+    assert "permissions" not in raw_config
+    assert "permissions" not in load_ecn_config(
+        {**raw_config, "permissions": {"scheme_writer_roles": ["admin"]}}
+    )
     assert loaded["reminders"]["impact_followup_states"] == [
         ECNState.ECN_SCHEMING,
         ECNState.ECN_REVIEWING,
@@ -238,79 +235,6 @@ def test_overview_project_new_data_uses_each_projects_validated_svn_path():
     assert "url_path" not in shared_data
 
 
-def test_non_image_file_view_permission_uses_the_correct_configuration_source():
-    overview_item = {
-        "type": "overview_update",
-        "scheme_category": ECN_SCHEME_GROUP_OVERVIEW_DOCUMENT,
-        "label": "software_manual",
-    }
-    overview_configs = {
-        "software_manual": {
-            "permission": {
-                "read_role": ["质量"],
-                "edit_role": ["研发软件"],
-            }
-        }
-    }
-    assert can_view_ecn_scheme_non_image_file(
-        overview_item,
-        "质量",
-        overview_configs,
-        {"图纸更新": ["销售"]},
-    ) is True
-    assert can_view_ecn_scheme_non_image_file(
-        overview_item,
-        "研发软件",
-        overview_configs,
-        {"图纸更新": ["销售"]},
-    ) is True
-    assert can_view_ecn_scheme_non_image_file(
-        overview_item,
-        "质量主管",
-        overview_configs,
-        {"图纸更新": ["质量"]},
-    ) is False
-
-    ordinary_item = {
-        "type": "text_desc",
-        "scheme_category": ECN_SCHEME_GROUP_ORDINARY_DOCUMENT,
-        "change_type": "图纸更新",
-    }
-    assert can_view_ecn_scheme_non_image_file(
-        ordinary_item,
-        "质量主管",
-        overview_configs,
-        {"图纸更新": ["质量", "admin"], "SOP修改": ["工程"]},
-    ) is True
-    assert can_view_ecn_scheme_non_image_file(
-        ordinary_item,
-        "采购",
-        overview_configs,
-        {"图纸更新": ["质量", "admin"], "SOP修改": ["工程"]},
-    ) is False
-    ordinary_item["change_type"] = "SOP修改"
-    assert can_view_ecn_scheme_non_image_file(
-        ordinary_item,
-        "质量主管",
-        overview_configs,
-        {"图纸更新": ["质量"], "SOP修改": ["工程"]},
-    ) is False
-    assert can_view_ecn_scheme_non_image_file(
-        ordinary_item,
-        "工程主管",
-        overview_configs,
-        {"图纸更新": ["质量"], "SOP修改": ["工程"]},
-    ) is True
-
-    with ECN_CONFIG_PATH.open("r", encoding="utf-8") as config_file:
-        empty_role_config = json.load(config_file)
-    empty_role_config["permissions"]["ordinary_document_file_view_roles_by_type"]["其它"] = []
-    empty_other_roles = load_ecn_config(empty_role_config)["permissions"][
-        "ordinary_document_file_view_roles_by_type"
-    ]
-    assert empty_other_roles["其它"] == []
-
-
 def test_pending_overview_overrides_exclude_the_item_being_edited():
     change_items = [
         {
@@ -381,26 +305,6 @@ def test_impact_audit_log_merges_by_unique_event_id_without_overwrite():
     assert merge_ecn_impact_audit_log(review_info, incoming) == 0
 
 
-def test_empty_impact_only_reminds_rd_assistant():
-    record = _ecn_record()
-
-    assert is_ecn_pending_for_user(record, "助理A", "研发助理") is True
-    assert is_ecn_pending_for_user(record, "工程师A", "研发硬件") is False
-    assert is_ecn_pending_for_user(record, "工程师B", "工程") is False
-
-
-def test_explicit_impact_handlers_replace_broad_role_reminder():
-    record = _ecn_record(
-        impact_handlers=["工程师A", "工程师B"],
-        impact_selected=True,
-    )
-
-    assert is_ecn_pending_for_user(record, "工程师A", "研发硬件") is True
-    assert is_ecn_pending_for_user(record, "工程师B", "工程") is True
-    assert is_ecn_pending_for_user(record, "助理A", "研发助理") is False
-    assert is_ecn_pending_for_user(record, "工程师C", "质量") is False
-
-
 def test_registering_impact_handlers_supports_multiple_people_and_does_not_duplicate():
     record = _ecn_record(impact_selected=True)
 
@@ -414,25 +318,7 @@ def test_registering_impact_handlers_supports_multiple_people_and_does_not_dupli
     assert record["workflow"]["impact_handlers"] == ["工程师A", "工程师B"]
 
 
-def test_confirmed_handler_is_not_reminded_but_rejected_handler_is_reminded():
-    reviewing = _ecn_record(
-        state=ECNState.ECN_REVIEWING,
-        impact_handlers=["工程师A"],
-        impact_selected=True,
-        participants={"工程师A": ECN_PARTICIPANT_STATUS_CONFIRMED},
-    )
-    rejected = _ecn_record(
-        state=ECNState.ECN_SCHEMING,
-        impact_handlers=["工程师A"],
-        impact_selected=True,
-        participants={"工程师A": ECN_PARTICIPANT_STATUS_NEEDS_RECONFIRMATION},
-    )
-
-    assert is_ecn_pending_for_user(reviewing, "工程师A", "研发硬件") is False
-    assert is_ecn_pending_for_user(rejected, "工程师A", "研发硬件") is True
-
-
-def test_scheme_initiator_is_reminded_when_scheme_is_ready_for_review():
+def test_scheme_is_ready_for_review_when_participants_and_coverage_are_complete():
     record = _ecn_record(
         impact_selected=True,
         impact_handlers=["工程师A"],
@@ -448,12 +334,9 @@ def test_scheme_initiator_is_reminded_when_scheme_is_ready_for_review():
     ]
 
     assert is_ecn_scheme_ready_for_review(record) is True
-    assert is_ecn_pending_for_user(record, "经理A", "研发经理") is True
-    assert is_ecn_pending_for_user(record, "管理员", "admin") is True
-    assert is_ecn_pending_for_user(record, "未参与工程师", "研发硬件") is False
 
 
-def test_scheme_initiator_is_not_reminded_until_confirmation_and_coverage_are_complete():
+def test_scheme_is_not_ready_until_confirmation_and_coverage_are_complete():
     unconfirmed = _ecn_record(
         impact_selected=True,
         impact_handlers=["工程师A"],
@@ -468,9 +351,7 @@ def test_scheme_initiator_is_not_reminded_until_confirmation_and_coverage_are_co
     missing_coverage["change_items"] = []
 
     assert is_ecn_scheme_ready_for_review(unconfirmed) is False
-    assert is_ecn_pending_for_user(unconfirmed, "经理A", "研发经理") is False
     assert is_ecn_scheme_ready_for_review(missing_coverage) is False
-    assert is_ecn_pending_for_user(missing_coverage, "经理A", "研发经理") is False
 
 
 def test_every_change_requirement_must_be_linked_by_at_least_one_scheme():
@@ -489,7 +370,6 @@ def test_every_change_requirement_must_be_linked_by_at_least_one_scheme():
     coverage = get_ecn_scheme_coverage(record)
     assert coverage["missing_requirements"] == {"2"}
     assert is_ecn_scheme_ready_for_review(record) is False
-    assert is_ecn_pending_for_user(record, "经理A", "研发经理") is False
 
     change_items.append({"req_idxs": ["2"]})
     assert get_ecn_scheme_coverage(record)["missing_requirements"] == set()
@@ -551,8 +431,6 @@ def test_rejecting_selected_items_only_reopens_their_authors():
         "工程师A": ECN_PARTICIPANT_STATUS_NEEDS_RECONFIRMATION,
         "工程师B": ECN_PARTICIPANT_STATUS_CONFIRMED,
     }
-    assert is_ecn_pending_for_user(record, "工程师A", "研发硬件") is True
-    assert is_ecn_pending_for_user(record, "工程师B", "工程") is False
 
 
 def test_rejected_item_must_be_revised_before_reconfirmation():
@@ -738,17 +616,6 @@ def test_traceability_only_cascades_when_a_new_level_is_selected():
     assert expanded_again == configured_levels[:5]
 
 
-def test_normal_approval_and_applicant_pending_rules_are_preserved():
-    approval_record = _ecn_record(
-        state=ECNState.ECR_REVIEWING,
-        pending_roles=["研发经理"],
-    )
-    draft_record = _ecn_record(state=ECNState.DRAFT, applicant="申请人A")
-
-    assert is_ecn_pending_for_user(approval_record, "经理A", "研发经理") is True
-    assert is_ecn_pending_for_user(draft_record, "申请人A", "销售") is True
-
-
 def test_parallel_approval_removes_completed_role_from_pending_work():
     approval_record = _ecn_record(
         state=ECNState.ECN_REVIEWING,
@@ -757,14 +624,6 @@ def test_parallel_approval_removes_completed_role_from_pending_work():
     approval_record["workflow"]["step_approvals"] = {"工程NPI": True}
 
     assert get_ecn_pending_approval_roles(approval_record["workflow"]) == ["质量经理", "PMC"]
-    assert is_ecn_pending_for_user(approval_record, "工程师A", "工程NPI") is False
-    assert is_ecn_pending_for_user(approval_record, "质量A", "质量经理") is True
-    assert is_ecn_pending_for_user(approval_record, "计划A", "PMC") is True
-    assert get_ecn_dashboard_pending_count(
-        {"ECN-并行审批": approval_record},
-        "工程师A",
-        "工程NPI",
-    ) == 0
 
 
 def test_execution_checklists_are_built_from_the_three_scheme_groups():
@@ -803,11 +662,6 @@ def test_execution_checklists_are_built_from_the_three_scheme_groups():
     record = _ecn_record(state=ECNState.ECN_EXECUTING)
     record["change_items"] = change_items
     record["execution_info"] = execution_info
-    assert is_ecn_pending_for_user(record, "助理A", "研发助理") is True
-    assert is_ecn_pending_for_user(record, "工程师A", "工程NPI") is False
-
-    execution_info["stage"] = ECN_EXECUTION_STAGE_OVERVIEW_RUNNING
-    assert is_ecn_pending_for_user(record, "助理A", "研发助理") is True
 
 
 def test_material_specs_use_only_persisted_workflow_snapshot():
@@ -861,17 +715,6 @@ def test_invalid_step_approval_data_does_not_hide_pending_roles():
     }
 
     assert get_ecn_pending_approval_roles(workflow) == ["工程NPI", "质量经理"]
-
-
-def test_dashboard_count_counts_each_ecn_once():
-    all_ecns = {
-        "ECN1": _ecn_record(impact_handlers=["工程师A"], impact_selected=True),
-        "ECN2": _ecn_record(impact_handlers=["工程师A"], impact_selected=True),
-        "ECN3": _ecn_record(impact_handlers=["工程师B"], impact_selected=True),
-        "dirty": None,
-    }
-
-    assert get_ecn_dashboard_pending_count(all_ecns, "工程师A", "研发硬件") == 2
 
 
 def test_impact_blank_detection_covers_project_document_material_and_description():
