@@ -68,6 +68,21 @@ def main_page():
     setup_global_activity_tracking()
     ui.add_head_html("""
         <style>
+            /* 保持各断点的卡片宽度，每行不足时由弹性容器居中。 */
+            .dashboard-menu-card {
+                flex: 0 0 100%;
+                min-width: 0;
+            }
+            @media (min-width: 640px) {
+                .dashboard-menu-card { flex-basis: calc((100% - 1.5rem) / 2); }
+            }
+            @media (min-width: 1024px) {
+                .dashboard-menu-card { flex-basis: calc((100% - 4.5rem) / 4); }
+            }
+            @media (min-width: 1280px) {
+                .dashboard-menu-card { flex-basis: calc((100% - 6rem) / 5); }
+            }
+
             @keyframes hard-shake {
                 0% { transform: translateX(0); }
                 20% { transform: translateX(-2px) rotate(-3deg); }
@@ -338,15 +353,10 @@ def main_page():
                 ui.separator().props("size=1px")
                 ui.menu_item("注销登录", on_click=lambda: logout())
 
-    # 使用 ui.grid 创建一个响应式的网格布局
-    # a-classes: 应用于所有子元素的通用样式
-    # b-classes: 应用于特定子元素的样式 (这里没用，但可以写 b-col-6 c-col-4 等)
-    # 增加 h-[calc(100vh-3rem)] 严格限制高度，并增加 overflow-y-auto 开启局部滚动
+    # 限制内容区高度并开启局部滚动。
     with ui.column().classes("w-full h-[calc(100vh-3rem)] overflow-y-auto items-center justify-center"):
-        # 使用 Tailwind 响应式网格布局，替代原先的 calc(70vw) 和动态算列数
-        # max-w-6xl 限制最大宽度，在超大屏幕下不会显得过于稀疏
-        # grid-cols-1 到 xl:grid-cols-5 实现浏览器大中小窗口的自适应
-        with ui.grid().classes("w-full max-w-7xl grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-6 px-6"):
+        # 各屏宽仍容纳 1、2、4、5 张卡片，权限过滤后的每一行都水平居中。
+        with ui.row().classes("w-full max-w-7xl flex-wrap justify-center items-stretch gap-6 px-6"):
             # 当前用户负责且达到3级以上的概述项目
             overview_urgent_projects: list[tuple[str, int]] = []
             # 所有登录用户负责的概述变更任务数量
@@ -498,7 +508,7 @@ def main_page():
 
                 # 3. 渲染卡片 (【修改重点】增加大圆角、软阴影、悬浮抬升和过渡动画)
                 with ui.card().classes(
-                    "relative flex flex-col items-center justify-center p-6 -space-y-2 cursor-pointer bg-white/90 backdrop-blur-sm "
+                    "dashboard-menu-card relative flex flex-col items-center justify-center p-6 -space-y-2 cursor-pointer bg-white/90 backdrop-blur-sm "
                     "rounded-xl "
                     "shadow-[0_6px_20px_-4px_rgba(0,0,0,0.06)] "
                     "hover:shadow-[0_12px_30px_-6px_rgba(0,0,0,0.15)] "
