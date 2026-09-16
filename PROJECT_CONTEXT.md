@@ -393,7 +393,7 @@ ECR 与 ECN 方案评审分别使用 `ecn:ecr_review`、`ecn:scheme_review` 业�
 | `src/issue_workflow_utils.py` | 异常单和样品问题共用的日期解析、负责人判断、人员文本拆分、收件人合并及后台任务调度工具。 | 不保存模块状态，也不定义稳定权限目录。 |
 | `src/db_storage.py` | 通用业务数据存储层；提供 `general_storage`、逐实体 JSON、缓存、事务锁和原子更新。身份表也位于同一 SQLite 文件，但身份关系由 `IdentityStore` 管理。 | 不作为权限判断入口；业务数据存在不代表当前用户有权读取或修改。 |
 | `src/pages/manage.py` | “用户、组织与权限中心”的 NiceGUI 管理界面；组合用户迁移、企业微信绑定、部门岗位维护、岗位默认权限、附加权限组和审批流程草稿/发布/模拟。流程编辑器采用约 3:7 的策略导航与编辑区布局，以横向阶段概览和纵向节点连线表达审批顺序，字段使用紧凑分栏。 | 页面校验不能替代 `IdentityStore` 的事务校验；不应在这里硬编码某个业务角色名称。 |
-| `src/pages/main_dashboard.py` | 系统主页模块卡片、稳定权限入口过滤和各模块红色待办角标汇总。 | 只负责入口与摘要，不应成为业务模块唯一的权限防线；目标页面及保存回调仍须复核。 |
+| `src/pages/main_dashboard.py` | 系统主页模块卡片、稳定权限入口过滤和各模块红色待办角标汇总；`src/dashboard_layout.py` 按可见数量及视窗上限（1/2/4/5）优先等量分行，不能整除为多列时各行最多差一张，逐行居中。 | 只负责入口与摘要，不应成为业务模块唯一的权限防线；目标页面及保存回调仍须复核。 |
 | `src/utils.py` | 提供 `sync_current_user_role()` 等会话公共工具；身份数据库模式下同步当前用户的岗位显示信息，兼容旧页面仍读取 `current_role` 的阶段。 | `current_role` 目前主要用于未迁移模块和历史留痕，不能重新用于已迁移模块授权。 |
 | `scripts/migrate_users_to_iam.py` | 服务器命令行一键迁移入口；从执行机器当前的 `data/users.xlsx` 迁移用户并同步权限目录，默认不覆盖已迁移密码。 | 普通重复部署不得随意使用 `--refresh-existing-passwords`。 |
 | `scripts/convert_excel_to_json.py` | 独立的 Excel 转 JSON 命令行工具；部署前从项目根目录归入脚本目录，应用运行时不引用。 | 不用于用户身份或配置包迁移。 |

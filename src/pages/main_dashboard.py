@@ -9,6 +9,7 @@ from nicegui import app, ui
 from .. import db_storage  # 导入我们创建的模块
 from ..access_control import can
 from ..config import IMG_DIR, PRESET_AVATARS
+from ..dashboard_layout import get_dashboard_layout_css
 from ..ecn_access import can_view_ecn, get_ecn_dashboard_pending_count
 from ..ecn_management_config import ECN_DATA_KEY
 from ..overview_batch_operations import (
@@ -68,19 +69,9 @@ def main_page():
     setup_global_activity_tracking()
     ui.add_head_html("""
         <style>
-            /* 保持各断点的卡片宽度，每行不足时由弹性容器居中。 */
+            /* 卡片位置在权限过滤后按数量生成，保留各断点的卡片宽度。 */
             .dashboard-menu-card {
-                flex: 0 0 100%;
                 min-width: 0;
-            }
-            @media (min-width: 640px) {
-                .dashboard-menu-card { flex-basis: calc((100% - 1.5rem) / 2); }
-            }
-            @media (min-width: 1024px) {
-                .dashboard-menu-card { flex-basis: calc((100% - 4.5rem) / 4); }
-            }
-            @media (min-width: 1280px) {
-                .dashboard-menu-card { flex-basis: calc((100% - 6rem) / 5); }
             }
 
             @keyframes hard-shake {
@@ -310,6 +301,8 @@ def main_page():
             continue
         menu_items.append(items)
 
+    ui.add_head_html(f"<style>{get_dashboard_layout_css(len(menu_items))}</style>")
+
     # 主界面
     with ui.header(elevated=True).classes("flex justify-between items-center bg-blue-500 h-12 px-4"):
         ui.image(f"{IMG_DIR}/Rayfine.png").classes("absolute w-20")
@@ -355,8 +348,8 @@ def main_page():
 
     # 限制内容区高度并开启局部滚动。
     with ui.column().classes("w-full h-[calc(100vh-3rem)] overflow-y-auto items-center justify-center"):
-        # 各屏宽仍容纳 1、2、4、5 张卡片，权限过滤后的每一行都水平居中。
-        with ui.row().classes("w-full max-w-7xl flex-wrap justify-center items-stretch gap-6 px-6"):
+        # 各屏宽上限仍为 1、2、4、5 张，按可见数量均衡分行并居中。
+        with ui.element("div").classes("dashboard-menu grid w-full max-w-7xl items-stretch gap-6 px-6"):
             # 当前用户负责且达到3级以上的概述项目
             overview_urgent_projects: list[tuple[str, int]] = []
             # 所有登录用户负责的概述变更任务数量
