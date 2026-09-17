@@ -3629,6 +3629,24 @@ def manage_page():
 
             ui.separator().classes("shrink-0 mb-2")
 
+            with ui.row().classes("w-full items-center gap-3 shrink-0"):
+                user_search = ui.input(
+                    placeholder="搜索用户名、部门、岗位、角色或企业微信账号"
+                ).props("outlined dense clearable debounce=250").classes("flex-grow")
+                search_count = ui.label("").classes("text-sm text-gray-500 whitespace-nowrap")
+            expanded_user_departments: set[str] = set()
+            touched_user_departments: set[str] = set()
+
+            def remember_user_department(event, department_key: str):
+                """保留管理员手动调整的部门展开状态。"""
+                if user_search.value:
+                    return
+                touched_user_departments.add(department_key)
+                if event.value:
+                    expanded_user_departments.add(department_key)
+                else:
+                    expanded_user_departments.discard(department_key)
+
             # 3. 核心交互函数定义
             async def save_user(action, target_username, form_pwd, form_role, form_dialog):
                 try:
@@ -3677,13 +3695,7 @@ def manage_page():
                 if app.state.user_service.storage_mode != "database":
                     ui.notify("请先执行一键迁移，再绑定企业微信账号。", type="warning")
                     return
-                if str(target_user).strip().casefold() == "admin":
-                    ui.notify(
-                        "admin 是系统管理账号，无需绑定企业微信；同一企业微信成员仍只允许绑定一个员工账号。",
-                        type="info",
-                        multi_line=True,
-                    )
-                    return
+                is_admin_route = str(target_user).strip().casefold() == "admin"
 
                 cache_data = load_wecom_contacts_cache()
 
@@ -3714,7 +3726,8 @@ def manage_page():
                 }
                 current_binding = app.state.user_service.get_wecom_binding(target_user)
                 auto_suggestion = (
-                    {} if current_binding else app.state.user_service.suggest_wecom_contact(target_user, contacts)
+                    {} if current_binding or is_admin_route
+                    else app.state.user_service.suggest_wecom_contact(target_user, contacts)
                 )
                 suggested_contact = auto_suggestion.get("contact")
                 initial_userid = current_binding.get("external_userid")
@@ -3722,8 +3735,14 @@ def manage_page():
                     initial_userid = suggested_contact.get("userid")
 
                 with ui.dialog() as binding_dialog, ui.card().classes("w-[44rem] max-w-[95vw] p-6"):
-                    ui.label(f"绑定企业微信：{target_user}").classes("text-lg font-bold")
-                    ui.label("同一企业微信账号只能绑定一个系统用户；绑定不会自动导入部门或岗位字典。").classes(
+                    ui.label(
+                        f"{'设置通知微信地址' if is_admin_route else '绑定企业微信'}：{target_user}"
+                    ).classes("text-lg font-bold")
+                    ui.label(
+                        "admin 的通知地址可与一名员工的微信账号相同；此设置不代表员工身份，也不自动授予通知权限。"
+                        if is_admin_route else
+                        "同一企业微信账号只能绑定一个员工账号；绑定不会自动导入部门或岗位字典。"
+                    ).classes(
                         "text-xs text-gray-500"
                     )
                     binding_select = (
@@ -3751,15 +3770,18 @@ def manage_page():
                                     target_user,
                                     selected_contact,
                                 )
-                                org_assigned = app.state.user_service.apply_suggested_org_membership(
-                                    target_user,
-                                    selected_contact,
-                                )
-                                message = "企业微信账号绑定成功。"
-                                if org_assigned:
-                                    message += " 已自动补齐部门和可匹配岗位。"
+                                if is_admin_route:
+                                    message = "admin 通知微信地址已保存。"
                                 else:
-                                    message += " 如需自动补齐任职，请先在组织架构中勾选导入对应部门和岗位。"
+                                    org_assigned = app.state.user_service.apply_suggested_org_membership(
+                                        target_user,
+                                        selected_contact,
+                                    )
+                                    message = "企业微信账号绑定成功。"
+                                    if org_assigned:
+                                        message += " 已自动补齐部门和可匹配岗位。"
+                                    else:
+                                        message += " 如需自动补齐任职，请先在组织架构中勾选导入对应部门和岗位。"
                                 ui.notify(message, type="positive")
                             else:
                                 app.state.user_service.unbind_wecom_user(target_user)
@@ -3821,6 +3843,8 @@ def manage_page():
                         label="主部门",
                         with_input=True,
                     ).classes("w-full")
+                    ui.label("用户分组以这里保存的系统主部门为准，企业微信部门资料不会直接改变分组。") \
+                        .classes("text-xs text-blue-700")
                     position_select = ui.select(
                         position_options_for_org(initial_org_unit_id),
                         value=initial_position_id,
@@ -3845,7 +3869,14 @@ def manage_page():
                         with_input=True,
                         clearable=True,
                     ).classes("w-full")
-                    ui.label("直属上级将作为离职上交和后续审批策略的首选解析对象。").classes("text-xs text-gray-500")
+                    is_top_level_role = str(
+                        app.state.users_data.get(target_user, {}).get("role", "")
+                    ).casefold() in {"boss", "admin"}
+                    ui.label(
+                        "最高层岗位没有直属上级时可留空，列表显示为无需设置。"
+                        if is_top_level_role else
+                        "直属上级将作为离职上交和后续审批策略的首选解析对象。"
+                    ).classes("text-xs text-gray-500")
                     ui.label("岗位列表会随主部门自动过滤。").classes("text-xs text-blue-700")
                     if suggested:
                         ui.label(
@@ -3981,6 +4012,36 @@ def manage_page():
                         ).props("color=negative")
                 confirm_dialog.open()
 
+            def confirm_permanent_delete(target_user):
+                """确认后永久删除误建账号，关联检查由数据层在事务内执行。"""
+                if str(target_user).strip().casefold() == "admin":
+                    ui.notify("不能删除系统管理员账号", type="warning")
+                    return
+
+                with ui.dialog() as confirm_dialog, ui.card().classes("w-[28rem] max-w-[95vw] p-6"):
+                    ui.label(f"确认永久删除用户【{target_user}】？").classes("text-lg font-bold text-red-700")
+                    ui.label("删除后该账号无法恢复，同名账号可重新创建。已有业务待办或操作记录的账号会被拒绝删除。") \
+                        .classes("text-sm text-gray-600")
+
+                    async def delete_confirmed():
+                        try:
+                            app.state.user_service.modify_user(
+                                "delete", target_user,
+                                actor_username=current_user if isinstance(current_user, str) else None,
+                            )
+                            app.state.users_data = app.state.user_service.load_users()
+                            await refresh_user_list_preserving_scroll()
+                        except Exception as exc:
+                            ui.notify(f"删除失败：{exc}", type="negative", multi_line=True)
+                            return
+                        confirm_dialog.close()
+                        ui.notify(f"用户 {target_user} 已删除。", type="positive")
+
+                    with ui.row().classes("w-full justify-end gap-3 mt-4"):
+                        ui.button("取消", on_click=confirm_dialog.close).props("flat")
+                        ui.button("永久删除", on_click=delete_confirmed).props("color=negative")
+                confirm_dialog.open()
+
             async def activate_user(target_user):
                 try:
                     app.state.user_service.modify_user("activate", target_user, None, None)
@@ -4038,28 +4099,44 @@ def manage_page():
             # 6. 列表渲染引擎：每次增删改后，清空容器并重新生成行
             def render_user_list():
                 list_container.clear()
-                wecom_bindings = app.state.user_service.list_wecom_bindings()
-                with list_container:
-                    # 【核心修改】：提取字典的键值对，并按照 role 字段进行升序排序
-                    # item[0] 是用户名，item[1] 是包含密码和角色的字典
-                    sorted_users = sorted(app.state.users_data.items(), key=lambda item: item[1].get("role", ""))
+                user_svc = app.state.user_service
+                wecom_bindings = user_svc.list_wecom_bindings()
+                memberships = user_svc.list_primary_memberships()
+                units = user_svc.list_org_units()
+                unit_by_id = {str(unit["org_unit_id"]): unit for unit in units}
+                keyword = str(user_search.value or "").strip().casefold()
 
-                    for username, info in sorted_users:
-                        membership = app.state.user_service.get_primary_membership(username)
-                        binding = wecom_bindings.get(username, {})
+                def department_search_text(org_unit_id: str) -> str:
+                    """包含上级部门名称，让搜索父部门时也能找到下级员工。"""
+                    names: list[str] = []
+                    visited: set[str] = set()
+                    current_id = org_unit_id
+                    while current_id in unit_by_id and current_id not in visited:
+                        visited.add(current_id)
+                        unit = unit_by_id[current_id]
+                        names.append(str(unit.get("name") or ""))
+                        current_id = str(unit.get("parent_org_unit_id") or "")
+                    return " ".join(names)
+
+                with list_container:
+                    def render_user_item(username, info, membership, binding):
+                        """绘制单个用户，供各部门分组和未划分部门复用。"""
                         status = info.get("status", "active")
-                        is_top_level_account = username == "admin" or str(info.get("role", "")).lower() in {
+                        is_admin_account = username.casefold() == "admin"
+                        is_top_level_account = is_admin_account or str(info.get("role", "")).casefold() in {
                             "admin",
                             "boss",
                         }
                         missing_items = []
                         if not info.get("password_set"):
                             missing_items.append("登录密码")
-                        if username.casefold() != "admin" and not binding:
+                        if is_admin_account and not binding:
+                            missing_items.append("通知微信地址")
+                        elif not binding:
                             missing_items.append("企业微信账号")
-                        if not membership.get("org_unit_id"):
+                        if not is_admin_account and not membership.get("org_unit_id"):
                             missing_items.append("主部门")
-                        if not membership.get("position_id"):
+                        if not is_admin_account and not membership.get("position_id"):
                             missing_items.append("岗位")
                         if not is_top_level_account and not membership.get("direct_manager_user_id"):
                             missing_items.append("直属上级")
@@ -4087,6 +4164,14 @@ def manage_page():
                                         f"{membership.get('org_name', '')} / "
                                         f"{membership.get('position_name') or '未设岗位'}"
                                     ).classes("text-xs text-gray-500")
+                                elif is_admin_account:
+                                    ui.label("系统账号 · 组织任职免设置").classes("text-xs text-blue-700")
+                                else:
+                                    ui.label("主部门待设置").classes("text-xs text-orange-700")
+                                if is_top_level_account and not is_admin_account:
+                                    ui.label(
+                                        f"直属上级：{membership.get('manager_username') or '无需设置'}"
+                                    ).classes("text-xs text-gray-500")
                             with ui.column().classes("w-[15%] min-w-[100px] gap-0"):
                                 config_chip = (
                                     ui.chip(config_label, color=config_color)
@@ -4112,13 +4197,15 @@ def manage_page():
                                 ).classes("text-xs")
 
                             with ui.column().classes("w-[22%] min-w-[120px] gap-0"):
-                                if username.casefold() == "admin":
-                                    ui.label("系统账号免绑定").classes("text-sm text-blue-700")
+                                if is_admin_account:
+                                    ui.label(
+                                        binding.get("external_display_name") or "通知地址未设置"
+                                    ).classes("text-sm text-blue-700" if binding else "text-sm text-orange-700")
                                 else:
                                     ui.label(binding.get("external_display_name") or "未绑定").classes(
                                         "text-sm" if binding else "text-sm text-orange-700"
                                     )
-                                if binding and username.casefold() != "admin":
+                                if binding:
                                     ui.label(binding.get("external_userid", "")).classes("text-xs text-gray-500")
 
                             # 原生按钮绑定，绝不会出现点击失效的问题
@@ -4127,13 +4214,14 @@ def manage_page():
                                 ui.button("编辑", on_click=lambda u=username: open_form("edit", u)).props(
                                     "outline size=sm color=primary"
                                 )
-                                if username.casefold() != "admin":
-                                    ui.button("微信", on_click=lambda u=username: open_wecom_binding_form(u)).props(
-                                        "outline size=sm color=teal"
+                                ui.button(
+                                    "通知微信" if is_admin_account else "微信",
+                                    on_click=lambda u=username: open_wecom_binding_form(u),
+                                ).props("outline size=sm color=teal")
+                                if not is_admin_account:
+                                    ui.button("组织", on_click=lambda u=username: open_membership_form(u)).props(
+                                        "outline size=sm color=indigo"
                                     )
-                                ui.button("组织", on_click=lambda u=username: open_membership_form(u)).props(
-                                    "outline size=sm color=indigo"
-                                )
                                 if info.get("status", "active") == "active":
                                     ui.button("停用", on_click=lambda u=username: confirm_delete(u)).props(
                                         "outline size=sm color=negative"
@@ -4142,8 +4230,132 @@ def manage_page():
                                     ui.button("启用", on_click=lambda u=username: activate_user(u)).props(
                                         "outline size=sm color=positive"
                                     )
+                                if username.casefold() != "admin":
+                                    ui.button("删除", on_click=lambda u=username: confirm_permanent_delete(u)).props(
+                                        "outline size=sm color=negative"
+                                    )
+
+                    users_by_unit: dict[str, list] = {}
+                    unassigned_users: list = []
+                    system_users: list = []
+                    matched_count = 0
+                    for username, info in sorted(app.state.users_data.items(), key=lambda item: item[0].casefold()):
+                        membership = memberships.get(username, {})
+                        binding = wecom_bindings.get(username, {})
+                        org_unit_id = str(membership.get("org_unit_id") or "")
+                        if keyword:
+                            searchable = " ".join(
+                                str(value or "") for value in (
+                                    username,
+                                    info.get("role"),
+                                    membership.get("org_name"),
+                                    membership.get("position_name"),
+                                    department_search_text(org_unit_id),
+                                    binding.get("external_display_name"),
+                                    binding.get("external_userid"),
+                                )
+                            ).casefold()
+                            if keyword not in searchable:
+                                continue
+                        matched_count += 1
+                        user_row = (username, info, membership, binding)
+                        if username.casefold() == "admin":
+                            system_users.append(user_row)
+                        elif org_unit_id in unit_by_id:
+                            users_by_unit.setdefault(org_unit_id, []).append(user_row)
+                        else:
+                            unassigned_users.append(user_row)
+
+                    search_count.set_text(f"显示 {matched_count} / {len(app.state.users_data)} 人")
+                    if matched_count == 0:
+                        ui.label("没有找到匹配的用户。" if keyword else "暂无用户。") \
+                            .classes("w-full text-center text-gray-500 p-6")
+                        return
+
+                    children_by_parent: dict[str, list[dict]] = {}
+                    root_units: list[dict] = []
+                    for unit in units:
+                        parent_id = str(unit.get("parent_org_unit_id") or "")
+                        if parent_id and parent_id in unit_by_id:
+                            children_by_parent.setdefault(parent_id, []).append(unit)
+                        else:
+                            root_units.append(unit)
+
+                    # 每位用户计入自己的主部门及每一级上级部门，搜索时仅统计命中用户。
+                    branch_user_counts: dict[str, int] = {}
+                    for assigned_unit_id, department_users in users_by_unit.items():
+                        current_id = assigned_unit_id
+                        visited: set[str] = set()
+                        while current_id in unit_by_id and current_id not in visited:
+                            visited.add(current_id)
+                            branch_user_counts[current_id] = (
+                                branch_user_counts.get(current_id, 0) + len(department_users)
+                            )
+                            current_id = str(unit_by_id[current_id].get("parent_org_unit_id") or "")
+
+                    rendered_unit_ids: set[str] = set()
+
+                    def render_department_branch(unit, depth=0):
+                        unit_id = str(unit["org_unit_id"])
+                        if unit_id in rendered_unit_ids:
+                            return
+                        rendered_unit_ids.add(unit_id)
+                        if not branch_user_counts.get(unit_id, 0):
+                            return
+                        child_units = [
+                            child for child in children_by_parent.get(unit_id, [])
+                            if branch_user_counts.get(str(child["org_unit_id"]), 0)
+                        ]
+                        direct_users = users_by_unit.get(unit_id, [])
+                        with ui.expansion(
+                            f"{unit['name']}（本部门及下级 {branch_user_counts[unit_id]} 人）",
+                            icon="account_tree" if child_units else "business",
+                            value=bool(keyword) or (
+                                unit_id in expanded_user_departments
+                                if unit_id in touched_user_departments else depth == 0
+                            ),
+                        ).classes(
+                            "w-full bg-blue-50 border border-blue-100 rounded mt-2 "
+                            + ("ml-3" if depth else "")
+                        ) as expansion:
+                            for user_row in direct_users:
+                                render_user_item(*user_row)
+                            for child in child_units:
+                                render_department_branch(child, depth + 1)
+                        expansion.on_value_change(
+                            lambda event, key=unit_id: remember_user_department(event, key)
+                        )
+
+                    for unit in root_units:
+                        render_department_branch(unit)
+                    for unit in units:
+                        if str(unit["org_unit_id"]) not in rendered_unit_ids:
+                            render_department_branch(unit)
+                    if unassigned_users:
+                        with ui.expansion(
+                            f"未划分部门（{len(unassigned_users)} 人）",
+                            icon="help_outline",
+                            value=bool(keyword) or "__unassigned__" in expanded_user_departments,
+                        ).classes("w-full bg-orange-50 border border-orange-100 rounded mt-2") as expansion:
+                            for user_row in unassigned_users:
+                                render_user_item(*user_row)
+                        expansion.on_value_change(
+                            lambda event: remember_user_department(event, "__unassigned__")
+                        )
+                    if system_users:
+                        with ui.expansion(
+                            f"系统账号（{len(system_users)} 人）",
+                            icon="admin_panel_settings",
+                            value=bool(keyword) or "__system__" in expanded_user_departments,
+                        ).classes("w-full bg-slate-50 border border-slate-200 rounded mt-2") as expansion:
+                            for user_row in system_users:
+                                render_user_item(*user_row)
+                        expansion.on_value_change(
+                            lambda event: remember_user_department(event, "__system__")
+                        )
 
             # 初始加载渲染列表
+            user_search.on_value_change(lambda _: render_user_list())
             render_user_list()
 
             # 7. 底部控制区

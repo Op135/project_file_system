@@ -29,6 +29,7 @@ from .identity_codes import normalize_stable_code, validate_stable_code
 PASSWORD_SCHEME = "pbkdf2_sha256"
 PASSWORD_ITERATIONS = 390_000
 ACTIVE_USER_STATUSES = {"active"}
+ADMIN_WECOM_ROUTE_KEY = "admin_wecom_notification_route"
 
 
 def _now_text() -> str:
@@ -673,8 +674,65 @@ class IdentityStore:
             raise ValueError(f"用户 {username} 不存在")
         return True
 
+    def delete_user(self, username: str, *, actor_username: str | None = None) -> bool:
+        """永久删除未参与业务流程的误建账号及其身份关联。"""
+        normalized = str(username).strip()
+        if normalized.casefold() == "admin":
+            raise ValueError("不能删除系统管理员账号")
+        with self._lock, self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            user = connection.execute(
+                "SELECT user_id, username FROM iam_users WHERE username=? COLLATE NOCASE",
+                (normalized,),
+            ).fetchone()
+            if user is None:
+                raise ValueError(f"用户 {normalized} 不存在或已被删除")
+            user_id = str(user["user_id"])
+            for table, column, message in (
+                ("work_assignments", "assignee_user_id", "用户已有业务待办，请停用账号并处理待办"),
+                ("iam_audit_logs", "actor_user_id", "用户已有操作记录，请改用停用账号"),
+                ("org_memberships", "direct_manager_user_id", "用户是其他员工的直属上级，请先调整任职关系"),
+            ):
+                if connection.execute(
+                    f"SELECT 1 FROM {table} WHERE {column}=? LIMIT 1", (user_id,)
+                ).fetchone() is not None:
+                    raise ValueError(message)
+            connection.execute("DELETE FROM org_memberships WHERE user_id=?", (user_id,))
+            connection.execute("DELETE FROM iam_external_identities WHERE user_id=?", (user_id,))
+            connection.execute("DELETE FROM iam_user_roles WHERE user_id=?", (user_id,))
+            self._audit(
+                connection,
+                actor_username=actor_username,
+                action="user_deleted",
+                target_type="user",
+                target_id=user_id,
+                detail={"username": str(user["username"])},
+            )
+            connection.execute("DELETE FROM iam_users WHERE user_id=?", (user_id,))
+        return True
+
+    @staticmethod
+    def _admin_wecom_route(connection: sqlite3.Connection) -> dict[str, Any]:
+        """读取系统账号的通知地址，损坏的设置按未配置处理。"""
+        row = connection.execute(
+            "SELECT value FROM iam_meta WHERE key=?", (ADMIN_WECOM_ROUTE_KEY,)
+        ).fetchone()
+        if row is None:
+            return {}
+        try:
+            route = json.loads(str(row["value"]))
+        except (TypeError, ValueError):
+            return {}
+        if not isinstance(route, dict) or not str(route.get("external_userid") or "").strip():
+            return {}
+        return route
+
     def get_external_identity(self, username: str, provider: str = "wecom") -> dict[str, Any]:
         with self._lock, self._connect() as connection:
+            if provider == "wecom" and str(username).strip().casefold() == "admin":
+                route = self._admin_wecom_route(connection)
+                if route:
+                    return route
             row = connection.execute(
                 "SELECT e.* FROM iam_external_identities e "
                 "JOIN iam_users u ON u.user_id=e.user_id "
@@ -690,7 +748,12 @@ class IdentityStore:
                 "JOIN iam_users u ON u.user_id=e.user_id WHERE e.provider=?",
                 (provider,),
             ).fetchall()
-        return {row["username"]: dict(row) for row in rows}
+            result = {row["username"]: dict(row) for row in rows}
+            if provider == "wecom":
+                route = self._admin_wecom_route(connection)
+                if route:
+                    result["admin"] = route
+        return result
 
     def bind_external_identity(
         self,
@@ -708,7 +771,28 @@ class IdentityStore:
         if not external_userid:
             raise ValueError("外部账号不能为空")
         now = _now_text()
+        if provider == "wecom" and str(user["username"]).casefold() == "admin":
+            # admin 只保存通知收件地址，不占用员工身份绑定的唯一名额。
+            route = {
+                "external_userid": external_userid,
+                "external_display_name": display_name,
+                "binding_source": "admin_notification_route",
+                "metadata_json": json.dumps(metadata or {}, ensure_ascii=False),
+            }
+            with self._lock, self._connect() as connection:
+                connection.execute("BEGIN IMMEDIATE")
+                connection.execute(
+                    "DELETE FROM iam_external_identities WHERE user_id=? AND provider='wecom'",
+                    (user["user_id"],),
+                )
+                connection.execute(
+                    "INSERT INTO iam_meta(key, value, updated_at) VALUES(?, ?, ?) "
+                    "ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at",
+                    (ADMIN_WECOM_ROUTE_KEY, json.dumps(route, ensure_ascii=False), now),
+                )
+            return True
         with self._lock, self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
             conflict = connection.execute(
                 "SELECT u.username FROM iam_external_identities e "
                 "JOIN iam_users u ON u.user_id=e.user_id "
@@ -742,6 +826,16 @@ class IdentityStore:
         if not user:
             raise ValueError(f"用户 {username} 不存在")
         with self._lock, self._connect() as connection:
+            if provider == "wecom" and str(user["username"]).casefold() == "admin":
+                connection.execute("BEGIN IMMEDIATE")
+                route_cursor = connection.execute(
+                    "DELETE FROM iam_meta WHERE key=?", (ADMIN_WECOM_ROUTE_KEY,)
+                )
+                old_cursor = connection.execute(
+                    "DELETE FROM iam_external_identities WHERE user_id=? AND provider='wecom'",
+                    (user["user_id"],),
+                )
+                return route_cursor.rowcount > 0 or old_cursor.rowcount > 0
             cursor = connection.execute(
                 "DELETE FROM iam_external_identities WHERE user_id=? AND provider=?",
                 (user["user_id"], provider),

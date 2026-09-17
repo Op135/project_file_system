@@ -170,8 +170,11 @@ class UserService:
             return self.identity_store.update_password(username, normalized)
         return self._update_excel_password(username, normalized)
 
-    def modify_user(self, action: str, username: str, password: str = "", role: str = "") -> bool:
-        """在当前启用的数据源中新增、编辑用户或修改用户状态。"""
+    def modify_user(
+        self, action: str, username: str, password: str = "", role: str = "",
+        *, actor_username: str | None = None,
+    ) -> bool:
+        """在当前启用的数据源中新增、编辑、删除用户或修改用户状态。"""
         if self.storage_mode == "database":
             if action == "add":
                 result = self.identity_store.create_user(username, password or "", role or "普通用户")
@@ -181,7 +184,9 @@ class UserService:
                 result = self.identity_store.update_user(username, password or None, role)
                 self.sync_permission_catalog()
                 return result
-            if action in {"delete", "deactivate"}:
+            if action == "delete":
+                return self.identity_store.delete_user(username, actor_username=actor_username)
+            if action == "deactivate":
                 return self.identity_store.set_user_status(username, "disabled")
             if action == "depart":
                 return self.identity_store.set_user_status(username, "departed")
@@ -222,6 +227,8 @@ class UserService:
                     if role is not None:
                         frame.loc[frame["用户名"] == username, "角色"] = str(role)
                 elif action == "delete":
+                    if str(username).strip().casefold() == "admin":
+                        raise ValueError("不能删除系统管理员账号")
                     if username not in frame["用户名"].values:
                         raise ValueError(f"用户 {username} 不存在")
                     frame = frame[frame["用户名"] != username]
@@ -465,9 +472,9 @@ class UserService:
 
     def build_wecom_match_plan(self, contacts: list[dict[str, Any]]) -> list[dict[str, Any]]:
         return build_wecom_user_match_plan(
-            self.load_users(),
+            {name: user for name, user in self.load_users().items() if name.casefold() != "admin"},
             contacts,
-            self.list_wecom_bindings(),
+            {name: binding for name, binding in self.list_wecom_bindings().items() if name.casefold() != "admin"},
         )
 
     def suggest_wecom_contact(
@@ -482,7 +489,7 @@ class UserService:
             username,
             user,
             contacts,
-            self.list_wecom_bindings(),
+            {name: binding for name, binding in self.list_wecom_bindings().items() if name.casefold() != "admin"},
         )
 
     def suggest_org_membership(self, contact: dict[str, Any]) -> dict[str, Any]:

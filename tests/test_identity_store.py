@@ -40,6 +40,44 @@ class IdentityStoreMigrationTests(unittest.TestCase):
         self.assertTrue(self.service.authenticate("张三", "123456"))
         self.assertFalse(self.service.authenticate("张三", "bad-password"))
 
+    def test_delete_mistaken_user_in_excel_mode(self):
+        self.service.modify_user("add", "错别字", "123456", "普通用户")
+        self.assertTrue(self.service.modify_user("delete", "错别字"))
+        self.assertNotIn("错别字", self.service.load_users())
+        with self.assertRaisesRegex(ValueError, "系统管理员"):
+            self.service.modify_user("delete", "admin")
+
+    def test_delete_mistaken_user_in_database_mode(self):
+        self.service.migrate_legacy_users()
+        self.service.modify_user("add", "错别字", "123456", "普通用户")
+        self.assertTrue(self.service.modify_user("delete", "错别字"))
+        self.assertNotIn("错别字", self.service.load_users())
+        self.assertTrue(self.service.modify_user("add", "错别字", "123456", "普通用户"))
+        with self.assertRaisesRegex(ValueError, "系统管理员"):
+            self.service.modify_user("delete", "ADMIN")
+
+    def test_delete_refuses_user_with_business_assignment(self):
+        self.service.migrate_legacy_users()
+        self.service.modify_user("add", "错别字", "123456", "普通用户")
+        connection = sqlite3.connect(self.db_path)
+        try:
+            user_row = connection.execute(
+                "SELECT user_id FROM iam_users WHERE username='错别字'"
+            ).fetchone()
+            assert user_row is not None
+            connection.execute(
+                "INSERT INTO work_assignments(assignment_id, module, entity_id, task_key, "
+                "assignment_type, assignee_user_id, created_at, updated_at) "
+                "VALUES('assignment-1', 'test', '1', 'review', 'user', ?, 'now', 'now')",
+                (user_row[0],),
+            )
+            connection.commit()
+        finally:
+            connection.close()
+        with self.assertRaisesRegex(ValueError, "业务待办"):
+            self.service.modify_user("delete", "错别字")
+        self.assertIn("错别字", self.service.load_users())
+
     def test_migration_hashes_the_passwords_from_the_current_workbook(self):
         result = self.service.migrate_legacy_users()
 
@@ -118,15 +156,46 @@ class IdentityStoreMigrationTests(unittest.TestCase):
 
         binding = self.service.get_wecom_binding("张三")
         self.assertEqual(binding["external_userid"], "wecom-zhangsan")
-        with self.assertRaisesRegex(ValueError, "已绑定"):
-            self.service.bind_wecom_user(
-                "admin",
-                {"userid": "wecom-zhangsan", "name": "管理员"},
-            )
+        self.assertTrue(self.service.bind_wecom_user(
+            "admin", {"userid": "wecom-zhangsan", "name": "管理员"},
+        ))
 
         self.service.modify_user("deactivate", "张三")
         self.assertFalse(self.service.authenticate("张三", "123456"))
         self.assertEqual(self.service.get_user("张三")["status"], "disabled")
+
+    def test_admin_notification_wecom_route_can_share_employee_contact(self):
+        self.service.migrate_legacy_users()
+        contact = {"userid": "shared-wecom-id", "name": "收件人", "is_active": True}
+        self.service.bind_wecom_user("张三", contact)
+        self.service.bind_wecom_user("admin", contact)
+
+        bindings = self.service.list_wecom_bindings()
+        self.assertEqual(bindings["admin"]["external_userid"], "shared-wecom-id")
+        self.assertEqual(bindings["张三"]["external_userid"], "shared-wecom-id")
+        self.assertEqual(
+            self.service.get_wecom_binding("admin")["binding_source"],
+            "admin_notification_route",
+        )
+        self.service.modify_user("add", "李四", "123456", "普通用户")
+        with self.assertRaisesRegex(ValueError, "已绑定系统用户"):
+            self.service.bind_wecom_user("李四", contact)
+
+        self.assertTrue(self.service.unbind_wecom_user("admin"))
+        self.assertFalse(self.service.get_wecom_binding("admin"))
+        self.assertEqual(
+            self.service.get_wecom_binding("张三")["external_userid"],
+            "shared-wecom-id",
+        )
+
+    def test_admin_route_does_not_reserve_contact_for_employee_matching(self):
+        self.service.migrate_legacy_users()
+        contact = {"userid": "employee-wecom-id", "name": "李四", "is_active": True}
+        self.service.bind_wecom_user("admin", contact)
+        self.service.modify_user("add", "李四", "123456", "普通用户")
+        plan = self.service.build_wecom_match_plan([contact])
+        matched_user = next(item for item in plan if item["username"] == "李四")
+        self.assertEqual(matched_user["status"], "matched")
 
     def test_org_import_position_and_direct_manager_membership(self):
         self.service.migrate_legacy_users()
@@ -482,8 +551,9 @@ class IdentityStoreMigrationTests(unittest.TestCase):
         self.assertEqual(rd_position["org_unit_ids"], [rd_unit["org_unit_id"]])
 
         plan = self.service.build_wecom_match_plan(contacts)
-        self.assertEqual(sum(item["status"] == "matched" for item in plan), 2)
-        self.assertEqual(self.service.apply_wecom_match_plan(plan), (2, 2))
+        self.assertEqual(sum(item["status"] == "matched" for item in plan), 1)
+        self.assertEqual(self.service.apply_wecom_match_plan(plan), (1, 1))
+        self.assertFalse(self.service.get_wecom_binding("admin"))
         self.assertEqual(
             self.service.get_wecom_binding("张三")["external_userid"],
             "wecom-zhangsan",
