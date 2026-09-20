@@ -86,6 +86,9 @@ def _execution_workflow_task(
             "version_number": version_number,
             "node_key": str(node.get("node_key") or ""),
             "source_policy_code": f"{workflow_code}@{version_number}",
+            "notification": copy.deepcopy(version.get("notification", {}))
+            if isinstance(version, dict)
+            else {},
         },
         "confirmed": False,
         "history": [],

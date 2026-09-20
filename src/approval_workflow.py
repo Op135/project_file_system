@@ -506,9 +506,15 @@ def create_approval_assignments(
     result["assignment"] = {
         "task_key": task_key,
         "source_policy_code": source_policy_code,
+        "workflow_id": workflow["workflow_id"],
+        "workflow_code": workflow["code"],
+        "workflow_name": workflow["name"],
+        "version_id": version["version_id"],
+        "version_number": version["version_number"],
         "assignee_usernames": usernames,
         "required_permission_code": version["required_permission_code"],
         "approval_mode": version.get("approval_mode", "any"),
+        "notification": copy.deepcopy(version.get("notification", {})),
     }
     return result
 
@@ -574,6 +580,7 @@ def create_approval_sequence_assignments(
         "version_id": version["version_id"],
         "version_number": version["version_number"],
         "source_policy_code": source_policy_code,
+        "notification": copy.deepcopy(version.get("notification", {})),
         "base_task_key": str(task_key),
         "current_node_index": 0,
         "status": "pending",

@@ -27,6 +27,7 @@ from ...ecn_access import (
 )
 from ...ecn_management_config import (
     ECN_REQUIRE_REJECTED_ITEM_SELECTION,
+    ECN_WECOM_CONFIG,
     ECNState,
     ECN_SCHEME_GROUP_MATERIAL,
     apply_ecn_material_code_values,
@@ -70,6 +71,8 @@ from .models import (
 from .repository import (
     mutate_record,
 )
+from ...issue_workflow_utils import schedule_background_task
+from ...workflow_notifications import send_workflow_completion_cc
 from .attachments import cleanup_staged, publish_pending, validate_scheme_attachments
 
 
@@ -477,6 +480,43 @@ async def execute_action(
         raise
     if result.ok:
         cleanup_staged(staged_ecr_attachments)
+        if action == "approve" and result.record is not None:
+            completed_phase = str(baseline.get("workflow", {}).get("current_phase") or "")
+            assignment_key = (
+                "ecr_workflow_assignment"
+                if completed_phase == "ECR_PHASE"
+                else "scheme_workflow_assignment"
+            )
+            assignment = result.record.get("workflow", {}).get(assignment_key, {})
+            if isinstance(assignment, dict) and assignment.get("status") == "completed":
+                ecn_id = str(result.record.get("ecn_id") or "")
+                title = str(result.record.get("basic_info", {}).get("title") or "—")
+                event_name = "ECR申请审批" if completed_phase == "ECR_PHASE" else "ECN方案评审"
+                link_url = (
+                    f"{ECN_WECOM_CONFIG['public_base_url']}/ecn_management"
+                    if ECN_WECOM_CONFIG["public_base_url"]
+                    else ""
+                )
+                schedule_background_task(
+                    send_workflow_completion_cc(
+                        assignment,
+                        title=f"【ECN工程变更】{event_name}已通过",
+                        lines=(
+                            f"单号：{ecn_id}",
+                            f"主题：{title}",
+                            "结果：全部审批节点已通过",
+                            f"最终审批人：{user}",
+                        ),
+                        link_url=link_url,
+                        module="ecn_management",
+                        business_key=(
+                            f"{ecn_id}:{assignment_key}:"
+                            f"{result.record.get('workflow', {}).get('approval_round', '')}:completion_cc"
+                        ),
+                        user_service=service,
+                    ),
+                    f"{event_name}完成抄送",
+                )
     else:
         for path in published_paths:
             path.unlink(missing_ok=True)

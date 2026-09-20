@@ -579,7 +579,7 @@ class SampleIssueCollectionConfigTests(unittest.TestCase):
         self.assertTrue(config["special_preparation"]["default_actions"])
         self.assertTrue(config["wecom"]["default_notify_targets"])
         self.assertTrue(config["wecom"]["extension"]["approver_roles"])
-        self.assertTrue(config["wecom"]["extension"]["approval_notify_targets"])
+        self.assertNotIn("approval_notify_targets", config["wecom"]["extension"])
         self.assertTrue(config["wecom"]["extension"]["notify_requester_on_approval"])
         self.assertTrue(config["wecom"]["close"]["approver_roles"])
         self.assertIn("routing_rules", config["wecom"]["close"])
@@ -1197,14 +1197,12 @@ class SampleIssueCollectionConcurrencyTests(unittest.IsolatedAsyncioTestCase):
                 original_route_values = {
                     "SAMPLE_CLOSE_APPROVER_ROLES": sample_issue.SAMPLE_CLOSE_APPROVER_ROLES,
                     "SAMPLE_CLOSE_NOTIFY_TARGETS": sample_issue.SAMPLE_CLOSE_NOTIFY_TARGETS,
-                    "SAMPLE_CLOSE_APPROVAL_NOTIFY_TARGETS": sample_issue.SAMPLE_CLOSE_APPROVAL_NOTIFY_TARGETS,
                     "SAMPLE_CLOSE_NOTIFY_REQUESTER_ON_APPROVAL": sample_issue.SAMPLE_CLOSE_NOTIFY_REQUESTER_ON_APPROVAL,
                     "SAMPLE_CLOSE_ROUTING_RULES": sample_issue.SAMPLE_CLOSE_ROUTING_RULES,
                 }
                 sample_issue.db_storage = isolated_db
                 sample_issue.SAMPLE_CLOSE_APPROVER_ROLES = ["研发经理", "admin"]
                 sample_issue.SAMPLE_CLOSE_NOTIFY_TARGETS = [{"position": "研发经理"}]
-                sample_issue.SAMPLE_CLOSE_APPROVAL_NOTIFY_TARGETS = [{"position": "PIE工程师"}]
                 sample_issue.SAMPLE_CLOSE_NOTIFY_REQUESTER_ON_APPROVAL = True
                 sample_issue.SAMPLE_CLOSE_ROUTING_RULES = [
                     {
@@ -1213,7 +1211,6 @@ class SampleIssueCollectionConcurrencyTests(unittest.IsolatedAsyncioTestCase):
                         "requester_role_keywords": ["PIE"],
                         "approver_roles": ["品质经理"],
                         "notify_targets": [{"position": "品质经理"}],
-                        "approval_notify_targets": [{"position": "PIE工程师"}],
                         "notify_requester_on_approval": True,
                     }
                 ]

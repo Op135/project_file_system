@@ -77,3 +77,60 @@ async def resolve_permission_wecom_recipients(
     fallback = "|".join(_unique_values(str(fallback_touser or "").split("|")))
     logger.warning("通知权限未解析到已绑定成员：permission=%s", permission_code)
     return fallback
+
+
+def resolve_position_usernames(
+    position_ids: Iterable[Any],
+    *,
+    user_service=None,
+) -> tuple[list[str], list[str]]:
+    """解析指定稳定岗位当前的在职主任职人员，并返回无任职岗位。"""
+    service = user_service or getattr(app.state, "user_service", None)
+    normalized_ids = _unique_values(position_ids)
+    if not normalized_ids or service is None:
+        return [], normalized_ids
+
+    users = service.load_users()
+    memberships = service.list_primary_memberships()
+    matched_positions: set[str] = set()
+    usernames: list[str] = []
+    for username, membership in memberships.items():
+        position_id = str(membership.get("position_id") or "").strip()
+        user = users.get(username, {})
+        if position_id not in normalized_ids or user.get("status") != "active":
+            continue
+        matched_positions.add(position_id)
+        usernames.append(username)
+    missing_positions = [value for value in normalized_ids if value not in matched_positions]
+    return _unique_values(usernames), missing_positions
+
+
+async def resolve_position_wecom_recipients(
+    position_ids: Iterable[Any],
+    *,
+    user_service=None,
+) -> str:
+    """把流程完成抄送岗位解析为已绑定的企业微信成员账号。"""
+    service = user_service or getattr(app.state, "user_service", None)
+    if service is None or getattr(service, "storage_mode", "legacy_excel") != "database":
+        logger.warning("流程完成抄送岗位只支持数据库身份模式")
+        return ""
+
+    usernames, missing_positions = resolve_position_usernames(
+        position_ids,
+        user_service=service,
+    )
+    if missing_positions:
+        logger.warning("流程完成抄送岗位当前没有在职主任职人员：%s", "、".join(missing_positions))
+    bindings = service.list_wecom_bindings()
+    recipients: list[str] = []
+    missing_bindings: list[str] = []
+    for username in usernames:
+        external_userid = str(bindings.get(username, {}).get("external_userid", "")).strip()
+        if external_userid:
+            recipients.append(external_userid)
+        else:
+            missing_bindings.append(username)
+    if missing_bindings:
+        logger.warning("流程完成抄送人员未绑定企业微信：%s", "、".join(missing_bindings))
+    return "|".join(_unique_values(recipients))

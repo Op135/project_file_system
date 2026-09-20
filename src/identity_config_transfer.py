@@ -804,7 +804,9 @@ class IdentityConfigurationTransfer:
                     ),
                     "required_permission_code": row["required_permission_code"],
                     "approval_mode": row["approval_mode"],
-                    "notification": _decode_json(row["notification_json"]),
+                    "notification": _replace_reference_fields(
+                        _decode_json(row["notification_json"]), field_maps=export_maps
+                    ),
                 }
 
             published = None
@@ -1336,6 +1338,12 @@ class IdentityConfigurationTransfer:
             missing=missing,
             context=f"审批流程 {code}：",
         )
+        notification = _replace_reference_fields(
+            version.get("notification", {}),
+            field_maps=import_maps,
+            missing=missing,
+            context=f"审批流程 {code}：",
+        )
         if missing:
             raise ValueError("；".join(missing))
         return {
@@ -1344,7 +1352,7 @@ class IdentityConfigurationTransfer:
             "approver": approver,
             "required_permission_code": str(version.get("required_permission_code", "")).strip().lower(),
             "approval_mode": str(version.get("approval_mode", "any")).strip().lower(),
-            "notification": copy.deepcopy(version.get("notification", {})),
+            "notification": notification,
         }
 
     @staticmethod

@@ -20,6 +20,7 @@ from ..approval_workflow import (
 )
 from ..config import BASE_DIR, IMG_DIR, PRESET_AVATARS
 from ..identity_codes import STABLE_CODE_HINT, normalize_stable_code, validate_stable_code
+from ..notification_recipients import resolve_position_usernames
 from ..overview_permission_mapping import (
     OVERVIEW_ITEM_PERMISSION_PREFIX,
     build_overview_position_permission_plan,
@@ -3214,6 +3215,111 @@ def manage_page():
                             )
                             render_approval_nodes()
 
+                            notification_config = version.get("notification", {})
+                            if not isinstance(notification_config, dict):
+                                notification_config = {}
+                            completion_cc_config = notification_config.get("completion_cc", {})
+                            if not isinstance(completion_cc_config, dict):
+                                completion_cc_config = {}
+                            is_execution_route = bool(
+                                event_definition
+                                and event_definition.supports_parallel_stages
+                            )
+                            with ui.card().classes(
+                                "w-full shadow-none border border-emerald-200 bg-emerald-50/40 "
+                                "rounded-lg p-3 gap-2"
+                            ):
+                                with ui.row().classes("w-full items-center justify-between gap-3"):
+                                    with ui.column().classes("gap-0 min-w-0"):
+                                        ui.label(
+                                            "执行流程完成后额外抄送"
+                                            if is_execution_route
+                                            else "全部审批节点通过后额外抄送"
+                                        ).classes(
+                                            "text-sm font-semibold text-emerald-900"
+                                        )
+                                        ui.label(
+                                            (
+                                                "这是该执行路线全部责任节点确认后的附加收件人，"
+                                                if is_execution_route
+                                                else "这是全部审批节点通过后的附加收件人，"
+                                            )
+                                            + "不会替换或取消申请人、审批人、责任人等原有通知；"
+                                            "人员重复时只发送一次。"
+                                        ).classes("text-xs text-emerald-800")
+                                    completion_cc_switch = ui.switch(
+                                        "启用",
+                                        value=completion_cc_config.get("enabled") is True,
+                                    ).props("color=positive")
+                                completion_cc_positions = ui.select(
+                                    position_options,
+                                    value=list(completion_cc_config.get("position_ids", [])),
+                                    label="额外抄送岗位",
+                                    multiple=True,
+                                ).props("outlined dense use-chips options-dense").classes("w-full")
+                                completion_cc_positions.visible = bool(completion_cc_switch.value)
+                                completion_cc_preview = ui.label().classes(
+                                    "text-xs text-gray-600"
+                                )
+
+                                def update_completion_cc_preview():
+                                    if not completion_cc_switch.value:
+                                        completion_cc_preview.set_text("当前未启用完成抄送。")
+                                        return
+                                    selected_position_ids = list(
+                                        completion_cc_positions.value or []
+                                    )
+                                    usernames, missing_position_ids = resolve_position_usernames(
+                                        selected_position_ids,
+                                        user_service=user_svc,
+                                    )
+                                    bindings = user_svc.list_wecom_bindings()
+                                    bound_names = [
+                                        username
+                                        for username in usernames
+                                        if str(
+                                            bindings.get(username, {}).get(
+                                                "external_userid", ""
+                                            )
+                                        ).strip()
+                                    ]
+                                    unbound_names = [
+                                        username
+                                        for username in usernames
+                                        if username not in bound_names
+                                    ]
+                                    parts = [
+                                        "当前可送达人员："
+                                        + ("、".join(bound_names) if bound_names else "无")
+                                    ]
+                                    if unbound_names:
+                                        parts.append(
+                                            "未绑定企业微信：" + "、".join(unbound_names)
+                                        )
+                                    if missing_position_ids:
+                                        parts.append(
+                                            "暂无在职任职人员："
+                                            + "、".join(
+                                                str(position_options.get(position_id, position_id))
+                                                for position_id in missing_position_ids
+                                            )
+                                        )
+                                    completion_cc_preview.set_text("；".join(parts))
+
+                                def update_completion_cc_visibility(_event=None):
+                                    completion_cc_positions.visible = bool(
+                                        completion_cc_switch.value
+                                    )
+                                    update_completion_cc_preview()
+
+                                completion_cc_switch.on_value_change(
+                                    update_completion_cc_visibility
+                                )
+                                completion_cc_positions.on_value_change(
+                                    lambda _event: update_completion_cc_preview()
+                                )
+                                update_completion_cc_preview()
+
                             def build_node_payload(node, index):
                                 node_key = normalize_stable_code(node.get("node_key", ""))
                                 code_error = validate_stable_code(node_key)
@@ -3330,8 +3436,15 @@ def manage_page():
                                         ],
                                         approval_mode=approval_config["approval_mode"],
                                         notification={
+                                            **notification_config,
                                             "notify_assignees": True,
                                             "notify_requester_on_result": True,
+                                            "completion_cc": {
+                                                "enabled": bool(completion_cc_switch.value),
+                                                "position_ids": list(
+                                                    completion_cc_positions.value or []
+                                                ),
+                                            },
                                         },
                                         actor_username=current_user,
                                     )

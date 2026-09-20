@@ -25,6 +25,7 @@ from src.ecn_workflow import (
     reconcile_ecn_work_assignments,
     start_ecr_approval,
 )
+from src.notification_recipients import resolve_position_usernames
 from src.permission_catalog import (
     DESIGN_KNOWLEDGE_REVIEW_PERMISSION,
     DESIGN_KNOWLEDGE_TAG_REVIEW_PERMISSION,
@@ -162,6 +163,83 @@ class ApprovalWorkflowTests(unittest.TestCase):
         )
         self.assertEqual(second["status"], "matched")
         self.assertEqual([item["username"] for item in second["approvers"]], ["李四"])
+
+    def test_completion_cc_is_versioned_and_pinned_to_assignment(self):
+        """完成抄送岗位应随发布版本和单据审批快照固定。"""
+        workflow_id, _version_id = self.service.save_approval_workflow_draft(
+            code="sample_issue.close.completion_cc",
+            module="sample_issue",
+            event="close_request",
+            name="样品关闭完成抄送测试",
+            priority=5,
+            condition={
+                "requester_org_unit_ids": [self.org_unit_id],
+                "requester_position_ids": [self.requester_position_id],
+                "include_child_org_units": True,
+            },
+            approver={
+                "strategy": "position",
+                "position_ids": [self.approver_position_id],
+                "org_scope": "any",
+                "org_unit_ids": [],
+            },
+            required_permission_code=SAMPLE_ISSUE_CLOSE_APPROVE_PERMISSION,
+            notification={
+                "notify_assignees": True,
+                "notify_requester_on_result": True,
+                "completion_cc": {
+                    "enabled": True,
+                    "position_ids": [self.observer_position_id],
+                },
+            },
+            actor_username="admin",
+        )
+        self.service.publish_approval_workflow(workflow_id, actor_username="admin")
+
+        created = create_approval_assignments(
+            self.service,
+            module="sample_issue",
+            event="close_request",
+            entity_id="sample-completion-001",
+            task_key="close_approval:req-completion-001",
+            requester_username="张三",
+        )
+        self.assertEqual(created["status"], "matched")
+        self.assertEqual(
+            created["assignment"]["notification"]["completion_cc"],
+            {"enabled": True, "position_ids": [self.observer_position_id]},
+        )
+        usernames, missing_positions = resolve_position_usernames(
+            [self.observer_position_id],
+            user_service=self.service,
+        )
+        self.assertEqual(usernames, ["王五"])
+        self.assertEqual(missing_positions, [])
+
+    def test_completion_cc_rejects_unknown_position(self):
+        with self.assertRaisesRegex(ValueError, "不存在或已停用"):
+            self.service.save_approval_workflow_draft(
+                code="sample_issue.close.invalid_cc",
+                module="sample_issue",
+                event="close_request",
+                name="无效完成抄送岗位",
+                priority=5,
+                condition={},
+                approver={
+                    "strategy": "position",
+                    "position_ids": [self.approver_position_id],
+                    "org_scope": "any",
+                    "org_unit_ids": [],
+                },
+                required_permission_code=SAMPLE_ISSUE_CLOSE_APPROVE_PERMISSION,
+                notification={
+                    "completion_cc": {
+                        "enabled": True,
+                        "position_ids": ["missing-position"],
+                    }
+                },
+                actor_username="admin",
+            )
 
     def test_assignment_is_exact_even_when_another_user_has_permission(self):
         self.create_position_workflow()

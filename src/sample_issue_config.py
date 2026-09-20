@@ -54,13 +54,11 @@ _DEFAULT_CONFIG = {
         "extension": {
             "approver_roles": ["研发经理", "admin"],
             "notify_targets": [{"position": "研发经理"}],
-            "approval_notify_targets": [{"position": "研发经理"}, {"position": "研发助理"}],
             "notify_requester_on_approval": True,
         },
         "close": {
             "approver_roles": ["研发经理", "admin"],
             "notify_targets": [{"position": "研发经理"}],
-            "approval_notify_targets": [{"position": "研发经理"}, {"position": "研发助理"}],
             "notify_requester_on_approval": True,
             "routing_rules": [],
         },
@@ -232,11 +230,6 @@ def _close_routing_rules(config: dict, default_close: dict) -> list[dict]:
                 "requester_role_keywords": role_keywords,
                 "approver_roles": approver_roles,
                 "notify_targets": _notify_targets(rule, "notify_targets", default_notify_targets),
-                "approval_notify_targets": _notify_targets(
-                    rule,
-                    "approval_notify_targets",
-                    default_close["approval_notify_targets"],
-                ),
                 "notify_requester_on_approval": _bool_value(
                     rule,
                     "notify_requester_on_approval",
@@ -366,11 +359,6 @@ def load_sample_issue_config() -> dict[str, Any]:
             "notify_targets",
             default_close["notify_targets"],
         ),
-        "approval_notify_targets": _notify_targets(
-            raw_close,
-            "approval_notify_targets",
-            default_close["approval_notify_targets"],
-        ),
         "notify_requester_on_approval": _bool_value(
             raw_close,
             "notify_requester_on_approval",
@@ -426,11 +414,6 @@ def load_sample_issue_config() -> dict[str, Any]:
                     raw_extension,
                     "notify_targets",
                     default_extension["notify_targets"],
-                ),
-                "approval_notify_targets": _notify_targets(
-                    raw_extension,
-                    "approval_notify_targets",
-                    default_extension["approval_notify_targets"],
                 ),
                 "notify_requester_on_approval": _bool_value(
                     raw_extension,
@@ -493,7 +476,6 @@ SAMPLE_SPECIAL_PREPARATION_DEFAULT_ACTIONS = SAMPLE_ISSUE_CONFIG["special_prepar
 SAMPLE_DEFAULT_NOTIFY_TARGETS = SAMPLE_ISSUE_CONFIG["wecom"]["default_notify_targets"]
 SAMPLE_EXTENSION_APPROVER_ROLES = SAMPLE_ISSUE_CONFIG["wecom"]["extension"]["approver_roles"]
 SAMPLE_EXTENSION_NOTIFY_TARGETS = SAMPLE_ISSUE_CONFIG["wecom"]["extension"]["notify_targets"]
-SAMPLE_EXTENSION_APPROVAL_NOTIFY_TARGETS = SAMPLE_ISSUE_CONFIG["wecom"]["extension"]["approval_notify_targets"]
 SAMPLE_EXTENSION_NOTIFY_REQUESTER_ON_APPROVAL = SAMPLE_ISSUE_CONFIG["wecom"]["extension"][
     "notify_requester_on_approval"
 ]
@@ -504,7 +486,6 @@ SAMPLE_CLOSE_APPROVER_ROLES: list[str] = (
     else []
 )
 SAMPLE_CLOSE_NOTIFY_TARGETS = SAMPLE_ISSUE_CONFIG["wecom"]["close"]["notify_targets"]
-SAMPLE_CLOSE_APPROVAL_NOTIFY_TARGETS = SAMPLE_ISSUE_CONFIG["wecom"]["close"]["approval_notify_targets"]
 SAMPLE_CLOSE_NOTIFY_REQUESTER_ON_APPROVAL = SAMPLE_ISSUE_CONFIG["wecom"]["close"]["notify_requester_on_approval"]
 SAMPLE_CLOSE_ROUTING_RULES = SAMPLE_ISSUE_CONFIG["wecom"]["close"]["routing_rules"]
 SAMPLE_BACKGROUND_REMINDER_ENABLED = SAMPLE_ISSUE_CONFIG["reminders"]["background_enabled"]

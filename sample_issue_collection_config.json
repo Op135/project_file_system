@@ -12,11 +12,9 @@
         "wecom.default_notify_targets": "仅供旧 Excel 用户模式的无人员兜底通知；数据库用户由通知权限决定。",
         "wecom.extension.approver_roles": "仅供旧 Excel 用户模式兼容；数据库用户由“审批样品问题延期申请”权限决定。",
         "wecom.extension.notify_targets": "仅供旧 Excel 用户模式兼容；数据库用户由对应延期事件通知权限决定。",
-        "wecom.extension.approval_notify_targets": "仅供旧 Excel 用户模式兼容；数据库用户由“延期通过追加通知”权限决定。",
         "wecom.extension.notify_requester_on_approval": "审批通过或驳回后，是否同时通知本次延期申请人。",
         "wecom.close.approver_roles": "仅供旧 Excel 用户模式兼容；数据库用户由对应关闭路由审批权限决定。",
         "wecom.close.notify_targets": "仅供旧 Excel 用户模式兼容；数据库用户由对应关闭路由事件通知权限决定。",
-        "wecom.close.approval_notify_targets": "仅供旧 Excel 用户模式兼容；数据库用户由对应关闭路由通过追加通知权限决定。",
         "wecom.close.notify_requester_on_approval": "关闭审批通过或驳回后，是否同时通知本次关闭申请人。",
         "wecom.close.routing_rules": "关闭业务路由规则。数据库模式按申请人的系统主岗位名称匹配 requester_role_keywords，再使用该路由对应的稳定审批与通知权限；其余角色和通知字段仅供旧 Excel 模式兼容。",
         "reminders.background_enabled": "调试开关，是否在系统启动后自动运行样品问题预计完成日期提醒检查，服务器部署要设置为true。",
@@ -69,11 +67,6 @@
                     "position": "研发经理"
                 }
             ],
-            "approval_notify_targets": [
-                {
-                    "position": "NPI工程师"
-                }
-            ],
             "notify_requester_on_approval": true
         },
         "close": {
@@ -84,11 +77,6 @@
             "notify_targets": [
                 {
                     "position": "研发经理"
-                }
-            ],
-            "approval_notify_targets": [
-                {
-                    "position": "NPI工程师"
                 }
             ],
             "notify_requester_on_approval": true,
@@ -105,14 +93,6 @@
                     "notify_targets": [
                         {
                             "position": "研发电子主管"
-                        }
-                    ],
-                    "approval_notify_targets": [
-                        {
-                            "position": "NPI工程师"
-                        },
-                        {
-                            "position": "研发经理"
                         }
                     ],
                     "notify_requester_on_approval": true

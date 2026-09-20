@@ -34,6 +34,7 @@ from ...ecn_access import (
     resolve_ecn_material_spec_responsibility,
 )
 from ...ecn_management_config import (
+    ECN_WECOM_CONFIG,
     ECN_EXECUTION_RESULT_FAILED,
     ECN_EXECUTION_RESULT_PENDING,
     ECN_EXECUTION_RESULT_RUNNING,
@@ -57,6 +58,8 @@ from ...ecn_management_config import (
     is_ecn_material_execution_closed,
     is_ecn_special_execution_complete,
 )
+from ...issue_workflow_utils import schedule_background_task
+from ...workflow_notifications import send_workflow_completion_cc
 
 # 仅记录当前进程内实际仍在运行的系统内资料任务，用于区分“正在执行”与异常中断后遗留的运行状态。
 from .models import (
@@ -699,6 +702,7 @@ def build_execution_panel(
                 "reason": "",
                 "requires_final_confirmation": False,
             }
+            completed_route: dict[str, Any] = {}
             operation_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
             def update_confirmation(current_ecn):
@@ -825,6 +829,46 @@ def build_execution_panel(
                     }
                 )
 
+                if confirmed:
+                    assignment = target.get("workflow_assignment", {})
+                    if isinstance(assignment, dict):
+                        workflow_id = str(assignment.get("workflow_id") or "")
+                        version_id = str(assignment.get("version_id") or "")
+                        project = str(target.get("project") or "")
+                        route_tasks = [
+                            task
+                            for task in traceability_tasks.values()
+                            if isinstance(task, dict)
+                            and isinstance(task.get("workflow_assignment"), dict)
+                            and str(task["workflow_assignment"].get("workflow_id") or "")
+                            == workflow_id
+                            and str(task["workflow_assignment"].get("version_id") or "")
+                            == version_id
+                            and str(task.get("project") or "") == project
+                        ]
+                        marker_key = f"{workflow_id}:{version_id}:{project}"
+                        completion_markers = material_entry.setdefault(
+                            "workflow_completion_notifications", {}
+                        )
+                        if (
+                            workflow_id
+                            and route_tasks
+                            and all(task.get("confirmed") is True for task in route_tasks)
+                            and marker_key not in completion_markers
+                        ):
+                            completion_markers[marker_key] = operation_time
+                            completed_route.update(
+                                {
+                                    "assignment": copy.deepcopy(assignment),
+                                    "workflow_name": str(
+                                        assignment.get("workflow_name") or target.get("level") or "执行流程"
+                                    ),
+                                    "project": project,
+                                    "level": str(target.get("level") or ""),
+                                    "marker_key": marker_key,
+                                }
+                            )
+
                 approval_log = current_ecn.setdefault("approval_log", [])
                 if is_ecn_material_execution_closed(material_entry):
                     material_entry["status"] = "closed"
@@ -865,6 +909,35 @@ def build_execution_panel(
                 update_confirmation,
             )
             if success and not blocked["reason"]:
+                if completed_route:
+                    ecn_id = str(local_data.get("ecn_id") or "")
+                    title = str(local_data.get("basic_info", {}).get("title") or "—")
+                    route_name = str(completed_route.get("workflow_name") or "执行流程")
+                    schedule_background_task(
+                        send_workflow_completion_cc(
+                            completed_route.get("assignment", {}),
+                            title=f"【ECN工程变更】{route_name}已完成",
+                            lines=(
+                                f"单号：{ecn_id}",
+                                f"主题：{title}",
+                                f"追溯范围：{completed_route.get('level') or '—'}",
+                                f"项目：{completed_route.get('project') or '—'}",
+                                "结果：该执行流程全部节点已确认",
+                            ),
+                            link_url=(
+                                f"{ECN_WECOM_CONFIG['public_base_url']}/ecn_management"
+                                if ECN_WECOM_CONFIG["public_base_url"]
+                                else ""
+                            ),
+                            module="ecn_management",
+                            business_key=(
+                                f"{ecn_id}:{item_id}:"
+                                f"{completed_route.get('marker_key', '')}:completion_cc"
+                            ),
+                            user_service=app.state.user_service,
+                        ),
+                        f"{route_name}完成抄送",
+                    )
                 sync_execution_local_data()
                 execution_info = local_data.get("execution_info", {})
                 if (

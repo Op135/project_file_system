@@ -36,7 +36,7 @@ class ErrorManagementConfigTests(unittest.TestCase):
         self.assertIn("关闭申请中", config["filter_states"])
         self.assertEqual(config["wecom"]["default_notify_targets"], [{"position": "研发经理"}])
         self.assertTrue(config["wecom"]["extension"]["approver_roles"])
-        self.assertTrue(config["wecom"]["extension"]["approval_notify_targets"])
+        self.assertNotIn("approval_notify_targets", config["wecom"]["extension"])
         self.assertTrue(config["wecom"]["extension"]["notify_requester_on_approval"])
         self.assertEqual(config["reminders"]["check_window"], {"enabled": True, "start": "08:30", "end": "18:30"})
         self.assertTrue(config["reminders"]["rules"])
@@ -80,10 +80,7 @@ class ErrorManagementConfigTests(unittest.TestCase):
         self.assertEqual(loaded["editor_roles"], ["研发经理", "admin", "研发助理"])
         self.assertEqual(loaded["filter_states"], ["全部", "未关闭", "已关闭"])
         self.assertEqual(loaded["wecom"]["default_notify_targets"], [{"position": "研发经理"}])
-        self.assertEqual(
-            loaded["wecom"]["extension"]["approval_notify_targets"],
-            error_management_config._DEFAULT_CONFIG["wecom"]["extension"]["approval_notify_targets"],
-        )
+        self.assertNotIn("approval_notify_targets", loaded["wecom"]["extension"])
         self.assertEqual(loaded["reminders"]["initial_delay_seconds"], 60)
         self.assertEqual(loaded["reminders"]["check_interval_seconds"], 120)
         self.assertEqual(loaded["reminders"]["check_window"], {"enabled": True, "start": "09:00", "end": "17:30"})
@@ -129,8 +126,6 @@ class ErrorManagementNotificationTests(unittest.IsolatedAsyncioTestCase):
                 business_key="ERR-001:approval",
                 message_type="extension_approval",
                 additional_people="申请人",
-                # 数据库模式的审批订阅不能被空的旧 JSON 目标关闭。
-                additional_targets=[],
                 include_approval_recipients=True,
             )
 

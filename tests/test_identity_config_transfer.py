@@ -101,6 +101,12 @@ class IdentityConfigurationTransferTests(unittest.TestCase):
             },
             approver={"strategy": "users", "user_ids": [self.source.get_user("李经理")["user_id"]]},
             required_permission_code="sample_issue.close.approve",
+            notification={
+                "completion_cc": {
+                    "enabled": True,
+                    "position_ids": [position_id],
+                }
+            },
             actor_username="admin",
         )
         self.source.publish_approval_workflow(workflow_id, actor_username="admin")
@@ -183,6 +189,10 @@ class IdentityConfigurationTransferTests(unittest.TestCase):
         self.assertEqual(
             workflow["active_version"]["approver"]["user_ids"],
             [self.target.get_user("李经理")["user_id"]],
+        )
+        self.assertEqual(
+            workflow["active_version"]["notification"]["completion_cc"],
+            {"enabled": True, "position_ids": [target_position_id]},
         )
 
         versions_before = len(workflow["versions"])

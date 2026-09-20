@@ -43,7 +43,6 @@ _DEFAULT_CONFIG = {
         "extension": {
             "approver_roles": ["研发经理", "admin"],
             "notify_targets": [{"position": "研发经理"}],
-            "approval_notify_targets": [{"position": "研发经理"}, {"position": "研发助理"}],
             "notify_requester_on_approval": True,
         },
     },
@@ -225,11 +224,6 @@ def load_error_management_config() -> dict[str, Any]:
                     "notify_targets",
                     default_extension["notify_targets"],
                 ),
-                "approval_notify_targets": _notify_targets(
-                    raw_extension,
-                    "approval_notify_targets",
-                    default_extension["approval_notify_targets"],
-                ),
                 "notify_requester_on_approval": _bool_value(
                     raw_extension,
                     "notify_requester_on_approval",
@@ -278,7 +272,6 @@ ERROR_FILTER_PENDING_CLOSE_STATE = "关闭申请中"
 ERROR_DEFAULT_NOTIFY_TARGETS = ERROR_MANAGEMENT_CONFIG["wecom"]["default_notify_targets"]
 ERROR_EXTENSION_APPROVER_ROLES = ERROR_MANAGEMENT_CONFIG["wecom"]["extension"]["approver_roles"]
 ERROR_EXTENSION_NOTIFY_TARGETS = ERROR_MANAGEMENT_CONFIG["wecom"]["extension"]["notify_targets"]
-ERROR_EXTENSION_APPROVAL_NOTIFY_TARGETS = ERROR_MANAGEMENT_CONFIG["wecom"]["extension"]["approval_notify_targets"]
 ERROR_EXTENSION_NOTIFY_REQUESTER_ON_APPROVAL = ERROR_MANAGEMENT_CONFIG["wecom"]["extension"][
     "notify_requester_on_approval"
 ]

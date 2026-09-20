@@ -22,7 +22,14 @@ from .. import db_storage
 from ..access_control import can
 from ..approval_workflow import is_assigned_approver, resolve_approval_workflow
 from ..components import ButtonUploader, FileThumbnail, get_upload_local_path
-from ..config import IMG_DIR, PRESET_AVATARS, REQ_UPLOADS_FILE_TYPE, UPLOAD_URL_DIR, UPLOADS_DIR
+from ..config import (
+    IMG_DIR,
+    PRESET_AVATARS,
+    REQ_UPLOADS_FILE_TYPE,
+    SYSTEM_PUBLIC_BASE_URL,
+    UPLOAD_URL_DIR,
+    UPLOADS_DIR,
+)
 from ..design_knowledge_config import (
     APPLICABLE_PHASES,
     CONTENT_TYPE_COPY,
@@ -42,6 +49,7 @@ from ..design_knowledge_config import (
     resolve_design_knowledge_review_route as get_review_route,
 )
 from ..legacy_compatibility import record_legacy_compatibility_hit
+from ..issue_workflow_utils import schedule_background_task
 from ..permission_catalog import (
     DESIGN_KNOWLEDGE_CREATE_PERMISSION,
     DESIGN_KNOWLEDGE_DELETE_PERMISSION,
@@ -58,6 +66,7 @@ from ..utils import (
     setup_global_activity_tracking,
     sync_current_user_role,
 )
+from ..workflow_notifications import send_workflow_completion_cc
 
 logger = logging.getLogger(__name__)
 
@@ -708,6 +717,7 @@ def _build_workflow_assignment(workflow_result: dict, task_key: str) -> dict:
             item.get("display_name") or item["username"]
             for item in workflow_result["approvers"]
         ],
+        "notification": copy.deepcopy(version.get("notification", {})),
     }
 
 
@@ -759,6 +769,40 @@ def _complete_workflow_assignment(submission: dict, current_user: str) -> None:
         )
     except Exception:
         logger.error("完成设计知识审批待办失败", exc_info=True)
+
+
+def _schedule_design_completion_cc(
+    submission: dict,
+    *,
+    subject: str,
+    business_key: str,
+    reviewer: str,
+) -> None:
+    assignment = submission.get("workflow_assignment", {})
+    if not isinstance(assignment, dict):
+        return
+    title = str(
+        submission.get("title")
+        or submission.get("tag_name")
+        or submission.get("knowledge_id")
+        or submission.get("request_id")
+        or "—"
+    )
+    schedule_background_task(
+        send_workflow_completion_cc(
+            assignment,
+            title=f"【设计知识】{subject}已通过",
+            lines=(
+                f"事项：{title}",
+                "结果：全部审批节点已通过",
+                f"审批人：{reviewer}",
+            ),
+            link_url=f"{SYSTEM_PUBLIC_BASE_URL}/design_knowledge",
+            module="design_knowledge",
+            business_key=f"{business_key}:completion_cc",
+        ),
+        f"{subject}完成抄送",
+    )
 
 
 async def save_knowledge_record(
@@ -1086,6 +1130,12 @@ async def update_tag_request_status(
     _complete_workflow_assignment(request_data, current_user)
 
     if status == "已通过":
+        _schedule_design_completion_cc(
+            request_data,
+            subject="新标签审核",
+            business_key=str(request_data.get("request_id") or request_id),
+            reviewer=current_user,
+        )
         catalog = get_tag_catalog()
         domain = request_data.get("domain", "")
         tag_name = request_data.get("tag_name", "")
@@ -1307,6 +1357,13 @@ def design_knowledge_page():
         await db_storage.set_item(DESIGN_KNOWLEDGE_VERSION_KEY, time.time())
         if result["previous_status"] == RECORD_STATUS_REVIEW and result["record"]:
             _complete_workflow_assignment(result["record"], current_user)
+            if target_status == RECORD_STATUS_PUBLISHED:
+                _schedule_design_completion_cc(
+                    result["record"],
+                    subject="知识发布审核",
+                    business_key=str(result["record"].get("knowledge_id") or knowledge_id),
+                    reviewer=current_user,
+                )
         ui.notify("状态已更新", type="positive", position="bottom")
         detail_dialog.close()
         refresh_list()

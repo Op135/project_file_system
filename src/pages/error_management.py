@@ -36,7 +36,6 @@ from ..config import (
 from ..error_management_config import (
     ERROR_DEFAULT_NOTIFY_TARGETS as ERROR_LEGACY_DEFAULT_NOTIFY_TARGETS,
     ERROR_EDITOR_ROLES as ERROR_LEGACY_EDITOR_ROLES,
-    ERROR_EXTENSION_APPROVAL_NOTIFY_TARGETS as ERROR_LEGACY_EXTENSION_APPROVAL_NOTIFY_TARGETS,
     ERROR_EXTENSION_APPROVER_ROLES as ERROR_LEGACY_EXTENSION_APPROVER_ROLES,
     ERROR_EXTENSION_NOTIFY_REQUESTER_ON_APPROVAL,
     ERROR_EXTENSION_NOTIFY_TARGETS as ERROR_LEGACY_EXTENSION_NOTIFY_TARGETS,
@@ -144,7 +143,6 @@ async def send_error_extension_wecom_message(
     business_key: str,
     message_type: str,
     additional_people: str = "",
-    additional_targets=None,
     include_approval_recipients: bool = False,
 ) -> tuple[bool, str]:
     """通知稳定权限的订阅人，并可额外合并申请人等动态人员。"""
@@ -159,7 +157,7 @@ async def send_error_extension_wecom_message(
     approved_recipients = (
         await resolve_error_notify_recipients(
             approved_permission,
-            additional_targets,
+            None,
         )
         if include_approval_recipients and approved_permission
         else ""
@@ -1950,8 +1948,6 @@ async def error_management_page(error_id: str = "", view: str = ""):
                     additional_people=(
                         fresh_request.get("requester", "") if ERROR_EXTENSION_NOTIFY_REQUESTER_ON_APPROVAL else ""
                     ),
-                    # 旧 Excel 模式仍按追加目标发送；数据库模式按“延期通过追加通知”权限发送。
-                    additional_targets=ERROR_LEGACY_EXTENSION_APPROVAL_NOTIFY_TARGETS,
                     include_approval_recipients=approved,
                 ),
                 "延期审批企业微信通知",
@@ -2063,7 +2059,6 @@ async def error_management_page(error_id: str = "", view: str = ""):
                     additional_people=(
                         fresh_request.get("requester", "") if ERROR_EXTENSION_NOTIFY_REQUESTER_ON_APPROVAL else ""
                     ),
-                    additional_targets=ERROR_LEGACY_EXTENSION_APPROVAL_NOTIFY_TARGETS,
                     include_approval_recipients=approved,
                 ),
                 "纠正预防措施关闭审批企业微信通知",

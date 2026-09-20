@@ -55,14 +55,12 @@ from ..permission_catalog import (
     SAMPLE_ISSUE_VIEW_PERMISSION,
 )
 from ..sample_issue_config import (
-    SAMPLE_CLOSE_APPROVAL_NOTIFY_TARGETS,
     SAMPLE_CLOSE_APPROVER_ROLES,
     SAMPLE_CLOSE_NOTIFY_REQUESTER_ON_APPROVAL,
     SAMPLE_CLOSE_NOTIFY_TARGETS,
     SAMPLE_CLOSE_ROUTING_RULES,
     SAMPLE_DEFAULT_NOTIFY_TARGETS,
     SAMPLE_EDITOR_ROLES,
-    SAMPLE_EXTENSION_APPROVAL_NOTIFY_TARGETS,
     SAMPLE_EXTENSION_APPROVER_ROLES,
     SAMPLE_EXTENSION_NOTIFY_REQUESTER_ON_APPROVAL,
     SAMPLE_EXTENSION_NOTIFY_TARGETS,
@@ -99,6 +97,10 @@ from ..wecom_service import (
     resolve_wecom_recipients,
     retry_failed_wecom_messages,
     send_wecom_text_message,
+)
+from ..workflow_notifications import (
+    merge_wecom_userids,
+    resolve_workflow_completion_cc_recipients,
 )
 
 logger = logging.getLogger(__name__)
@@ -479,7 +481,6 @@ def get_default_sample_close_approval_route() -> dict:
         "requester_role_keywords": [],
         "approver_roles": copy.deepcopy(SAMPLE_CLOSE_APPROVER_ROLES),
         "notify_targets": copy.deepcopy(SAMPLE_CLOSE_NOTIFY_TARGETS),
-        "approval_notify_targets": copy.deepcopy(SAMPLE_CLOSE_APPROVAL_NOTIFY_TARGETS),
         "notify_requester_on_approval": SAMPLE_CLOSE_NOTIFY_REQUESTER_ON_APPROVAL,
     }
 
@@ -513,7 +514,7 @@ def get_sample_close_approval_route_for_request(close_request: Optional[dict]) -
     for key in ["key", "label"]:
         if isinstance(close_request.get(key), str) and close_request[key].strip():
             route[key] = close_request[key].strip()
-    for key in ["approver_roles", "notify_targets", "approval_notify_targets"]:
+    for key in ["approver_roles", "notify_targets"]:
         if isinstance(close_request.get(key), list):
             route[key] = copy.deepcopy(close_request[key])
     if isinstance(close_request.get("notify_requester_on_approval"), bool):
@@ -1577,8 +1578,8 @@ async def send_sample_extension_wecom_message(
     route_key: str = "default",
     notify_targets=None,
     additional_people: str = "",
-    additional_targets=None,
     include_approved_recipients: bool = False,
+    workflow_assignment: Optional[dict] = None,
 ) -> tuple[bool, str]:
     """按事件和关闭路由发送样品问题企业微信通知。"""
     if message_type in SAMPLE_EXTENSION_NOTIFY_PERMISSION_BY_MESSAGE_TYPE:
@@ -1602,10 +1603,22 @@ async def send_sample_extension_wecom_message(
     if include_approved_recipients:
         additional_role_recipients = await resolve_sample_notify_recipients(
             approved_permission,
-            additional_targets,
+            None,
         )
     people_recipients = await format_people_for_wecom(additional_people) if additional_people else ""
-    touser = merge_wecom_recipients(role_recipients, additional_role_recipients, people_recipients)
+    completion_cc_recipients = (
+        await resolve_workflow_completion_cc_recipients(workflow_assignment)
+        if include_approved_recipients and workflow_assignment
+        else ""
+    )
+    touser = merge_wecom_userids(
+        merge_wecom_recipients(
+            role_recipients,
+            additional_role_recipients,
+            people_recipients,
+        ),
+        completion_cc_recipients,
+    )
     if not touser:
         return False, "样品问题延期通知规则未匹配到企业微信成员"
     return await send_wecom_text_message(
@@ -1820,9 +1833,6 @@ async def submit_sample_close_request(
         "label": close_route.get("label", "默认关闭审批"),
         "approver_roles": copy.deepcopy(close_route.get("approver_roles", SAMPLE_CLOSE_APPROVER_ROLES)),
         "notify_targets": copy.deepcopy(close_route.get("notify_targets", SAMPLE_CLOSE_NOTIFY_TARGETS)),
-        "approval_notify_targets": copy.deepcopy(
-            close_route.get("approval_notify_targets", SAMPLE_CLOSE_APPROVAL_NOTIFY_TARGETS)
-        ),
         "notify_requester_on_approval": close_route.get(
             "notify_requester_on_approval",
             SAMPLE_CLOSE_NOTIFY_REQUESTER_ON_APPROVAL,
@@ -1841,6 +1851,7 @@ async def submit_sample_close_request(
             "required_permission_code": version["required_permission_code"],
             "approval_mode": version.get("approval_mode", "any"),
             "assignee_usernames": [item["username"] for item in workflow_result["approvers"]],
+            "notification": copy.deepcopy(version.get("notification", {})),
         }
 
     def add_close_request(current):
@@ -3003,8 +3014,8 @@ async def sample_issue_collection_page(issue_id: str = "", view: str = ""):
                     additional_people=(
                         fresh_request.get("requester", "") if SAMPLE_EXTENSION_NOTIFY_REQUESTER_ON_APPROVAL else ""
                     ),
-                    additional_targets=SAMPLE_EXTENSION_APPROVAL_NOTIFY_TARGETS if approved else None,
                     include_approved_recipients=approved,
+                    workflow_assignment=fresh_request.get("workflow_assignment"),
                 ),
                 "样品问题延期审批企业微信通知",
             )
@@ -3204,8 +3215,8 @@ async def sample_issue_collection_page(issue_id: str = "", view: str = ""):
                     route_key=str(close_route.get("key", "default")),
                     notify_targets=close_route.get("notify_targets"),
                     additional_people=approval_additional_people,
-                    additional_targets=close_route.get("approval_notify_targets") if approved else None,
                     include_approved_recipients=approved,
+                    workflow_assignment=fresh_request.get("workflow_assignment"),
                 ),
                 "样品问题关闭审批企业微信通知",
             )

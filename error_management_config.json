@@ -8,7 +8,6 @@
         "wecom.default_notify_targets": "仅旧 Excel 用户模式使用：异常负责人缺失时的默认通知对象。数据库模式改用“接收异常措施无负责人兜底提醒”权限。",
         "wecom.extension.approver_roles": "仅旧 Excel 用户模式使用：可以通过或驳回延期、关闭申请的角色关键字列表。",
         "wecom.extension.notify_targets": "仅旧 Excel 用户模式使用：延期申请、延期审批结果、关闭申请和关闭审批结果的通知接收人规则。数据库模式分别使用对应事件的四项通知接收权限。",
-        "wecom.extension.approval_notify_targets": "仅旧 Excel 用户模式使用：延期或关闭审批通过后的追加通知规则。数据库模式分别使用“延期通过追加通知”和“关闭通过追加通知”权限。",
         "wecom.extension.notify_requester_on_approval": "审批通过或驳回后，是否同时通知本次延期申请人。",
         "reminders.background_enabled": "调试开关，是否在系统启动后自动运行到期提醒检查，部署到服务器时设置为true。",
         "reminders.initial_delay_seconds": "系统启动多少秒后执行第一次提醒检查，必须为正整数。",
@@ -50,17 +49,6 @@
             "notify_targets": [
                 {
                     "position": "研发助理"
-                }
-            ],
-            "approval_notify_targets": [
-                {
-                    "position": "品质经理"
-                },
-                {
-                    "position": "QE工程师"
-                },
-                {
-                    "position": "NPI工程师"
                 }
             ],
             "notify_requester_on_approval": true

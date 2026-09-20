@@ -36,6 +36,40 @@ def _now_text() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
+def _normalize_workflow_notification(value: dict[str, Any] | None) -> dict[str, Any]:
+    """规范流程通知设置；完成抄送是原业务通知之外的附加收件人。"""
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise ValueError("流程通知设置必须是对象")
+    result = dict(value)
+    raw_cc = result.get("completion_cc", {})
+    if raw_cc is None:
+        raw_cc = {}
+    if not isinstance(raw_cc, dict):
+        raise ValueError("流程完成抄送设置必须是对象")
+    enabled = raw_cc.get("enabled", False)
+    if not isinstance(enabled, bool):
+        raise ValueError("流程完成抄送开关必须是布尔值")
+    raw_position_ids = raw_cc.get("position_ids", [])
+    if not isinstance(raw_position_ids, list):
+        raise ValueError("流程完成抄送岗位必须是列表")
+    position_ids = list(
+        dict.fromkeys(
+            str(position_id).strip()
+            for position_id in raw_position_ids
+            if str(position_id).strip()
+        )
+    )
+    if enabled and not position_ids:
+        raise ValueError("启用流程完成抄送后至少需要选择一个岗位")
+    result["completion_cc"] = {
+        "enabled": enabled,
+        "position_ids": position_ids,
+    }
+    return result
+
+
 def hash_password(password: str, *, iterations: int = PASSWORD_ITERATIONS) -> str:
     """生成带版本信息的 PBKDF2-SHA256 密码哈希。"""
     if not isinstance(password, str):
@@ -1547,6 +1581,7 @@ class IdentityStore:
         normalized_name = str(name or "").strip()
         permission_code = str(required_permission_code or "").strip().lower()
         normalized_mode = str(approval_mode or "any").strip().lower()
+        normalized_notification = _normalize_workflow_notification(notification)
         if not normalized_module or not normalized_event or not normalized_name:
             raise ValueError("模块、业务事件和流程名称不能为空")
         if not isinstance(condition, dict) or not isinstance(approver, dict):
@@ -1566,6 +1601,17 @@ class IdentityStore:
         now = _now_text()
         with self._lock, self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
+            completion_cc = normalized_notification.get("completion_cc", {})
+            completion_position_ids = list(completion_cc.get("position_ids", []))
+            if completion_position_ids:
+                placeholders = ",".join("?" for _ in completion_position_ids)
+                count = connection.execute(
+                    f"SELECT COUNT(*) AS total FROM iam_positions "
+                    f"WHERE position_id IN ({placeholders}) AND status='active'",
+                    completion_position_ids,
+                ).fetchone()["total"]
+                if int(count) != len(completion_position_ids):
+                    raise ValueError("流程完成抄送包含不存在或已停用的岗位")
             for node in approval_nodes:
                 permission = connection.execute(
                     "SELECT permission_id FROM iam_permissions WHERE code=? COLLATE NOCASE",
@@ -1637,7 +1683,7 @@ class IdentityStore:
                         json.dumps(approver, ensure_ascii=False),
                         permission_code,
                         normalized_mode,
-                        json.dumps(notification or {}, ensure_ascii=False),
+                        json.dumps(normalized_notification, ensure_ascii=False),
                         version_id,
                     ),
                 )
@@ -1663,7 +1709,7 @@ class IdentityStore:
                         json.dumps(approver, ensure_ascii=False),
                         permission_code,
                         normalized_mode,
-                        json.dumps(notification or {}, ensure_ascii=False),
+                        json.dumps(normalized_notification, ensure_ascii=False),
                         now,
                     ),
                 )
@@ -1702,6 +1748,9 @@ class IdentityStore:
                 raise ValueError("没有可以发布的流程草稿")
             condition = self._decode_workflow_json(draft["condition_json"])
             approver = self._decode_workflow_json(draft["approver_json"])
+            notification = _normalize_workflow_notification(
+                self._decode_workflow_json(draft["notification_json"])
+            )
             if condition.get("migration_requires_review"):
                 raise ValueError("旧配置没有匹配到申请岗位，请先检查并保存草稿后再发布")
             approval_nodes = self._workflow_approval_nodes(
@@ -1729,6 +1778,18 @@ class IdentityStore:
                 ).fetchone()["total"]
                 if int(count) != len(values):
                     raise ValueError("流程触发条件包含不存在或已停用的组织岗位")
+            completion_position_ids = list(
+                notification.get("completion_cc", {}).get("position_ids", [])
+            )
+            if completion_position_ids:
+                placeholders = ",".join("?" for _ in completion_position_ids)
+                count = connection.execute(
+                    f"SELECT COUNT(*) AS total FROM iam_positions "
+                    f"WHERE position_id IN ({placeholders}) AND status='active'",
+                    completion_position_ids,
+                ).fetchone()["total"]
+                if int(count) != len(completion_position_ids):
+                    raise ValueError("流程完成抄送包含不存在或已停用的岗位")
             for node in approval_nodes:
                 node_name = str(node["name"])
                 node_approver = node["approver"]

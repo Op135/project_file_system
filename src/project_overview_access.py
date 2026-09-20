@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import copy
+
 from nicegui import app
 
 from .access_control import can
@@ -273,6 +275,7 @@ def resolve_project_overview_workflow(event: str, requester_username: str, *, us
         "approval_mode": version.get("approval_mode", "any"),
         "assignee_usernames": [item["username"] for item in result["approvers"]],
         "assignee_names": [item.get("display_name") or item["username"] for item in result["approvers"]],
+        "notification": copy.deepcopy(version.get("notification", {})),
     }
     return result
 

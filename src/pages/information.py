@@ -14,7 +14,16 @@ from nicegui import app, ui
 
 from .. import db_storage
 from ..components import FileThumbnail, OverviewReasonSelector
-from ..config import BASE_DIR, IMG_DIR, OVER_DIR, PRESET_AVATARS, REQ_DIR, REQ_REMOVE_DIR
+from ..config import (
+    BASE_DIR,
+    IMG_DIR,
+    OVER_DIR,
+    PRESET_AVATARS,
+    REQ_DIR,
+    REQ_REMOVE_DIR,
+    SYSTEM_PUBLIC_BASE_URL,
+)
+from ..issue_workflow_utils import schedule_background_task
 from ..overview_batch_operations import (
     BATCH_OVERVIEW_REQUESTS_KEY,
     BATCH_OVERVIEW_STAGING_DIR,
@@ -68,6 +77,7 @@ from ..utils import (
     validate_search_path,
     validate_svn_url,
 )
+from ..workflow_notifications import send_workflow_completion_cc
 
 # 获取 logger
 logger = logging.getLogger(__name__)
@@ -77,6 +87,34 @@ _requirement_review_locks = defaultdict(asyncio.Lock)
 _batch_overview_review_locks = defaultdict(asyncio.Lock)
 _overview_correction_review_locks = defaultdict(asyncio.Lock)
 _correction_preview_routes: set[str] = set()
+
+
+def _schedule_overview_completion_cc(
+    request: dict,
+    *,
+    subject: str,
+    business_key: str,
+    reviewer: str,
+) -> None:
+    assignment = request.get("workflow_assignment", {})
+    if not isinstance(assignment, dict):
+        return
+    project = str(request.get("project") or request.get("project_name") or "—")
+    schedule_background_task(
+        send_workflow_completion_cc(
+            assignment,
+            title=f"【项目概述】{subject}已通过",
+            lines=(
+                f"项目：{project}",
+                "结果：全部审批节点已通过",
+                f"审批人：{reviewer}",
+            ),
+            link_url=f"{SYSTEM_PUBLIC_BASE_URL}/information",
+            module="project_overview",
+            business_key=f"{business_key}:completion_cc",
+        ),
+        f"{subject}完成抄送",
+    )
 
 
 def _get_draft_saved_timestamp(project_name, version, owner) -> float:
@@ -1070,6 +1108,14 @@ def information_page():
                     ui.notify("纠错已执行，但活动申请清理失败，请联系管理员检查归档。", type="warning", timeout=0)
                 else:
                     ui.notify(result.get("message", "纠错审批已通过。"), type="positive")
+                completion_scheduler = globals().get("_schedule_overview_completion_cc")
+                if callable(completion_scheduler):
+                    completion_scheduler(
+                        request,
+                        subject="概述原记录纠错",
+                        business_key=request_id,
+                        reviewer=current_user,
+                    )
             except Exception as exc:
                 logger.error("执行单项概述纠错失败: request_id=%s", request_id, exc_info=True)
                 await update_correction_request(
@@ -1355,6 +1401,15 @@ def information_page():
                         "review_log": review_log,
                     },
                 )
+                if success_count:
+                    completion_scheduler = globals().get("_schedule_overview_completion_cc")
+                    if callable(completion_scheduler):
+                        completion_scheduler(
+                            request,
+                            subject="批量概述变更",
+                            business_key=request_id,
+                            reviewer=current_user,
+                        )
                 notification_type = "positive" if final_status == "approved" else "warning"
                 ui.notify(result.get("message", "批量申请已处理。"), type=notification_type, timeout=0)
             except Exception as exc:

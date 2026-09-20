@@ -36,6 +36,7 @@
 | `access_control.py` 及 `*_access.py` | 公共和各业务模块权限判断 |
 | `approval_workflow.py` | 通用审批流程匹配、具体审批人解析和多节点推进 |
 | `notification_recipients.py` | 固定通知权限到企业微信收件人的解析 |
+| `workflow_notifications.py` | 审批完成额外抄送岗位解析、收件人去重和统一企业微信卡片发送 |
 | `*_config.py` | 对应根目录 JSON 的校验、默认值和业务配置读取 |
 | `pages/` | NiceGUI 路由、页面组合和业务交互 |
 | `modules/ecn/` | ECN 数据模型、事务、协作编辑、流程服务与页面组件 |
