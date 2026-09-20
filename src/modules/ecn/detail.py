@@ -256,12 +256,19 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
             tab_exec = ui.tab("4. ECN-执行", icon="assignment_turned_in")
             tab_workflow = ui.tab("审批记录", icon="timeline")
 
+        open_scheme_review_tab = bool(
+            wf.get("current_state") == ECNState.ECN_REVIEWING
+            and wf.get("current_phase") == "ECN_SCHEME_REVIEW_PHASE"
+            and is_scheme_assigned_approver(local_data, current_user)
+        )
+        initial_tab = tab_scheme if open_scheme_review_tab else tab_ecr
+
         # 当前用户是否为ECN申请人，且处于草稿或驳回待编辑状态
         is_ecr_editable = is_new or (
             basic.get("applicant") == current_user and wf.get("current_state") in [ECNState.DRAFT, ECNState.REJECTED]
         )
 
-        with ui.tab_panels(tabs, value=tab_ecr).classes("w-full flex-1 min-h-0 p-2 md:p-4"):
+        with ui.tab_panels(tabs, value=initial_tab).classes("w-full flex-1 min-h-0 p-2 md:p-4"):
             # --- [TAB 1] ECR 申请表单 ---
             with ui.tab_panel(tab_ecr).classes("p-0 bg-transparent"):
                 with ui.column().classes(
@@ -932,6 +939,8 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
 
             tab_scheme.on("click", lambda: queue_lazy_panel("scheme"))
             tab_exec.on("click", lambda: queue_lazy_panel("execution"))
+            if open_scheme_review_tab:
+                queue_lazy_panel("scheme")
 
             # --- [TAB 4] 审批流转记录 ---
             with ui.tab_panel(tab_workflow).classes("p-2 md:p-3 bg-transparent h-full min-h-0 overflow-hidden"):
@@ -1229,12 +1238,12 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
                 ]:
                     if wf["current_state"] == ECNState.ECN_REVIEWING:
                         ui.button(
-                            "驳回",
+                            "驳回 ECN 方案",
                             color="red",
                             on_click=open_scheme_reject_dialog,
                         )
                         ui.button(
-                            "同意",
+                            "通过 ECN 方案",
                             color="green",
                             on_click=lambda: execute_db_action("approve"),
                         )
@@ -1242,7 +1251,7 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
                         note_input = ui.input("审批意见 (选填)").props("dense outlined").classes("w-64")
                         if wf.get("current_phase") == "ECR_PHASE":
                             ui.button(
-                                "驳回",
+                                "驳回 ECR 申请",
                                 color="red",
                                 on_click=lambda: execute_db_action("reject", note=note_input.value),
                             )
@@ -1253,7 +1262,9 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
                                 on_click=lambda: open_scheme_reject_dialog(note_input.value),
                             )
                         ui.button(
-                            "同意",
+                            "同意 ECR 申请"
+                            if wf.get("current_phase") == "ECR_PHASE"
+                            else "通过 ECN 方案",
                             color="green",
                             on_click=lambda: execute_db_action("approve", note=note_input.value),
                         )
