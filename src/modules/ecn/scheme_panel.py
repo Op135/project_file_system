@@ -54,7 +54,6 @@ from ...ecn_management_config import (
     get_ecn_overview_deactivation_remaining_contents,
     get_ecn_overview_project_new_data,
     get_ecn_scheme_coverage,
-    is_ecn_disposition_condition_required,
     is_ecn_material_disposition_required,
     resolve_ecn_overview_parameter_config,
 )
@@ -516,18 +515,10 @@ def build_scheme_panel(
                                     disposition_color = {
                                         "报废": "text-red-700",
                                         "返工": "text-orange-600",
-                                        "有条件用完止": "text-amber-600",
                                     }.get(disposition_measure, "text-slate-700")
                                     ui.label(disposition_measure).classes(
                                         f"text-sm font-semibold {disposition_color} break-all"
                                     )
-                                    disposition_condition = str(item.get("disposition_condition") or "").strip()
-                                    if disposition_condition:
-                                        ui.label(f"条件：{disposition_condition}").classes(
-                                            "text-xs text-slate-500 break-all"
-                                        )
-                                    elif is_ecn_disposition_condition_required(disposition_measure):
-                                        ui.label("条件：未填写").classes("text-xs text-red-500 break-all")
                                 elif classify_ecn_change_item(item) == ECN_SCHEME_GROUP_MATERIAL:
                                     ui.label("未配置").classes("text-sm text-red-500")
                                 else:
@@ -1277,13 +1268,6 @@ def build_scheme_panel(
                                             snapshot.get("change_type")
                                         ):
                                             snapshot_disposition_text = snapshot_disposition_measure or "未配置"
-                                            snapshot_condition = str(
-                                                snapshot.get("disposition_condition") or ""
-                                            ).strip()
-                                            if snapshot_condition:
-                                                snapshot_disposition_text += f"\n条件：{snapshot_condition}"
-                                            elif is_ecn_disposition_condition_required(snapshot_disposition_measure):
-                                                snapshot_disposition_text += "\n条件：未填写"
                                             snapshot_fields.append(
                                                 (
                                                     "旧料处置措施",

@@ -36,12 +36,14 @@ from src.ecn_management_config import (
     get_ecn_stage_index,
     has_unrevised_rejected_scheme_items,
     is_ecn_assistant_execution_ready,
+    is_ecn_material_disposition_measure_final,
     is_ecn_material_execution_closed,
     is_ecn_review_info_blank,
     is_ecn_scheme_ready_for_review,
     load_ecn_config,
     merge_ecn_impact_audit_log,
     register_ecn_impact_handler,
+    resolve_ecn_material_value_disposition,
     resolve_ecn_overview_parameter_config,
     confirm_revised_scheme_items,
     mark_rejected_scheme_item_revised,
@@ -160,7 +162,9 @@ def test_checked_in_config_file_is_valid():
     assert loaded["ui"]["overview_conflict_auto_close_seconds"] == 5.0
     assert loaded["scheme_review"]["require_rejected_item_selection"] is True
     assert loaded["scheme_review"]["require_revision_before_reconfirmation"] is True
-    assert loaded["scheme_review"]["document_types_without_required_scheme"] == []
+    assert loaded["scheme_review"]["document_types_without_required_scheme"] == raw_config["scheme_review"][
+        "document_types_without_required_scheme"
+    ]
     assert loaded["scheme_review"]["participant_statuses"]["confirmed"]["remind"] is False
     assert loaded["scheme_review"]["participant_statuses"]["needs_reconfirmation"]["remind"] is True
     assert loaded["scheme_review"]["transitions"] == {
@@ -185,6 +189,7 @@ def test_checked_in_config_file_is_valid():
         "deactivate": "失效",
     }
     assert loaded["scheme_options"] == raw_config["scheme_options"]
+    assert "disposition_condition_required_measures" not in loaded["scheme_options"]
 
     raw_config["scheme_review"]["document_types_without_required_scheme"] = [
         "出厂测试报告",
@@ -614,7 +619,7 @@ def test_discontinued_material_scheme_requires_old_material_disposition():
     assert get_ecn_scheme_coverage(record)["incomplete_material_schemes"] == {"方案 #01"}
 
 
-def test_conditional_disposition_requires_specific_condition():
+def test_conditional_use_up_is_only_a_value_selection_trigger():
     record = _ecn_record(participants={"工程师A": ECN_PARTICIPANT_STATUS_CONFIRMED})
     record["change_items"] = [
         {
@@ -628,7 +633,14 @@ def test_conditional_disposition_requires_specific_condition():
     ]
 
     assert get_ecn_scheme_coverage(record)["incomplete_material_schemes"] == {"方案 #01"}
-    record["change_items"][0]["disposition_condition"] = "仅限内部试制批次使用"
+    assert is_ecn_material_disposition_measure_final("有条件用完止") is False
+    assert resolve_ecn_material_value_disposition("高价值") == "暂存移用"
+    assert resolve_ecn_material_value_disposition("低价值") == "报废"
+    assert resolve_ecn_material_value_disposition("未选择") is None
+
+    record["change_items"][0]["disposition_measure"] = resolve_ecn_material_value_disposition("高价值")
+    assert get_ecn_scheme_coverage(record)["incomplete_material_schemes"] == set()
+    record["change_items"][0]["disposition_measure"] = resolve_ecn_material_value_disposition("低价值")
     assert get_ecn_scheme_coverage(record)["incomplete_material_schemes"] == set()
 
 

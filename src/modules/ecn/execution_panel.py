@@ -1542,19 +1542,10 @@ def build_execution_panel(
                                                 disposition_color = {
                                                     "报废": "text-red-700",
                                                     "返工": "text-orange-600",
-                                                    "有条件用完止": "text-amber-600",
                                                 }.get(disposition_measure, "text-slate-700")
                                                 ui.label(disposition_measure or "未配置").classes(
                                                     f"font-semibold {disposition_color} break-words"
                                                 )
-                                                disposition_condition = str(
-                                                    item.get("disposition_condition") or ""
-                                                ).strip()
-                                                if disposition_condition:
-                                                    ui.label(f"条件：{disposition_condition}").classes(
-                                                        "mt-1 text-xs text-slate-500 break-words"
-                                                    )
-
                                         for level in ECN_TRACEABILITY_LEVELS:
                                             level_specs = specs_by_level[level]
                                             with ui.element("div").classes(

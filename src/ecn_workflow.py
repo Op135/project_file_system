@@ -146,10 +146,8 @@ def build_ecn_execution_info_from_workflows(
             else []
         )
         disposition_measure = str(item.get("disposition_measure") or "").strip()
-        disposition_condition = str(item.get("disposition_condition") or "").strip()
         disposition_instruction = (
             f"旧料处置：{disposition_measure}"
-            + (f"（条件：{disposition_condition}）" if disposition_condition else "")
             if disposition_measure
             else ""
         )

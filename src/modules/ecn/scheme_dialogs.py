@@ -17,6 +17,7 @@ from ...custom_ui import (
 )
 from ...ecn_management_config import (
     ECN_ATTACHMENT_CONFIG,
+    ECN_CONDITIONAL_USE_UP_MEASURE,
     ECN_DISPOSITION_MEASURES,
     ECN_DOCUMENT_CHANGE_TYPES,
     ECN_MATERIAL_CHANGE_TYPE_ADD,
@@ -42,17 +43,18 @@ from ...ecn_management_config import (
     get_ecn_material_change_missing_fields,
     get_ecn_material_code_entries,
     get_ecn_scheme_target_projects,
-    is_ecn_disposition_condition_required,
+    is_ecn_material_disposition_measure_final,
     is_ecn_material_disposition_required,
+    resolve_ecn_material_value_disposition,
     resolve_ecn_overview_parameter_config,
 )
-from .attachments import cleanup_staged, publish_pending, stage_upload
 from .attachment_preview import (
     attachment_kind,
     issue_attachment_preview_url,
     issue_staged_attachment_preview_url,
 )
 from .attachment_ui import open_ecn_attachment_file, open_staged_ecn_attachment_file
+from .attachments import cleanup_staged, publish_pending, stage_upload
 
 
 def open_material_code_dialog(item: dict, on_save_callback) -> None:
@@ -62,9 +64,7 @@ def open_material_code_dialog(item: dict, on_save_callback) -> None:
     dialog = ui.dialog().props("persistent")
     with dialog, ui.card().classes("w-[620px] max-w-full p-5 gap-3"):
         ui.label("补充物料料号").classes("text-lg font-bold text-blue-900")
-        ui.label("主物料和替换料的料号全部补齐后才能进入ECN执行；进入执行后将锁定。").classes(
-            "text-sm text-slate-500"
-        )
+        ui.label("主物料和替换料的料号全部补齐后才能进入ECN执行；进入执行后将锁定。").classes("text-sm text-slate-500")
         for index, entry in enumerate(entries):
             token = entry["token"]
             ui.input(f"{entry['label']}（必填）").classes("w-full").bind_value(values, token).props(
@@ -76,9 +76,7 @@ def open_material_code_dialog(item: dict, on_save_callback) -> None:
             if missing:
                 ui.notify("请填写：" + "、".join(missing), type="warning")
                 return
-            if await on_save_callback(
-                {entry["token"]: str(values[entry["token"]]).strip() for entry in entries}
-            ):
+            if await on_save_callback({entry["token"]: str(values[entry["token"]]).strip() for entry in entries}):
                 dialog.close()
 
         with ui.row().classes("w-full justify-end gap-2 mt-2"):
@@ -1152,6 +1150,9 @@ def open_text_change_dialog(
     attachment_upload_busy = {"count": 0}
     attachment_dialog_closed = {"value": False}
 
+    initial_disposition_measure = edit_data.get("disposition_measure") if is_material_scheme else None
+    if initial_disposition_measure == ECN_CONDITIONAL_USE_UP_MEASURE:
+        initial_disposition_measure = None
     sel_state = {
         "projects": copy.deepcopy(edit_data.get("projects", [])),
         "req_idxs": edit_data.get("req_idxs", []),
@@ -1162,8 +1163,7 @@ def open_text_change_dialog(
         "change_type": initial_change_type,
         "material_change": material_change,
         "traceability_levels": traceability_levels,
-        "disposition_measure": edit_data.get("disposition_measure") if is_material_scheme else None,
-        "disposition_condition": edit_data.get("disposition_condition", ""),
+        "disposition_measure": initial_disposition_measure,
         "provide_file_server_path": bool(initial_file_server_path),
         "file_server_path": initial_file_server_path,
     }
@@ -1266,9 +1266,7 @@ def open_text_change_dialog(
 
             def remove_alternative(group_key: str, alternative_id: str) -> None:
                 material_state[group_key] = [
-                    row
-                    for row in alternative_rows(group_key)
-                    if str(row.get("alternative_id") or "") != alternative_id
+                    row for row in alternative_rows(group_key) if str(row.get("alternative_id") or "") != alternative_id
                 ]
                 render_material_change_form()
 
@@ -1293,7 +1291,9 @@ def open_text_change_dialog(
                             ).props("outlined dense bg-white")
                             ui.button(
                                 icon="delete_outline",
-                                on_click=lambda _, key=group_key, row_id=alternative_id: remove_alternative(key, row_id),
+                                on_click=lambda _, key=group_key, row_id=alternative_id: remove_alternative(
+                                    key, row_id
+                                ),
                             ).props("flat round dense color=negative").tooltip("删除这行替换料")
 
             with material_form_container:
@@ -1355,9 +1355,7 @@ def open_text_change_dialog(
                         with (
                             ui.grid(columns=5)
                             .classes("w-full gap-3")
-                            .style(
-                                "grid-template-columns:minmax(180px,.8fr) minmax(300px,1.7fr) 130px 110px 40px"
-                            )
+                            .style("grid-template-columns:minmax(180px,.8fr) minmax(280px,1.7fr) 150px 110px 40px")
                         ):
                             ui.input("改前料号（可后补）").classes("w-full").bind_value(
                                 material_state, "old_material_code"
@@ -1380,9 +1378,7 @@ def open_text_change_dialog(
                         with (
                             ui.grid(columns=5)
                             .classes("w-full gap-3")
-                            .style(
-                                "grid-template-columns:minmax(180px,.8fr) minmax(300px,1.7fr) 130px 110px 40px"
-                            )
+                            .style("grid-template-columns:minmax(180px,.8fr) minmax(280px,1.7fr) 150px 110px 40px")
                         ):
                             ui.input("改后料号（可后补）").classes("w-full").bind_value(
                                 material_state, "new_material_code"
@@ -1406,7 +1402,6 @@ def open_text_change_dialog(
             sel_state["change_type"] = e.value
             if is_material_scheme and not is_ecn_material_disposition_required(e.value):
                 sel_state["disposition_measure"] = None
-                sel_state["disposition_condition"] = ""
             render_material_change_form()
             render_disposition_field()
 
@@ -1441,26 +1436,44 @@ def open_text_change_dialog(
                         .bind_value(sel_state, "disposition_measure")
                         .props("inline dense color=primary")
                     )
-                    condition_container = ui.column().classes("w-full gap-0")
 
-                    def render_disposition_condition():
-                        condition_container.clear()
-                        if not is_ecn_disposition_condition_required(sel_state["disposition_measure"]):
-                            sel_state["disposition_condition"] = ""
-                            condition_container.set_visibility(False)
-                            return
-                        condition_container.set_visibility(True)
-                        with condition_container:
-                            ui.input("具体使用条件（必填）").classes("w-full").bind_value(
-                                sel_state, "disposition_condition"
-                            ).props("outlined dense bg-white")
+                    async def request_material_value() -> str:
+                        with (
+                            ui.dialog().props("persistent") as value_dialog,
+                            ui.card().classes("w-[520px] max-w-[92vw] p-5 gap-3"),
+                        ):
+                            with ui.row().classes("items-center gap-2"):
+                                ui.icon("inventory_2", color="orange", size="sm")
+                                ui.label("请选择涉及旧料的价值等级").classes("text-lg font-bold text-slate-800")
+                            ui.label(
+                                "公司为降低物料管理成本，不再采用“有条件用完止”并填写具体条件的方式。"
+                                "请根据涉及旧料的价值选择最终处置措施。"
+                            ).classes("text-sm text-slate-600 leading-relaxed")
+                            with ui.row().classes("w-full gap-3 mt-1"):
+                                ui.button(
+                                    "高价值 · 暂存移用",
+                                    icon="warehouse",
+                                    on_click=lambda: value_dialog.submit("高价值"),
+                                ).classes("flex-1").props("outline color=primary no-caps")
+                                ui.button(
+                                    "低价值 · 报废",
+                                    icon="delete_outline",
+                                    on_click=lambda: value_dialog.submit("低价值"),
+                                ).classes("flex-1").props("outline color=negative no-caps")
+                        selected_value = await value_dialog
+                        return str(selected_value or "")
 
-                    def on_disposition_change(e):
+                    async def on_disposition_change(e):
                         sel_state["disposition_measure"] = e.value
-                        render_disposition_condition()
+                        if e.value != ECN_CONDITIONAL_USE_UP_MEASURE:
+                            return
+                        material_value = await request_material_value()
+                        resolved_measure = resolve_ecn_material_value_disposition(material_value)
+                        sel_state["disposition_measure"] = resolved_measure
+                        disposition_select.value = resolved_measure
+                        disposition_select.update()
 
                     disposition_select.on_value_change(on_disposition_change)
-                    render_disposition_condition()
 
         render_disposition_field()
 
@@ -1511,9 +1524,7 @@ def open_text_change_dialog(
                     "w-full grid grid-cols-1 md:grid-cols-2 gap-5 items-start"
                 )
                 with attachment_layout, ui.column().classes("w-full min-w-0 gap-2"):
-                    ui.label("已上传附件（点击文件名预览或下载）").classes(
-                        "text-xs font-bold text-slate-700"
-                    )
+                    ui.label("已上传附件（点击文件名预览或下载）").classes("text-xs font-bold text-slate-700")
                     attachment_list = ui.column().classes("w-full gap-3 max-h-[280px] overflow-y-auto")
 
                 def render_attachment_list() -> None:
@@ -1530,9 +1541,13 @@ def open_text_change_dialog(
                                     open_staged_ecn_attachment_file(entry, current_user, actor_role)
                                 else:
                                     open_ecn_attachment_file(
-                                        str(ecn_data["ecn_id"]), "scheme",
-                                        str(edit_data.get("item_id") or ""), "",
-                                        fid, current_user, actor_role,
+                                        str(ecn_data["ecn_id"]),
+                                        "scheme",
+                                        str(edit_data.get("item_id") or ""),
+                                        "",
+                                        fid,
+                                        current_user,
+                                        actor_role,
                                     )
 
                             with ui.row().classes(
@@ -1542,10 +1557,15 @@ def open_text_change_dialog(
                                 if attachment_kind(name) == "image":
                                     image_url = (
                                         issue_staged_attachment_preview_url(attachment, current_user, actor_role)
-                                        if pending else issue_attachment_preview_url(
-                                            str(ecn_data["ecn_id"]), "scheme",
-                                            str(edit_data.get("item_id") or ""), "", file_id,
-                                            current_user, actor_role,
+                                        if pending
+                                        else issue_attachment_preview_url(
+                                            str(ecn_data["ecn_id"]),
+                                            "scheme",
+                                            str(edit_data.get("item_id") or ""),
+                                            "",
+                                            file_id,
+                                            current_user,
+                                            actor_role,
                                         )
                                     )
                                     ui.image(image_url).classes(
@@ -1578,13 +1598,11 @@ def open_text_change_dialog(
                     for file_info in event.files:
                         match = next(
                             (
-                                entry for entry in staged_attachments
+                                entry
+                                for entry in staged_attachments
                                 if entry not in removed
                                 and entry.get("name") == file_info.get("name")
-                                and (
-                                    file_info.get("size") is None
-                                    or entry.get("size") == file_info.get("size")
-                                )
+                                and (file_info.get("size") is None or entry.get("size") == file_info.get("size"))
                             ),
                             None,
                         )
@@ -1617,16 +1635,9 @@ def open_text_change_dialog(
             if (
                 is_material_scheme
                 and is_ecn_material_disposition_required(sel_state["change_type"])
-                and not sel_state["disposition_measure"]
+                and not is_ecn_material_disposition_measure_final(sel_state["disposition_measure"])
             ):
                 return ui.notify("请选择旧料处置措施", type="warning")
-            if (
-                is_material_scheme
-                and is_ecn_material_disposition_required(sel_state["change_type"])
-                and is_ecn_disposition_condition_required(sel_state["disposition_measure"])
-                and not sel_state["disposition_condition"].strip()
-            ):
-                return ui.notify("请填写旧料处置的具体使用条件", type="warning")
             if is_material_scheme:
                 missing_fields = get_ecn_material_change_missing_fields(
                     sel_state["change_type"], sel_state["material_change"]
@@ -1688,8 +1699,6 @@ def open_text_change_dialog(
                 payload["traceability_levels"] = copy.deepcopy(sel_state["traceability_levels"])
             if is_material_scheme and is_ecn_material_disposition_required(sel_state["change_type"]):
                 payload["disposition_measure"] = sel_state["disposition_measure"]
-                if is_ecn_disposition_condition_required(sel_state["disposition_measure"]):
-                    payload["disposition_condition"] = sel_state["disposition_condition"].strip()
             if is_material_scheme:
                 assert normalized_material_change is not None
                 payload["material_change"] = normalized_material_change
@@ -1704,8 +1713,11 @@ def open_text_change_dialog(
                 try:
                     for attachment in staged_attachments:
                         published, path = await asyncio.to_thread(
-                            publish_pending, attachment, str(ecn_data["ecn_id"]),
-                            current_user, f"scheme_{payload['item_id']}",
+                            publish_pending,
+                            attachment,
+                            str(ecn_data["ecn_id"]),
+                            current_user,
+                            f"scheme_{payload['item_id']}",
                         )
                         published_paths.append(path)
                         payload["attachments"].append(published)
@@ -1727,6 +1739,7 @@ def open_text_change_dialog(
         with ui.row().classes("w-full justify-end mt-4"):
             ui.button("取消", on_click=dialog.close).props("flat color=grey")
             ui.button("确认修改" if is_edit else "确认添加", on_click=save_item).props("color=primary")
+
     def cleanup_dialog_uploads() -> None:
         attachment_dialog_closed["value"] = True
         cleanup_staged(staged_attachments)

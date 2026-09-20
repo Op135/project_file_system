@@ -382,7 +382,6 @@ _DEFAULT_CONFIG: dict[str, Any] = {
         },
         "material_default_unit": "pcs",
         "material_disposition_required_types": ["discontinue", "replace"],
-        "disposition_condition_required_measures": ["有条件用完止"],
     },
     "ui": {
         "overview_conflict_auto_close_seconds": 5.0,
@@ -609,7 +608,6 @@ def load_ecn_config(raw_config: dict | None = None) -> dict:
     for key in [
         "document_change_types",
         "material_disposition_required_types",
-        "disposition_condition_required_measures",
     ]:
         default = _DEFAULT_CONFIG["scheme_options"][key]
         result["scheme_options"][key] = _string_list(raw_scheme_options.get(key), default, f"scheme_options.{key}")
@@ -702,9 +700,11 @@ ECN_MATERIAL_CHANGE_TYPE_LABELS = ECN_CONFIG["scheme_options"]["material_change_
 ECN_MATERIAL_CHANGE_TYPES = list(ECN_MATERIAL_CHANGE_TYPE_LABELS.values())
 ECN_MATERIAL_DEFAULT_UNIT = ECN_CONFIG["scheme_options"]["material_default_unit"]
 ECN_MATERIAL_DISPOSITION_REQUIRED_TYPES = set(ECN_CONFIG["scheme_options"]["material_disposition_required_types"])
-ECN_DISPOSITION_CONDITION_REQUIRED_MEASURES = set(
-    ECN_CONFIG["scheme_options"]["disposition_condition_required_measures"]
-)
+ECN_CONDITIONAL_USE_UP_MEASURE = "有条件用完止"
+ECN_MATERIAL_VALUE_DISPOSITION_MAP = {
+    "高价值": "暂存移用",
+    "低价值": "报废",
+}
 ECN_EXECUTION_STAGE_ASSISTANT = "assistant_confirmation"
 ECN_EXECUTION_STAGE_OVERVIEW_RUNNING = "overview_execution"
 ECN_EXECUTION_STAGE_OVERVIEW_FAILED = "overview_failed"
@@ -790,8 +790,17 @@ def is_ecn_material_disposition_required(change_type: Any) -> bool:
     return semantic_key in ECN_MATERIAL_DISPOSITION_REQUIRED_TYPES
 
 
-def is_ecn_disposition_condition_required(disposition_measure: Any) -> bool:
-    return disposition_measure in ECN_DISPOSITION_CONDITION_REQUIRED_MEASURES
+def resolve_ecn_material_value_disposition(material_value: Any) -> str | None:
+    """把工程师选择的旧料价值等级换算为最终处置措施。"""
+    return ECN_MATERIAL_VALUE_DISPOSITION_MAP.get(str(material_value or "").strip())
+
+
+def is_ecn_material_disposition_measure_final(disposition_measure: Any) -> bool:
+    """“有条件用完止”仅用于唤起价值判断，不能作为最终方案保存。"""
+    return (
+        disposition_measure in ECN_DISPOSITION_MEASURES
+        and disposition_measure != ECN_CONDITIONAL_USE_UP_MEASURE
+    )
 
 
 def expand_new_material_traceability_selection(
@@ -1328,15 +1337,9 @@ def get_ecn_scheme_coverage(ecn_data: Any) -> dict[str, set[str]]:
             traceability_levels = item.get("traceability_levels", [])
             disposition_measure = item.get("disposition_measure")
             requires_disposition = is_ecn_material_disposition_required(item.get("change_type"))
-            disposition_condition = str(item.get("disposition_condition") or "").strip()
             if (
                 not (isinstance(traceability_levels, list) and traceability_levels)
-                or (requires_disposition and not disposition_measure)
-                or (
-                    requires_disposition
-                    and is_ecn_disposition_condition_required(disposition_measure)
-                    and not disposition_condition
-                )
+                or (requires_disposition and not is_ecn_material_disposition_measure_final(disposition_measure))
             ):
                 incomplete_material_schemes.add(f"方案 #{scheme_index:02d}")
         linked_requirements = item.get("req_idxs", [])
