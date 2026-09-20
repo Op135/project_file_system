@@ -1732,15 +1732,15 @@ def overview_role_update(project_name, input_role="all_update"):
         _apply_role_statistics(input_role, app.storage.general["over_config_data"].get(input_role, {}))
 
 
-# 在指定目录中查找包含特定前缀的文件名，并提取版本号
+# 在指定目录中查找指定项目的需求文件，并提取版本号
 def find_files_with_prefix_and_version(directory, prefix):
     """
     description:
-        在指定目录中查找包含特定前缀的文件名，并提取版本号
+        在指定目录中精确查找指定项目的需求文件，并提取版本号。
 
     Args:
         directory: 要搜索的目录路径
-        prefix: 文件名中需要包含的前缀字符串（如"RFFM-1519-A"）
+        prefix: 完整项目名（如"RFFM-1519-A"）
 
     Returns:
         字典: 以完整版本为键，值为：{"name":文件名, "v_a":版本号整数部分, "v_b":版本号小数部分}
@@ -1755,9 +1755,8 @@ def find_files_with_prefix_and_version(directory, prefix):
         logger.info(f"错误项目名： {prefix} ")
         return result_dic
 
-    # 编译正则表达式：匹配前缀 + 提取版本号
-    # 解释：前缀任意字符 + 下划线 + "V" + 1个或多个数字（捕获组） + 文件结束
-    pattern = re.compile(rf".*{re.escape(prefix)}.*_V(\d+)\.(\d+).json")
+    # 项目名必须完整匹配，避免 RFFM-1519-S 命中 RFFM-1519-SH 的文件。
+    pattern = re.compile(rf"^{re.escape(prefix)}_需求配置_V(\d+)\.(\d+)\.json$")
 
     # 遍历目录中的每个文件
     for filename in os.listdir(directory):
@@ -1767,7 +1766,7 @@ def find_files_with_prefix_and_version(directory, prefix):
         if os.path.isfile(file_path):
             # 尝试匹配正则表达式
 
-            match = pattern.search(filename)
+            match = pattern.fullmatch(filename)
             if match:
                 # 提取版本号并添加到结果
                 version_a = match.group(1)
