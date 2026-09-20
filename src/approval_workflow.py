@@ -155,8 +155,10 @@ def _condition_matches(
     condition: dict[str, Any],
     membership: dict[str, Any],
     org_units: list[dict[str, Any]],
+    *,
+    scheme_author_memberships: list[dict[str, Any]] | None = None,
 ) -> bool:
-    """使用稳定部门和岗位 ID 判断申请人是否命中流程条件。"""
+    """使用稳定部门和岗位 ID 判断申请人及方案出具人是否命中流程条件。"""
     position_ids = {
         str(value) for value in condition.get("requester_position_ids", []) if str(value)
     }
@@ -173,6 +175,32 @@ def _condition_matches(
             else set(org_unit_ids)
         )
         if str(membership.get("org_unit_id", "")) not in allowed_org_ids:
+            return False
+
+    author_position_ids = {
+        str(value) for value in condition.get("scheme_author_position_ids", []) if str(value)
+    }
+    author_org_unit_ids = [
+        str(value) for value in condition.get("scheme_author_org_unit_ids", []) if str(value)
+    ]
+    if author_position_ids or author_org_unit_ids:
+        allowed_author_org_ids = (
+            _org_unit_ids_with_descendants(org_units, author_org_unit_ids)
+            if author_org_unit_ids
+            and condition.get("include_child_scheme_author_org_units", True)
+            else set(author_org_unit_ids)
+        )
+        if not any(
+            (
+                not author_position_ids
+                or str(author_membership.get("position_id", "")) in author_position_ids
+            )
+            and (
+                not allowed_author_org_ids
+                or str(author_membership.get("org_unit_id", "")) in allowed_author_org_ids
+            )
+            for author_membership in scheme_author_memberships or []
+        ):
             return False
     return True
 
@@ -353,6 +381,17 @@ def resolve_approval_workflow(
     if not requester_membership:
         return {"status": "missing_membership", "message": "申请人尚未配置主部门和主岗位"}
     org_units = user_service.list_org_units()
+    raw_scheme_authors = (context or {}).get("scheme_author_usernames", [])
+    scheme_author_usernames = (
+        list(dict.fromkeys(str(value).strip() for value in raw_scheme_authors if str(value).strip()))
+        if isinstance(raw_scheme_authors, (list, tuple, set))
+        else []
+    )
+    scheme_author_memberships = [
+        author_membership
+        for username in scheme_author_usernames
+        if (author_membership := user_service.get_primary_membership(username))
+    ]
     workflows = [
         workflow
         for workflow in user_service.list_approval_workflows(module=module, event=event)
@@ -361,7 +400,12 @@ def resolve_approval_workflow(
     matched = [
         (workflow, workflow["active_version"])
         for workflow in workflows
-        if _condition_matches(workflow["active_version"].get("condition", {}), requester_membership, org_units)
+        if _condition_matches(
+            workflow["active_version"].get("condition", {}),
+            requester_membership,
+            org_units,
+            scheme_author_memberships=scheme_author_memberships,
+        )
     ]
     if not matched:
         return {
@@ -535,6 +579,7 @@ def create_approval_sequence_assignments(
     entity_id: str,
     task_key: str,
     requester_username: str,
+    context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """解析全部节点并固化审批人快照，只激活第一个节点的具体待办。"""
     result = resolve_approval_workflow(
@@ -542,6 +587,7 @@ def create_approval_sequence_assignments(
         module=module,
         event=event,
         requester_username=requester_username,
+        context=context,
     )
     if result.get("status") != "matched":
         return result

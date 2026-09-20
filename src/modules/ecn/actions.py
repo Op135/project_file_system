@@ -74,6 +74,7 @@ from .repository import (
 from ...issue_workflow_utils import schedule_background_task
 from ...workflow_notifications import send_workflow_completion_cc
 from .attachments import cleanup_staged, publish_pending, validate_scheme_attachments
+from .scheme_notifications import send_scheme_sales_completion_notifications
 
 
 def require_permission(check, role, user, service):
@@ -310,11 +311,26 @@ def transition(current, expected, baseline, action, user, role, note, rejected_i
             require_permission(can_submit_ecn_scheme_review, role, user, service)
             validate_scheme_review(current)
         workflow["approval_round"] = str(uuid.uuid4())
-        result = (start_ecr_approval if is_ecr else start_scheme_approval)(
-            current["ecn_id"],
-            current["basic_info"]["applicant"],
-            user_service=service,
-        )
+        if is_ecr:
+            result = start_ecr_approval(
+                current["ecn_id"],
+                current["basic_info"]["applicant"],
+                user_service=service,
+            )
+        else:
+            scheme_author_usernames = list(
+                dict.fromkeys(
+                    str(item.get("author") or "").strip()
+                    for item in current.get("change_items", [])
+                    if isinstance(item, dict) and str(item.get("author") or "").strip()
+                )
+            )
+            result = start_scheme_approval(
+                current["ecn_id"],
+                current["basic_info"]["applicant"],
+                scheme_author_usernames=scheme_author_usernames,
+                user_service=service,
+            )
         if result.get("status") != "matched":
             raise ECNConflict(ecn_workflow_error_message(result, "ECR申请" if is_ecr else "ECN方案评审"))
         workflow["ecr_workflow_assignment" if is_ecr else "scheme_workflow_assignment"] = result["assignment"]
@@ -517,6 +533,18 @@ async def execute_action(
                     ),
                     f"{event_name}完成抄送",
                 )
+                if completed_phase == "ECN_SCHEME_REVIEW_PHASE":
+                    schedule_background_task(
+                        send_scheme_sales_completion_notifications(
+                            result.record,
+                            project_sales or {},
+                            approval_round=str(
+                                result.record.get("workflow", {}).get("approval_round") or ""
+                            ),
+                            user_service=service,
+                        ),
+                        "ECN方案评审通过销售通知",
+                    )
     else:
         for path in published_paths:
             path.unlink(missing_ok=True)

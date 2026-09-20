@@ -2692,6 +2692,7 @@ def manage_page():
                             }
                             condition = version.get("condition", {})
                             event_key = f"{selected['module']}:{selected['event']}"
+                            is_ecn_scheme_review = event_key == "ecn:scheme_review"
                             event_definition = next(
                                 (
                                     item for item in APPROVAL_WORKFLOW_EVENTS
@@ -2789,7 +2790,11 @@ def manage_page():
                                     ui.icon("filter_alt", color="primary", size="sm")
                                     with ui.column().classes("gap-0"):
                                         ui.label("条件匹配").classes("text-sm font-semibold text-blue-900")
-                                        ui.label("部门、岗位、优先级").classes("text-xs text-blue-700")
+                                        ui.label(
+                                            "申请人/方案出具人、岗位、优先级"
+                                            if is_ecn_scheme_review
+                                            else "部门、岗位、优先级"
+                                        ).classes("text-xs text-blue-700")
                                 ui.icon("arrow_forward", color="primary").classes("self-center")
                                 with ui.row().classes(
                                     "items-center no-wrap gap-2 rounded-lg bg-indigo-50 border border-indigo-100 px-3 py-2"
@@ -2839,6 +2844,39 @@ def manage_page():
                                         multiple=True,
                                         with_input=True,
                                     ).props("outlined dense use-chips options-dense")
+                                scheme_author_org_select = None
+                                scheme_author_position_select = None
+                                include_author_children_switch = None
+                                if is_ecn_scheme_review:
+                                    with ui.row().classes("w-full items-center gap-2 pt-1"):
+                                        ui.label("方案出具人条件").classes("text-sm font-semibold text-indigo-800")
+                                        ui.label("任一方案作者同时符合部门和岗位即命中").classes(
+                                            "text-xs text-gray-500"
+                                        )
+                                        ui.space()
+                                        include_author_children_switch = ui.switch(
+                                            "包含下级部门",
+                                            value=condition.get(
+                                                "include_child_scheme_author_org_units", True
+                                            ),
+                                        ).props("dense")
+                                    with ui.element("div").classes("w-full grid gap-3").style(
+                                        "grid-template-columns: repeat(2, minmax(260px, 1fr));"
+                                    ):
+                                        scheme_author_org_select = ui.select(
+                                            unit_options,
+                                            value=condition.get("scheme_author_org_unit_ids", []),
+                                            label="方案出具人所属部门",
+                                            multiple=True,
+                                            with_input=True,
+                                        ).props("outlined dense use-chips options-dense")
+                                        scheme_author_position_select = ui.select(
+                                            position_options,
+                                            value=condition.get("scheme_author_position_ids", []),
+                                            label="方案出具人岗位",
+                                            multiple=True,
+                                            with_input=True,
+                                        ).props("outlined dense use-chips options-dense")
 
                             with ui.row().classes("w-full items-center gap-3 pt-1"):
                                 with ui.row().classes("items-center gap-2"):
@@ -3416,6 +3454,31 @@ def manage_page():
                             def save_workflow_draft():
                                 try:
                                     approval_config = build_workflow_approval_config()
+                                    workflow_condition = {
+                                        "requester_org_unit_ids": requester_org_select.value or [],
+                                        "requester_position_ids": requester_position_select.value or [],
+                                        "include_child_org_units": bool(
+                                            include_children_switch.value
+                                        ),
+                                    }
+                                    if (
+                                        scheme_author_org_select is not None
+                                        and scheme_author_position_select is not None
+                                        and include_author_children_switch is not None
+                                    ):
+                                        workflow_condition.update(
+                                            {
+                                                "scheme_author_org_unit_ids": (
+                                                    scheme_author_org_select.value or []
+                                                ),
+                                                "scheme_author_position_ids": (
+                                                    scheme_author_position_select.value or []
+                                                ),
+                                                "include_child_scheme_author_org_units": bool(
+                                                    include_author_children_switch.value
+                                                ),
+                                            }
+                                        )
                                     user_svc.save_approval_workflow_draft(
                                         workflow_id=selected["workflow_id"],
                                         code=selected["code"],
@@ -3423,13 +3486,7 @@ def manage_page():
                                         event=selected["event"],
                                         name=name_input.value,
                                         priority=int(priority_input.value or 0),
-                                        condition={
-                                            "requester_org_unit_ids": requester_org_select.value or [],
-                                            "requester_position_ids": requester_position_select.value or [],
-                                            "include_child_org_units": bool(
-                                                include_children_switch.value
-                                            ),
-                                        },
+                                        condition=workflow_condition,
                                         approver=approval_config["approver"],
                                         required_permission_code=approval_config[
                                             "required_permission_code"
@@ -3542,6 +3599,14 @@ def manage_page():
                                         label="选择申请人",
                                         with_input=True,
                                     ).props("outlined dense options-dense").classes("w-80")
+                                    simulation_scheme_authors_select = None
+                                    if is_ecn_scheme_review:
+                                        simulation_scheme_authors_select = ui.select(
+                                            simulation_options,
+                                            label="选择方案出具人",
+                                            multiple=True,
+                                            with_input=True,
+                                        ).props("outlined dense use-chips options-dense").classes("w-96")
                                     simulate_button = ui.button(
                                         "模拟匹配",
                                         icon="science",
@@ -3562,6 +3627,13 @@ def manage_page():
                                         module=selected["module"],
                                         event=selected["event"],
                                         requester_username=simulation_user_select.value,
+                                        context={
+                                            "scheme_author_usernames": (
+                                                simulation_scheme_authors_select.value or []
+                                                if simulation_scheme_authors_select is not None
+                                                else []
+                                            )
+                                        },
                                     )
                                     result_type = (
                                         "text-green-700"

@@ -249,6 +249,7 @@ def start_scheme_approval(
     ecn_id: str,
     requester_username: str,
     *,
+    scheme_author_usernames: list[str] | None = None,
     user_service=None,
 ) -> dict[str, Any]:
     """解析 ECN 方案评审流程并激活首节点待办。"""
@@ -262,6 +263,7 @@ def start_scheme_approval(
         entity_id=str(ecn_id),
         task_key=ECN_SCHEME_REVIEW_TASK_KEY,
         requester_username=requester_username,
+        context={"scheme_author_usernames": scheme_author_usernames or []},
     )
 
 

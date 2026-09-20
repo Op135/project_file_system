@@ -34,6 +34,7 @@ from src.permission_catalog import (
     ECN_EXECUTION_PMC_CONFIRM_PERMISSION,
     ECN_EXECUTION_PURCHASE_CONFIRM_PERMISSION,
     ECN_EXECUTION_SALES_SUPERVISOR_CONFIRM_PERMISSION,
+    ECN_SCHEME_APPROVE_PERMISSION,
     PROJECT_OVERVIEW_BATCH_REVIEW_PERMISSION,
     PROJECT_OVERVIEW_CORRECTION_REVIEW_PERMISSION,
     SAMPLE_ISSUE_CLOSE_APPROVE_PERMISSION,
@@ -163,6 +164,68 @@ class ApprovalWorkflowTests(unittest.TestCase):
         )
         self.assertEqual(second["status"], "matched")
         self.assertEqual([item["username"] for item in second["approvers"]], ["李四"])
+
+    def test_ecn_scheme_workflow_can_match_any_scheme_author_membership(self):
+        author_org_id = self.service.save_org_unit(
+            code="org.workflow.electronic",
+            name="电子组",
+        )
+        author_position_id = self.service.save_position(
+            code="position.workflow.electronic.engineer",
+            name="电子工程师",
+            org_unit_ids=[author_org_id],
+        )
+        self.service.set_primary_membership(
+            "王五",
+            org_unit_id=author_org_id,
+            position_id=author_position_id,
+        )
+        self.service.set_position_permissions(
+            self.approver_position_id,
+            [SAMPLE_ISSUE_CLOSE_APPROVE_PERMISSION, ECN_SCHEME_APPROVE_PERMISSION],
+        )
+        workflow_id, _version_id = self.service.save_approval_workflow_draft(
+            code="ecn.scheme.electronic.author",
+            module="ecn",
+            event="scheme_review",
+            name="电子组方案评审",
+            priority=10,
+            condition={
+                "requester_org_unit_ids": [],
+                "requester_position_ids": [],
+                "scheme_author_org_unit_ids": [author_org_id],
+                "scheme_author_position_ids": [author_position_id],
+                "include_child_scheme_author_org_units": True,
+            },
+            approver={
+                "strategy": "position",
+                "position_ids": [self.approver_position_id],
+                "org_scope": "any",
+                "org_unit_ids": [],
+            },
+            required_permission_code=ECN_SCHEME_APPROVE_PERMISSION,
+            approval_mode="any",
+            actor_username="admin",
+        )
+        self.service.publish_approval_workflow(workflow_id, actor_username="admin")
+
+        without_author = resolve_approval_workflow(
+            self.service,
+            module="ecn",
+            event="scheme_review",
+            requester_username="张三",
+        )
+        self.assertEqual(without_author["status"], "no_match")
+
+        with_author = resolve_approval_workflow(
+            self.service,
+            module="ecn",
+            event="scheme_review",
+            requester_username="张三",
+            context={"scheme_author_usernames": ["李四", "王五"]},
+        )
+        self.assertEqual(with_author["status"], "matched")
+        self.assertEqual(with_author["workflow"]["code"], "ecn.scheme.electronic.author")
 
     def test_completion_cc_is_versioned_and_pinned_to_assignment(self):
         """完成抄送岗位应随发布版本和单据审批快照固定。"""

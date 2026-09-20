@@ -1761,6 +1761,8 @@ class IdentityStore:
             reference_checks = [
                 ("requester_position_ids", "iam_positions", "position_id"),
                 ("requester_org_unit_ids", "org_units", "org_unit_id"),
+                ("scheme_author_position_ids", "iam_positions", "position_id"),
+                ("scheme_author_org_unit_ids", "org_units", "org_unit_id"),
             ]
             for field_name, table_name, id_column in reference_checks:
                 values = list(
