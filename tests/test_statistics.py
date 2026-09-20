@@ -23,6 +23,37 @@ class OverviewCompletionClassificationTests(unittest.TestCase):
         self.assertEqual(statistics.classify_overview_completion({"缺需填"}), "仅缺需填")
         self.assertEqual(statistics.classify_overview_completion(set()), "概述已完成")
 
+    def test_completion_colors_match_the_overview_chart_categories(self):
+        self.assertEqual(
+            statistics.OVERVIEW_COMPLETION_COLORS,
+            {
+                "概述无负责人": "#8b5cf6",
+                "存在缺必填": "#ef4444",
+                "有待定": "#f59e0b",
+                "仅缺需填": "#3b82f6",
+                "概述已完成": "#10b981",
+            },
+        )
+        self.assertEqual(statistics.UNRECORDED_REQUIREMENT_TEXT_COLOR, "#6b7280")
+
+    def test_projects_are_grouped_by_type_then_sorted_by_name(self):
+        projects = ["P-20", "P-02", "P-10", "P-01", "P-00"]
+        project_types = {
+            "P-20": "概述已完成",
+            "P-02": "存在缺必填",
+            "P-10": "概述已完成",
+            "P-01": "存在缺必填",
+        }
+
+        result = statistics.sort_projects_by_type(
+            projects,
+            project_types=project_types,
+            type_order=["存在缺必填", "概述已完成"],
+            unknown_type="未录需求",
+        )
+
+        self.assertEqual(result, ["P-01", "P-02", "P-10", "P-20", "P-00"])
+
 
 class OverviewManagementSnapshotTests(unittest.TestCase):
     def test_projects_are_deduplicated_and_completion_uses_the_users_scope(self):

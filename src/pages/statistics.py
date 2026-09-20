@@ -3,9 +3,10 @@ import copy
 import json
 import logging
 import os
+from collections.abc import Iterable, Mapping, Sequence
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import cast
+from typing import Callable, cast
 
 import pandas as pd
 from nicegui import app, ui
@@ -39,6 +40,40 @@ CLICK_DETAIL_TOOLTIP_FORMATTER = """
                '<br/><span style="color:#2563eb;font-weight:600;">点击查看详情</span>';
     }
 """
+
+OVERVIEW_COMPLETION_COLORS = {
+    "概述无负责人": "#8b5cf6",
+    "存在缺必填": "#ef4444",
+    "有待定": "#f59e0b",
+    "仅缺需填": "#3b82f6",
+    "概述已完成": "#10b981",
+}
+UNRECORDED_REQUIREMENT_TEXT_COLOR = "#6b7280"
+
+
+def sort_projects_by_type(
+    projects: Iterable[str],
+    project_types: Mapping[str, str] | None = None,
+    type_order: Sequence[str] | None = None,
+    unknown_type: str = "其他",
+) -> list[str]:
+    """按指定类型顺序分组，并在同一类型内按项目名排序。"""
+    project_list = list(projects)
+    type_order_map = {name: index for index, name in enumerate(type_order or [])}
+
+    def get_project_type(project_name: str) -> str:
+        if project_types is None:
+            return unknown_type
+        return project_types.get(project_name, unknown_type)
+
+    project_list.sort(
+        key=lambda project_name: (
+            type_order_map.get(get_project_type(project_name), len(type_order_map)),
+            get_project_type(project_name),
+            project_name.casefold(),
+        )
+    )
+    return project_list
 
 
 def normalize_overview_user(raw_user):
@@ -458,35 +493,111 @@ def statistics_page():
                             columns=pd.Index(["日期", "用户", "项目状态", "缺必填数", "有待定数", "缺需填数"])
                         )
 
-                def show_project_list_dialog(title, projects, show_state=True):
+                def show_project_list_dialog(
+                    title,
+                    projects,
+                    show_state=True,
+                    project_text_colors=None,
+                    project_types=None,
+                    type_order=None,
+                    type_filter_label="类型筛选",
+                    unknown_type="其他",
+                ):
                     """使用统一弹窗展示任意统计柱对应的项目清单。"""
-                    project_list = list(projects or [])
+                    project_list = sort_projects_by_type(
+                        projects or [],
+                        project_types=project_types,
+                        type_order=type_order,
+                        unknown_type=unknown_type,
+                    )
+                    type_order_map = {name: index for index, name in enumerate(type_order or [])}
+
+                    def get_project_type(project_name):
+                        if project_types is None:
+                            return unknown_type
+                        return project_types.get(project_name, unknown_type)
+
                     dialog.clear()
                     with dialog, ui.card().classes("w-full max-w-4xl bg-white"):
                         with ui.row().classes("w-full justify-between items-center mb-4 border-b pb-2"):
                             ui.label(f"{title}（共 {len(project_list)} 项）").classes("text-xl font-bold text-gray-800")
                             ui.button(icon="close", on_click=dialog.close).props("flat round dense text-color=gray")
 
+                        if project_text_colors is not None:
+                            with ui.row().classes("w-full flex-wrap items-center gap-x-4 gap-y-1 px-2 text-xs"):
+                                ui.label("字体颜色对应概述完成度：").classes("text-gray-500")
+                                for category, color in OVERVIEW_COMPLETION_COLORS.items():
+                                    ui.label(category).style(f"color: {color}; font-weight: 600")
+                                ui.label("未录需求").style(
+                                    f"color: {UNRECORDED_REQUIREMENT_TEXT_COLOR}; font-weight: 600"
+                                )
+
+                        with ui.row().classes("w-full flex-wrap items-center gap-3 px-2"):
+                            project_search = ui.input(
+                                label="搜索项目名称",
+                                placeholder="输入项目名关键词",
+                            ).props("clearable dense outlined prepend-icon=search").classes("flex-1 min-w-[220px]")
+                            available_types = sorted(
+                                {get_project_type(project_name) for project_name in project_list},
+                                key=lambda type_name: (
+                                    type_order_map.get(type_name, len(type_order_map)),
+                                    type_name,
+                                ),
+                            )
+                            project_type_filter = ui.select(
+                                options={"": "全部", **{type_name: type_name for type_name in available_types}},
+                                value="",
+                                label=type_filter_label,
+                            ).props("dense outlined options-dense").classes("w-48")
+                            filtered_count_label = ui.label(f"显示 {len(project_list)} 项").classes(
+                                "text-xs text-gray-500 whitespace-nowrap"
+                            )
+
                         with ui.scroll_area().classes("w-full max-h-[60vh] p-2"):
                             if not project_list:
                                 ui.label("当前分类暂无项目").classes("text-gray-500 text-center w-full mt-4")
                             else:
+                                project_row_visibility: list[tuple[str, str, Callable[[bool], None]]] = []
                                 with ui.element("div").classes(
                                     "grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3"
                                 ):
                                     for project_name in project_list:
+                                        project_type = get_project_type(project_name)
                                         with ui.row().classes(
                                             "w-full min-w-0 flex-nowrap items-center justify-between gap-2 "
                                             "bg-gray-50 px-3 py-2 rounded border border-gray-200 text-sm "
                                             "text-gray-700 hover:bg-blue-50 hover:text-blue-600 "
                                             "transition-colors cursor-default"
-                                        ):
-                                            ui.label(project_name).classes("min-w-0 flex-1 truncate")
+                                        ) as project_row:
+                                            project_row_visibility.append(
+                                                (str(project_name), project_type, project_row.set_visibility)
+                                            )
+                                            project_label = ui.label(project_name).classes("min-w-0 flex-1 truncate")
+                                            if project_text_colors is not None:
+                                                text_color = project_text_colors.get(
+                                                    project_name, UNRECORDED_REQUIREMENT_TEXT_COLOR
+                                                )
+                                                project_label.style(f"color: {text_color}; font-weight: 600")
                                             if show_state:
                                                 project_state = project_summary.get(project_name, {}).get(
                                                     "state", "未知"
                                                 )
                                                 status_badge(project_state)
+
+                                def apply_project_filters():
+                                    query = str(project_search.value or "").strip().casefold()
+                                    selected_type = str(project_type_filter.value or "")
+                                    visible_count = 0
+                                    for project_name, project_type, set_visibility in project_row_visibility:
+                                        is_visible = (not query or query in project_name.casefold()) and (
+                                            not selected_type or project_type == selected_type
+                                        )
+                                        set_visibility(is_visible)
+                                        visible_count += int(is_visible)
+                                    filtered_count_label.set_text(f"显示 {visible_count} 项")
+
+                                project_search.on_value_change(lambda _: apply_project_filters())
+                                project_type_filter.on_value_change(lambda _: apply_project_filters())
                     dialog.open()
 
                 def bind_project_detail_click(chart, callback):
@@ -1272,21 +1383,35 @@ def statistics_page():
                             # ==========================================
                             # 新增：点击图表柱子弹窗显示项目明细的回调函数
                             # ==========================================
-                            def show_project_details(e):
+                            def show_status_project_details(e):
                                 category_name = e.args.get("name")
-
-                                # 终极防御：如果没有名字直接退出
                                 if not category_name:
                                     return
-
-                                # 直接从你的内存字典反查项目列表，抛弃前端的不稳定数据回传
-                                projects = ordered_status_dict.get(category_name) or overview_categories.get(
-                                    category_name, []
-                                )
                                 show_project_list_dialog(
                                     f"项目明细：{category_name}",
-                                    projects,
-                                    show_state=category_name not in ordered_status_dict,
+                                    ordered_status_dict.get(category_name, []),
+                                    show_state=False,
+                                    project_text_colors=project_overview_text_colors,
+                                    project_types=project_overview_categories,
+                                    type_order=list(OVERVIEW_COMPLETION_COLORS),
+                                    type_filter_label="概述完成度",
+                                    unknown_type="未录需求",
+                                )
+
+                            def show_overview_project_details(e):
+                                category_name = e.args.get("name")
+                                if not category_name:
+                                    return
+                                show_project_list_dialog(
+                                    f"项目明细：{category_name}",
+                                    overview_categories.get(category_name, []),
+                                    project_types={
+                                        project_name: project_summary.get(project_name, {}).get("state", "未知状态")
+                                        for project_name in overview_categories.get(category_name, [])
+                                    },
+                                    type_order=list(status_color_map),
+                                    type_filter_label="项目状态",
+                                    unknown_type="未知状态",
                                 )
 
                             # 2. 数据处理与清洗
@@ -1352,6 +1477,8 @@ def statistics_page():
                                 "仅缺需填": [],
                                 "概述已完成": [],
                             }
+                            project_overview_text_colors = {}
+                            project_overview_categories = {}
 
                             # 遍历所有有需求版本记录的项目
                             for proj in req_ver_data.keys():
@@ -1361,6 +1488,8 @@ def statistics_page():
                                     has_unassigned_owner=proj in overview_pending_projects,
                                 )
                                 overview_categories[category].append(proj)
+                                project_overview_text_colors[proj] = OVERVIEW_COMPLETION_COLORS[category]
+                                project_overview_categories[proj] = category
 
                                 # 同步供项目表使用的完成/仅缺需填缓存，防止旧分类残留。
                                 if category == "概述已完成":
@@ -1382,31 +1511,31 @@ def statistics_page():
                                     "value": len(overview_categories["概述无负责人"]),
                                     "name": "概述无负责人",
                                     "projects": overview_categories["概述无负责人"],
-                                    "itemStyle": {"color": "#8b5cf6"},
+                                    "itemStyle": {"color": OVERVIEW_COMPLETION_COLORS["概述无负责人"]},
                                 },
                                 {
                                     "value": len(overview_categories["存在缺必填"]),
                                     "name": "存在缺必填",
                                     "projects": overview_categories["存在缺必填"],
-                                    "itemStyle": {"color": "#ef4444"},
+                                    "itemStyle": {"color": OVERVIEW_COMPLETION_COLORS["存在缺必填"]},
                                 },
                                 {
                                     "value": len(overview_categories["有待定"]),
                                     "name": "有待定",
                                     "projects": overview_categories["有待定"],
-                                    "itemStyle": {"color": "#f59e0b"},
+                                    "itemStyle": {"color": OVERVIEW_COMPLETION_COLORS["有待定"]},
                                 },
                                 {
                                     "value": len(overview_categories["仅缺需填"]),
                                     "name": "仅缺需填",
                                     "projects": overview_categories["仅缺需填"],
-                                    "itemStyle": {"color": "#3b82f6"},
+                                    "itemStyle": {"color": OVERVIEW_COMPLETION_COLORS["仅缺需填"]},
                                 },
                                 {
                                     "value": len(overview_categories["概述已完成"]),
                                     "name": "概述已完成",
                                     "projects": overview_categories["概述已完成"],
-                                    "itemStyle": {"color": "#10b981"},
+                                    "itemStyle": {"color": OVERVIEW_COMPLETION_COLORS["概述已完成"]},
                                 },
                             ]
 
@@ -1505,8 +1634,8 @@ def statistics_page():
                                 # 渲染图表并绑定点击事件
                                 overview_chart = ui.echart(echart_overview_config).classes("w-full h-80 cursor-pointer")
 
-                                bind_project_detail_click(status_chart, show_project_details)
-                                bind_project_detail_click(overview_chart, show_project_details)
+                                bind_project_detail_click(status_chart, show_status_project_details)
+                                bind_project_detail_click(overview_chart, show_overview_project_details)
                     # E. 概述负责人项目完成统计
                     if can_view_overview_stats:
                         with ui.card().classes(
