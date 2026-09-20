@@ -88,8 +88,22 @@ APPROVAL_WORKFLOW_EVENTS = (
     ),
     ApprovalWorkflowEventDefinition(
         module="ecn",
+        event="ecr_review_simple",
+        name="简单ECN · ECR申请审批",
+        permission_codes=(ECN_ECR_APPROVE_PERMISSION,),
+        supports_sequential=True,
+    ),
+    ApprovalWorkflowEventDefinition(
+        module="ecn",
         event="scheme_review",
         name="ECN方案评审",
+        permission_codes=(ECN_SCHEME_APPROVE_PERMISSION,),
+        supports_sequential=True,
+    ),
+    ApprovalWorkflowEventDefinition(
+        module="ecn",
+        event="scheme_review_simple",
+        name="简单ECN · 方案评审",
         permission_codes=(ECN_SCHEME_APPROVE_PERMISSION,),
         supports_sequential=True,
     ),

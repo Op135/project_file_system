@@ -10,12 +10,14 @@ from unittest.mock import patch
 
 from src.ecn_management_config import (
     ECN_ITEM_STATUS_NEEDS_IMPROVEMENT,
+    ECN_LEVEL_COMPLEX,
     ECN_PARTICIPANT_STATUS_CONFIRMED,
     ECN_PARTICIPANT_STATUS_EDITING,
     ECNState,
     reject_ecn_scheme_items,
 )
 from src.modules.ecn import actions
+from src.modules.ecn import validation_reports
 from src.modules.ecn.approval_transaction import ApprovalTransaction
 from src.modules.ecn.approval_reassignment import reassign_ecn_approval_reviewer
 from src.modules.ecn.editing import ECNConflict, merge_fields, sync_review_snapshot
@@ -106,6 +108,89 @@ class ECNConcurrencyTests(unittest.IsolatedAsyncioTestCase):
         all_records = await self.left.get_fresh_item("ecn_management_data")
         self.assertEqual(set(all_records), ids)
         self.assertTrue(all(v["basic_info"]["file_no"] == k for k, v in all_records.items()))
+
+    async def test_complex_validation_report_designation_and_review_are_transactional(self):
+        value = record()
+        value["workflow"]["ecn_level"] = ECN_LEVEL_COMPLEX
+        await self.store(value)
+
+        with patch.object(validation_reports, "can_designate_ecn_validation_report", return_value=True):
+            designated = await validation_reports.set_validation_report_required(
+                value["ecn_id"],
+                "S1",
+                {},
+                True,
+                "经理",
+                "研发经理",
+                user_service=self.service,
+                storage=self.left,
+            )
+        self.assertTrue(designated.ok)
+        assert designated.record is not None
+        report = designated.record["change_items"][0]["validation_report"]
+        self.assertEqual(report["status"], "pending_upload")
+
+        report["attachments"] = [{"id": "report-1", "name": "验证报告.pdf"}]
+        report["status"] = "pending_review"
+        await self.left.set_item("ecn_management_data", {value["ecn_id"]: designated.record})
+        with (
+            patch.object(validation_reports, "can_view_ecn_validation_report", return_value=True),
+            patch.object(validation_reports, "can_approve_ecn_validation_report", return_value=True),
+        ):
+            self_review = await validation_reports.review_validation_report(
+                value["ecn_id"],
+                "S1",
+                copy.deepcopy(report),
+                True,
+                "",
+                "张三",
+                "研发工程师",
+                user_service=self.service,
+                storage=self.left,
+            )
+            self.assertFalse(self_review.ok)
+            self.assertIn("本人", self_review.message)
+            reviewed = await validation_reports.review_validation_report(
+                value["ecn_id"],
+                "S1",
+                copy.deepcopy(report),
+                True,
+                "验证结果符合要求",
+                "审核人",
+                "研发经理",
+                user_service=self.service,
+                storage=self.left,
+            )
+        self.assertTrue(reviewed.ok)
+        assert reviewed.record is not None
+        self.assertEqual(
+            reviewed.record["change_items"][0]["validation_report"]["status"],
+            "approved",
+        )
+
+    async def test_scheme_stage_level_decision_uses_independent_permission(self):
+        value = record()
+        await self.store(value)
+
+        with patch.object(actions, "can_classify_ecn_level_before_scheme_review", return_value=True):
+            result = await actions.set_ecn_level(
+                value["ecn_id"],
+                copy.deepcopy(value),
+                ECN_LEVEL_COMPLEX,
+                "before_scheme_review",
+                "经理",
+                "研发经理",
+                user_service=self.service,
+                storage=self.left,
+            )
+
+        self.assertTrue(result.ok)
+        assert result.record is not None
+        self.assertEqual(result.record["workflow"]["ecn_level"], ECN_LEVEL_COMPLEX)
+        self.assertEqual(
+            result.record["workflow"]["ecn_level_decisions"][-1]["timing"],
+            "before_scheme_review",
+        )
 
     async def test_independent_impact_fields_and_project_additions_are_preserved(self):
         value = record()
@@ -390,6 +475,58 @@ class ECNDatabaseApprovalTests(unittest.IsolatedAsyncioTestCase):
             ),
             [],
         )
+
+    async def test_ecr_level_change_to_simple_rebuilds_pending_workflow(self):
+        from src.permission_catalog import (
+            ECN_CREATE_PERMISSION,
+            ECN_ECR_APPROVE_PERMISSION,
+            ECN_LEVEL_CLASSIFY_ECR_PERMISSION,
+            ECN_VIEW_PERMISSION,
+        )
+
+        self.service.set_position_permissions(
+            self.fixture.requester_position_id,
+            [
+                ECN_CREATE_PERMISSION,
+                ECN_ECR_APPROVE_PERMISSION,
+                ECN_LEVEL_CLASSIFY_ECR_PERMISSION,
+                ECN_VIEW_PERMISSION,
+            ],
+        )
+        users = self.service.load_users()
+        simple_workflow_id, _ = self.service.save_approval_workflow_draft(
+            code="ecn.simple.ecr.test",
+            module="ecn",
+            event="ecr_review_simple",
+            name="简单ECN审批",
+            priority=1,
+            condition={"requester_org_unit_ids": [self.fixture.org_unit_id]},
+            approver={"strategy": "users", "user_ids": [users["李四"]["user_id"]]},
+            required_permission_code=ECN_ECR_APPROVE_PERMISSION,
+            approval_mode="any",
+            actor_username="admin",
+        )
+        self.service.publish_approval_workflow(simple_workflow_id, actor_username="admin")
+        created = await self.create()
+        self.assertTrue(created.ok, created.message)
+        assert created.record is not None
+        self.assertEqual(set(self.pending(created.record)), {"李四", "王五"})
+
+        changed = await actions.set_ecn_level(
+            created.record["ecn_id"],
+            copy.deepcopy(created.record),
+            "simple",
+            "ecr_review",
+            "张三",
+            "申请岗位",
+            user_service=self.service,
+            storage=self.left,
+        )
+        self.assertTrue(changed.ok, changed.message)
+        assert changed.record is not None
+        assignment = changed.record["workflow"]["ecr_workflow_assignment"]
+        self.assertEqual(assignment["workflow_code"], "ecn.simple.ecr.test")
+        self.assertEqual(self.pending(changed.record), ["李四"])
 
     async def approve(self, value, user, storage=None):
         return await actions.execute_action(

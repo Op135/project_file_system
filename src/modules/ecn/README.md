@@ -11,6 +11,7 @@
 | `approval_transaction.py` | 复用通用审批引擎，缓冲待办命令并在 ECN 事务连接中落盘 |
 | `approval_reassignment.py` | ECR与方案评审未完成节点的审核人调整、实时权限和待办事务校验 |
 | `approval_reassignment_ui.py` | 按部门、岗位筛选合资格接手人并执行审批待办移交 |
+| `validation_reports.py` | 复杂ECN方案验证报告的指定、并发校验、查看审批权限和审核状态事务 |
 | `detail.py` | 详情弹窗、申请与影响表单、审批记录、页面同步和服务调用 |
 | `scheme_dialogs.py` | 三类方案的新增/编辑窗口，保留编辑前快照 |
 | `scheme_panel.py` | 方案列表、对照表、附件访问、驳回历史与参与者操作 |
@@ -23,7 +24,7 @@
 | `special_tasks_ui.py` | 部门/岗位/人员筛选、移交操作与总表特定事项跟进弹窗 |
 | `special_task_messages.py` | 与执行表一致的移交摘要：优先事项/方案、项目、应执行内容，分别限制长度 |
 | `task_labels.py` | 把方案UUID、ERP特殊键和物料责任项键转换为审批记录及通知使用的业务名称 |
-| `attachments.py` / `attachment_ui.py` / `attachment_preview.py` | ECR、特定事项方案和执行节点的附件归档、实时权限校验、上传清单及短时预览 |
+| `attachments.py` / `attachment_ui.py` / `attachment_preview.py` | ECR、特定事项方案、复杂ECN验证报告和执行节点的附件归档、实时权限校验、上传清单及短时预览 |
 | `transfer_notifications.py` | 原负责人取消告知的后台发送、调试/抄送路由、逐收件人去重和重试 |
 
 ## 写入约定
@@ -35,6 +36,8 @@
 影响字段使用 `current / baseline / submitted` 三方合并。不同字段的修改保留；相同字段的不同修改报冲突。扩展项目按实际新增/移除合并。轮询只能同步未编辑字段，并保留正在输入内容的原始基线。
 
 方案更新/删除必须匹配打开窗口时的方案快照；确认时核对本人当前方案；发起评审在事务内检查最新参与者和方案覆盖率。每次提交有独立 `approval_round`，旧轮次页面不能继续审批。
+
+ECN等级使用稳定编码保存，JSON只修改显示名称。未判定按一般等级运行；简单等级的ECR与方案评审分别使用独立数据库流程事件。ECR审核中切换简单/非简单等级必须在同一业务事务中重建审批待办。复杂等级可指定方案验证报告，作者上传后由同时具备查看和审批权限的其他人员审批；所有指定项通过后才满足方案评审门禁。
 
 `db_storage.atomic_deep_update_transaction` 的回调持有 SQLite 写事务，只允许使用提供的连接执行关联表写入。`ApprovalTransaction` 的同步方法只记录待办命令，`flush` 才使用该连接实际写入，避免同步/异步连接相互等待，并确保失败同时回滚单据与待办。数据库模式的物料执行清单从七个已发布 `ecn:execution_*` 流程生成，并在每个责任项中固化流程编码、版本、节点及具体人员；根目录执行路线仅供旧模式和首次迁移。
 

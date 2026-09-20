@@ -63,6 +63,8 @@ def get_ecn_template() -> dict:
             "current_step_index": 0,  # 当前步骤索引
             "approval_round": "",  # 每次提交生成新标识，防止旧页面跨审批轮次操作
             "route_type": "",  # 路由类型
+            "ecn_level": "",  # 稳定等级编码；空值表示尚未判定，业务上按一般等级处理
+            "ecn_level_decisions": [],  # 等级判定历史，记录时机、操作人和前后等级
             "pending_roles": [],  # 当前节点角色集合；实际待审批角色需排除 step_approvals 已通过项
             "step_approvals": {},  # 当前并行节点各角色的审批结果
             "scheme_participants": {},  # 方案参与者

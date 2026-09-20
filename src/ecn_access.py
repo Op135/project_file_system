@@ -18,6 +18,8 @@ from .ecn_management_config import (
     get_ecn_impact_handlers,
     get_ecn_material_execution_specs,
     get_ecn_missing_material_code_items,
+    get_ecn_level_code,
+    get_ecn_validation_report,
     is_ecn_impact_blank,
     role_matches_keywords,
     is_ecn_scheme_ready_for_review,
@@ -25,6 +27,7 @@ from .ecn_management_config import (
     ECNState,
     ECN_SCHEME_GROUP_ORDINARY_DOCUMENT,
     ECN_SCHEME_GROUP_OVERVIEW_DOCUMENT,
+    ECN_LEVEL_COMPLEX,
 )
 from .permission_catalog import (
     ECN_CREATE_PERMISSION,
@@ -39,11 +42,16 @@ from .permission_catalog import (
     ECN_EXECUTION_SALES_SUPERVISOR_CONFIRM_PERMISSION,
     ECN_IMPACT_EDIT_PERMISSION,
     ECN_IMPACT_INITIAL_REMINDER_PERMISSION,
+    ECN_LEVEL_CLASSIFY_ECR_PERMISSION,
+    ECN_LEVEL_CLASSIFY_SCHEME_PERMISSION,
     ECN_MATERIAL_CODE_EDIT_PERMISSION,
     ECN_SCHEME_APPROVE_PERMISSION,
     ECN_SCHEME_EDIT_PERMISSION,
     ECN_SCHEME_REVIEW_SUBMIT_PERMISSION,
     ECN_VIEW_PERMISSION,
+    ECN_VALIDATION_DESIGNATE_PERMISSION,
+    ECN_VALIDATION_REPORT_APPROVE_PERMISSION,
+    ECN_VALIDATION_REPORT_VIEW_PERMISSION,
     ecn_ordinary_file_view_permission,
 )
 from .project_overview_access import can_view_overview_item
@@ -104,6 +112,11 @@ def build_ecn_access_snapshot(user_service=None) -> dict[str, Any]:
             ECN_IMPACT_EDIT_PERMISSION,
             ECN_SCHEME_EDIT_PERMISSION,
             ECN_SCHEME_REVIEW_SUBMIT_PERMISSION,
+            ECN_LEVEL_CLASSIFY_ECR_PERMISSION,
+            ECN_LEVEL_CLASSIFY_SCHEME_PERMISSION,
+            ECN_VALIDATION_DESIGNATE_PERMISSION,
+            ECN_VALIDATION_REPORT_VIEW_PERMISSION,
+            ECN_VALIDATION_REPORT_APPROVE_PERMISSION,
             ECN_APPROVAL_REASSIGN_PERMISSION,
             ECN_MATERIAL_CODE_EDIT_PERMISSION,
             ECN_EXECUTION_ASSISTANT_PERMISSION,
@@ -267,6 +280,101 @@ def can_submit_ecn_scheme_review(
         _service(user_service),
         current_user,
         ECN_SCHEME_REVIEW_SUBMIT_PERMISSION,
+    )
+
+
+def _can_ecn_permission(
+    permission_code: str,
+    current_role: object,
+    current_user: str,
+    *,
+    user_service=None,
+    access_snapshot: dict[str, Any] | None = None,
+) -> bool:
+    if isinstance(access_snapshot, dict) and access_snapshot.get("database_mode") is True:
+        return _snapshot_permission(access_snapshot, current_user, permission_code)
+    if not _database_mode(user_service):
+        return False
+    return can(_service(user_service), current_user, permission_code)
+
+
+def can_classify_ecn_level_during_ecr(
+    current_role: object,
+    current_user: str,
+    *,
+    user_service=None,
+    access_snapshot: dict[str, Any] | None = None,
+) -> bool:
+    return _can_ecn_permission(
+        ECN_LEVEL_CLASSIFY_ECR_PERMISSION,
+        current_role,
+        current_user,
+        user_service=user_service,
+        access_snapshot=access_snapshot,
+    )
+
+
+def can_classify_ecn_level_before_scheme_review(
+    current_role: object,
+    current_user: str,
+    *,
+    user_service=None,
+    access_snapshot: dict[str, Any] | None = None,
+) -> bool:
+    return _can_ecn_permission(
+        ECN_LEVEL_CLASSIFY_SCHEME_PERMISSION,
+        current_role,
+        current_user,
+        user_service=user_service,
+        access_snapshot=access_snapshot,
+    )
+
+
+def can_designate_ecn_validation_report(
+    current_role: object,
+    current_user: str,
+    *,
+    user_service=None,
+    access_snapshot: dict[str, Any] | None = None,
+) -> bool:
+    return _can_ecn_permission(
+        ECN_VALIDATION_DESIGNATE_PERMISSION,
+        current_role,
+        current_user,
+        user_service=user_service,
+        access_snapshot=access_snapshot,
+    )
+
+
+def can_view_ecn_validation_report(
+    current_role: object,
+    current_user: str,
+    *,
+    user_service=None,
+    access_snapshot: dict[str, Any] | None = None,
+) -> bool:
+    return _can_ecn_permission(
+        ECN_VALIDATION_REPORT_VIEW_PERMISSION,
+        current_role,
+        current_user,
+        user_service=user_service,
+        access_snapshot=access_snapshot,
+    )
+
+
+def can_approve_ecn_validation_report(
+    current_role: object,
+    current_user: str,
+    *,
+    user_service=None,
+    access_snapshot: dict[str, Any] | None = None,
+) -> bool:
+    return _can_ecn_permission(
+        ECN_VALIDATION_REPORT_APPROVE_PERMISSION,
+        current_role,
+        current_user,
+        user_service=user_service,
+        access_snapshot=access_snapshot,
     )
 
 
@@ -997,6 +1105,43 @@ def is_ecn_pending_for_user(
         return basic_info.get("applicant") == current_user and can_create_ecn_request(
             current_role, current_user, user_service=user_service
         )
+    if current_state == ECNState.ECN_SCHEMING and get_ecn_level_code(ecn_data) == ECN_LEVEL_COMPLEX:
+        items = ecn_data.get("change_items", [])
+        for item in items if isinstance(items, list) else []:
+            if not isinstance(item, dict):
+                continue
+            report = get_ecn_validation_report(item)
+            if report.get("required") is not True:
+                continue
+            status = str(report.get("status") or "pending_upload")
+            if (
+                item.get("author") == current_user
+                and status in {"pending_upload", "rejected"}
+                and can_edit_ecn_scheme(
+                    current_role,
+                    current_user,
+                    user_service=user_service,
+                    access_snapshot=access_snapshot,
+                )
+            ):
+                return True
+            if (
+                status == "pending_review"
+                and item.get("author") != current_user
+                and can_view_ecn_validation_report(
+                    current_role,
+                    current_user,
+                    user_service=user_service,
+                    access_snapshot=access_snapshot,
+                )
+                and can_approve_ecn_validation_report(
+                    current_role,
+                    current_user,
+                    user_service=user_service,
+                    access_snapshot=access_snapshot,
+                )
+            ):
+                return True
     if is_ecn_scheme_ready_for_review(ecn_data):
         return can_submit_ecn_scheme_review(current_role, current_user, user_service=user_service)
     if current_state not in ECN_IMPACT_FOLLOWUP_STATES:

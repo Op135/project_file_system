@@ -124,11 +124,22 @@ def save_scheme(current: dict, expected: dict, item: dict, original: dict | None
             raise ECNConflict("被驳回方案的内容尚未修改，请完成整改后再保存。")
         updated["review_status"] = existing.get("review_status")
         updated["rejection_history"] = copy.deepcopy(existing.get("rejection_history", []))
+        validation_report = existing.get("validation_report", {})
+        if isinstance(validation_report, dict) and validation_report:
+            updated["validation_report"] = copy.deepcopy(validation_report)
+            if validation_report.get("required") is True:
+                attachments = validation_report.get("attachments", [])
+                updated["validation_report"]["status"] = (
+                    "pending_review" if isinstance(attachments, list) and attachments else "pending_upload"
+                )
+                for key in ("reviewed_by", "reviewed_at", "review_note"):
+                    updated["validation_report"].pop(key, None)
         if updated["rejection_history"]:
             updated["review_status"] = ECN_ITEM_STATUS_NEEDS_IMPROVEMENT
         mark_rejected_scheme_item_revised(updated)
         items[items.index(existing)] = updated
     else:
+        updated.pop("validation_report", None)
         items.append(updated)
     current["workflow"].setdefault("scheme_participants", {})[user] = (
         ECN_PARTICIPANT_STATUS_NEEDS_RECONFIRMATION

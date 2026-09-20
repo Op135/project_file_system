@@ -36,6 +36,7 @@ from ...ecn_management_config import (
     ECN_ITEM_STATUS_NORMAL,
     ECN_ITEM_STATUS_REVISED_CONFIRMED,
     ECN_ITEM_STATUS_REVISED_PENDING_CONFIRMATION,
+    ECN_LEVEL_COMPLEX,
     ECN_OVERVIEW_ACTION_ADD,
     ECN_OVERVIEW_ACTION_DEACTIVATE,
     ECN_OVERVIEW_ACTION_LABELS,
@@ -54,6 +55,8 @@ from ...ecn_management_config import (
     get_ecn_overview_deactivation_remaining_contents,
     get_ecn_overview_project_new_data,
     get_ecn_scheme_coverage,
+    get_ecn_level_code,
+    get_ecn_validation_report,
     is_ecn_material_disposition_required,
     resolve_ecn_overview_parameter_config,
 )
@@ -68,6 +71,7 @@ from .scheme_dialogs import (
     open_text_change_dialog,
 )
 from .attachment_ui import open_ecn_attachment_dialog
+from .validation_reports import review_validation_report, set_validation_report_required
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +87,9 @@ def build_scheme_panel(
     is_scheming_phase,
     is_scheme_writer,
     can_edit_material_codes,
+    can_designate_validation_reports,
+    can_view_validation_reports,
+    can_approve_validation_reports,
     material_code_saved_callback,
     dashboard_updater,
     *,
@@ -138,6 +145,7 @@ def build_scheme_panel(
                                 missing_docs = coverage["missing_docs"]
                                 missing_mats = coverage["missing_materials"]
                                 incomplete_material_schemes = coverage["incomplete_material_schemes"]
+                                validation_report_issues = coverage["validation_report_issues"]
 
                                 # 渲染看板卡片 (单列纯净版)
                                 with ui.card().classes(
@@ -194,6 +202,12 @@ def build_scheme_panel(
                                             ui.label(
                                                 "✖ 物料方案未配置追溯处置范围或适用的旧料处置措施: "
                                                 + ", ".join(sorted(incomplete_material_schemes))
+                                            ).classes("text-xs text-red-600 font-bold")
+
+                                        if validation_report_issues:
+                                            ui.label(
+                                                "✖ 复杂ECN验证报告尚未全部审批通过: "
+                                                + ", ".join(sorted(validation_report_issues))
                                             ).classes("text-xs text-red-600 font-bold")
 
                                         if not req_requirements and not req_docs and not req_mats:
@@ -463,6 +477,207 @@ def build_scheme_panel(
                                     )
                                     return f"{item.get('role') or '概述参数'} · {title}"
                                 return item.get("change_type") or "资料变更"
+
+                            async def update_validation_requirement(item: dict, required: bool) -> None:
+                                report = get_ecn_validation_report(item)
+                                result = await set_validation_report_required(
+                                    str(local_data.get("ecn_id") or ""),
+                                    str(item.get("item_id") or ""),
+                                    copy.deepcopy(report),
+                                    required,
+                                    current_user,
+                                    current_role,
+                                )
+                                if not result.ok or result.record is None:
+                                    ui.notify(result.message, type="warning", multi_line=True)
+                                    return
+                                apply_scheme_result(result.record)
+                                ui.notify("验证报告要求已更新", type="positive")
+
+                            def refresh_validation_attachments() -> None:
+                                fresh = db_storage.get_deep_item(
+                                    ["ecn_management_data", str(local_data.get("ecn_id") or "")]
+                                )
+                                if isinstance(fresh, dict):
+                                    apply_scheme_result(fresh)
+
+                            def open_validation_review_dialog(item: dict) -> None:
+                                report = get_ecn_validation_report(item)
+                                review_dialog = ui.dialog().props("persistent")
+                                with review_dialog, ui.card().classes("w-[560px] max-w-[94vw] p-5 gap-3"):
+                                    ui.label("审批方案验证报告").classes("text-lg font-bold text-blue-950")
+                                    ui.label(table_item_title(item)).classes("text-sm text-slate-600 break-all")
+                                    attachments = report.get("attachments", [])
+                                    ui.label(
+                                        f"报告附件：{len(attachments) if isinstance(attachments, list) else 0} 个"
+                                    ).classes("text-xs text-slate-500")
+                                    review_note = ui.textarea(
+                                        "审核意见",
+                                        placeholder="通过时可选；不通过时必须填写",
+                                    ).props("outlined auto-grow rows=3").classes("w-full")
+
+                                    async def submit_review(approved: bool) -> None:
+                                        result = await review_validation_report(
+                                            str(local_data.get("ecn_id") or ""),
+                                            str(item.get("item_id") or ""),
+                                            copy.deepcopy(report),
+                                            approved,
+                                            str(review_note.value or ""),
+                                            current_user,
+                                            current_role,
+                                        )
+                                        if not result.ok or result.record is None:
+                                            ui.notify(result.message, type="warning", multi_line=True)
+                                            return
+                                        review_dialog.close()
+                                        apply_scheme_result(result.record)
+                                        ui.notify(
+                                            "验证报告已通过" if approved else "验证报告已退回",
+                                            type="positive" if approved else "warning",
+                                        )
+
+                                    with ui.row().classes("w-full justify-end gap-2"):
+                                        ui.button("取消", on_click=review_dialog.close).props("flat color=grey")
+                                        ui.button(
+                                            "不通过",
+                                            icon="close",
+                                            on_click=lambda: submit_review(False),
+                                        ).props("outline color=negative")
+                                        ui.button(
+                                            "审批通过",
+                                            icon="check",
+                                            on_click=lambda: submit_review(True),
+                                        ).props("color=positive")
+                                review_dialog.on("close", review_dialog.delete)
+                                review_dialog.open()
+
+                            if get_ecn_level_code(local_data) == ECN_LEVEL_COMPLEX:
+                                status_views = {
+                                    "pending_upload": ("待上传", "cloud_upload", "text-orange-700 bg-orange-50"),
+                                    "pending_review": ("待审批", "pending_actions", "text-blue-700 bg-blue-50"),
+                                    "approved": ("已通过", "verified", "text-green-700 bg-green-50"),
+                                    "rejected": ("未通过", "error_outline", "text-red-700 bg-red-50"),
+                                }
+                                required_items = [
+                                    (index, item)
+                                    for index, item in enumerate(change_items, start=1)
+                                    if get_ecn_validation_report(item).get("required") is True
+                                ]
+                                with ui.card().classes(
+                                    "w-full p-3 gap-2 shadow-none border border-violet-200 bg-violet-50/50"
+                                ):
+                                    with ui.row().classes("w-full items-center justify-between gap-2"):
+                                        with ui.row().classes("items-center gap-2"):
+                                            ui.icon("science", color="deep-purple", size="sm")
+                                            ui.label("复杂ECN · 方案验证报告").classes(
+                                                "text-sm font-bold text-violet-900"
+                                            )
+                                        ui.label(
+                                            f"已指定 {len(required_items)} 项；全部审批通过后才能发起方案评审"
+                                        ).classes("text-xs text-violet-700")
+                                    if not required_items and not can_designate_validation_reports:
+                                        ui.label("尚未指定需要提交验证报告的方案").classes(
+                                            "text-xs text-slate-500"
+                                        )
+                                    for index, item in enumerate(change_items, start=1):
+                                        report = get_ecn_validation_report(item)
+                                        required = report.get("required") is True
+                                        if not required and not can_designate_validation_reports:
+                                            continue
+                                        attachments = report.get("attachments", [])
+                                        attachment_count = len(attachments) if isinstance(attachments, list) else 0
+                                        status = str(report.get("status") or "pending_upload")
+                                        status_label, status_icon, status_classes = status_views.get(
+                                            status,
+                                            status_views["pending_upload"],
+                                        )
+                                        with ui.row().classes(
+                                            "w-full min-h-[42px] items-center gap-2 px-2 py-1 rounded "
+                                            "border border-violet-100 bg-white"
+                                        ):
+                                            ui.label(f"方案 #{index:02d}").classes(
+                                                "w-20 shrink-0 text-xs font-bold text-violet-800"
+                                            )
+                                            ui.label(table_item_title(item)).classes(
+                                                "flex-1 min-w-0 text-xs text-slate-700 break-all"
+                                            )
+                                            ui.label(f"出具人：{item.get('author') or '未知'}").classes(
+                                                "text-xs text-slate-500 shrink-0"
+                                            )
+                                            if required:
+                                                with ui.row().classes(
+                                                    f"items-center gap-1 rounded px-2 py-1 {status_classes}"
+                                                ):
+                                                    ui.icon(status_icon, size="xs")
+                                                    ui.label(status_label).classes("text-xs font-bold")
+                                            if can_designate_validation_reports and is_scheming_phase:
+                                                ui.button(
+                                                    icon="remove_circle_outline" if required else "add_task",
+                                                    on_click=lambda _, i=item, value=not required: (
+                                                        update_validation_requirement(i, value)
+                                                    ),
+                                                ).props(
+                                                    "flat round dense size=sm "
+                                                    + ("color=grey-7" if required else "color=deep-purple")
+                                                ).tooltip("取消验证报告要求" if required else "指定提交验证报告")
+                                            is_report_author = item.get("author") == current_user
+                                            can_upload_report = bool(
+                                                required
+                                                and is_scheming_phase
+                                                and is_report_author
+                                                and is_scheme_writer
+                                            )
+                                            can_open_report = bool(
+                                                required
+                                                and (
+                                                    can_upload_report
+                                                    or (
+                                                        attachment_count
+                                                        and (
+                                                            is_report_author
+                                                            or can_view_validation_reports
+                                                        )
+                                                    )
+                                                )
+                                            )
+                                            if can_open_report:
+                                                ui.button(
+                                                    icon="cloud_upload" if can_upload_report else "description",
+                                                    on_click=lambda _, i=item, upload=can_upload_report: (
+                                                        open_ecn_attachment_dialog(
+                                                            str(local_data.get("ecn_id") or ""),
+                                                            "validation",
+                                                            str(i.get("item_id") or ""),
+                                                            "",
+                                                            "方案验证报告",
+                                                            current_user,
+                                                            current_role,
+                                                            can_upload=upload,
+                                                            on_updated=refresh_validation_attachments,
+                                                        )
+                                                    ),
+                                                ).props(
+                                                    "unelevated round dense size=sm "
+                                                    + ("color=orange-7" if can_upload_report else "color=indigo-6")
+                                                ).tooltip(
+                                                    f"上传/查看验证报告（{attachment_count}）"
+                                                    if can_upload_report
+                                                    else f"查看验证报告（{attachment_count}）"
+                                                )
+                                            if (
+                                                required
+                                                and attachment_count
+                                                and can_view_validation_reports
+                                                and can_approve_validation_reports
+                                                and status == "pending_review"
+                                                and item.get("author") != current_user
+                                            ):
+                                                ui.button(
+                                                    icon="fact_check",
+                                                    on_click=lambda _, i=item: open_validation_review_dialog(i),
+                                                ).props(
+                                                    "unelevated round dense size=sm color=positive"
+                                                ).tooltip("审批验证报告")
 
                             def render_table_projects(item):
                                 project_states = item.get("project_states", {})

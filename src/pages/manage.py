@@ -2692,7 +2692,10 @@ def manage_page():
                             }
                             condition = version.get("condition", {})
                             event_key = f"{selected['module']}:{selected['event']}"
-                            is_ecn_scheme_review = event_key == "ecn:scheme_review"
+                            is_ecn_scheme_review = event_key in {
+                                "ecn:scheme_review",
+                                "ecn:scheme_review_simple",
+                            }
                             event_definition = next(
                                 (
                                     item for item in APPROVAL_WORKFLOW_EVENTS

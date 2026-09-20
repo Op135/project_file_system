@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
-from src.ecn_management_config import ECNState, load_ecn_config
+from src.ecn_management_config import ECN_LEVEL_COMPLEX, ECNState, load_ecn_config
 from src.modules.ecn import notifications
 from src.modules.ecn.models import get_ecn_template
 from tests.test_error_management_concurrency import load_isolated_db_storage
@@ -78,6 +78,36 @@ class ECNNotificationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(kwargs["link_url"], "https://example.test/ecn_management")
         self.assertIn('<div class="gray">调试转发', args[0])
         self.resolver.assert_awaited_once_with([{"position": "研发经理"}], fallback_touser="")
+
+    async def test_complex_validation_report_notifies_author_then_reviewer(self):
+        self.record["workflow"].update(
+            ecn_level=ECN_LEVEL_COMPLEX,
+            scheme_participants={"writer": "confirmed"},
+        )
+        self.record["change_items"] = [
+            {
+                "item_id": "S1",
+                "author": "writer",
+                "change_type": "物料更改",
+                "validation_report": {
+                    "required": True,
+                    "status": "pending_upload",
+                    "attachments": [],
+                },
+            }
+        ]
+        pending = notifications.collect_pending_users(self.record, self.service)
+        self.assertEqual(pending, {"writer": "研发硬件"})
+        tasks = notifications.pending_task_details(self.record, pending, self.service)
+        self.assertIn("上传验证报告", tasks["writer"][0])
+
+        report = self.record["change_items"][0]["validation_report"]
+        report["status"] = "pending_review"
+        report["attachments"] = [{"id": "R1", "name": "验证报告.pdf"}]
+        pending = notifications.collect_pending_users(self.record, self.service)
+        self.assertEqual(pending, {"manager": "研发经理"})
+        tasks = notifications.pending_task_details(self.record, pending, self.service)
+        self.assertIn("审批验证报告", tasks["manager"][0])
 
     async def test_missing_debug_recipient_does_not_fallback_to_real_people(self):
         self.resolver.return_value = ""

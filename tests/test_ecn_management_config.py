@@ -14,6 +14,8 @@ from src.ecn_management_config import (
     ECN_ITEM_STATUS_REVISED_PENDING_CONFIRMATION,
     ECN_MATERIAL_CHANGE_TYPE_DISCONTINUE,
     ECN_MATERIAL_CHANGE_TYPE_REPLACE,
+    ECN_LEVEL_COMPLEX,
+    ECN_LEVEL_GENERAL,
     ECN_PARTICIPANT_STATUS_CONFIRMED,
     ECN_PARTICIPANT_STATUS_NEEDS_RECONFIRMATION,
     ECNState,
@@ -28,7 +30,10 @@ from src.ecn_management_config import (
     get_ecn_scheme_target_projects,
     get_ecn_material_change_display,
     get_ecn_material_change_missing_fields,
+    get_ecn_level_code,
+    get_ecn_level_label,
     get_ecn_scheme_coverage,
+    get_ecn_validation_report_issues,
     get_ecn_traceability_closure_summary,
     get_ecn_execution_pending_role_keywords,
     get_ecn_execution_pending_usernames,
@@ -174,6 +179,11 @@ def test_checked_in_config_file_is_valid():
         "item_after_rejection": "needs_improvement",
         "item_after_revision": "revised_pending_confirmation",
         "item_after_reconfirmation": "revised_confirmed",
+    }
+    assert loaded["ecn_levels"] == {
+        "simple": "简单",
+        "general": "一般",
+        "complex": "复杂",
     }
     assert loaded["scheme_tracking"]["traceability_levels"] == raw_config["scheme_tracking"][
         "traceability_levels"
@@ -393,6 +403,53 @@ def test_configured_optional_document_types_do_not_require_a_scheme():
         record["change_items"] = [{"linked_docs": ["光学件图纸"]}]
         assert get_ecn_scheme_coverage(record)["missing_docs"] == set()
         assert is_ecn_scheme_ready_for_review(record) is True
+
+
+def test_ecn_level_defaults_to_general_and_labels_are_configurable():
+    record = _ecn_record()
+    assert get_ecn_level_code(record) == ECN_LEVEL_GENERAL
+    assert get_ecn_level_label(record) == "一般"
+
+    with ECN_CONFIG_PATH.open("r", encoding="utf-8") as config_file:
+        raw_config = json.load(config_file)
+    raw_config["ecn_levels"] = {
+        "simple": "快速",
+        "general": "标准",
+        "complex": "重大",
+    }
+    assert load_ecn_config(raw_config)["ecn_levels"] == raw_config["ecn_levels"]
+
+
+def test_complex_ecn_requires_all_designated_validation_reports_to_be_approved():
+    record = _ecn_record(
+        impact_selected=True,
+        impact_handlers=["工程师A"],
+        participants={"工程师A": ECN_PARTICIPANT_STATUS_CONFIRMED},
+    )
+    record["workflow"]["ecn_level"] = ECN_LEVEL_COMPLEX
+    record["change_items"] = [
+        {
+            "item_id": "S1",
+            "author": "工程师A",
+            "validation_report": {
+                "required": True,
+                "status": "pending_upload",
+                "attachments": [],
+            },
+        }
+    ]
+
+    assert get_ecn_validation_report_issues(record) == {"方案 #01"}
+    assert is_ecn_scheme_ready_for_review(record) is False
+
+    report = record["change_items"][0]["validation_report"]
+    report["attachments"] = [{"id": "report-1"}]
+    report["status"] = "pending_review"
+    assert is_ecn_scheme_ready_for_review(record) is False
+
+    report["status"] = "approved"
+    assert get_ecn_validation_report_issues(record) == set()
+    assert is_ecn_scheme_ready_for_review(record) is True
 
 
 def test_every_change_requirement_must_be_linked_by_at_least_one_scheme():

@@ -447,7 +447,11 @@ class ApprovalWorkflowTests(unittest.TestCase):
         assert event is not None
         self.assertTrue(event.supports_sequential)
         scheme_event = get_workflow_event_definition("ecn", "scheme_review")
+        simple_ecr_event = get_workflow_event_definition("ecn", "ecr_review_simple")
+        simple_scheme_event = get_workflow_event_definition("ecn", "scheme_review_simple")
         self.assertIsNotNone(scheme_event)
+        self.assertIsNotNone(simple_ecr_event)
+        self.assertIsNotNone(simple_scheme_event)
         assert scheme_event is not None
         self.assertTrue(scheme_event.supports_sequential)
 

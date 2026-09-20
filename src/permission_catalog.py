@@ -542,6 +542,11 @@ ECN_CREATE_PERMISSION = "ecn.request.create"
 ECN_IMPACT_EDIT_PERMISSION = "ecn.impact.edit"
 ECN_SCHEME_EDIT_PERMISSION = "ecn.scheme.edit"
 ECN_SCHEME_REVIEW_SUBMIT_PERMISSION = "ecn.scheme.review.submit"
+ECN_LEVEL_CLASSIFY_ECR_PERMISSION = "ecn.level.classify.ecr"
+ECN_LEVEL_CLASSIFY_SCHEME_PERMISSION = "ecn.level.classify.scheme"
+ECN_VALIDATION_DESIGNATE_PERMISSION = "ecn.validation.designate"
+ECN_VALIDATION_REPORT_VIEW_PERMISSION = "ecn.validation.report.view"
+ECN_VALIDATION_REPORT_APPROVE_PERMISSION = "ecn.validation.report.approve"
 ECN_IMPACT_INITIAL_REMINDER_PERMISSION = "ecn.impact.initial_reminder"
 ECN_ECR_APPROVE_PERMISSION = "ecn.ecr.approve"
 ECN_SCHEME_APPROVE_PERMISSION = "ecn.scheme.approve"
@@ -599,6 +604,36 @@ ECN_PERMISSIONS = (
         "发起 — ECN方案评审",
         "工程变更 · 影响与方案",
         "允许在所有方案参与人确认完成后发起ECN方案评审",
+    ),
+    PermissionDefinition(
+        ECN_LEVEL_CLASSIFY_ECR_PERMISSION,
+        "判定 — ECR审核阶段ECN等级",
+        "工程变更 · 等级与验证",
+        "允许在ECR审批阶段判定或调整ECN等级；改为简单等级时重新匹配简单ECR审批流程",
+    ),
+    PermissionDefinition(
+        ECN_LEVEL_CLASSIFY_SCHEME_PERMISSION,
+        "判定 — 方案评审前ECN等级",
+        "工程变更 · 等级与验证",
+        "允许在ECN方案编写阶段、发起方案评审前判定或调整ECN等级",
+    ),
+    PermissionDefinition(
+        ECN_VALIDATION_DESIGNATE_PERMISSION,
+        "指定 — 复杂ECN验证方案",
+        "工程变更 · 等级与验证",
+        "允许在复杂ECN中指定哪些方案必须由方案出具人提交验证报告",
+    ),
+    PermissionDefinition(
+        ECN_VALIDATION_REPORT_VIEW_PERMISSION,
+        "查看 — 复杂ECN验证报告",
+        "工程变更 · 等级与验证",
+        "允许查看或下载复杂ECN方案的验证报告；方案出具人始终可查看本人报告",
+    ),
+    PermissionDefinition(
+        ECN_VALIDATION_REPORT_APPROVE_PERMISSION,
+        "审批 — 复杂ECN验证报告",
+        "工程变更 · 等级与验证",
+        "允许审批复杂ECN方案验证报告；审批人还需具备验证报告查看权限",
     ),
     PermissionDefinition(
         ECN_IMPACT_INITIAL_REMINDER_PERMISSION,

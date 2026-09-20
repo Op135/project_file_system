@@ -121,6 +121,10 @@
 
 ECR 与 ECN 方案评审分别使用 `ecn:ecr_review`、`ecn:scheme_review` 业务事件；管理员在 `/manage` 按申请人主部门/主岗位配置流程条件、串行节点、节点内任意审批或全部会签，提交时固化流程版本和具体审批用户名。ECN 不再从根目录 JSON 读取审批路线：
 
+ECN等级使用稳定编码 `simple / general / complex`，显示名称由 `ecn_management_config.json.ecn_levels` 配置；未判定时按 `general` 运行。`ecn.level.classify.ecr` 允许在ECR审批阶段判定，`ecn.level.classify.scheme` 允许在方案评审发起前判定。ECR审批中切换进入或离开简单等级时，在ECN单据与待办的同一SQLite事务内终止原当前待办并重建审批快照，避免显示等级与实际路线不一致。简单等级使用独立事件 `ecn:ecr_review_simple`、`ecn:scheme_review_simple`，供管理员配置精简路线；一般和复杂等级沿用现有审批事件。
+
+复杂等级可由 `ecn.validation.designate` 指定部分方案提交验证报告。报告由方案出具人通过现有自定义上传控件提交，`ecn.validation.report.view` 控制其他人员查看下载，`ecn.validation.report.approve` 与查看权限共同控制审批，且作者不能审批本人报告。指定报告全部上传并审批通过前，后端拒绝发起方案评审；上传、删除或方案内容修改会使原审批失效。首页“待我处理”和企业微信依次提醒方案作者上传、验证审批人审核。
+
 - 销售发起 ECR：销售总监 -> 研发经理。
 - 非销售发起 ECR：研发经理 -> 销售总监。
 - ECN 方案评审：研发经理 -> 销售总监 -> 工程、质量、PMC 并行会签。
@@ -135,6 +139,7 @@ ECR 与 ECN 方案评审分别使用 `ecn:ecr_review`、`ecn:scheme_review` 业�
 ### 3.5 权限逻辑
 
 - ECN 权限集中在 `src/permission_catalog.py`，判断集中在 `src/ecn_access.py`。入口/详情使用 `ecn.view`；本人 ECR 新建、草稿、提交、撤回和作废使用 `ecn.request.create`；影响维护、方案编写、发起方案评审分别使用 `ecn.impact.edit`、`ecn.scheme.edit`、`ecn.scheme.review.submit`。
+- ECN等级在ECR审核和方案评审前分别使用 `ecn.level.classify.ecr`、`ecn.level.classify.scheme`；复杂方案验证分别使用 `ecn.validation.designate`、`ecn.validation.report.view`、`ecn.validation.report.approve`，查看与审批不互相隐含。
 - ECR 与方案审批资格分别为 `ecn.ecr.approve`、`ecn.scheme.approve`，资格权限本身不能审批任意单据；用户还必须持有本单当前节点的具体 `work_assignments` 待办。`admin` 只有在流程明确选中时才成为审批人。
 - 审批协调人使用独立权限 `ecn.approval.reassign`。授权后可在单据“审批记录”页签把当前或后续未完成节点中的某一审核人移交给另一名在职人员；接手人必须同时拥有ECN查看权限和该节点要求的ECR/方案审批权限。已完成节点和已投票人员不可改写。当前节点移交会在同一SQLite事务内同步更新流程快照、具体待办和审批日志，原审核人立即失去该单待办；后续节点只调整快照，到达该节点时再生成新审核人的待办。
 - 第一阶段资料/ERP确认及系统内资料落盘使用 `ecn.execution.assistant`。物料责任节点按 `ecn.execution.purchase.confirm`、`ecn.execution.pmc.confirm`、`ecn.execution.production.confirm`、`ecn.execution.sales_supervisor.confirm` 判断；项目销售还必须是单据明确固化的用户名并拥有 `ecn.execution.material.confirm`。数据库模式不再读取当前岗位名称匹配这些责任项。

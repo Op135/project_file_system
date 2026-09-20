@@ -355,6 +355,11 @@ _DEFAULT_CONFIG: dict[str, Any] = {
             "item_after_reconfirmation": "revised_confirmed",
         },
     },
+    "ecn_levels": {
+        "simple": "简单",
+        "general": "一般",
+        "complex": "复杂",
+    },
     "scheme_tracking": {
         "traceability_levels": [
             "文件",
@@ -652,6 +657,17 @@ def load_ecn_config(raw_config: dict | None = None) -> dict:
         "scheme_review.document_types_without_required_scheme",
         allow_empty=True,
     )
+
+    raw_level_labels = raw.get("ecn_levels", {})
+    if not isinstance(raw_level_labels, dict):
+        raw_level_labels = {}
+    for level_code, default_label in _DEFAULT_CONFIG["ecn_levels"].items():
+        configured_label = raw_level_labels.get(level_code)
+        result["ecn_levels"][level_code] = (
+            configured_label.strip()
+            if isinstance(configured_label, str) and configured_label.strip()
+            else default_label
+        )
     known_document_types = set(result["schema"]["document_types"])
     unknown_optional_document_types = [
         name for name in configured_optional_document_types if name not in known_document_types
@@ -672,6 +688,10 @@ ECN_CONFIG = load_ecn_config()
 ECN_WECOM_CONFIG = ECN_CONFIG["wecom"]
 ECN_ATTACHMENT_CONFIG = ECN_CONFIG["attachments"]
 ECN_SCHEMA_CONFIG = ECN_CONFIG["schema"]
+ECN_LEVEL_LABELS: dict[str, str] = dict(ECN_CONFIG["ecn_levels"])
+ECN_LEVEL_SIMPLE = "simple"
+ECN_LEVEL_GENERAL = "general"
+ECN_LEVEL_COMPLEX = "complex"
 ECN_ALLOWED_PROJECT_STATES = ECN_CONFIG["allowed_project_states"]
 ECN_IMPACT_FOLLOWUP_STATES = ECN_CONFIG["reminders"]["impact_followup_states"]
 ECN_REQUIRE_REJECTED_ITEM_SELECTION = ECN_CONFIG["scheme_review"]["require_rejected_item_selection"]
@@ -719,6 +739,51 @@ ECN_MATERIAL_CHANGE_TYPE_ADJUST_QUANTITY = ECN_MATERIAL_CHANGE_TYPE_LABELS["adju
 ECN_MATERIAL_CHANGE_TYPE_DISCONTINUE = ECN_MATERIAL_CHANGE_TYPE_LABELS["discontinue"]
 ECN_MATERIAL_CHANGE_TYPE_REPLACE = ECN_MATERIAL_CHANGE_TYPE_LABELS["replace"]
 ECN_OVERVIEW_CONFLICT_AUTO_CLOSE_SECONDS = ECN_CONFIG["ui"]["overview_conflict_auto_close_seconds"]
+
+
+def get_ecn_level_code(ecn_data: Any) -> str:
+    """返回稳定等级编码；未判定或异常值统一按一般等级处理。"""
+    if not isinstance(ecn_data, dict):
+        return ECN_LEVEL_GENERAL
+    workflow = ecn_data.get("workflow", {})
+    level_code = str(workflow.get("ecn_level") or "").strip() if isinstance(workflow, dict) else ""
+    return level_code if level_code in ECN_LEVEL_LABELS else ECN_LEVEL_GENERAL
+
+
+def is_ecn_level_decided(ecn_data: Any) -> bool:
+    if not isinstance(ecn_data, dict):
+        return False
+    workflow = ecn_data.get("workflow", {})
+    return bool(isinstance(workflow, dict) and str(workflow.get("ecn_level") or "") in ECN_LEVEL_LABELS)
+
+
+def get_ecn_level_label(ecn_data: Any) -> str:
+    return ECN_LEVEL_LABELS[get_ecn_level_code(ecn_data)]
+
+
+def get_ecn_validation_report(item: Any) -> dict[str, Any]:
+    if not isinstance(item, dict):
+        return {}
+    report = item.get("validation_report", {})
+    return report if isinstance(report, dict) else {}
+
+
+def get_ecn_validation_report_issues(ecn_data: Any) -> set[str]:
+    """返回复杂ECN中尚未完成验证报告闭环的方案显示编号。"""
+    if get_ecn_level_code(ecn_data) != ECN_LEVEL_COMPLEX or not isinstance(ecn_data, dict):
+        return set()
+    items = ecn_data.get("change_items", [])
+    if not isinstance(items, list):
+        return set()
+    issues: set[str] = set()
+    for index, item in enumerate(items, start=1):
+        report = get_ecn_validation_report(item)
+        if report.get("required") is not True:
+            continue
+        attachments = report.get("attachments", [])
+        if not isinstance(attachments, list) or not attachments or report.get("status") != "approved":
+            issues.add(f"方案 #{index:02d}")
+    return issues
 
 
 def ecn_overview_requires_new_content(project_states: Any) -> bool:
@@ -1367,6 +1432,7 @@ def get_ecn_scheme_coverage(ecn_data: Any) -> dict[str, set[str]]:
         "missing_docs": required_docs - provided_docs,
         "missing_materials": required_materials - provided_materials,
         "incomplete_material_schemes": incomplete_material_schemes,
+        "validation_report_issues": get_ecn_validation_report_issues(ecn_data),
     }
 
 
@@ -1392,6 +1458,7 @@ def is_ecn_scheme_ready_for_review(ecn_data: Any) -> bool:
             "missing_docs",
             "missing_materials",
             "incomplete_material_schemes",
+            "validation_report_issues",
         ]
     )
 
@@ -1400,6 +1467,7 @@ _ECN_SCHEME_SNAPSHOT_EXCLUDED_FIELDS = {
     "rejection_history",
     "review_status",
     "execute_status",
+    "validation_report",
 }
 
 

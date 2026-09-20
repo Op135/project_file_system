@@ -294,6 +294,7 @@ async def ecn_management_page():
             ).classes("ecn-management-grid ag-theme-alpine w-full h-full min-h-0")
 
             execution_focus_hidden_fields = [
+                "ecn_level",
                 "projects",
                 "applicant",
                 "apply_date",

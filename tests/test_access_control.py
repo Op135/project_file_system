@@ -9,6 +9,9 @@ import pandas as pd
 from src.access_control import can_use_tool
 from src.ecn_management_config import ECNState
 from src.ecn_access import (
+    can_approve_ecn_validation_report,
+    can_classify_ecn_level_before_scheme_review,
+    can_classify_ecn_level_during_ecr,
     can_create_ecn_request,
     can_confirm_ecn_material_spec,
     can_delete_ecn,
@@ -16,6 +19,8 @@ from src.ecn_access import (
     can_edit_ecn_scheme,
     can_execute_ecn_assistant_stage,
     can_submit_ecn_scheme_review,
+    can_designate_ecn_validation_report,
+    can_view_ecn_validation_report,
     can_view_ecn,
     can_view_ecn_scheme_non_image_file,
     get_ecn_dashboard_pending_count,
@@ -33,9 +38,14 @@ from src.permission_catalog import (
     ECN_EXECUTION_PMC_CONFIRM_PERMISSION,
     ECN_IMPACT_EDIT_PERMISSION,
     ECN_IMPACT_INITIAL_REMINDER_PERMISSION,
+    ECN_LEVEL_CLASSIFY_ECR_PERMISSION,
+    ECN_LEVEL_CLASSIFY_SCHEME_PERMISSION,
     ECN_SCHEME_EDIT_PERMISSION,
     ECN_SCHEME_REVIEW_SUBMIT_PERMISSION,
     ECN_VIEW_PERMISSION,
+    ECN_VALIDATION_DESIGNATE_PERMISSION,
+    ECN_VALIDATION_REPORT_APPROVE_PERMISSION,
+    ECN_VALIDATION_REPORT_VIEW_PERMISSION,
     ERROR_NOTIFICATION_MODULE,
     ERROR_RECORD_EDIT_PERMISSION,
     ERROR_VIEW_PERMISSION,
@@ -254,6 +264,11 @@ class AccessControlTests(unittest.TestCase):
                 ECN_IMPACT_EDIT_PERMISSION,
                 ECN_SCHEME_EDIT_PERMISSION,
                 ECN_SCHEME_REVIEW_SUBMIT_PERMISSION,
+                ECN_LEVEL_CLASSIFY_ECR_PERMISSION,
+                ECN_LEVEL_CLASSIFY_SCHEME_PERMISSION,
+                ECN_VALIDATION_DESIGNATE_PERMISSION,
+                ECN_VALIDATION_REPORT_VIEW_PERMISSION,
+                ECN_VALIDATION_REPORT_APPROVE_PERMISSION,
                 ECN_EXECUTION_ASSISTANT_PERMISSION,
                 ECN_EXECUTION_MATERIAL_CONFIRM_PERMISSION,
             ],
@@ -267,6 +282,13 @@ class AccessControlTests(unittest.TestCase):
         self.assertTrue(
             can_submit_ecn_scheme_review("普通岗位", "张三", user_service=self.service)
         )
+        self.assertTrue(can_classify_ecn_level_during_ecr("普通岗位", "张三", user_service=self.service))
+        self.assertTrue(
+            can_classify_ecn_level_before_scheme_review("普通岗位", "张三", user_service=self.service)
+        )
+        self.assertTrue(can_designate_ecn_validation_report("普通岗位", "张三", user_service=self.service))
+        self.assertTrue(can_view_ecn_validation_report("普通岗位", "张三", user_service=self.service))
+        self.assertTrue(can_approve_ecn_validation_report("普通岗位", "张三", user_service=self.service))
         self.assertTrue(
             can_execute_ecn_assistant_stage("普通岗位", "张三", user_service=self.service)
         )

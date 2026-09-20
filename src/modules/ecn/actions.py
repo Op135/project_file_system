@@ -18,6 +18,8 @@ from ... import (
     db_storage,
 )
 from ...ecn_access import (
+    can_classify_ecn_level_before_scheme_review,
+    can_classify_ecn_level_during_ecr,
     can_create_ecn_request,
     can_edit_ecn_material_codes,
     can_edit_ecn_impact,
@@ -26,6 +28,8 @@ from ...ecn_access import (
     get_active_ecn_actor_role,
 )
 from ...ecn_management_config import (
+    ECN_LEVEL_LABELS,
+    ECN_LEVEL_SIMPLE,
     ECN_REQUIRE_REJECTED_ITEM_SELECTION,
     ECN_WECOM_CONFIG,
     ECNState,
@@ -34,6 +38,7 @@ from ...ecn_management_config import (
     classify_ecn_change_item,
     get_ecn_material_code_entries,
     get_ecn_missing_material_code_items,
+    get_ecn_level_code,
     get_ecn_scheme_coverage,
     is_ecn_scheme_ready_for_review,
     reject_ecn_scheme_items,
@@ -144,6 +149,7 @@ def validate_scheme_review(record):
             ("missing_docs", "遗漏资料"),
             ("missing_materials", "遗漏物料"),
             ("incomplete_material_schemes", "物料追溯或处置未完整"),
+            ("validation_report_issues", "验证报告未审批通过"),
         ):
             if coverage[key]:
                 missing.append(f"{title}：{'、'.join(sorted(coverage[key]))}")
@@ -315,6 +321,7 @@ def transition(current, expected, baseline, action, user, role, note, rejected_i
             result = start_ecr_approval(
                 current["ecn_id"],
                 current["basic_info"]["applicant"],
+                level_code=get_ecn_level_code(current),
                 user_service=service,
             )
         else:
@@ -328,6 +335,7 @@ def transition(current, expected, baseline, action, user, role, note, rejected_i
             result = start_scheme_approval(
                 current["ecn_id"],
                 current["basic_info"]["applicant"],
+                level_code=get_ecn_level_code(current),
                 scheme_author_usernames=scheme_author_usernames,
                 user_service=service,
             )
@@ -549,3 +557,105 @@ async def execute_action(
         for path in published_paths:
             path.unlink(missing_ok=True)
     return result
+
+
+async def set_ecn_level(
+    ecn_id: str,
+    expected: dict,
+    level_code: str,
+    timing: str,
+    user: str,
+    role: str,
+    *,
+    user_service=None,
+    storage=None,
+):
+    """按ECR审核或方案评审前两个独立时机判定等级；ECR路线变化时原子重建待办。"""
+    service = user_service or getattr(app.state, "user_service", None)
+    storage = storage or db_storage
+
+    async def operation(current: dict, connection):
+        actor_role = require_active_actor_role(user, role, service)
+        require_current_context(current, expected)
+        workflow = current.get("workflow", {})
+        if not isinstance(workflow, dict):
+            raise ECNConflict("ECN流程数据异常。")
+        if level_code not in ECN_LEVEL_LABELS:
+            raise ECNConflict("ECN等级无效，请刷新后重试。")
+        if timing == "ecr_review":
+            require_permission(can_classify_ecn_level_during_ecr, actor_role, user, service)
+            if (
+                workflow.get("current_state") != ECNState.ECR_REVIEWING
+                or workflow.get("current_phase") != "ECR_PHASE"
+            ):
+                raise ECNConflict("当前不在ECR审核阶段，不能按此时机判定等级。")
+        elif timing == "before_scheme_review":
+            require_permission(can_classify_ecn_level_before_scheme_review, actor_role, user, service)
+            if (
+                workflow.get("current_state") != ECNState.ECN_SCHEMING
+                or workflow.get("current_phase") != "ECN_SCHEME_PHASE"
+            ):
+                raise ECNConflict("当前不在方案评审发起前，不能按此时机判定等级。")
+        else:
+            raise ECNConflict("ECN等级判定时机无效。")
+
+        previous_level = get_ecn_level_code(current)
+        was_decided = bool(str(workflow.get("ecn_level") or "") in ECN_LEVEL_LABELS)
+        if was_decided and previous_level == level_code:
+            return current
+
+        proxy = None
+        if timing == "ecr_review":
+            if service is None or not is_ecn_database_workflow_enabled(user_service=service):
+                raise ECNConflict("ECN等级判定需要数据库身份与审批流程。")
+            if Path(service.identity_store.db_path).resolve() != Path(storage.DB_PATH).resolve():
+                raise ECNConflict("ECN审批需要身份数据与业务数据使用同一数据库。")
+            previous_simple = previous_level == ECN_LEVEL_SIMPLE
+            next_simple = level_code == ECN_LEVEL_SIMPLE
+            if previous_simple != next_simple:
+                proxy = ApprovalTransaction(service)
+                cancel_ecr_approval(current, user_service=proxy)
+                result = start_ecr_approval(
+                    str(current.get("ecn_id") or ""),
+                    str(current.get("basic_info", {}).get("applicant") or ""),
+                    level_code=level_code,
+                    user_service=proxy,
+                )
+                if result.get("status") != "matched":
+                    raise ECNConflict(ecn_workflow_error_message(result, "ECN等级调整"))
+                workflow["ecr_workflow_assignment"] = result["assignment"]
+                workflow["approval_round"] = str(uuid.uuid4())
+                workflow["current_step_index"] = 0
+                workflow["step_approvals"] = {}
+                workflow["pending_roles"] = get_ecr_pending_usernames(current, user_service=proxy)
+
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        workflow["ecn_level"] = level_code
+        decisions = workflow.setdefault("ecn_level_decisions", [])
+        if not isinstance(decisions, list):
+            decisions = []
+            workflow["ecn_level_decisions"] = decisions
+        decisions.append(
+            {
+                "timing": timing,
+                "from": previous_level if was_decided else "",
+                "to": level_code,
+                "user": user,
+                "role": actor_role,
+                "time": now,
+            }
+        )
+        append_ecn_approval_log_once(
+            current.setdefault("approval_log", []),
+            {
+                "user": user,
+                "role": actor_role,
+                "action": f"判定ECN等级：{ECN_LEVEL_LABELS[level_code]}",
+                "time": now,
+            },
+        )
+        if proxy is not None:
+            await proxy.flush(connection)
+        return current
+
+    return await mutate_record(ecn_id, operation, storage=storage)

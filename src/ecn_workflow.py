@@ -16,6 +16,7 @@ from .approval_workflow import (
     resolve_approval_workflow,
 )
 from .ecn_management_config import (
+    ECN_LEVEL_SIMPLE,
     ECN_SCHEME_GROUP_MATERIAL,
     ECNState,
     build_ecn_execution_info,
@@ -25,8 +26,10 @@ from .permission_catalog import ECN_EXECUTION_ASSISTANT_PERMISSION
 
 ECN_WORKFLOW_MODULE = "ecn"
 ECN_ECR_REVIEW_EVENT = "ecr_review"
+ECN_SIMPLE_ECR_REVIEW_EVENT = "ecr_review_simple"
 ECN_ECR_REVIEW_TASK_KEY = "ecr_review"
 ECN_SCHEME_REVIEW_EVENT = "scheme_review"
+ECN_SIMPLE_SCHEME_REVIEW_EVENT = "scheme_review_simple"
 ECN_SCHEME_REVIEW_TASK_KEY = "scheme_review"
 ECN_ECR_ASSIGNMENT_KEY = "ecr_workflow_assignment"
 ECN_SCHEME_ASSIGNMENT_KEY = "scheme_workflow_assignment"
@@ -227,6 +230,7 @@ def start_ecr_approval(
     ecn_id: str,
     requester_username: str,
     *,
+    level_code: str = "",
     user_service=None,
 ) -> dict[str, Any]:
     """解析 ECR 流程，固化全部节点快照并激活首节点待办。"""
@@ -236,7 +240,7 @@ def start_ecr_approval(
     return create_approval_sequence_assignments(
         service,
         module=ECN_WORKFLOW_MODULE,
-        event=ECN_ECR_REVIEW_EVENT,
+        event=ECN_SIMPLE_ECR_REVIEW_EVENT if level_code == ECN_LEVEL_SIMPLE else ECN_ECR_REVIEW_EVENT,
         entity_id=str(ecn_id),
         task_key=ECN_ECR_REVIEW_TASK_KEY,
         requester_username=requester_username,
@@ -247,6 +251,7 @@ def start_scheme_approval(
     ecn_id: str,
     requester_username: str,
     *,
+    level_code: str = "",
     scheme_author_usernames: list[str] | None = None,
     user_service=None,
 ) -> dict[str, Any]:
@@ -257,7 +262,11 @@ def start_scheme_approval(
     return create_approval_sequence_assignments(
         service,
         module=ECN_WORKFLOW_MODULE,
-        event=ECN_SCHEME_REVIEW_EVENT,
+        event=(
+            ECN_SIMPLE_SCHEME_REVIEW_EVENT
+            if level_code == ECN_LEVEL_SIMPLE
+            else ECN_SCHEME_REVIEW_EVENT
+        ),
         entity_id=str(ecn_id),
         task_key=ECN_SCHEME_REVIEW_TASK_KEY,
         requester_username=requester_username,

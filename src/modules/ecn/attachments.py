@@ -17,6 +17,7 @@ from ...ecn_access import (
     can_create_ecn_request,
     can_edit_ecn_scheme,
     can_execute_ecn_assistant_stage,
+    can_view_ecn_validation_report,
     can_view_ecn,
     can_view_ecn_scheme_non_image_file,
     get_active_ecn_actor_role,
@@ -24,11 +25,13 @@ from ...ecn_access import (
 from ...ecn_management_config import (
     ECN_ATTACHMENT_CONFIG,
     ECN_DATA_KEY,
+    ECN_LEVEL_COMPLEX,
     ECN_PARTICIPANT_STATUS_CONFIRMED,
     ECN_PARTICIPANT_STATUS_EDITING,
     ECN_PARTICIPANT_STATUS_NEEDS_RECONFIRMATION,
     ECNState,
     get_ecn_material_execution_specs,
+    get_ecn_level_code,
 )
 from .editing import ECNConflict, ECNResult
 from .repository import mutate_record
@@ -64,6 +67,18 @@ def _read_attachments(record: dict, scope: str, item_id: str, task_key: str) -> 
             None,
         ) if isinstance(items, list) else None
         value = item.get("attachments", []) if isinstance(item, dict) else []
+    elif scope == "validation":
+        items = record.get("change_items", [])
+        item = next(
+            (
+                entry
+                for entry in items
+                if isinstance(entry, dict) and str(entry.get("item_id") or "") == item_id
+            ),
+            None,
+        ) if isinstance(items, list) else None
+        report = item.get("validation_report", {}) if isinstance(item, dict) else {}
+        value = report.get("attachments", []) if isinstance(report, dict) else []
     else:
         execution = record.get("execution_info", {})
         registry = execution.get("attachments", {}) if isinstance(execution, dict) else {}
@@ -86,6 +101,21 @@ def _attachment_list(record: dict, scope: str, item_id: str, task_key: str) -> l
         if not isinstance(item, dict):
             raise ECNConflict("方案不存在，请刷新页面")
         return item.setdefault("attachments", [])
+    if scope == "validation":
+        item = next(
+            (
+                entry
+                for entry in record.get("change_items", [])
+                if isinstance(entry, dict) and str(entry.get("item_id") or "") == item_id
+            ),
+            None,
+        )
+        if not isinstance(item, dict):
+            raise ECNConflict("方案不存在，请刷新页面")
+        report = item.setdefault("validation_report", {})
+        if not isinstance(report, dict):
+            raise ECNConflict("验证报告数据异常")
+        return report.setdefault("attachments", [])
     execution = record.setdefault("execution_info", {})
     return execution.setdefault("attachments", {}).setdefault(_execution_key(scope, item_id, task_key), [])
 
@@ -112,6 +142,29 @@ def _validate_access(record: dict, scope: str, item_id: str, task_key: str, user
         participants = workflow.get("scheme_participants", {}) if isinstance(workflow, dict) else {}
         if isinstance(participants, dict) and participants.get(user) == ECN_PARTICIPANT_STATUS_CONFIRMED:
             raise ECNConflict("已确认方案不能直接补传附件，请先重新开启编辑")
+        return
+    if scope == "validation":
+        items = record.get("change_items", [])
+        item = next(
+            (
+                entry
+                for entry in items
+                if isinstance(entry, dict) and str(entry.get("item_id") or "") == item_id
+            ),
+            None,
+        ) if isinstance(items, list) else None
+        report = item.get("validation_report", {}) if isinstance(item, dict) else {}
+        if (
+            state != ECNState.ECN_SCHEMING
+            or get_ecn_level_code(record) != ECN_LEVEL_COMPLEX
+            or not isinstance(item, dict)
+            or item.get("author") != user
+            or not isinstance(report, dict)
+            or report.get("required") is not True
+        ):
+            raise ECNConflict("当前不能上传此方案的验证报告")
+        if not can_edit_ecn_scheme(role, user, user_service=service):
+            raise ECNConflict("当前用户没有提交验证报告的权限")
         return
     if state != ECNState.ECN_EXECUTING:
         raise ECNConflict("当前不在 ECN 执行阶段")
@@ -260,6 +313,20 @@ def visible_attachments(ecn_id: str, scope: str, item_id: str, task_key: str, us
             and not can_view_ecn_scheme_non_image_file(item, role, user, user_service=service)
         ):
             return []
+    if scope == "validation":
+        item = next(
+            (
+                entry
+                for entry in record.get("change_items", [])
+                if isinstance(entry, dict) and str(entry.get("item_id") or "") == item_id
+            ),
+            None,
+        )
+        if not isinstance(item, dict) or (
+            item.get("author") != user
+            and not can_view_ecn_validation_report(role, user, user_service=service)
+        ):
+            return []
     return copy.deepcopy(_read_attachments(record, scope, item_id, task_key))
 
 
@@ -283,6 +350,16 @@ async def attach_existing(
             participants = record["workflow"].setdefault("scheme_participants", {})
             if participants.get(user) != ECN_PARTICIPANT_STATUS_NEEDS_RECONFIRMATION:
                 participants[user] = ECN_PARTICIPANT_STATUS_EDITING
+        elif scope == "validation":
+            item = next(
+                entry
+                for entry in record.get("change_items", [])
+                if isinstance(entry, dict) and str(entry.get("item_id") or "") == item_id
+            )
+            report = item.setdefault("validation_report", {})
+            report["status"] = "pending_review"
+            for key in ("reviewed_by", "reviewed_at", "review_note"):
+                report.pop(key, None)
         return record
 
     try:
@@ -320,6 +397,16 @@ async def remove_existing(
             participants = record["workflow"].setdefault("scheme_participants", {})
             if participants.get(user) != ECN_PARTICIPANT_STATUS_NEEDS_RECONFIRMATION:
                 participants[user] = ECN_PARTICIPANT_STATUS_EDITING
+        elif scope == "validation":
+            item = next(
+                entry
+                for entry in record.get("change_items", [])
+                if isinstance(entry, dict) and str(entry.get("item_id") or "") == item_id
+            )
+            report = item.setdefault("validation_report", {})
+            report["status"] = "pending_review" if files else "pending_upload"
+            for key in ("reviewed_by", "reviewed_at", "review_note"):
+                report.pop(key, None)
         return record
 
     result = await mutate_record(ecn_id, operation)

@@ -15,6 +15,8 @@ from ...ecn_access import (
     build_ecn_access_snapshot,
     can_confirm_ecn_material_spec,
     can_execute_ecn_assistant_stage,
+    can_approve_ecn_validation_report,
+    can_view_ecn_validation_report,
     can_view_ecn,
     get_ecn_execution_assignment_issues,
     is_ecn_pending_for_user,
@@ -31,8 +33,11 @@ from ...ecn_management_config import (
     get_ecn_scheme_target_projects,
     get_ecn_material_execution_specs,
     get_ecn_missing_material_code_items,
+    get_ecn_level_code,
+    get_ecn_validation_report,
     is_ecn_scheme_ready_for_review,
     get_ecn_special_confirmations,
+    ECN_LEVEL_COMPLEX,
 )
 from ...wecom_service import resolve_wecom_recipients, send_wecom_text_message, send_wecom_textcard_message
 from .special_task_messages import get_special_message_item, get_special_message_items, build_special_card
@@ -155,6 +160,40 @@ def pending_task_details(
                 f"补充物料料号\n方案：{item['scheme_no']}\n缺少：{'、'.join(field_names)}"
             )
         return {name: list(code_tasks) for name in pending}
+    if state == ECNState.ECN_SCHEMING and get_ecn_level_code(record) == ECN_LEVEL_COMPLEX:
+        validation_tasks: dict[str, list[str]] = {name: [] for name in pending}
+        items = record.get("change_items", [])
+        for index, item in enumerate(items if isinstance(items, list) else [], start=1):
+            if not isinstance(item, dict):
+                continue
+            report = get_ecn_validation_report(item)
+            if report.get("required") is not True:
+                continue
+            status = str(report.get("status") or "pending_upload")
+            author = str(item.get("author") or "")
+            subject = str(item.get("label") or item.get("change_type") or "变更方案")
+            if author in validation_tasks and status in {"pending_upload", "rejected"}:
+                suffix = f"；审核意见：{report.get('review_note')}" if status == "rejected" and report.get("review_note") else ""
+                validation_tasks[author].append(
+                    f"上传验证报告｜方案 #{index:02d}｜{subject}{suffix}"
+                )
+            if status == "pending_review":
+                for name, role in pending.items():
+                    if name == author:
+                        continue
+                    if can_view_ecn_validation_report(
+                        role, name, user_service=service, access_snapshot=snapshot
+                    ) and can_approve_ecn_validation_report(
+                        role, name, user_service=service, access_snapshot=snapshot
+                    ):
+                        validation_tasks[name].append(
+                            f"审批验证报告｜方案 #{index:02d}｜{subject}｜出具人：{author or '未知'}"
+                        )
+        if any(validation_tasks.values()):
+            return {
+                name: tasks or ["完善影响评估或本人方案"]
+                for name, tasks in validation_tasks.items()
+            }
     for issue in assignment_issues:
         if issue["kind"] == "special":
             detail = get_special_message_item(record, issue["key"], issue["owner"])

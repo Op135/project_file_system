@@ -23,6 +23,9 @@ from ...config import (
 )
 from ...ecn_access import (
     build_ecn_access_snapshot,
+    can_approve_ecn_validation_report,
+    can_classify_ecn_level_before_scheme_review,
+    can_classify_ecn_level_during_ecr,
     can_create_ecn_request,
     can_edit_ecn_impact,
     can_edit_ecn_material_codes,
@@ -30,6 +33,8 @@ from ...ecn_access import (
     can_execute_ecn_assistant_stage,
     can_reassign_ecn_approval,
     can_submit_ecn_scheme_review,
+    can_designate_ecn_validation_report,
+    can_view_ecn_validation_report,
     can_view_ecn,
 )
 from ...ecn_management_config import (
@@ -42,6 +47,9 @@ from ...ecn_management_config import (
     ECN_SCHEME_GROUP_ORDINARY_DOCUMENT,
     ECN_SCHEME_GROUP_OVERVIEW_DOCUMENT,
     ECN_SCHEME_GROUP_UNKNOWN,
+    ECN_LEVEL_LABELS,
+    get_ecn_level_code,
+    get_ecn_level_label,
     classify_ecn_change_item,
     get_ecn_material_change_display,
     get_ecn_pending_approval_roles,
@@ -56,6 +64,7 @@ from ...ecn_workflow import (
 from .actions import (
     execute_action,
     save_review,
+    set_ecn_level,
 )
 from .editing import (
     sync_review_snapshot,
@@ -117,6 +126,21 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
         current_role,
         current_user,
         access_snapshot=access_snapshot,
+    )
+    can_classify_level_ecr = can_classify_ecn_level_during_ecr(
+        current_role, current_user, access_snapshot=access_snapshot
+    )
+    can_classify_level_scheme = can_classify_ecn_level_before_scheme_review(
+        current_role, current_user, access_snapshot=access_snapshot
+    )
+    can_designate_validation = can_designate_ecn_validation_report(
+        current_role, current_user, access_snapshot=access_snapshot
+    )
+    can_view_validation = can_view_ecn_validation_report(
+        current_role, current_user, access_snapshot=access_snapshot
+    )
+    can_approve_validation = can_approve_ecn_validation_report(
+        current_role, current_user, access_snapshot=access_snapshot
     )
     is_new = ecn_id is None
     if is_new and not can_create_request:
@@ -182,6 +206,63 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
     # 影响评估与方案编写是两个独立权限，避免为了填写方案而放开全部影响范围。
     is_impact_editor = is_scheming_phase and can_edit_impact
     is_scheme_writer = is_scheming_phase and can_edit_scheme
+    level_code = get_ecn_level_code(local_data)
+    level_chip_color = {
+        "simple": "green-7",
+        "general": "indigo-6",
+        "complex": "deep-orange-7",
+    }.get(level_code, "indigo-6")
+
+    level_timing = (
+        "ecr_review"
+        if wf.get("current_state") == ECNState.ECR_REVIEWING
+        and wf.get("current_phase") == "ECR_PHASE"
+        and can_classify_level_ecr
+        else "before_scheme_review"
+        if is_scheming_phase and can_classify_level_scheme
+        else ""
+    )
+
+    def open_level_dialog() -> None:
+        if not level_timing:
+            return
+        level_dialog = ui.dialog().props("persistent")
+        level_state = {"code": get_ecn_level_code(local_data)}
+        with level_dialog, ui.card().classes("w-[500px] max-w-[94vw] p-5 gap-3"):
+            ui.label("判定 ECN 等级").classes("text-lg font-bold text-blue-950")
+            ui.label(
+                "未判定的ECN按一般等级运行。简单等级将使用独立的精简审批流程；"
+                "复杂等级在发起方案评审前还须完成指定方案的验证报告审批。"
+            ).classes("text-sm text-slate-600 leading-relaxed")
+            ui.radio(ECN_LEVEL_LABELS).bind_value(level_state, "code").props(
+                "inline color=primary"
+            ).classes("w-full")
+
+            async def submit_level() -> None:
+                result = await set_ecn_level(
+                    str(local_data.get("ecn_id") or ""),
+                    copy.deepcopy(local_data),
+                    str(level_state["code"]),
+                    level_timing,
+                    current_user,
+                    current_role,
+                )
+                if not result.ok or result.record is None:
+                    ui.notify(result.message, type="warning", multi_line=True)
+                    return
+                level_dialog.close()
+                root_dialog.close()
+                refresh_list()
+                ui.notify(
+                    f"ECN等级已判定为：{get_ecn_level_label(result.record)}",
+                    type="positive",
+                )
+
+            with ui.row().classes("w-full justify-end gap-2"):
+                ui.button("取消", on_click=level_dialog.close).props("flat color=grey")
+                ui.button("保存等级", icon="save", on_click=submit_level).props("color=primary")
+        level_dialog.on("close", level_dialog.delete)
+        level_dialog.open()
 
     # === 建立一个跨 Tab 刷新的引用桥梁 ===
     dashboard_updater = {"refresh": lambda: None}  # 初始值为一个空函数，后续会被覆盖为真正的刷新函数
@@ -233,19 +314,29 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
         with ui.row().classes(
             "w-full bg-white px-4 py-2 border-b border-gray-300 justify-between items-start shrink-0"
         ):
-            ui.chip(
-                wf["current_state"],
-                color="orange"
-                if "中" in wf["current_state"]
-                else "red"
-                if wf["current_state"] == ECNState.REJECTED
-                else "blue",
-            ).props("outline size=base")
+            with ui.row().classes("items-center gap-2"):
+                ui.chip(
+                    wf["current_state"],
+                    color="orange"
+                    if "中" in wf["current_state"]
+                    else "red"
+                    if wf["current_state"] == ECNState.REJECTED
+                    else "blue",
+                ).props("outline size=base")
             with ui.column().classes("gap-0 items-center"):
                 ui.label("工程变更单").classes("text-2xl font-black text-gray-800 tracking-widest")
-                ui.label(local_data["ecn_id"] or "新建 ECR（保存后生成编号）").classes(
-                    "text-lg font-mono font-bold text-gray-700"
-                )
+                with ui.row().classes("items-center justify-center gap-2"):
+                    ui.label(local_data["ecn_id"] or "新建 ECR（保存后生成编号）").classes(
+                        "text-lg font-mono font-bold text-gray-700"
+                    )
+                    if not is_new:
+                        ui.chip(
+                            f"ECN等级：{get_ecn_level_label(local_data)}",
+                            icon="speed",
+                            color=level_chip_color,
+                        ).props("dense square text-color=white").classes(
+                            "font-bold shadow-sm"
+                        )
             ui.button(icon="close", on_click=root_dialog.close).props("flat round dense").classes("ml-15")
 
         # ui.tabs: NiceGUI框架用于创建选项卡导航容器的类
@@ -892,6 +983,9 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
                     is_scheming_phase,
                     is_scheme_writer,
                     can_edit_material_codes,
+                    can_designate_validation,
+                    can_view_validation,
+                    can_approve_validation,
                     handle_material_code_saved,
                     dashboard_updater,
                     panel_container=scheme_panel_host,
@@ -1205,6 +1299,10 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
         with ui.row().classes(
             "w-full bg-white p-4 border-t border-gray-300 justify-end items-center shrink-0 gap-4 shadow-[0_-5px_15px_rgba(0,0,0,0.05)]"
         ):
+            if level_timing:
+                ui.button("判定等级", icon="rule", on_click=open_level_dialog).props(
+                    "outline color=indigo no-caps"
+                )
             if is_draft_or_reject:
                 if can_create_request and (basic["applicant"] == current_user or is_new):
                     ui.button("保存为草稿", on_click=lambda: execute_db_action("save_draft")).props("color=grey-7")
@@ -1321,6 +1419,10 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
                 # 1. 同步工作流状态
                 fresh_wf = fresh.get("workflow", {})
                 was_current_role_pending = current_user in get_ecn_pending_approval_roles(wf)
+                level_changed = (
+                    fresh_wf.get("ecn_level") != wf.get("ecn_level")
+                    or fresh_wf.get("ecn_level_decisions", []) != wf.get("ecn_level_decisions", [])
+                )
                 if (
                     fresh_wf.get("current_state") != wf["current_state"]
                     or fresh_wf.get("pending_roles") != wf["pending_roles"]
@@ -1330,6 +1432,7 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
                     or fresh_wf.get("step_approvals", {}) != wf.get("step_approvals", {})
                     or fresh_wf.get("ecr_workflow_assignment", {}) != wf.get("ecr_workflow_assignment", {})
                     or fresh_wf.get("scheme_workflow_assignment", {}) != wf.get("scheme_workflow_assignment", {})
+                    or level_changed
                 ):
                     wf["approval_round"] = fresh_wf.get("approval_round")
                     wf["current_state"] = fresh_wf.get("current_state")
@@ -1339,8 +1442,15 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
                     wf["step_approvals"] = copy.deepcopy(fresh_wf.get("step_approvals", {}))
                     wf["ecr_workflow_assignment"] = copy.deepcopy(fresh_wf.get("ecr_workflow_assignment", {}))
                     wf["scheme_workflow_assignment"] = copy.deepcopy(fresh_wf.get("scheme_workflow_assignment", {}))
+                    wf["ecn_level"] = fresh_wf.get("ecn_level", "")
+                    wf["ecn_level_decisions"] = copy.deepcopy(fresh_wf.get("ecn_level_decisions", []))
                     local_data["approval_log"] = copy.deepcopy(fresh.get("approval_log", []))
                     render_workflow_tab()  # 触发刷新流转页面
+                    if level_changed:
+                        root_dialog.close()
+                        refresh_list()
+                        ui.notify("ECN等级已由其他页面调整，请重新打开详情。", type="info")
+                        return
                     current_identity_still_pending = current_user in get_ecn_pending_approval_roles(wf)
                     if was_current_role_pending and not current_identity_still_pending:
                         root_dialog.close()
@@ -1406,7 +1516,9 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
                         await restore_execution_scroll_state(execution_container.client, scroll_state)
 
         if wf["current_state"] in [
+            ECNState.ECR_REVIEWING,
             ECNState.ECN_SCHEMING,
+            ECNState.ECN_REVIEWING,
             ECNState.MATERIAL_CODE_PENDING,
             ECNState.ECN_EXECUTING,
         ] and not is_new:

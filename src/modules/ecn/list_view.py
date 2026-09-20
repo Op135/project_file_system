@@ -21,6 +21,7 @@ from ...ecn_management_config import (
     ECN_TRACEABILITY_LEVELS,
     get_ecn_execution_pending_role_keywords,
     get_ecn_execution_pending_usernames,
+    get_ecn_level_label,
     get_ecn_missing_material_code_items,
     get_ecn_pending_approval_roles,
     get_ecn_scheme_coverage,
@@ -147,6 +148,7 @@ def build_ecn_management_grid_row(
         "current_state": current_state,
         "is_my_pending": is_my_pending,
         "attention": "负责人异常·待改派" if can_reassign else "待我处理" if is_my_pending else "",
+        "ecn_level": get_ecn_level_label(ecn_data),
         "summary": summary_text,
         "projects": "、".join(projects) or "—",
         "applicant": str(basic_info.get("applicant") or "—"),
@@ -248,6 +250,12 @@ def get_ecn_management_grid_columns(include_delete: bool = False) -> list[dict[s
             },
             {"headerName": "当前状态", "field": "current_state", "filter": text_filter, "width": 150},
             {"headerName": "关注事项", "field": "attention", "filter": text_filter, "width": 105},
+            {
+                "headerName": "ECN等级",
+                "field": "ecn_level",
+                "filter": text_filter,
+                "width": 120,
+            },
             {
                 "headerName": "变更简要",
                 "field": "summary",

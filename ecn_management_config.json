@@ -8,6 +8,7 @@
         "scheme_review.require_rejected_item_selection": "审批人驳回ECN方案时是否必须选择至少一个具体方案。",
         "scheme_review.require_revision_before_reconfirmation": "被驳回方案未实际修改前，是否禁止作者直接重新确认。",
         "scheme_review.document_types_without_required_scheme": "schema.document_types 中无需强制存在对应方案的资料类型；资料仍可关联方案，未列入的已勾选资料仍须至少由一条方案覆盖。",
+        "ecn_levels": "ECN等级的显示名称；simple、general、complex为稳定编码，只能修改右侧名称。未判定时按general处理。",
         "scheme_review.participant_statuses": "方案参与人的状态编码、显示文案、颜色、图标和是否提醒。",
         "scheme_review.item_statuses": "单条方案的评审整改状态编码及显示文案。",
         "scheme_review.transitions": "方案编辑、确认、驳回和整改动作分别写入哪个参与人/方案状态。状态值必须存在于对应statuses配置中。",
@@ -92,6 +93,11 @@
             "item_after_revision": "revised_pending_confirmation",
             "item_after_reconfirmation": "revised_confirmed"
         }
+    },
+    "ecn_levels": {
+        "simple": "简单",
+        "general": "一般",
+        "complex": "复杂"
     },
     "scheme_tracking": {
         "traceability_levels": [
