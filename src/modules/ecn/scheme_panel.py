@@ -273,7 +273,11 @@ def build_scheme_panel(
                         def render_my_actions():
                             my_action_container.clear()
                             with my_action_container:
-                                if is_scheme_writer:
+                                has_own_scheme = any(
+                                    isinstance(item, dict) and item.get("author") == current_user
+                                    for item in local_data.get("change_items", [])
+                                )
+                                if is_scheme_writer and has_own_scheme:
                                     cur_status = participants.get(current_user)
                                     if cur_status in [
                                         ECN_PARTICIPANT_STATUS_EDITING,

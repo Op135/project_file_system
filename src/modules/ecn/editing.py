@@ -162,6 +162,8 @@ def confirm_participant(current: dict, expected: dict, user: str, status: str) -
         def own_items(record):
             return [item for item in record.get("change_items", []) if item.get("author") == user]
 
+        if not own_items(current):
+            raise ECNConflict("请先添加至少一条本人方案，再确认完成。")
         if own_items(current) != own_items(expected):
             raise ECNConflict("本人的方案已变化，请核对最新内容后再确认。")
         if ECN_REQUIRE_REVISION_BEFORE_RECONFIRMATION and has_unrevised_rejected_scheme_items(current, user):

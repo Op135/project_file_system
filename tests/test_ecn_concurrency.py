@@ -169,6 +169,23 @@ class ECNConcurrencyTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(deleted.ok)
         self.assertEqual((await self.fresh())["change_items"][0]["new_content"], "第一次修改")
 
+    async def test_user_without_own_scheme_cannot_confirm_participation(self):
+        value = record()
+        await self.store(value)
+        with patch.object(actions, "can_edit_ecn_scheme", return_value=True):
+            result = await actions.set_participant_status(
+                value["ecn_id"],
+                copy.deepcopy(value),
+                "李四",
+                "研发",
+                ECN_PARTICIPANT_STATUS_CONFIRMED,
+                user_service=self.service,
+                storage=self.left,
+            )
+        self.assertFalse(result.ok)
+        self.assertIn("先添加至少一条本人方案", result.message)
+        self.assertNotIn("李四", (await self.fresh())["workflow"]["scheme_participants"])
+
     async def test_review_start_rechecks_latest_confirmation_and_coverage(self):
         value = record()
         for mutate in (
