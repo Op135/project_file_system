@@ -324,6 +324,7 @@ _DEFAULT_CONFIG: dict[str, Any] = {
     "scheme_review": {
         "require_rejected_item_selection": True,
         "require_revision_before_reconfirmation": True,
+        "document_types_without_required_scheme": [],
         "participant_statuses": {
             "editing": {"label": "编写中", "color": "orange", "icon": "edit", "remind": True},
             "confirmed": {
@@ -463,10 +464,16 @@ def _read_config_file() -> dict:
     return {}
 
 
-def _string_list(value: Any, default: list[str], field_name: str) -> list[str]:
+def _string_list(
+    value: Any,
+    default: list[str],
+    field_name: str,
+    *,
+    allow_empty: bool = False,
+) -> list[str]:
     if isinstance(value, list) and all(isinstance(item, str) and item.strip() for item in value):
         normalized = list(dict.fromkeys(item.strip() for item in value))
-        if normalized:
+        if normalized or allow_empty:
             return normalized
     logger.warning("ECN配置 %s 无效，已使用默认值", field_name)
     return copy.deepcopy(default)
@@ -638,6 +645,28 @@ def load_ecn_config(raw_config: dict | None = None) -> dict:
     for key, default in _DEFAULT_CONFIG["schema"].items():
         result["schema"][key] = _string_list(raw_schema.get(key), default, f"schema.{key}")
 
+    configured_optional_document_types = _string_list(
+        raw_scheme_review.get(
+            "document_types_without_required_scheme",
+            _DEFAULT_CONFIG["scheme_review"]["document_types_without_required_scheme"],
+        ),
+        _DEFAULT_CONFIG["scheme_review"]["document_types_without_required_scheme"],
+        "scheme_review.document_types_without_required_scheme",
+        allow_empty=True,
+    )
+    known_document_types = set(result["schema"]["document_types"])
+    unknown_optional_document_types = [
+        name for name in configured_optional_document_types if name not in known_document_types
+    ]
+    if unknown_optional_document_types:
+        logger.warning(
+            "ECN配置 scheme_review.document_types_without_required_scheme 包含未定义资料类型，已忽略：%s",
+            "、".join(unknown_optional_document_types),
+        )
+    result["scheme_review"]["document_types_without_required_scheme"] = [
+        name for name in configured_optional_document_types if name in known_document_types
+    ]
+
     return result
 
 
@@ -649,6 +678,9 @@ ECN_ALLOWED_PROJECT_STATES = ECN_CONFIG["allowed_project_states"]
 ECN_IMPACT_FOLLOWUP_STATES = ECN_CONFIG["reminders"]["impact_followup_states"]
 ECN_REQUIRE_REJECTED_ITEM_SELECTION = ECN_CONFIG["scheme_review"]["require_rejected_item_selection"]
 ECN_REQUIRE_REVISION_BEFORE_RECONFIRMATION = ECN_CONFIG["scheme_review"]["require_revision_before_reconfirmation"]
+ECN_DOCUMENT_TYPES_WITHOUT_REQUIRED_SCHEME = set(
+    ECN_CONFIG["scheme_review"]["document_types_without_required_scheme"]
+)
 ECN_PARTICIPANT_STATUS_CONFIG = ECN_CONFIG["scheme_review"]["participant_statuses"]
 ECN_ITEM_STATUS_CONFIG = ECN_CONFIG["scheme_review"]["item_statuses"]
 ECN_SCHEME_STATUS_TRANSITIONS = ECN_CONFIG["scheme_review"]["transitions"]
@@ -1266,7 +1298,14 @@ def get_ecn_scheme_coverage(ecn_data: Any) -> dict[str, set[str]]:
             requirement_idx = requirement.get("idx")
             if requirement_idx not in [None, ""]:
                 required_requirements.add(str(requirement_idx).strip())
-    required_docs = {name for name, selected in review_info.get("involved_docs", {}).items() if selected}
+    involved_docs = review_info.get("involved_docs", {})
+    if not isinstance(involved_docs, dict):
+        involved_docs = {}
+    required_docs = {
+        name
+        for name, selected in involved_docs.items()
+        if selected and name not in ECN_DOCUMENT_TYPES_WITHOUT_REQUIRED_SCHEME
+    }
     required_materials = {
         f"{material}-{action}"
         for material, actions in review_info.get("involved_materials", {}).items()

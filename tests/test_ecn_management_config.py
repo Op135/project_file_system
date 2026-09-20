@@ -160,6 +160,7 @@ def test_checked_in_config_file_is_valid():
     assert loaded["ui"]["overview_conflict_auto_close_seconds"] == 5.0
     assert loaded["scheme_review"]["require_rejected_item_selection"] is True
     assert loaded["scheme_review"]["require_revision_before_reconfirmation"] is True
+    assert loaded["scheme_review"]["document_types_without_required_scheme"] == []
     assert loaded["scheme_review"]["participant_statuses"]["confirmed"]["remind"] is False
     assert loaded["scheme_review"]["participant_statuses"]["needs_reconfirmation"]["remind"] is True
     assert loaded["scheme_review"]["transitions"] == {
@@ -184,6 +185,14 @@ def test_checked_in_config_file_is_valid():
         "deactivate": "失效",
     }
     assert loaded["scheme_options"] == raw_config["scheme_options"]
+
+    raw_config["scheme_review"]["document_types_without_required_scheme"] = [
+        "出厂测试报告",
+        "不存在的资料类型",
+        "出厂测试报告",
+    ]
+    custom_loaded = load_ecn_config(raw_config)
+    assert custom_loaded["scheme_review"]["document_types_without_required_scheme"] == ["出厂测试报告"]
 
 
 def test_all_scheme_dialogs_share_ecr_and_expanded_target_projects():
@@ -353,6 +362,32 @@ def test_scheme_is_not_ready_until_confirmation_and_coverage_are_complete():
 
     assert is_ecn_scheme_ready_for_review(unconfirmed) is False
     assert is_ecn_scheme_ready_for_review(missing_coverage) is False
+
+
+def test_configured_optional_document_types_do_not_require_a_scheme():
+    record = _ecn_record(
+        impact_selected=True,
+        impact_handlers=["工程师A"],
+        participants={"工程师A": "confirmed"},
+    )
+    record["review_info"]["involved_docs"] = {
+        "出厂测试报告": True,
+        "光学件图纸": True,
+    }
+    record["change_items"] = []
+
+    with patch(
+        "src.ecn_management_config.ECN_DOCUMENT_TYPES_WITHOUT_REQUIRED_SCHEME",
+        {"出厂测试报告"},
+    ):
+        coverage = get_ecn_scheme_coverage(record)
+        assert coverage["required_docs"] == {"光学件图纸"}
+        assert coverage["missing_docs"] == {"光学件图纸"}
+        assert is_ecn_scheme_ready_for_review(record) is False
+
+        record["change_items"] = [{"linked_docs": ["光学件图纸"]}]
+        assert get_ecn_scheme_coverage(record)["missing_docs"] == set()
+        assert is_ecn_scheme_ready_for_review(record) is True
 
 
 def test_every_change_requirement_must_be_linked_by_at_least_one_scheme():
