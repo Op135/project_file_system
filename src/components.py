@@ -98,6 +98,32 @@ from .utils import (
 logger = logging.getLogger(__name__)
 
 
+async def _fetch_svn_file_http_async(
+    http_url: str,
+    username: str = "",
+    password: str = "",
+) -> tuple[str | None, bytes | None]:
+    """直连 SVN 并读取文件，避免本机代理环境干扰内网 HTTPS。"""
+    auth = BasicAuth(username, password) if username and password else None
+    ssl_context = ssl.create_default_context()
+    ssl_context.check_hostname = False
+    ssl_context.verify_mode = ssl.CERT_NONE
+    try:
+        async with httpx.AsyncClient(
+            follow_redirects=True,
+            verify=ssl_context,
+            auth=auth,
+            trust_env=False,
+            timeout=60.0,
+        ) as client:
+            response = await client.get(http_url)
+            response.raise_for_status()
+            return http_url.rsplit("/", 1)[-1], response.content
+    except Exception:
+        logger.error("读取 SVN 文件失败：%s", http_url, exc_info=True)
+        return None, None
+
+
 def _prepare_overview_state_draft(project: str, chip_id: str, current_states: dict) -> dict:
     """创建或复用状态编辑草稿，并返回不受广播条目后续删除影响的字典引用。"""
     broadcast_root = app.storage.general.setdefault("over_change_broadcast", {})
@@ -4364,17 +4390,7 @@ class InteractiveButton:
     #         return False, None
 
     async def get_svn_file_http_async(self, http_url: str, username: str = "", password: str = "") -> tuple:
-        auth = BasicAuth(username, password) if username and password else None
-        ssl_context = ssl.create_default_context()
-        ssl_context.check_hostname = False
-        ssl_context.verify_mode = ssl.CERT_NONE
-        try:
-            async with httpx.AsyncClient(follow_redirects=True, verify=ssl_context, auth=auth) as client:
-                response = await client.get(http_url, auth=auth, timeout=10)
-                response.raise_for_status()
-                return http_url.split("/")[-1], response.content
-        except Exception:
-            return None, None
+        return await _fetch_svn_file_http_async(http_url, username, password)
 
     async def check_and_download_svn(self, http_url, file_name):
         storage_key = f"downloaded_{file_name}"
@@ -4396,24 +4412,29 @@ class InteractiveButton:
                     ui.button("关闭", on_click=self.check_down_dialog.close, color="grey")
             self.check_down_dialog.open()
         else:
-            await self.trigger_download_svn_async(http_url, file_name)
-            await ui.run_javascript(f'sessionStorage.setItem("{storage_key}", "true")')
+            download_succeeded = await self.trigger_download_svn_async(http_url, file_name)
+            if download_succeeded:
+                await ui.run_javascript(f'sessionStorage.setItem("{storage_key}", "true")')
 
-    async def trigger_download_svn_async(self, http_url, file_name, on_finish=None):
+    async def trigger_download_svn_async(self, http_url, file_name, on_finish=None) -> bool:
+        ui.notify(f"正在从 SVN 读取 {file_name}...", type="info", timeout=2000)
         _, content = await self.get_svn_file_http_async(http_url, username=SVN_USERNAME, password=SVN_PASSWORD)
-        if content:
-            ui.download(content, file_name)
-            ui.notify(
-                f"已开始下载: {file_name}",
-                type="positive",
-                position="bottom",
-                timeout=1000,
-                progress=True,
-                # multi_line=True,
-                close_button="✖",
-            )
-            if on_finish:
-                on_finish()
+        if content is None:
+            ui.notify("SVN 文件下载失败，请检查网络连接或联系管理员查看日志。", type="negative", timeout=4000)
+            return False
+        ui.download(content, file_name)
+        ui.notify(
+            f"已开始下载: {file_name}",
+            type="positive",
+            position="bottom",
+            timeout=1000,
+            progress=True,
+            # multi_line=True,
+            close_button="✖",
+        )
+        if on_finish:
+            on_finish()
+        return True
 
     async def open_svn_pdf_in_browser(self, http_url, file_name):
         ui.notify(
@@ -7786,17 +7807,7 @@ class OverviewTableGroup:
     #         return False, None
 
     async def get_svn_file_http_async(self, http_url: str, username: str = "", password: str = ""):
-        auth = BasicAuth(username, password) if username and password else None
-        ssl_context = ssl.create_default_context()
-        ssl_context.check_hostname = False
-        ssl_context.verify_mode = ssl.CERT_NONE
-        try:
-            async with httpx.AsyncClient(follow_redirects=True, verify=ssl_context, auth=auth) as client:
-                response = await client.get(http_url, auth=auth, timeout=10)
-                response.raise_for_status()
-                return http_url.split("/")[-1], response.content
-        except Exception:
-            return None, None
+        return await _fetch_svn_file_http_async(http_url, username, password)
 
     async def check_and_download_svn(self, http_url, file_name):
         storage_key = f"downloaded_{file_name}"
@@ -7817,24 +7828,29 @@ class OverviewTableGroup:
                     ui.button("关闭", on_click=self.check_down_dialog.close, color="grey")
             self.check_down_dialog.open()
         else:
-            await self.trigger_download_svn_async(http_url, file_name)
-            await ui.run_javascript(f'sessionStorage.setItem("{storage_key}", "true")')
+            download_succeeded = await self.trigger_download_svn_async(http_url, file_name)
+            if download_succeeded:
+                await ui.run_javascript(f'sessionStorage.setItem("{storage_key}", "true")')
 
-    async def trigger_download_svn_async(self, http_url, file_name, on_finish=None):
+    async def trigger_download_svn_async(self, http_url, file_name, on_finish=None) -> bool:
+        ui.notify(f"正在从 SVN 读取 {file_name}...", type="info", timeout=2000)
         _, content = await self.get_svn_file_http_async(http_url, username=SVN_USERNAME, password=SVN_PASSWORD)
-        if content:
-            ui.download(content, file_name)
-            ui.notify(
-                f"已开始下载: {file_name}",
-                type="positive",
-                position="bottom",
-                timeout=1000,
-                progress=True,
-                # multi_line=True,
-                close_button="✖",
-            )
-            if on_finish:
-                on_finish()
+        if content is None:
+            ui.notify("SVN 文件下载失败，请检查网络连接或联系管理员查看日志。", type="negative", timeout=4000)
+            return False
+        ui.download(content, file_name)
+        ui.notify(
+            f"已开始下载: {file_name}",
+            type="positive",
+            position="bottom",
+            timeout=1000,
+            progress=True,
+            # multi_line=True,
+            close_button="✖",
+        )
+        if on_finish:
+            on_finish()
+        return True
 
     async def open_svn_pdf_in_browser(self, http_url, file_name):
         """修复 4.3: 恢复拉取前与打开后的交互提示"""
