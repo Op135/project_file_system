@@ -4227,6 +4227,7 @@
                     "量产": "Product"
                 },
                 "search_scope_regular": "((?:RF|IT)[A-Za-z]{2})[-_]?([0-9A-Z]{4}[A-Z]?)",
+                "fallback_folder_path": "",
                 "search_folder_according": [],
                 "search_hierarchy": [
                     "src"
@@ -4294,6 +4295,7 @@
                     "量产": "Product"
                 },
                 "search_scope_regular": "((?:RF|IT)[A-Za-z]{2})[-_]?([0-9A-Z]{4}[A-Z]?)",
+                "fallback_folder_path": "",
                 "search_folder_according": [],
                 "search_hierarchy": [
                     "docs"
@@ -4344,6 +4346,7 @@
                     "量产": "Product"
                 },
                 "search_scope_regular": "((?:RF|IT)[A-Za-z]{2})[-_]?([0-9A-Z]{4}[A-Z]?)",
+                "fallback_folder_path": "tmp_docs",
                 "search_folder_according": [],
                 "search_hierarchy": [
                     "docs"
@@ -4396,6 +4399,7 @@
                     "量产": "Product"
                 },
                 "search_scope_regular": "((?:RF|IT)[A-Za-z]{2})[-_]?([0-9A-Z]{4}[A-Z]?)",
+                "fallback_folder_path": "tmp_docs",
                 "search_folder_according": [],
                 "search_hierarchy": [
                     "docs"
@@ -4511,6 +4515,7 @@
                     "量产": "Product"
                 },
                 "search_scope_regular": "((?:RF|IT)[A-Za-z]{2})[-_]?([0-9A-Z]{4}[A-Z]?)",
+                "fallback_folder_path": "",
                 "search_folder_according": [],
                 "search_hierarchy": [
                     "src"

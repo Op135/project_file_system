@@ -58,6 +58,7 @@
 - 概述新建和手动激活状态调整的原因选项由根目录 `overview_operation_config.json` 管理；“其他”需要补充简短说明。自动转待定、关联影响、表格联动及 ECN 落盘的原因文案也集中在该配置中。
 - 顶层 `creator` 表示概述的原始录入人，后续状态调整不覆盖它；“最近操作人”和技术维度的“最近负责人”读取最新一条 `timestamp.<时间>.creator`。
 - 新概述不再生成顶层 `notes`。每次操作在秒级 `timestamp` 中保存 `creator`、`reason` 和当时完整的 `select_activ_dic` 状态快照；ECN 自动处理额外以 `source_id` 保存 ECN 编号。既有概述的顶层 `notes` 只作为历史兼容读取，不再更新。
+- SVN 类概述保留按 `search_scope_regular` 定位项目目录的首选规则，`search_hierarchy` 仅参与该正则路径；首选 URL 未找到文件时，可按概述项的 `fallback_folder_path` 从同一 `upload_path/state_path` 起点进入相对兜底目录并直接探测文件。空值表示不启用兜底。
 - 自动转待定不写“系统”为操作人，使用该概述技术维度已有的最近负责人；没有运行时负责人索引时回退该条概述的原始录入人。
 - 概述 Tooltip 的“注释”只显示最新一条时间记录的 `reason`；旧数据没有 `reason` 时回退旧 `notes`。单条、具体参数和项目技术维度三级历史都可分别查看录入记录及后续状态变更，并展示原因、操作人、状态快照和可选来源编号。
 - 检测概述汇总表继续使用“备注”作为列名，但内容读取最新一条 `timestamp.reason`，旧数据仍回退顶层 `notes`。

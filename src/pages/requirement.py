@@ -5897,6 +5897,7 @@ async def requirement_page(
                                                             upload_path=data["upload_path"],
                                                             state_path=data["state_path"],
                                                             search_scope_regular=data["search_scope_regular"],
+                                                            fallback_folder_path=data.get("fallback_folder_path", ""),
                                                             content_regular=data["content_regular"],
                                                             search_folder_according_li=data["search_folder_according"],
                                                             search_hierarchy=data["search_hierarchy"],

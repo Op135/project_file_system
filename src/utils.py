@@ -369,8 +369,6 @@ async def validate_svn_url(content: str, config: dict, projects: list, pending_o
     返回: (is_valid: bool, url_path: str, file_type: str, message: str)
     """
 
-    from nicegui import app
-
     primary_project = projects[0] if projects else ""
     project_state = app.storage.general.get("project_summary", {}).get(primary_project, {}).get("state", "")
     svn_main_folder = config.get("state_path", {}).get(project_state)
@@ -382,6 +380,7 @@ async def validate_svn_url(content: str, config: dict, projects: list, pending_o
     search_scope_regular = config.get("search_scope_regular", "")
     search_folder_according_li = config.get("search_folder_according", [])
     search_hierarchy = config.get("search_hierarchy", [])
+    fallback_folder_path = str(config.get("fallback_folder_path") or "").strip().strip("/\\")
 
     according_folder_name = []
     target_url_li = []
@@ -396,7 +395,7 @@ async def validate_svn_url(content: str, config: dict, projects: list, pending_o
                     if DATA.get("enabled"):
                         according_folder_name.append(DATA["content"])
 
-        if not according_folder_name:
+        if not according_folder_name and not fallback_folder_path:
             return False, "", "", "项目缺少依赖的目录项配置，无法构建SVN路径"
 
         if search_scope_regular:
@@ -417,7 +416,11 @@ async def validate_svn_url(content: str, config: dict, projects: list, pending_o
         else:
             target_url_li.append(f"{upload_path}/{svn_main_folder}")
 
-    if not target_url_li:
+    fallback_url = ""
+    if fallback_folder_path:
+        fallback_url = f"{upload_path}/{svn_main_folder}/{fallback_folder_path}"
+
+    if not target_url_li and not fallback_url:
         return False, "", "", "未能生成有效的 SVN 校验路径"
 
     return_url_li = []
@@ -430,7 +433,10 @@ async def validate_svn_url(content: str, config: dict, projects: list, pending_o
     if len(return_url_li) > 1:
         return False, "", "", "生成了多个 SVN 路径，存在歧义不合规"
 
-    target_url = return_url_li[0]
+    if fallback_url:
+        fallback_file_url = f"{fallback_url}/{content}"
+        if fallback_file_url not in return_url_li:
+            return_url_li.append(fallback_file_url)
 
     # HTTP 探测
     headers = {"User-Agent": "Mozilla/5.0"}
@@ -443,31 +449,28 @@ async def validate_svn_url(content: str, config: dict, projects: list, pending_o
     # BasicAuth: httpx 库提供的类，用于构造 HTTP 基本认证 (Basic Authentication) 的凭证对象，底层会自动将账号密码进行 Base64 编码并注入 Headers。
     auth = BasicAuth(SVN_USERNAME, SVN_PASSWORD) if SVN_USERNAME and SVN_PASSWORD else None
 
-    file_type = None
-    is_valid = False
-
     try:
         # httpx.AsyncClient: httpx 库提供的核心类，用于创建一个异步的 HTTP 客户端实例，负责管理连接池、HTTP/2 支持及全局配置。
         # 【修复核心】trust_env=False: 强制客户端忽略操作系统的环境代理变量（如 HTTP_PROXY, HTTPS_PROXY），避免请求内网地址时被代理拦截。
         async with httpx.AsyncClient(follow_redirects=False, verify=ssl_context, auth=auth, trust_env=False) as client:
-            # client.stream(): AsyncClient 实例的方法，用于发起异步的流式 HTTP 请求。它只读取响应头而不立即下载响应体，非常适合仅需探测文件类型或处理大文件的场景，可极大节省内存。
-            async with client.stream("GET", target_url, timeout=15, headers=headers) as response:
-                if response.status_code < 400:
+            for target_url in return_url_li:
+                # 按顺序探测：原正则路径优先，仅在未找到时尝试配置的兜底目录。
+                async with client.stream("GET", target_url, timeout=15, headers=headers) as response:
+                    if response.status_code >= 400:
+                        continue
                     ct = response.headers.get("Content-Type")
                     file_type = ct.split(";")[0].strip() if ct else None
                     if (file_type == "application/octet-stream" or file_type is None) and target_url.lower().endswith(
                         ".pdf"
                     ):
                         file_type = "application/pdf"
-                    is_valid = True
+                    return True, target_url, file_type, "SVN 文件校验通过！"
     except Exception as e:
         # 建议将 str(e) 替换为 repr(e)，以保留更完整的异常类名，方便后续排查其他未知问题
         return False, "", "", f"SVN 连接异常: {repr(e)}"
 
-    if is_valid:
-        return True, target_url, file_type, "SVN 文件校验通过！"
-    else:
-        return False, "", "", f"SVN 文件探测失败: 状态异常或不存在于 {target_url}"
+    checked_urls = "、".join(return_url_li)
+    return False, "", "", f"SVN 文件探测失败: 状态异常或不存在于 {checked_urls}"
 
 
 def update_overview_charge_pending_dic(scope, des_user="", project_name="", des_label=""):

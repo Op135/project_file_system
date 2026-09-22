@@ -1495,6 +1495,7 @@ class InteractiveButton:
         upload_path: str = SUBMIT_FILES_DIR,
         state_path: dict = {},
         search_scope_regular: str = "",
+        fallback_folder_path: str = "",
         search_folder_according: list = [],
         content_regular: list = [],
         search_folder_according_li: list = [],
@@ -1522,6 +1523,7 @@ class InteractiveButton:
         self.upload_path = upload_path
         self.state_path = state_path
         self.search_scope_regular = search_scope_regular
+        self.fallback_folder_path = fallback_folder_path
         self.search_folder_according = search_folder_according
         self.content_regular = content_regular
         self.search_folder_according_li = search_folder_according_li
@@ -1858,6 +1860,7 @@ class InteractiveButton:
             "upload_path": self.upload_path,
             "state_path": copy.deepcopy(self.state_path),
             "search_scope_regular": self.search_scope_regular,
+            "fallback_folder_path": self.fallback_folder_path,
             "search_folder_according": copy.deepcopy(self.search_folder_according),
             "search_folder_according_li": copy.deepcopy(self.search_folder_according_li),
             "search_hierarchy": copy.deepcopy(self.search_hierarchy),
@@ -2132,6 +2135,7 @@ class InteractiveButton:
         # 处理非图片类（含视频）
         if chip_info.get("type") in ["text", "file", "test", "search", "svn", "video"]:
             file_info = (False, None)
+            resolved_svn_url = str(chip_info.get("url_path") or "")
 
             if chip_info["type"] in ["file", "video"] and chip_info.get("enabled"):
                 filepath = f"{self.upload_path}/{chip_text}"
@@ -2220,13 +2224,18 @@ class InteractiveButton:
                 config_mock = {
                     "upload_path": self.upload_path,
                     "search_scope_regular": self.search_scope_regular,
+                    "fallback_folder_path": self.fallback_folder_path,
                     "search_folder_according_li": self.search_folder_according_li,
                     "search_hierarchy": self.search_hierarchy,
                     "state_path": self.state_path,
                 }
                 # SVN 校验
-                is_valid, _, file_type, msg = await validate_svn_url(chip_text, config_mock, [self.project])
+                is_valid, resolved_url, file_type, msg = await validate_svn_url(
+                    chip_text, config_mock, [self.project]
+                )
                 file_info = (is_valid, file_type)
+                if is_valid:
+                    resolved_svn_url = resolved_url
                 if not is_valid:
                     logger.warning(f"渲染时 SVN 检查失败: {msg}")
 
@@ -2261,11 +2270,11 @@ class InteractiveButton:
             elif chip_info.get("type") == "svn":
                 if chip_info.get("file_type") == "application/pdf" and file_info[0]:
                     chip.on_click(
-                        lambda url=chip_info.get("url_path"), fn=chip_text: self.open_svn_pdf_in_browser(url, fn)
+                        lambda url=resolved_svn_url, fn=chip_text: self.open_svn_pdf_in_browser(url, fn)
                     )
                 elif file_info[0]:
                     chip.on_click(
-                        lambda url=chip_info.get("url_path"), fn=chip_text: self.check_and_download_svn(url, fn)
+                        lambda url=resolved_svn_url, fn=chip_text: self.check_and_download_svn(url, fn)
                     )
                 else:
                     if chip.icon != "question_mark":
@@ -2995,6 +3004,7 @@ class InteractiveButton:
                 config_mock = {
                     "upload_path": self.upload_path,
                     "search_scope_regular": self.search_scope_regular,
+                    "fallback_folder_path": self.fallback_folder_path,
                     "search_folder_according_li": self.search_folder_according_li,
                     "search_hierarchy": self.search_hierarchy,
                     "state_path": self.state_path,
@@ -3996,6 +4006,7 @@ class InteractiveButton:
             config_mock = {
                 "upload_path": self.upload_path,
                 "search_scope_regular": self.search_scope_regular,
+                "fallback_folder_path": self.fallback_folder_path,
                 "search_folder_according_li": self.search_folder_according_li,
                 "search_hierarchy": self.search_hierarchy,
                 "state_path": self.state_path,
@@ -5319,6 +5330,7 @@ class OverviewTableGroup:
         chip_text = chip_info.get("content", "")
         filepath = ""
         file_exists = False
+        resolved_svn_url = str(chip_info.get("url_path") or "")
         upload_path = config.get("upload_path", "")
         delete_icon = "close" if app.storage.user["current_user"] == "admin" else "settings"
         delete_bg = "bg-red text-white" if app.storage.user["current_user"] == "admin" else "bg-white text-light-blue"
@@ -5357,8 +5369,10 @@ class OverviewTableGroup:
             elif chip_info["type"] == "svn" and chip_info.get("enabled"):
                 # target_url = chip_info.get("url_path", "")
                 # file_info = await self.get_url_file_info_async(target_url)
-                is_valid, _, file_type, msg = await validate_svn_url(chip_text, config, [self.project])
+                is_valid, resolved_url, file_type, msg = await validate_svn_url(chip_text, config, [self.project])
                 file_info = (is_valid, file_type)
+                if is_valid:
+                    resolved_svn_url = resolved_url
 
             # 💡 优化 3：新增一个相对定位的容器包裹 Chip，这是解决小按钮被裁切的关键！
             with ui.element("div").classes("relative w-full flex items-center justify-start") as wrapper:
@@ -5401,11 +5415,11 @@ class OverviewTableGroup:
                 elif chip_info.get("type") == "svn":
                     if chip_info.get("file_type") == "application/pdf" and file_info[0]:
                         chip.on_click(
-                            lambda url=chip_info.get("url_path"), fn=chip_text: self.open_svn_pdf_in_browser(url, fn)
+                            lambda url=resolved_svn_url, fn=chip_text: self.open_svn_pdf_in_browser(url, fn)
                         )
                     elif file_info[0]:
                         chip.on_click(
-                            lambda url=chip_info.get("url_path"), fn=chip_text: self.check_and_download_svn(url, fn)
+                            lambda url=resolved_svn_url, fn=chip_text: self.check_and_download_svn(url, fn)
                         )
                     else:
                         if chip._props.get("icon") != "question_mark":
