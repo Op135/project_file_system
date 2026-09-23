@@ -4761,7 +4761,7 @@ class OverviewTableGroup:
         self.activ_dialog = ui.dialog().props("persistent").classes("")
         self.history_dialog = ui.dialog().classes("w-full")
         # 采用 w-full max-w-screen-md 确保在大中小屏幕下均有良好的自适应宽度表现
-        self.autofill_dialog = ui.dialog().classes("w-full max-w-screen-md px-4 py-2")
+        self.autofill_dialog = ui.dialog().classes("w-full px-2 py-2")
 
         # 隐藏的文件上传器
         self.uploader = ui.upload(
@@ -7019,26 +7019,58 @@ class OverviewTableGroup:
         展示联动组合勾选弹窗 (支持 test 类型的深度条件解析与多终端自适应滚动)
         """
         self.autofill_dialog.clear()
-        selected_idx = {"val": list(combinations.keys())[0]}
+        project_names = list(combinations.keys())
+        selected_idx = {"val": project_names[0]}
 
-        with self.autofill_dialog, ui.card().classes("w-full"):
-            ui.label("发现历史项目中存在相同内容的关联配置，是否快捷填充？").classes("text-lg font-bold text-blue-900")
+        with self.autofill_dialog, ui.card().classes(
+            "w-[94vw] max-w-[1500px] h-[88vh] max-h-[920px] p-5 flex flex-col gap-3"
+        ):
+            ui.label("发现历史项目中存在相同内容的关联配置，是否快捷填充？").classes(
+                "text-lg font-bold text-blue-900 shrink-0"
+            )
 
-            # 使用 max-h-[50vh] 等限制高度并加上滚动条，保障移动端与小屏显示器的可用性
-            with ui.scroll_area().classes("w-full max-h-[50vh] border p-2 bg-gray-50/50 rounded-sm"):
+            project_radios = {}
+            syncing_radios = False
+
+            def select_project(project_name: str) -> None:
+                nonlocal syncing_radios
+                if syncing_radios:
+                    return
+                syncing_radios = True
+                try:
+                    selected_idx["val"] = project_name
+                    for name, radio in project_radios.items():
+                        expected_value = name if name == project_name else None
+                        if radio.value != expected_value:
+                            radio.value = expected_value
+                finally:
+                    syncing_radios = False
+
+            def handle_radio_change(project_name: str, value) -> None:
+                if not syncing_radios and value == project_name:
+                    select_project(project_name)
+
+            # 每个项目的选项和关联内容保持在同一卡片内，整个卡片均可点击选中。
+            with ui.scroll_area().classes("w-full flex-grow min-h-0 border p-3 bg-gray-50/50 rounded-md"):
                 for project_name, combo in combinations.items():
                     bg_hover = "hover:bg-blue-50"
                     with (
                         ui.row()
                         .classes(
-                            f"w-full items-start border-b border-gray-200 py-3 px-2 cursor-pointer transition-colors {bg_hover}"
+                            f"w-full items-start border border-gray-200 rounded-lg py-3 px-3 mb-3 "
+                            f"cursor-pointer transition-colors bg-white {bg_hover}"
                         )
-                        .on("click", lambda _, i=project_name: selected_idx.update({"val": i}))
+                        .on("click", lambda _, name=project_name: select_project(name))
                     ):
-                        ui.radio([project_name], value=selected_idx["val"]).bind_value(selected_idx, "val").classes(
-                            "mt-0"
+                        radio = ui.radio(
+                            [project_name],
+                            value=project_name if project_name == selected_idx["val"] else None,
+                        ).classes("w-full")
+                        project_radios[project_name] = radio
+                        radio.on_value_change(
+                            lambda event, name=project_name: handle_radio_change(name, event.value)
                         )
-                        with ui.column().classes("flex-grow gap-1"):
+                        with ui.column().classes("w-full gap-1 pl-10 -mt-2"):
                             for title, chip_list in combo.items():
                                 display_texts = []
                                 for c in chip_list:
@@ -7072,7 +7104,8 @@ class OverviewTableGroup:
                                 content_str = " | ".join(display_texts)
                                 ui.label(f"【{title}】: {content_str}").classes("text-sm text-gray-700 break-all")
 
-            unified_reason = OverviewReasonSelector("create", "统一录入原因（必选）")
+            with ui.column().classes("w-full shrink-0 gap-1"):
+                unified_reason = OverviewReasonSelector("create", "统一录入原因（必选）")
 
             with ui.row().classes("w-full justify-end items-center mt-2 gap-2"):
                 ui.button("跳过不填充", color="grey", on_click=self.autofill_dialog.close)

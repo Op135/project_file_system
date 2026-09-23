@@ -1,6 +1,10 @@
 import unittest
+from unittest.mock import patch
+
+from nicegui import ui
 
 from src.components import (
+    OverviewTableGroup,
     OverviewReasonSelector,
     _can_skip_related_impact,
     _get_active_chip_icon,
@@ -11,6 +15,26 @@ from src.components import (
 
 
 class RelatedImpactSelectionTests(unittest.TestCase):
+    def test_autofill_dialog_accepts_multiple_project_candidates(self):
+        table = OverviewTableGroup.__new__(OverviewTableGroup)
+        table.autofill_dialog = ui.dialog()
+
+        with patch("src.components.ui.radio", wraps=ui.radio) as radio_factory:
+            table._show_autofill_dialog(
+                "row-1",
+                {
+                    "RFME-2783-A": {"字段A": []},
+                    "RFME-2784-B": {"字段A": []},
+                },
+                [],
+            )
+
+        self.assertTrue(table.autofill_dialog.value)
+        self.assertEqual(radio_factory.call_args_list[0].args, (["RFME-2783-A"],))
+        self.assertEqual(radio_factory.call_args_list[0].kwargs["value"], "RFME-2783-A")
+        self.assertEqual(radio_factory.call_args_list[1].args, (["RFME-2784-B"],))
+        self.assertIsNone(radio_factory.call_args_list[1].kwargs["value"])
+
     def test_overview_reason_selector_starts_empty_and_preserves_legacy_free_text(self):
         selector = OverviewReasonSelector("state_change")
         self.assertIsNone(selector.radio.value)
