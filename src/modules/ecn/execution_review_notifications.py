@@ -8,6 +8,8 @@ import uuid
 from html import escape
 from typing import Any
 
+from ...notification_recipients import is_system_admin_username
+
 logger = logging.getLogger(__name__)
 STATE_KEY = "ecn_execution_review_notification_state"
 
@@ -27,7 +29,8 @@ def _deliverable(usernames: list[str], users: dict, bindings: dict) -> list[str]
     return _unique(
         username
         for username in usernames
-        if isinstance(users.get(username), dict)
+        if not is_system_admin_username(username)
+        and isinstance(users.get(username), dict)
         and users[username].get("status", "active") == "active"
         and str(bindings.get(username, {}).get("external_userid") or "").strip()
     )
@@ -206,4 +209,3 @@ async def send_execution_review_notices(
 
                 await storage.atomic_deep_update(path, finish)
     return sent, failed
-

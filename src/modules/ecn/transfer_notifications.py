@@ -7,6 +7,7 @@ import time
 import uuid
 
 from ...ecn_management_config import get_ecn_special_confirmations
+from ...notification_recipients import is_system_admin_username
 from .special_task_messages import get_special_message_item, build_special_card
 
 logger = logging.getLogger(__name__)
@@ -25,6 +26,8 @@ async def send_transfer_cancellations(ecn_id: str, record: dict, settings: dict,
     ).hexdigest()
     for event_id, notice in record.get("execution_info", {}).get("transfer_notices", {}).items():
         name = str(notice["recipient"])
+        if is_system_admin_username(name):
+            continue
         user = service.get_user(name)
         if not user or user.get("status", "active") != "active":
             continue

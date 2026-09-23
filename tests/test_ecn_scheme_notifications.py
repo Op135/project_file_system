@@ -9,16 +9,19 @@ class SchemeSalesUsers:
 
     def __init__(self):
         self.users = {
+            "admin": {"role": "admin", "status": "active"},
             "sales": {"role": "销售", "status": "active", "display_name": "销售甲"},
             "supervisor": {"role": "销售主管", "status": "active"},
             "director": {"role": "销售总监", "status": "active"},
         }
         self.memberships = {
+            "admin": {"position_name": "系统管理员", "manager_username": ""},
             "sales": {"position_name": "项目销售", "manager_username": "supervisor"},
             "supervisor": {"position_name": "销售主管", "manager_username": "director"},
             "director": {"position_name": "销售总监", "manager_username": ""},
         }
         self.bindings = {
+            "admin": {"external_userid": "wx-admin"},
             "sales": {"external_userid": "wx-sales"},
             "supervisor": {"external_userid": "wx-supervisor"},
             "director": {"external_userid": "wx-director"},
@@ -70,6 +73,18 @@ class SchemeSalesNotificationTests(unittest.IsolatedAsyncioTestCase):
         self.service.bindings.pop("supervisor")
         routes = self.routes({"P1": "sales", "P2": "未指定"})
         self.assertEqual([route["recipient_usernames"] for route in routes], [["director"], ["director"]])
+
+    def test_system_admin_is_not_used_as_project_sales_recipient(self):
+        routes = self.routes({"P1": "admin", "P2": "admin"})
+        self.assertEqual(
+            [route["recipient_usernames"] for route in routes],
+            [["supervisor"], ["supervisor"]],
+        )
+        self.assertNotIn("admin", {
+            username
+            for route in routes
+            for username in route["recipient_usernames"]
+        })
 
     async def test_test_mode_only_sends_manager_and_lists_intended_people(self):
         config = {

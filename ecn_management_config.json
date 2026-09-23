@@ -23,12 +23,12 @@
         "schema": "ECN申请与影响表单使用的原因、影响、资料类型和物料选项。",
         "wecom.enabled": "ECN企业微信待办提醒总开关；关闭不影响首页角标。",
         "wecom.test_mode": "true为调试模式，只发送给test_notify_targets；false按与首页角标一致的实际待办人员发送。修改后重启生效。",
-        "wecom.cc_manager_enabled": "正式模式下是否同时抄送通讯录职务为研发经理的人员，默认true；观察结束改false并重启。每个ECN汇总一条抄送，经理本人有待办时合并；调试模式不额外抄送。仅切换抄送不触发实际处理人重复提醒。",
+        "wecom.cc_manager_enabled": "正式模式下是否同时抄送通讯录职务为研发经理的人员，默认true；观察结束改false并重启。抄送按原待办人员逐人镜像，不汇总多人内容；研发经理本人就是实际收件人时不重复抄送。调试模式不额外抄送。",
         "wecom.test_notify_targets": "调试收件人，默认精确匹配企业微信通讯录职务“研发经理”；没有匹配对象则跳过，不回退给其它人员。",
         "wecom.public_base_url": "员工浏览器可访问的HTTP/HTTPS系统地址；ECN卡片底部查看详情打开ECN列表。为空时回退文字提醒且不附跳转链接。",
         "wecom.initial_delay_seconds": "启动后首次检查的延迟秒数。",
         "wecom.check_interval_seconds": "后台检查间隔，不依赖用户打开ECN页面。",
-        "wecom.repeat_hours": "相同待办重复提醒间隔小时数；状态、当前节点或待办人员变化会产生新提醒。",
+        "wecom.repeat_hours": "同一人员相同待办的重复提醒间隔小时数；只有该人员新增待处理责任或已到重复周期时发送，任务减少不触发提醒。",
         "wecom.retry_seconds": "发送失败后的重试间隔秒数；每次重试重新核对待办和收件人，不发送过期待办。"
     },
     "attachments": {

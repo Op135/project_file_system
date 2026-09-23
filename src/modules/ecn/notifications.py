@@ -40,6 +40,7 @@ from ...ecn_management_config import (
     ECN_LEVEL_COMPLEX,
 )
 from ...wecom_service import resolve_wecom_recipients, send_wecom_text_message, send_wecom_textcard_message
+from ...notification_recipients import is_system_admin_username
 from .special_task_messages import get_special_message_item, get_special_message_items, build_special_card
 from .task_labels import compact_material_confirmation_label, execution_scheme_no
 
@@ -72,7 +73,11 @@ def collect_pending_users(record: dict, service, access_snapshot: dict | None = 
     pending: dict[str, str] = {}
     users = snapshot.get("users", {})
     for username, info in users.items() if isinstance(users, dict) else []:
-        if not isinstance(info, dict) or info.get("status", "active") != "active":
+        if (
+            is_system_admin_username(username)
+            or not isinstance(info, dict)
+            or info.get("status", "active") != "active"
+        ):
             continue
         role = str(info.get("role") or "")
         if can_view_ecn(
@@ -273,6 +278,44 @@ def build_notification_fingerprint(record: dict, tasks: dict, config: dict) -> s
     return hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
 
+def build_personal_task_tokens(record: dict, name: str, tasks: list[str]) -> list[str]:
+    """生成个人待办的稳定标识；任务减少不应让其余人员重新收到提醒。"""
+    workflow = record.get("workflow", {})
+    workflow = workflow if isinstance(workflow, dict) else {}
+    execution = record.get("execution_info", {})
+    execution = execution if isinstance(execution, dict) else {}
+    participants = workflow.get("scheme_participants", {})
+    participant_status = participants.get(name) if isinstance(participants, dict) else None
+    context = {
+        "state": workflow.get("current_state"),
+        "phase": workflow.get("current_phase"),
+        "round": workflow.get("approval_round"),
+        "step": workflow.get("current_step_index"),
+        "stage": execution.get("stage"),
+        "participant_status": participant_status,
+    }
+    return sorted(
+        hashlib.sha256(
+            json.dumps(
+                {"context": context, "task": str(task)},
+                sort_keys=True,
+                ensure_ascii=False,
+            ).encode()
+        ).hexdigest()
+        for task in dict.fromkeys(tasks)
+    )
+
+
+def build_personal_notification_fingerprint(name: str, task_tokens: list[str]) -> str:
+    return hashlib.sha256(
+        json.dumps(
+            {"name": name, "tasks": task_tokens},
+            sort_keys=True,
+            ensure_ascii=False,
+        ).encode()
+    ).hexdigest()
+
+
 async def resolve_delivery_targets(pending: dict[str, str], config: dict, service) -> dict[str, list[str]]:
     """返回企业微信账号到原始待办用户名的映射；调试解析失败绝不回退到正式人员。"""
     if config["test_mode"]:
@@ -282,6 +325,8 @@ async def resolve_delivery_targets(pending: dict[str, str], config: dict, servic
     database_mode = getattr(service, "storage_mode", "legacy_excel") == "database"
     bindings = service.list_wecom_bindings() if database_mode else {}
     for name in pending:
+        if is_system_admin_username(name):
+            continue
         if database_mode:
             touser = str(bindings.get(name, {}).get("external_userid") or "").strip()
         else:
@@ -443,14 +488,21 @@ async def check_and_send_ecn_reminders(*, config=None, user_service=None, storag
             pending = {name: role for name, role in pending.items() if tasks.get(name)}
             if not pending:
                 continue
-            fingerprint = build_notification_fingerprint(record, tasks, settings)
-            targets = await resolve_delivery_targets(pending, settings, service)
-            if not targets:
-                logger.warning("ECN通知没有可用收件人，未发送：%s（test_mode=%s）", ecn_id, settings["test_mode"])
-                continue
+            initial_tokens = {
+                name: build_personal_task_tokens(record, name, tasks[name])
+                for name in pending
+            }
+            # 先解析初始个人路线，再读取一次最新业务状态；解析期间单据若已变化，本轮不发送旧待办。
+            resolved_targets = await resolve_delivery_targets(pending, settings, service)
+            initial_targets: dict[str, dict[str, list[str]]] = {
+                name: {} for name in pending
+            }
+            for recipient, names in resolved_targets.items():
+                for name in names:
+                    if name in initial_targets:
+                        initial_targets[name][recipient] = [name]
             cc_recipients: set[str] = set()
             if not settings["test_mode"] and settings["cc_manager_enabled"]:
-                # 抄送失败不阻断正式通知；按账号合并，经理本人有待办时也只发一条。
                 try:
                     cc_users = await resolve_wecom_recipients([{"position": "研发经理"}], fallback_touser="")
                     cc_recipients = {userid for userid in cc_users.split("|") if userid and userid != "@all"}
@@ -458,98 +510,175 @@ async def check_and_send_ecn_reminders(*, config=None, user_service=None, storag
                         logger.warning("ECN研发经理抄送未匹配到微信账号：%s", ecn_id)
                 except Exception:
                     logger.exception("ECN研发经理抄送解析失败：%s", ecn_id)
-                names_to_copy = list(dict.fromkeys(name for names in targets.values() for name in names))
-                for userid in sorted(cc_recipients):
-                    targets[userid] = names_to_copy.copy()
-            # 同一单据的一轮收件人发送共用一次最新状态和权限快照，避免按收件人重复查库。
+            # 同一单据的一轮收件人发送共用一次最新状态和权限快照。
             fresh_records = await storage.get_fresh_item(ECN_DATA_KEY, {})
             fresh = fresh_records.get(ecn_id, {}) if isinstance(fresh_records, dict) else {}
             fresh_access_snapshot = build_ecn_access_snapshot(service)
             fresh_pending = collect_pending_users(fresh, service, fresh_access_snapshot)
             fresh_tasks = pending_task_details(fresh, fresh_pending, service, fresh_access_snapshot)
-            if not fresh_pending or build_notification_fingerprint(fresh, fresh_tasks, settings) != fingerprint:
+            fresh_pending = {
+                name: role for name, role in fresh_pending.items() if fresh_tasks.get(name)
+            }
+            if not fresh_pending:
+                await storage.del_deep_item([NOTIFICATION_STATE_KEY, ecn_id])
                 continue
-            # 抄送开关不参与业务指纹，避免切换时向实际处理人重发同一待办。
-            for recipient, names in targets.items():
-                now = time.time()
-                token = uuid.uuid4().hex
-                claimed = False
+            fresh_tokens = {
+                name: build_personal_task_tokens(fresh, name, fresh_tasks[name])
+                for name in fresh_pending
+            }
 
-                def claim(current):
-                    nonlocal claimed
-                    entry = current if isinstance(current, dict) else {}
-                    if entry.get("fingerprint") != fingerprint:
-                        entry = {"fingerprint": fingerprint, "recipients": {}}
-                    delivery = entry.setdefault("recipients", {}).get(recipient, {})
-                    if delivery.get("lease_until", 0) > now:
-                        return storage.ATOMIC_NO_UPDATE
-                    if delivery.get("sent_at", 0) > now - settings["repeat_hours"] * 3600:
-                        return storage.ATOMIC_NO_UPDATE
-                    if delivery.get("attempted_at", 0) > now - settings["retry_seconds"]:
-                        return storage.ATOMIC_NO_UPDATE
-                    entry["recipients"][recipient] = {
-                        **delivery,
-                        "token": token,
-                        "lease_until": now + 300,
-                        "attempted_at": now,
-                    }
-                    claimed = True
-                    return entry
+            # 已经不再有待办的人从状态中移除；同一任务日后重新出现时按新责任通知。
+            notification_states = await storage.get_fresh_item(NOTIFICATION_STATE_KEY, {})
+            ecn_state = (
+                notification_states.get(ecn_id, {})
+                if isinstance(notification_states, dict)
+                else {}
+            )
+            known_users = ecn_state.get("users", {}) if isinstance(ecn_state, dict) else {}
+            for stale_name in set(known_users if isinstance(known_users, dict) else {}) - set(fresh_pending):
+                await storage.del_deep_item(
+                    [NOTIFICATION_STATE_KEY, ecn_id, "users", str(stale_name)]
+                )
 
-                if not await storage.atomic_deep_update([NOTIFICATION_STATE_KEY, ecn_id], claim) or not claimed:
+            for name, role in fresh_pending.items():
+                if initial_tokens.get(name) != fresh_tokens[name]:
                     continue
-                success = False
-                try:
-                    if settings["public_base_url"]:
-                        title, description = build_notification_card(
-                            fresh, fresh_tasks, names, settings, is_cc=recipient in cc_recipients
-                        )
-                        success, message = await send_wecom_textcard_message(
-                            description,
-                            recipient,
-                            title=title,
-                            link_url=f"{settings['public_base_url']}/ecn_management",
-                            module="ecn_management",
-                            business_key=f"{ecn_id}:{fingerprint}",
-                        )
-                    else:
-                        # 卡片必须带有效链接；未配置系统地址时保留文字提醒。
-                        success, message = await send_wecom_text_message(
-                            build_notification_content(
-                                fresh, fresh_tasks, names, settings, is_cc=recipient in cc_recipients
-                            ),
-                            recipient,
-                            module="ecn_management",
-                            business_key=f"{ecn_id}:{fingerprint}",
-                            message_type="pending",
-                            link_url=f"{settings['public_base_url']}/ecn_management"
-                            if settings["public_base_url"]
-                            else "",
-                            # ECN自身重试会重新检查待办/调试开关，避免全局重试发送旧任务或通知其它人员。
-                            retry_tracking=False,
-                            alert_on_max_failure=False,
-                        )
-                    sent += int(success)
-                    failed += int(not success)
-                    if not success:
-                        logger.warning("ECN微信发送失败，将按配置重试：%s %s", ecn_id, message)
-                except Exception:
-                    failed += 1
-                    logger.exception("ECN微信发送异常：%s", ecn_id)
-                finally:
+                current_tokens = fresh_tokens[name]
 
-                    def finish(current):
-                        if not isinstance(current, dict) or current.get("fingerprint") != fingerprint:
-                            return storage.ATOMIC_NO_UPDATE
-                        delivery = current.get("recipients", {}).get(recipient, {})
-                        if delivery.get("token") != token:
-                            return storage.ATOMIC_NO_UPDATE
-                        delivery["lease_until"] = 0
-                        if success:
-                            delivery["sent_at"] = time.time()
-                        return current
+                # 先从所有既有投递路线中移除已经完成的任务标识。这样同一责任以后重新出现时会再次通知。
+                def prune_completed(current):
+                    user_state = current if isinstance(current, dict) else {}
+                    recipients = user_state.get("recipients", {})
+                    if not isinstance(recipients, dict):
+                        recipients = {}
+                    current_set = set(current_tokens)
+                    for delivery in recipients.values():
+                        if not isinstance(delivery, dict):
+                            continue
+                        notified = delivery.get("notified_task_tokens", [])
+                        delivery["notified_task_tokens"] = [
+                            token for token in notified if token in current_set
+                        ] if isinstance(notified, list) else []
+                    user_state["recipients"] = recipients
+                    return user_state
 
-                    await storage.atomic_deep_update([NOTIFICATION_STATE_KEY, ecn_id], finish)
+                await storage.atomic_deep_update(
+                    [NOTIFICATION_STATE_KEY, ecn_id, "users", name],
+                    prune_completed,
+                )
+
+                personal_targets = initial_targets.get(name, {})
+                delivery_jobs: dict[str, bool] = {
+                    recipient: False for recipient in personal_targets
+                }
+                if personal_targets and not settings["test_mode"]:
+                    for recipient in cc_recipients:
+                        # 研发经理本人就是实际收件人时只发实际待办，不重复抄送。
+                        delivery_jobs.setdefault(recipient, True)
+                if not delivery_jobs:
+                    logger.warning(
+                        "ECN个人待办没有可用收件人，未发送：%s %s（test_mode=%s）",
+                        ecn_id,
+                        name,
+                        settings["test_mode"],
+                    )
+                    continue
+
+                fingerprint = build_personal_notification_fingerprint(name, current_tokens)
+                for recipient, is_cc in delivery_jobs.items():
+                    route_key = f"{'cc' if is_cc else 'primary'}:{recipient}"
+                    state_path = [
+                        NOTIFICATION_STATE_KEY,
+                        ecn_id,
+                        "users",
+                        name,
+                        "recipients",
+                        route_key,
+                    ]
+                    now = time.time()
+                    token = uuid.uuid4().hex
+                    claimed = False
+
+                    def claim(current):
+                        nonlocal claimed
+                        delivery = current if isinstance(current, dict) else {}
+                        notified = delivery.get("notified_task_tokens", [])
+                        notified_set = set(notified) if isinstance(notified, list) else set()
+                        current_set = set(current_tokens)
+                        notified_set &= current_set
+                        has_new_responsibility = bool(current_set - notified_set)
+                        repeat_due = (
+                            delivery.get("sent_at", 0)
+                            <= now - settings["repeat_hours"] * 3600
+                        )
+                        if delivery.get("lease_until", 0) > now:
+                            return storage.ATOMIC_NO_UPDATE
+                        if not has_new_responsibility and not repeat_due:
+                            if set(notified if isinstance(notified, list) else []) != notified_set:
+                                delivery["notified_task_tokens"] = sorted(notified_set)
+                                return delivery
+                            return storage.ATOMIC_NO_UPDATE
+                        if delivery.get("attempted_at", 0) > now - settings["retry_seconds"]:
+                            return storage.ATOMIC_NO_UPDATE
+                        delivery.update(
+                            token=token,
+                            lease_until=now + 300,
+                            attempted_at=now,
+                        )
+                        claimed = True
+                        return delivery
+
+                    if not await storage.atomic_deep_update(state_path, claim) or not claimed:
+                        continue
+                    success = False
+                    try:
+                        if settings["public_base_url"]:
+                            title, description = build_notification_card(
+                                fresh, fresh_tasks, [name], settings, is_cc=is_cc
+                            )
+                            success, message = await send_wecom_textcard_message(
+                                description,
+                                recipient,
+                                title=title,
+                                link_url=f"{settings['public_base_url']}/ecn_management",
+                                module="ecn_management",
+                                business_key=f"{ecn_id}:{name}:{fingerprint}",
+                            )
+                        else:
+                            # 卡片必须带有效链接；未配置系统地址时保留文字提醒。
+                            success, message = await send_wecom_text_message(
+                                build_notification_content(
+                                    fresh, fresh_tasks, [name], settings, is_cc=is_cc
+                                ),
+                                recipient,
+                                module="ecn_management",
+                                business_key=f"{ecn_id}:{name}:{fingerprint}",
+                                message_type="pending",
+                                link_url="",
+                                # ECN自身重试会重新检查待办/调试开关，避免全局重试发送旧任务或通知其它人员。
+                                retry_tracking=False,
+                                alert_on_max_failure=False,
+                            )
+                        sent += int(success)
+                        failed += int(not success)
+                        if not success:
+                            logger.warning("ECN微信发送失败，将按配置重试：%s %s", ecn_id, message)
+                    except Exception:
+                        failed += 1
+                        logger.exception("ECN微信发送异常：%s", ecn_id)
+                    finally:
+
+                        def finish(current):
+                            delivery = current if isinstance(current, dict) else {}
+                            if delivery.get("token") != token:
+                                return storage.ATOMIC_NO_UPDATE
+                            delivery["lease_until"] = 0
+                            if success:
+                                delivery["sent_at"] = time.time()
+                                delivery["notified_task_tokens"] = list(current_tokens)
+                            return delivery
+
+                        await storage.atomic_deep_update(state_path, finish)
     return sent, failed
 
 

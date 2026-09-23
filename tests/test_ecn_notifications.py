@@ -16,6 +16,7 @@ class Users:
 
     def load_users(self):
         return {
+            "admin": {"role": "admin", "status": "active"},
             "writer": {"role": "研发硬件", "status": "active"},
             "manager": {"role": "研发经理", "status": "active"},
             "inactive": {"role": "研发硬件", "status": "inactive"},
@@ -25,10 +26,15 @@ class Users:
         return True
 
     def list_wecom_bindings(self):
-        return {"writer": {"external_userid": "writer_wx"}, "manager": {"external_userid": "manager_wx"}}
+        return {
+            "admin": {"external_userid": "admin_wx"},
+            "writer": {"external_userid": "writer_wx"},
+            "manager": {"external_userid": "manager_wx"},
+        }
 
     def list_primary_memberships(self):
         return {
+            "admin": {"manager_username": "", "position_name": "系统管理员"},
             "writer": {"manager_username": "manager", "position_name": "研发硬件"},
             "inactive": {"manager_username": "manager", "position_name": "研发硬件"},
             "manager": {"manager_username": "", "position_name": "研发经理"},
@@ -85,6 +91,16 @@ class ECNNotificationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(kwargs["link_url"], "https://example.test/ecn_management")
         self.assertIn('<div class="gray">调试转发', args[0])
         self.resolver.assert_awaited_once_with([{"position": "研发经理"}], fallback_touser="")
+
+    async def test_system_admin_full_permissions_do_not_create_business_notifications(self):
+        pending = notifications.collect_pending_users(self.record, self.service)
+        self.assertEqual(pending, {"writer": "研发硬件"})
+        self.assertNotIn("admin", pending)
+
+        self.settings.update(test_mode=False, cc_manager_enabled=False)
+        self.assertEqual(await self.check(), (1, 0))
+        self.assertEqual(self.sender.call_args.args[1], "writer_wx")
+        self.assertNotIn("admin", self.sender.call_args.args[0])
 
     async def test_complex_validation_report_notifies_author_then_reviewer(self):
         self.record["workflow"].update(
@@ -233,15 +249,39 @@ class ECNNotificationTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("抄送", messages["writer_wx"])
         self.assertEqual(await self.check(), (0, 0))
 
-    async def test_manager_with_own_task_receives_one_combined_notification(self):
+    async def test_manager_observes_each_person_as_a_separate_notification(self):
         self.settings["test_mode"] = False
         self.resolver.return_value = "manager_wx"
         self.record["workflow"]["scheme_participants"] = {"writer": "editing", "manager": "editing"}
         await self.save_record()
-        self.assertEqual(await self.check(), (2, 0))
+        self.assertEqual(await self.check(), (3, 0))
         copies = [call.args[0] for call in self.sender.await_args_list if call.args[1] == "manager_wx"]
-        self.assertEqual(len(copies), 1)
-        self.assertIn("待处理人员：writer、manager", copies[0])
+        self.assertEqual(len(copies), 2)
+        self.assertTrue(any("待处理人员：writer" in content for content in copies))
+        self.assertTrue(any("待处理人员：manager" in content for content in copies))
+        self.assertFalse(any("writer、manager" in content for content in copies))
+
+    async def test_one_person_completing_work_does_not_remind_unchanged_people(self):
+        self.record["workflow"]["scheme_participants"] = {
+            "writer": "editing",
+            "manager": "editing",
+        }
+        await self.save_record()
+        self.assertEqual(await self.check(), (2, 0))
+
+        self.sender.reset_mock()
+        self.record["workflow"]["scheme_participants"] = {"manager": "editing"}
+        await self.save_record()
+        self.assertEqual(await self.check(), (0, 0))
+        self.sender.assert_not_awaited()
+
+        self.record["workflow"]["scheme_participants"] = {
+            "writer": "editing",
+            "manager": "editing",
+        }
+        await self.save_record()
+        self.assertEqual(await self.check(), (1, 0))
+        self.assertIn("原应通知人员：writer", self.sender.call_args.args[0])
 
     async def test_cc_switch_does_not_resend_actual_notification(self):
         self.settings.update(test_mode=False, cc_manager_enabled=False)
@@ -261,11 +301,15 @@ class ECNNotificationTests(unittest.IsolatedAsyncioTestCase):
         with self.assertLogs(level="WARNING"):
             self.assertEqual(await self.check(), (1, 1))
         await self.storage.atomic_deep_update(
-            [notifications.NOTIFICATION_STATE_KEY, "ECN-test"],
-            lambda entry: {
-                **entry,
-                "recipients": {key: {**value, "attempted_at": 0} for key, value in entry["recipients"].items()},
-            },
+            [
+                notifications.NOTIFICATION_STATE_KEY,
+                "ECN-test",
+                "users",
+                "writer",
+                "recipients",
+                "cc:manager_wx",
+            ],
+            lambda entry: {**entry, "attempted_at": 0},
         )
         self.sender.reset_mock(side_effect=True)
         self.sender.return_value = (True, "ok")
@@ -334,11 +378,15 @@ class ECNNotificationTests(unittest.IsolatedAsyncioTestCase):
         self.sender.return_value = (True, "ok")
         self.assertEqual(await self.check(), (0, 0))
         await self.storage.atomic_deep_update(
-            [notifications.NOTIFICATION_STATE_KEY, "ECN-test"],
-            lambda entry: {
-                **entry,
-                "recipients": {key: {**value, "attempted_at": 0} for key, value in entry["recipients"].items()},
-            },
+            [
+                notifications.NOTIFICATION_STATE_KEY,
+                "ECN-test",
+                "users",
+                "writer",
+                "recipients",
+                "primary:debug_manager_wx",
+            ],
+            lambda entry: {**entry, "attempted_at": 0},
         )
         self.assertEqual(await self.check(), (1, 0))
 

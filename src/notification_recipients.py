@@ -11,6 +11,12 @@ from .legacy_compatibility import record_legacy_compatibility_hit
 from .wecom_service import resolve_wecom_recipients
 
 logger = logging.getLogger(__name__)
+SYSTEM_ADMIN_USERNAME = "admin"
+
+
+def is_system_admin_username(value: Any) -> bool:
+    """系统管理员拥有全权限，但默认不作为业务通知收件人。"""
+    return str(value or "").strip().casefold() == SYSTEM_ADMIN_USERNAME
 
 
 def _unique_values(values: Iterable[Any]) -> list[str]:
@@ -97,7 +103,11 @@ def resolve_position_usernames(
     for username, membership in memberships.items():
         position_id = str(membership.get("position_id") or "").strip()
         user = users.get(username, {})
-        if position_id not in normalized_ids or user.get("status") != "active":
+        if (
+            is_system_admin_username(username)
+            or position_id not in normalized_ids
+            or user.get("status") != "active"
+        ):
             continue
         matched_positions.add(position_id)
         usernames.append(username)

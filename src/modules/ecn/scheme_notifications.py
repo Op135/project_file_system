@@ -7,6 +7,7 @@ from html import escape
 from typing import Any
 
 from ...ecn_management_config import ECN_WECOM_CONFIG, get_ecn_scheme_target_projects
+from ...notification_recipients import is_system_admin_username
 from ...wecom_service import (
     resolve_wecom_recipients,
     send_wecom_text_message,
@@ -64,7 +65,8 @@ def _deliverable_usernames(
     return _unique(
         username
         for username in usernames
-        if isinstance(users.get(username), dict)
+        if not is_system_admin_username(username)
+        and isinstance(users.get(username), dict)
         and users[username].get("status", "active") == "active"
         and str(bindings.get(username, {}).get("external_userid") or "").strip()
     )

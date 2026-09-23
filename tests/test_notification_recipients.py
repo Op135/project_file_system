@@ -6,6 +6,24 @@ from src import notification_recipients
 
 
 class NotificationRecipientTests(unittest.IsolatedAsyncioTestCase):
+    def test_position_recipients_exclude_system_admin(self):
+        service = SimpleNamespace(
+            load_users=lambda: {
+                "admin": {"status": "active"},
+                "业务人员": {"status": "active"},
+            },
+            list_primary_memberships=lambda: {
+                "admin": {"position_id": "position-observer"},
+                "业务人员": {"position_id": "position-observer"},
+            },
+        )
+        usernames, missing = notification_recipients.resolve_position_usernames(
+            ["position-observer"],
+            user_service=service,
+        )
+        self.assertEqual(usernames, ["业务人员"])
+        self.assertEqual(missing, [])
+
     async def test_database_mode_resolves_permission_users_from_wecom_bindings(self):
         """数据库模式只返回拥有权限且已绑定企业微信的用户。"""
         service = SimpleNamespace(
