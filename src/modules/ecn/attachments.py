@@ -79,6 +79,19 @@ def _read_attachments(record: dict, scope: str, item_id: str, task_key: str) -> 
         ) if isinstance(items, list) else None
         report = item.get("validation_report", {}) if isinstance(item, dict) else {}
         value = report.get("attachments", []) if isinstance(report, dict) else []
+    elif scope == "execution_review":
+        execution = record.get("execution_info", {})
+        verification = execution.get("verification", {}) if isinstance(execution, dict) else {}
+        history = verification.get("history", []) if isinstance(verification, dict) else []
+        event = next(
+            (
+                entry
+                for entry in history
+                if isinstance(entry, dict) and str(entry.get("event_id") or "") == item_id
+            ),
+            None,
+        ) if isinstance(history, list) else None
+        value = event.get("attachments", []) if isinstance(event, dict) else []
     else:
         execution = record.get("execution_info", {})
         registry = execution.get("attachments", {}) if isinstance(execution, dict) else {}

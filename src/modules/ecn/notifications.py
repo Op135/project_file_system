@@ -413,8 +413,18 @@ async def check_and_send_ecn_reminders(*, config=None, user_service=None, storag
         for ecn_id, record in all_records.items():
             if not isinstance(record, dict):
                 continue
+            from .execution_review_notifications import send_execution_review_notices
             from .transfer_notifications import send_transfer_cancellations
 
+            try:
+                notice_sent, notice_failed = await send_execution_review_notices(
+                    ecn_id, record, settings, service, storage
+                )
+                sent += notice_sent
+                failed += notice_failed
+            except Exception:
+                logger.exception("ECN执行复核撤销告知检查失败，下次重试：%s", ecn_id)
+                failed += 1
             try:
                 notice_sent, notice_failed = await send_transfer_cancellations(
                     ecn_id, record, settings, service, storage

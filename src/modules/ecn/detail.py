@@ -35,6 +35,7 @@ from ...ecn_access import (
     can_submit_ecn_scheme_review,
     can_designate_ecn_validation_report,
     can_view_ecn_validation_report,
+    can_verify_ecn_execution,
     can_view_ecn,
 )
 from ...ecn_management_config import (
@@ -140,6 +141,9 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
         current_role, current_user, access_snapshot=access_snapshot
     )
     can_approve_validation = can_approve_ecn_validation_report(
+        current_role, current_user, access_snapshot=access_snapshot
+    )
+    can_review_execution = can_verify_ecn_execution(
         current_role, current_user, access_snapshot=access_snapshot
     )
     is_new = ecn_id is None
@@ -1014,6 +1018,7 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
                     current_user,
                     current_role,
                     can_execute_assistant,
+                    can_review_execution,
                     refresh_list,
                     panel_container=execution_panel_host,
                 )
@@ -1485,12 +1490,23 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
                         else {}
                     )
                     fresh_material = fresh_execution_info.get("material_confirmations", {})
+                    previous_non_material = {
+                        key: value
+                        for key, value in previous_execution_info.items()
+                        if key != "material_confirmations"
+                    } if isinstance(previous_execution_info, dict) else {}
+                    fresh_non_material = {
+                        key: value
+                        for key, value in fresh_execution_info.items()
+                        if key != "material_confirmations"
+                    }
                     can_update_controls_only = (
                         isinstance(previous_execution_info, dict)
                         and previous_execution_info.get("stage") == ECN_EXECUTION_STAGE_MATERIAL
                         and fresh_execution_info.get("stage") == ECN_EXECUTION_STAGE_MATERIAL
                         and isinstance(previous_material, dict)
                         and isinstance(fresh_material, dict)
+                        and previous_non_material == fresh_non_material
                         and bool(material_task_controls)
                         and not change_items_changed
                     )
@@ -1521,6 +1537,7 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
             ECNState.ECN_REVIEWING,
             ECNState.MATERIAL_CODE_PENDING,
             ECNState.ECN_EXECUTING,
+            ECNState.CLOSED,
         ] and not is_new:
             sync_timer = ui.timer(3.0, sync_schemes)
             root_dialog.on("close", sync_timer.cancel)

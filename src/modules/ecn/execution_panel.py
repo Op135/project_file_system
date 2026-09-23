@@ -22,6 +22,7 @@ from nicegui.client import (
 from ... import (
     db_storage,
 )
+from ...custom_ui import custom_upload
 from ...config import (
     ECNState,
 )
@@ -34,6 +35,7 @@ from ...ecn_access import (
     resolve_ecn_material_spec_responsibility,
 )
 from ...ecn_management_config import (
+    ECN_ATTACHMENT_CONFIG,
     ECN_WECOM_CONFIG,
     ECN_EXECUTION_RESULT_FAILED,
     ECN_EXECUTION_RESULT_PENDING,
@@ -44,11 +46,13 @@ from ...ecn_management_config import (
     ECN_EXECUTION_STAGE_MATERIAL,
     ECN_EXECUTION_STAGE_OVERVIEW_FAILED,
     ECN_EXECUTION_STAGE_OVERVIEW_RUNNING,
+    ECN_EXECUTION_VERIFICATION_VERIFIED,
     ECN_SCHEME_GROUP_MATERIAL,
     ECN_SCHEME_GROUP_OVERVIEW_DOCUMENT,
     ECN_TRACEABILITY_LEVELS,
     classify_ecn_change_item,
     get_ecn_material_change_display,
+    get_ecn_execution_verification_label,
     split_ecn_material_change_display,
     get_ecn_material_execution_specs,
     get_ecn_scheme_target_projects,
@@ -74,7 +78,13 @@ from .repository import (
 from .special_tasks import update_special_task
 from .special_tasks_ui import open_material_transfer_dialog, render_transfer_button
 from .task_labels import compact_material_confirmation_label, material_confirmation_tooltip_text
-from .attachment_ui import open_ecn_attachment_dialog
+from .attachment_ui import (
+    open_ecn_attachment_dialog,
+    open_ecn_attachment_file,
+    open_staged_ecn_attachment_file,
+)
+from .attachments import cleanup_staged, stage_upload
+from .execution_review import revoke_execution_confirmation, verify_execution_result
 
 logger = logging.getLogger(__name__)
 ACTIVE_ECN_OVERVIEW_EXECUTIONS: set[str] = set()
@@ -88,6 +98,7 @@ def build_execution_panel(
     current_user,
     current_role,
     can_execute_assistant,
+    can_review_execution,
     refresh_list,
     *,
     panel_container=None,
@@ -299,6 +310,187 @@ def build_execution_panel(
                 wf.update(copy.deepcopy(fresh_workflow))
             local_data["approval_log"] = copy.deepcopy(fresh_data.get("approval_log", []))
             return True
+
+        def open_execution_review_revoke_dialog(
+            target_kind: Literal["special", "material"],
+            item_id: str,
+            task_key: str,
+            confirmation: dict,
+            subject: str,
+        ) -> None:
+            staged_attachments: list[dict] = []
+            review_dialog = ui.dialog().props("persistent")
+            with review_dialog, ui.card().classes("w-[820px] max-w-[95vw] p-5 gap-3"):
+                ui.label("撤销执行确认").classes("text-lg font-bold text-red-700")
+                ui.label(subject).classes(
+                    "text-sm font-semibold text-slate-700 bg-slate-50 border border-slate-200 rounded px-3 py-2"
+                )
+                ui.label(
+                    f"原确认人：{confirmation.get('user') or confirmation.get('assignee') or '未知'}"
+                ).classes("text-xs text-slate-500")
+                reason_input = ui.textarea(
+                    "撤销理由（必填）",
+                    placeholder="请说明实际执行不到位的具体情况和需要重新处理的内容……",
+                ).props("outlined auto-grow rows=3").classes("w-full")
+                with ui.element("div").classes(
+                    "w-full grid grid-cols-1 md:grid-cols-2 gap-4 items-start"
+                ):
+                    with ui.column().classes("w-full gap-2"):
+                        ui.label("证明附件（可选）").classes("text-xs font-semibold text-slate-600")
+                        staged_host = ui.column().classes(
+                            "w-full gap-2 max-h-[220px] overflow-y-auto"
+                        )
+
+                        def render_staged() -> None:
+                            staged_host.clear()
+                            with staged_host:
+                                if not staged_attachments:
+                                    ui.label("暂无附件").classes("text-xs text-slate-400 py-2")
+                                for attachment in staged_attachments:
+                                    name = str(attachment.get("name") or "附件")
+                                    with ui.row().classes(
+                                        "w-full items-center gap-2 border border-slate-200 rounded px-3 py-2 bg-white"
+                                    ):
+                                        ui.icon("attach_file", size="xs").classes("text-slate-500")
+                                        ui.label(name).classes(
+                                            "flex-1 min-w-0 text-sm break-all cursor-pointer hover:underline"
+                                        ).on(
+                                            "click",
+                                            lambda _, current=attachment: open_staged_ecn_attachment_file(
+                                                current,
+                                                current_user,
+                                                current_role,
+                                            ),
+                                        )
+
+                                        def remove_staged(current=attachment) -> None:
+                                            cleanup_staged([current])
+                                            if current in staged_attachments:
+                                                staged_attachments.remove(current)
+                                            render_staged()
+
+                                        ui.button(icon="delete_outline", on_click=remove_staged).props(
+                                            "flat round dense size=sm color=red-5"
+                                        )
+
+                        render_staged()
+
+                    async def handle_review_upload(event: Any) -> None:
+                        try:
+                            staged = await stage_upload(event.file, current_user)
+                            staged_attachments.append(staged)
+                            render_staged()
+                        except Exception as exc:
+                            ui.notify(f"上传失败：{exc}", type="negative")
+
+                    with ui.column().classes("w-full gap-2"):
+                        ui.label("添加附件").classes("text-xs font-semibold text-slate-600")
+                        custom_upload(
+                            multiple=True,
+                            max_file_size=int(ECN_ATTACHMENT_CONFIG["max_file_size_mb"])
+                            * 1024
+                            * 1024,
+                            on_upload=handle_review_upload,
+                        ).props("accept=*/*")
+
+                async def submit_revoke() -> None:
+                    result = await revoke_execution_confirmation(
+                        str(local_data.get("ecn_id") or ""),
+                        target_kind,
+                        item_id,
+                        task_key,
+                        copy.deepcopy(confirmation),
+                        str(reason_input.value or ""),
+                        copy.deepcopy(staged_attachments),
+                        current_user,
+                        current_role,
+                        user_service=app.state.user_service,
+                    )
+                    if not result.ok or result.record is None:
+                        ui.notify(result.message, type="warning", multi_line=True)
+                        return
+                    staged_attachments.clear()
+                    review_dialog.close()
+                    sync_execution_local_data()
+                    render_execution_tab()
+                    refresh_list()
+                    ui.notify("已撤销该执行确认，并保留原确认记录。", type="positive")
+
+                with ui.row().classes("w-full justify-end gap-2"):
+                    ui.button("取消", on_click=review_dialog.close).props("flat color=grey")
+                    ui.button("确认撤销", icon="undo", on_click=submit_revoke).props(
+                        "color=negative"
+                    )
+
+            def cleanup_dialog_files() -> None:
+                cleanup_staged(staged_attachments)
+                staged_attachments.clear()
+                review_dialog.delete()
+
+            review_dialog.on("close", cleanup_dialog_files)
+            review_dialog.open()
+
+        def render_review_revocation_attachment_button(confirmation: dict) -> None:
+            """在被复核退回的具体执行项旁提供附件入口。"""
+            revocation = confirmation.get("review_revocation")
+            if not isinstance(revocation, dict):
+                return
+            files = revocation.get("attachments", [])
+            attachment_count = len(files) if isinstance(files, list) else 0
+            if attachment_count == 0:
+                return
+            event_id = str(revocation.get("event_id") or "")
+            if not event_id:
+                return
+            ui.button(
+                icon="attachment",
+                on_click=lambda: open_ecn_attachment_dialog(
+                    str(local_data.get("ecn_id") or ""),
+                    "execution_review",
+                    event_id,
+                    "",
+                    "复核退回附件",
+                    current_user,
+                    current_role,
+                    can_upload=False,
+                ),
+            ).props(
+                "unelevated round dense size=xs color=deep-orange-7"
+            ).classes("shrink-0").tooltip(
+                f"查看本次复核退回附件（{attachment_count}）"
+            )
+
+        def request_execution_verified() -> None:
+            confirm_dialog = ui.dialog().props("persistent")
+            with confirm_dialog, ui.card().classes("w-[470px] max-w-[94vw] p-5 gap-3"):
+                ui.label("确认执行结果已核验无误？").classes("text-lg font-bold text-green-800")
+                ui.label(
+                    "系统会记录本次核验人员和时间。只有全部执行勾选项均已完成时才能提交。"
+                ).classes("text-sm text-slate-600 leading-relaxed")
+
+                async def submit_verified() -> None:
+                    result = await verify_execution_result(
+                        str(local_data.get("ecn_id") or ""),
+                        current_user,
+                        current_role,
+                        user_service=app.state.user_service,
+                    )
+                    if not result.ok or result.record is None:
+                        ui.notify(result.message, type="warning", multi_line=True)
+                        return
+                    confirm_dialog.close()
+                    sync_execution_local_data()
+                    render_execution_tab()
+                    refresh_list()
+                    ui.notify("ECN执行结果已标记为核验无误。", type="positive")
+
+                with ui.row().classes("w-full justify-end gap-2"):
+                    ui.button("返回", on_click=confirm_dialog.close).props("flat color=grey")
+                    ui.button("已核验无误", icon="verified", on_click=submit_verified).props(
+                        "color=positive"
+                    )
+            confirm_dialog.on("close", confirm_dialog.delete)
+            confirm_dialog.open()
 
         def get_material_execution_runtime(item_id: str) -> tuple[dict, dict, list[dict], dict]:
             execution_info = local_data.get("execution_info", {})
@@ -820,6 +1012,8 @@ def build_execution_panel(
                 target["user"] = current_user
                 target["role"] = actor_role
                 target["time"] = operation_time
+                if confirmed:
+                    target.pop("review_revocation", None)
                 target.setdefault("history", []).append(
                     {
                         "confirmed": bool(confirmed),
@@ -1039,12 +1233,104 @@ def build_execution_panel(
                 ):
                     stage_labels[stage] = "系统内资料执行已中断"
                     stage_colors[stage] = "red"
+                verification = execution_info.get("verification", {})
+                verification = verification if isinstance(verification, dict) else {}
+                verification_label = get_ecn_execution_verification_label(local_data)
+                verification_color = {
+                    "已核验": "green",
+                    "待整改": "red",
+                    "待复核": "orange",
+                    "待核验": "orange",
+                    "未到核验": "grey",
+                }.get(verification_label, "grey")
+                review_revoke_allowed = stage != ECN_EXECUTION_STAGE_OVERVIEW_RUNNING
                 with ui.row().classes("w-full items-center justify-between"):
                     ui.label("ECN执行进度").classes("text-xl font-bold text-slate-800")
-                    ui.badge(
-                        stage_labels.get(stage, str(stage)),
-                        color=stage_colors.get(stage, "grey"),
-                    ).props("outline")
+                    with ui.row().classes("items-center gap-2"):
+                        ui.badge(
+                            stage_labels.get(stage, str(stage)),
+                            color=stage_colors.get(stage, "grey"),
+                        ).props("outline")
+                        ui.badge(
+                            f"执行核验：{verification_label}",
+                            color=verification_color,
+                        ).props("outline")
+                        if (
+                            can_review_execution
+                            and wf.get("current_state") == ECNState.CLOSED
+                            and stage == ECN_EXECUTION_STAGE_COMPLETED
+                            and verification.get("status") != ECN_EXECUTION_VERIFICATION_VERIFIED
+                        ):
+                            ui.button(
+                                "已核验无误",
+                                icon="verified",
+                                on_click=request_execution_verified,
+                            ).props("dense color=positive no-caps")
+
+                verification_history = verification.get("history", [])
+                verification_history = (
+                    verification_history if isinstance(verification_history, list) else []
+                )
+                if verification_history:
+                    with ui.expansion(
+                        f"执行复核记录（{len(verification_history)}）",
+                        icon="fact_check",
+                    ).classes(
+                        "w-full bg-white border border-slate-200 rounded text-sm"
+                    ).props("dense"):
+                        with ui.column().classes("w-full gap-2 p-2"):
+                            for event in reversed(verification_history):
+                                if not isinstance(event, dict):
+                                    continue
+                                revoked = event.get("action") == "revoked"
+                                with ui.row().classes(
+                                    "w-full items-start gap-2 rounded border border-slate-100 px-3 py-2 bg-slate-50/60"
+                                ):
+                                    ui.icon(
+                                        "undo" if revoked else "verified",
+                                        size="xs",
+                                    ).classes("text-red-600" if revoked else "text-green-600")
+                                    with ui.column().classes("flex-1 min-w-0 gap-0.5"):
+                                        ui.label(
+                                            (
+                                                f"撤销确认：{event.get('subject') or '执行项'}"
+                                                if revoked
+                                                else "执行结果核验无误"
+                                            )
+                                        ).classes("text-sm font-semibold text-slate-700 break-all")
+                                        ui.label(
+                                            f"{event.get('reviewer') or '未知'}（{event.get('reviewer_role') or ''}） · "
+                                            f"{event.get('time') or ''}"
+                                        ).classes("text-xs text-slate-500")
+                                        if revoked:
+                                            ui.label(
+                                                f"原确认人：{event.get('original_user') or '未知'}"
+                                            ).classes("text-xs text-slate-500")
+                                            ui.label(f"理由：{event.get('reason') or '—'}").classes(
+                                                "text-xs text-red-700 whitespace-pre-wrap break-all"
+                                            )
+                                            attachments = event.get("attachments", [])
+                                            if isinstance(attachments, list) and attachments:
+                                                with ui.row().classes("items-center gap-1 flex-wrap"):
+                                                    for attachment in attachments:
+                                                        if not isinstance(attachment, dict):
+                                                            continue
+                                                        file_id = str(attachment.get("id") or "")
+                                                        ui.button(
+                                                            str(attachment.get("name") or "附件"),
+                                                            icon="attach_file",
+                                                            on_click=lambda _, event_id=str(
+                                                                event.get("event_id") or ""
+                                                            ), fid=file_id: open_ecn_attachment_file(
+                                                                str(local_data.get("ecn_id") or ""),
+                                                                "execution_review",
+                                                                event_id,
+                                                                "",
+                                                                fid,
+                                                                current_user,
+                                                                current_role,
+                                                            ),
+                                                        ).props("flat dense size=sm color=indigo no-caps")
 
                 item_map = get_execution_change_items()
                 assistant_can_operate = (
@@ -1140,6 +1426,25 @@ def build_execution_panel(
                                                     )
                                                 ),
                                             )
+                                            render_review_revocation_attachment_button(confirmation)
+                                            if checked and can_review_execution and review_revoke_allowed:
+                                                ui.button(
+                                                    icon="undo",
+                                                    on_click=lambda _, current_id=str(item_id), snapshot=copy.deepcopy(
+                                                        confirmation
+                                                    ), current_item=item: open_execution_review_revoke_dialog(
+                                                        "special",
+                                                        current_id,
+                                                        "",
+                                                        snapshot,
+                                                        execution_scheme_title(
+                                                            current_item,
+                                                            include_projects=True,
+                                                        ),
+                                                    ),
+                                                ).props(
+                                                    "flat round dense size=xs color=negative"
+                                                ).tooltip("复核发现执行不到位，撤销此确认")
                                         ui.label(execution_scheme_no(str(item_id))).classes(
                                             "px-3 py-2 border-r border-slate-200 font-mono font-bold "
                                             "flex items-center " + execution_column_alignment("assistant", "编号")
@@ -1166,12 +1471,31 @@ def build_execution_panel(
                                                 f"{confirmation.get('time', '')}"
                                             )
                                             if checked
-                                            else "待确认"
+                                            else (
+                                                "待重新确认\n复核退回："
+                                                + str(
+                                                    confirmation.get("review_revocation", {}).get(
+                                                        "reason", ""
+                                                    )
+                                                )
+                                                if isinstance(
+                                                    confirmation.get("review_revocation"), dict
+                                                )
+                                                else "待确认"
+                                            )
                                         ).classes(
                                             "px-3 py-2 whitespace-pre-line text-xs "
                                             + execution_column_alignment("assistant", "确认记录")
                                             + " "
-                                            + ("text-emerald-700" if checked else "text-slate-400")
+                                            + (
+                                                "text-emerald-700"
+                                                if checked
+                                                else "text-red-600 font-semibold"
+                                                if isinstance(
+                                                    confirmation.get("review_revocation"), dict
+                                                )
+                                                else "text-slate-400"
+                                            )
                                         )
 
                                         render_transfer_button(
@@ -1228,6 +1552,22 @@ def build_execution_panel(
                                                 )
                                             ),
                                         )
+                                        render_review_revocation_attachment_button(erp_confirmation)
+                                        if erp_checked and can_review_execution and review_revoke_allowed:
+                                            ui.button(
+                                                icon="undo",
+                                                on_click=lambda _, snapshot=copy.deepcopy(
+                                                    erp_confirmation
+                                                ): open_execution_review_revoke_dialog(
+                                                    "special",
+                                                    "__erp__",
+                                                    "",
+                                                    snapshot,
+                                                    "ERP相关变更",
+                                                ),
+                                            ).props(
+                                                "flat round dense size=xs color=negative"
+                                            ).tooltip("复核发现执行不到位，撤销此确认")
                                     ui.label("ERP").classes(
                                         "px-3 py-2 border-r border-slate-200 font-mono font-bold "
                                         "flex items-center " + execution_column_alignment("assistant", "编号")
@@ -1254,12 +1594,31 @@ def build_execution_panel(
                                             f"{erp_confirmation.get('time', '')}"
                                         )
                                         if erp_checked
-                                        else "待确认"
+                                        else (
+                                            "待重新确认\n复核退回："
+                                            + str(
+                                                erp_confirmation.get("review_revocation", {}).get(
+                                                    "reason", ""
+                                                )
+                                            )
+                                            if isinstance(
+                                                erp_confirmation.get("review_revocation"), dict
+                                            )
+                                            else "待确认"
+                                        )
                                     ).classes(
                                         "px-3 py-2 whitespace-pre-line text-xs "
                                         + execution_column_alignment("assistant", "确认记录")
                                         + " "
-                                        + ("text-emerald-700" if erp_checked else "text-slate-400")
+                                        + (
+                                            "text-emerald-700"
+                                            if erp_checked
+                                            else "text-red-600 font-semibold"
+                                            if isinstance(
+                                                erp_confirmation.get("review_revocation"), dict
+                                            )
+                                            else "text-slate-400"
+                                        )
                                     )
 
                                     render_transfer_button(
@@ -1649,6 +2008,36 @@ def build_execution_panel(
                                                                     )
                                                                 ),
                                                             )
+                                                            render_review_revocation_attachment_button(
+                                                                confirmation
+                                                            )
+                                                            if (
+                                                                checked
+                                                                and can_review_execution
+                                                                and review_revoke_allowed
+                                                            ):
+                                                                ui.button(
+                                                                    icon="undo",
+                                                                    on_click=lambda _, current_id=str(
+                                                                        item_id
+                                                                    ), current_key=key, snapshot=copy.deepcopy(
+                                                                        confirmation
+                                                                    ), current_spec=copy.deepcopy(
+                                                                        spec
+                                                                    ): open_execution_review_revoke_dialog(
+                                                                        "material",
+                                                                        current_id,
+                                                                        current_key,
+                                                                        snapshot,
+                                                                        (
+                                                                            f"{execution_scheme_no(current_id)} · "
+                                                                            f"{current_spec.get('level') or '追溯节点'} · "
+                                                                            f"{compact_material_confirmation_label(current_spec)}"
+                                                                        ),
+                                                                    ),
+                                                                ).props(
+                                                                    "flat round dense size=xs color=negative"
+                                                                ).tooltip("复核发现执行不到位，撤销此确认")
                                                         with checkbox:
                                                             tooltip = ui.tooltip(
                                                                 material_confirmation_tooltip_text(
@@ -1658,6 +2047,20 @@ def build_execution_panel(
                                                                     can_cancel,
                                                                 )
                                                             ).classes("text-xs whitespace-pre-line")
+                                                        review_revocation = confirmation.get(
+                                                            "review_revocation"
+                                                        )
+                                                        if (
+                                                            not checked
+                                                            and isinstance(review_revocation, dict)
+                                                        ):
+                                                            ui.label(
+                                                                "复核退回："
+                                                                + str(review_revocation.get("reason") or "")
+                                                            ).classes(
+                                                                "w-full text-[11px] font-semibold text-red-600 "
+                                                                "whitespace-pre-wrap break-all"
+                                                            )
                                                         material_task_controls.setdefault(
                                                             str(item_id),
                                                             {},

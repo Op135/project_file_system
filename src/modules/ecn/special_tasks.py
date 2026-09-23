@@ -114,6 +114,8 @@ async def update_special_task(
             ):
                 raise ECNConflict("当前用户或阶段不允许确认未移交事项。")
             item.update(confirmed=confirmed, user=username, role=actor_role, time=now)
+            if confirmed:
+                item.pop("review_revocation", None)
             item.setdefault("history", []).append(
                 {"confirmed": confirmed, "user": username, "role": actor_role, "time": now}
             )

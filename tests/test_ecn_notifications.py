@@ -27,6 +27,13 @@ class Users:
     def list_wecom_bindings(self):
         return {"writer": {"external_userid": "writer_wx"}, "manager": {"external_userid": "manager_wx"}}
 
+    def list_primary_memberships(self):
+        return {
+            "writer": {"manager_username": "manager", "position_name": "研发硬件"},
+            "inactive": {"manager_username": "manager", "position_name": "研发硬件"},
+            "manager": {"manager_username": "", "position_name": "研发经理"},
+        }
+
 
 class ECNNotificationTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
@@ -108,6 +115,41 @@ class ECNNotificationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(pending, {"manager": "研发经理"})
         tasks = notifications.pending_task_details(self.record, pending, self.service)
         self.assertIn("审批验证报告", tasks["manager"][0])
+
+    async def test_execution_review_revocation_escalates_notice_to_inactive_users_manager(self):
+        self.settings.update(test_mode=False, cc_manager_enabled=False)
+        self.record["workflow"].update(
+            current_state=ECNState.ECN_EXECUTING,
+            current_phase="ECN_EXECUTION_PHASE",
+            scheme_participants={},
+        )
+        self.record["execution_info"] = {
+            "stage": "material_confirmation",
+            "ordinary_confirmations": {},
+            "erp_confirmation": {"confirmed": True},
+            "material_confirmations": {},
+            "verification": {
+                "status": "correction_required",
+                "notices": {
+                    "review-event-1": {
+                        "event_id": "review-event-1",
+                        "recipient": "inactive",
+                        "subject": "特定事项 #01 测试报告",
+                        "reason": "现场文件没有更新",
+                        "reviewer": "manager",
+                        "time": "2026-09-22 10:00:00",
+                    }
+                },
+            },
+        }
+        await self.save_record()
+
+        self.assertEqual(await self.check(), (1, 0))
+        self.assertEqual(self.sender.call_args.args[1], "manager_wx")
+        description = self.sender.call_args.args[0]
+        self.assertIn("已沿直属上级传导", description)
+        self.assertIn("现场文件没有更新", description)
+        self.assertEqual(await self.check(), (0, 0))
 
     async def test_missing_debug_recipient_does_not_fallback_to_real_people(self):
         self.resolver.return_value = ""

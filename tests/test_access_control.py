@@ -18,6 +18,7 @@ from src.ecn_access import (
     can_edit_ecn_impact,
     can_edit_ecn_scheme,
     can_execute_ecn_assistant_stage,
+    can_verify_ecn_execution,
     can_submit_ecn_scheme_review,
     can_designate_ecn_validation_report,
     can_view_ecn_validation_report,
@@ -36,6 +37,7 @@ from src.permission_catalog import (
     ECN_EXECUTION_ASSISTANT_PERMISSION,
     ECN_EXECUTION_MATERIAL_CONFIRM_PERMISSION,
     ECN_EXECUTION_PMC_CONFIRM_PERMISSION,
+    ECN_EXECUTION_VERIFY_PERMISSION,
     ECN_IMPACT_EDIT_PERMISSION,
     ECN_IMPACT_INITIAL_REMINDER_PERMISSION,
     ECN_LEVEL_CLASSIFY_ECR_PERMISSION,
@@ -271,6 +273,7 @@ class AccessControlTests(unittest.TestCase):
                 ECN_VALIDATION_REPORT_APPROVE_PERMISSION,
                 ECN_EXECUTION_ASSISTANT_PERMISSION,
                 ECN_EXECUTION_MATERIAL_CONFIRM_PERMISSION,
+                ECN_EXECUTION_VERIFY_PERMISSION,
             ],
             actor_username="admin",
         )
@@ -292,6 +295,7 @@ class AccessControlTests(unittest.TestCase):
         self.assertTrue(
             can_execute_ecn_assistant_stage("普通岗位", "张三", user_service=self.service)
         )
+        self.assertTrue(can_verify_ecn_execution("普通岗位", "张三", user_service=self.service))
         self.assertTrue(
             has_ecn_material_execution_qualification(
                 "普通岗位",

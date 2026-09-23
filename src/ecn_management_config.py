@@ -730,6 +730,9 @@ ECN_EXECUTION_STAGE_OVERVIEW_RUNNING = "overview_execution"
 ECN_EXECUTION_STAGE_OVERVIEW_FAILED = "overview_failed"
 ECN_EXECUTION_STAGE_MATERIAL = "material_confirmation"
 ECN_EXECUTION_STAGE_COMPLETED = "completed"
+ECN_EXECUTION_VERIFICATION_PENDING = "pending"
+ECN_EXECUTION_VERIFICATION_CORRECTION_REQUIRED = "correction_required"
+ECN_EXECUTION_VERIFICATION_VERIFIED = "verified"
 ECN_EXECUTION_RESULT_PENDING = "pending"
 ECN_EXECUTION_RESULT_RUNNING = "running"
 ECN_EXECUTION_RESULT_SUCCESS = "success"
@@ -1216,6 +1219,28 @@ def get_ecn_traceability_closure_summary(ecn_data: Any) -> dict[str, str]:
         else:
             summary[level] = "未开始"
     return summary
+
+
+def get_ecn_execution_verification_label(ecn_data: Any) -> str:
+    """返回总表使用的执行复核状态；旧单据没有复核字段时按当前流程状态推导。"""
+    if not isinstance(ecn_data, dict):
+        return "未到核验"
+    workflow = ecn_data.get("workflow", {})
+    execution = ecn_data.get("execution_info", {})
+    workflow = workflow if isinstance(workflow, dict) else {}
+    execution = execution if isinstance(execution, dict) else {}
+    verification = execution.get("verification", {})
+    verification = verification if isinstance(verification, dict) else {}
+    status = str(verification.get("status") or ECN_EXECUTION_VERIFICATION_PENDING)
+    is_closed = (
+        workflow.get("current_state") == ECNState.CLOSED
+        and execution.get("stage") == ECN_EXECUTION_STAGE_COMPLETED
+    )
+    if status == ECN_EXECUTION_VERIFICATION_VERIFIED:
+        return "已核验" if is_closed else "待整改"
+    if status == ECN_EXECUTION_VERIFICATION_CORRECTION_REQUIRED:
+        return "待复核" if is_closed else "待整改"
+    return "待核验" if is_closed else "未到核验"
 
 
 def get_ecn_execution_pending_assignees(ecn_data: Any) -> dict[str, list[str]]:

@@ -40,6 +40,7 @@ from .permission_catalog import (
     ECN_EXECUTION_PRODUCTION_CONFIRM_PERMISSION,
     ECN_EXECUTION_PURCHASE_CONFIRM_PERMISSION,
     ECN_EXECUTION_SALES_SUPERVISOR_CONFIRM_PERMISSION,
+    ECN_EXECUTION_VERIFY_PERMISSION,
     ECN_IMPACT_EDIT_PERMISSION,
     ECN_IMPACT_INITIAL_REMINDER_PERMISSION,
     ECN_LEVEL_CLASSIFY_ECR_PERMISSION,
@@ -125,6 +126,7 @@ def build_ecn_access_snapshot(user_service=None) -> dict[str, Any]:
             ECN_EXECUTION_PMC_CONFIRM_PERMISSION,
             ECN_EXECUTION_PRODUCTION_CONFIRM_PERMISSION,
             ECN_EXECUTION_SALES_SUPERVISOR_CONFIRM_PERMISSION,
+            ECN_EXECUTION_VERIFY_PERMISSION,
         }
         permissions = {
             username: {code for code in relevant_codes if service.has_permission(username, code)}
@@ -371,6 +373,22 @@ def can_approve_ecn_validation_report(
 ) -> bool:
     return _can_ecn_permission(
         ECN_VALIDATION_REPORT_APPROVE_PERMISSION,
+        current_role,
+        current_user,
+        user_service=user_service,
+        access_snapshot=access_snapshot,
+    )
+
+
+def can_verify_ecn_execution(
+    current_role: object,
+    current_user: str,
+    *,
+    user_service=None,
+    access_snapshot: dict[str, Any] | None = None,
+) -> bool:
+    return _can_ecn_permission(
+        ECN_EXECUTION_VERIFY_PERMISSION,
         current_role,
         current_user,
         user_service=user_service,

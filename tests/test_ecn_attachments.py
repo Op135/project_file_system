@@ -195,6 +195,45 @@ class ECNAttachmentPreviewTests(unittest.TestCase):
                 self.assertTrue(response.headers["content-disposition"].startswith("inline;"))
                 self.assertEqual(response.headers["x-content-type-options"], "nosniff")
 
+    def test_execution_review_attachment_is_visible_to_reviewer_and_original_owner(self):
+        attachment = {
+            "id": "review-file",
+            "name": "整改现场照片.png",
+            "uploaded_by": "reviewer",
+        }
+        record = {
+            "execution_info": {
+                "verification": {
+                    "history": [
+                        {
+                            "event_id": "review-event",
+                            "action": "revoked",
+                            "reviewer": "reviewer",
+                            "original_user": "owner",
+                            "attachments": [attachment],
+                        }
+                    ]
+                }
+            }
+        }
+        with patch.object(
+            attachments.db_storage,
+            "get_deep_item",
+            return_value=record,
+        ), patch.object(attachments, "can_view_ecn", return_value=True):
+            for username in ("reviewer", "owner"):
+                with self.subTest(username=username):
+                    visible = attachments.visible_attachments(
+                        "ECN26092201",
+                        "execution_review",
+                        "review-event",
+                        "",
+                        username,
+                        "测试岗位",
+                        object(),
+                    )
+                    self.assertEqual(visible, [attachment])
+
     def test_preview_rechecks_access_and_rejects_non_preview_files(self):
         url = attachment_preview.issue_attachment_preview_url(
             "ECN26091601", "ecr", "", "", "file-1", "owner", "测试岗位",

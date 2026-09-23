@@ -9,15 +9,22 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from src.ecn_management_config import (
+    ECN_EXECUTION_STAGE_COMPLETED,
+    ECN_EXECUTION_STAGE_MATERIAL,
+    ECN_EXECUTION_VERIFICATION_CORRECTION_REQUIRED,
+    ECN_EXECUTION_VERIFICATION_VERIFIED,
     ECN_ITEM_STATUS_NEEDS_IMPROVEMENT,
     ECN_LEVEL_COMPLEX,
     ECN_PARTICIPANT_STATUS_CONFIRMED,
     ECN_PARTICIPANT_STATUS_EDITING,
     ECNState,
+    get_ecn_execution_verification_label,
+    get_ecn_traceability_closure_summary,
     reject_ecn_scheme_items,
 )
 from src.modules.ecn import actions
 from src.modules.ecn import validation_reports
+from src.modules.ecn import execution_review
 from src.modules.ecn.approval_transaction import ApprovalTransaction
 from src.modules.ecn.approval_reassignment import reassign_ecn_approval_reviewer
 from src.modules.ecn.editing import ECNConflict, merge_fields, sync_review_snapshot
@@ -167,6 +174,214 @@ class ECNConcurrencyTests(unittest.IsolatedAsyncioTestCase):
             reviewed.record["change_items"][0]["validation_report"]["status"],
             "approved",
         )
+
+    async def test_execution_reviewer_revokes_without_erasing_confirmation_then_verifies(self):
+        value = record(ECNState.CLOSED)
+        value["workflow"]["current_phase"] = "ECN_EXECUTION_PHASE"
+        value["execution_info"] = {
+            "stage": ECN_EXECUTION_STAGE_COMPLETED,
+            "completed_time": "2026-09-22 09:00:00",
+            "ordinary_confirmations": {
+                "S1": {
+                    "confirmed": True,
+                    "user": "执行人",
+                    "role": "执行岗位",
+                    "time": "2026-09-22 08:30:00",
+                    "history": [
+                        {
+                            "confirmed": True,
+                            "user": "执行人",
+                            "role": "执行岗位",
+                            "time": "2026-09-22 08:30:00",
+                        }
+                    ],
+                }
+            },
+            "erp_confirmation": {
+                "confirmed": True,
+                "user": "执行人",
+                "role": "执行岗位",
+                "time": "2026-09-22 08:40:00",
+                "history": [],
+            },
+            "overview_results": {},
+            "material_confirmations": {},
+        }
+        await self.store(value)
+        expected = copy.deepcopy(value["execution_info"]["ordinary_confirmations"]["S1"])
+
+        missing_reason = await execution_review.revoke_execution_confirmation(
+            value["ecn_id"],
+            "special",
+            "S1",
+            "",
+            expected,
+            " ",
+            [],
+            "复核人",
+            "质量经理",
+            user_service=self.service,
+            storage=self.left,
+        )
+        self.assertFalse(missing_reason.ok)
+        self.assertIn("必须填写", missing_reason.message)
+
+        with (
+            patch.object(execution_review, "can_view_ecn", return_value=True),
+            patch.object(execution_review, "can_verify_ecn_execution", return_value=True),
+        ):
+            revoked = await execution_review.revoke_execution_confirmation(
+                value["ecn_id"],
+                "special",
+                "S1",
+                "",
+                expected,
+                "现场文件仍未更新",
+                [],
+                "复核人",
+                "质量经理",
+                user_service=self.service,
+                storage=self.left,
+            )
+            stale = await execution_review.revoke_execution_confirmation(
+                value["ecn_id"],
+                "special",
+                "S1",
+                "",
+                expected,
+                "重复撤销",
+                [],
+                "复核人",
+                "质量经理",
+                user_service=self.service,
+                storage=self.left,
+            )
+
+        self.assertTrue(revoked.ok)
+        assert revoked.record is not None
+        confirmation = revoked.record["execution_info"]["ordinary_confirmations"]["S1"]
+        self.assertFalse(confirmation["confirmed"])
+        self.assertTrue(confirmation["history"][0]["confirmed"])
+        self.assertEqual(confirmation["history"][-1]["action"], "verification_revoked")
+        self.assertEqual(revoked.record["workflow"]["current_state"], ECNState.ECN_EXECUTING)
+        self.assertEqual(revoked.record["execution_info"]["stage"], ECN_EXECUTION_STAGE_MATERIAL)
+        verification = revoked.record["execution_info"]["verification"]
+        self.assertEqual(verification["status"], ECN_EXECUTION_VERIFICATION_CORRECTION_REQUIRED)
+        self.assertEqual(verification["notices"][verification["last_event_id"]]["recipient"], "执行人")
+        self.assertEqual(get_ecn_execution_verification_label(revoked.record), "待整改")
+        self.assertFalse(stale.ok)
+
+        corrected = revoked.record
+        corrected_confirmation = corrected["execution_info"]["ordinary_confirmations"]["S1"]
+        corrected_confirmation.update(
+            confirmed=True,
+            user="执行人",
+            role="执行岗位",
+            time="2026-09-22 10:00:00",
+        )
+        corrected_confirmation.pop("review_revocation", None)
+        corrected["execution_info"].update(
+            stage=ECN_EXECUTION_STAGE_COMPLETED,
+            completed_time="2026-09-22 10:01:00",
+        )
+        corrected["workflow"].update(current_state=ECNState.CLOSED, pending_roles=[])
+        await self.left.set_item("ecn_management_data", {value["ecn_id"]: corrected})
+
+        with (
+            patch.object(execution_review, "can_view_ecn", return_value=True),
+            patch.object(execution_review, "can_verify_ecn_execution", return_value=True),
+        ):
+            verified = await execution_review.verify_execution_result(
+                value["ecn_id"],
+                "复核人",
+                "质量经理",
+                user_service=self.service,
+                storage=self.left,
+            )
+        self.assertTrue(verified.ok)
+        assert verified.record is not None
+        self.assertEqual(
+            verified.record["execution_info"]["verification"]["status"],
+            ECN_EXECUTION_VERIFICATION_VERIFIED,
+        )
+        self.assertEqual(get_ecn_execution_verification_label(verified.record), "已核验")
+
+    async def test_execution_reviewer_reopens_closed_material_item(self):
+        value = record(ECNState.CLOSED)
+        value["workflow"]["current_phase"] = "ECN_EXECUTION_PHASE"
+        value["change_items"][0].update(
+            scheme_category="material",
+            change_type="更换",
+            traceability_levels=["文件"],
+        )
+        assignment = {
+            "workflow_id": "workflow-file",
+            "version_id": "version-1",
+            "workflow_name": "文件执行",
+        }
+        marker_key = "workflow-file:version-1:P1"
+        task = {
+            "confirmed": True,
+            "user": "执行人",
+            "role": "研发助理",
+            "time": "2026-09-22 08:30:00",
+            "history": [{"confirmed": True, "user": "执行人"}],
+            "level": "文件",
+            "stage_index": 0,
+            "label": "研发助理",
+            "project": "P1",
+            "users": ["执行人"],
+            "roles": [],
+            "responsible_type": "workflow_users",
+            "responsible_key": "研发助理",
+            "workflow_assignment": assignment,
+        }
+        value["execution_info"] = {
+            "stage": ECN_EXECUTION_STAGE_COMPLETED,
+            "completed_time": "2026-09-22 09:00:00",
+            "ordinary_confirmations": {},
+            "erp_confirmation": {"confirmed": True, "history": []},
+            "overview_results": {},
+            "material_confirmations": {
+                "S1": {
+                    "status": "closed",
+                    "closed_time": "2026-09-22 09:00:00",
+                    "traceability_tasks": {"T1": task},
+                    "workflow_completion_notifications": {
+                        marker_key: "2026-09-22 09:00:00"
+                    },
+                }
+            },
+        }
+        await self.store(value)
+
+        with (
+            patch.object(execution_review, "can_view_ecn", return_value=True),
+            patch.object(execution_review, "can_verify_ecn_execution", return_value=True),
+        ):
+            result = await execution_review.revoke_execution_confirmation(
+                value["ecn_id"],
+                "material",
+                "S1",
+                "T1",
+                copy.deepcopy(task),
+                "文件版本仍不正确",
+                [],
+                "复核人",
+                "质量经理",
+                user_service=self.service,
+                storage=self.left,
+            )
+
+        self.assertTrue(result.ok)
+        assert result.record is not None
+        material = result.record["execution_info"]["material_confirmations"]["S1"]
+        self.assertEqual(material["status"], "open")
+        self.assertNotIn("closed_time", material)
+        self.assertNotIn(marker_key, material["workflow_completion_notifications"])
+        self.assertFalse(material["traceability_tasks"]["T1"]["confirmed"])
+        self.assertEqual(get_ecn_traceability_closure_summary(result.record)["文件"], "待确认")
+        self.assertEqual(result.record["workflow"]["current_state"], ECNState.ECN_EXECUTING)
 
     async def test_scheme_stage_level_decision_uses_independent_permission(self):
         value = record()

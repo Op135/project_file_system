@@ -107,6 +107,10 @@ async def ecn_management_page():
             .ecn-management-grid .ecn-trace-pending { color: #c2410c; font-weight: 600; }
             .ecn-management-grid .ecn-trace-not-started { color: #64748b; }
             .ecn-management-grid .ecn-trace-na { color: #cbd5e1; }
+            .ecn-management-grid .ecn-verification-done { color: #15803d; font-weight: 600; }
+            .ecn-management-grid .ecn-verification-failed { color: #dc2626; font-weight: 600; }
+            .ecn-management-grid .ecn-verification-pending { color: #c2410c; font-weight: 600; }
+            .ecn-management-grid .ecn-verification-na { color: #94a3b8; }
             /*::-webkit-scrollbar {
                 width: 3px; /* 极细滚动条 */
                 background-color: transparent; /* 轨道透明，不占视觉空间 */
