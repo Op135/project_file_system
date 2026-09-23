@@ -151,6 +151,7 @@ class SpecialTasksTests(unittest.IsolatedAsyncioTestCase):
         columns = get_ecn_management_grid_columns()
         fields = [column["field"] for column in columns]
         self.assertLess(fields.index("special_tasks"), fields.index("traceability_0"))
+        self.assertEqual(fields[-2:], ["closed_date", "execution_verification"])
 
     async def test_cancel_and_new_owner_notifications_and_retry_dedup(self):
         await self.update(assignee="writer")

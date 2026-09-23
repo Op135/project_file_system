@@ -302,6 +302,7 @@ async def ecn_management_page():
                 "projects",
                 "applicant",
                 "apply_date",
+                "progress",
             ]
 
             def apply_execution_focus(enabled: bool) -> None:

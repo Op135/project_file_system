@@ -259,18 +259,6 @@ def get_ecn_management_grid_columns(include_delete: bool = False) -> list[dict[s
                 "width": 120,
             },
             {
-                "headerName": "执行核验",
-                "field": "execution_verification",
-                "filter": text_filter,
-                "width": 105,
-                "cellClassRules": {
-                    "ecn-verification-done": "value == '已核验'",
-                    "ecn-verification-failed": "value == '待整改'",
-                    "ecn-verification-pending": "value == '待复核' || value == '待核验'",
-                    "ecn-verification-na": "value == '未到核验'",
-                },
-            },
-            {
                 "headerName": "变更简要",
                 "field": "summary",
                 "filter": text_filter,
@@ -329,6 +317,20 @@ def get_ecn_management_grid_columns(include_delete: bool = False) -> list[dict[s
             "field": "closed_date",
             "filter": "agDateColumnFilter",
             "width": 115,
+        }
+    )
+    columns.append(
+        {
+            "headerName": "执行核验",
+            "field": "execution_verification",
+            "filter": text_filter,
+            "width": 105,
+            "cellClassRules": {
+                "ecn-verification-done": "value == '已核验'",
+                "ecn-verification-failed": "value == '待整改'",
+                "ecn-verification-pending": "value == '待复核' || value == '待核验'",
+                "ecn-verification-na": "value == '未到核验'",
+            },
         }
     )
     for column in columns:
