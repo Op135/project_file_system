@@ -63,6 +63,7 @@ from ..wecom_service import find_unknown_wecom_names, resolve_wecom_recipients, 
 SAMPLE_ORDER_DATA_KEY = "sample_order_dashboard_data"
 SAMPLE_ORDER_ENTITY_NAMESPACE = "sample_order_dashboard"
 SAMPLE_ORDER_VERSION_KEY = "sample_order_dashboard_version_stamp"
+SAMPLE_ORDER_OVERDUE_NOTIFICATION_STATE_KEY = "sample_order_overdue_notification_state"
 SAMPLE_ORDER_EXCEL_IMPORT_OWNER = "叶子浩"
 SAMPLE_ORDER_LEGACY_VIEW_ROLE_KEYWORDS = ["销售", "工程", "研发", "boss", "admin"]
 
@@ -154,6 +155,71 @@ def option_text_in(value: object, allowed_values: list[str], default: str) -> st
     return normalized if normalized in allowed_values else default
 
 
+def resolve_sample_order_projects(product_model: object, project_summary: object) -> list[str]:
+    """按产品型号解析项目键；内部型号精确匹配优先于对外型号别名。"""
+    model = option_text(product_model)
+    if not model or not isinstance(project_summary, dict):
+        return []
+    normalized_model = model.casefold()
+    exact_keys = [
+        option_text(project_key)
+        for project_key in project_summary
+        if option_text(project_key).casefold() == normalized_model
+    ]
+    if exact_keys:
+        return list(dict.fromkeys(exact_keys))
+
+    aliases: list[str] = []
+    for project_key, raw_summary in project_summary.items():
+        if not isinstance(raw_summary, dict):
+            continue
+        alias_values = (raw_summary.get("sub_project"), raw_summary.get("project"))
+        if any(option_text(value).casefold() == normalized_model for value in alias_values):
+            project_name = option_text(project_key)
+            if project_name:
+                aliases.append(project_name)
+    return list(dict.fromkeys(aliases))
+
+
+def resolve_sample_order_project_engineer(
+    product_model: object,
+    project_summary: object,
+    project_engineers: object,
+) -> str:
+    """识别型号对应的唯一项目工程师；有歧义或未指定时返回空。"""
+    if not isinstance(project_engineers, dict):
+        return ""
+    engineers = {
+        engineer
+        for project in resolve_sample_order_projects(product_model, project_summary)
+        if (engineer := option_text(project_engineers.get(project)))
+        and engineer != "未指定"
+    }
+    return next(iter(engineers)) if len(engineers) == 1 else ""
+
+
+def match_sample_order_project_engineer(product_model: object) -> str:
+    """按当前项目主数据尝试匹配产品型号的项目工程师。"""
+    general = app.storage.general
+    return resolve_sample_order_project_engineer(
+        product_model,
+        general.get("project_summary", {}),
+        general.get("project_engineer", {}),
+    )
+
+
+def get_assigned_sample_order_project_engineer(record: object) -> str:
+    """读取样品单内经样品组长确认并保存的项目工程师。"""
+    data = merge_with_sample_order_template(record)
+    return option_text(data["basic_info"].get("project_engineer"))
+
+
+def is_assigned_sample_order_project_engineer(record: object, username: object) -> bool:
+    """判断当前用户是否是样品单内已确认的项目工程师。"""
+    engineer = get_assigned_sample_order_project_engineer(record)
+    return bool(engineer and engineer.casefold() == option_text(username).casefold())
+
+
 def sample_order_delivery_display(value: object) -> str:
     """把空实际交样日期显示为明确的未交样状态。"""
     return option_text(value) or "未交样"
@@ -223,6 +289,7 @@ def get_sample_order_template() -> dict:
             "sample_order_no": "",
             "customer_code": "",
             "product_model": "",
+            "project_engineer": "",
             "application_qty": 1,
             "application_date": "",
             "applicant": "",
@@ -898,7 +965,11 @@ def get_sample_order_dashboard_pending_count(
     valid_records = [record for record in all_records.values() if isinstance(record, dict)]
     can_edit_delay = is_sample_order_delay_editor(current_role, current_user)
     can_mark_delay_nature = is_sample_order_delay_nature_marker(current_role, current_user)
-    if not (can_edit_delay or can_mark_delay_nature):
+    manages_assigned_project = any(
+        is_assigned_sample_order_project_engineer(record, current_user)
+        for record in valid_records
+    )
+    if not (can_edit_delay or can_mark_delay_nature or manages_assigned_project):
         return 0
     return sum(
         1
@@ -906,7 +977,8 @@ def get_sample_order_dashboard_pending_count(
         if is_sample_order_pending_for_user(
             record,
             today,
-            can_edit_delay=can_edit_delay,
+            can_edit_delay=can_edit_delay
+            or is_assigned_sample_order_project_engineer(record, current_user),
             can_mark_delay_nature=can_mark_delay_nature,
         )
     )
@@ -1002,6 +1074,19 @@ async def _send_sample_order_change_notifications(
     basic = record["basic_info"]
     record_id = option_text(record.get("record_id"))
     applicant = option_text(basic.get("applicant"))
+    project_engineer = option_text(basic.get("project_engineer"))
+    engineer_extension_events = [
+        event
+        for event in extension_events
+        if bool(event.get("changed_by_project_engineer"))
+        or (
+            project_engineer
+            and option_text(event.get("created_by")).casefold() == project_engineer.casefold()
+        )
+    ]
+    sample_leader_extension_events = [
+        event for event in extension_events if event not in engineer_extension_events
+    ]
     applicant_needed = bool(extension_events and SAMPLE_ORDER_NOTIFY_APPLICANT_ON_EXTENSION) or bool(
         status_event and SAMPLE_ORDER_NOTIFY_APPLICANT_ON_SPECIAL_STATUS
     )
@@ -1027,6 +1112,19 @@ async def _send_sample_order_change_notifications(
             legacy_targets=SAMPLE_ORDER_LEGACY_MANAGER_NOTIFY_TARGETS,
             fallback_touser="",
         )
+    sample_leader_recipients = ""
+    project_engineer_recipients = ""
+    if engineer_extension_events:
+        sample_leader_recipients = await resolve_permission_wecom_recipients(
+            SAMPLE_ORDER_DELAY_EDIT_PERMISSION,
+            legacy_targets=[{"position": "研发样品组长"}],
+            fallback_touser="",
+        )
+    if sample_leader_extension_events and project_engineer:
+        project_engineer_recipients = await resolve_wecom_recipients(
+            [{"names": [project_engineer]}],
+            fallback_touser="",
+        )
     special_status_subscribers = ""
     if status_event:
         special_status_subscribers = await resolve_permission_wecom_recipients(
@@ -1040,6 +1138,10 @@ async def _send_sample_order_change_notifications(
         failures.append(f"申请人“{applicant or '未填写'}”未匹配到企业微信成员")
     if needs_extension_subscribers and not extension_subscribers:
         failures.append("样品单延期关注通知权限未匹配到已绑定企业微信成员")
+    if engineer_extension_events and not sample_leader_recipients:
+        failures.append("项目工程师修改交期后，未匹配到已绑定企业微信的样品组长")
+    if sample_leader_extension_events and project_engineer and not project_engineer_recipients:
+        failures.append("样品组长修改交期后，未匹配到已绑定企业微信的项目工程师")
     if status_event and not special_status_subscribers:
         failures.append("样品单特殊状态通知权限未匹配到已绑定企业微信成员")
     for event in extension_events:
@@ -1048,6 +1150,8 @@ async def _send_sample_order_change_notifications(
         recipients = merge_wecom_recipients(
             applicant_recipient if SAMPLE_ORDER_NOTIFY_APPLICANT_ON_EXTENSION and not redirect_applicant else "",
             extension_subscribers if notify_manager or redirect_applicant else "",
+            sample_leader_recipients if event in engineer_extension_events else "",
+            project_engineer_recipients if event in sample_leader_extension_events else "",
         )
         if not recipients:
             failures.append(f"第{extension_number}次延期未匹配到企业微信收件人")
@@ -1125,6 +1229,94 @@ async def _send_sample_order_notifications_in_background(
         logger.warning("样品单后台通知未即时成功：%s", "；".join(failures))
 
 
+async def check_and_send_sample_order_overdue_reminders(
+    today: Optional[date] = None,
+) -> tuple[int, int]:
+    """提醒当前目标已逾期且尚未填写下一目标日期的样品单责任人。"""
+    await db_storage.refresh_json_entities(SAMPLE_ORDER_ENTITY_NAMESPACE)
+    all_records = get_all_sample_order_records()
+    state_value = await db_storage.get_fresh_item(
+        SAMPLE_ORDER_OVERDUE_NOTIFICATION_STATE_KEY,
+        {},
+    )
+    notification_state = copy.deepcopy(state_value) if isinstance(state_value, dict) else {}
+    today_value = today or date.today()
+    sample_leader_recipients = await resolve_permission_wecom_recipients(
+        SAMPLE_ORDER_DELAY_EDIT_PERMISSION,
+        legacy_targets=[{"position": "研发样品组长"}],
+        fallback_touser="",
+    )
+    sent_count = 0
+    fail_count = 0
+    state_changed = False
+
+    for raw_record in all_records.values():
+        if not isinstance(raw_record, dict):
+            continue
+        record = merge_with_sample_order_template(raw_record)
+        metrics = calculate_sample_order_metrics(record, today_value)
+        if metrics.get("attention_level") != "overdue":
+            continue
+        record_id = option_text(record.get("record_id"))
+        basic = record["basic_info"]
+        effective_target = option_text(metrics.get("effective_target_date"))
+        project_engineer = option_text(basic.get("project_engineer"))
+        route_fingerprint = (
+            f"{today_value.isoformat()}|{effective_target}|{project_engineer.casefold()}"
+        )
+        if not record_id or notification_state.get(record_id) == route_fingerprint:
+            continue
+
+        engineer_recipients = ""
+        if project_engineer:
+            engineer_recipients = await resolve_wecom_recipients(
+                [{"names": [project_engineer]}],
+                fallback_touser="",
+            )
+        recipients = merge_wecom_recipients(
+            sample_leader_recipients,
+            engineer_recipients,
+        )
+        if not recipients:
+            fail_count += 1
+            logger.warning("样品单逾期提醒未匹配到收件人：%s", record_id)
+            continue
+
+        content = (
+            "【样品单逾期未填新交期提醒】\n"
+            f"样品单号：{basic.get('sample_order_no', '')}\n"
+            f"产品型号：{basic.get('product_model', '')}\n"
+            f"项目工程师：{project_engineer or '未指定'}\n"
+            f"当前目标交期：{effective_target}\n"
+            f"当前状态：{metrics.get('alert_message', '')}\n"
+            "请进入样品订单看板填写新的目标交期和延期原因。"
+        )
+        success, message = await send_wecom_text_message(
+            content,
+            recipients,
+            module="sample_order_dashboard",
+            business_key=(
+                f"{record_id}:overdue:{today_value.isoformat()}:{effective_target}:{project_engineer}"
+            ),
+            message_type="overdue_target_missing",
+            link_url=get_sample_order_dashboard_url(record_id),
+        )
+        if success:
+            sent_count += 1
+            notification_state[record_id] = route_fingerprint
+            state_changed = True
+        else:
+            fail_count += 1
+            logger.warning("样品单逾期提醒发送失败：%s %s", record_id, message)
+
+    if state_changed:
+        await db_storage.set_item(
+            SAMPLE_ORDER_OVERDUE_NOTIFICATION_STATE_KEY,
+            notification_state,
+        )
+    return sent_count, fail_count
+
+
 async def save_sample_order_record(
     submitted: dict,
     user: str,
@@ -1134,15 +1326,18 @@ async def save_sample_order_record(
 ) -> SampleOrderUpdateResult:
     """按字段职责和记录版本原子保存一张样品单。"""
     can_edit_base = is_sample_order_base_editor(role, user)
-    can_edit_delay = is_sample_order_delay_editor(role, user)
+    can_edit_delay_by_permission = is_sample_order_delay_editor(role, user)
     can_edit_special_status = is_sample_order_special_status_editor(role, user)
     can_edit_execution = can_edit_base
     if is_new and not can_edit_base:
         return SampleOrderUpdateResult(True, False, "forbidden")
+    record = merge_with_sample_order_template(submitted)
+    can_edit_delay = can_edit_delay_by_permission or is_assigned_sample_order_project_engineer(
+        record,
+        user,
+    )
     if not (can_edit_base or can_edit_delay or can_edit_special_status):
         return SampleOrderUpdateResult(True, False, "forbidden")
-
-    record = merge_with_sample_order_template(submitted)
     errors = validate_sample_order_submission(
         record,
         check_basic=can_edit_base,
@@ -1185,14 +1380,31 @@ async def save_sample_order_record(
                 outcome["record"] = copy.deepcopy(updated)
                 return db_storage.ATOMIC_NO_UPDATE
 
+        effective_can_edit_delay = can_edit_delay_by_permission or is_assigned_sample_order_project_engineer(
+            updated,
+            user,
+        )
+        if not (can_edit_base or effective_can_edit_delay or can_edit_special_status):
+            outcome["code"] = "forbidden"
+            outcome["record"] = copy.deepcopy(updated)
+            return db_storage.ATOMIC_NO_UPDATE
+
         changed_sections: list[str] = []
         if can_edit_base:
+            assigned_engineer = option_text(updated["basic_info"].get("project_engineer"))
             updated["basic_info"] = copy.deepcopy(record["basic_info"])
+            updated["basic_info"]["project_engineer"] = assigned_engineer
             changed_sections.append("基础信息")
         if can_edit_execution:
             updated["execution"] = copy.deepcopy(record["execution"])
             changed_sections.append("执行信息")
-        if can_edit_delay:
+        if can_edit_delay_by_permission:
+            incoming_engineer = option_text(record["basic_info"].get("project_engineer"))
+            stored_engineer = option_text(updated["basic_info"].get("project_engineer"))
+            if incoming_engineer != stored_engineer:
+                updated["basic_info"]["project_engineer"] = incoming_engineer
+                changed_sections.append("项目工程师")
+        if effective_can_edit_delay:
             stored_extensions = [normalize_extension(item) for item in updated.get("extensions", [])]
             incoming_extensions = [normalize_extension(item) for item in record.get("extensions", [])]
             if len(incoming_extensions) < len(stored_extensions):
@@ -1215,6 +1427,9 @@ async def save_sample_order_record(
                 extension["created_at"] = now_str
                 extension_event = copy.deepcopy(extension)
                 extension_event["extension_number"] = len(stored_extensions) + 1
+                extension_event["changed_by_project_engineer"] = bool(
+                    is_assigned_sample_order_project_engineer(updated, user)
+                )
                 stored_extensions.append(extension)
                 outcome["extension_events"].append(extension_event)
             updated["extensions"] = stored_extensions
@@ -2115,7 +2330,12 @@ async def sample_order_dashboard_page(record_id: str = "", view: str = "") -> No
     can_edit_special_status = is_sample_order_special_status_editor(current_role, current_user)
     can_mark_delay_nature = is_sample_order_delay_nature_marker(current_role, current_user)
     can_delete = is_sample_order_admin(current_role, current_user)
-    has_pending_scope = can_edit_delay or can_mark_delay_nature
+    has_assigned_projects = any(
+        is_assigned_sample_order_project_engineer(record, current_user)
+        for record in get_all_sample_order_records().values()
+        if isinstance(record, dict)
+    )
+    has_pending_scope = can_edit_delay or can_mark_delay_nature or has_assigned_projects
     initial_filter = (
         FILTER_MY_PENDING
         if option_text(view).lower() == "my_pending" and has_pending_scope
@@ -2518,6 +2738,11 @@ async def sample_order_dashboard_page(record_id: str = "", view: str = "") -> No
                 ui.notify("未找到该样品单记录", type="warning", position="bottom")
                 return
 
+        project_engineer = option_text(local_data["basic_info"].get("project_engineer"))
+        can_edit_record_delay = can_edit_delay or bool(
+            project_engineer and project_engineer.casefold() == current_user.casefold()
+        )
+
         detail_dialog.clear()
         with detail_dialog, ui.card().classes("w-full h-full rounded-none p-0"):
             preview_container = ui.row().classes("w-full gap-3 flex-wrap")
@@ -2639,11 +2864,53 @@ async def sample_order_dashboard_page(record_id: str = "", view: str = "") -> No
                 with ui.card().classes("w-full h-full p-5 shadow-sm border bg-amber-50/50"):
                     with ui.row().classes("items-center gap-2 mb-3"):
                         ui.icon("description", color="blue")
-                        ui.label("基础信息 · 研发助理维护").classes("text-lg font-bold")
+                        ui.label("基础信息 · 研发助理维护 / 项目工程师由样品组长确认").classes(
+                            "text-lg font-bold"
+                        )
                     with ui.grid().classes("w-full grid-cols-1 md:grid-cols-2 2xl:grid-cols-4 gap-4"):
                         bind_text_input("样品单号 *", basic, "sample_order_no", editable=can_edit_base)
                         bind_text_input("客户编码 *", basic, "customer_code", editable=can_edit_base)
-                        bind_text_input("产品型号 *", basic, "product_model", editable=can_edit_base)
+                        product_model_field = ui.input(
+                            "产品型号 *",
+                            value=option_text(basic.get("product_model")),
+                        ).props("outlined dense").classes("w-full")
+                        engineer_field = ui.input(
+                            "项目工程师",
+                            value=project_engineer,
+                        ).props("outlined dense").classes("w-full")
+
+                        if can_edit_base:
+
+                            def set_product_model(event: Any) -> None:
+                                basic["product_model"] = option_text(event.value)
+
+                            product_model_field.on_value_change(set_product_model)
+                        else:
+                            product_model_field.props("disable")
+                        if can_edit_delay and not is_new:
+
+                            def set_project_engineer(event: Any) -> None:
+                                nonlocal project_engineer
+                                project_engineer = option_text(event.value)
+                                basic["project_engineer"] = project_engineer
+
+                            async def warn_unknown_project_engineer(_event: Any = None) -> None:
+                                unknown_names = await find_unknown_wecom_names(
+                                    basic.get("project_engineer", "")
+                                )
+                                if unknown_names:
+                                    ui.notify(
+                                        f"项目工程师未在企业微信通讯录中找到：{'、'.join(unknown_names)}，"
+                                        "请检查是否有错别字",
+                                        type="warning",
+                                        position="bottom",
+                                        multi_line=True,
+                                    )
+
+                            engineer_field.on_value_change(set_project_engineer)
+                            engineer_field.on("blur", warn_unknown_project_engineer)
+                        else:
+                            engineer_field.props("disable")
                         qty_field = (
                             ui.number(
                                 "申请数量 *",
@@ -2704,12 +2971,42 @@ async def sample_order_dashboard_page(record_id: str = "", view: str = "") -> No
                         with ui.row().classes("items-center gap-2"):
                             ui.icon("event_repeat", color="orange")
                             ui.label("延期历史 · 研发样品组长追加").classes("text-lg font-bold")
-                        if can_edit_delay and not is_new:
-                            ui.button("新增一次延期", icon="add", on_click=lambda: add_extension()).props(
-                                "outline color=orange"
-                            )
+                        with ui.row().classes("items-center gap-2"):
+                            if can_edit_delay and not is_new:
+                                ui.button(
+                                    "匹配项目工程师",
+                                    icon="person_search",
+                                    on_click=lambda: match_project_engineer(),
+                                ).props("outline color=blue")
+                            if can_edit_record_delay and not is_new:
+                                ui.button("新增一次延期", icon="add", on_click=lambda: add_extension()).props(
+                                    "outline color=orange"
+                                )
 
                     extension_container = ui.column().classes("w-full gap-3")
+
+                    def match_project_engineer() -> None:
+                        nonlocal project_engineer
+                        if not can_edit_delay:
+                            ui.notify("当前账号没有匹配项目工程师的权限", type="negative", position="bottom")
+                            return
+                        project_engineer = match_sample_order_project_engineer(
+                            basic.get("product_model")
+                        )
+                        basic["project_engineer"] = project_engineer
+                        engineer_field.set_value(project_engineer)
+                        if project_engineer:
+                            ui.notify(
+                                f"已匹配项目工程师：{project_engineer}，请保存样品单",
+                                type="positive",
+                                position="bottom",
+                            )
+                        else:
+                            ui.notify(
+                                "未匹配到唯一项目工程师，请在基础信息中手工填写后保存",
+                                type="warning",
+                                position="bottom",
+                            )
 
                     def remove_extension(index: int) -> None:
                         if 0 <= index < len(extensions) and not extensions[index].get("extension_id"):
@@ -2750,7 +3047,7 @@ async def sample_order_dashboard_page(record_id: str = "", view: str = "") -> No
                                             f"第{index + 1}次延期目标日期",
                                             extension,
                                             "target_date",
-                                            editable=can_edit_delay and not saved,
+                                            editable=can_edit_record_delay and not saved,
                                             classes="w-full md:col-span-3",
                                             min_date=date.today().isoformat() if not saved else "",
                                         )
@@ -2758,7 +3055,7 @@ async def sample_order_dashboard_page(record_id: str = "", view: str = "") -> No
                                             f"第{index + 1}次延期原因",
                                             extension,
                                             "reason",
-                                            editable=can_edit_delay and not saved,
+                                            editable=can_edit_record_delay and not saved,
                                             classes="w-full md:col-span-9",
                                             refresh_metrics=True,
                                         )
@@ -2913,7 +3210,7 @@ async def sample_order_dashboard_page(record_id: str = "", view: str = "") -> No
                     local_data,
                     check_basic=can_edit_base,
                     check_execution=execution_editable,
-                    check_delay=can_edit_delay,
+                    check_delay=can_edit_record_delay,
                     check_special_status=can_edit_special_status,
                 )
                 if errors:
@@ -2976,7 +3273,7 @@ async def sample_order_dashboard_page(record_id: str = "", view: str = "") -> No
                 if can_delete and not is_new:
                     ui.button("删除", icon="delete", on_click=open_delete_confirmation).props("outline color=negative")
                 ui.button("关闭", on_click=detail_dialog.close).props("outline color=grey")
-                if can_edit_base or can_edit_delay or can_edit_special_status:
+                if can_edit_base or can_edit_record_delay or can_edit_special_status:
                     ui.button("保存", icon="save", on_click=save_current_record).props("color=primary")
         detail_dialog.open()
 
@@ -3131,7 +3428,8 @@ async def sample_order_dashboard_page(record_id: str = "", view: str = "") -> No
                         record,
                         filter_value,
                         calculated_metrics=metrics,
-                        can_edit_delay=can_edit_delay,
+                        can_edit_delay=can_edit_delay
+                        or is_assigned_sample_order_project_engineer(record, current_user),
                         can_mark_delay_nature=can_mark_delay_nature,
                     ):
                         continue

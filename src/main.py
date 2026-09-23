@@ -13,6 +13,8 @@ from starlette.responses import Response
 # 导入新的配置和工具模块
 from . import (
     db_storage,
+)
+from . import (
     pages as pages,  # 导入页面以注册路由；显式保留副作用导入
 )
 from .components import StorageBackupManager
@@ -27,7 +29,10 @@ from .error_management_config import (
 )
 from .issue_workflow_utils import is_time_in_window
 from .modules.ecn.notifications import init_ecn_reminder_task
-from .pages.sample_order_dashboard import initialize_sample_order_storage
+from .pages.sample_order_dashboard import (
+    check_and_send_sample_order_overdue_reminders,
+    initialize_sample_order_storage,
+)
 from .sample_issue_config import (
     SAMPLE_BACKGROUND_REMINDER_ENABLED,
     SAMPLE_BACKGROUND_REMINDER_INITIAL_DELAY_SECONDS,
@@ -282,6 +287,23 @@ def init_sample_issue_reminder_task():
     )
 
 
+def init_sample_order_overdue_reminder_task():
+    """初始化样品订单逾期未填新交期提醒。"""
+
+    async def check_sample_order_overdue_reminders():
+        sent_count, fail_count = await check_and_send_sample_order_overdue_reminders()
+        if sent_count or fail_count:
+            logger.info(
+                "样品订单逾期提醒检查完成：新发成功 %s 条，失败 %s 条",
+                sent_count,
+                fail_count,
+            )
+
+    app.timer(30, check_sample_order_overdue_reminders, once=True)
+    app.timer(3600, check_sample_order_overdue_reminders)
+    logger.info("样品订单逾期未填新交期提醒任务已挂载（首次 30 秒，循环 3600 秒）。")
+
+
 # ==========================================
 # 🌟 核心重构：统一的异步启动序列
 # ==========================================
@@ -336,6 +358,7 @@ async def master_startup():
 
     # 第八顺位：启动样品问题后台提醒检查任务
     init_sample_issue_reminder_task()
+    init_sample_order_overdue_reminder_task()
     init_ecn_reminder_task()
 
     logger.info("系统启动序列全部执行完毕。")

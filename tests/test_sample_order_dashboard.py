@@ -695,6 +695,29 @@ class SampleOrderCalculationTests(unittest.TestCase):
             1,
         )
 
+    def test_project_engineer_badge_counts_only_assigned_overdue_orders(self):
+        assigned = make_record()
+        assigned["basic_info"]["product_model"] = "MODEL-A"
+        assigned["basic_info"]["project_engineer"] = "工程师A"
+        assigned["basic_info"]["planned_delivery_date"] = "2026-07-19"
+        other = make_record()
+        other["record_id"] = "record-other"
+        other["basic_info"]["product_model"] = "MODEL-B"
+        other["basic_info"]["planned_delivery_date"] = "2026-07-19"
+
+        with (
+            patch.object(dashboard, "is_sample_order_delay_editor", return_value=False),
+            patch.object(dashboard, "is_sample_order_delay_nature_marker", return_value=False),
+        ):
+            count = dashboard.get_sample_order_dashboard_pending_count(
+                {"assigned": assigned, "other": other},
+                date(2026, 7, 20),
+                current_user="工程师A",
+                current_role="项目工程师",
+            )
+
+        self.assertEqual(count, 1)
+
     def test_combined_permissions_badge_counts_pending_union(self):
         """同时拥有延期和性质权限时，应合并两类待办并按订单计数。"""
         overdue = make_record()
@@ -862,6 +885,39 @@ class SampleOrderExcelImportTests(unittest.TestCase):
 
 
 class SampleOrderValidationTests(unittest.TestCase):
+    def test_project_engineer_is_resolved_from_internal_or_unique_external_model(self):
+        project_summary = {
+            "RFTS-0001-A": {"project": "RFTS-0001", "sub_project": "RFTS-0001-A"},
+            "RFTS-0001-B": {"project": "RFTS-0001", "sub_project": "RFTS-0001-B"},
+        }
+        engineers = {"RFTS-0001-A": "工程师A", "RFTS-0001-B": "工程师A"}
+
+        self.assertEqual(
+            dashboard.resolve_sample_order_project_engineer(
+                "rfts-0001-a",
+                project_summary,
+                engineers,
+            ),
+            "工程师A",
+        )
+        self.assertEqual(
+            dashboard.resolve_sample_order_project_engineer(
+                "RFTS-0001",
+                project_summary,
+                engineers,
+            ),
+            "工程师A",
+        )
+        engineers["RFTS-0001-B"] = "工程师B"
+        self.assertEqual(
+            dashboard.resolve_sample_order_project_engineer(
+                "RFTS-0001",
+                project_summary,
+                engineers,
+            ),
+            "",
+        )
+
     def test_role_permissions_are_separated(self):
         self.assertTrue(dashboard.is_sample_order_base_editor("研发助理"))
         self.assertFalse(dashboard.is_sample_order_delay_editor("研发助理"))
@@ -982,6 +1038,132 @@ class SampleOrderValidationTests(unittest.TestCase):
 
 
 class SampleOrderAtomicSaveTests(unittest.IsolatedAsyncioTestCase):
+    async def test_sample_leader_can_save_manual_project_engineer_assignment(self):
+        stored = make_record()
+        submitted = copy.deepcopy(stored)
+        submitted["basic_info"]["project_engineer"] = "工程师A"
+        saved: dict[str, object] = {}
+
+        async def fake_atomic(_namespace, _entity_id, callback):
+            updated = callback(copy.deepcopy(stored))
+            saved["record"] = updated
+            return True
+
+        with (
+            patch.object(db_storage, "atomic_json_entity_update", side_effect=fake_atomic),
+            patch.object(db_storage, "set_item", new=AsyncMock()),
+        ):
+            result = await dashboard.save_sample_order_record(
+                submitted,
+                "组长A",
+                "研发样品组长",
+                is_new=False,
+            )
+
+        self.assertTrue(result.changed)
+        saved_record = cast(dict[str, Any], saved["record"])
+        self.assertEqual(saved_record["basic_info"]["project_engineer"], "工程师A")
+
+    async def test_base_editor_cannot_change_project_engineer_assignment(self):
+        stored = make_record()
+        stored["basic_info"]["project_engineer"] = "工程师A"
+        submitted = copy.deepcopy(stored)
+        submitted["basic_info"]["project_engineer"] = "伪造工程师"
+        saved: dict[str, object] = {}
+
+        async def fake_atomic(_namespace, _entity_id, callback):
+            updated = callback(copy.deepcopy(stored))
+            saved["record"] = updated
+            return True
+
+        with (
+            patch.object(db_storage, "atomic_json_entity_update", side_effect=fake_atomic),
+            patch.object(db_storage, "set_item", new=AsyncMock()),
+        ):
+            result = await dashboard.save_sample_order_record(
+                submitted,
+                "助理A",
+                "研发助理",
+                is_new=False,
+            )
+
+        self.assertTrue(result.changed)
+        saved_record = cast(dict[str, Any], saved["record"])
+        self.assertEqual(saved_record["basic_info"]["project_engineer"], "工程师A")
+
+    async def test_assigned_project_engineer_can_append_extension(self):
+        stored = make_record()
+        stored["basic_info"]["project_engineer"] = "工程师A"
+        submitted = copy.deepcopy(stored)
+        submitted["extensions"].append(
+            dashboard.normalize_extension(
+                {
+                    "target_date": (date.today() + timedelta(days=1)).isoformat(),
+                    "reason": "项目排期调整",
+                }
+            )
+        )
+        saved: dict[str, object] = {}
+
+        async def fake_atomic(_namespace, _entity_id, callback):
+            updated = callback(copy.deepcopy(stored))
+            saved["record"] = updated
+            return True
+
+        schedule = Mock(side_effect=lambda coroutine, _name: coroutine.close())
+        with (
+            patch.object(db_storage, "atomic_json_entity_update", side_effect=fake_atomic),
+            patch.object(db_storage, "set_item", new=AsyncMock()),
+            patch.object(dashboard, "schedule_background_task", new=schedule),
+        ):
+            result = await dashboard.save_sample_order_record(
+                submitted,
+                "工程师A",
+                "项目工程师",
+                is_new=False,
+            )
+
+        self.assertTrue(result.changed)
+        saved_record = cast(dict[str, Any], saved["record"])
+        self.assertEqual(saved_record["extensions"][0]["created_by"], "工程师A")
+        scheduled_record = schedule.call_args.args[0]
+        scheduled_record.close()
+
+    async def test_project_engineer_permission_is_rechecked_against_stored_model(self):
+        stored = make_record()
+        stored["basic_info"]["product_model"] = "MODEL-B"
+        stored["basic_info"]["project_engineer"] = "工程师B"
+        submitted = copy.deepcopy(stored)
+        submitted["basic_info"]["product_model"] = "MODEL-A"
+        submitted["basic_info"]["project_engineer"] = "工程师A"
+        submitted["extensions"].append(
+            dashboard.normalize_extension(
+                {
+                    "target_date": (date.today() + timedelta(days=1)).isoformat(),
+                    "reason": "不应写入",
+                }
+            )
+        )
+
+        async def fake_atomic(_namespace, _entity_id, callback):
+            updated = callback(copy.deepcopy(stored))
+            self.assertIs(updated, db_storage.ATOMIC_NO_UPDATE)
+            return True
+
+        with (
+            patch.object(db_storage, "atomic_json_entity_update", side_effect=fake_atomic),
+            patch.object(db_storage, "set_item", new=AsyncMock()),
+        ):
+            result = await dashboard.save_sample_order_record(
+                submitted,
+                "工程师A",
+                "项目工程师",
+                is_new=False,
+            )
+
+        self.assertFalse(result.changed)
+        self.assertEqual(result.code, "forbidden")
+
     async def test_assistant_save_preserves_leader_fields(self):
         stored = make_record()
         stored["extensions"] = [
@@ -1267,6 +1449,184 @@ class SampleOrderAtomicSaveTests(unittest.IsolatedAsyncioTestCase):
 
 
 class SampleOrderNotificationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_sample_leader_extension_notifies_assigned_project_engineer(self):
+        record = make_record()
+        record["basic_info"]["project_engineer"] = "工程师A"
+        event = {
+            "extension_id": "extension-leader",
+            "extension_number": 1,
+            "target_date": "2026-07-25",
+            "reason": "制样排期调整",
+            "created_by": "组长A",
+            "created_role": "研发样品组长",
+            "changed_by_project_engineer": False,
+        }
+
+        async def fake_resolve(targets, fallback_touser="", **_kwargs):
+            names = targets[0].get("names", []) if targets and isinstance(targets[0], dict) else []
+            return "engineer_userid" if names == ["工程师A"] else "sales_userid"
+
+        send_message = AsyncMock(return_value=(True, "已发送"))
+        with (
+            patch.object(dashboard, "resolve_wecom_recipients", side_effect=fake_resolve),
+            patch.object(dashboard, "send_wecom_text_message", new=send_message),
+            patch.object(dashboard, "SAMPLE_ORDER_REDIRECT_APPLICANT_NOTIFICATIONS_TO_MANAGER", False),
+        ):
+            failures = await dashboard._send_sample_order_change_notifications(record, [event], None)
+
+        self.assertEqual(failures, ())
+        sent_call = send_message.await_args
+        assert sent_call is not None
+        self.assertEqual(
+            set(sent_call.args[1].split("|")),
+            {"sales_userid", "engineer_userid"},
+        )
+
+    async def test_overdue_reminder_notifies_leader_and_engineer_once_per_day(self):
+        record = make_record()
+        record["basic_info"].update(
+            {
+                "planned_delivery_date": "2026-07-19",
+                "project_engineer": "工程师A",
+            }
+        )
+        state: dict[str, str] = {}
+
+        async def get_state(_key, _default):
+            return copy.deepcopy(state)
+
+        async def save_state(_key, value):
+            state.clear()
+            state.update(value)
+            return True
+
+        send_message = AsyncMock(return_value=(True, "已发送"))
+        with (
+            patch.object(
+                db_storage,
+                "refresh_json_entities",
+                new=AsyncMock(),
+            ),
+            patch.object(dashboard, "get_all_sample_order_records", return_value={"record-1": record}),
+            patch.object(db_storage, "get_fresh_item", side_effect=get_state),
+            patch.object(db_storage, "set_item", side_effect=save_state),
+            patch.object(
+                dashboard,
+                "resolve_permission_wecom_recipients",
+                new=AsyncMock(return_value="leader_userid"),
+            ),
+            patch.object(
+                dashboard,
+                "resolve_wecom_recipients",
+                new=AsyncMock(return_value="engineer_userid"),
+            ),
+            patch.object(dashboard, "send_wecom_text_message", new=send_message),
+        ):
+            first_result = await dashboard.check_and_send_sample_order_overdue_reminders(
+                date(2026, 7, 20)
+            )
+            second_result = await dashboard.check_and_send_sample_order_overdue_reminders(
+                date(2026, 7, 20)
+            )
+            next_day_result = await dashboard.check_and_send_sample_order_overdue_reminders(
+                date(2026, 7, 21)
+            )
+
+        self.assertEqual(first_result, (1, 0))
+        self.assertEqual(second_result, (0, 0))
+        self.assertEqual(next_day_result, (1, 0))
+        self.assertEqual(send_message.await_count, 2)
+        sent_call = send_message.await_args_list[0]
+        self.assertEqual(
+            set(sent_call.args[1].split("|")),
+            {"leader_userid", "engineer_userid"},
+        )
+
+    async def test_project_engineer_extension_notifies_applicant_and_sample_leader(self):
+        record = make_record()
+        record["basic_info"]["product_model"] = "RFTS-0001"
+        record["basic_info"]["project_engineer"] = "工程师A"
+        event = {
+            "extension_id": "extension-engineer",
+            "extension_number": 1,
+            "target_date": "2026-07-25",
+            "reason": "项目排期调整",
+            "created_by": "工程师A",
+            "created_role": "项目工程师",
+            "changed_by_project_engineer": True,
+        }
+        fake_app = SimpleNamespace(
+            storage=SimpleNamespace(
+                general={
+                    "project_summary": {"RFTS-0001": {"sub_project": "RFTS-0001"}},
+                    "project_engineer": {"RFTS-0001": "工程师A"},
+                }
+            )
+        )
+
+        async def fake_resolve(targets, fallback_touser="", **_kwargs):
+            names = targets[0].get("names", []) if targets and isinstance(targets[0], dict) else []
+            return "sales_userid" if names == ["销售A"] else "applicant_userid"
+
+        permission_resolver = AsyncMock(return_value="leader_userid")
+        send_message = AsyncMock(return_value=(True, "已发送"))
+        with (
+            patch.object(dashboard, "app", fake_app),
+            patch.object(dashboard, "resolve_wecom_recipients", side_effect=fake_resolve),
+            patch.object(
+                dashboard,
+                "resolve_permission_wecom_recipients",
+                new=permission_resolver,
+            ),
+            patch.object(dashboard, "send_wecom_text_message", new=send_message),
+            patch.object(dashboard, "SAMPLE_ORDER_REDIRECT_APPLICANT_NOTIFICATIONS_TO_MANAGER", False),
+        ):
+            failures = await dashboard._send_sample_order_change_notifications(record, [event], None)
+
+        self.assertEqual(failures, ())
+        sent_call = send_message.await_args
+        assert sent_call is not None
+        self.assertEqual(
+            set(sent_call.args[1].split("|")),
+            {"applicant_userid", "leader_userid"},
+        )
+        permission_call = permission_resolver.await_args
+        assert permission_call is not None
+        self.assertEqual(permission_call.args[0], dashboard.SAMPLE_ORDER_DELAY_EDIT_PERMISSION)
+
+    async def test_project_engineer_extension_respects_disabled_applicant_notification(self):
+        record = make_record()
+        record["basic_info"]["project_engineer"] = "工程师A"
+        event = {
+            "extension_id": "extension-engineer",
+            "extension_number": 1,
+            "target_date": "2026-07-25",
+            "reason": "项目排期调整",
+            "created_by": "工程师A",
+            "created_role": "项目工程师",
+            "changed_by_project_engineer": True,
+        }
+        direct_resolver = AsyncMock(return_value="applicant_userid")
+        send_message = AsyncMock(return_value=(True, "已发送"))
+        with (
+            patch.object(dashboard, "resolve_wecom_recipients", new=direct_resolver),
+            patch.object(
+                dashboard,
+                "resolve_permission_wecom_recipients",
+                new=AsyncMock(return_value="leader_userid"),
+            ),
+            patch.object(dashboard, "send_wecom_text_message", new=send_message),
+            patch.object(dashboard, "SAMPLE_ORDER_NOTIFY_APPLICANT_ON_EXTENSION", False),
+            patch.object(dashboard, "SAMPLE_ORDER_REDIRECT_APPLICANT_NOTIFICATIONS_TO_MANAGER", False),
+        ):
+            failures = await dashboard._send_sample_order_change_notifications(record, [event], None)
+
+        self.assertEqual(failures, ())
+        direct_resolver.assert_not_awaited()
+        sent_call = send_message.await_args
+        assert sent_call is not None
+        self.assertEqual(sent_call.args[1], "leader_userid")
+
     async def test_debug_mode_redirects_all_extension_notifications_to_manager(self):
         record = make_record()
 
