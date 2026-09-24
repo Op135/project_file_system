@@ -9,8 +9,42 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 
-class InformationBatchRefreshTests(unittest.IsolatedAsyncioTestCase):
-    """隔离数据库和页面初始化，验证真实审批回调的刷新行为。"""
+class InformationOverviewRefreshTests(unittest.IsolatedAsyncioTestCase):
+    """隔离数据库和页面初始化，验证概述审批回调的局部刷新行为。"""
+
+    def test_overview_request_handlers_do_not_reload_the_whole_page(self):
+        source = Path(__file__).resolve().parents[1] / "src" / "pages" / "information.py"
+        tree = ast.parse(source.read_text(encoding="utf-8"))
+        target_names = {
+            "handle_withdraw",
+            "handle_approve",
+            "handle_archive",
+            "open_reject_modal",
+            "delete_correction_request",
+            "approve_correction_request",
+            "reject_correction_request",
+            "withdraw_batch_request",
+            "approve_batch_request",
+            "reject_batch_request",
+        }
+        handlers = {
+            node.name: node
+            for node in ast.walk(tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in target_names
+        }
+        self.assertEqual(set(handlers), target_names)
+
+        for name, handler in handlers.items():
+            called_functions = {
+                ast.unparse(node.func)
+                for node in ast.walk(handler)
+                if isinstance(node, ast.Call)
+            }
+            self.assertNotIn("ui.navigate.reload", called_functions, name)
+            if name == "handle_approve":
+                self.assertIn("handle_archive", called_functions, name)
+            else:
+                self.assertIn("refresh_overview_request_sections", called_functions, name)
 
     async def run_approval(self, *, allowed=True, execution_error=False):
         source = Path(__file__).resolve().parents[1] / "src" / "pages" / "information.py"
@@ -44,7 +78,7 @@ class InformationBatchRefreshTests(unittest.IsolatedAsyncioTestCase):
             "ui": ui,
             "execute_batch_overview_request": execute,
             "update_batch_overview_request": update,
-            "refresh_batch_request_sections": refresh,
+            "refresh_overview_request_sections": refresh,
             "logger": MagicMock(),
         }
         exec(compile(ast.Module(body=[callback], type_ignores=[]), str(source), "exec"), namespace)

@@ -134,11 +134,6 @@ def _get_draft_saved_timestamp(project_name, version, owner) -> float:
         return float("-inf")
 
 
-def _reload_after_dialog_transition(delay: float = 0.4) -> None:
-    """给弹窗关闭动画留出时间，再刷新待办页。"""
-    ui.timer(delay, ui.navigate.reload, once=True)
-
-
 def _get_correction_media_preview(
     request_id: str,
     payload: dict,
@@ -887,7 +882,7 @@ def information_page():
             return
         app.storage.general["overview_change_requests"][req_id]["status"] = "withdrawn"
         ui.notify("申请已撤回")
-        ui.navigate.reload()
+        refresh_overview_request_sections()
 
     # 2. 审批通过 (执行物理动作 + 数据更新 + 归档)
     async def handle_approve(req_id, req_data):
@@ -937,7 +932,6 @@ def information_page():
             # 归档
             await handle_archive(req_id, "approved")
             ui.notify("审批通过并已同步刷新")
-            ui.navigate.reload()
         except Exception as e:
             ui.notify(f"错误: {e}", type="negative")
 
@@ -951,6 +945,7 @@ def information_page():
         await db_storage.atomic_deep_update(
             ["overview_change_archives"], lambda old: {**(old or {}), req_id: archive_data}
         )
+        refresh_overview_request_sections()
 
     def open_reject_modal(req_id):
         """弹出驳回理由填写对话框"""
@@ -986,7 +981,7 @@ def information_page():
 
                     ui.notify("已驳回该申请", type="positive")
                     dialog.close()
-                    ui.navigate.reload()  # 刷新页面以更新列表
+                    refresh_overview_request_sections()
                 except Exception as e:
                     ui.notify(f"操作失败: {e}", type="negative")
 
@@ -1031,7 +1026,7 @@ def information_page():
         cleanup_correction_staged_files([str(payload.get("staged_file_path") or "")])
         correction_request_dialog.close()
         ui.notify("纠错申请已撤销删除。", type="positive")
-        ui.navigate.reload()
+        refresh_overview_request_sections()
 
     async def approve_correction_request(request_id: str) -> None:
         # 先让详情弹窗完成关闭动画；审批中的文件、数据库和归档操作随后继续执行。
@@ -1057,7 +1052,7 @@ def information_page():
             request = claimed["request"]
             if claimed["value"] is not True or not isinstance(request, dict):
                 ui.notify("申请已被处理或当前账号无审批权限。", type="warning")
-                _reload_after_dialog_transition()
+                refresh_overview_request_sections()
                 return
             processing_notice = ui.notification("正在执行单项概述纠错审批…", timeout=None, spinner=True)
             try:
@@ -1071,7 +1066,7 @@ def information_page():
                         },
                     )
                     ui.notify(f"纠错执行失败：{result.get('message', '未知原因')}", type="negative", timeout=0)
-                    _reload_after_dialog_transition()
+                    refresh_overview_request_sections()
                     return
                 reviewed_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 review_log = list(request.get("review_log") or [])
@@ -1125,7 +1120,7 @@ def information_page():
                 ui.notify(f"纠错审批异常：{exc}", type="negative", timeout=0)
             finally:
                 processing_notice.dismiss()
-            _reload_after_dialog_transition()
+            refresh_overview_request_sections()
 
     def reject_correction_request(request_id: str) -> None:
         reject_dialog = ui.dialog().props("persistent")
@@ -1169,7 +1164,7 @@ def information_page():
                 reject_dialog.close()
                 correction_request_dialog.close()
                 ui.notify("纠错申请已驳回。", type="positive")
-                ui.navigate.reload()
+                refresh_overview_request_sections()
 
             with ui.row().classes("w-full justify-end gap-2"):
                 ui.button("取消", on_click=reject_dialog.close).props("flat color=grey")
@@ -1341,7 +1336,7 @@ def information_page():
                 pass
         batch_request_dialog.close()
         ui.notify("批量概述申请已撤销删除。", type="positive")
-        refresh_batch_request_sections()
+        refresh_overview_request_sections()
 
     async def approve_batch_request(request_id: str) -> None:
         # 批量执行可能包含多个项目和文件操作，先收起弹窗避免界面等待执行完成。
@@ -1367,7 +1362,7 @@ def information_page():
             request = claimed["request"]
             if claimed["value"] is not True or not isinstance(request, dict):
                 ui.notify("申请已被处理或当前账号无审核权限。", type="warning")
-                refresh_batch_request_sections()
+                refresh_overview_request_sections()
                 return
 
             processing_notice = ui.notification("正在执行批量概述审批…", timeout=None, spinner=True)
@@ -1424,7 +1419,7 @@ def information_page():
                 ui.notify(f"审批执行失败：{exc}", type="negative", timeout=0)
             finally:
                 processing_notice.dismiss()
-            refresh_batch_request_sections()
+            refresh_overview_request_sections()
 
     def reject_batch_request(request_id: str) -> None:
         reject_dialog = ui.dialog().props("persistent")
@@ -1468,7 +1463,7 @@ def information_page():
                 reject_dialog.close()
                 batch_request_dialog.close()
                 ui.notify("批量概述申请已驳回，申请人将在待办中收到提示。", type="positive")
-                refresh_batch_request_sections()
+                refresh_overview_request_sections()
 
             with ui.row().classes("w-full justify-end gap-2"):
                 ui.button("取消", on_click=reject_dialog.close).props("flat color=grey")
@@ -1674,7 +1669,7 @@ def information_page():
                 )
                 batch_request_dialog.close()
                 ui.notify("申请已修改并重新提交审批。", type="positive")
-                refresh_batch_request_sections()
+                refresh_overview_request_sections()
 
             with ui.row().classes("w-full justify-end gap-2 pt-2 border-t"):
                 if can_review and request.get("status") == "pending":
@@ -2049,8 +2044,8 @@ def information_page():
         else:
             ui.label("暂无概述变更申请").classes("text-sm text-gray-400 p-2")
 
-    def refresh_batch_request_sections() -> None:
-        """批量申请变化后仅更新审批列表和受影响的概述待办。"""
+    def refresh_overview_request_sections() -> None:
+        """概述变更申请变化后仅更新审批列表和受影响的概述待办。"""
         render_overview_requests.refresh()
         render_overview_pending.refresh()
 
