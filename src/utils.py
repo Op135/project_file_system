@@ -1007,6 +1007,46 @@ def validate_user_output(new_item_config, old_item_data):
     return {}
 
 
+def _normalize_requirement_node_reference(value) -> str:
+    """将配置中的节点序号统一成可用于查表的字符串。"""
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    try:
+        number = float(text)
+    except (TypeError, ValueError, OverflowError):
+        return text
+    return str(int(number)) if number.is_integer() else text
+
+
+def _build_requirement_sequence_to_node_id(config_data_full) -> dict[str, str]:
+    """建立当前版本的节点序号到固定唯一码映射。"""
+    sequence_to_node_id: dict[str, str] = {}
+    data = config_data_full.get("data", {})
+    if not isinstance(data, dict):
+        return sequence_to_node_id
+
+    for sequence, item in data.items():
+        if not isinstance(item, dict):
+            continue
+        node_id = str(item.get("node_id") or "").strip()
+        normalized_sequence = _normalize_requirement_node_reference(sequence)
+        if normalized_sequence and node_id:
+            sequence_to_node_id[normalized_sequence] = node_id
+    return sequence_to_node_id
+
+
+def _resolve_requirement_dependency(value, sequence_to_node_id: dict[str, str]) -> tuple[str, str]:
+    """优先把依赖序号解析成固定唯一码；无法解析时保留原值参与比较。"""
+    normalized_reference = _normalize_requirement_node_reference(value)
+    if not normalized_reference:
+        return ("empty", "")
+    node_id = sequence_to_node_id.get(normalized_reference)
+    if node_id is not None:
+        return ("node_id", node_id)
+    return ("unresolved_sequence", normalized_reference)
+
+
 def merge_data_with_template(user_data_full, template_data_full):
     """
     核心合并函数：
@@ -1026,8 +1066,12 @@ def merge_data_with_template(user_data_full, template_data_full):
             if node_id:
                 old_data_map[str(node_id)] = v
 
-    # 定义结构性字段，一旦这些变化，视为题目性质改变，必须重填
-    structural_keys = ["answer_type", "input_num_accor", "input_name_accor", "input_tolerance"]
+    # 答案类型和公差类型可直接比较；两个输入依据保存的是会随插入操作变化的节点序号，
+    # 比较前必须分别解析成各自版本中的固定唯一码。
+    direct_structural_keys = ["answer_type", "input_tolerance"]
+    dependency_structural_keys = ["input_num_accor", "input_name_accor"]
+    old_sequence_to_node_id = _build_requirement_sequence_to_node_id(user_data_full)
+    new_sequence_to_node_id = _build_requirement_sequence_to_node_id(merged_data)
 
     # 遍历模板数据拷贝，将其处理成新需求数据
     for new_key, new_item in merged_data["data"].items():
@@ -1041,13 +1085,24 @@ def merge_data_with_template(user_data_full, template_data_full):
 
             # 判断结构是否发生变化
             structure_changed = False
-            # 遍历重点结构键
-            for key in structural_keys:
+            # 遍历可直接比较的重点结构键
+            for key in direct_structural_keys:
                 # 如果需求数据重点结构配置不一致
                 if str(new_item.get(key)) != str(old_item.get(key)):
                     # 判定发生变化
                     structure_changed = True
                     break
+            if not structure_changed:
+                for key in dependency_structural_keys:
+                    old_dependency = _resolve_requirement_dependency(
+                        old_item.get(key), old_sequence_to_node_id
+                    )
+                    new_dependency = _resolve_requirement_dependency(
+                        new_item.get(key), new_sequence_to_node_id
+                    )
+                    if old_dependency != new_dependency:
+                        structure_changed = True
+                        break
             # 如果结构变了
             if structure_changed:
                 # 强制重填，并创建快照
