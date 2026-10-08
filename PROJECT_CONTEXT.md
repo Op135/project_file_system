@@ -429,7 +429,7 @@ ECN等级使用稳定编码 `simple / general / complex`，显示名称由 `ecn_
 | 样品订单配置 | `src/sample_order_dashboard_config.py` | 读取 `sample_order_dashboard_config.json` 中的预警天数、特殊状态及通知行为等业务配置；角色列表只供旧 Excel 模式兼容，不参与身份数据库模式授权。 |
 | 异常单跟进 | `src/pages/error_management.py` | 定义 `/error_management` 页面，负责异常单数据模型、原子并发更新、负责人局部处理、延期/关闭申请审批、附件、提醒、待办角标、稳定权限复核和通知发送。 |
 | 异常单配置 | `src/error_management_config.py` | 读取 `error_management_config.json` 中的产品状态、筛选状态、提醒周期、通知开关等业务配置；旧编辑/审批角色和旧通知目标仅用于 Excel 模式。 |
-| 样品问题跟进 | `src/pages/sample_issue_collection.py` | 定义 `/sample_issue_collection` 页面，负责样品问题录入、对策、延期、关闭、试产前特殊准备、附件、并发更新、待办角标、稳定权限和企业微信通知；关闭申请在这里调用通用审批引擎并保存流程及审批人快照。 |
+| 样品问题跟进 | `src/pages/sample_issue_collection.py` | 定义 `/sample_issue_collection` 页面，负责样品问题录入、对策、延期、关闭、试产前特殊准备、附件、并发更新、待办角标、稳定权限和企业微信通知；提供按记录日期区间统计“记录日期 - 组装日期”自然日差值分布的中文日历与图表，并单列日期异常；关闭申请在这里调用通用审批引擎并保存流程及审批人快照。 |
 | 样品问题配置 | `src/sample_issue_config.py` | 读取 `sample_issue_collection_config.json` 中的业务状态、提醒、特殊准备和旧通知路由；关闭路由角色只供旧模式及生成流程草稿使用。 |
 | 设计知识库 | `src/pages/design_knowledge.py` | 定义 `/design_knowledge` 页面，负责知识与标签数据、附件、筛选、状态流转、入口与操作权限、知识/标签审批具体待办以及主页角标；数据库模式的新审核必须命中管理员发布的流程。 |
 | 设计知识配置 | `src/design_knowledge_config.py` | 读取 `design_knowledge_config.json` 中的内容类型、专业领域、等级、默认标签、表单文案和附件配置；角色路由只供旧 Excel 模式、旧待审核记录收尾及一次性流程草稿导入。 |
@@ -448,7 +448,7 @@ ECN等级使用稳定编码 `simple / general / complex`，显示名称由 `ecn_
 - `tests/test_workflow_notifications.py`：完成抄送默认关闭、稳定岗位配置读取、原收件人与抄送账号去重及卡片发送。
 - `tests/test_sample_order_dashboard.py`：样品订单权限、状态、日期、导入和待办计算。
 - `tests/test_error_management_concurrency.py`、`tests/test_error_management_config.py`：异常单原子更新和配置解析。
-- `tests/test_sample_issue_collection.py`：样品问题状态、责任人、延期/关闭和权限边界。
+- `tests/test_sample_issue_collection.py`：样品问题状态、责任人、延期/关闭、组装至记录时效分布和权限边界。
 - `tests/test_design_knowledge_config.py`、`tests/test_design_knowledge_workflow.py`：设计知识旧模式兼容、稳定权限、两个审批事件和具体审批人隔离。
 - `tests/test_statistics.py`：统计分类和负责人完成度聚合；统计入口及细权限的旧模式和数据库模式隔离由 `tests/test_access_control.py` 覆盖。分类断言必须与图表当前使用的“概述无负责人”“有待定”等数据键保持一致。
 - `tests/test_utils_overview_config.py`：概述配置在后台启动时禁止创建 UI 通知，以及通知 slot 消失时不影响核心同步结果。

@@ -13,7 +13,7 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
-from typing import Any, Optional
+from typing import Any, Optional, TypedDict
 from urllib.parse import quote, unquote
 
 from nicegui import app, ui
@@ -138,6 +138,98 @@ SAMPLE_CLOSE_NOTIFY_PERMISSIONS_BY_ROUTE = {
         "approved": SAMPLE_ISSUE_CLOSE_ELECTRON_APPROVED_NOTIFY_PERMISSION,
     },
 }
+
+
+class SampleIssueAssemblyLagBucket(TypedDict):
+    """一个“记录日期 - 组装日期”自然日差值桶。"""
+
+    days: int
+    label: str
+    count: int
+    percentage: float
+
+
+class SampleIssueAssemblyLagStatistics(TypedDict):
+    """指定记录日期区间内的组装至记录时效统计。"""
+
+    start_date: str
+    end_date: str
+    matched_count: int
+    valid_count: int
+    invalid_assembly_date_count: int
+    negative_lag_count: int
+    unreadable_record_date_count: int
+    distribution: list[SampleIssueAssemblyLagBucket]
+
+
+def calculate_sample_issue_assembly_lag_statistics(
+    all_issues: Any,
+    start_date_text: str,
+    end_date_text: str,
+) -> SampleIssueAssemblyLagStatistics:
+    """按记录日期筛选单据，并统计记录日期减组装日期的自然日差值分布。"""
+    start_date = parse_date(start_date_text)
+    end_date = parse_date(end_date_text)
+    if start_date is None or end_date is None:
+        raise ValueError("起始日期和结束日期必须是有效日期")
+    if start_date > end_date:
+        raise ValueError("起始日期不能晚于结束日期")
+
+    matched_count = 0
+    invalid_assembly_date_count = 0
+    negative_lag_count = 0
+    unreadable_record_date_count = 0
+    lag_counts: dict[int, int] = {}
+    raw_issues = all_issues.values() if isinstance(all_issues, dict) else []
+    for raw_issue in raw_issues:
+        if not isinstance(raw_issue, dict):
+            continue
+        raw_basic = raw_issue.get("basic_info", {})
+        if not isinstance(raw_basic, dict):
+            unreadable_record_date_count += 1
+            continue
+        record_date = parse_date(str(raw_basic.get("record_date", "")))
+        if record_date is None:
+            unreadable_record_date_count += 1
+            continue
+        if record_date < start_date or record_date > end_date:
+            continue
+
+        matched_count += 1
+        assembly_date = parse_date(str(raw_basic.get("assembly_date", "")))
+        if assembly_date is None:
+            invalid_assembly_date_count += 1
+            continue
+        lag_days = (record_date - assembly_date).days
+        if lag_days < 0:
+            negative_lag_count += 1
+            continue
+        lag_counts[lag_days] = lag_counts.get(lag_days, 0) + 1
+
+    valid_count = sum(lag_counts.values())
+    max_lag_days = max(lag_counts, default=-1)
+    distribution: list[SampleIssueAssemblyLagBucket] = []
+    for days in range(max_lag_days + 1):
+        count = lag_counts.get(days, 0)
+        distribution.append(
+            {
+                "days": days,
+                "label": "当天" if days == 0 else f"{days}天",
+                "count": count,
+                "percentage": round(count * 100 / valid_count, 1) if valid_count else 0.0,
+            }
+        )
+
+    return {
+        "start_date": start_date.strftime("%Y-%m-%d"),
+        "end_date": end_date.strftime("%Y-%m-%d"),
+        "matched_count": matched_count,
+        "valid_count": valid_count,
+        "invalid_assembly_date_count": invalid_assembly_date_count,
+        "negative_lag_count": negative_lag_count,
+        "unreadable_record_date_count": unreadable_record_date_count,
+        "distribution": distribution,
+    }
 
 
 def get_attachment_label_number(file_info: dict) -> int:
@@ -2193,6 +2285,7 @@ async def sample_issue_collection_page(issue_id: str = "", view: str = ""):
     page_state = {"search_keyword": "", "filter_state": initial_filter}
     dialog = ui.dialog().props("persistent")
     root_dialog = ui.dialog().props("maximized persistent")
+    statistics_dialog = ui.dialog().props("persistent")
     can_delete_record = is_sample_admin(current_role, current_user)
     reminder_guard = {"running": False}
 
@@ -2212,6 +2305,136 @@ async def sample_issue_collection_page(issue_id: str = "", view: str = ""):
 
     async def handle_manual_reminder_check():
         await run_reminder_check(True)
+
+    def open_assembly_lag_statistics_dialog() -> None:
+        """打开按记录日期筛选的组装至记录自然日差值统计。"""
+        today = datetime.now().date()
+        statistics_state = {
+            "start_date": today.replace(day=1).strftime("%Y-%m-%d"),
+            "end_date": today.strftime("%Y-%m-%d"),
+        }
+        statistics_dialog.clear()
+        with statistics_dialog, ui.card().classes("w-[min(1100px,96vw)] max-w-none p-0"):
+            with ui.row().classes("w-full items-center justify-between px-5 py-4 border-b border-gray-200"):
+                with ui.column().classes("gap-0"):
+                    ui.label("组装至记录时效分布").classes("text-lg font-bold text-gray-800")
+                    ui.label("按记录日期筛选，差值按自然日计算").classes("text-xs text-gray-500")
+                ui.button(icon="close", on_click=statistics_dialog.close).props("flat round color=grey")
+
+            result_container = ui.column().classes("w-full gap-3 px-5 pb-5")
+
+            def render_statistics_result() -> None:
+                result_container.clear()
+                try:
+                    statistics = calculate_sample_issue_assembly_lag_statistics(
+                        db_storage.get_item(SAMPLE_ISSUE_DATA_KEY, {}),
+                        statistics_state["start_date"],
+                        statistics_state["end_date"],
+                    )
+                except ValueError as exc:
+                    with result_container:
+                        ui.label(str(exc)).classes("text-sm text-red-600")
+                    return
+
+                abnormal_count = (
+                    statistics["invalid_assembly_date_count"] + statistics["negative_lag_count"]
+                )
+                with result_container:
+                    with ui.row().classes("w-full gap-3 flex-wrap"):
+                        summary_items = [
+                            ("区间内单据", statistics["matched_count"], "text-blue-700 bg-blue-50"),
+                            ("有效统计", statistics["valid_count"], "text-green-700 bg-green-50"),
+                            ("日期异常", abnormal_count, "text-orange-700 bg-orange-50"),
+                        ]
+                        for label, value, color_classes in summary_items:
+                            with ui.column().classes(
+                                f"flex-1 min-w-40 gap-0 rounded-lg px-4 py-3 {color_classes}"
+                            ):
+                                ui.label(label).classes("text-xs")
+                                ui.label(str(value)).classes("text-2xl font-bold")
+
+                    if statistics["distribution"]:
+                        chart_options = {
+                            "grid": {"left": 48, "right": 24, "top": 42, "bottom": 70},
+                            "tooltip": {"trigger": "axis", "axisPointer": {"type": "shadow"}},
+                            "xAxis": {
+                                "type": "category",
+                                "name": "记录与组装相差天数",
+                                "data": [item["label"] for item in statistics["distribution"]],
+                                "axisLabel": {"interval": 0, "rotate": 35},
+                            },
+                            "yAxis": {"type": "value", "name": "单据数", "minInterval": 1},
+                            "series": [
+                                {
+                                    "name": "单据数",
+                                    "type": "bar",
+                                    "data": [item["count"] for item in statistics["distribution"]],
+                                    "barMaxWidth": 52,
+                                    "itemStyle": {"color": "#3b82f6", "borderRadius": [5, 5, 0, 0]},
+                                    "label": {"show": True, "position": "top"},
+                                }
+                            ],
+                        }
+                        if len(statistics["distribution"]) > 15:
+                            chart_options["dataZoom"] = [
+                                {"type": "inside", "start": 0, "end": 100},
+                                {"type": "slider", "height": 18, "bottom": 8},
+                            ]
+                        ui.echart(chart_options).classes("w-full h-[390px]")
+                        with ui.row().classes("w-full gap-x-5 gap-y-1 flex-wrap text-xs text-gray-600"):
+                            for item in statistics["distribution"]:
+                                ui.label(
+                                    f"{item['label']}：{item['count']} 张（{item['percentage']:.1f}%）"
+                                )
+                    else:
+                        with ui.column().classes("w-full h-64 items-center justify-center gap-2 text-gray-400"):
+                            ui.icon("insert_chart_outlined").classes("text-5xl")
+                            ui.label("该区间没有可统计的有效单据")
+
+                    warning_parts = []
+                    if statistics["invalid_assembly_date_count"]:
+                        warning_parts.append(
+                            f"{statistics['invalid_assembly_date_count']} 张组装日期缺失或格式错误"
+                        )
+                    if statistics["negative_lag_count"]:
+                        warning_parts.append(
+                            f"{statistics['negative_lag_count']} 张记录日期早于组装日期"
+                        )
+                    if warning_parts:
+                        ui.label("日期异常未计入分布：" + "；".join(warning_parts)).classes(
+                            "text-xs text-orange-700"
+                        )
+                    if statistics["unreadable_record_date_count"]:
+                        ui.label(
+                            f"另有 {statistics['unreadable_record_date_count']} 张单据的记录日期无法识别，无法判断是否属于所选区间。"
+                        ).classes("text-xs text-gray-500")
+
+            def statistics_date_input(label: str, key: str) -> None:
+                field = ui.input(label, value=statistics_state[key]).props("outlined dense readonly").classes("w-48")
+
+                def set_statistics_date(event: Any) -> None:
+                    statistics_state[key] = str(event.value or "")
+                    field.value = statistics_state[key]
+                    field.update()
+                    menu.close()
+
+                with ui.menu().props("no-parent-event") as menu:
+                    apply_chinese_date_locale(
+                        ui.date(value=statistics_state[key], mask="YYYY-MM-DD", on_change=set_statistics_date)
+                    )
+                field.on("click", lambda _, target_menu=menu: target_menu.open())
+                with field.add_slot("append"):
+                    ui.icon("event").classes("cursor-pointer").on(
+                        "click", lambda _, target_menu=menu: target_menu.open()
+                    )
+
+            with ui.row().classes("w-full items-center gap-3 flex-wrap px-5 pt-4 pb-4"):
+                statistics_date_input("起始记录日期", "start_date")
+                statistics_date_input("结束记录日期", "end_date")
+                ui.button("统计", icon="query_stats", on_click=render_statistics_result).props("color=primary")
+
+            render_statistics_result()
+        statistics_dialog.open()
 
     def validate_sample_issue_record(sample_data: dict, *, is_new_record: bool = False) -> bool:
         """执行保存前的基础校验。"""
@@ -3626,6 +3849,11 @@ async def sample_issue_collection_page(issue_id: str = "", view: str = ""):
                     ui.button("刷新", icon="refresh", on_click=lambda: refresh_list()).props("flat color=primary")
                 with ui.row().classes("gap-2 items-center"):
                     ui.label("点击“详情”打开详情").classes("text-xs text-gray-500")
+                    ui.button(
+                        "时效统计",
+                        icon="bar_chart",
+                        on_click=open_assembly_lag_statistics_dialog,
+                    ).props("outline color=primary")
                     if can_check_sample_reminders(current_role, current_user):
                         ui.button(
                             "检查提醒",

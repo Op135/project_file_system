@@ -31,6 +31,45 @@ def load_isolated_db_storage(module_name: str, db_path: Path) -> Any:
 
 
 class SampleIssueCollectionDataTests(unittest.TestCase):
+    def test_assembly_lag_statistics_filters_by_record_date_and_fills_empty_days(self):
+        """时效统计按记录日期取区间，并保留中间为零的自然日桶。"""
+        from src.pages import sample_issue_collection as sample_issue
+
+        all_issues = {
+            "same-day": {"basic_info": {"record_date": "2026-08-02", "assembly_date": "2026-08-02"}},
+            "two-days": {"basic_info": {"record_date": "2026-08-03", "assembly_date": "2026-08-01"}},
+            "outside": {"basic_info": {"record_date": "2026-07-31", "assembly_date": "2026-07-30"}},
+            "bad-assembly": {"basic_info": {"record_date": "2026-08-04", "assembly_date": ""}},
+            "negative": {"basic_info": {"record_date": "2026-08-05", "assembly_date": "2026-08-06"}},
+            "bad-record": {"basic_info": {"record_date": "not-a-date", "assembly_date": "2026-08-01"}},
+        }
+
+        result = sample_issue.calculate_sample_issue_assembly_lag_statistics(
+            all_issues,
+            "2026-08-01",
+            "2026-08-05",
+        )
+
+        self.assertEqual(result["matched_count"], 4)
+        self.assertEqual(result["valid_count"], 2)
+        self.assertEqual(result["invalid_assembly_date_count"], 1)
+        self.assertEqual(result["negative_lag_count"], 1)
+        self.assertEqual(result["unreadable_record_date_count"], 1)
+        self.assertEqual(
+            result["distribution"],
+            [
+                {"days": 0, "label": "当天", "count": 1, "percentage": 50.0},
+                {"days": 1, "label": "1天", "count": 0, "percentage": 0.0},
+                {"days": 2, "label": "2天", "count": 1, "percentage": 50.0},
+            ],
+        )
+
+    def test_assembly_lag_statistics_rejects_reversed_date_range(self):
+        from src.pages import sample_issue_collection as sample_issue
+
+        with self.assertRaisesRegex(ValueError, "起始日期不能晚于结束日期"):
+            sample_issue.calculate_sample_issue_assembly_lag_statistics({}, "2026-08-02", "2026-08-01")
+
     def test_grid_row_and_columns_keep_dashboard_information(self):
         from src.pages import sample_issue_collection as sample_issue
 
