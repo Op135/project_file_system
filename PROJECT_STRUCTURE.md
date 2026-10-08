@@ -27,6 +27,7 @@
 | 文件或目录 | 作用 |
 | --- | --- |
 | `main.py` | 应用启动、数据库初始化、后台任务和页面装配 |
+| `system_lifecycle.py` | 管理端重启/关闭前备份校验、优雅退出与跨热重载进程重启协调 |
 | `db_storage.py` | 通用业务 JSON/实体的异步 SQLite 存储 |
 | `identity_store.py` | 用户、组织、岗位、权限、流程和具体待办的同步 SQLite 数据层 |
 | `user_service.py` | 旧 Excel 与身份数据库之间的统一服务门面 |

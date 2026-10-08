@@ -1,6 +1,8 @@
 # -*- encoding: utf-8 -*-
 import logging
+import multiprocessing
 import os
+import sys
 import warnings
 from logging.handlers import RotatingFileHandler
 
@@ -39,6 +41,7 @@ from .sample_issue_config import (
     SAMPLE_BACKGROUND_REMINDER_INTERVAL_SECONDS,
     SAMPLE_REMINDER_CHECK_WINDOW,
 )
+from .system_lifecycle import clear_stale_restart_request, consume_restart_request
 from .user_service import UserService
 from .utils import (  # 导入上面定义的函数
     handle_connect,
@@ -510,6 +513,12 @@ if __name__ in {"__main__", "__mp_main__"}:
             "uvicorn_logging_level": "info",
         }
 
+    # Windows 的热重载工作进程会以 ``__mp_main__`` 预载入口；只有生命周期主进程
+    # 可以清理或消费跨进程标记，避免工作进程提前吞掉重启请求。
+    is_lifecycle_owner = multiprocessing.current_process().name == "MainProcess"
+    if is_lifecycle_owner:
+        clear_stale_restart_request()
+
     ui.run(
         title="百炼光研发管理系统",
         favicon=f"{IMG_DIR}/RFRF.png",
@@ -521,3 +530,9 @@ if __name__ in {"__main__", "__mp_main__"}:
         dark=False,
         **run_environment_options,
     )
+
+    # 此处只会在服务器及其 shutdown hooks 全部结束后到达，确保旧连接和端口已经释放。
+    if is_lifecycle_owner and consume_restart_request():
+        logger.warning("系统已安全退出，正在使用原解释器和启动参数重新启动")
+        logging.shutdown()
+        os.execv(sys.executable, [sys.executable, *sys.argv])

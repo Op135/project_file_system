@@ -924,7 +924,7 @@ class StorageBackupManager:
         self._register_hooks()
         logger.info(f"备份管理器已启动. 监控目标: JSON={self.json_file.name}, DB={self.db_path.name}")
 
-    async def run_safe_backup(self, trigger_type: str):
+    async def run_safe_backup(self, trigger_type: str, *, strict: bool = False) -> str:
         """
         【安全模式 - 异步】
         适用于：定时任务、正常关机、手动触发。
@@ -933,7 +933,9 @@ class StorageBackupManager:
         logger.info(f"[{trigger_type}] 开始执行全量安全备份...")
 
         # --- 任务 A: 备份 JSON 文件 (原有逻辑) ---
-        self._backup_json_file(trigger_type, timestamp)
+        json_backup_ok = self._backup_json_file(trigger_type, timestamp)
+        if strict and not json_backup_ok:
+            raise RuntimeError("NiceGUI JSON 存储备份失败")
 
         # --- 任务 B: 备份 SQLite 数据库 (新逻辑 - 异步) ---
         try:
@@ -941,10 +943,15 @@ class StorageBackupManager:
             saved_db_path = await db_storage.backup_db(
                 backup_dir=self.backup_dir_name, retention_days=self.retention_days
             )
-            if saved_db_path:
-                logger.info(f"[{trigger_type}] SQLite 数据库备份成功")
+            if not saved_db_path:
+                raise RuntimeError("SQLite 数据库备份未生成文件")
+            logger.info(f"[{trigger_type}] SQLite 数据库备份成功")
+            return saved_db_path
         except Exception:
             logger.error(f"[{trigger_type}] SQLite 数据库备份失败", exc_info=True)
+            if strict:
+                raise
+            return ""
 
     def run_emergency_backup(self, trigger_type: str):
         """
@@ -961,10 +968,10 @@ class StorageBackupManager:
         # --- 任务 B: 备份 SQLite 数据库 (强制文件拷贝) ---
         self._backup_sqlite_force(trigger_type, timestamp)
 
-    def _backup_json_file(self, trigger_type: str, timestamp: str):
+    def _backup_json_file(self, trigger_type: str, timestamp: str) -> bool:
         """内部辅助：复制 JSON 文件"""
         if not self.json_file.exists():
-            return  # 文件不存在则跳过
+            return True  # 文件不存在则跳过
 
         try:
             # 备份文件名格式为 原文件名_触发类型_时间戳.json
@@ -973,8 +980,10 @@ class StorageBackupManager:
             # 不仅仅是复制文件内容，还保留了文件的元数据（如创建时间、最后修改时间），这对于数据恢复时的判断非常重要
             shutil.copy2(self.json_file, target_path)
             logger.info(f"[{trigger_type}] JSON 备份成功: {target_name}")
+            return True
         except Exception:
             logger.error(f"[{trigger_type}] JSON 备份失败", exc_info=True)
+            return False
 
     def _backup_sqlite_force(self, trigger_type: str, timestamp: str):
         """内部辅助：强制复制 SQLite 文件 (包含 WAL/SHM)"""

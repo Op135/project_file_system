@@ -1481,6 +1481,7 @@ async def backup_db(backup_dir: str = "backups", retention_days: int = 30) -> st
         logger.error("备份失败: 数据库未初始化")
         return ""
 
+    backup_path: Path | None = None
     try:
         # 2. 准备备份路径
         # 结构: /项目根目录/backups/
@@ -1489,8 +1490,9 @@ async def backup_db(backup_dir: str = "backups", retention_days: int = 30) -> st
         # 首次备份时递归创建目录，已存在则不报错。
         target_dir.mkdir(parents=True, exist_ok=True)
 
-        # 秒级时间戳使日常定时备份文件按名称自然排序。
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        # 时间戳使日常定时备份文件按名称自然排序；微秒避免“操作前备份”和紧随其后的
+        # shutdown hook 备份覆盖同一文件。
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         backup_filename = f"storage_backup_{timestamp}.db"
         backup_path = target_dir / backup_filename
 
@@ -1507,7 +1509,15 @@ async def backup_db(backup_dir: str = "backups", retention_days: int = 30) -> st
                 # pages=0 表示一步完成，也可以设置为正整数来分块备份以减少阻塞
                 await db.backup(dest_db)
 
-        logger.info(f"数据库备份成功: {backup_path}")
+        # 备份完成不等于文件一定可恢复；关闭独立目标连接后重新打开并做完整性检查。
+        async with aiosqlite.connect(backup_path) as verify_db:
+            cursor = await verify_db.execute("PRAGMA quick_check")
+            check_rows = await cursor.fetchall()
+            await cursor.close()
+        if check_rows != [("ok",)]:
+            raise RuntimeError(f"数据库备份完整性检查失败: {check_rows!r}")
+
+        logger.info(f"数据库备份成功且完整性检查通过: {backup_path}")
 
         # 4. 执行备份轮转 (清理旧文件)
         # retention_days 为 0 或负数时明确禁用自动删除。
@@ -1518,6 +1528,11 @@ async def backup_db(backup_dir: str = "backups", retention_days: int = 30) -> st
 
     except Exception:
         logger.error("数据库备份过程中发生严重错误", exc_info=True)
+        if backup_path is not None:
+            try:
+                backup_path.unlink(missing_ok=True)
+            except OSError:
+                logger.exception("删除未通过完整性检查的备份文件失败: %s", backup_path)
         return ""
 
 

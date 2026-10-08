@@ -34,6 +34,7 @@ from ..requirement_overview_impact import (
     load_requirement_overview_impact_config,
     save_requirement_overview_impact_config,
 )
+from ..system_lifecycle import SystemAction, action_label, request_system_action
 from ..utils import (
     get_cache_busted_path,
     get_temp_config_service,
@@ -142,18 +143,136 @@ def manage_page():
         try:
             # 3. 调用安全备份方法 (注意要用 await)
             # 传入触发类型 "MANUAL_ADMIN" 以便在日志中区分
-            await manager.run_safe_backup("MANUAL_ADMIN")
+            backup_path = await manager.run_safe_backup("MANUAL_ADMIN", strict=True)
+            if not backup_path:
+                raise RuntimeError("未生成有效的数据库备份文件")
 
             # 4. 成功反馈
             notification.dismiss()  # 关闭加载提示
             logger.info("成功备份了数据库文件。")
-            ui.notify("备份成功！文件已保存至 backups 目录", type="positive", icon="check_circle")
+            ui.notify(
+                f"备份成功：{os.path.basename(backup_path)}",
+                type="positive",
+                icon="check_circle",
+            )
 
         except Exception as e:
             # 5. 失败反馈
             notification.dismiss()
             logger.error(f"备份数据库文件失败：{e}")
             ui.notify(f"备份失败: {str(e)}", type="negative")
+
+    def has_system_control_permission() -> bool:
+        """执行危险操作时重新检查最新权限，不能只依赖页面进入时的结果。"""
+        latest_role = sync_current_user_role()
+        return current_user == "admin" or can(
+            app.state.user_service,
+            current_user,
+            "system.manage",
+            legacy_role=latest_role,
+            legacy_allowed_roles=["admin"],
+        )
+
+    def open_system_action_dialog(action: SystemAction) -> None:
+        label = action_label(action)
+        confirmation_phrase = f"{label}系统"
+        active_connections = len(online_users)
+
+        with ui.dialog().props("persistent") as dialog, ui.card().classes("w-full max-w-xl p-5"):
+            with ui.row().classes("items-center gap-3"):
+                ui.icon(
+                    "restart_alt" if action is SystemAction.RESTART else "power_settings_new",
+                    size="36px",
+                ).classes("text-orange-600" if action is SystemAction.RESTART else "text-red-700")
+                ui.label(f"确认{label}整个系统？").classes("text-xl font-bold text-slate-800")
+
+            ui.label(
+                "系统会先生成并校验一份新的 SQLite 完整备份；只有校验通过才会继续。"
+            ).classes("text-sm text-green-800 bg-green-50 rounded p-3 w-full")
+            ui.label(
+                "随后停止接收新请求，等待在途请求和数据库事务结束，再执行关闭钩子和最终备份。"
+            ).classes("text-sm text-slate-600")
+            if action is SystemAction.RESTART:
+                ui.label("旧进程完全退出并释放端口后，系统会使用相同命令自动启动。").classes(
+                    "text-sm text-slate-600"
+                )
+            else:
+                ui.label("关闭后必须在服务器上重新启动进程，所有当前连接都会断开。").classes(
+                    "text-sm font-medium text-red-700"
+                )
+                ui.label("如果外部服务管理器配置了自动拉起，它仍可能重新启动本进程。").classes(
+                    "text-xs text-slate-500"
+                )
+            ui.label(f"当前检测到 {active_connections} 个在线连接。").classes("text-sm text-amber-800")
+
+            confirmation_input = ui.input(
+                label=f"请输入“{confirmation_phrase}”以确认",
+                placeholder=confirmation_phrase,
+            ).props("outlined autofocus").classes("w-full")
+
+            with ui.row().classes("w-full justify-end gap-2 mt-2"):
+                cancel_button = ui.button("取消", on_click=dialog.close).props("flat")
+                confirm_button = ui.button(
+                    f"确认{label}",
+                    icon="restart_alt" if action is SystemAction.RESTART else "power_settings_new",
+                ).props("color=orange" if action is SystemAction.RESTART else "color=negative")
+                confirm_button.disable()
+
+            def refresh_confirmation_state() -> None:
+                if str(confirmation_input.value or "").strip() == confirmation_phrase:
+                    confirm_button.enable()
+                else:
+                    confirm_button.disable()
+
+            async def execute_action() -> None:
+                if str(confirmation_input.value or "").strip() != confirmation_phrase:
+                    ui.notify("确认文字不匹配，操作未执行。", type="warning")
+                    return
+                if not has_system_control_permission():
+                    dialog.close()
+                    ui.notify("当前账号已无系统管理权限，操作被拒绝。", type="negative")
+                    return
+
+                manager = getattr(app.state, "backup_manager", None)
+                if manager is None:
+                    ui.notify("备份服务未初始化，为保护数据已拒绝操作。", type="negative")
+                    return
+
+                confirm_button.disable()
+                cancel_button.disable()
+                confirmation_input.disable()
+                notice = ui.notification(
+                    f"正在执行{label}前安全备份与完整性检查……",
+                    timeout=None,
+                    spinner=True,
+                )
+                try:
+                    receipt = await request_system_action(
+                        action,
+                        actor=str(current_user),
+                        backup_manager=manager,
+                    )
+                except Exception as exc:
+                    notice.dismiss()
+                    cancel_button.enable()
+                    confirmation_input.enable()
+                    refresh_confirmation_state()
+                    logger.exception("管理员触发系统%s失败", label)
+                    ui.notify(f"{label}已取消：{exc}", type="negative", multi_line=True, timeout=10_000)
+                    return
+
+                notice.dismiss()
+                dialog.close()
+                ui.notify(
+                    f"安全备份已通过，即将{label}系统。备份：{os.path.basename(receipt.backup_path)}",
+                    type="positive",
+                    timeout=10_000,
+                )
+
+            confirmation_input.on_value_change(lambda _event: refresh_confirmation_state())
+            confirm_button.on_click(execute_action)
+
+        dialog.open()
 
     # --- 关联影响编辑模块 (最终修复版：解决 .disable() 赋值为 None 的问题) ---
     def open_impact_editor():
@@ -5189,10 +5308,21 @@ def manage_page():
         with ui.card().classes("w-full q-pa-md"):
             ui.label("数据安全与维护").classes("text-h6 q-mb-md")
 
-            # --- 添加备份按钮 ---
-            ui.button("立即备份所有数据", on_click=handle_manual_backup).props("icon=save color=primary").tooltip(
-                "同时备份 storage-general.json 和 SQLite 数据库"
-            )
+            with ui.row().classes("items-center gap-3"):
+                ui.button("立即备份所有数据", on_click=handle_manual_backup).props(
+                    "icon=save color=primary"
+                ).tooltip("同时备份 storage-general.json 和 SQLite 数据库")
+                ui.button(
+                    "重启整个系统",
+                    on_click=lambda: open_system_action_dialog(SystemAction.RESTART),
+                ).props("icon=restart_alt color=orange outline")
+                ui.button(
+                    "关闭整个系统",
+                    on_click=lambda: open_system_action_dialog(SystemAction.SHUTDOWN),
+                ).props("icon=power_settings_new color=negative outline")
+            ui.label(
+                "重启与关闭会先创建并校验独立备份，再等待在途请求及数据库事务安全结束。"
+            ).classes("text-xs text-slate-500 mt-2")
     # --- 日志读取逻辑 ---
     log_file_path = os.path.join(BASE_DIR, "logs", "app.log")
     file_cursor = 0  # 文件指针，记录读取到了哪里
