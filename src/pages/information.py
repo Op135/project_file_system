@@ -2155,31 +2155,34 @@ def information_page():
                                     row = (
                                         ui.element("div")
                                         .classes(
-                                            "w-full items-center gap-3 py-2 border-b border-gray-100 last:border-0"
-                                        )
-                                        .style(
-                                            "display: grid; grid-template-columns: minmax(140px, 1fr) 64px 96px 220px 64px; "
-                                            "min-width: 632px"
+                                            "w-full grid grid-cols-[minmax(0,1fr)_auto] items-start sm:items-center "
+                                            "gap-x-3 gap-y-1 py-2 border-b border-gray-100 last:border-0"
                                         )
                                     )
                                     with row:
-                                        ui.label(project_name).classes(
-                                            "min-w-0 truncate font-medium text-sm text-gray-700"
-                                        ).tooltip(project_name)
-                                        ui.label(f"V{version}").classes(
-                                            "min-w-0 truncate text-xs text-gray-400"
-                                        ).tooltip(f"V{version}")
-                                        ui.label(user).classes("min-w-0 truncate text-xs text-gray-400").tooltip(user)
                                         saved_time = (
                                             datetime.fromtimestamp(saved_timestamp).strftime("%Y-%m-%d %H:%M:%S")
                                             if saved_timestamp != float("-inf")
                                             else "未知"
                                         )
-                                        ui.label(f"保存时间：{saved_time}").classes(
-                                            "whitespace-nowrap tabular-nums text-xs text-gray-400"
-                                        )
+                                        with ui.element("div").classes(
+                                            "min-w-0 grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_48px_72px_minmax(0,1.25fr)] "
+                                            "sm:items-center gap-x-3 gap-y-1"
+                                        ):
+                                            ui.label(project_name).classes(
+                                                "min-w-0 truncate font-medium text-sm text-gray-700"
+                                            ).tooltip(project_name)
+                                            ui.label(f"V{version}").classes(
+                                                "min-w-0 truncate text-xs text-gray-400"
+                                            ).tooltip(f"V{version}")
+                                            ui.label(user).classes(
+                                                "min-w-0 truncate text-xs text-gray-400"
+                                            ).tooltip(user)
+                                            ui.label(f"保存时间：{saved_time}").classes(
+                                                "min-w-0 truncate tabular-nums text-xs text-gray-400"
+                                            ).tooltip(f"保存时间：{saved_time}")
 
-                                        with ui.row().classes("gap-1 flex-nowrap justify-end"):
+                                        with ui.row().classes("shrink-0 self-center gap-1 flex-nowrap justify-end"):
                                             # 跨用户草稿管理权限只允许查看，草稿本人仍可继续编辑。
                                             btn_icon = "visibility" if user != current_user else "edit"
                                             ui.button(

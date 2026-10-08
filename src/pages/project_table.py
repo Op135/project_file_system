@@ -26,8 +26,8 @@ from ..permission_catalog import (
     PROJECT_VIEW_PERMISSION,
 )
 from ..project_access import can_edit_project_status, can_manage_project_records
-from ..project_requirement_access import can_view_project_requirement
 from ..project_overview_access import can_view_any_project_overview
+from ..project_requirement_access import can_view_project_requirement
 from ..project_test_summary_access import (
     build_project_test_summary_url,
     can_view_project_test_summary,
@@ -48,6 +48,8 @@ from ..utils import (
 logger = logging.getLogger(__name__)
 
 PROJECT_TABLE_SESSION_STORAGE_KEY = "project_table_view_state"
+
+
 def can_view_project_table(
     current_role: object,
     current_user: str,
@@ -376,10 +378,14 @@ def project_table_page():
             save_data = copy.deepcopy(new_project_data)
             if not has_project_status_permission():
                 project_name = str(save_data.get("project_name") or "")
-                save_data["state"] = app.storage.general.get("project_summary", {}).get(
-                    project_name,
-                    {},
-                ).get("state", "研发")
+                save_data["state"] = (
+                    app.storage.general.get("project_summary", {})
+                    .get(
+                        project_name,
+                        {},
+                    )
+                    .get("state", "研发")
+                )
             # === 性能优化：将文件读写推入后台线程执行 ===
             success, msg = await asyncio.to_thread(_sync_process_project_save, save_data, False)
             if not success:
@@ -500,13 +506,15 @@ def project_table_page():
 
                 with ui.row().classes("w-full gap-2"):
                     # 状态
-                    state_select = ui.select(
-                        PROJECT_STATE_LIST,
-                        value=form_data["state"],
-                        label="状态",
-                    ).bind_value(
-                        form_data, "state"
-                    ).classes("w-1/3")
+                    state_select = (
+                        ui.select(
+                            PROJECT_STATE_LIST,
+                            value=form_data["state"],
+                            label="状态",
+                        )
+                        .bind_value(form_data, "state")
+                        .classes("w-1/3")
+                    )
                     if not has_project_status_permission():
                         state_select.disable()
                         state_select.tooltip("需要“维护 — 项目状态”权限；新项目默认使用研发状态")
@@ -937,11 +945,11 @@ def project_table_page():
                                 show_str = "点击录入"
                         elif pro_key == "overview":
                             if project_name in app.storage.general["overview_completed"]:
-                                show_str = "已完成\n点击更新"
+                                show_str = "已完成\n点击查看"
                             elif project_name in app.storage.general["overview_only_need"]:
-                                show_str = "基本完成\n点击更新"
+                                show_str = "基本完成\n点击查看"
                             else:
-                                show_str = "待处理\n点击录入"
+                                show_str = "待补充\n点击查看"
                         # 待确定的内容，统一更换仅显示一个?号
                         # if "?" in show_str:
                         #     show_str = "?"
