@@ -6,6 +6,7 @@ import os
 import ssl
 import time
 import uuid
+from collections.abc import Callable
 
 import httpx
 from httpx import (
@@ -28,10 +29,10 @@ from ...config import (
     UPLOADS_DIR,
 )
 from ...ecn_access import (
+    can_submit_ecn_scheme_review,
     can_view_ecn_scheme_non_image_file,
 )
 from ...ecn_management_config import (
-    ECNState,
     ECN_ITEM_STATUS_NEEDS_IMPROVEMENT,
     ECN_ITEM_STATUS_NORMAL,
     ECN_ITEM_STATUS_REVISED_CONFIRMED,
@@ -48,29 +49,31 @@ from ...ecn_management_config import (
     ECN_SCHEME_GROUP_ORDINARY_DOCUMENT,
     ECN_SCHEME_GROUP_OVERVIEW_DOCUMENT,
     ECN_SCHEME_GROUP_UNKNOWN,
+    ECNState,
     classify_ecn_change_item,
+    get_ecn_level_code,
     get_ecn_material_change_display,
     get_ecn_material_code_entries,
-    split_ecn_material_change_display,
     get_ecn_overview_deactivation_remaining_contents,
     get_ecn_overview_project_new_data,
     get_ecn_scheme_coverage,
-    get_ecn_level_code,
     get_ecn_validation_report,
     is_ecn_material_disposition_required,
     resolve_ecn_overview_parameter_config,
+    split_ecn_material_change_display,
 )
 from .actions import (
     edit_scheme,
     set_participant_status,
+    set_trial_production_decision,
     update_material_codes,
 )
+from .attachment_ui import open_ecn_attachment_dialog
 from .scheme_dialogs import (
     open_material_code_dialog,
     open_overview_change_dialog,
     open_text_change_dialog,
 )
-from .attachment_ui import open_ecn_attachment_dialog
 from .validation_reports import review_validation_report, set_validation_report_required
 
 logger = logging.getLogger(__name__)
@@ -93,9 +96,16 @@ def build_scheme_panel(
     material_code_saved_callback,
     dashboard_updater,
     *,
+    trial_saved_callback=None,
     panel_container=None,
 ):
-    render_parts = render_my_actions = render_items = render_coverage_dashboard = lambda: None
+    def noop_render() -> None:
+        pass
+
+    render_parts: Callable[[], None] = noop_render
+    render_my_actions: Callable[[], None] = noop_render
+    render_items: Callable[[], None] = noop_render
+    render_coverage_dashboard: Callable[[], None] = noop_render
 
     def apply_scheme_result(record):
         local_data["change_items"] = copy.deepcopy(record["change_items"])
@@ -147,10 +157,18 @@ def build_scheme_panel(
                                 incomplete_material_schemes = coverage["incomplete_material_schemes"]
                                 validation_report_issues = coverage["validation_report_issues"]
 
-                                # 渲染看板卡片 (单列纯净版)
-                                with ui.card().classes(
-                                    "w-full bg-orange-50/70 border border-orange-200 shadow-sm p-3 gap-2"
-                                ):
+                                dashboard_row = ui.row().classes("w-full items-stretch gap-3 flex-wrap lg:flex-nowrap")
+                                with dashboard_row:
+                                    coverage_card = ui.card().classes(
+                                        "w-full lg:flex-1 bg-orange-50/70 border border-orange-200 shadow-sm p-3 gap-2"
+                                    )
+                                    trial_card = ui.card().classes(
+                                        "w-full lg:w-[30rem] bg-blue-50 border border-blue-200 "
+                                        "shadow-sm p-3 gap-3 justify-center"
+                                    )
+
+                                # 方案完整性和试产判定使用两个独立看板，避免视觉上混为同一类信息。
+                                with coverage_card:
                                     with ui.row().classes("items-center gap-2 border-b border-orange-200 pb-2 w-full"):
                                         ui.icon("rule", color="orange-8").classes("text-lg")
                                         ui.label("方案完整性自检与提醒").classes(
@@ -214,6 +232,60 @@ def build_scheme_panel(
                                             ui.label("暂无需要检查的变更要求、资料或物料").classes(
                                                 "text-xs text-gray-400"
                                             )
+
+                                with trial_card:
+                                    with ui.row().classes("w-full items-center gap-2"):
+                                        ui.icon("science", color="blue-8").classes("text-2xl")
+                                        ui.label("是否需要试产").classes("text-xl font-bold text-blue-900")
+
+                                        decision = wf.get("trial_production", {})
+                                        decision = decision if isinstance(decision, dict) else {}
+                                        required = decision.get("required")
+                                        if wf.get(
+                                            "current_state"
+                                        ) == ECNState.ECN_SCHEMING and can_submit_ecn_scheme_review(
+                                            current_role, current_user, user_service=app.state.user_service
+                                        ):
+                                            decision_snapshot = copy.deepcopy(local_data)
+
+                                            async def save_trial_decision(event, expected=decision_snapshot):
+                                                result = await set_trial_production_decision(
+                                                    str(local_data["ecn_id"]),
+                                                    expected,
+                                                    event.value == "required",
+                                                    current_user,
+                                                    current_role,
+                                                    user_service=app.state.user_service,
+                                                )
+                                                if not result.ok or result.record is None:
+                                                    ui.notify(result.message, type="warning")
+                                                    render_coverage_dashboard()
+                                                    return
+                                                wf["trial_production"] = copy.deepcopy(
+                                                    result.record["workflow"]["trial_production"]
+                                                )
+                                                local_data["approval_log"] = copy.deepcopy(
+                                                    result.record["approval_log"]
+                                                )
+                                                render_coverage_dashboard()
+                                                if trial_saved_callback is not None:
+                                                    trial_saved_callback()
+
+                                            ui.radio(
+                                                {"required": "需要试产", "not_required": "无需试产"},
+                                                value=("required" if required else "not_required")
+                                                if isinstance(required, bool)
+                                                else None,
+                                                on_change=save_trial_decision,
+                                            ).props("inline color=primary").classes("text-xl font-bold")
+                                            if not isinstance(required, bool):
+                                                ui.label("发起评审前必选").classes("text-base text-red-600")
+                                        else:
+                                            ui.label(
+                                                ("需要试产" if required else "无需试产")
+                                                if isinstance(required, bool)
+                                                else "未判定"
+                                            ).classes("text-2xl font-bold text-blue-800")
 
                         # 将渲染函数挂载到上方定义的字典中，以便借助自动刷新机制在数据变更时调用，同步更新覆盖率看板
                         dashboard_updater["refresh"] = render_coverage_dashboard
@@ -511,10 +583,14 @@ def build_scheme_panel(
                                     ui.label(
                                         f"报告附件：{len(attachments) if isinstance(attachments, list) else 0} 个"
                                     ).classes("text-xs text-slate-500")
-                                    review_note = ui.textarea(
-                                        "审核意见",
-                                        placeholder="通过时可选；不通过时必须填写",
-                                    ).props("outlined auto-grow rows=3").classes("w-full")
+                                    review_note = (
+                                        ui.textarea(
+                                            "审核意见",
+                                            placeholder="通过时可选；不通过时必须填写",
+                                        )
+                                        .props("outlined auto-grow rows=3")
+                                        .classes("w-full")
+                                    )
 
                                     async def submit_review(approved: bool) -> None:
                                         result = await review_validation_report(
@@ -576,9 +652,7 @@ def build_scheme_panel(
                                             f"已指定 {len(required_items)} 项；全部审批通过后才能发起方案评审"
                                         ).classes("text-xs text-violet-700")
                                     if not required_items and not can_designate_validation_reports:
-                                        ui.label("尚未指定需要提交验证报告的方案").classes(
-                                            "text-xs text-slate-500"
-                                        )
+                                        ui.label("尚未指定需要提交验证报告的方案").classes("text-xs text-slate-500")
                                     for index, item in enumerate(change_items, start=1):
                                         report = get_ecn_validation_report(item)
                                         required = report.get("required") is True
@@ -622,10 +696,7 @@ def build_scheme_panel(
                                                 ).tooltip("取消验证报告要求" if required else "指定提交验证报告")
                                             is_report_author = item.get("author") == current_user
                                             can_upload_report = bool(
-                                                required
-                                                and is_scheming_phase
-                                                and is_report_author
-                                                and is_scheme_writer
+                                                required and is_scheming_phase and is_report_author and is_scheme_writer
                                             )
                                             can_open_report = bool(
                                                 required
@@ -633,10 +704,7 @@ def build_scheme_panel(
                                                     can_upload_report
                                                     or (
                                                         attachment_count
-                                                        and (
-                                                            is_report_author
-                                                            or can_view_validation_reports
-                                                        )
+                                                        and (is_report_author or can_view_validation_reports)
                                                     )
                                                 )
                                             )
@@ -675,9 +743,9 @@ def build_scheme_panel(
                                                 ui.button(
                                                     icon="fact_check",
                                                     on_click=lambda _, i=item: open_validation_review_dialog(i),
-                                                ).props(
-                                                    "unelevated round dense size=sm color=positive"
-                                                ).tooltip("审批验证报告")
+                                                ).props("unelevated round dense size=sm color=positive").tooltip(
+                                                    "审批验证报告"
+                                                )
 
                             def render_table_projects(item):
                                 project_states = item.get("project_states", {})
@@ -1244,9 +1312,7 @@ def build_scheme_panel(
                                             attachments = item.get("attachments", [])
                                             can_view_uploads = bool(
                                                 item.get("author") == current_user
-                                                or can_view_ecn_scheme_non_image_file(
-                                                    item, current_role, current_user
-                                                )
+                                                or can_view_ecn_scheme_non_image_file(item, current_role, current_user)
                                             )
                                             if can_view_uploads and attachments:
                                                 ui.button(
@@ -1720,9 +1786,9 @@ def build_scheme_panel(
                                                                     codes,
                                                                 ),
                                                             ),
-                                                        ).props(
-                                                            "flat round dense text-color=indigo-7 size=sm"
-                                                        ).tooltip("修改料号" if has_any_code else "添加料号")
+                                                        ).props("flat round dense text-color=indigo-7 size=sm").tooltip(
+                                                            "修改料号" if has_any_code else "添加料号"
+                                                        )
                                             else:
                                                 ui.icon("more_horiz").classes("text-slate-300")
 

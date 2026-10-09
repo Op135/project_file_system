@@ -58,6 +58,7 @@ def get_ecn_template() -> dict:
         "change_items": [],
         # 评审工作流程
         "workflow": {
+            "trial_production": {},  # 方案评审前必填：required、判定人及时间
             "current_state": ECNState.DRAFT,  # ECN当前流程状态
             "current_phase": "ECR_PHASE",  # 当前流程阶段
             "current_step_index": 0,  # 当前步骤索引

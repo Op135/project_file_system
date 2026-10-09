@@ -1389,7 +1389,7 @@
             "input_name_accor": "",
             "input_tolerance": "",
             "ref_config": "False",
-            "option_hint": "产品做光参数测试时，客户是否指定或提供导光束来测，\n不指定则默认使用我司1M、Φ5、NA0.62导光束进行测试，\n双方使用不同导光束时，研发阶段最好进行光参数对标，避免后期批量合格认定不一致导致退货。",
+            "option_hint": "产品做光参数测试时，是否指定或提供导光束来测，\n不指定则默认使用我司1M、Φ5、NA0.62导光束进行测试，\n双方使用不同导光束时，研发阶段最好进行光参数对标，避免后期批量合格认定不一致导致退货。",
             "placeholder": "",
             "tolerance_placeholder": "",
             "option_group_id": "3",
@@ -1402,7 +1402,7 @@
                     "option_id": "opt_1",
                     "option_content": "是",
                     "option_out": "True",
-                    "option_bold": "客户指定/提供",
+                    "option_bold": "指定/提供",
                     "option_show": "{V}导光束做光参数测试",
                     "option_label": "指定导光束测光参数"
                 },
@@ -1737,7 +1737,7 @@
             "input_name_accor": "",
             "input_tolerance": "",
             "ref_config": "False",
-            "option_hint": "如产品可输出单白光、又可输出单紫光、又可输出白+紫复合光，则选：是；\n如产品只输出某某光（白光、单色光、复合光），只输出一种就够了，则选：否。",
+            "option_hint": "如产品可输出单白光、又可输出单紫光、又可输出白+紫复合光，则选：是；\n如产品只输出某一种光（白光、单色光、复合光），只输出一种就够了，则选：否。",
             "placeholder": "",
             "tolerance_placeholder": "",
             "option_group_id": "5",
@@ -1758,7 +1758,7 @@
                     "option_id": "opt_2",
                     "option_content": "否",
                     "option_out": "False",
-                    "option_bold": "单种光色输出",
+                    "option_bold": "一种光色输出",
                     "option_show": "产品仅需{V}",
                     "option_label": ""
                 }
@@ -7697,7 +7697,7 @@
             ]
         }
     },
-    "config_timestamp": "2026-10-09T13:07:09.489794",
-    "excel_version_hash": "34dcb053",
+    "config_timestamp": "2026-10-09T16:49:16.944668",
+    "excel_version_hash": "97cfb114",
     "entry_status": false
 }

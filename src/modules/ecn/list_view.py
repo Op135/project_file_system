@@ -119,6 +119,8 @@ def build_ecn_management_grid_row(
     execution_info = execution_info if isinstance(execution_info, dict) else {}
     current_state = str(workflow.get("current_state") or "")
     snapshot = access_snapshot or build_ecn_access_snapshot(user_service)
+    trial = workflow.get("trial_production", {})
+    trial_required = trial.get("required") if isinstance(trial, dict) else None
     assignment_issues = get_ecn_execution_assignment_issues(
         ecn_data, user_service=user_service, access_snapshot=snapshot
     )
@@ -150,6 +152,7 @@ def build_ecn_management_grid_row(
         "is_my_pending": is_my_pending,
         "attention": "负责人异常·待改派" if can_reassign else "待我处理" if is_my_pending else "",
         "ecn_level": get_ecn_level_label(ecn_data),
+        "trial_production": ("需要试产" if trial_required else "无需试产") if isinstance(trial_required, bool) else "未判定",
         "execution_verification": get_ecn_execution_verification_label(ecn_data),
         "summary": summary_text,
         "projects": "、".join(projects) or "—",
@@ -258,6 +261,7 @@ def get_ecn_management_grid_columns(include_delete: bool = False) -> list[dict[s
                 "filter": text_filter,
                 "width": 120,
             },
+            {"headerName": "是否试产", "field": "trial_production", "filter": text_filter, "width": 120},
             {
                 "headerName": "变更简要",
                 "field": "summary",

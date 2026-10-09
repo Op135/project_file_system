@@ -124,6 +124,33 @@ async def set_participant_status(ecn_id, expected, user, role, status, *, user_s
     return await mutate_record(ecn_id, operation, storage=storage)
 
 
+async def set_trial_production_decision(ecn_id, expected, required, user, role, *, user_service=None, storage=None):
+    """试产判定独立保存；不覆盖方案，并在事务内检查权限和并发修改。"""
+    async def operation(current, connection):
+        actor_role = require_active_actor_role(user, role, user_service)
+        require_permission(can_submit_ecn_scheme_review, actor_role, user, user_service)
+        require_current_context(current, expected)
+        workflow = current["workflow"]
+        if workflow.get("current_state") != ECNState.ECN_SCHEMING:
+            raise ECNConflict("仅在方案编写阶段可以判定是否需要试产。")
+        if not isinstance(required, bool):
+            raise ECNConflict("请选择需要试产或无需试产。")
+        if workflow.get("trial_production") != expected.get("workflow", {}).get("trial_production"):
+            raise ECNConflict("试产判定已被其他人员修改，请刷新后核对。")
+        decision = workflow.get("trial_production", {})
+        if isinstance(decision, dict) and decision.get("required") is required:
+            return current
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        workflow["trial_production"] = {"required": required, "user": user, "role": actor_role, "time": now}
+        current.setdefault("approval_log", []).append({
+            "user": user, "role": actor_role, "time": now,
+            "action": "试产判定：" + ("需要试产" if required else "无需试产"),
+        })
+        return current
+
+    return await mutate_record(ecn_id, operation, storage=storage)
+
+
 def validate_request(record):
     basic = record["basic_info"]
     checks = [
@@ -141,6 +168,9 @@ def validate_request(record):
 
 
 def validate_scheme_review(record):
+    decision = record.get("workflow", {}).get("trial_production")
+    if not isinstance(decision, dict) or not isinstance(decision.get("required"), bool):
+        raise ECNConflict("请先在方案右上角判定是否需要试产，再发起方案评审。")
     if not is_ecn_scheme_ready_for_review(record):
         coverage = get_ecn_scheme_coverage(record)
         missing = []

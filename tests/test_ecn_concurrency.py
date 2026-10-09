@@ -58,10 +58,50 @@ def record(state=ECNState.ECN_SCHEMING):
         }
     ]
     value["workflow"]["scheme_participants"] = {"张三": ECN_PARTICIPANT_STATUS_CONFIRMED}
+    value["workflow"]["trial_production"] = {"required": False}
     return value
 
 
 class ECNConcurrencyTests(unittest.IsolatedAsyncioTestCase):
+    async def test_trial_decision_permission_conflict_and_phase(self):
+        value = record()
+        value["workflow"]["trial_production"] = {}
+        await self.store(value)
+        with patch.object(actions, "can_submit_ecn_scheme_review", return_value=False):
+            denied = await actions.set_trial_production_decision(
+                value["ecn_id"], value, True, "张三", "研发", user_service=self.service, storage=self.left,
+            )
+        self.assertFalse(denied.ok)
+        with patch.object(actions, "can_submit_ecn_scheme_review", return_value=True):
+            saved = await actions.set_trial_production_decision(
+                value["ecn_id"], value, True, "张三", "研发", user_service=self.service, storage=self.left,
+            )
+            self.assertTrue(saved.ok, saved.message)
+            assert saved.record is not None
+            self.assertTrue(saved.record["workflow"]["trial_production"]["required"])
+            self.assertEqual(saved.record["change_items"], value["change_items"])
+            stale = await actions.set_trial_production_decision(
+                value["ecn_id"], value, False, "张三", "研发", user_service=self.service, storage=self.right,
+            )
+            self.assertFalse(stale.ok)
+            saved.record["workflow"]["current_state"] = ECNState.ECN_REVIEWING
+            await self.store(saved.record)
+            locked = await actions.set_trial_production_decision(
+                value["ecn_id"], saved.record, False, "张三", "研发", user_service=self.service, storage=self.left,
+            )
+            self.assertFalse(locked.ok)
+
+    async def test_review_rejects_missing_trial_decision_but_accepts_explicit_false(self):
+        value = record()
+        actions.validate_scheme_review(value)
+        value["workflow"]["trial_production"] = {}
+        await self.store(value)
+        with patch.object(actions, "can_submit_ecn_scheme_review", return_value=True):
+            result = await self.action(value, "initiate_scheme_review")
+        self.assertFalse(result.ok)
+        self.assertIn("试产", result.message)
+        self.assertEqual((await self.fresh())["workflow"]["current_state"], ECNState.ECN_SCHEMING)
+
     async def asyncSetUp(self):
         self.temp = tempfile.TemporaryDirectory()
         path = Path(self.temp.name) / "ecn.db"

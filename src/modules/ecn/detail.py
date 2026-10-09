@@ -992,6 +992,7 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
                     can_approve_validation,
                     handle_material_code_saved,
                     dashboard_updater,
+                    trial_saved_callback=lambda: (render_workflow_tab(), refresh_list()),
                     panel_container=scheme_panel_host,
                 )
 
@@ -1331,8 +1332,12 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
                     ui.button("发起 ECN 方案评审", on_click=lambda: execute_db_action("initiate_scheme_review")).props(
                         "color=purple"
                     ).bind_enabled_from(
-                        local_data, "workflow", backward=lambda _: is_ecn_scheme_ready_for_review(local_data)
-                    ).tooltip("需要所有参与人确认完成，且变更要求、资料与物料均有完整方案")
+                        local_data, "workflow", backward=lambda _: (
+                            is_ecn_scheme_ready_for_review(local_data)
+                            and isinstance(wf.get("trial_production"), dict)
+                            and isinstance(wf["trial_production"].get("required"), bool)
+                        )
+                    ).tooltip("需先判定是否试产、所有参与人确认完成，且变更要求、资料与物料均有完整方案")
                 elif is_pending_user and wf["current_state"] not in [
                     ECNState.CLOSED,
                     ECNState.CANCEL,
@@ -1423,6 +1428,11 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
 
                 # 1. 同步工作流状态
                 fresh_wf = fresh.get("workflow", {})
+                if fresh_wf.get("trial_production") != wf.get("trial_production"):
+                    wf["trial_production"] = copy.deepcopy(fresh_wf.get("trial_production"))
+                    local_data["approval_log"] = copy.deepcopy(fresh.get("approval_log", []))
+                    render_coverage_dashboard()
+                    render_workflow_tab()
                 was_current_role_pending = current_user in get_ecn_pending_approval_roles(wf)
                 level_changed = (
                     fresh_wf.get("ecn_level") != wf.get("ecn_level")
