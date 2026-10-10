@@ -1575,7 +1575,7 @@
                     "option_content": "否",
                     "option_out": "False",
                     "option_bold": "我司",
-                    "option_show": "",
+                    "option_show": "使用{V}导光束做转接座检测功能可靠性出厂测试",
                     "option_label": ""
                 }
             ]
@@ -7697,7 +7697,7 @@
             ]
         }
     },
-    "config_timestamp": "2026-10-10T14:33:04.924707",
-    "excel_version_hash": "46a7c0a5",
+    "config_timestamp": "2026-10-10T15:20:34.266494",
+    "excel_version_hash": "6148339a",
     "entry_status": false
 }

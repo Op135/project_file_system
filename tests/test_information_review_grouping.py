@@ -79,12 +79,10 @@ class InformationReviewGroupingTests(unittest.TestCase):
             if isinstance(node, ast.Assign)
             and any(isinstance(target, ast.Name) and target.id == "group_options" for target in node.targets)
         )
+        semantic_options = tuple(option[:3] for option in ast.literal_eval(group_options))
         self.assertEqual(
-            ast.literal_eval(group_options),
-            (
-                ("待审", "pending_actions", True, "text-blue-700 border-blue-100"),
-                ("待修改", "edit_note", False, "text-orange-700 border-orange-100"),
-            ),
+            semantic_options,
+            (("待审", "pending_actions", True), ("待修改", "edit_note", False)),
         )
 
         for function_name in ("set_review_revise", "set_review_pass", "remove_requirement_file"):

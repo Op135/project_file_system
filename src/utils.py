@@ -1838,6 +1838,20 @@ def find_files_with_prefix_and_version(directory, prefix):
     return result_dic
 
 
+# 规范化需求版本对比中的文本边界。
+def normalize_requirement_comparison_value(value: object) -> object:
+    """递归去除文本首尾空白，保留正文内部的空白和换行。"""
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, dict):
+        return {key: normalize_requirement_comparison_value(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [normalize_requirement_comparison_value(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(normalize_requirement_comparison_value(item) for item in value)
+    return value
+
+
 # 提取需求节点真正参与版本差异判断的业务答案。
 def get_effective_requirement_output(item: dict) -> object:
     """忽略选项型答案中仅用于 UI 绑定的未选值。
@@ -1859,7 +1873,7 @@ def get_effective_requirement_output(item: dict) -> object:
             return None
         return str(selected_value)
 
-    return user_output
+    return normalize_requirement_comparison_value(user_output)
 
 
 # 对比两个需求配置文件的需求确认项的差异
@@ -1917,6 +1931,9 @@ def compare_configs_by_id(old_data, new_data, add_options: list = []) -> dict:
                 if key == "user_must_out":
                     old_value = get_effective_requirement_output(old_item)
                     new_value = get_effective_requirement_output(new_item)
+                elif key == "option_tolerance_out":
+                    old_value = normalize_requirement_comparison_value(old_item.get(key))
+                    new_value = normalize_requirement_comparison_value(new_item.get(key))
                 else:
                     old_value = old_item.get(key)
                     new_value = new_item.get(key)
@@ -1925,7 +1942,9 @@ def compare_configs_by_id(old_data, new_data, add_options: list = []) -> dict:
                     break
 
             # 如果需要，也可以检查其他字段的变化，例如 guide_content
-            if "guide_content" in add_options and old_item.get("guide_content") != new_item.get("guide_content"):
+            if "guide_content" in add_options and normalize_requirement_comparison_value(
+                old_item.get("guide_content")
+            ) != normalize_requirement_comparison_value(new_item.get("guide_content")):
                 is_modified = True
 
             if is_modified:
