@@ -46,6 +46,34 @@ class OverviewOperationTests(unittest.TestCase):
         self.assertEqual(record["select_activ_dic"], {"1.0": True, "2.0": None})
         self.assertEqual(record["source_id"], "ECN26082101")
 
+    def test_append_timestamp_keeps_two_operations_in_the_same_second(self):
+        states: dict[str, object] = {"1.0": None, "2.0": None}
+        chip: dict[str, object] = {"select_activ_dic": states}
+        first_time = append_overview_timestamp(
+            chip,
+            creator="负责人",
+            reason="修改V1.0",
+            operation_time="2026-10-10 10:00:00",
+        )
+        states["1.0"] = True
+        second_time = append_overview_timestamp(
+            chip,
+            creator="负责人",
+            reason="修改V2.0",
+            operation_time="2026-10-10 10:00:00",
+        )
+
+        self.assertEqual(first_time, "2026-10-10 10:00:00")
+        self.assertNotEqual(second_time, first_time)
+        timestamp = chip.get("timestamp")
+        self.assertIsInstance(timestamp, dict)
+        assert isinstance(timestamp, dict)
+        self.assertEqual(len(timestamp), 2)
+        second_record = timestamp.get(second_time)
+        self.assertIsInstance(second_record, dict)
+        assert isinstance(second_record, dict)
+        self.assertEqual(second_record["creator"], "负责人")
+
 
 if __name__ == "__main__":
     unittest.main()

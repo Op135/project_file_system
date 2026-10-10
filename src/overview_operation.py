@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import copy
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Mapping, Optional
 
@@ -106,6 +106,13 @@ def append_overview_timestamp(
 ) -> str:
     """在状态已经修改后，追加一条秒级概述状态快照。"""
     time_text = operation_time or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    timestamp = chip.setdefault("timestamp", {})
+    if time_text in timestamp:
+        base_time = datetime.fromisoformat(time_text)
+        suffix = 1
+        while time_text in timestamp:
+            time_text = (base_time + timedelta(microseconds=suffix)).isoformat(sep=" ", timespec="microseconds")
+            suffix += 1
     record = {
         "creator": str(creator or "待定负责人"),
         "reason": str(reason or "").strip(),
@@ -113,5 +120,5 @@ def append_overview_timestamp(
     }
     if source_id:
         record["source_id"] = str(source_id)
-    chip.setdefault("timestamp", {})[time_text] = record
+    timestamp[time_text] = record
     return time_text

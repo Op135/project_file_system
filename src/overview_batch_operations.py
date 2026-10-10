@@ -28,6 +28,7 @@ BATCH_OVERVIEW_STAGING_DIR = Path(__file__).resolve().parents[1] / ".overview_ba
 
 # 单独维护“审核角色 -> 被审核的申请人角色”，避免把工具使用权限误当成审批权限。
 BATCH_OVERVIEW_APPROVAL_ROLE_TARGETS = BATCH_OVERVIEW_CONFIG["approval_role_targets"]
+_OVERVIEW_STATE_EXPECTATION_UNSET = object()
 
 
 def get_batch_overview_reviewer_roles(applicant_role: str) -> list[str]:
@@ -436,15 +437,20 @@ async def update_overview_chip_state(
     target_state: Optional[bool],
     creator: str,
     reason: str = "状态确认",
+    expected_state: object = _OVERVIEW_STATE_EXPECTATION_UNSET,
 ) -> tuple[bool, str, Optional[dict]]:
-    """原子更新一个 chip 当前版本的激活状态。"""
+    """原子更新一个 chip 指定版本的激活状态，可选校验提交瞬间的原状态。"""
     outcome: dict[str, object] = {"changed": False, "chip": None}
-    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    state_conflict = {"value": False}
 
     def update(chip):
         if not chip:
             return db_storage.ATOMIC_NO_UPDATE
         old_state = chip.get("select_activ_dic", {}).get(req_max_ver, chip.get("enabled"))
+        if expected_state is not _OVERVIEW_STATE_EXPECTATION_UNSET and old_state is not expected_state:
+            state_conflict["value"] = True
+            outcome["chip"] = copy.deepcopy(chip)
+            return db_storage.ATOMIC_NO_UPDATE
         if old_state is target_state:
             outcome["chip"] = copy.deepcopy(chip)
             return db_storage.ATOMIC_NO_UPDATE
@@ -455,11 +461,7 @@ async def update_overview_chip_state(
             chip["icon"] = icon
             chip["enabled"] = enabled
             chip["bg_color"] = bg_color
-        chip.setdefault("timestamp", {})[now_str] = {
-            "creator": creator,
-            "reason": reason,
-            "select_activ_dic": copy.deepcopy(chip["select_activ_dic"]),
-        }
+        append_overview_timestamp(chip, creator=creator, reason=reason)
         outcome["changed"] = True
         outcome["chip"] = copy.deepcopy(chip)
         return chip
@@ -470,6 +472,8 @@ async def update_overview_chip_state(
     updated_chip = outcome["chip"]
     if not isinstance(updated_chip, dict):
         return False, "概述条目已不存在", None
+    if state_conflict["value"]:
+        return False, "概述当前状态已变化", updated_chip
     if outcome["changed"] is not True:
         return False, "目标状态与当前状态相同", updated_chip
     return True, "状态已修改", updated_chip

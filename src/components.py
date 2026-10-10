@@ -213,13 +213,14 @@ class OverviewReasonSelector:
 def _overview_tooltip_audit_html(chip_info: dict, extra_html: str = "") -> str:
     """统一生成概述 tooltip 的审计信息；注释只取最近一次操作原因。"""
     latest_time, _record = get_latest_overview_record(chip_info)
+    latest_time_display = format_overview_timestamp(latest_time)
     reason = get_latest_overview_reason(chip_info).replace("\n", "<br>")
     extra = f"<br>{extra_html}" if extra_html else ""
     reason_html = f"<br>最近操作注释:<br>●{reason}" if reason else ""
     return (
         f"录入节点: 需求V{chip_info.get('req_ver')}后"
         f"<br>最近操作人: {get_latest_overview_operator(chip_info)}"
-        f"<br>最近操作时间: {latest_time}{extra}{reason_html}"
+        f"<br>最近操作时间: {latest_time_display}{extra}{reason_html}"
     )
 
 

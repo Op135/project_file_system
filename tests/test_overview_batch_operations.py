@@ -340,6 +340,39 @@ class OverviewBatchOperationTests(unittest.TestCase):
         datetime.strptime(timestamp, "%Y-%m-%d %H:%M:%S")
         self.assertEqual(updated["timestamp"][timestamp]["reason"], "状态确认")
 
+    def test_state_update_can_require_state_to_still_be_pending(self):
+        stored = {
+            "id": "chip-1",
+            "type": "text",
+            "enabled": False,
+            "select_activ_dic": {"2.0": False},
+            "timestamp": {},
+        }
+
+        async def fake_atomic(_path, updater, *args, **kwargs):
+            result = updater(copy.deepcopy(stored), *args, **kwargs)
+            self.assertIs(result, db_storage.ATOMIC_NO_UPDATE)
+            return True
+
+        with patch("src.overview_batch_operations.db_storage.atomic_deep_update", new=fake_atomic):
+            changed, message, updated = asyncio.run(
+                update_overview_chip_state(
+                    "P1",
+                    "label",
+                    "chip-1",
+                    "2.0",
+                    True,
+                    "原负责人",
+                    "特殊维护",
+                    expected_state=None,
+                )
+            )
+
+        self.assertFalse(changed)
+        self.assertEqual(message, "概述当前状态已变化")
+        self.assertIsNotNone(updated)
+        self.assertEqual(stored["timestamp"], {})
+
     def test_related_impact_records_active_and_already_pending_targets(self):
         overview = {
             "target": {

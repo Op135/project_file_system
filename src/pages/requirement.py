@@ -75,6 +75,12 @@ from ..overview_batch_operations import (
     update_overview_chip_state,
     validate_overview_content,
 )
+from ..overview_admin_maintenance import (
+    PendingOverviewItem,
+    apply_admin_pending_overview_states,
+    collect_pending_overview_items,
+    is_admin_overview_maintenance_user,
+)
 from ..overview_corrections import get_project_correction_archives
 from ..overview_operation import append_overview_timestamp, get_automatic_overview_reason
 from ..project_access import can_assign_all_project_engineers, can_edit_project_status
@@ -360,6 +366,7 @@ async def requirement_page(
     general_dialog = ui.dialog()
     batch_overview_dialog = ui.dialog().props("persistent")
     correction_archive_dialog = ui.dialog().props("persistent")
+    admin_pending_maintenance_dialog = ui.dialog().props("persistent")
     # 创建项目名修改对话框
     with ui.dialog().props("persistent").classes("") as project_dialog:
         project_card = ui.card().classes("w-1/4")
@@ -5004,6 +5011,186 @@ async def requirement_page(
 
             show_overview_collection_history(general_dialog, f"全项历史记录: {role}", entries)
 
+        def show_admin_pending_maintenance_dialog(project_name: str) -> None:
+            """展示当前项目的 admin 专用待定状态纠正窗口。"""
+            session_user = app.storage.user.get("current_user")
+            if not is_admin_overview_maintenance_user(session_user):
+                ui.notify("只有 admin 账户可以使用特殊维护功能", type="negative")
+                return
+
+            req_version_value = app.storage.general.get("project_req_max_ver", {}).get(project_name)
+            if req_version_value is None:
+                ui.notify("当前项目没有可用的最高需求版本", type="negative")
+                return
+            req_version = str(req_version_value)
+            overview_data_value = db_storage.get_item(f"{project_name}_over_data", {})
+            over_config_value = app.storage.general.get("over_config_data", {})
+            if not isinstance(overview_data_value, dict) or not isinstance(over_config_value, dict):
+                ui.notify("当前项目概述数据无效", type="negative")
+                return
+            grouped_items = collect_pending_overview_items(
+                overview_data_value,
+                over_config_value,
+            )
+
+            admin_pending_maintenance_dialog.clear()
+            with admin_pending_maintenance_dialog, ui.card().classes("w-[900px] max-w-[95vw] gap-3"):
+                ui.label(f"特殊维护：{project_name} 待定概述").classes("text-xl font-bold text-red-800")
+                ui.label(
+                    f"列出当前项目全部待定版本（当前最高需求版本为 V{req_version}）。"
+                    "所选版本会通过常规状态接口统一修改，并以原概述负责人作为最近操作人。"
+                ).classes("text-sm text-red-700")
+
+                if not grouped_items:
+                    ui.label("当前项目没有待定状态的概述。整页数据未作修改。")
+                    with ui.row().classes("w-full justify-end"):
+                        ui.button("关闭", on_click=admin_pending_maintenance_dialog.close).props("flat")
+                    admin_pending_maintenance_dialog.open()
+                    return
+
+                target_state_radio = ui.radio(
+                    {"active": "设为激活", "inactive": "设为失活"},
+                    value="active",
+                ).props("inline dense")
+                operation_note_input = ui.input(
+                    "操作注释（必填）",
+                    placeholder="请说明本次特殊维护的原因",
+                ).props("outlined dense maxlength=200").classes("w-full")
+                checkbox_entries: list[tuple[PendingOverviewItem, Any]] = []
+
+                def set_all_checked(checked: bool) -> None:
+                    for _item, checkbox in checkbox_entries:
+                        checkbox.set_value(checked)
+
+                def set_role_checked(role_name: str, checked: bool) -> None:
+                    for item, checkbox in checkbox_entries:
+                        if item.role == role_name:
+                            checkbox.set_value(checked)
+
+                def set_version_checked(version: str, checked: bool) -> None:
+                    for item, checkbox in checkbox_entries:
+                        if item.version == version:
+                            checkbox.set_value(checked)
+
+                def pending_version_sort_key(version: str) -> tuple[int, float, str]:
+                    try:
+                        return (1, float(version), version)
+                    except (TypeError, ValueError, OverflowError):
+                        return (0, 0.0, version)
+
+                pending_versions = sorted(
+                    {item.version for items in grouped_items.values() for item in items},
+                    key=pending_version_sort_key,
+                )
+
+                with ui.row().classes("w-full items-center gap-2"):
+                    ui.button("全选", icon="select_all", on_click=lambda: set_all_checked(True)).props(
+                        "outline dense"
+                    )
+                    ui.button("全取消", icon="deselect", on_click=lambda: set_all_checked(False)).props(
+                        "outline dense"
+                    )
+                    ui.label(f"共 {sum(len(items) for items in grouped_items.values())} 个待定版本").classes(
+                        "text-sm text-gray-600 ml-2"
+                    )
+
+                with ui.column().classes("w-full gap-1"):
+                    ui.label("按版本快捷选择").classes("text-xs font-medium text-gray-600")
+                    with ui.row().classes("w-full items-center gap-2 flex-wrap"):
+                        for version in pending_versions:
+                            with ui.row().classes("items-center gap-0 px-1 rounded bg-blue-50"):
+                                ui.label(f"V{version}").classes("text-xs font-bold text-blue-800 px-1")
+                                ui.button(
+                                    "全选",
+                                    on_click=lambda _e, v=version: set_version_checked(v, True),
+                                ).props("flat dense size=sm color=primary")
+                                ui.button(
+                                    "取消",
+                                    on_click=lambda _e, v=version: set_version_checked(v, False),
+                                ).props("flat dense size=sm color=grey-7")
+
+                with ui.scroll_area().classes("w-full h-[58vh] border rounded p-2"):
+                    for role, items in grouped_items.items():
+                        with ui.expansion(f"{role}职能（{len(items)}项）", value=True, icon="engineering").classes(
+                            "w-full bg-gray-50 rounded"
+                        ):
+                            with ui.row().classes("w-full items-center justify-end gap-1 pb-1"):
+                                ui.button(
+                                    "全选本职能",
+                                    icon="select_all",
+                                    on_click=lambda _e, r=role: set_role_checked(r, True),
+                                ).props("outline dense size=sm color=primary")
+                                ui.button(
+                                    "取消本职能",
+                                    icon="deselect",
+                                    on_click=lambda _e, r=role: set_role_checked(r, False),
+                                ).props("outline dense size=sm color=grey-7")
+                            for item in items:
+                                with ui.row().classes(
+                                    "w-full items-start flex-nowrap gap-2 py-1 border-b border-gray-200"
+                                ):
+                                    checkbox = ui.checkbox(value=True).props("dense")
+                                    checkbox_entries.append((item, checkbox))
+                                    with ui.column().classes("gap-0 min-w-0"):
+                                        ui.label(f"{item.title} · {item.group_name} · V{item.version}").classes(
+                                            "text-sm font-medium"
+                                        )
+                                        ui.label(item.content).classes(
+                                            "text-xs text-gray-600 whitespace-normal break-all"
+                                        )
+                                        ui.label(f"待定原因：{item.pending_reason}").classes(
+                                            "text-xs text-orange-700 whitespace-normal break-all"
+                                        )
+
+                async def save_admin_pending_maintenance() -> None:
+                    latest_session_user = app.storage.user.get("current_user")
+                    if not is_admin_overview_maintenance_user(latest_session_user):
+                        ui.notify("只有 admin 账户可以使用特殊维护功能", type="negative")
+                        return
+                    latest_version_value = app.storage.general.get("project_req_max_ver", {}).get(project_name)
+                    if latest_version_value is None or str(latest_version_value) != req_version:
+                        ui.notify("项目最高需求版本已变化，请重新打开维护窗口", type="warning")
+                        return
+                    selected_targets = {
+                        (item.label, item.chip_id, item.version)
+                        for item, checkbox in checkbox_entries
+                        if checkbox.value is True
+                    }
+                    target_state = target_state_radio.value == "active"
+                    result = await apply_admin_pending_overview_states(
+                        project_name=project_name,
+                        targets=selected_targets,
+                        target_state=target_state,
+                        actor=latest_session_user,
+                        operation_note=str(operation_note_input.value or "").strip(),
+                    )
+                    for label in result.changed_labels:
+                        OverviewVersionManager.bump(project_name, label)
+                    if result.changed_labels:
+                        refresh_overview_pending_labels(project_name, set(result.changed_labels))
+                    if result.changed_count == 0:
+                        detail = f"；{result.failures[0]}" if result.failures else ""
+                        ui.notify(f"{result.message}{detail}", type="negative" if result.failed_count else "warning")
+                        return
+                    admin_pending_maintenance_dialog.close()
+                    target_text = "激活" if target_state else "失活"
+                    skipped_text = f"；另有 {result.skipped_count} 条因状态已变化而跳过" if result.skipped_count else ""
+                    failed_text = f"；{result.failed_count} 条处理失败" if result.failed_count else ""
+                    ui.notify(
+                        f"已将 {result.changed_count} 个待定版本设为{target_text}{skipped_text}{failed_text}",
+                        type="positive" if result.ok else "warning",
+                    )
+
+                with ui.row().classes("w-full justify-end"):
+                    ui.button("取消", on_click=admin_pending_maintenance_dialog.close).props("flat")
+                    ui.button(
+                        "确认维护",
+                        icon="build",
+                        on_click=save_admin_pending_maintenance,
+                    ).props("color=negative")
+
+            admin_pending_maintenance_dialog.open()
+
         # 需求界面内容
         header.clear()
         with header:
@@ -5031,6 +5218,12 @@ async def requirement_page(
                     if can_submit_batch_overview(current_role, current_user, BATCH_OVERVIEW_TOOL_ROLES):
                         ui.separator().props("size=1px")
                         ui.menu_item("批量维护概述", on_click=batch_overview_maintenance_dialog)
+                    if not temp_bool and is_admin_overview_maintenance_user(current_user):
+                        ui.separator().props("size=1px")
+                        ui.menu_item(
+                            "特殊维护待定状态",
+                            on_click=lambda: show_admin_pending_maintenance_dialog(project_name),
+                        )
 
             with ui.row().classes("font-sans h-[calc(100vh-9rem)] items-stretch flex-nowrap w-full mt-3 text-black"):
                 # 需求内容列

@@ -2,7 +2,7 @@
 
 > 用途：为后续开发、排查和代码审查保存项目级背景。本文是持续更新的“活文档”，不是用户操作手册。
 >
-> 最近更新：2026-09-24；页面交互刷新遵循最小影响范围原则。ECN 拆分及类型检查约束见下文和根目录 AGENTS.md。
+> 最近更新：2026-10-10；页面交互刷新遵循最小影响范围原则。ECN 拆分及类型检查约束见下文和根目录 AGENTS.md。
 
 ## 1. 项目概览
 
@@ -59,10 +59,11 @@
 
 - 概述新建和手动激活状态调整的原因选项由根目录 `overview_operation_config.json` 管理；“其他”需要补充简短说明。自动转待定、关联影响、表格联动及 ECN 落盘的原因文案也集中在该配置中。
 - 顶层 `creator` 表示概述的原始录入人，后续状态调整不覆盖它；“最近操作人”和技术维度的“最近负责人”读取最新一条 `timestamp.<时间>.creator`。
-- 新概述不再生成顶层 `notes`。每次操作在秒级 `timestamp` 中保存 `creator`、`reason` 和当时完整的 `select_activ_dic` 状态快照；ECN 自动处理额外以 `source_id` 保存 ECN 编号。既有概述的顶层 `notes` 只作为历史兼容读取，不再更新。
+- 新概述不再生成顶层 `notes`。每次操作在秒级 `timestamp` 中保存 `creator`、`reason` 和当时完整的 `select_activ_dic` 状态快照；ECN 自动处理额外以 `source_id` 保存 ECN 编号。同一条概述在同一秒内连续修改多个版本时，以微秒后缀生成不同时间键，避免后一次记录覆盖前一次。既有概述的顶层 `notes` 只作为历史兼容读取，不再更新。
 - SVN 类概述保留按 `search_scope_regular` 定位项目目录的首选规则，`search_hierarchy` 仅参与该正则路径；首选 URL 未找到文件时，可按概述项的 `fallback_folder_path` 从同一 `upload_path/state_path` 起点进入相对兜底目录并直接探测文件。空值表示不启用兜底。
 - SVN 类概述的文件读取统一忽略系统代理并使用 60 秒超时；读取失败需记录异常并提示用户，只有实际触发下载成功后才写入浏览器会话的“已下载”标记。
 - 自动转待定不写“系统”为操作人，使用该概述技术维度已有的最近负责人；没有运行时负责人索引时回退该条概述的原始录入人。
+- 正式概述页右上角为固定 `admin` 账户提供“特殊维护待定状态”：汇总当前项目全部版本中明确为待定的“概述条目 × 版本”，逐条展示当时转为待定的原因，按职能分组；除整表全选/全取消外，还可按某个版本或某个职能快速全选/取消，再统一设为激活或失活。保存时必须填写操作注释并再次校验账号、项目最高版本未变化；每个目标都调用常规概述状态更新接口，并在该项原子更新内确认提交瞬间仍为待定。记录包含完整状态快照，注释标记为特殊维护，最近操作人沿用该概述原负责人而不是 admin，因此不改变负责人归属。
 - 概述 Tooltip 的“注释”只显示最新一条时间记录的 `reason`；旧数据没有 `reason` 时回退旧 `notes`。单条、具体参数和项目技术维度三级历史都可分别查看录入记录及后续状态变更，并展示原因、操作人、状态快照和可选来源编号。
 - 检测概述汇总表继续使用“备注”作为列名，但内容读取最新一条 `timestamp.reason`，旧数据仍回退顶层 `notes`。
 
@@ -427,7 +428,7 @@ ECN等级使用稳定编码 `simple / general / complex`，显示名称由 `ecn_
 | 项目待办 | `src/pages/information.py`、`src/pages/main_dashboard.py` | `information.py` 定义 `/information` 聚合工作台，组合本人概述待办、需求评审/草稿及概述变更申请；主页负责入口和角标摘要。两处统一复用 `project_todo_access.py`，内部业务操作仍由各业务访问层复核。 |
 | 需求项结构 | `src/pages/question_tree_tabs.py` | 定义 `/question_tree_tabs` 层级结构浏览页与 `/print_list` 完整清单页，读取 `config_service.json` 的需求节点配置，提供路径追溯、搜索、打印；两个路由共用稳定查看权限，不写业务数据。 |
 | 生产测试项汇总 | `src/pages/test_summary.py`、`src/pages/project_table.py`、`src/pages/requirement.py` | `test_summary.py` 定义项目测试项只读汇总与打印页面；项目资料表和项目概述页提供入口，并在显示和点击时复核同一权限。汇总数据来自项目概述中的启用测试项。 |
-| 项目概述 | `src/pages/requirement.py`、`src/components.py`、`src/pages/information.py`、`src/overview_batch_operations.py`、`src/overview_corrections.py` | `requirement.py` 的概述模式负责页面、专业分组、项目状态/负责人和批量申请；两个组件负责普通项/表格项的读写与纠错申请；`information.py` 负责本人概述待办和两类审批；两个服务文件负责批量变更及纠错的校验和原子执行。 |
+| 项目概述 | `src/pages/requirement.py`、`src/components.py`、`src/pages/information.py`、`src/overview_batch_operations.py`、`src/overview_corrections.py`、`src/overview_admin_maintenance.py` | `requirement.py` 的概述模式负责页面、专业分组、项目状态/负责人、批量申请和 admin 特殊维护入口；两个组件负责普通项/表格项的读写与纠错申请；`information.py` 负责本人概述待办和两类审批；三个服务文件分别负责批量变更、纠错及 admin 多版本待定状态纠正的校验和原子执行。 |
 | 样品订单看板 | `src/pages/sample_order_dashboard.py` | 定义 `/sample_order_dashboard` 页面，负责逐订单存储迁移、导入、日期与考核计算、增删改、待办筛选、权限复核和企业微信通知；这是样品订单业务的主要实现文件。 |
 | 样品订单配置 | `src/sample_order_dashboard_config.py` | 读取 `sample_order_dashboard_config.json` 中的预警天数、特殊状态及通知行为等业务配置；角色列表只供旧 Excel 模式兼容，不参与身份数据库模式授权。 |
 | 异常单跟进 | `src/pages/error_management.py` | 定义 `/error_management` 页面，负责异常单数据模型、原子并发更新、负责人局部处理、延期/关闭申请审批、附件、提醒、待办角标、稳定权限复核和通知发送。 |
