@@ -7677,7 +7677,7 @@
             "input_name_accor": "",
             "input_tolerance": "",
             "ref_config": "True",
-            "option_hint": "对产品出厂测试报告的格式与内容无要求则写“无”，有要求则填写详细要求，并附上报告模板。",
+            "option_hint": "对产品出厂测试报告的格式与内容无要求则写“无”，有要求则填写详细要求，模板有要求则附上报告模板。",
             "placeholder": "",
             "tolerance_placeholder": "",
             "option_group_id": "99",
@@ -7692,12 +7692,12 @@
                     "option_out": "字典",
                     "option_bold": "",
                     "option_show": "测试报告格式与内容要求：{V}",
-                    "option_label": "要求测试报告模板"
+                    "option_label": "要求特定测试内容或格式"
                 }
             ]
         }
     },
-    "config_timestamp": "2026-10-09T16:49:16.944668",
-    "excel_version_hash": "97cfb114",
+    "config_timestamp": "2026-10-10T13:50:16.095238",
+    "excel_version_hash": "46a7c0a5",
     "entry_status": false
 }

@@ -7,6 +7,7 @@ import mimetypes
 import os
 import re
 from collections import defaultdict
+from collections.abc import Callable
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -87,6 +88,36 @@ _requirement_review_locks = defaultdict(asyncio.Lock)
 _batch_overview_review_locks = defaultdict(asyncio.Lock)
 _overview_correction_review_locks = defaultdict(asyncio.Lock)
 _correction_preview_routes: set[str] = set()
+
+
+def _group_visible_requirement_reviews(
+    wait_review: object,
+    *,
+    current_user: str,
+    can_review_requirement: Callable[[str], bool],
+    can_review_all: bool,
+) -> dict[str, list[tuple[str, str]]]:
+    """按状态归类当前用户可见的未完成需求评审记录。"""
+    groups: dict[str, list[tuple[str, str]]] = {"待审": [], "待修改": []}
+    if not isinstance(wait_review, dict):
+        return groups
+
+    for project_name, versions in wait_review.items():
+        if not isinstance(project_name, str) or not isinstance(versions, dict):
+            continue
+        for version, review_data in versions.items():
+            if not isinstance(review_data, dict):
+                continue
+            state = review_data.get("state")
+            if state not in groups:
+                continue
+
+            is_submitter = review_data.get("submitter") == current_user
+            is_project_reviewer = can_review_requirement(project_name)
+            if can_review_all or is_submitter or (is_project_reviewer and state == "待审"):
+                groups[state].append((project_name, str(version)))
+
+    return groups
 
 
 def _schedule_overview_completion_cc(
@@ -356,6 +387,7 @@ def information_page():
             ui.notify("当前账号无权退回或申请修改该需求", type="negative")
             return
         app.storage.general["wait_review"][p_name][v]["state"] = "待修改"
+        render_requirement_review_board.refresh()
 
     async def set_review_pass(container_row, p_name, v):
         """审核通过逻辑"""
@@ -521,8 +553,8 @@ def information_page():
                     exc_info=True,
                 )
 
-            # 刷新UI行
-            refresh_review_row(container_row, p_name, v)
+            # 刷新整个看板，使记录按最新状态重新归类并同步空状态。
+            render_requirement_review_board.refresh()
             dialog.close()
 
     async def set_temporary_project_review_pass(container_row, p_name, v, data):
@@ -628,7 +660,7 @@ def information_page():
         move_file_with_timestamp_pathlib(f"{REQ_DIR}/{p_name}_需求配置_V{v}.json", REQ_REMOVE_DIR)
         delete_file(f"{OVER_DIR}/{p_name}_概述整理_temp.json")
         app.storage.general["wait_review"][p_name].pop(v, None)
-        container_row.delete()  # 删除整行UI
+        render_requirement_review_board.refresh()
         dialog.close()
 
     def remove_requirement_dialog(container_row, p_name, v):
@@ -688,8 +720,10 @@ def information_page():
 
         can_review = can_review_requirement(project_name)
         can_review_all = can_review_all_requirements()
-        # 全局审批人仍可看到待修改记录；仅负责具体项目的审批人在退回后不再保留待办。
-        if review_state == "已审" or review_state == "待修改" and not can_review_all and can_review:
+        is_submitter = submitter == current_user
+        should_show = (can_review_all or is_submitter) and review_state in {"待审", "待修改"}
+        should_show = should_show or (can_review and review_state == "待审")
+        if not should_show:
             container.delete()
             return
 
@@ -731,9 +765,7 @@ def information_page():
 
                             ui.button(
                                 icon="edit_note", color="orange", on_click=lambda: set_review_revise(project_name, ver)
-                            ).on("click", lambda: refresh_review_row(container, project_name, ver)).props(
-                                "flat round dense"
-                            ).tooltip("退回修改")
+                            ).props("flat round dense").tooltip("退回修改")
 
                             ui.button(
                                 icon="delete",
@@ -751,9 +783,40 @@ def information_page():
 
                             ui.button(
                                 icon="replay", color="orange", on_click=lambda: set_review_revise(project_name, ver)
-                            ).on("click", lambda: refresh_review_row(container, project_name, ver)).props(
-                                "flat round dense"
-                            ).tooltip("申请修改")
+                            ).props("flat round dense").tooltip("申请修改")
+
+    @ui.refreshable
+    def render_requirement_review_board() -> None:
+        review_groups = _group_visible_requirement_reviews(
+            app.storage.general.get("wait_review", {}),
+            current_user=current_user,
+            can_review_requirement=can_review_requirement,
+            can_review_all=can_review_all_requirements(),
+        )
+        if not any(review_groups.values()):
+            with ui.column().classes("w-full items-center py-8 text-gray-400"):
+                ui.icon("task_alt", size="4em").classes("mb-2 opacity-50")
+                ui.label("当前没有待评审的需求").classes("text-sm")
+            return
+
+        group_options = (
+            ("待审", "pending_actions", True, "text-blue-700 border-blue-100"),
+            ("待修改", "edit_note", False, "text-orange-700 border-orange-100"),
+        )
+        with ui.column().classes("w-full gap-3"):
+            for state, icon, default_open, style_classes in group_options:
+                review_items = review_groups[state]
+                if not review_items:
+                    continue
+                with ui.expansion(
+                    f"{state}（{len(review_items)}）",
+                    icon=icon,
+                    value=default_open,
+                ).classes(f"w-full rounded-lg border {style_classes}"):
+                    with ui.column().classes("w-full gap-3 pb-2"):
+                        for project_name, ver in review_items:
+                            row = ui.row().classes("w-full p-0 gap-0")
+                            refresh_review_row(row, project_name, ver)
 
     def create_revoke_dialog():
         """构建需要独立稳定权限的撤销审批对话框。"""
@@ -2095,37 +2158,7 @@ def information_page():
                     if can_edit_requirements() or can_review_all_requirements() or has_assigned_projects:
                         with ui.card().classes("w-full rounded-xl shadow-sm border border-gray-100 bg-white"):
                             ui_card_header("需求评审看板", "rate_review", "blue-600")
-
-                            review_container = ui.column().classes("w-full gap-3")
-                            has_review_data = False
-
-                            with review_container:
-                                if app.storage.general.get("wait_review", {}):
-                                    for project_name, ver_dic in app.storage.general["wait_review"].items():
-                                        for ver, dic in ver_dic.items():
-                                            # 过滤显示逻辑
-                                            is_reviewer = can_review_requirement(project_name)
-                                            is_global_reviewer = can_review_all_requirements()
-                                            is_submitter = dic.get("submitter") == current_user
-
-                                            should_show = False
-                                            # 全局审批人或提交人查看尚未完成的需求记录。
-                                            if (is_global_reviewer or is_submitter) and dic.get("state") != "已审":
-                                                should_show = True
-                                            # 具体项目审批人只查看分配给自己的待审记录。
-                                            elif is_reviewer and dic.get("state") == "待审":
-                                                should_show = True
-
-                                            if should_show:
-                                                has_review_data = True
-                                                # 创建行容器
-                                                row = ui.row().classes("w-full p-0 gap-0")
-                                                refresh_review_row(row, project_name, ver)
-
-                            if not has_review_data:
-                                with ui.column().classes("w-full items-center py-8 text-gray-400"):
-                                    ui.icon("task_alt", size="4em").classes("mb-2 opacity-50")
-                                    ui.label("当前没有待评审的需求").classes("text-sm")
+                            render_requirement_review_board()
 
                 # =========================================================
                 # 右侧列
