@@ -17,7 +17,11 @@ from src.ecn_management_config import (
 )
 from src.modules.ecn import notifications
 from src.modules.ecn.special_tasks import update_special_task, finish_if_complete
-from src.modules.ecn.list_view import build_ecn_management_grid_row, get_ecn_management_grid_columns
+from src.modules.ecn.list_view import (
+    build_ecn_management_grid_row,
+    get_ecn_list_progress_summary,
+    get_ecn_management_grid_columns,
+)
 from tests.test_error_management_concurrency import load_isolated_db_storage
 from tests.test_ecn_notifications import Users
 
@@ -152,6 +156,51 @@ class SpecialTasksTests(unittest.IsolatedAsyncioTestCase):
         fields = [column["field"] for column in columns]
         self.assertLess(fields.index("special_tasks"), fields.index("traceability_0"))
         self.assertEqual(fields[-2:], ["closed_date", "execution_verification"])
+
+    async def test_complex_validation_report_progress_is_visible_in_grid_summary(self):
+        record = {
+            "basic_info": {"requirements": []},
+            "review_info": {
+                "impacts": {},
+                "involved_docs": {},
+                "involved_materials": {},
+            },
+            "workflow": {
+                "current_state": ECNState.ECN_SCHEMING,
+                "ecn_level": "complex",
+                "scheme_participants": {"工程师A": "confirmed"},
+            },
+            "change_items": [
+                {
+                    "validation_report": {
+                        "required": True,
+                        "status": "pending_upload",
+                        "attachments": [],
+                    }
+                }
+            ],
+        }
+        self.assertEqual(
+            get_ecn_list_progress_summary(record),
+            "验证报告待处理：待上传 方案 #01",
+        )
+
+        report = record["change_items"][0]["validation_report"]
+        report["status"] = "pending_review"
+        report["attachments"] = [{"id": "report-1"}]
+        self.assertEqual(
+            get_ecn_list_progress_summary(record),
+            "验证报告待处理：待审批 方案 #01",
+        )
+
+        report["status"] = "rejected"
+        self.assertEqual(
+            get_ecn_list_progress_summary(record),
+            "验证报告待处理：未通过待重提 方案 #01",
+        )
+
+        report["status"] = "approved"
+        self.assertEqual(get_ecn_list_progress_summary(record), "方案已齐，待发起评审")
 
     async def test_cancel_and_new_owner_notifications_and_retry_dedup(self):
         await self.update(assignee="writer")

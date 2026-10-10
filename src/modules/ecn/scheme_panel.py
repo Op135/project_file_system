@@ -97,6 +97,7 @@ def build_scheme_panel(
     dashboard_updater,
     *,
     trial_saved_callback=None,
+    validation_saved_callback=None,
     panel_container=None,
 ):
     def noop_render() -> None:
@@ -439,13 +440,13 @@ def build_scheme_panel(
                             wf.update(copy.deepcopy(current_workflow))
                         local_data["execution_info"] = copy.deepcopy(record.get("execution_info", {}))
                         local_data["approval_log"] = copy.deepcopy(record.get("approval_log", []))
-                        render_items()
-                        render_coverage_dashboard()
-                        material_code_saved_callback()
                         if wf.get("current_state") == ECNState.ECN_EXECUTING:
                             ui.notify("全部料号已补齐，ECN已进入执行阶段。", type="positive")
                         else:
                             ui.notify("料号已保存。", type="positive")
+                        render_items()
+                        render_coverage_dashboard()
+                        material_code_saved_callback()
                         return True
 
                     def get_item_projects(item):
@@ -563,14 +564,18 @@ def build_scheme_panel(
                                 if not result.ok or result.record is None:
                                     ui.notify(result.message, type="warning", multi_line=True)
                                     return
-                                apply_scheme_result(result.record)
                                 ui.notify("验证报告要求已更新", type="positive")
+                                if validation_saved_callback is not None:
+                                    validation_saved_callback()
+                                apply_scheme_result(result.record)
 
                             def refresh_validation_attachments() -> None:
                                 fresh = db_storage.get_deep_item(
                                     ["ecn_management_data", str(local_data.get("ecn_id") or "")]
                                 )
                                 if isinstance(fresh, dict):
+                                    if validation_saved_callback is not None:
+                                        validation_saved_callback()
                                     apply_scheme_result(fresh)
 
                             def open_validation_review_dialog(item: dict) -> None:
@@ -605,12 +610,14 @@ def build_scheme_panel(
                                         if not result.ok or result.record is None:
                                             ui.notify(result.message, type="warning", multi_line=True)
                                             return
-                                        review_dialog.close()
-                                        apply_scheme_result(result.record)
                                         ui.notify(
                                             "验证报告已通过" if approved else "验证报告已退回",
                                             type="positive" if approved else "warning",
                                         )
+                                        if validation_saved_callback is not None:
+                                            validation_saved_callback()
+                                        review_dialog.close()
+                                        apply_scheme_result(result.record)
 
                                     with ui.row().classes("w-full justify-end gap-2"):
                                         ui.button("取消", on_click=review_dialog.close).props("flat color=grey")

@@ -993,6 +993,7 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
                     handle_material_code_saved,
                     dashboard_updater,
                     trial_saved_callback=lambda: (render_workflow_tab(), refresh_list()),
+                    validation_saved_callback=refresh_list,
                     panel_container=scheme_panel_host,
                 )
 

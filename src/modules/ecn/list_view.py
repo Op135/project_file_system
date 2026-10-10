@@ -29,6 +29,7 @@ from ...ecn_management_config import (
     get_ecn_scheme_target_projects,
     get_ecn_traceability_closure_summary,
     get_ecn_special_confirmations,
+    get_ecn_validation_report,
 )
 
 
@@ -96,6 +97,38 @@ def get_ecn_list_progress_summary(ecn_data: Any) -> str:
         missing_labels.append("物料追溯/处置配置")
     if missing_labels:
         return f"尚缺{'、'.join(missing_labels)}方案，待补充"
+    validation_issues = coverage["validation_report_issues"]
+    if validation_issues:
+        pending_upload: list[str] = []
+        pending_review: list[str] = []
+        rejected: list[str] = []
+        change_items = ecn_data.get("change_items", [])
+        if isinstance(change_items, list):
+            for index, item in enumerate(change_items, start=1):
+                report = get_ecn_validation_report(item)
+                if report.get("required") is not True or report.get("status") == "approved":
+                    continue
+                scheme_label = f"方案 #{index:02d}"
+                attachments = report.get("attachments", [])
+                status = str(report.get("status") or "pending_upload")
+                if status == "rejected":
+                    rejected.append(scheme_label)
+                elif status == "pending_upload" or not isinstance(attachments, list) or not attachments:
+                    pending_upload.append(scheme_label)
+                else:
+                    pending_review.append(scheme_label)
+        progress_parts = []
+        if pending_upload:
+            progress_parts.append(f"待上传 {'、'.join(pending_upload)}")
+        if pending_review:
+            progress_parts.append(f"待审批 {'、'.join(pending_review)}")
+        if rejected:
+            progress_parts.append(f"未通过待重提 {'、'.join(rejected)}")
+        return (
+            f"验证报告待处理：{'；'.join(progress_parts)}"
+            if progress_parts
+            else f"验证报告待处理：{'、'.join(sorted(validation_issues))}"
+        )
     return "方案已齐，待发起评审" if participants else "等待方案编写人员"
 
 
