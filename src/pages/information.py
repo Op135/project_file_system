@@ -34,8 +34,8 @@ from ..overview_batch_operations import (
     update_batch_overview_request,
 )
 from ..overview_corrections import (
-    TEST_FIELD_DEFINITIONS,
     OVERVIEW_CORRECTION_REQUESTS_KEY,
+    TEST_FIELD_DEFINITIONS,
     archive_correction_request,
     build_correction_changes,
     can_review_correction_request,
@@ -800,8 +800,8 @@ def information_page():
             return
 
         group_options = (
-            ("待审", "pending_actions", True, "text-blue-700 border-blue-100"),
-            ("待修改", "edit_note", False, "text-orange-700 border-orange-100"),
+            ("待审", "pending_actions", True, "text-blue-700 border-blue-300"),
+            ("待修改", "edit_note", False, "text-orange-700 border-orange-300"),
         )
         with ui.column().classes("w-full gap-3"):
             for state, icon, default_open, style_classes in group_options:
@@ -1768,9 +1768,7 @@ def information_page():
             if isinstance(my_pending, dict):
                 with ui.card().classes("w-full rounded-xl shadow-sm border border-red-100 bg-white"):
                     ui_card_header("待处理：项目概述", "edit_document", "red-600")
-                    with ui.column().classes(
-                        "w-full gap-2 px-1 pr-2 max-h-[60vh] overflow-y-auto overflow-x-hidden"
-                    ):
+                    with ui.column().classes("w-full gap-2 px-1 pr-2 max-h-[60vh] overflow-y-auto overflow-x-hidden"):
                         project_summary = app.storage.general.get("project_summary", {})
 
                         project_states = {
@@ -1782,9 +1780,7 @@ def information_page():
                             for project_name, state_dic in my_pending.items()
                             if project_states[project_name] not in ["作废", "待定"]
                         ]
-                        sorted_pending_items = sort_overview_pending_items(
-                            visible_pending_items, project_states
-                        )
+                        sorted_pending_items = sort_overview_pending_items(visible_pending_items, project_states)
 
                         for project_name, state_dic in sorted_pending_items:
                             # 1. 获取已经过滤过的当前项目状态
@@ -1838,28 +1834,19 @@ def information_page():
                             tooltip_html = ""
                             if false_items:
                                 tooltip_html += "<b>【必填无内容】</b><br>" + "<br>".join(
-                                    [
-                                        f"• {over_flat.get(item, {}).get('title', '未知概述项')}"
-                                        for item in false_items
-                                    ]
+                                    [f"• {over_flat.get(item, {}).get('title', '未知概述项')}" for item in false_items]
                                 )
                             if need_items:
                                 if tooltip_html:
                                     tooltip_html += "<br><br>"
                                 tooltip_html += "<b>【需填无内容】</b><br>" + "<br>".join(
-                                    [
-                                        f"• {over_flat.get(item, {}).get('title', '未知概述项')}"
-                                        for item in need_items
-                                    ]
+                                    [f"• {over_flat.get(item, {}).get('title', '未知概述项')}" for item in need_items]
                                 )
                             if none_items:
                                 if tooltip_html:
                                     tooltip_html += "<br><br>"
                                 tooltip_html += "<b>【待确认】</b><br>" + "<br>".join(
-                                    [
-                                        f"• {over_flat.get(item, {}).get('title', '未知概述项')}"
-                                        for item in none_items
-                                    ]
+                                    [f"• {over_flat.get(item, {}).get('title', '未知概述项')}" for item in none_items]
                                 )
                             # ------------------------------------
 
@@ -1888,7 +1875,9 @@ def information_page():
                                             )
                                         else:
                                             # 仅加粗高亮
-                                            num_html = f'<span class="font-black text-lg text-{base_color}-600">{num}</span>'
+                                            num_html = (
+                                                f'<span class="font-black text-lg text-{base_color}-600">{num}</span>'
+                                            )
                                     else:
                                         num_html = str(num)
                                     parts_html.append(f"{num_html}{text}")
@@ -1896,9 +1885,7 @@ def information_page():
                                 title_html = f'<span class="font-medium text-gray-800">{project_name}（{"，".join(parts_html)}）</span>'
 
                                 # ui.element: 创建基础 DOM 元素作为包裹层，避开 v-html 的内部覆盖效应
-                                title_wrapper = ui.element("div").classes(
-                                    "cursor-help flex items-center gap-2"
-                                )
+                                title_wrapper = ui.element("div").classes("cursor-help flex items-center gap-2")
 
                                 with title_wrapper:
                                     ui.html(title_html, sanitize=False)
@@ -1924,10 +1911,7 @@ def information_page():
         visible_correction_requests = {
             rid: request
             for rid, request in correction_requests.items()
-            if (
-                request.get("submitter") == current_user
-                and request.get("status") in {"pending", "rejected", "failed"}
-            )
+            if (request.get("submitter") == current_user and request.get("status") in {"pending", "rejected", "failed"})
             or (
                 request.get("status") == "pending"
                 and can_review_correction_request(request, current_user, str(current_role or ""))
@@ -1973,11 +1957,7 @@ def information_page():
                 if correction_todo_count:
                     ui.badge(f"原记录纠错待办 {correction_todo_count}", color="red").classes("mb-2")
                 with ui.column().classes("w-full gap-2"):
-                    if (
-                        not visible_single_requests
-                        and not visible_correction_requests
-                        and not visible_batch_requests
-                    ):
+                    if not visible_single_requests and not visible_correction_requests and not visible_batch_requests:
                         with ui.column().classes("w-full items-center py-8 text-gray-400"):
                             ui.icon("task_alt", size="4em").classes("mb-2 opacity-50")
                             ui.label("当前没有待处理的概述变更申请").classes("text-sm")
@@ -1988,16 +1968,14 @@ def information_page():
                             is_manager = can_review_overview_correction(req, current_role, current_user)
                             is_mine = req.get("submitter") == current_user
 
-                            with ui.row().classes(
-                                "w-full items-center justify-between p-3 bg-gray-50 rounded border"
-                            ):
+                            with ui.row().classes("w-full items-center justify-between p-3 bg-gray-50 rounded border"):
                                 with ui.column().classes("gap-1"):
-                                    ui.label(
-                                        f"{req.get('project_name', '')} | {req.get('action', '')}"
-                                    ).classes("font-bold")
-                                    ui.label(
-                                        f"{req.get('old_content', '')} → {req.get('new_content', '')}"
-                                    ).classes("text-sm text-gray-600")
+                                    ui.label(f"{req.get('project_name', '')} | {req.get('action', '')}").classes(
+                                        "font-bold"
+                                    )
+                                    ui.label(f"{req.get('old_content', '')} → {req.get('new_content', '')}").classes(
+                                        "text-sm text-gray-600"
+                                    )
                                     status_badge(req.get("status", ""))
 
                                 with ui.row().classes("gap-2"):
@@ -2051,8 +2029,7 @@ def information_page():
                                         f"{'纠正原记录' if request.get('action') == 'correct' else '删除错误记录'}"
                                     ).classes("font-bold")
                                     ui.label(
-                                        f"申请人：{request.get('submitter', '')} ｜ "
-                                        f"{request.get('updated_at', '')}"
+                                        f"申请人：{request.get('submitter', '')} ｜ {request.get('updated_at', '')}"
                                     ).classes("text-xs text-gray-600")
                                     status_badge(str(request.get("status") or ""))
                                     if request.get("status") in {"rejected", "failed"}:
@@ -2062,9 +2039,7 @@ def information_page():
                                 ui.button(
                                     "查看详情",
                                     icon="open_in_new",
-                                    on_click=lambda _=None, request_id=rid: open_correction_request_detail(
-                                        request_id
-                                    ),
+                                    on_click=lambda _=None, request_id=rid: open_correction_request_detail(request_id),
                                 ).props("flat dense color=purple size=sm")
 
                     if visible_batch_requests:
@@ -2090,19 +2065,14 @@ def information_page():
                                         f"{request.get('updated_at', '')}"
                                     ).classes("text-xs text-gray-600")
                                     status_badge(str(request.get("status") or ""))
-                                    if (
-                                        request.get("status") == "rejected"
-                                        and request.get("submitter") == current_user
-                                    ):
+                                    if request.get("status") == "rejected" and request.get("submitter") == current_user:
                                         ui.label(f"驳回理由：{request.get('reject_reason', '')}").classes(
                                             "text-xs font-bold text-red-700"
                                         )
                                 ui.button(
                                     "查看详情",
                                     icon="open_in_new",
-                                    on_click=lambda _=None, request_id=rid: open_batch_request_detail(
-                                        request_id
-                                    ),
+                                    on_click=lambda _=None, request_id=rid: open_batch_request_detail(request_id),
                                 ).props("flat dense color=primary size=sm")
         else:
             ui.label("暂无概述变更申请").classes("text-sm text-gray-400 p-2")
@@ -2185,12 +2155,9 @@ def information_page():
 
                             with ui.scroll_area().classes("h-90 w-full pr-2"):
                                 for project_name, version, user, saved_timestamp in drafts:
-                                    row = (
-                                        ui.element("div")
-                                        .classes(
-                                            "w-full grid grid-cols-[minmax(0,1fr)_auto] items-start sm:items-center "
-                                            "gap-x-3 gap-y-1 py-2 border-b border-gray-100 last:border-0"
-                                        )
+                                    row = ui.element("div").classes(
+                                        "w-full grid grid-cols-[minmax(0,1fr)_auto] items-start sm:items-center "
+                                        "gap-x-3 gap-y-1 py-2 border-b border-gray-100 last:border-0"
                                     )
                                     with row:
                                         saved_time = (
@@ -2208,9 +2175,9 @@ def information_page():
                                             ui.label(f"V{version}").classes(
                                                 "min-w-0 truncate text-xs text-gray-400"
                                             ).tooltip(f"V{version}")
-                                            ui.label(user).classes(
-                                                "min-w-0 truncate text-xs text-gray-400"
-                                            ).tooltip(user)
+                                            ui.label(user).classes("min-w-0 truncate text-xs text-gray-400").tooltip(
+                                                user
+                                            )
                                             ui.label(f"保存时间：{saved_time}").classes(
                                                 "min-w-0 truncate tabular-nums text-xs text-gray-400"
                                             ).tooltip(f"保存时间：{saved_time}")
