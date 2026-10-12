@@ -24,7 +24,11 @@ from ..project_requirement_access import (
     can_review_all_project_requirements,
     has_assigned_requirement_review_permission,
 )
-from ..project_todo_access import can_view_project_todo, filter_actionable_overview_pending
+from ..project_todo_access import (
+    can_view_project_todo,
+    filter_actionable_overview_pending,
+    get_requirement_todo_keys_by_state,
+)
 from ..question_tree_access import can_view_question_tree
 from ..statistics_access import can_view_statistics
 from ..utils import (
@@ -390,20 +394,18 @@ def main_page():
                 current_role,
                 current_user,
             )
-            requirement_pending_keys: set[tuple[str, str]] = set()
-            for project_name, ver_dic in app.storage.general["wait_review"].items():
-                for ver, dic in ver_dic.items():
-                    state = dic.get("state")
-                    submitter = dic.get("submitter")
-                    if state == "待修改":
-                        if submitter == current_user and can_edit_requirements:
-                            requirement_pending_keys.add((project_name, str(ver)))
-                    elif state == "待审":
-                        if can_review_all_requirements or (
-                            can_review_assigned_requirements
-                            and project_name in project_engineer_dic.get(current_user, [])
-                        ):
-                            requirement_pending_keys.add((project_name, str(ver)))
+            assigned_requirement_projects = set(project_engineer_dic.get(current_user, []))
+            requirement_todos = get_requirement_todo_keys_by_state(
+                app.storage.general.get("wait_review", {}),
+                current_user=current_user,
+                can_edit_requirements=can_edit_requirements,
+                can_review_requirement=lambda project_name: can_review_all_requirements
+                or (
+                    can_review_assigned_requirements
+                    and project_name in assigned_requirement_projects
+                ),
+            )
+            requirement_pending_keys = requirement_todos["待审"] | requirement_todos["待修改"]
 
             # --- 仅针对项目概述待办进行状态过滤 ---
             project_summary = app.storage.general.get("project_summary", {})

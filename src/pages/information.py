@@ -55,7 +55,12 @@ from ..project_requirement_access import (
     can_revoke_project_requirement_approval,
     has_assigned_requirement_review_permission,
 )
-from ..project_todo_access import can_view_project_todo, filter_actionable_overview_pending
+from ..project_todo_access import (
+    can_view_project_todo,
+    filter_actionable_overview_pending,
+    get_default_requirement_review_state,
+    get_requirement_todo_keys_by_state,
+)
 from ..requirement_overview_impact import RequirementOverviewImpactConfigError
 from ..utils import (
     delete_file,
@@ -118,6 +123,21 @@ def _group_visible_requirement_reviews(
                 groups[state].append((project_name, str(version)))
 
     return groups
+
+
+def _can_remove_requirement_review(
+    review_record: object,
+    *,
+    current_user: str,
+    can_edit_requirements: bool,
+    reviewer_allowed: bool,
+) -> bool:
+    """提交人可撤销自己的未完成需求，审核人保留原移除权限。"""
+    if not isinstance(review_record, dict) or review_record.get("state") not in {"待审", "待修改"}:
+        return False
+    return reviewer_allowed or (
+        can_edit_requirements and review_record.get("submitter") == current_user
+    )
 
 
 def _schedule_overview_completion_cc(
@@ -370,6 +390,15 @@ def information_page():
 
     def can_edit_requirements() -> bool:
         return can_edit_project_requirement(current_role, current_user)
+
+    def can_remove_requirement(p_name, v) -> bool:
+        review_record = app.storage.general.get("wait_review", {}).get(p_name, {}).get(v)
+        return _can_remove_requirement_review(
+            review_record,
+            current_user=current_user,
+            can_edit_requirements=can_edit_requirements(),
+            reviewer_allowed=can_review_requirement(p_name),
+        )
 
     # 头像处理
     user_prefs = app.storage.general.get("user_preferences", {}).get(current_user, {})
@@ -654,8 +683,8 @@ def information_page():
             refresh_review_row(container_row, p_name, v)
 
     def remove_requirement_file(container_row, p_name, v):
-        if not can_review_requirement(p_name):
-            ui.notify("当前账号无权移除该需求记录", type="negative")
+        if not can_remove_requirement(p_name, v):
+            ui.notify("当前账号无权移除该需求记录，或记录状态已经变化", type="negative")
             return
         move_file_with_timestamp_pathlib(f"{REQ_DIR}/{p_name}_需求配置_V{v}.json", REQ_REMOVE_DIR)
         delete_file(f"{OVER_DIR}/{p_name}_概述整理_temp.json")
@@ -664,16 +693,23 @@ def information_page():
         dialog.close()
 
     def remove_requirement_dialog(container_row, p_name, v):
-        if not can_review_requirement(p_name):
-            ui.notify("当前账号无权移除该需求记录", type="negative")
+        if not can_remove_requirement(p_name, v):
+            ui.notify("当前账号无权移除该需求记录，或记录状态已经变化", type="negative")
             return
+        review_record = app.storage.general.get("wait_review", {}).get(p_name, {}).get(v, {})
+        is_own_submission = review_record.get("submitter") == current_user
+        action_text = "撤销并移除" if is_own_submission else "移除"
         dialog.clear()
         with dialog, ui.card():
             ui.label("⚠️ 危险操作").classes("text-lg font-bold text-red-600")
-            ui.label(f"确认移除 {p_name}_V{v} 吗？移除后需联系管理员恢复。")
+            ui.label(f"确认{action_text} {p_name}_V{v} 吗？移除后需联系管理员恢复。")
             with ui.row().classes("w-full justify-end mt-4"):
                 ui.button("取消", on_click=dialog.close).props("flat")
-                ui.button("确认移除", color="red", on_click=lambda: remove_requirement_file(container_row, p_name, v))
+                ui.button(
+                    f"确认{action_text}",
+                    color="red",
+                    on_click=lambda: remove_requirement_file(container_row, p_name, v),
+                )
         dialog.open()
 
     def get_requirement_page(project_name, ver):
@@ -757,15 +793,18 @@ def information_page():
                                 "flat round dense text-color=grey-7"
                             ).tooltip("查看需求详情")
 
-                            ui.button(
-                                icon="check",
-                                color="green",
-                                on_click=lambda: set_review_pass_dialog(container, project_name, ver),
-                            ).props("flat round dense").tooltip("审核通过")
+                            if review_state == "待审":
+                                ui.button(
+                                    icon="check",
+                                    color="green",
+                                    on_click=lambda: set_review_pass_dialog(container, project_name, ver),
+                                ).props("flat round dense").tooltip("审核通过")
 
-                            ui.button(
-                                icon="edit_note", color="orange", on_click=lambda: set_review_revise(project_name, ver)
-                            ).props("flat round dense").tooltip("退回修改")
+                                ui.button(
+                                    icon="edit_note",
+                                    color="orange",
+                                    on_click=lambda: set_review_revise(project_name, ver),
+                                ).props("flat round dense").tooltip("退回修改")
 
                             ui.button(
                                 icon="delete",
@@ -777,13 +816,25 @@ def information_page():
                             ui.button(icon="visibility", on_click=lambda: get_overviow_page(project_name, True)).props(
                                 "flat round dense text-color=grey-7"
                             ).tooltip("查看需求详情")
-                            ui.button(
-                                icon="edit_note", color="blue", on_click=lambda: get_requirement_page(project_name, ver)
-                            ).props("flat round dense").tooltip("配置需求")
+                            if is_submitter and review_state == "待修改":
+                                ui.button(
+                                    icon="edit_note",
+                                    color="blue",
+                                    on_click=lambda: get_requirement_page(project_name, ver),
+                                ).props("flat round dense").tooltip("配置需求")
+                            elif is_submitter and review_state == "待审":
+                                ui.button(
+                                    icon="replay",
+                                    color="orange",
+                                    on_click=lambda: set_review_revise(project_name, ver),
+                                ).props("flat round dense").tooltip("申请修改")
 
-                            ui.button(
-                                icon="replay", color="orange", on_click=lambda: set_review_revise(project_name, ver)
-                            ).props("flat round dense").tooltip("申请修改")
+                            if is_submitter and can_edit_requirements():
+                                ui.button(
+                                    icon="delete",
+                                    color="red",
+                                    on_click=lambda: remove_requirement_dialog(container, project_name, ver),
+                                ).props("flat round dense").tooltip("撤销并移除需求")
 
     @ui.refreshable
     def render_requirement_review_board() -> None:
@@ -799,9 +850,26 @@ def information_page():
                 ui.label("当前没有待评审的需求").classes("text-sm")
             return
 
+        requirement_todos = get_requirement_todo_keys_by_state(
+            app.storage.general.get("wait_review", {}),
+            current_user=current_user,
+            can_edit_requirements=can_edit_requirements(),
+            can_review_requirement=can_review_requirement,
+        )
+        default_open_state = get_default_requirement_review_state(requirement_todos)
         group_options = (
-            ("待审", "pending_actions", True, "text-blue-700 border-blue-300"),
-            ("待修改", "edit_note", False, "text-orange-700 border-orange-300"),
+            (
+                "待审",
+                "pending_actions",
+                default_open_state == "待审",
+                "text-blue-700 border-blue-300",
+            ),
+            (
+                "待修改",
+                "edit_note",
+                default_open_state == "待修改",
+                "text-orange-700 border-orange-300",
+            ),
         )
         with ui.column().classes("w-full gap-3"):
             for state, icon, default_open, style_classes in group_options:

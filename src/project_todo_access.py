@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 
 from nicegui import app
 
@@ -29,6 +29,46 @@ def can_view_project_todo(current_role: object, current_user: str, *, user_servi
         legacy_role=role,
         legacy_allowed_roles=(role,) if legacy_allowed else (),
     )
+
+
+def get_requirement_todo_keys_by_state(
+    wait_review: object,
+    *,
+    current_user: str,
+    can_edit_requirements: bool,
+    can_review_requirement: Callable[[str], bool],
+) -> dict[str, set[tuple[str, str]]]:
+    """按首页角标口径归类当前用户真正需要处理的需求待办。"""
+    result: dict[str, set[tuple[str, str]]] = {"待审": set(), "待修改": set()}
+    if not isinstance(wait_review, Mapping):
+        return result
+
+    for project_name, versions in wait_review.items():
+        if not isinstance(project_name, str) or not isinstance(versions, Mapping):
+            continue
+        for version, review_data in versions.items():
+            if not isinstance(review_data, Mapping):
+                continue
+            state = review_data.get("state")
+            key = (project_name, str(version))
+            if state == "待修改":
+                if can_edit_requirements and review_data.get("submitter") == current_user:
+                    result["待修改"].add(key)
+            elif state == "待审" and can_review_requirement(project_name):
+                result["待审"].add(key)
+
+    return result
+
+
+def get_default_requirement_review_state(
+    requirement_todos: Mapping[str, object],
+) -> str:
+    """选择需求看板默认展开项；审批待办优先于本人返修待办。"""
+    if requirement_todos.get("待审"):
+        return "待审"
+    if requirement_todos.get("待修改"):
+        return "待修改"
+    return "待审"
 
 
 def filter_actionable_overview_pending(
