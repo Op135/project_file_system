@@ -1258,13 +1258,45 @@ async def check_and_send_sample_order_overdue_reminders(
         if metrics.get("attention_level") != "overdue":
             continue
         record_id = option_text(record.get("record_id"))
+        if not record_id:
+            continue
+
+        # 扫描缓存只用于快速筛选候选项；发送前必须回到 SQLite 读取跨进程最新记录。
+        # 这样即使用户刚完成订单或填写了新交期，也不会按旧快照继续发送提醒。
+        latest_candidate: dict[str, Any] = {}
+
+        def inspect_latest(current: Any) -> object:
+            if not isinstance(current, dict):
+                return db_storage.ATOMIC_NO_UPDATE
+            latest_record = merge_with_sample_order_template(current)
+            latest_metrics = calculate_sample_order_metrics(latest_record, today_value)
+            if latest_metrics.get("attention_level") == "overdue":
+                latest_candidate["record"] = latest_record
+                latest_candidate["metrics"] = latest_metrics
+            return db_storage.ATOMIC_NO_UPDATE
+
+        inspected = await db_storage.atomic_json_entity_update(
+            SAMPLE_ORDER_ENTITY_NAMESPACE,
+            record_id,
+            inspect_latest,
+        )
+        latest_record_value = latest_candidate.get("record")
+        latest_metrics_value = latest_candidate.get("metrics")
+        if (
+            not inspected
+            or not isinstance(latest_record_value, dict)
+            or not isinstance(latest_metrics_value, dict)
+        ):
+            continue
+        record = latest_record_value
+        metrics = latest_metrics_value
         basic = record["basic_info"]
         effective_target = option_text(metrics.get("effective_target_date"))
         project_engineer = option_text(basic.get("project_engineer"))
         route_fingerprint = (
             f"{today_value.isoformat()}|{effective_target}|{project_engineer.casefold()}"
         )
-        if not record_id or notification_state.get(record_id) == route_fingerprint:
+        if notification_state.get(record_id) == route_fingerprint:
             continue
 
         engineer_recipients = ""
@@ -1300,6 +1332,8 @@ async def check_and_send_sample_order_overdue_reminders(
             ),
             message_type="overdue_target_missing",
             link_url=get_sample_order_dashboard_url(record_id),
+            retry_tracking=False,
+            alert_on_max_failure=False,
         )
         if success:
             sent_count += 1

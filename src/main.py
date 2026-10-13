@@ -245,7 +245,7 @@ def init_error_reminder_task():
 
         sent_count, fail_count = await check_and_send_error_reminders(show_result=False)
         if sent_count or fail_count:
-            logger.info("生产异常提醒检查完成：新发成功 %s 条，失败进入重试 %s 条", sent_count, fail_count)
+            logger.info("生产异常提醒检查完成：发送成功 %s 条，失败待下轮复核重试 %s 条", sent_count, fail_count)
 
     app.timer(ERROR_BACKGROUND_REMINDER_INITIAL_DELAY_SECONDS, check_error_reminders, once=True)
     app.timer(ERROR_BACKGROUND_REMINDER_INTERVAL_SECONDS, check_error_reminders)
@@ -277,7 +277,7 @@ def init_sample_issue_reminder_task():
 
         sent_count, fail_count = await check_and_send_sample_issue_reminders(show_result=False)
         if sent_count or fail_count:
-            logger.info("样品问题提醒检查完成：新发成功 %s 条，失败进入重试 %s 条", sent_count, fail_count)
+            logger.info("样品问题提醒检查完成：发送成功 %s 条，失败待下轮复核重试 %s 条", sent_count, fail_count)
 
     app.timer(SAMPLE_BACKGROUND_REMINDER_INITIAL_DELAY_SECONDS, check_sample_issue_reminders, once=True)
     app.timer(SAMPLE_BACKGROUND_REMINDER_INTERVAL_SECONDS, check_sample_issue_reminders)

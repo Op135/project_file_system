@@ -485,6 +485,7 @@ async def _set_retry_failure(
     recipient: str,
     content: str,
     message: str,
+    message_type: str,
 ) -> int:
     async with _wecom_file_lock:
         state = _read_retry_state_locked()
@@ -497,6 +498,8 @@ async def _set_retry_failure(
             "recipient": recipient,
             "content": content,
             "content_hash": _content_hash(content),
+            "message_type": message_type,
+            "created_at": item.get("created_at") or _now_str(),
             "attempts": attempts,
             "last_error": message,
             "last_attempt_at": _now_str(),
@@ -657,6 +660,7 @@ async def send_wecom_text_message(
                 recipient=recipient,
                 content=content,
                 message=message,
+                message_type=message_type,
             )
             if alert_on_max_failure and attempts >= WECOM_MAX_RETRY_COUNT:
                 await _send_retry_failure_alert(module, business_key, recipient, content, attempts, message)
@@ -701,7 +705,15 @@ async def _send_retry_failure_alert(
 
 async def retry_failed_wecom_messages() -> tuple[int, int]:
     state = await _read_retry_state()
-    retry_items = [(key, item) for key, item in state.items() if int(item.get("attempts", 0)) < WECOM_MAX_RETRY_COUNT]
+    stale_reminder_keys = [
+        key for key, item in state.items() if _is_state_dependent_reminder_retry(item)
+    ]
+    retry_items = [
+        (key, item)
+        for key, item in state.items()
+        if key not in stale_reminder_keys
+        and int(item.get("attempts", 0)) < WECOM_MAX_RETRY_COUNT
+    ]
     success_count = 0
     fail_count = 0
 
@@ -720,4 +732,42 @@ async def retry_failed_wecom_messages() -> tuple[int, int]:
         else:
             fail_count += 1
 
+    if stale_reminder_keys:
+        async with _wecom_file_lock:
+            latest_state = _read_retry_state_locked()
+            removed_count = 0
+            for key in stale_reminder_keys:
+                if key in latest_state:
+                    del latest_state[key]
+                    removed_count += 1
+            if removed_count:
+                _write_retry_state_locked(latest_state)
+                logger.info("已丢弃 %s 条需要按最新业务状态重算的历史提醒", removed_count)
+
     return success_count, fail_count
+
+
+def _is_state_dependent_reminder_retry(item: object) -> bool:
+    """识别不能脱离最新业务状态直接重放的提醒。"""
+    if not isinstance(item, dict):
+        return False
+    message_type = str(item.get("message_type", "")).strip()
+    if message_type in {
+        "overdue_target_missing",
+        "preventive_reminder",
+        "sample_issue_reminder",
+        "sample_issue_incomplete_reminder",
+    }:
+        return True
+
+    # 兼容修复上线前没有保存 message_type 的历史重试记录。
+    module = str(item.get("module", "")).strip()
+    business_key = str(item.get("business_key", ""))
+    content = str(item.get("content", ""))
+    if module == "sample_order_dashboard" and ":overdue:" in business_key:
+        return True
+    if module == "error_management" and content.startswith("生产异常纠正预防措施提醒"):
+        return True
+    return module == "sample_issue_collection" and content.startswith(
+        ("样品问题纠正预防措施提醒", "样品问题对策填写提醒")
+    )

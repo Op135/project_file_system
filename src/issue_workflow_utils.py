@@ -47,6 +47,31 @@ def merge_wecom_recipients(*recipient_values: str) -> str:
     return "|".join(recipients)
 
 
+def reminder_claim_is_available(
+    entry: object,
+    *,
+    now: datetime | None = None,
+    retry_after_seconds: int = 600,
+) -> bool:
+    """判断一条提醒发送标记是否可以重新认领。
+
+    已成功发送的标记永久去重；正在发送或上次发送失败的标记超过冷却时间后允许重新认领，
+    让业务扫描在最新记录上重试，而不是把可能已经失效的正文交给公共消息队列。
+    """
+    if not isinstance(entry, dict):
+        return True
+    state = str(entry.get("state", "")).strip()
+    if state == "sent":
+        return False
+    if state not in {"sending", "failed_retrying"}:
+        return False
+    try:
+        marked_at = datetime.strptime(str(entry.get("time", "")), "%Y-%m-%d %H:%M:%S")
+    except ValueError:
+        return True
+    return ((now or datetime.now()) - marked_at).total_seconds() > retry_after_seconds
+
+
 def unique_nonempty_texts(values) -> list[str]:
     """清洗文本列表，去空并保留第一次出现的顺序。"""
     result = []

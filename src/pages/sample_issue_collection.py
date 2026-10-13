@@ -27,6 +27,7 @@ from ..issue_workflow_utils import (
     is_current_responsible,
     merge_wecom_recipients,
     parse_date,
+    reminder_claim_is_available,
     schedule_background_task,
     split_people,
     unique_nonempty_texts,
@@ -95,7 +96,6 @@ from ..wecom_service import (
     find_unknown_wecom_names,
     load_wecom_contacts_cache,
     resolve_wecom_recipients,
-    retry_failed_wecom_messages,
     send_wecom_text_message,
 )
 from ..workflow_notifications import (
@@ -1400,7 +1400,6 @@ async def format_people_for_wecom(value: str) -> str:
 
 async def check_and_send_sample_issue_reminders(show_result: bool = False) -> tuple[int, int]:
     """检查未关闭样品问题并发送纠正预防措施预计完成日期提醒。"""
-    retry_success_count, retry_fail_count = await retry_failed_wecom_messages()
     all_issues = db_storage.get_item(SAMPLE_ISSUE_DATA_KEY, {})
     today = datetime.now().date()
     today_key = today.strftime("%Y-%m-%d")
@@ -1428,7 +1427,8 @@ async def check_and_send_sample_issue_reminders(show_result: bool = False) -> tu
                 continue
 
             marker = f"{issue_data['issue_id']}:{rule['key']}:{today_key}"
-            if marker in issue_data.get("reminder_log", {}):
+            existing_marker = issue_data.get("reminder_log", {}).get(marker)
+            if not reminder_claim_is_available(existing_marker):
                 continue
 
             claim_id = uuid.uuid4().hex
@@ -1455,13 +1455,7 @@ async def check_and_send_sample_issue_reminders(show_result: bool = False) -> tu
 
                 reminder_log = stored.setdefault("reminder_log", {})
                 existing_marker = reminder_log.get(marker)
-                can_claim = marker not in reminder_log
-                if existing_marker and existing_marker.get("state") == "sending":
-                    try:
-                        sending_time = datetime.strptime(existing_marker.get("time", ""), "%Y-%m-%d %H:%M:%S")
-                        can_claim = datetime.now() - sending_time > timedelta(minutes=10)
-                    except ValueError:
-                        can_claim = True
+                can_claim = reminder_claim_is_available(existing_marker)
                 if not can_claim:
                     return "already_claimed", current
 
@@ -1501,6 +1495,8 @@ async def check_and_send_sample_issue_reminders(show_result: bool = False) -> tu
                 business_key=f"{fresh_issue.get('issue_id')}:{rule['key']}",
                 message_type="sample_issue_reminder",
                 link_url=get_sample_issue_collection_url(fresh_issue.get("issue_id", "")),
+                retry_tracking=False,
+                alert_on_max_failure=False,
             )
             if success:
                 sent_count += 1
@@ -1550,7 +1546,8 @@ async def check_and_send_sample_issue_reminders(show_result: bool = False) -> tu
                 continue
 
             marker = f"{issue_data['issue_id']}:incomplete:{rule['key']}:{today_key}"
-            if marker in issue_data.get("reminder_log", {}):
+            existing_marker = issue_data.get("reminder_log", {}).get(marker)
+            if not reminder_claim_is_available(existing_marker):
                 continue
 
             claim_id = uuid.uuid4().hex
@@ -1576,13 +1573,7 @@ async def check_and_send_sample_issue_reminders(show_result: bool = False) -> tu
 
                 reminder_log = stored.setdefault("reminder_log", {})
                 existing_marker = reminder_log.get(marker)
-                can_claim = marker not in reminder_log
-                if existing_marker and existing_marker.get("state") == "sending":
-                    try:
-                        sending_time = datetime.strptime(existing_marker.get("time", ""), "%Y-%m-%d %H:%M:%S")
-                        can_claim = datetime.now() - sending_time > timedelta(minutes=10)
-                    except ValueError:
-                        can_claim = True
+                can_claim = reminder_claim_is_available(existing_marker)
                 if not can_claim:
                     return "already_claimed", current
 
@@ -1622,6 +1613,8 @@ async def check_and_send_sample_issue_reminders(show_result: bool = False) -> tu
                 business_key=f"{fresh_issue.get('issue_id')}:incomplete:{rule['key']}",
                 message_type="sample_issue_incomplete_reminder",
                 link_url=get_sample_issue_collection_url(fresh_issue.get("issue_id", "")),
+                retry_tracking=False,
+                alert_on_max_failure=False,
             )
             if success:
                 sent_count += 1
@@ -1654,7 +1647,7 @@ async def check_and_send_sample_issue_reminders(show_result: bool = False) -> tu
 
     if show_result:
         ui.notify(
-            f"提醒检查完成：新发成功 {sent_count} 条，失败进入重试 {fail_count} 条；历史重试成功 {retry_success_count} 条，仍失败 {retry_fail_count} 条",
+            f"提醒检查完成：发送成功 {sent_count} 条，失败待下轮复核重试 {fail_count} 条",
             type="info",
             position="bottom",
         )

@@ -1,6 +1,8 @@
 """卡片发送协议回归；模拟 HTTP、令牌和日志，不触达企业微信。"""
 
 import unittest
+import tempfile
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -68,3 +70,47 @@ class WecomCardTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(body["msgtype"], "text")
         self.assertEqual(body["text"], {"content": "样品问题提醒"})
         self.assertNotIn("textcard", body)
+
+    async def test_public_retry_discards_state_dependent_reminders(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            retry_path = Path(temp_dir) / "wecom_retry_state.json"
+            reminder_content = "【样品单逾期未填新交期提醒】\n样品单号：Y001"
+            event_content = "样品单延期通知\n样品单号：Y002"
+            reminder_key = wecom._retry_key(
+                "sample_order_dashboard",
+                "record-1:overdue:2026-10-13:2026-10-01:",
+                "leader",
+                reminder_content,
+            )
+            event_key = wecom._retry_key(
+                "sample_order_dashboard",
+                "record-2:extension:extension-1",
+                "leader",
+                event_content,
+            )
+            state = {
+                reminder_key: {
+                    "module": "sample_order_dashboard",
+                    "business_key": "record-1:overdue:2026-10-13:2026-10-01:",
+                    "recipient": "leader",
+                    "content": reminder_content,
+                    "attempts": wecom.WECOM_MAX_RETRY_COUNT,
+                    "message_type": "overdue_target_missing",
+                },
+                event_key: {
+                    "module": "sample_order_dashboard",
+                    "business_key": "record-2:extension:extension-1",
+                    "recipient": "leader",
+                    "content": event_content,
+                    "attempts": 1,
+                    "message_type": "extension_created",
+                },
+            }
+            with patch.object(wecom, "WECOM_RETRY_STATE_PATH", retry_path):
+                await wecom._write_retry_state(state)
+                success_count, fail_count = await wecom.retry_failed_wecom_messages()
+                remaining = await wecom._read_retry_state()
+
+            self.assertEqual((success_count, fail_count), (1, 0))
+            self.assertNotIn(reminder_key, remaining)
+            self.assertNotIn(event_key, remaining)

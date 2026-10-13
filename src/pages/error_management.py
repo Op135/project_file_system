@@ -53,6 +53,7 @@ from ..issue_workflow_utils import (
     is_current_responsible,
     merge_wecom_recipients,
     parse_date,
+    reminder_claim_is_available,
     schedule_background_task,
     split_people,
     unique_nonempty_texts,
@@ -83,7 +84,6 @@ from ..utils import (
 from ..wecom_service import (
     find_unknown_wecom_names,
     resolve_wecom_recipients,
-    retry_failed_wecom_messages,
     send_wecom_text_message,
 )
 
@@ -1207,10 +1207,9 @@ async def check_and_send_error_reminders(show_result: bool = False) -> tuple[int
     唯一 claim_id，只有成功认领的任务才可以发送；因此多人打开页面或多个服务实例同时检查时，
     同一条提醒也只会由一个任务发送。卡在 sending 超过 10 分钟的标记允许重新认领。
 
-    企业微信发送失败会先进入统一发送日志，后续由 wecom_service 重试；这里再把本次结果写回
-    异常单 reminder_log，方便审计。
+    企业微信发送失败后保留业务认领记录；后续扫描会先复核最新措施状态，再重新认领发送，
+    不把可能已经失效的提醒正文交给公共消息重试队列。
     """
-    retry_success_count, retry_fail_count = await retry_failed_wecom_messages()
     all_errors = db_storage.get_item(ERROR_DATA_KEY, {})
     today = datetime.now().date()
     today_key = today.strftime("%Y-%m-%d")
@@ -1237,7 +1236,8 @@ async def check_and_send_error_reminders(show_result: bool = False) -> tuple[int
                     continue
 
                 marker = f"{action_id}:{rule['key']}:{today_key}"
-                if marker in error_data.get("reminder_log", {}):
+                existing_marker = error_data.get("reminder_log", {}).get(marker)
+                if not reminder_claim_is_available(existing_marker):
                     continue
 
                 # claim_id 用于确认发送结果仍属于当前认领者，防止超时重认领后旧任务覆盖新任务状态。
@@ -1257,13 +1257,7 @@ async def check_and_send_error_reminders(show_result: bool = False) -> tuple[int
 
                     reminder_log = current.setdefault("reminder_log", {})
                     existing_marker = reminder_log.get(marker)
-                    can_claim = marker not in reminder_log
-                    if existing_marker and existing_marker.get("state") == "sending":
-                        try:
-                            sending_time = datetime.strptime(existing_marker.get("time", ""), "%Y-%m-%d %H:%M:%S")
-                            can_claim = datetime.now() - sending_time > timedelta(minutes=10)
-                        except ValueError:
-                            can_claim = True
+                    can_claim = reminder_claim_is_available(existing_marker)
                     if not can_claim:
                         return "already_claimed", current
                     reminder_log[marker] = {
@@ -1301,6 +1295,8 @@ async def check_and_send_error_reminders(show_result: bool = False) -> tuple[int
                     business_key=f"{fresh_error.get('error_id')}:{get_item_id(fresh_action)}:{rule['key']}",
                     message_type="preventive_reminder",
                     link_url=get_error_management_url(fresh_error.get("error_id", "")),
+                    retry_tracking=False,
+                    alert_on_max_failure=False,
                 )
                 if success:
                     sent_count += 1
@@ -1332,7 +1328,7 @@ async def check_and_send_error_reminders(show_result: bool = False) -> tuple[int
 
     if show_result:
         ui.notify(
-            f"提醒检查完成：新发成功 {sent_count} 条，失败进入重试 {fail_count} 条；历史重试成功 {retry_success_count} 条，仍失败 {retry_fail_count} 条",
+            f"提醒检查完成：发送成功 {sent_count} 条，失败待下轮复核重试 {fail_count} 条",
             type="info",
             position="bottom",
         )

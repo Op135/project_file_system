@@ -39,6 +39,7 @@
 | `overview_admin_maintenance.py` | 固定 admin 账户按职能汇总当前项目各版本待定概述，并复用常规状态接口批量纠正 |
 | `notification_recipients.py` | 固定通知权限到企业微信收件人的解析 |
 | `workflow_notifications.py` | 审批完成额外抄送岗位解析、收件人去重和统一企业微信卡片发送 |
+| `wecom_service.py` | 企业微信底层发送与公共失败重试；公共队列仅重放不会随业务状态失效的事件通知，并清理历史遗留的状态型提醒 |
 | `*_config.py` | 对应根目录 JSON 的校验、默认值和业务配置读取 |
 | `pages/` | NiceGUI 路由、页面组合和业务交互 |
 | `modules/ecn/` | ECN 数据模型、事务、协作编辑、流程服务与页面组件 |

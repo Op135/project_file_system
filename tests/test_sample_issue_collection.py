@@ -1437,7 +1437,6 @@ class SampleIssueCollectionConcurrencyTests(unittest.IsolatedAsyncioTestCase):
                             "SAMPLE_REMINDER_RULES",
                             [{"key": "due_today", "label": "预计完成日期当天", "days_until_due": 0}],
                         ),
-                        patch.object(sample_issue, "retry_failed_wecom_messages", AsyncMock(return_value=(0, 0))),
                         patch.object(sample_issue, "format_people_for_wecom", AsyncMock(return_value="lisi")),
                         patch.object(sample_issue, "send_wecom_text_message", send_mock),
                     ):
@@ -1447,6 +1446,9 @@ class SampleIssueCollectionConcurrencyTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual((sent_count, fail_count), (1, 0))
                     self.assertEqual((repeated_sent_count, repeated_fail_count), (0, 0))
                     self.assertEqual(send_mock.await_count, 1)
+                    awaited_send = send_mock.await_args
+                    assert awaited_send is not None
+                    self.assertFalse(awaited_send.kwargs["retry_tracking"])
                     stored = isolated_db.get_deep_item([sample_issue.SAMPLE_ISSUE_DATA_KEY, issue_id])
                     self.assertEqual(len(stored["reminder_log"]), 1)
                     reminder_entry = next(iter(stored["reminder_log"].values()))
@@ -1514,7 +1516,6 @@ class SampleIssueCollectionConcurrencyTests(unittest.IsolatedAsyncioTestCase):
                             "SAMPLE_INCOMPLETE_REMINDER_RULES",
                             [{"key": "record_day", "label": "问题录入当天未完善对策", "days_since_record": 0}],
                         ),
-                        patch.object(sample_issue, "retry_failed_wecom_messages", AsyncMock(return_value=(0, 0))),
                         patch.object(sample_issue, "format_people_for_wecom", AsyncMock(return_value="lisi")),
                         patch.object(sample_issue, "send_wecom_text_message", send_mock),
                     ):
@@ -1526,6 +1527,7 @@ class SampleIssueCollectionConcurrencyTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(send_mock.await_count, 1)
                     _, _, kwargs = send_mock.mock_calls[0]
                     self.assertEqual(kwargs["message_type"], "sample_issue_incomplete_reminder")
+                    self.assertFalse(kwargs["retry_tracking"])
                     self.assertIn("待完善字段：样品临时对策、纠正预防措施、纠正预防措施预计完成日期", send_mock.call_args.args[0])
                     stored = isolated_db.get_deep_item([sample_issue.SAMPLE_ISSUE_DATA_KEY, issue_id])
                     self.assertEqual(len(stored["reminder_log"]), 1)

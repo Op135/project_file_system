@@ -1500,6 +1500,11 @@ class SampleOrderNotificationTests(unittest.IsolatedAsyncioTestCase):
             state.update(value)
             return True
 
+        async def inspect_latest(_namespace, _record_id, update_function):
+            result = update_function(copy.deepcopy(record))
+            self.assertIs(result, db_storage.ATOMIC_NO_UPDATE)
+            return True
+
         send_message = AsyncMock(return_value=(True, "已发送"))
         with (
             patch.object(
@@ -1508,6 +1513,11 @@ class SampleOrderNotificationTests(unittest.IsolatedAsyncioTestCase):
                 new=AsyncMock(),
             ),
             patch.object(dashboard, "get_all_sample_order_records", return_value={"record-1": record}),
+            patch.object(
+                db_storage,
+                "atomic_json_entity_update",
+                side_effect=inspect_latest,
+            ),
             patch.object(db_storage, "get_fresh_item", side_effect=get_state),
             patch.object(db_storage, "set_item", side_effect=save_state),
             patch.object(
@@ -1537,10 +1547,69 @@ class SampleOrderNotificationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(next_day_result, (1, 0))
         self.assertEqual(send_message.await_count, 2)
         sent_call = send_message.await_args_list[0]
+        self.assertFalse(sent_call.kwargs["retry_tracking"])
         self.assertEqual(
             set(sent_call.args[1].split("|")),
             {"leader_userid", "engineer_userid"},
         )
+
+    async def test_overdue_reminder_rechecks_latest_database_record_before_sending(self):
+        stale_record = make_record()
+        stale_record["basic_info"]["planned_delivery_date"] = "2026-07-19"
+        completed_record = copy.deepcopy(stale_record)
+        completed_record["execution"]["actual_delivery_date"] = "2026-07-20"
+        stale_extended_record = copy.deepcopy(stale_record)
+        stale_extended_record["record_id"] = "record-2"
+        extended_record = copy.deepcopy(stale_extended_record)
+        extended_record["extensions"] = [
+            dashboard.normalize_extension(
+                {
+                    "extension_id": "extension-1",
+                    "target_date": "2026-07-30",
+                    "reason": "等待客户确认",
+                }
+            )
+        ]
+        latest_records = {
+            "record-1": completed_record,
+            "record-2": extended_record,
+        }
+
+        async def inspect_latest(_namespace, record_id, update_function):
+            result = update_function(copy.deepcopy(latest_records[record_id]))
+            self.assertIs(result, db_storage.ATOMIC_NO_UPDATE)
+            return True
+
+        send_message = AsyncMock(return_value=(True, "已发送"))
+        with (
+            patch.object(db_storage, "refresh_json_entities", new=AsyncMock()),
+            patch.object(
+                dashboard,
+                "get_all_sample_order_records",
+                return_value={
+                    "record-1": stale_record,
+                    "record-2": stale_extended_record,
+                },
+            ),
+            patch.object(
+                db_storage,
+                "atomic_json_entity_update",
+                side_effect=inspect_latest,
+            ),
+            patch.object(db_storage, "get_fresh_item", new=AsyncMock(return_value={})),
+            patch.object(
+                dashboard,
+                "resolve_permission_wecom_recipients",
+                new=AsyncMock(return_value="leader_userid"),
+            ),
+            patch.object(dashboard, "send_wecom_text_message", new=send_message),
+        ):
+            result = await dashboard.check_and_send_sample_order_overdue_reminders(
+                date(2026, 7, 20)
+            )
+
+        self.assertEqual(result, (0, 0))
+        send_message.assert_not_awaited()
 
     async def test_project_engineer_extension_notifies_applicant_and_sample_leader(self):
         record = make_record()
