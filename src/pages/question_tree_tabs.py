@@ -459,7 +459,7 @@ def print_list_page():
         return
 
     # --- 调用全局活跃跟踪组件 ---
-    setup_global_activity_tracking()
+    setup_global_activity_tracking("print_list")
 
     ui.add_head_html("""
         <style>
@@ -638,7 +638,7 @@ def question_tree_page():
     selected_path.clear()
     active_ancestors.clear()
 
-    setup_global_activity_tracking()
+    setup_global_activity_tracking("question_tree_tabs")
 
     current_user = stored_current_user
     user_prefs = app.storage.general.get("user_preferences", {}).get(current_user, {})

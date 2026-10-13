@@ -87,7 +87,7 @@ def can_view_all_project_states(
 @ui.page("/project_table")
 def project_table_page():
     # --- 调用全局活跃跟踪组件 ---
-    setup_global_activity_tracking()
+    setup_global_activity_tracking("project_table")
 
     # 向页面的 <head> 部分添加自定义的 HTML 代码。这通常用于添加自定义的 CSS 样式、JavaScript 代码或元数据（如 <meta> 标签）
     ui.add_head_html("""

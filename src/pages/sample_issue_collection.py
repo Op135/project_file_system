@@ -2245,7 +2245,7 @@ async def delete_sample_issue_record(issue_id: str, role: str, username: str = "
 @ui.page("/sample_issue_collection")
 async def sample_issue_collection_page(issue_id: str = "", view: str = ""):
     """构建样品问题收集页面。"""
-    setup_global_activity_tracking()
+    setup_global_activity_tracking("sample_issue_collection")
     app.storage.client.setdefault("key_state", {})
     ui.keyboard(on_key=handle_key)
 

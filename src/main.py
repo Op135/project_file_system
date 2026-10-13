@@ -480,8 +480,8 @@ if __name__ in {"__main__", "__mp_main__"}:
     # ==========================================================
     # 本地开发时保持为 False；部署到服务器时改为 True。
     # 只需修改这一行，不需要在 ui.run() 内反复注释/取消注释多个参数。
-    # PRODUCTION_MODE = False
-    PRODUCTION_MODE = True
+    PRODUCTION_MODE = False
+    # PRODUCTION_MODE = True
     # 默认启用热重载；需要临时关闭时可显式设置 NICEGUI_RELOAD=false。
     DEVELOPMENT_RELOAD = os.environ.get("NICEGUI_RELOAD", "true").strip().lower() not in {
         "0",

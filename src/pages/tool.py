@@ -48,7 +48,7 @@ def tool_page():
     # dialog = ui.dialog().props("persistent").classes("")
 
     # --- 调用全局活跃跟踪组件 ---
-    setup_global_activity_tracking()
+    setup_global_activity_tracking("tool")
 
     # 获取用户信息
     current_user = stored_current_user

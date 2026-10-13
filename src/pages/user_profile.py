@@ -33,7 +33,7 @@ def user_profile_page():
         return
 
     # --- 调用全局活跃跟踪组件 ---
-    setup_global_activity_tracking()
+    setup_global_activity_tracking("profile")
 
     def pick_file(uploader):
         # 在上传新文件前，先清空upload列表，否则后续删除文件后，不能在重新插入

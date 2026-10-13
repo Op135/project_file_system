@@ -321,7 +321,7 @@ def information_page():
         return
 
     # --- 调用全局活跃跟踪组件 ---
-    setup_global_activity_tracking()
+    setup_global_activity_tracking("information")
     ui.add_css("""
         @keyframes overview-warning-shake {
             0%, 100% { transform: translateX(0); }

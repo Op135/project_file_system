@@ -1148,7 +1148,7 @@ async def update_tag_request_status(
 
 @ui.page("/design_knowledge")
 def design_knowledge_page():
-    setup_global_activity_tracking()
+    setup_global_activity_tracking("design_knowledge")
     app.storage.client.setdefault("key_state", {})
     ui.keyboard(on_key=handle_key, ignore=[])
     ui.add_head_html("""

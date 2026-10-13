@@ -42,7 +42,7 @@ def test_summary_report(project_name: str = ""):
         return
 
     # --- 调用全局活跃跟踪组件 ---
-    setup_global_activity_tracking()
+    setup_global_activity_tracking("test_summary")
 
     # 运行时初始化水印：透明度调至 0.2，印章缩小至 0.8倍，画布变小使得印章平铺更密集
     watermark_bg = generate_watermark_css(opacity=0.1, scale=1.2, spacing_width=500, spacing_height=300)

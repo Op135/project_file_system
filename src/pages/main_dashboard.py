@@ -1,8 +1,6 @@
 # -*- encoding: utf-8 -*-
 import logging
-import time
-from datetime import datetime, timedelta
-from typing import Any, Dict  # 引入类型提示，便于静态类型检查
+from datetime import timedelta
 
 from nicegui import app, ui
 
@@ -32,11 +30,12 @@ from ..project_todo_access import (
 from ..question_tree_access import can_view_question_tree
 from ..statistics_access import can_view_statistics
 from ..utils import (
+    build_online_users_tooltip,
     get_cache_busted_path,
     get_project_engineer_project_list_dic,
     logout,
-    online_users,
     setup_global_activity_tracking,
+    summarize_online_users,
     sync_current_user_role,
 )
 from .design_knowledge import (
@@ -70,7 +69,7 @@ logger = logging.getLogger(__name__)
 @ui.page("/main")
 def main_page():
     # --- 调用全局活跃跟踪组件 ---
-    setup_global_activity_tracking()
+    setup_global_activity_tracking("main")
     ui.add_head_html("""
         <style>
             /* 卡片位置在权限过滤后按数量生成，保留各断点的卡片宽度。 */
@@ -159,56 +158,12 @@ def main_page():
     """)
     online_data = {"online_count": "", "online_users": [], "tooltip_text": ""}
 
-    # --- 刷新在线人数的逻辑，基于绝对时间戳过滤 ---
+    # --- 刷新在线人数与各用户最近实际操作的页面模块 ---
     def refresh_online_num():
-        unique_users_map: Dict[str, Any] = {}
-        # 定义在线心跳阈值：1分钟（60 秒）
-        ONLINE_THRESHOLD_SEC = 1 * 60
-        current_time = time.time()
-
-        for user_data in online_users.values():
-            username = user_data.get("username", "未知用户")
-            # last_seen_ts 是页面心跳，表示页面仍在连接；last_activity_ts 是最后一次物理操作。
-            last_seen_ts = user_data.get("last_seen_ts", user_data.get("last_activity_ts", 0))
-            last_activity_ts = user_data.get("last_activity_ts", 0)
-
-            idle_time_sec = current_time - last_seen_ts
-
-            if idle_time_sec < ONLINE_THRESHOLD_SEC:
-                if username not in unique_users_map:
-                    unique_users_map[username] = dict(user_data)
-                    unique_users_map[username]["last_seen_ts"] = last_seen_ts
-                    unique_users_map[username]["last_activity_ts"] = last_activity_ts
-                else:
-                    # 多标签页情况下，在线心跳和最后操作分别取最新时间，避免显示在多个标签页之间跳动。
-                    unique_users_map[username]["last_seen_ts"] = max(
-                        unique_users_map[username].get("last_seen_ts", 0),
-                        last_seen_ts,
-                    )
-                    unique_users_map[username]["last_activity_ts"] = max(
-                        unique_users_map[username].get("last_activity_ts", 0),
-                        last_activity_ts,
-                    )
-
-        online_data["online_count"] = str(len(unique_users_map))
-
-        tooltip_text = "当前在线用户:<br>"
-        for user in unique_users_map.values():
-            u_name = user.get("username", "未知用户")
-            u_ts = user.get("last_activity_ts", 0)
-
-            # 格式化时间
-            if u_ts > 0:
-                u_time_str = datetime.fromtimestamp(u_ts).strftime("%H:%M:%S")
-            else:
-                u_time_str = "未知时间"
-
-            tooltip_text += f"{u_name} - 最后操作: {u_time_str}<br>"
-
-        if not unique_users_map:
-            tooltip_text = "当前无在线用户"
-
-        online_data["tooltip_text"] = tooltip_text
+        summaries = summarize_online_users(threshold_seconds=60.0)
+        online_data["online_count"] = str(len(summaries))
+        online_data["online_users"] = summaries
+        online_data["tooltip_text"] = build_online_users_tooltip(summaries)
 
     # 每 3 秒刷新一次 UI 显示
     ui.timer(3.0, refresh_online_num)

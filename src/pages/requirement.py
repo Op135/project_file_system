@@ -238,7 +238,7 @@ async def requirement_page(
     if not isinstance(stored_current_user, str) or not stored_current_user:
         ui.navigate.to("/login")  # 如果未登录，跳转到登录页
         return
-    setup_global_activity_tracking()
+    setup_global_activity_tracking("requirement")
     current_user = stored_current_user
     current_role = sync_current_user_role()
     is_requirement_mode = type in {"", "requirement"}

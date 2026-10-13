@@ -88,7 +88,7 @@ from ..modules.ecn.special_tasks_ui import open_special_tasks_dialog
 @ui.page("/ecn_management")
 async def ecn_management_page():
     # --- 调用全局活跃跟踪组件 ---
-    setup_global_activity_tracking()
+    setup_global_activity_tracking("ecn_management")
 
     ui.add_head_html("""
         <style>

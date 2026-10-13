@@ -1369,7 +1369,7 @@ def save_uploaded_evidence_file(error_id: str, action_id: str, original_filename
 async def error_management_page(error_id: str = "", view: str = ""):
     """构建异常管理页面；error_id 来自企业微信直达链接，可在登录后自动打开对应异常单。"""
     # --- 调用全局活跃跟踪组件 ---
-    setup_global_activity_tracking()
+    setup_global_activity_tracking("error_management")
 
     ui.add_head_html("""
         <style>

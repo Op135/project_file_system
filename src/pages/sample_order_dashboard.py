@@ -2325,7 +2325,7 @@ def build_sample_order_delay_reason_trend_chart(statistics: dict[str, Any]) -> d
 @ui.page("/sample_order_dashboard")
 async def sample_order_dashboard_page(record_id: str = "", view: str = "") -> None:
     """构建样品单执行看板页面。"""
-    setup_global_activity_tracking()
+    setup_global_activity_tracking("sample_order_dashboard")
     ui.add_head_html(
         """
         <style>

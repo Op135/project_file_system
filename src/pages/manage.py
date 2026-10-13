@@ -75,7 +75,7 @@ def manage_page():
         return
 
     # --- 调用全局活跃跟踪组件 ---
-    setup_global_activity_tracking()
+    setup_global_activity_tracking("manage")
 
     # 从全局存储中获取用户当前的头像设置
     # (在 main.py 中定义 "user_preferences")

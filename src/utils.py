@@ -13,7 +13,9 @@ import ssl
 import time
 import uuid
 from datetime import datetime
+from html import escape
 from pathlib import Path
+from typing import TypedDict
 from urllib.parse import urlencode
 
 import httpx
@@ -70,8 +72,49 @@ def get_overview_latest_responsible(project_name: str, label: str, chip_data: di
         return latest_user
     return str((chip_data or {}).get("creator") or "待定负责人")
 
-# 内存中的全局字典：{ client.id : { 'username': str, 'login_time': str, 'ip': str } }
-online_users = {}
+PAGE_MODULE_LABELS = {
+    "main": "首页",
+    "project_table": "项目资料",
+    "information": "项目待办项",
+    "tool": "分析工具",
+    "question_tree_tabs": "需求项结构",
+    "print_list": "需求项打印",
+    "statistics": "统计信息",
+    "ecn_management": "工程变更",
+    "error_management": "批量产品问题跟进",
+    "sample_issue_collection": "样品问题跟进",
+    "sample_order_dashboard": "样品订单看板",
+    "design_knowledge": "设计知识库",
+    "requirement": "项目需求与概述",
+    "test_summary": "检测概述报告",
+    "manage": "系统管理",
+    "profile": "用户信息",
+}
+
+
+class OnlineUserRecord(TypedDict, total=False):
+    username: str
+    login_time: str
+    ip: str
+    last_seen_ts: float
+    last_activity_ts: float
+    page_key: str
+    page_label: str
+    page_entered_ts: float
+
+
+class OnlineUserSummary(TypedDict):
+    username: str
+    last_seen_ts: float
+    last_activity_ts: float
+    current_page: str
+    open_pages: list[str]
+
+
+# 内存中的全局字典，以 NiceGUI client.id 区分同一用户打开的不同标签页。
+online_users: dict[str, OnlineUserRecord] = {}
+# 页面元数据与在线记录分开保存，以便 Socket 短暂断线后恢复；客户端销毁时同步清理。
+_client_page_modules: dict[str, tuple[str, str, float]] = {}
 
 CHINESE_DATE_LOCALE = {
     "days": ["星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"],
@@ -103,23 +146,100 @@ def apply_chinese_date_locale(date_element):
     return date_element
 
 
-def setup_global_activity_tracking():
+def _timestamp(value: object) -> float:
+    return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else 0.0
+
+
+def summarize_online_users(current_time: float | None = None, threshold_seconds: float = 60.0) -> list[OnlineUserSummary]:
+    """按用户名合并在线标签页，并以最近操作的标签页作为当前模块。"""
+    now = time.time() if current_time is None else current_time
+    active_by_username: dict[str, list[OnlineUserRecord]] = {}
+
+    for user_data in online_users.values():
+        last_seen_ts = _timestamp(user_data.get("last_seen_ts", user_data.get("last_activity_ts", 0.0)))
+        if now - last_seen_ts >= threshold_seconds:
+            continue
+        raw_username = user_data.get("username", "未知用户")
+        username = raw_username if isinstance(raw_username, str) and raw_username else "未知用户"
+        active_by_username.setdefault(username, []).append(user_data)
+
+    summaries: list[OnlineUserSummary] = []
+    for username, records in active_by_username.items():
+        latest_record = max(
+            records,
+            key=lambda record: (
+                _timestamp(record.get("last_activity_ts")),
+                _timestamp(record.get("page_entered_ts")),
+            ),
+        )
+        page_activity: dict[str, float] = {}
+        for record in records:
+            raw_page_label = record.get("page_label", "其他页面")
+            page_label = raw_page_label if isinstance(raw_page_label, str) and raw_page_label else "其他页面"
+            page_activity[page_label] = max(
+                page_activity.get(page_label, 0.0),
+                _timestamp(record.get("last_activity_ts")),
+            )
+        raw_current_page = latest_record.get("page_label", "其他页面")
+        current_page = raw_current_page if isinstance(raw_current_page, str) and raw_current_page else "其他页面"
+        summaries.append(
+            {
+                "username": username,
+                "last_seen_ts": max(_timestamp(record.get("last_seen_ts")) for record in records),
+                "last_activity_ts": max(_timestamp(record.get("last_activity_ts")) for record in records),
+                "current_page": current_page,
+                "open_pages": sorted(page_activity, key=lambda label: (-page_activity[label], label)),
+            }
+        )
+
+    return sorted(summaries, key=lambda user: (-user["last_activity_ts"], user["username"]))
+
+
+def build_online_users_tooltip(summaries: list[OnlineUserSummary]) -> str:
+    """生成在线用户 Tooltip；所有动态文本均转义后再交给 ui.html。"""
+    if not summaries:
+        return "当前无在线用户"
+
+    lines = ["当前在线用户:"]
+    for user in summaries:
+        activity_time = (
+            datetime.fromtimestamp(user["last_activity_ts"]).strftime("%H:%M:%S")
+            if user["last_activity_ts"] > 0
+            else "未知时间"
+        )
+        username = escape(user["username"])
+        current_page = escape(user["current_page"])
+        line = f"{username} — {current_page} — 最后操作: {activity_time}"
+        other_pages = [page for page in user["open_pages"] if page != user["current_page"]]
+        if other_pages:
+            open_pages = "、".join(escape(page) for page in other_pages)
+            line += f"；同时打开: {open_pages}"
+        lines.append(line)
+    return "<br>".join(lines)
+
+
+def setup_global_activity_tracking(page_key: str):
     """注入全局前端活跃监听与心跳上报"""
     client = None
-    client_id = None
+    client_id: str | None = None
     username = "访客"
     try:
         client = ui.context.client
-        client_id = client.id
+        client_id = str(client.id)
         username = app.storage.user.get("current_user", "访客")
         existing_data = online_users.get(client.id, {})
         now = time.time()
+        page_label = PAGE_MODULE_LABELS.get(page_key, "其他页面")
+        _client_page_modules[client_id] = (page_key, page_label, now)
         online_users[client.id] = {
             "username": username,
             "login_time": existing_data.get("login_time", datetime.now().strftime("%H:%M:%S")),
             "ip": client.ip or existing_data.get("ip", "Unknown"),
             "last_seen_ts": now,
             "last_activity_ts": now,
+            "page_key": page_key,
+            "page_label": page_label,
+            "page_entered_ts": now,
         }
     except Exception:
         pass
@@ -171,7 +291,9 @@ def setup_global_activity_tracking():
     def cleanup_heartbeat() -> None:
         # 同时取消正在等待 JS 响应的回调，避免继续使用已销毁的页面。
         heartbeat_timer.cancel(with_current_invocation=True)
-        online_users.pop(client_id, None)
+        if client_id is not None:
+            online_users.pop(client_id, None)
+            _client_page_modules.pop(client_id, None)
 
     if client is not None:
         client.on_delete(cleanup_heartbeat)
@@ -260,15 +382,29 @@ def handle_connect(client):
         # 注意：app.storage.user 需要在上下文中使用，这里假设已能获取
         username = app.storage.user.get("current_user", "访客")
 
-        # 记录用户信息
+        # 记录用户信息；短暂断线重连时保留页面模块，页面函数不会因此重新执行。
         now = time.time()
-        online_users[client.id] = {
+        existing_data = online_users.get(client.id, {})
+        record: OnlineUserRecord = {
             "username": username,
-            "login_time": datetime.now().strftime("%H:%M:%S"),
-            "ip": client.ip or "Unknown",
+            "login_time": existing_data.get("login_time", datetime.now().strftime("%H:%M:%S")),
+            "ip": client.ip or existing_data.get("ip", "Unknown"),
             "last_seen_ts": now,
             "last_activity_ts": now,  # 一连上就给一个初始的静态绝对时间戳
         }
+        page_module = _client_page_modules.get(str(client.id))
+        existing_page_key = existing_data.get("page_key")
+        existing_page_label = existing_data.get("page_label")
+        existing_page_entered_ts = existing_data.get("page_entered_ts")
+        if page_module is not None:
+            existing_page_key, existing_page_label, existing_page_entered_ts = page_module
+        if isinstance(existing_page_key, str):
+            record["page_key"] = existing_page_key
+        if isinstance(existing_page_label, str):
+            record["page_label"] = existing_page_label
+        if isinstance(existing_page_entered_ts, (int, float)) and not isinstance(existing_page_entered_ts, bool):
+            record["page_entered_ts"] = float(existing_page_entered_ts)
+        online_users[client.id] = record
     except Exception as e:
         print(f"Connection track error: {e}")
 

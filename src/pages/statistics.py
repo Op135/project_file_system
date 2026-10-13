@@ -251,7 +251,7 @@ def statistics_page():
         return
 
     # --- 调用全局活跃跟踪组件 ---
-    setup_global_activity_tracking()
+    setup_global_activity_tracking("statistics")
 
     # 彻底锁死根节点尺寸，强制无滚动。
     # 让 Quasar 计算出的滚动条宽度永远为 0，彻底根除弹窗时的防抖动补偿位移。
