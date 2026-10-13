@@ -11,6 +11,12 @@ from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
+SCHEDULED_WECOM_REMINDER_WINDOW = {
+    "enabled": True,
+    "start": "08:30",
+    "end": "18:30",
+}
+
 
 def schedule_background_task(coro, task_name: str) -> None:
     """让不应阻塞页面交互的协程后台执行，并把异常写入日志。"""
@@ -155,6 +161,11 @@ def is_time_in_window(window: dict, now: datetime | None = None) -> bool:
     if start_time < end_time:
         return start_time <= current_time <= end_time
     return current_time >= start_time or current_time <= end_time
+
+
+def is_scheduled_wecom_reminder_time(now: datetime | None = None) -> bool:
+    """定时企业微信提醒的全局硬时间窗；操作事件通知不调用此限制。"""
+    return is_time_in_window(SCHEDULED_WECOM_REMINDER_WINDOW, now)
 
 
 def is_current_responsible(owner_text: str, current_user: str, current_role: str) -> bool:

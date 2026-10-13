@@ -51,6 +51,7 @@ from ..error_management_config import (
 )
 from ..issue_workflow_utils import (
     is_current_responsible,
+    is_scheduled_wecom_reminder_time,
     merge_wecom_recipients,
     parse_date,
     reminder_claim_is_available,
@@ -1200,7 +1201,11 @@ async def delete_error_record(
     )
 
 
-async def check_and_send_error_reminders(show_result: bool = False) -> tuple[int, int]:
+async def check_and_send_error_reminders(
+    show_result: bool = False,
+    *,
+    enforce_time_window: bool = False,
+) -> tuple[int, int]:
     """检查所有未关闭措施并发送到期提醒。
 
     去重标记格式为 ``措施id:规则key:日期``。发送前先通过原子更新把标记写成 ``sending`` 并附带
@@ -1288,9 +1293,12 @@ async def check_and_send_error_reminders(show_result: bool = False) -> tuple[int
                     f"已通过延期：{get_extension_counts(fresh_action)[0]} 次\n"
                     f"提醒策略：{rule['label']}"
                 )
+                recipients = await format_people_for_wecom(owner)
+                if enforce_time_window and not is_scheduled_wecom_reminder_time():
+                    return sent_count, fail_count
                 success, message = await send_wecom_text_message(
                     content,
-                    await format_people_for_wecom(owner),
+                    recipients,
                     module="error_management",
                     business_key=f"{fresh_error.get('error_id')}:{get_item_id(fresh_action)}:{rule['key']}",
                     message_type="preventive_reminder",

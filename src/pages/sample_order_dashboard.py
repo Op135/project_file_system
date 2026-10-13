@@ -28,7 +28,11 @@ from .. import db_storage
 from ..access_control import can
 from ..config import IMG_DIR, PRESET_AVATARS
 from ..custom_ui import custom_upload
-from ..issue_workflow_utils import merge_wecom_recipients, schedule_background_task
+from ..issue_workflow_utils import (
+    is_scheduled_wecom_reminder_time,
+    merge_wecom_recipients,
+    schedule_background_task,
+)
 from ..notification_recipients import resolve_permission_wecom_recipients
 from ..permission_catalog import (
     SAMPLE_ORDER_AVERAGE_SCORE_VIEW_PERMISSION,
@@ -1231,6 +1235,8 @@ async def _send_sample_order_notifications_in_background(
 
 async def check_and_send_sample_order_overdue_reminders(
     today: Optional[date] = None,
+    *,
+    enforce_time_window: bool = False,
 ) -> tuple[int, int]:
     """提醒当前目标已逾期且尚未填写下一目标日期的样品单责任人。"""
     await db_storage.refresh_json_entities(SAMPLE_ORDER_ENTITY_NAMESPACE)
@@ -1323,6 +1329,8 @@ async def check_and_send_sample_order_overdue_reminders(
             f"当前状态：{metrics.get('alert_message', '')}\n"
             "请进入样品订单看板填写新的目标交期和延期原因。"
         )
+        if enforce_time_window and not is_scheduled_wecom_reminder_time():
+            return sent_count, fail_count
         success, message = await send_wecom_text_message(
             content,
             recipients,

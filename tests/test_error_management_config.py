@@ -88,7 +88,7 @@ class ErrorManagementConfigTests(unittest.TestCase):
 
     def test_time_window_matches_daytime_and_overnight_ranges(self):
         """提醒时间窗口支持普通工作时段、跨午夜时段和关闭限制。"""
-        from src.issue_workflow_utils import is_time_in_window
+        from src.issue_workflow_utils import is_scheduled_wecom_reminder_time, is_time_in_window
 
         daytime_window = {"enabled": True, "start": "08:30", "end": "18:30"}
         overnight_window = {"enabled": True, "start": "22:00", "end": "06:00"}
@@ -100,6 +100,10 @@ class ErrorManagementConfigTests(unittest.TestCase):
         self.assertFalse(is_time_in_window(overnight_window, datetime(2026, 7, 10, 12, 0)))
         self.assertTrue(is_time_in_window({"enabled": False, "start": "08:30", "end": "18:30"}))
         self.assertTrue(is_time_in_window({"enabled": False, "start": "", "end": ""}, datetime(2026, 7, 10, 3, 0)))
+        self.assertFalse(is_scheduled_wecom_reminder_time(datetime(2026, 7, 10, 8, 29, 59)))
+        self.assertTrue(is_scheduled_wecom_reminder_time(datetime(2026, 7, 10, 8, 30)))
+        self.assertTrue(is_scheduled_wecom_reminder_time(datetime(2026, 7, 10, 18, 30)))
+        self.assertFalse(is_scheduled_wecom_reminder_time(datetime(2026, 7, 10, 18, 30, 1)))
 
 
 class ErrorManagementNotificationTests(unittest.IsolatedAsyncioTestCase):

@@ -29,7 +29,7 @@ from .error_management_config import (
     ERROR_BACKGROUND_REMINDER_INTERVAL_SECONDS,
     ERROR_REMINDER_CHECK_WINDOW,
 )
-from .issue_workflow_utils import is_time_in_window
+from .issue_workflow_utils import is_scheduled_wecom_reminder_time, is_time_in_window
 from .modules.ecn.notifications import init_ecn_reminder_task
 from .pages.sample_order_dashboard import (
     check_and_send_sample_order_overdue_reminders,
@@ -232,6 +232,9 @@ def init_error_reminder_task():
         return
 
     async def check_error_reminders():
+        if not is_scheduled_wecom_reminder_time():
+            logger.info("生产异常提醒检查已跳过：当前时间不在全局窗口 08:30-18:30。")
+            return
         if not is_time_in_window(ERROR_REMINDER_CHECK_WINDOW):
             logger.info(
                 "生产异常提醒检查已跳过：当前时间不在配置窗口 %s-%s。",
@@ -243,7 +246,10 @@ def init_error_reminder_task():
         # 延迟导入页面模块，避免应用启动阶段因页面与 main 互相导入形成循环依赖。
         from .pages.error_management import check_and_send_error_reminders
 
-        sent_count, fail_count = await check_and_send_error_reminders(show_result=False)
+        sent_count, fail_count = await check_and_send_error_reminders(
+            show_result=False,
+            enforce_time_window=True,
+        )
         if sent_count or fail_count:
             logger.info("生产异常提醒检查完成：发送成功 %s 条，失败待下轮复核重试 %s 条", sent_count, fail_count)
 
@@ -265,6 +271,9 @@ def init_sample_issue_reminder_task():
         return
 
     async def check_sample_issue_reminders():
+        if not is_scheduled_wecom_reminder_time():
+            logger.info("样品问题提醒检查已跳过：当前时间不在全局窗口 08:30-18:30。")
+            return
         if not is_time_in_window(SAMPLE_REMINDER_CHECK_WINDOW):
             logger.info(
                 "样品问题提醒检查已跳过：当前时间不在配置窗口 %s-%s。",
@@ -275,7 +284,10 @@ def init_sample_issue_reminder_task():
 
         from .pages.sample_issue_collection import check_and_send_sample_issue_reminders
 
-        sent_count, fail_count = await check_and_send_sample_issue_reminders(show_result=False)
+        sent_count, fail_count = await check_and_send_sample_issue_reminders(
+            show_result=False,
+            enforce_time_window=True,
+        )
         if sent_count or fail_count:
             logger.info("样品问题提醒检查完成：发送成功 %s 条，失败待下轮复核重试 %s 条", sent_count, fail_count)
 
@@ -294,7 +306,10 @@ def init_sample_order_overdue_reminder_task():
     """初始化样品订单逾期未填新交期提醒。"""
 
     async def check_sample_order_overdue_reminders():
-        sent_count, fail_count = await check_and_send_sample_order_overdue_reminders()
+        if not is_scheduled_wecom_reminder_time():
+            logger.info("样品订单逾期提醒检查已跳过：当前时间不在全局窗口 08:30-18:30。")
+            return
+        sent_count, fail_count = await check_and_send_sample_order_overdue_reminders(enforce_time_window=True)
         if sent_count or fail_count:
             logger.info(
                 "样品订单逾期提醒检查完成：新发成功 %s 条，失败 %s 条",
@@ -304,7 +319,7 @@ def init_sample_order_overdue_reminder_task():
 
     app.timer(30, check_sample_order_overdue_reminders, once=True)
     app.timer(3600, check_sample_order_overdue_reminders)
-    logger.info("样品订单逾期未填新交期提醒任务已挂载（首次 30 秒，循环 3600 秒）。")
+    logger.info("样品订单逾期未填新交期提醒任务已挂载（首次 30 秒，循环 3600 秒，窗口 08:30-18:30）。")
 
 
 # ==========================================
@@ -465,8 +480,8 @@ if __name__ in {"__main__", "__mp_main__"}:
     # ==========================================================
     # 本地开发时保持为 False；部署到服务器时改为 True。
     # 只需修改这一行，不需要在 ui.run() 内反复注释/取消注释多个参数。
-    PRODUCTION_MODE = False
-    # PRODUCTION_MODE = True
+    # PRODUCTION_MODE = False
+    PRODUCTION_MODE = True
     # 默认启用热重载；需要临时关闭时可显式设置 NICEGUI_RELOAD=false。
     DEVELOPMENT_RELOAD = os.environ.get("NICEGUI_RELOAD", "true").strip().lower() not in {
         "0",

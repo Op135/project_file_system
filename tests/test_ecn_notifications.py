@@ -371,6 +371,22 @@ class ECNNotificationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await self.check(), (0, 0))
         self.sender.assert_not_awaited()
 
+    async def test_enforced_time_window_stops_before_actual_send(self):
+        with patch.object(
+            notifications,
+            "is_scheduled_wecom_reminder_time",
+            return_value=False,
+        ):
+            result = await notifications.check_and_send_ecn_reminders(
+                config=self.settings,
+                user_service=self.service,
+                storage=self.storage,
+                enforce_time_window=True,
+            )
+
+        self.assertEqual(result, (0, 0))
+        self.sender.assert_not_awaited()
+
     async def test_failure_retries_after_configured_interval_only(self):
         self.sender.return_value = (False, "模拟网络失败")
         with self.assertLogs(level="WARNING"):
@@ -416,6 +432,28 @@ class ECNWecomConfigTests(unittest.TestCase):
         config = load_ecn_config({"wecom": {"cc_manager_enabled": False}})["wecom"]
         self.assertFalse(config["cc_manager_enabled"])
         self.assertTrue(config["test_mode"])
+
+
+class ECNReminderScheduleTests(unittest.IsolatedAsyncioTestCase):
+    async def test_timer_callback_skips_scan_outside_global_window(self):
+        callbacks = []
+
+        def capture_timer(_interval, callback, **_kwargs):
+            callbacks.append(callback)
+
+        scan = AsyncMock(return_value=(1, 0))
+        with (
+            patch.dict(notifications.ECN_WECOM_CONFIG, {"enabled": True}),
+            patch.object(notifications.app, "timer", side_effect=capture_timer),
+            patch.object(notifications, "is_scheduled_wecom_reminder_time", return_value=False),
+            patch.object(notifications, "check_and_send_ecn_reminders", scan),
+        ):
+            notifications.init_ecn_reminder_task()
+            self.assertEqual(len(callbacks), 2)
+            await callbacks[0]()
+            await callbacks[1]()
+
+        scan.assert_not_awaited()
 
 
 if __name__ == "__main__":

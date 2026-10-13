@@ -25,6 +25,7 @@ from ..components import ButtonUploader, FileThumbnail, get_upload_local_path
 from ..config import IMG_DIR, PRESET_AVATARS, REQ_UPLOADS_FILE_TYPE, UPLOAD_URL_DIR, UPLOADS_DIR
 from ..issue_workflow_utils import (
     is_current_responsible,
+    is_scheduled_wecom_reminder_time,
     merge_wecom_recipients,
     parse_date,
     reminder_claim_is_available,
@@ -1398,7 +1399,11 @@ async def format_people_for_wecom(value: str) -> str:
     )
 
 
-async def check_and_send_sample_issue_reminders(show_result: bool = False) -> tuple[int, int]:
+async def check_and_send_sample_issue_reminders(
+    show_result: bool = False,
+    *,
+    enforce_time_window: bool = False,
+) -> tuple[int, int]:
     """检查未关闭样品问题并发送纠正预防措施预计完成日期提醒。"""
     all_issues = db_storage.get_item(SAMPLE_ISSUE_DATA_KEY, {})
     today = datetime.now().date()
@@ -1488,9 +1493,12 @@ async def check_and_send_sample_issue_reminders(show_result: bool = False) -> tu
                 f"已通过延期：{approved_extension_count} 次\n"
                 f"提醒策略：{rule['label']}"
             )
+            recipients = await format_people_for_wecom(owner)
+            if enforce_time_window and not is_scheduled_wecom_reminder_time():
+                return sent_count, fail_count
             success, message = await send_wecom_text_message(
                 content,
-                await format_people_for_wecom(owner),
+                recipients,
                 module="sample_issue_collection",
                 business_key=f"{fresh_issue.get('issue_id')}:{rule['key']}",
                 message_type="sample_issue_reminder",
@@ -1606,9 +1614,12 @@ async def check_and_send_sample_issue_reminders(show_result: bool = False) -> tu
                 f"待完善字段：{'、'.join(fresh_missing_labels)}\n"
                 f"提醒策略：{rule['label']}"
             )
+            recipients = await format_people_for_wecom(recipient_people)
+            if enforce_time_window and not is_scheduled_wecom_reminder_time():
+                return sent_count, fail_count
             success, message = await send_wecom_text_message(
                 content,
-                await format_people_for_wecom(recipient_people),
+                recipients,
                 module="sample_issue_collection",
                 business_key=f"{fresh_issue.get('issue_id')}:incomplete:{rule['key']}",
                 message_type="sample_issue_incomplete_reminder",

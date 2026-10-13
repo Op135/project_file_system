@@ -1530,8 +1530,19 @@ class SampleOrderNotificationTests(unittest.IsolatedAsyncioTestCase):
                 "resolve_wecom_recipients",
                 new=AsyncMock(return_value="engineer_userid"),
             ),
+            patch.object(
+                dashboard,
+                "is_scheduled_wecom_reminder_time",
+                return_value=False,
+            ),
             patch.object(dashboard, "send_wecom_text_message", new=send_message),
         ):
+            outside_window_result = (
+                await dashboard.check_and_send_sample_order_overdue_reminders(
+                    date(2026, 7, 20),
+                    enforce_time_window=True,
+                )
+            )
             first_result = await dashboard.check_and_send_sample_order_overdue_reminders(
                 date(2026, 7, 20)
             )
@@ -1542,6 +1553,7 @@ class SampleOrderNotificationTests(unittest.IsolatedAsyncioTestCase):
                 date(2026, 7, 21)
             )
 
+        self.assertEqual(outside_window_result, (0, 0))
         self.assertEqual(first_result, (1, 0))
         self.assertEqual(second_result, (0, 0))
         self.assertEqual(next_day_result, (1, 0))

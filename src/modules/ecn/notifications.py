@@ -41,6 +41,7 @@ from ...ecn_management_config import (
 )
 from ...wecom_service import resolve_wecom_recipients, send_wecom_text_message, send_wecom_textcard_message
 from ...notification_recipients import is_system_admin_username
+from ...issue_workflow_utils import is_scheduled_wecom_reminder_time
 from .special_task_messages import get_special_message_item, get_special_message_items, build_special_card
 from .task_labels import compact_material_confirmation_label, execution_scheme_no
 
@@ -440,7 +441,13 @@ def build_notification_card(
     return title, prefix + "".join(parts) + suffix
 
 
-async def check_and_send_ecn_reminders(*, config=None, user_service=None, storage=None) -> tuple[int, int]:
+async def check_and_send_ecn_reminders(
+    *,
+    config=None,
+    user_service=None,
+    storage=None,
+    enforce_time_window: bool = False,
+) -> tuple[int, int]:
     """定时扫描最新待办；独立通知状态保存在SQLite中，不改动ECN业务单据。"""
     settings = config if config is not None else ECN_WECOM_CONFIG
     if not settings["enabled"] or _scan_lock.locked():
@@ -632,6 +639,8 @@ async def check_and_send_ecn_reminders(*, config=None, user_service=None, storag
                         continue
                     success = False
                     try:
+                        if enforce_time_window and not is_scheduled_wecom_reminder_time():
+                            continue
                         if settings["public_base_url"]:
                             title, description = build_notification_card(
                                 fresh, fresh_tasks, [name], settings, is_cc=is_cc
@@ -689,7 +698,10 @@ def init_ecn_reminder_task() -> None:
 
     async def check():
         try:
-            sent, failed = await check_and_send_ecn_reminders()
+            if not is_scheduled_wecom_reminder_time():
+                logger.debug("ECN微信待办检查已跳过：当前时间不在全局窗口 08:30-18:30。")
+                return
+            sent, failed = await check_and_send_ecn_reminders(enforce_time_window=True)
             if sent or failed:
                 logger.info("ECN微信提醒：成功 %s 条，失败 %s 条", sent, failed)
         except Exception:
