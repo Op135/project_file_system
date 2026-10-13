@@ -1,4 +1,4 @@
-"""生产异常 JSON 配置加载器的回归测试。
+"""批量产品问题跟进 JSON 配置加载器的回归测试。
 
 这组测试不关心页面样式，只保证根目录配置具有运行所需的关键字段，并验证错误配置不会阻止
 系统启动。新增可维护字段或新的校验规则时，应在这里补充相应断言。
@@ -29,7 +29,7 @@ class ErrorManagementConfigTests(unittest.TestCase):
 
         self.assertTrue(config["public_base_url"].startswith("http"))
         self.assertTrue(config["editor_roles"])
-        self.assertTrue(config["product_states"])
+        self.assertEqual(config["product_states"], ["试产异常", "量产异常", "客诉"])
         self.assertEqual(config["filter_states"][0], "全部")
         self.assertEqual(config["filter_states"][1], "未关闭")
         self.assertIn("延期申请中", config["filter_states"])
@@ -254,6 +254,12 @@ class ErrorManagementDashboardPendingTests(unittest.TestCase):
         self.assertEqual(row["row_tone"], "pending")
         self.assertEqual(columns[0]["field"], "detail_action")
         self.assertFalse(columns[0]["filter"])
+        headers = {column["field"]: column["headerName"] for column in columns}
+        self.assertEqual(headers["error_id"], "异常单号/单据编号")
+        self.assertEqual(headers["order_no"], "订单号/客户编号")
+        self.assertEqual(headers["product_state"], "单据分类")
+        self.assertEqual(headers["description"], "情况说明/现象描述")
+        self.assertEqual(headers["publish_date"], "发起日期")
         self.assertTrue(all("width" in column for column in columns))
         self.assertTrue(all(column.get("cellStyle", {}).get("textAlign") == "center" for column in columns))
 

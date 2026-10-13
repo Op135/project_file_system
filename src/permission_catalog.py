@@ -377,38 +377,38 @@ ERROR_REMINDER_CHECK_PERMISSION = "error.reminder.check"
 ERROR_PERMISSIONS = (
     PermissionDefinition(
         ERROR_VIEW_PERMISSION,
-        "查看 — 异常单",
-        "异常单跟进",
-        "允许从主页进入并查看生产异常单",
+        "查看 — 产品问题单据",
+        "批量产品问题跟进",
+        "允许从主页进入并查看产品问题单据",
     ),
     PermissionDefinition(
         ERROR_RECORD_EDIT_PERMISSION,
         "维护 — 整单信息",
-        "异常单跟进",
-        "允许新建并维护异常单整单内容",
+        "批量产品问题跟进",
+        "允许新建并维护产品问题单据的整单内容",
     ),
     PermissionDefinition(
         ERROR_REQUEST_APPROVE_PERMISSION,
         "审批 — 延期/关闭申请",
-        "异常单跟进",
+        "批量产品问题跟进",
         "允许审批纠正预防措施的延期申请和关闭申请",
     ),
     PermissionDefinition(
         ERROR_RECORD_RENAME_PERMISSION,
-        "修改 — 异常单号",
-        "异常单跟进",
-        "允许修改已有异常单的单号",
+        "修改 — 单据编号",
+        "批量产品问题跟进",
+        "允许修改已有产品问题单据的编号",
     ),
     PermissionDefinition(
         ERROR_RECORD_DELETE_PERMISSION,
-        "删除 — 异常单",
-        "异常单跟进",
-        "允许永久删除整张异常单",
+        "删除 — 产品问题单据",
+        "批量产品问题跟进",
+        "允许永久删除整张产品问题单据",
     ),
     PermissionDefinition(
         ERROR_REMINDER_CHECK_PERMISSION,
         "触发 — 人工检查提醒",
-        "异常单跟进",
+        "批量产品问题跟进",
         "允许手动触发异常措施到期提醒检查",
     ),
 )
@@ -746,7 +746,7 @@ SAMPLE_ISSUE_CLOSE_ELECTRON_RESULT_NOTIFY_PERMISSION = "notifications.sample_iss
 SAMPLE_ISSUE_CLOSE_ELECTRON_APPROVED_NOTIFY_PERMISSION = "notifications.sample_issue.close.electron.approved.receive"
 SAMPLE_ISSUE_FALLBACK_REMINDER_PERMISSION = "notifications.sample_issue.fallback_reminder.receive"
 SAMPLE_ORDER_NOTIFICATION_MODULE = "样品单执行看板 · 通知接收"
-ERROR_NOTIFICATION_MODULE = "异常单跟进 · 通知接收"
+ERROR_NOTIFICATION_MODULE = "批量产品问题跟进 · 通知接收"
 SAMPLE_ISSUE_NOTIFICATION_MODULE = "样品问题跟进 · 通知接收"
 
 

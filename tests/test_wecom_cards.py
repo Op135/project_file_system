@@ -71,6 +71,17 @@ class WecomCardTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(body["text"], {"content": "样品问题提醒"})
         self.assertNotIn("textcard", body)
 
+    async def test_product_issue_reminder_retry_recognizes_new_and_legacy_titles(self):
+        for title in ("产品问题纠正预防措施提醒", "生产异常纠正预防措施提醒"):
+            self.assertTrue(
+                wecom._is_state_dependent_reminder_retry(
+                    {
+                        "module": "error_management",
+                        "content": f"{title}\n单据：ISSUE-001",
+                    }
+                )
+            )
+
     async def test_public_retry_discards_state_dependent_reminders(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             retry_path = Path(temp_dir) / "wecom_retry_state.json"

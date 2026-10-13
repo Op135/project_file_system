@@ -242,7 +242,7 @@ def main_page():
         ("account_tree", "需求项结构", "查阅需求项结构", "/question_tree_tabs"),
         ("equalizer", "统计信息", "查阅系统统计信息", "/statistics"),
         ("published_with_changes", "工程变更", "ECR与ECN流程管理", "/ecn_management"),
-        ("error", "异常单跟进", "查阅记录异常单处理进度", "/error_management"),
+        ("error", "批量产品问题跟进", "查阅记录产品问题处理进度", "/error_management"),
         ("science", "样品问题跟进", "查阅记录样品问题处理进度", "/sample_issue_collection"),
         ("fact_check", "样品订单看板", "录入并跟踪样品订单交期", "/sample_order_dashboard"),
         ("menu_book", "设计知识库", "沉淀规范与设计案例", "/design_knowledge"),
@@ -273,7 +273,7 @@ def main_page():
             current_user,
         ):
             continue
-        # 异常单跟进使用稳定权限控制入口，旧 Excel 环境仍沿用原角色关键词。
+        # 批量产品问题跟进使用稳定权限控制入口，旧 Excel 环境仍沿用原角色关键词。
         elif items[3] == "/error_management" and not can_view_error_management(
             current_role,
             current_user,

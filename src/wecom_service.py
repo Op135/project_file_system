@@ -766,7 +766,9 @@ def _is_state_dependent_reminder_retry(item: object) -> bool:
     content = str(item.get("content", ""))
     if module == "sample_order_dashboard" and ":overdue:" in business_key:
         return True
-    if module == "error_management" and content.startswith("生产异常纠正预防措施提醒"):
+    if module == "error_management" and content.startswith(
+        ("生产异常纠正预防措施提醒", "产品问题纠正预防措施提醒")
+    ):
         return True
     return module == "sample_issue_collection" and content.startswith(
         ("样品问题纠正预防措施提醒", "样品问题对策填写提醒")

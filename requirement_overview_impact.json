@@ -2324,6 +2324,19 @@
             "product_bom",
             "packing_list"
         ],
-        "221": []
+        "221": [
+            "ui_testing",
+            "optical_testing",
+            "drive_output_testing",
+            "craft_key_requirements",
+            "electronic_testing",
+            "mechanical_testing",
+            "software_testing"
+        ],
+        "222": [
+            "craft_key_requirements",
+            "mechanical_testing",
+            "software_testing"
+        ]
     }
 }

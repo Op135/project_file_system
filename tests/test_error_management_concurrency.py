@@ -1,4 +1,4 @@
-"""生产异常模块的并发写入回归测试。
+"""批量产品问题跟进模块的并发写入回归测试。
 
 这里刻意模拟两个数据库模块实例和多个同时执行的业务动作，用来防止未来维护时重新引入
 “后保存的旧快照覆盖先保存的新数据”问题。该文件应长期保留，并在修改原子更新逻辑后运行。
@@ -362,7 +362,7 @@ class ErrorManagementConcurrencyTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(stored["ERR-CORRECT"]["basic_info"]["product_name"], "after rename")
                     self.assertTrue(
                         any(
-                            log.get("action") == "修改异常单号：ERR-WRONG → ERR-CORRECT"
+                            log.get("action") == "修改单据编号：ERR-WRONG → ERR-CORRECT"
                             for log in stored["ERR-CORRECT"]["operation_log"]
                         )
                     )

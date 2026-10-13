@@ -1,5 +1,5 @@
 # -*- encoding: utf-8 -*-
-"""生产异常管理模块的业务配置加载器。
+"""批量产品问题跟进模块的业务配置加载器。
 
 维护人员通常只需要修改项目根目录的 ``error_management_config.json``。
 本模块在 Python 导入阶段读取一次 JSON，并把经过校验的值导出为常量供页面和后台任务使用，
@@ -26,7 +26,7 @@ ERROR_MANAGEMENT_CONFIG_PATH = Path(__file__).parent.parent / "error_management_
 _DEFAULT_CONFIG = {
     "public_base_url": "http://192.168.1.102:8080",
     "editor_roles": ["研发经理", "admin", "研发助理"],
-    "product_states": ["试产", "量产"],
+    "product_states": ["试产异常", "量产异常", "客诉"],
     "filter_states": [
         "全部",
         "未关闭",
@@ -70,9 +70,9 @@ def _read_config_file() -> dict:
             raise ValueError("配置文件根节点必须是 JSON 对象")
         return loaded
     except FileNotFoundError:
-        logger.warning("生产异常配置文件不存在：%s，已使用代码默认值", ERROR_MANAGEMENT_CONFIG_PATH)
+        logger.warning("产品问题跟进配置文件不存在：%s，已使用代码默认值", ERROR_MANAGEMENT_CONFIG_PATH)
     except (OSError, json.JSONDecodeError, ValueError):
-        logger.exception("生产异常配置文件读取失败，已使用代码默认值")
+        logger.exception("产品问题跟进配置文件读取失败，已使用代码默认值")
     return {}
 
 
@@ -81,7 +81,7 @@ def _string_value(config: dict, key: str, default: str) -> str:
     value = config.get(key)
     if isinstance(value, str) and value.strip():
         return value.strip()
-    logger.warning("生产异常配置 %s 无效，已使用默认值", key)
+    logger.warning("产品问题跟进配置 %s 无效，已使用默认值", key)
     return default
 
 
@@ -92,7 +92,7 @@ def _string_list(config: dict, key: str, default: list[str], *, allow_empty: boo
         normalized = list(dict.fromkeys(item.strip() for item in value))
         if normalized or allow_empty:
             return normalized
-    logger.warning("生产异常配置 %s 无效，已使用默认值", key)
+    logger.warning("产品问题跟进配置 %s 无效，已使用默认值", key)
     return copy.deepcopy(default)
 
 
@@ -111,7 +111,7 @@ def _positive_int(config: dict, key: str, default: int) -> int:
     value = config.get(key)
     if isinstance(value, int) and not isinstance(value, bool) and value > 0:
         return value
-    logger.warning("生产异常配置 %s 无效，已使用默认值", key)
+    logger.warning("产品问题跟进配置 %s 无效，已使用默认值", key)
     return default
 
 
@@ -120,7 +120,7 @@ def _bool_value(config: dict, key: str, default: bool) -> bool:
     value = config.get(key)
     if isinstance(value, bool):
         return value
-    logger.warning("生产异常配置 %s 无效，已使用默认值", key)
+    logger.warning("产品问题跟进配置 %s 无效，已使用默认值", key)
     return default
 
 
@@ -129,7 +129,7 @@ def _notify_targets(config: dict, key: str, default: list) -> list:
     value = config.get(key)
     if isinstance(value, list) and all(isinstance(item, (str, dict)) for item in value):
         return copy.deepcopy(value)
-    logger.warning("生产异常配置 %s 无效，已使用默认值", key)
+    logger.warning("产品问题跟进配置 %s 无效，已使用默认值", key)
     return copy.deepcopy(default)
 
 
@@ -138,7 +138,7 @@ def _time_window(config: dict, key: str, default: dict) -> dict:
     normalized = normalize_time_window(config.get(key), default)
     if normalized is not None:
         return normalized
-    logger.warning("生产异常配置 %s 无效，已使用默认值", key)
+    logger.warning("产品问题跟进配置 %s 无效，已使用默认值", key)
     return copy.deepcopy(default)
 
 
@@ -150,14 +150,14 @@ def _reminder_rules(config: dict, default: list[dict]) -> list[dict]:
     """
     value = config.get("rules")
     if not isinstance(value, list):
-        logger.warning("生产异常提醒规则必须是列表，已使用默认值")
+        logger.warning("产品问题跟进提醒规则必须是列表，已使用默认值")
         return copy.deepcopy(default)
 
     normalized_rules = []
     seen_keys = set()
     for index, rule in enumerate(value):
         if not isinstance(rule, dict):
-            logger.warning("生产异常提醒规则第 %s 项不是对象，已忽略", index + 1)
+            logger.warning("产品问题跟进提醒规则第 %s 项不是对象，已忽略", index + 1)
             continue
         if rule.get("enabled", True) is False:
             continue
@@ -176,7 +176,7 @@ def _reminder_rules(config: dict, default: list[dict]) -> list[dict]:
             or not label.strip()
             or has_exact == has_max
         ):
-            logger.warning("生产异常提醒规则第 %s 项格式无效，已忽略", index + 1)
+            logger.warning("产品问题跟进提醒规则第 %s 项格式无效，已忽略", index + 1)
             continue
 
         normalized_rule = {"key": key.strip(), "label": label.strip()}
