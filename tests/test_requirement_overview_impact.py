@@ -13,6 +13,7 @@ from src.requirement_overview_impact import (
     REQUIREMENT_OVERVIEW_IMPACT_STORAGE_KEY,
     RequirementOverviewImpactConfigError,
     collect_requirement_change_node_ids,
+    index_requirement_nodes_by_id,
     load_requirement_overview_impact_config,
     resolve_requirement_overview_impacts,
     save_requirement_overview_impact_config,
@@ -31,6 +32,18 @@ def test_checked_in_requirement_overview_impact_config_is_valid():
     loaded = load_requirement_overview_impact_config(valid_overview_labels=valid_labels)
     assert loaded["valid"] is True
     assert loaded["unmapped_policy"] == "all_overviews"
+    software_labels = {
+        "ui_execute_file",
+        "ui_testing",
+        "software_xml",
+        "software_manual",
+        "software_executable_file",
+        "software_protocol",
+        "software_testing",
+    }
+    assert set(loaded["node_impacts"]["212"]) == software_labels
+    assert set(loaded["node_impacts"]["213"]) == software_labels
+    assert loaded["node_impacts"]["221"] == []
 
 
 def test_load_and_resolve_selective_impact_config():
@@ -51,6 +64,33 @@ def test_load_and_resolve_selective_impact_config():
 
     assert affected == {"light_source", "light_if"}
     assert missing == set()
+
+
+def test_requirement_node_index_uses_stable_node_id_instead_of_sequence():
+    indexed = index_requirement_nodes_by_id(
+        {
+            "218": {"node_id": "212", "guide_content": "是否补充软件需求"},
+            "222": {"node_id": 221, "guide_content": "是否指定测试报告格式与内容"},
+        }
+    )
+
+    assert set(indexed) == {"212", "221"}
+    assert indexed["212"]["guide_content"] == "是否补充软件需求"
+    assert "218" not in indexed
+
+
+def test_requirement_node_index_rejects_duplicate_stable_node_id():
+    try:
+        index_requirement_nodes_by_id(
+            {
+                "1": {"node_id": "9"},
+                "2": {"node_id": 9},
+            }
+        )
+    except RequirementOverviewImpactConfigError as exc:
+        assert "9" in str(exc)
+    else:
+        raise AssertionError("重复固定唯一码必须拒绝")
 
 
 def test_unmapped_node_falls_back_to_all_overviews_and_block_policy_rejects_it():
@@ -245,6 +285,46 @@ def test_compare_single_select_depends_only_on_selected_value():
     assert "9" in utils.compare_configs_by_id({"1": old_node}, {"1": selected_value_changed})["modified"]
 
 
+def test_compare_ignores_empty_nodes_added_or_deleted_by_template_upgrade():
+    existing = _option_requirement_node(
+        "单选",
+        {"value": "保留"},
+        [{"option_id": "opt_1", "option_out": "保留"}],
+    )
+    empty_added = {
+        "node_id": "220",
+        "answer_type": "多行文本",
+        "user_must_out": {},
+        "option_tolerance_out": {},
+        "ref_out": [],
+    }
+
+    added_result = utils.compare_configs_by_id({"1": existing}, {"1": existing, "2": empty_added})
+    deleted_result = utils.compare_configs_by_id({"1": existing, "2": empty_added}, {"1": existing})
+
+    assert added_result["added"] == {}
+    assert deleted_result["deleted"] == {}
+
+
+def test_compare_keeps_new_node_with_actual_business_answer():
+    existing = _option_requirement_node(
+        "单选",
+        {"value": "保留"},
+        [{"option_id": "opt_1", "option_out": "保留"}],
+    )
+    answered_added = {
+        "node_id": "221",
+        "answer_type": "多行文本",
+        "user_must_out": {"1": "无"},
+        "option_tolerance_out": {},
+        "ref_out": [],
+    }
+
+    result = utils.compare_configs_by_id({"1": existing}, {"1": existing, "2": answered_added})
+
+    assert set(result["added"]) == {"221"}
+
+
 def test_selective_active_state_marks_only_affected_labels_pending_and_carries_other_states():
     original = {
         "affected": {
@@ -409,6 +489,8 @@ def load_tests(_loader, _tests, _pattern):
     for test_function in (
         test_checked_in_requirement_overview_impact_config_is_valid,
         test_load_and_resolve_selective_impact_config,
+        test_requirement_node_index_uses_stable_node_id_instead_of_sequence,
+        test_requirement_node_index_rejects_duplicate_stable_node_id,
         test_unmapped_node_falls_back_to_all_overviews_and_block_policy_rejects_it,
         test_invalid_overview_label_is_rejected,
         test_save_config_atomically_updates_file_and_runtime_storage,
@@ -417,6 +499,8 @@ def load_tests(_loader, _tests, _pattern):
         test_compare_ignores_added_or_deleted_unselected_multi_select_options,
         test_compare_still_detects_actual_multi_select_answer_change,
         test_compare_single_select_depends_only_on_selected_value,
+        test_compare_ignores_empty_nodes_added_or_deleted_by_template_upgrade,
+        test_compare_keeps_new_node_with_actual_business_answer,
         test_selective_active_state_marks_only_affected_labels_pending_and_carries_other_states,
         test_overview_state_compensation_uses_compare_and_restore,
         test_file_snapshot_can_restore_original_or_remove_new_file,

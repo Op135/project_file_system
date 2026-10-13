@@ -381,15 +381,15 @@
             ]
         },
         "12": {
-            "condition": "9==True or 5==整机",
+            "condition": "1!=代工",
             "node_id": "12",
-            "guide_content": "客户提供的品质要求",
+            "guide_content": "客户对产品的品质要求，特别是外观要求",
             "answer_type": "多行文本",
             "input_num_accor": "",
             "input_name_accor": "",
             "input_tolerance": "",
             "ref_config": "True",
-            "option_hint": "尽量与客户确认对产品的品质要求、特别是外观品质要求，有无明确的文件输入，可提交附件。",
+            "option_hint": "尽量与客户确认对产品的品质要求、特别是外观品质要求，有则提交附件。\n如无要求，公司默认按照《五金件检验规范 二级》与《驱动板二级外观检验标准》对零部件与驱动板进行管控。\n规范文件存放位置：\\\\\\\\192.168.1.102\\\\Server\\\\质量部\\\\ISO体系文件\\\\广东百炼光ISO文件\\\\三级文件\\\\质量部",
             "placeholder": "",
             "tolerance_placeholder": "",
             "option_group_id": "1",
@@ -403,7 +403,7 @@
                     "option_content": "",
                     "option_out": "字典",
                     "option_bold": "",
-                    "option_show": "客户提供的品质要求：{V}",
+                    "option_show": "客户对产品的品质、外观要求：{V}",
                     "option_label": ""
                 }
             ]
@@ -7697,7 +7697,7 @@
             ]
         }
     },
-    "config_timestamp": "2026-10-13T11:29:04.855383",
-    "excel_version_hash": "6148339a",
+    "config_timestamp": "2026-10-13T14:34:24.927112",
+    "excel_version_hash": "6fab8ee6",
     "entry_status": false
 }

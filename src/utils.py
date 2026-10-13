@@ -1893,6 +1893,32 @@ def get_effective_requirement_output(item: dict) -> object:
     return normalize_requirement_comparison_value(user_output)
 
 
+def _has_effective_requirement_content(item: dict) -> bool:
+    """判断需求节点是否包含会影响版本差异的实际业务内容。"""
+
+    def has_value(value: object) -> bool:
+        if value is None:
+            return False
+        if isinstance(value, str):
+            return bool(value.strip())
+        if isinstance(value, dict):
+            return any(has_value(nested) for nested in value.values())
+        if isinstance(value, (list, tuple, set, frozenset)):
+            return any(has_value(nested) for nested in value)
+        if isinstance(value, bool):
+            return value
+        return True
+
+    return any(
+        has_value(value)
+        for value in (
+            get_effective_requirement_output(item),
+            normalize_requirement_comparison_value(item.get("option_tolerance_out")),
+            item.get("ref_out"),
+        )
+    )
+
+
 # 对比两个需求配置文件的需求确认项的差异
 def compare_configs_by_id(old_data, new_data, add_options: list = []) -> dict:
     """
@@ -1916,12 +1942,12 @@ def compare_configs_by_id(old_data, new_data, add_options: list = []) -> dict:
 
         for id in new_ids - old_ids:
             for k, v in new_data.items():
-                if id == v["node_id"]:
+                if id == v["node_id"] and _has_effective_requirement_content(v):
                     v["num"] = k
                     added_items[id] = v
         for id in old_ids - new_ids:
             for k, v in old_data.items():
-                if id == v["node_id"]:
+                if id == v["node_id"] and _has_effective_requirement_content(v):
                     v["num"] = k
                     deleted_items[id] = v
 

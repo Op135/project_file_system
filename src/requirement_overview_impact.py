@@ -39,6 +39,22 @@ def _node_id_sort_key(node_id: str) -> tuple[int, Decimal, str]:
     return 1, Decimal(0), node_id
 
 
+def index_requirement_nodes_by_id(raw_requirement_nodes: object) -> dict[str, dict]:
+    """按节点内部的固定唯一码建立索引，而不是使用会随插入变动的节点序号。"""
+    if not isinstance(raw_requirement_nodes, dict):
+        return {}
+
+    indexed_nodes: dict[str, dict] = {}
+    for node in raw_requirement_nodes.values():
+        if not isinstance(node, dict) or node.get("node_id") in {None, ""}:
+            continue
+        node_id = _normalize_node_id(node["node_id"])
+        if node_id in indexed_nodes:
+            raise RequirementOverviewImpactConfigError(f"需求配置包含重复的固定唯一码：{node_id}")
+        indexed_nodes[node_id] = node
+    return indexed_nodes
+
+
 def load_requirement_overview_impact_config(
     raw_config: dict | None = None,
     *,

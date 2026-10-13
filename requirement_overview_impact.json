@@ -782,43 +782,13 @@
             "drive_output_testing"
         ],
         "92": [
-            "optical_sports_logic",
-            "optical_materials",
-            "optical_sports",
             "light_source",
+            "light_if",
+            "target_surface",
             "specifications",
             "power_label",
             "optical_testing",
-            "drive_output_testing",
-            "control_pcb",
-            "control_electronic_bom",
-            "wiring_manual",
-            "drive_manual",
-            "drive_power",
-            "control_accessories",
-            "display_accessories",
-            "wire_accessories",
-            "drive_pcb",
-            "drive_electronic_bom",
-            "drive_size_diagram",
-            "drive_simplify_diagram",
-            "product_size_diagram",
-            "product_complete_diagram",
-            "product_simplify_diagram",
-            "packaging_materials",
-            "product_bom",
-            "packing_list",
-            "product_type_ambient",
-            "product_temperature_rise",
-            "product_output_position",
-            "cooling_type",
-            "sensor_type",
-            "fan_model",
-            "software_xml",
-            "software_manual",
-            "software_executable_file",
-            "software_protocol",
-            "software_testing"
+            "drive_output_testing"
         ],
         "93": [
             "light_source",
@@ -827,7 +797,8 @@
             "specifications",
             "power_label",
             "optical_testing",
-            "drive_output_testing"
+            "drive_output_testing",
+            "guide_beam"
         ],
         "94": [
             "light_source",
@@ -841,16 +812,14 @@
         ],
         "95": [
             "light_source",
-            "light_if",
-            "target_surface",
-            "specifications",
-            "power_label",
             "optical_testing",
-            "drive_output_testing",
-            "guide_beam"
+            "drive_output_testing"
         ],
         "96": [
+            "optical_materials",
             "light_source",
+            "target_surface",
+            "specifications",
             "optical_testing",
             "drive_output_testing"
         ],
@@ -865,14 +834,6 @@
         "98": [
             "optical_materials",
             "light_source",
-            "target_surface",
-            "specifications",
-            "optical_testing",
-            "drive_output_testing"
-        ],
-        "99": [
-            "optical_materials",
-            "light_source",
             "light_if",
             "target_surface",
             "specifications",
@@ -880,6 +841,28 @@
             "optical_testing",
             "drive_output_testing",
             "guide_beam"
+        ],
+        "99": [
+            "light_source",
+            "light_if",
+            "specifications",
+            "power_label",
+            "optical_testing",
+            "drive_output_testing",
+            "product_size_diagram",
+            "product_complete_diagram",
+            "product_simplify_diagram",
+            "packaging_materials",
+            "product_bom",
+            "product_weight",
+            "product_type_noise",
+            "product_type_ambient",
+            "product_temperature_rise",
+            "product_wind_diagram",
+            "tec_type",
+            "cooling_type",
+            "fan_model",
+            "software_executable_file"
         ],
         "100": [
             "light_source",
@@ -904,26 +887,8 @@
             "software_executable_file"
         ],
         "101": [
-            "light_source",
-            "light_if",
             "specifications",
-            "power_label",
-            "optical_testing",
-            "drive_output_testing",
-            "product_size_diagram",
-            "product_complete_diagram",
-            "product_simplify_diagram",
-            "packaging_materials",
-            "product_bom",
-            "product_weight",
-            "product_type_noise",
-            "product_type_ambient",
-            "product_temperature_rise",
-            "product_wind_diagram",
-            "tec_type",
-            "cooling_type",
-            "fan_model",
-            "software_executable_file"
+            "product_type_ambient"
         ],
         "102": [
             "specifications",
@@ -931,7 +896,8 @@
         ],
         "103": [
             "specifications",
-            "product_type_ambient"
+            "product_type_noise",
+            "fan_model"
         ],
         "104": [
             "specifications",
@@ -939,8 +905,24 @@
             "fan_model"
         ],
         "105": [
+            "light_source",
+            "light_if",
             "specifications",
+            "power_label",
+            "optical_testing",
+            "drive_output_testing",
+            "drive_power",
+            "product_size_diagram",
+            "product_complete_diagram",
+            "product_simplify_diagram",
+            "product_bom",
+            "product_weight",
+            "product_material_selection",
             "product_type_noise",
+            "product_type_ambient",
+            "product_temperature_rise",
+            "product_wind_diagram",
+            "cooling_type",
             "fan_model"
         ],
         "106": [
@@ -965,25 +947,11 @@
             "fan_model"
         ],
         "107": [
-            "light_source",
-            "light_if",
-            "specifications",
-            "power_label",
-            "optical_testing",
-            "drive_output_testing",
-            "drive_power",
             "product_size_diagram",
             "product_complete_diagram",
             "product_simplify_diagram",
             "product_bom",
-            "product_weight",
-            "product_material_selection",
-            "product_type_noise",
-            "product_type_ambient",
-            "product_temperature_rise",
-            "product_wind_diagram",
-            "cooling_type",
-            "fan_model"
+            "product_weight"
         ],
         "108": [
             "product_size_diagram",
@@ -996,13 +964,6 @@
             "product_size_diagram",
             "product_complete_diagram",
             "product_simplify_diagram",
-            "product_bom",
-            "product_weight"
-        ],
-        "110": [
-            "product_size_diagram",
-            "product_complete_diagram",
-            "product_simplify_diagram",
             "packaging_materials",
             "product_bom",
             "product_weight",
@@ -1011,21 +972,21 @@
             "product_wind_diagram",
             "mechanical_assembly_details"
         ],
-        "111": [
+        "110": [
             "product_size_diagram",
             "product_complete_diagram",
             "product_simplify_diagram",
             "packaging_materials",
             "product_output_position"
         ],
-        "112": [
+        "111": [
             "product_size_diagram",
             "product_complete_diagram",
             "product_simplify_diagram",
             "packaging_materials",
             "product_outlet_position"
         ],
-        "113": [
+        "112": [
             "product_size_diagram",
             "product_complete_diagram",
             "product_simplify_diagram",
@@ -1033,19 +994,33 @@
             "product_weight",
             "product_wind_diagram"
         ],
+        "113": [
+            "specifications",
+            "product_color"
+        ],
         "114": [
             "specifications",
             "product_color"
         ],
         "115": [
-            "specifications",
-            "product_color"
+            "specifications"
         ],
         "116": [
             "specifications"
         ],
         "117": [
-            "specifications"
+            "ui_execute_file",
+            "ui_testing",
+            "product_size_diagram",
+            "product_complete_diagram",
+            "product_simplify_diagram",
+            "product_color",
+            "product_treatment_process",
+            "product_material_selection",
+            "software_manual",
+            "software_executable_file",
+            "software_protocol",
+            "software_testing"
         ],
         "118": [
             "ui_execute_file",
@@ -1062,36 +1037,36 @@
             "software_testing"
         ],
         "119": [
-            "ui_execute_file",
-            "ui_testing",
-            "product_size_diagram",
-            "product_complete_diagram",
-            "product_simplify_diagram",
-            "product_color",
             "product_treatment_process",
-            "product_material_selection",
-            "software_manual",
-            "software_executable_file",
-            "software_protocol",
-            "software_testing"
+            "product_material_selection"
         ],
         "120": [
+            "specifications",
             "product_treatment_process",
             "product_material_selection"
         ],
         "121": [
             "specifications",
-            "product_treatment_process",
+            "product_weight",
             "product_material_selection"
         ],
         "122": [
             "specifications",
-            "product_weight",
-            "product_material_selection"
+            "product_weight"
         ],
         "123": [
-            "specifications",
-            "product_weight"
+            "wiring_manual",
+            "wire_accessories",
+            "drive_pcb",
+            "drive_electronic_bom",
+            "drive_size_diagram",
+            "drive_simplify_diagram",
+            "product_size_diagram",
+            "product_complete_diagram",
+            "product_simplify_diagram",
+            "packaging_materials",
+            "product_bom",
+            "packing_list"
         ],
         "124": [
             "wiring_manual",
@@ -1108,22 +1083,32 @@
             "packing_list"
         ],
         "125": [
-            "wiring_manual",
+            "control_pcb",
+            "control_electronic_bom",
+            "drive_pcb",
+            "drive_electronic_bom",
+            "fan_model",
+            "software_manual",
+            "software_executable_file",
+            "software_testing"
+        ],
+        "126": [
+            "control_pcb",
+            "control_electronic_bom",
+            "drive_manual",
             "wire_accessories",
             "drive_pcb",
             "drive_electronic_bom",
-            "drive_size_diagram",
-            "drive_simplify_diagram",
-            "product_size_diagram",
-            "product_complete_diagram",
-            "product_simplify_diagram",
-            "packaging_materials",
-            "product_bom",
-            "packing_list"
+            "fan_model",
+            "software_manual",
+            "software_executable_file",
+            "software_testing"
         ],
         "127": [
             "control_pcb",
             "control_electronic_bom",
+            "drive_manual",
+            "wire_accessories",
             "drive_pcb",
             "drive_electronic_bom",
             "fan_model",
@@ -1132,56 +1117,32 @@
             "software_testing"
         ],
         "128": [
-            "control_pcb",
-            "control_electronic_bom",
-            "drive_manual",
-            "wire_accessories",
-            "drive_pcb",
-            "drive_electronic_bom",
-            "fan_model",
-            "software_manual",
-            "software_executable_file",
-            "software_testing"
+            "product_size_diagram",
+            "product_complete_diagram",
+            "product_simplify_diagram",
+            "packaging_materials",
+            "product_bom",
+            "product_weight",
+            "product_type_ambient",
+            "product_temperature_rise",
+            "product_wind_diagram",
+            "cooling_type",
+            "fan_model"
         ],
         "129": [
-            "control_pcb",
-            "control_electronic_bom",
-            "drive_manual",
-            "wire_accessories",
-            "drive_pcb",
-            "drive_electronic_bom",
-            "fan_model",
-            "software_manual",
-            "software_executable_file",
-            "software_testing"
+            "product_size_diagram",
+            "product_complete_diagram",
+            "product_simplify_diagram",
+            "packaging_materials",
+            "product_bom",
+            "product_weight",
+            "product_type_ambient",
+            "product_temperature_rise",
+            "product_wind_diagram",
+            "cooling_type",
+            "fan_model"
         ],
         "130": [
-            "product_size_diagram",
-            "product_complete_diagram",
-            "product_simplify_diagram",
-            "packaging_materials",
-            "product_bom",
-            "product_weight",
-            "product_type_ambient",
-            "product_temperature_rise",
-            "product_wind_diagram",
-            "cooling_type",
-            "fan_model"
-        ],
-        "131": [
-            "product_size_diagram",
-            "product_complete_diagram",
-            "product_simplify_diagram",
-            "packaging_materials",
-            "product_bom",
-            "product_weight",
-            "product_type_ambient",
-            "product_temperature_rise",
-            "product_wind_diagram",
-            "cooling_type",
-            "fan_model"
-        ],
-        "132": [
             "optical_sports_logic",
             "optical_materials",
             "optical_sports",
@@ -1219,7 +1180,7 @@
             "software_protocol",
             "software_testing"
         ],
-        "133": [
+        "131": [
             "product_size_diagram",
             "product_complete_diagram",
             "product_simplify_diagram",
@@ -1228,7 +1189,7 @@
             "packing_list",
             "product_weight"
         ],
-        "134": [
+        "132": [
             "ui_execute_file",
             "ui_testing",
             "optical_sports_logic",
@@ -1265,7 +1226,7 @@
             "software_protocol",
             "software_testing"
         ],
-        "135": [
+        "133": [
             "ui_execute_file",
             "ui_testing",
             "software_xml",
@@ -1274,10 +1235,10 @@
             "software_protocol",
             "software_testing"
         ],
-        "136": [
+        "134": [
             "packing_list"
         ],
-        "137": [
+        "135": [
             "optical_materials",
             "specifications",
             "optical_testing",
@@ -1306,7 +1267,7 @@
             "software_executable_file",
             "software_testing"
         ],
-        "138": [
+        "136": [
             "product_size_diagram",
             "product_complete_diagram",
             "product_simplify_diagram",
@@ -1317,25 +1278,25 @@
             "other_drawings",
             "adapter_options"
         ],
-        "139": [
+        "137": [
             "craft_key_requirements",
             "product_bom",
             "mechanical_assembly_details",
             "other_drawings"
+        ],
+        "138": [
+            "craft_key_requirements",
+            "product_bom",
+            "mechanical_assembly_details",
+            "other_drawings"
+        ],
+        "139": [
+            "packaging_materials"
         ],
         "140": [
-            "craft_key_requirements",
-            "product_bom",
-            "mechanical_assembly_details",
-            "other_drawings"
+            "packaging_materials"
         ],
         "141": [
-            "packaging_materials"
-        ],
-        "142": [
-            "packaging_materials"
-        ],
-        "143": [
             "specifications",
             "power_label",
             "light_complete_diagram",
@@ -1383,7 +1344,7 @@
             "software_protocol",
             "software_testing"
         ],
-        "144": [
+        "142": [
             "ui_execute_file",
             "ui_testing",
             "specifications",
@@ -1414,7 +1375,7 @@
             "software_protocol",
             "software_testing"
         ],
-        "145": [
+        "143": [
             "control_complete_diagram",
             "control_pcb",
             "control_electronic_bom",
@@ -1432,33 +1393,33 @@
             "packing_list",
             "product_weight"
         ],
-        "146": [
+        "144": [
             "light_source",
             "light_if",
             "optical_testing",
             "drive_output_testing",
             "drive_power"
         ],
-        "147": [
+        "145": [
             "light_source",
             "light_if",
             "optical_testing",
             "drive_output_testing",
             "drive_power"
+        ],
+        "146": [
+            "specifications",
+            "drive_output_signal"
+        ],
+        "147": [
+            "specifications",
+            "drive_output_signal"
         ],
         "148": [
             "specifications",
             "drive_output_signal"
         ],
         "149": [
-            "specifications",
-            "drive_output_signal"
-        ],
-        "150": [
-            "specifications",
-            "drive_output_signal"
-        ],
-        "151": [
             "specifications",
             "control_complete_diagram",
             "control_pcb",
@@ -1467,7 +1428,7 @@
             "drive_size_diagram",
             "drive_simplify_diagram"
         ],
-        "152": [
+        "150": [
             "specifications",
             "control_electronic_bom",
             "wiring_manual",
@@ -1478,7 +1439,7 @@
             "product_size_diagram",
             "product_simplify_diagram"
         ],
-        "153": [
+        "151": [
             "specifications",
             "control_electronic_bom",
             "wiring_manual",
@@ -1488,6 +1449,32 @@
             "drive_simplify_diagram",
             "product_size_diagram",
             "product_simplify_diagram"
+        ],
+        "152": [
+            "specifications",
+            "control_pcb_principle",
+            "control_pcb",
+            "control_electronic_bom",
+            "drive_pcb_principle",
+            "drive_pcb",
+            "drive_electronic_bom",
+            "software_manual",
+            "software_executable_file",
+            "software_protocol",
+            "software_testing"
+        ],
+        "153": [
+            "specifications",
+            "control_pcb_principle",
+            "control_pcb",
+            "control_electronic_bom",
+            "drive_pcb_principle",
+            "drive_pcb",
+            "drive_electronic_bom",
+            "software_manual",
+            "software_executable_file",
+            "software_protocol",
+            "software_testing"
         ],
         "154": [
             "specifications",
@@ -1497,32 +1484,6 @@
             "drive_pcb_principle",
             "drive_pcb",
             "drive_electronic_bom",
-            "software_manual",
-            "software_executable_file",
-            "software_protocol",
-            "software_testing"
-        ],
-        "155": [
-            "specifications",
-            "control_pcb_principle",
-            "control_pcb",
-            "control_electronic_bom",
-            "drive_pcb_principle",
-            "drive_pcb",
-            "drive_electronic_bom",
-            "software_manual",
-            "software_executable_file",
-            "software_protocol",
-            "software_testing"
-        ],
-        "156": [
-            "specifications",
-            "control_pcb_principle",
-            "control_pcb",
-            "control_electronic_bom",
-            "drive_pcb_principle",
-            "drive_pcb",
-            "drive_electronic_bom",
             "drive_size_diagram",
             "drive_simplify_diagram",
             "product_size_diagram",
@@ -1532,7 +1493,7 @@
             "software_protocol",
             "software_testing"
         ],
-        "157": [
+        "155": [
             "specifications",
             "control_pcb",
             "control_electronic_bom",
@@ -1541,35 +1502,35 @@
             "drive_size_diagram",
             "drive_simplify_diagram",
             "product_simplify_diagram",
+            "software_manual",
+            "software_executable_file",
+            "software_protocol",
+            "software_testing"
+        ],
+        "156": [
+            "specifications",
+            "control_pcb",
+            "control_electronic_bom",
+            "drive_pcb",
+            "drive_electronic_bom",
+            "drive_size_diagram",
+            "drive_simplify_diagram",
+            "product_simplify_diagram",
+            "software_xml",
+            "software_manual",
+            "software_executable_file",
+            "software_protocol",
+            "software_testing"
+        ],
+        "157": [
+            "product_simplify_diagram",
+            "software_xml",
             "software_manual",
             "software_executable_file",
             "software_protocol",
             "software_testing"
         ],
         "158": [
-            "specifications",
-            "control_pcb",
-            "control_electronic_bom",
-            "drive_pcb",
-            "drive_electronic_bom",
-            "drive_size_diagram",
-            "drive_simplify_diagram",
-            "product_simplify_diagram",
-            "software_xml",
-            "software_manual",
-            "software_executable_file",
-            "software_protocol",
-            "software_testing"
-        ],
-        "159": [
-            "product_simplify_diagram",
-            "software_xml",
-            "software_manual",
-            "software_executable_file",
-            "software_protocol",
-            "software_testing"
-        ],
-        "160": [
             "specifications",
             "control_pcb",
             "control_electronic_bom",
@@ -1586,7 +1547,7 @@
             "software_protocol",
             "software_testing"
         ],
-        "161": [
+        "159": [
             "control_pcb",
             "control_electronic_bom",
             "drive_pcb",
@@ -1600,7 +1561,7 @@
             "software_protocol",
             "software_testing"
         ],
-        "162": [
+        "160": [
             "control_pcb",
             "drive_pcb",
             "software_manual",
@@ -1608,7 +1569,7 @@
             "software_protocol",
             "software_testing"
         ],
-        "163": [
+        "161": [
             "control_pcb",
             "drive_pcb",
             "software_xml",
@@ -1617,7 +1578,7 @@
             "software_protocol",
             "software_testing"
         ],
-        "164": [
+        "162": [
             "control_pcb",
             "wiring_manual",
             "control_accessories",
@@ -1625,6 +1586,20 @@
             "drive_pcb",
             "product_bom",
             "packing_list"
+        ],
+        "163": [
+            "software_xml",
+            "software_manual",
+            "software_executable_file",
+            "software_protocol",
+            "software_testing"
+        ],
+        "164": [
+            "software_xml",
+            "software_manual",
+            "software_executable_file",
+            "software_protocol",
+            "software_testing"
         ],
         "165": [
             "software_xml",
@@ -1641,27 +1616,13 @@
             "software_testing"
         ],
         "167": [
-            "software_xml",
-            "software_manual",
-            "software_executable_file",
-            "software_protocol",
-            "software_testing"
-        ],
-        "168": [
-            "software_xml",
-            "software_manual",
-            "software_executable_file",
-            "software_protocol",
-            "software_testing"
-        ],
-        "169": [
             "control_pcb",
             "wiring_manual",
             "control_accessories",
             "wire_accessories",
             "drive_pcb"
         ],
-        "170": [
+        "168": [
             "wiring_manual",
             "control_accessories",
             "wire_accessories",
@@ -1669,12 +1630,30 @@
             "software_manual",
             "software_executable_file"
         ],
-        "171": [
+        "169": [
             "control_pcb",
             "wiring_manual",
             "control_accessories",
             "wire_accessories",
             "drive_pcb",
+            "product_bom",
+            "packing_list",
+            "software_executable_file"
+        ],
+        "170": [
+            "control_pcb",
+            "wiring_manual",
+            "control_accessories",
+            "wire_accessories",
+            "drive_pcb",
+            "product_bom",
+            "software_executable_file"
+        ],
+        "171": [
+            "control_pcb",
+            "wiring_manual",
+            "control_accessories",
+            "wire_accessories",
             "product_bom",
             "packing_list",
             "software_executable_file"
@@ -1685,24 +1664,6 @@
             "control_accessories",
             "wire_accessories",
             "drive_pcb",
-            "product_bom",
-            "software_executable_file"
-        ],
-        "173": [
-            "control_pcb",
-            "wiring_manual",
-            "control_accessories",
-            "wire_accessories",
-            "product_bom",
-            "packing_list",
-            "software_executable_file"
-        ],
-        "174": [
-            "control_pcb",
-            "wiring_manual",
-            "control_accessories",
-            "wire_accessories",
-            "drive_pcb",
             "product_size_diagram",
             "product_complete_diagram",
             "product_simplify_diagram",
@@ -1712,7 +1673,7 @@
             "software_executable_file",
             "software_testing"
         ],
-        "175": [
+        "173": [
             "ui_execute_file",
             "ui_testing",
             "control_pcb",
@@ -1732,22 +1693,32 @@
             "software_executable_file",
             "software_testing"
         ],
-        "176": [
-            "control_pcb",
-            "control_electronic_bom",
+        "174": [
             "wiring_manual",
-            "drive_manual",
+            "control_accessories",
             "wire_accessories",
-            "drive_pcb",
-            "drive_electronic_bom",
-            "drive_size_diagram",
-            "drive_simplify_diagram",
+            "product_simplify_diagram",
+            "packaging_materials",
+            "product_bom",
+            "packing_list"
+        ],
+        "175": [
+            "control_accessories",
+            "wire_accessories",
+            "product_simplify_diagram",
+            "packaging_materials",
+            "product_bom",
+            "packing_list"
+        ],
+        "176": [
+            "control_accessories",
+            "wire_accessories",
+            "product_simplify_diagram",
             "packaging_materials",
             "product_bom",
             "packing_list"
         ],
         "177": [
-            "wiring_manual",
             "control_accessories",
             "wire_accessories",
             "product_simplify_diagram",
@@ -1756,35 +1727,6 @@
             "packing_list"
         ],
         "178": [
-            "control_accessories",
-            "wire_accessories",
-            "product_simplify_diagram",
-            "packaging_materials",
-            "product_bom",
-            "packing_list"
-        ],
-        "179": [
-            "control_accessories",
-            "wire_accessories",
-            "product_simplify_diagram",
-            "packaging_materials",
-            "product_bom",
-            "packing_list"
-        ],
-        "180": [
-            "control_accessories",
-            "wire_accessories",
-            "product_simplify_diagram",
-            "packaging_materials",
-            "product_bom",
-            "packing_list"
-        ],
-        "181": [
-            "packaging_materials",
-            "product_bom",
-            "packing_list"
-        ],
-        "182": [
             "ui_execute_file",
             "ui_testing",
             "specifications",
@@ -1807,7 +1749,7 @@
             "software_executable_file",
             "software_testing"
         ],
-        "183": [
+        "179": [
             "ui_execute_file",
             "ui_testing",
             "specifications",
@@ -1829,13 +1771,13 @@
             "software_executable_file",
             "software_testing"
         ],
-        "184": [
+        "180": [
             "ui_execute_file",
             "ui_testing",
             "software_executable_file",
             "software_testing"
         ],
-        "185": [
+        "181": [
             "ui_execute_file",
             "specifications",
             "control_pcb",
@@ -1851,7 +1793,7 @@
             "packing_list",
             "software_executable_file"
         ],
-        "186": [
+        "182": [
             "ui_execute_file",
             "specifications",
             "control_pcb",
@@ -1864,94 +1806,87 @@
             "product_bom",
             "packing_list",
             "software_executable_file"
+        ],
+        "183": [
+            "ui_execute_file",
+            "specifications",
+            "control_pcb",
+            "wiring_manual",
+            "display_accessories",
+            "wire_accessories",
+            "drive_pcb",
+            "product_simplify_diagram",
+            "packaging_materials",
+            "product_bom",
+            "packing_list",
+            "software_executable_file"
+        ],
+        "184": [
+            "ui_execute_file",
+            "specifications",
+            "control_pcb",
+            "wiring_manual",
+            "display_accessories",
+            "wire_accessories",
+            "drive_pcb",
+            "product_simplify_diagram",
+            "packaging_materials",
+            "product_bom",
+            "packing_list",
+            "software_executable_file"
+        ],
+        "185": [
+            "wire_accessories",
+            "packaging_materials",
+            "product_bom",
+            "packing_list"
+        ],
+        "186": [
+            "wire_accessories",
+            "packaging_materials",
+            "product_bom",
+            "packing_list"
         ],
         "187": [
             "ui_execute_file",
-            "specifications",
+            "ui_testing",
             "control_pcb",
-            "wiring_manual",
-            "display_accessories",
-            "wire_accessories",
+            "control_electronic_bom",
             "drive_pcb",
-            "product_simplify_diagram",
-            "packaging_materials",
-            "product_bom",
-            "packing_list",
-            "software_executable_file"
+            "drive_electronic_bom",
+            "software_xml",
+            "software_manual",
+            "software_executable_file",
+            "software_protocol",
+            "software_testing"
         ],
         "188": [
             "ui_execute_file",
-            "specifications",
+            "ui_testing",
             "control_pcb",
-            "wiring_manual",
-            "display_accessories",
-            "wire_accessories",
+            "control_electronic_bom",
             "drive_pcb",
-            "product_simplify_diagram",
-            "packaging_materials",
-            "product_bom",
-            "packing_list",
-            "software_executable_file"
+            "drive_electronic_bom",
+            "software_xml",
+            "software_manual",
+            "software_executable_file",
+            "software_protocol",
+            "software_testing"
         ],
         "189": [
-            "display_accessories",
-            "wire_accessories",
-            "packaging_materials",
-            "product_bom",
-            "packing_list"
+            "ui_execute_file",
+            "ui_testing",
+            "control_pcb",
+            "control_electronic_bom",
+            "drive_pcb",
+            "drive_electronic_bom",
+            "software_xml",
+            "software_manual",
+            "software_executable_file",
+            "software_protocol",
+            "software_testing"
         ],
         "190": [
-            "wire_accessories",
-            "packaging_materials",
-            "product_bom",
-            "packing_list"
-        ],
-        "191": [
-            "wire_accessories",
-            "packaging_materials",
-            "product_bom",
-            "packing_list"
-        ],
-        "192": [
-            "ui_execute_file",
-            "ui_testing",
-            "control_pcb",
-            "control_electronic_bom",
-            "drive_pcb",
-            "drive_electronic_bom",
-            "software_xml",
-            "software_manual",
-            "software_executable_file",
-            "software_protocol",
-            "software_testing"
-        ],
-        "193": [
-            "ui_execute_file",
-            "ui_testing",
-            "control_pcb",
-            "control_electronic_bom",
-            "drive_pcb",
-            "drive_electronic_bom",
-            "software_xml",
-            "software_manual",
-            "software_executable_file",
-            "software_protocol",
-            "software_testing"
-        ],
-        "194": [
-            "ui_execute_file",
-            "ui_testing",
-            "control_pcb",
-            "control_electronic_bom",
-            "drive_pcb",
-            "drive_electronic_bom",
-            "software_xml",
-            "software_manual",
-            "software_executable_file",
-            "software_protocol",
-            "software_testing"
-        ],
-        "195": [
             "ui_execute_file",
             "ui_testing",
             "optical_sports_logic",
@@ -1993,7 +1928,7 @@
             "software_protocol",
             "software_testing"
         ],
-        "196": [
+        "191": [
             "ui_execute_file",
             "ui_testing",
             "software_manual",
@@ -2001,7 +1936,7 @@
             "software_protocol",
             "software_testing"
         ],
-        "197": [
+        "192": [
             "ui_execute_file",
             "ui_testing",
             "photoelectric_sensors",
@@ -2012,7 +1947,7 @@
             "software_executable_file",
             "software_testing"
         ],
-        "198": [
+        "193": [
             "photoelectric_sensors",
             "light_pcb",
             "control_pcb",
@@ -2023,7 +1958,7 @@
             "software_executable_file",
             "software_testing"
         ],
-        "199": [
+        "194": [
             "photoelectric_sensors",
             "light_pcb",
             "control_pcb",
@@ -2034,7 +1969,7 @@
             "software_executable_file",
             "software_testing"
         ],
-        "200": [
+        "195": [
             "light_source",
             "light_if",
             "specifications",
@@ -2080,7 +2015,7 @@
             "software_protocol",
             "software_testing"
         ],
-        "201": [
+        "196": [
             "other_pcb",
             "other_electronic_bom",
             "control_pcb",
@@ -2100,7 +2035,7 @@
             "software_protocol",
             "software_testing"
         ],
-        "202": [
+        "197": [
             "fan_model",
             "software_xml",
             "software_manual",
@@ -2108,23 +2043,197 @@
             "software_protocol",
             "software_testing"
         ],
-        "203": [
+        "198": [
             "software_xml",
             "software_manual",
             "software_executable_file",
             "software_protocol",
             "software_testing"
         ],
-        "204": [
+        "199": [
             "ui_execute_file",
             "ui_testing",
             "software_xml",
             "software_manual",
             "software_executable_file",
             "software_protocol",
+            "software_testing"
+        ],
+        "200": [
+            "ui_execute_file",
+            "ui_testing",
+            "software_xml",
+            "software_manual",
+            "software_executable_file",
+            "software_protocol",
+            "software_testing"
+        ],
+        "201": [],
+        "202": [
+            "specifications",
+            "product_size_diagram",
+            "product_complete_diagram",
+            "product_simplify_diagram",
+            "product_bom",
+            "product_weight",
+            "product_treatment_process",
+            "product_material_selection"
+        ],
+        "203": [
+            "product_treatment_process",
+            "product_material_selection"
+        ],
+        "204": [
+            "electronic_testing",
+            "mechanical_testing",
             "software_testing"
         ],
         "205": [
+            "electronic_testing",
+            "mechanical_testing",
+            "software_testing"
+        ],
+        "206": [
+            "optical_sports_logic",
+            "optical_materials",
+            "optical_sports",
+            "light_source",
+            "light_if",
+            "photoelectric_sensors",
+            "target_surface",
+            "specifications",
+            "power_label",
+            "optical_testing",
+            "drive_output_testing",
+            "guide_beam"
+        ],
+        "207": [
+            "optical_sports_logic",
+            "optical_materials",
+            "optical_sports",
+            "light_source",
+            "light_if",
+            "photoelectric_sensors",
+            "target_surface",
+            "specifications",
+            "power_label",
+            "optical_testing",
+            "drive_output_testing",
+            "guide_beam"
+        ],
+        "208": [
+            "drive_size_diagram",
+            "drive_simplify_diagram",
+            "product_size_diagram",
+            "product_complete_diagram",
+            "product_simplify_diagram",
+            "packaging_materials",
+            "mechanical_testing",
+            "product_bom",
+            "packing_list",
+            "product_color",
+            "product_weight",
+            "product_treatment_process",
+            "product_material_selection",
+            "product_type_noise",
+            "product_type_ambient",
+            "product_temperature_rise",
+            "product_output_position",
+            "product_outlet_position",
+            "product_wind_diagram",
+            "mechanical_assembly_details",
+            "other_drawings",
+            "tec_type",
+            "cooling_type",
+            "sensor_type",
+            "adapter_options",
+            "fan_model"
+        ],
+        "209": [
+            "drive_size_diagram",
+            "drive_simplify_diagram",
+            "product_size_diagram",
+            "product_complete_diagram",
+            "product_simplify_diagram",
+            "packaging_materials",
+            "mechanical_testing",
+            "product_bom",
+            "packing_list",
+            "product_color",
+            "product_weight",
+            "product_treatment_process",
+            "product_material_selection",
+            "product_type_noise",
+            "product_type_ambient",
+            "product_temperature_rise",
+            "product_output_position",
+            "product_outlet_position",
+            "product_wind_diagram",
+            "mechanical_assembly_details",
+            "other_drawings",
+            "tec_type",
+            "cooling_type",
+            "sensor_type",
+            "adapter_options",
+            "fan_model"
+        ],
+        "210": [
+            "light_complete_diagram",
+            "light_pcb",
+            "light_electronic_bom",
+            "other_complete_diagram",
+            "other_pcb",
+            "other_electronic_bom",
+            "control_complete_diagram",
+            "control_pcb",
+            "control_electronic_bom",
+            "emc_baseline_test",
+            "wiring_manual",
+            "drive_manual",
+            "drive_test_report",
+            "electronic_testing",
+            "drive_power",
+            "product_control_mode",
+            "drive_voltage",
+            "drive_output_signal",
+            "control_accessories",
+            "display_accessories",
+            "wire_accessories",
+            "drive_complete_diagram",
+            "drive_pcb",
+            "drive_electronic_bom",
+            "drive_size_diagram",
+            "drive_simplify_diagram"
+        ],
+        "211": [
+            "light_complete_diagram",
+            "light_pcb",
+            "light_electronic_bom",
+            "other_complete_diagram",
+            "other_pcb",
+            "other_electronic_bom",
+            "control_complete_diagram",
+            "control_pcb",
+            "control_electronic_bom",
+            "emc_baseline_test",
+            "wiring_manual",
+            "drive_manual",
+            "drive_test_report",
+            "electronic_testing",
+            "drive_power",
+            "product_control_mode",
+            "drive_voltage",
+            "drive_output_signal",
+            "control_accessories",
+            "display_accessories",
+            "wire_accessories",
+            "drive_complete_diagram",
+            "drive_pcb",
+            "drive_electronic_bom",
+            "drive_size_diagram",
+            "drive_simplify_diagram"
+        ],
+        "212": [
             "ui_execute_file",
             "ui_testing",
             "software_xml",
@@ -2133,174 +2242,56 @@
             "software_protocol",
             "software_testing"
         ],
-        "206": [],
-        "207": [
-            "specifications",
-            "product_size_diagram",
-            "product_complete_diagram",
-            "product_simplify_diagram",
-            "product_bom",
-            "product_weight",
-            "product_treatment_process",
-            "product_material_selection"
-        ],
-        "208": [
-            "product_treatment_process",
-            "product_material_selection"
-        ],
-        "209": [
-            "electronic_testing",
-            "mechanical_testing",
-            "software_testing"
-        ],
-        "210": [
-            "electronic_testing",
-            "mechanical_testing",
-            "software_testing"
-        ],
-        "211": [
-            "optical_sports_logic",
-            "optical_materials",
-            "optical_sports",
-            "light_source",
-            "light_if",
-            "photoelectric_sensors",
-            "target_surface",
-            "specifications",
-            "power_label",
-            "optical_testing",
-            "drive_output_testing",
-            "guide_beam"
-        ],
-        "212": [
-            "optical_sports_logic",
-            "optical_materials",
-            "optical_sports",
-            "light_source",
-            "light_if",
-            "photoelectric_sensors",
-            "target_surface",
-            "specifications",
-            "power_label",
-            "optical_testing",
-            "drive_output_testing",
-            "guide_beam"
-        ],
         "213": [
-            "drive_size_diagram",
-            "drive_simplify_diagram",
-            "product_size_diagram",
-            "product_complete_diagram",
-            "product_simplify_diagram",
-            "packaging_materials",
-            "mechanical_testing",
-            "product_bom",
-            "packing_list",
-            "product_color",
-            "product_weight",
-            "product_treatment_process",
-            "product_material_selection",
-            "product_type_noise",
-            "product_type_ambient",
-            "product_temperature_rise",
-            "product_output_position",
-            "product_outlet_position",
-            "product_wind_diagram",
-            "mechanical_assembly_details",
-            "other_drawings",
-            "tec_type",
-            "cooling_type",
-            "sensor_type",
-            "adapter_options",
-            "fan_model"
-        ],
-        "214": [
-            "drive_size_diagram",
-            "drive_simplify_diagram",
-            "product_size_diagram",
-            "product_complete_diagram",
-            "product_simplify_diagram",
-            "packaging_materials",
-            "mechanical_testing",
-            "product_bom",
-            "packing_list",
-            "product_color",
-            "product_weight",
-            "product_treatment_process",
-            "product_material_selection",
-            "product_type_noise",
-            "product_type_ambient",
-            "product_temperature_rise",
-            "product_output_position",
-            "product_outlet_position",
-            "product_wind_diagram",
-            "mechanical_assembly_details",
-            "other_drawings",
-            "tec_type",
-            "cooling_type",
-            "sensor_type",
-            "adapter_options",
-            "fan_model"
-        ],
-        "215": [
-            "light_complete_diagram",
-            "light_pcb",
-            "light_electronic_bom",
-            "other_complete_diagram",
-            "other_pcb",
-            "other_electronic_bom",
-            "control_complete_diagram",
-            "control_pcb",
-            "control_electronic_bom",
-            "emc_baseline_test",
-            "wiring_manual",
-            "drive_manual",
-            "drive_test_report",
-            "electronic_testing",
-            "drive_power",
-            "product_control_mode",
-            "drive_voltage",
-            "drive_output_signal",
-            "control_accessories",
-            "display_accessories",
-            "wire_accessories",
-            "drive_complete_diagram",
-            "drive_pcb",
-            "drive_electronic_bom",
-            "drive_size_diagram",
-            "drive_simplify_diagram"
-        ],
-        "216": [
-            "light_complete_diagram",
-            "light_pcb",
-            "light_electronic_bom",
-            "other_complete_diagram",
-            "other_pcb",
-            "other_electronic_bom",
-            "control_complete_diagram",
-            "control_pcb",
-            "control_electronic_bom",
-            "emc_baseline_test",
-            "wiring_manual",
-            "drive_manual",
-            "drive_test_report",
-            "electronic_testing",
-            "drive_power",
-            "product_control_mode",
-            "drive_voltage",
-            "drive_output_signal",
-            "control_accessories",
-            "display_accessories",
-            "wire_accessories",
-            "drive_complete_diagram",
-            "drive_pcb",
-            "drive_electronic_bom",
-            "drive_size_diagram",
-            "drive_simplify_diagram"
-        ],
-        "217": [
             "ui_execute_file",
             "ui_testing",
+            "software_xml",
+            "software_manual",
+            "software_executable_file",
+            "software_protocol",
+            "software_testing"
+        ],
+        "214": [
+            "craft_key_requirements",
+            "product_complete_diagram"
+        ],
+        "215": [
+            "craft_key_requirements",
+            "product_complete_diagram"
+        ],
+        "217": [
+            "optical_sports_logic",
+            "optical_materials",
+            "optical_sports",
+            "light_source",
+            "specifications",
+            "power_label",
+            "optical_testing",
+            "drive_output_testing",
+            "control_pcb",
+            "control_electronic_bom",
+            "wiring_manual",
+            "drive_manual",
+            "drive_power",
+            "control_accessories",
+            "display_accessories",
+            "wire_accessories",
+            "drive_pcb",
+            "drive_electronic_bom",
+            "drive_size_diagram",
+            "drive_simplify_diagram",
+            "product_size_diagram",
+            "product_complete_diagram",
+            "product_simplify_diagram",
+            "packaging_materials",
+            "product_bom",
+            "packing_list",
+            "product_type_ambient",
+            "product_temperature_rise",
+            "product_output_position",
+            "cooling_type",
+            "sensor_type",
+            "fan_model",
             "software_xml",
             "software_manual",
             "software_executable_file",
@@ -2308,21 +2299,31 @@
             "software_testing"
         ],
         "218": [
-            "ui_execute_file",
-            "ui_testing",
-            "software_xml",
-            "software_manual",
-            "software_executable_file",
-            "software_protocol",
-            "software_testing"
+            "packaging_materials",
+            "product_bom",
+            "packing_list"
         ],
         "219": [
-            "craft_key_requirements",
-            "product_complete_diagram"
+            "display_accessories",
+            "wire_accessories",
+            "packaging_materials",
+            "product_bom",
+            "packing_list"
         ],
         "220": [
-            "craft_key_requirements",
-            "product_complete_diagram"
-        ]
+            "control_pcb",
+            "control_electronic_bom",
+            "wiring_manual",
+            "drive_manual",
+            "wire_accessories",
+            "drive_pcb",
+            "drive_electronic_bom",
+            "drive_size_diagram",
+            "drive_simplify_diagram",
+            "packaging_materials",
+            "product_bom",
+            "packing_list"
+        ],
+        "221": []
     }
 }

@@ -31,6 +31,7 @@ from ..overview_permission_mapping import (
 from ..requirement_overview_impact import (
     REQUIREMENT_OVERVIEW_IMPACT_STORAGE_KEY,
     RequirementOverviewImpactConfigError,
+    index_requirement_nodes_by_id,
     load_requirement_overview_impact_config,
     save_requirement_overview_impact_config,
 )
@@ -559,7 +560,11 @@ def manage_page():
         raw_requirement_nodes = (
             runtime_requirement_config.get("data", {}) if isinstance(runtime_requirement_config, dict) else {}
         )
-        requirement_nodes = raw_requirement_nodes if isinstance(raw_requirement_nodes, dict) else {}
+        try:
+            requirement_nodes = index_requirement_nodes_by_id(raw_requirement_nodes)
+        except RequirementOverviewImpactConfigError as exc:
+            ui.notify(f"需求配置无法建立固定唯一码索引：{exc}", type="negative", multi_line=True)
+            return
 
         def node_sort_key(node_id):
             node_id_text = str(node_id)
