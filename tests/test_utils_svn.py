@@ -34,10 +34,13 @@ class _FakeHttpClient:
 
 
 class ValidateSvnUrlTests(unittest.IsolatedAsyncioTestCase):
-    def _fake_app(self):
+    def _fake_app(self, project_summary=None):
         return SimpleNamespace(
             storage=SimpleNamespace(
-                general={"project_summary": {"项目A": {"state": "研发"}}},
+                general={
+                    "project_summary": project_summary
+                    or {"项目A": {"state": "研发", "project": "RFFM-1519"}},
+                },
             )
         )
 
@@ -116,6 +119,77 @@ class ValidateSvnUrlTests(unittest.IsolatedAsyncioTestCase):
             "https://svn.example.test/svn/Control/Controlled/Shared/Firmware/common.bin",
         )
         self.assertEqual(requested_urls, [url])
+
+    async def test_other_project_is_resolved_from_filename_instead_of_current_project(self):
+        requested_urls: list[str] = []
+        client = _FakeHttpClient([_FakeResponse(200, "application/octet-stream")], requested_urls)
+        config = self._config()
+        config["fallback_folder_path"] = ""
+
+        with (
+            patch.object(
+                utils,
+                "app",
+                self._fake_app(
+                    {
+                        "RM3000": {"state": "研发", "project": "RM3000"},
+                        "RM5000": {"state": "研发", "project": "RM5000"},
+                    }
+                ),
+            ),
+            patch.object(utils.httpx, "AsyncClient", return_value=client),
+        ):
+            valid, url, _, _ = await utils.validate_svn_url(
+                "RM3000-firmware.bin", config, ["RM5000"]
+            )
+
+        self.assertTrue(valid)
+        self.assertEqual(
+            url,
+            "https://svn.example.test/svn/Control/Controlled/RM3000/src/RM3000-firmware.bin",
+        )
+        self.assertEqual(requested_urls, [url])
+
+    async def test_regular_project_does_not_bypass_filename_rule(self):
+        config = self._config()
+        config["fallback_folder_path"] = ""
+
+        with patch.object(
+            utils,
+            "app",
+            self._fake_app(
+                {"RFFM-1519-A": {"state": "研发", "project": "RFFM-1519"}}
+            ),
+        ):
+            valid, url, _, message = await utils.validate_svn_url(
+                "unexpected-firmware.bin", config, ["RFFM-1519-A"]
+            )
+
+        self.assertFalse(valid)
+        self.assertEqual(url, "")
+        self.assertIn("未能生成有效", message)
+
+    async def test_equal_length_other_project_matches_are_rejected_as_ambiguous(self):
+        config = self._config()
+        config["fallback_folder_path"] = ""
+
+        with patch.object(
+            utils,
+            "app",
+            self._fake_app(
+                {
+                    "RM3000": {"state": "研发", "project": "RM3000"},
+                    "RM5000": {"state": "研发", "project": "RM5000"},
+                }
+            ),
+        ):
+            valid, url, _, message = await utils.validate_svn_url(
+                "RM3000-RM5000-firmware.bin", config, ["RM5000"]
+            )
+
+        self.assertFalse(valid)
+        self.assertEqual(url, "")
+        self.assertIn("同时匹配多个", message)
 
 
 if __name__ == "__main__":

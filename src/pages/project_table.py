@@ -26,6 +26,7 @@ from ..permission_catalog import (
     PROJECT_VIEW_PERMISSION,
 )
 from ..project_access import can_edit_project_status, can_manage_project_records
+from ..project_catalog import build_project_select_options, get_project_table_category
 from ..project_overview_access import can_view_any_project_overview
 from ..project_requirement_access import can_view_project_requirement
 from ..project_test_summary_access import (
@@ -435,23 +436,10 @@ def project_table_page():
         select_li_new = list(set([data["project"] for data in project_summary_dict.values()]))
 
         # 更新全局的 select_dic
-        select_dic = get_select_dic(select_li_new)
+        select_dic = build_project_select_options(select_li_new)
 
         # 3. 解析目标项目的分类 (反推它属于哪个大类和小类)
-        target_major = "RFFM"  # 默认兜底
-        target_sub = "所有"
-
-        # 复用 get_select_dic 里的切分逻辑
-        if "-" in target_project_name:
-            parts = target_project_name.split("-")
-            target_major = parts[0]
-            if len(parts) > 1:
-                # 取第二段的前两位作为子类 (如 15)
-                target_sub = parts[1][:2]
-        else:
-            # 如果没有横杠，属于“其它”
-            target_major = "其它"
-            target_sub = target_project_name
+        target_major, target_sub = get_project_table_category(target_project_name)
 
         # 4. 更新 UI 控件
         # 4.1 更新大类选项 (以防新增了大类)
@@ -587,39 +575,6 @@ def project_table_page():
                 ui.button("取消", on_click=table_dialog.close).props("color=grey-8")
 
             table_dialog.open()
-
-    # 按照项目名里“-”符号切分为大类和小类，并输出二层结构的类别字典
-    def get_select_dic(select_li):
-        # select_li为所有项目名列表：RFFM-1519-A
-        select_li.sort()
-        select_dic = {}
-        # 单独加入一个所有大类，以供显示所有型号
-        select_dic["所有"] = ["所有"]
-        # 现将临时项目加在靠前位置
-        select_dic["RFTS"] = ["所有"]
-        for s in select_li:
-            # 判断指定字符出现次数
-            if s.count("-") >= 1:
-                parts = s.split("-")
-                if parts[0] not in select_dic.keys():
-                    # 每个小类都先给个 所有 的选项
-                    select_dic[parts[0]] = ["所有"]
-                if parts[1][:2] not in select_dic[parts[0]]:
-                    # 将代表小类的 两位数字 加入到该大类的小类选项里
-                    select_dic[parts[0]].append(parts[1][:2])
-                    # 排序
-                    select_dic[parts[0]].sort(reverse=True)
-            # 对于没有-字符的类别做特殊处理
-            else:
-                # 单独设置一个其它的大类，且该大类下的小类选项里先加入 所有
-                if "其它" not in select_dic.keys():
-                    select_dic["其它"] = ["所有"]
-                # 将完整项目号直接加入小类选项里
-                if s not in select_dic["其它"]:
-                    select_dic["其它"].append(s)
-                    # 排序
-                    select_dic["其它"].sort(reverse=True)
-        return select_dic
 
     # 按照第一选项的值，生成更新第二选框的选项列表
     def update_sub_select(select_sub):
@@ -1347,7 +1302,7 @@ def project_table_page():
     # 恢复期间忽略程序设值触发的变更事件，防止默认值覆盖会话记忆。
     project_table_view_state = {"restoring": True}
     # 获取按照大类和小类整理后的项目类别字典，用于选项框的选项动态生成
-    select_dic = get_select_dic(select_li)
+    select_dic = build_project_select_options(select_li)
     select_major_li = list(select_dic.keys())
 
     # 项目信息表

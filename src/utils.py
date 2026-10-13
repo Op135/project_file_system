@@ -24,6 +24,7 @@ from nicegui.events import KeyEventArguments
 
 from . import db_storage
 from .permission_catalog import project_overview_permission_definitions
+from .project_catalog import match_other_project_name
 
 # import config
 from .config import (
@@ -382,6 +383,16 @@ async def validate_svn_url(content: str, config: dict, projects: list, pending_o
     search_hierarchy = config.get("search_hierarchy", [])
     fallback_folder_path = str(config.get("fallback_folder_path") or "").strip().strip("/\\")
 
+    project_summary = app.storage.general.get("project_summary", {})
+    other_project_names = [
+        str(project_data.get("project") or "").strip()
+        for project_data in project_summary.values()
+        if isinstance(project_data, dict)
+    ]
+    special_project_folder, special_project_matches = match_other_project_name(
+        content, other_project_names
+    )
+
     according_folder_name = []
     target_url_li = []
 
@@ -413,6 +424,12 @@ async def validate_svn_url(content: str, config: dict, projects: list, pending_o
             if match:
                 match_folder = f"{match.group(1)}-{match.group(2)}"
                 target_url_li.append(f"{upload_path}/{svn_main_folder}/{match_folder}")
+            elif special_project_folder:
+                # 常规正则未命中时，从文件名中识别项目总表里的“其它”项目号。
+                target_url_li.append(f"{upload_path}/{svn_main_folder}/{special_project_folder}")
+            elif special_project_matches:
+                matched_projects = "、".join(special_project_matches)
+                return False, "", "", f"文件名同时匹配多个其它项目号: {matched_projects}"
         else:
             target_url_li.append(f"{upload_path}/{svn_main_folder}")
 
