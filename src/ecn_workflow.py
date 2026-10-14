@@ -207,9 +207,9 @@ def _service(user_service=None):
 
 
 def is_ecn_database_workflow_enabled(*, user_service=None) -> bool:
-    """数据库身份模式下启用管理员可配置的 ECN 审批流程。"""
+    """身份服务可用时启用管理员可配置的 ECN 审批流程。"""
     service = _service(user_service)
-    return service is not None and getattr(service, "storage_mode", "legacy_excel") == "database"
+    return service is not None
 
 
 def ecn_workflow_error_message(result: dict[str, Any], subject: str) -> str:

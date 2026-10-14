@@ -54,8 +54,6 @@ class AssignmentUsers(Users):
 
 
 class HierarchyUsers:
-    storage_mode = "database"
-
     def __init__(self, supervisor_permissions: set[str]):
         self.users = {
             "sales": {"role": "销售", "status": "disabled"},

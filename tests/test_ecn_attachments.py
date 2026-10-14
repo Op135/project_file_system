@@ -11,6 +11,7 @@ from fastapi import HTTPException
 from src.ecn_management_config import ECNState
 from src.modules.ecn import actions, attachment_preview, attachments, repository
 from src.modules.ecn.models import get_ecn_template
+from src.user_service import UserService
 from tests.test_error_management_concurrency import load_isolated_db_storage
 
 
@@ -24,23 +25,6 @@ class Uploaded:
         Path(path).write_bytes(b"test-pdf-content")
 
 
-class Users:
-    storage_mode = "database"
-
-    def __init__(self, grants):
-        self.grants = grants
-
-    def get_user(self, username):
-        return {"status": "active", "role": "测试岗位"} if username in self.grants else None
-
-    def get_primary_membership(self, username):
-        return {"position_name": "测试岗位"} if username in self.grants else None
-
-    def has_permission(self, username, code, **kwargs):
-        del kwargs
-        return code in self.grants.get(username, set())
-
-
 class ECNAttachmentTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -52,10 +36,21 @@ class ECNAttachmentTests(unittest.IsolatedAsyncioTestCase):
         self.path_patch = patch.object(attachments, "attachment_root", return_value=self.files)
         self.db_patch.start()
         self.path_patch.start()
-        self.service = Users({
-            "owner": {"ecn.view", "ecn.request.create", "ecn.scheme.edit"},
-            "other": {"ecn.view"},
-        })
+        self.service = UserService(db_path=root / "ecn.db", password_iterations=1_000)
+        self.service.modify_user("add", "owner", "123456", "测试岗位")
+        self.service.modify_user("add", "other", "123456", "测试岗位")
+        owner_role = self.service.create_security_role(
+            code="test.ecn.attachment.owner",
+            name="附件所有者测试权限",
+            permission_codes=["ecn.view", "ecn.request.create", "ecn.scheme.edit"],
+        )
+        viewer_role = self.service.create_security_role(
+            code="test.ecn.attachment.viewer",
+            name="附件查看测试权限",
+            permission_codes=["ecn.view"],
+        )
+        self.service.set_user_security_roles("owner", [owner_role])
+        self.service.set_user_security_roles("other", [viewer_role])
 
     async def asyncTearDown(self):
         self.path_patch.stop()
@@ -68,11 +63,9 @@ class ECNAttachmentTests(unittest.IsolatedAsyncioTestCase):
         draft["basic_info"]["applicant"] = "owner"
         staged = await attachments.stage_upload(Uploaded(), "owner")
         draft["basic_info"]["attachments"] = [staged]
-        legacy_service = Users({"owner": {"ecn.request.create"}})
-        legacy_service.storage_mode = "legacy_excel"
         result = await actions.execute_action(
             copy.deepcopy(draft), copy.deepcopy(draft), "save_draft", "owner", "测试岗位",
-            is_new=True, user_service=legacy_service, storage=self.storage,
+            is_new=True, user_service=self.service, storage=self.storage,
         )
         self.assertTrue(result.ok, result.message)
         assert result.record is not None

@@ -65,7 +65,7 @@ def _service(user_service=None):
 
 def _database_mode(user_service=None) -> bool:
     service = _service(user_service)
-    return service is not None and getattr(service, "storage_mode", "legacy_excel") == "database"
+    return service is not None
 
 
 def get_active_ecn_actor_role(

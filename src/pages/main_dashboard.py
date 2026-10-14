@@ -204,7 +204,7 @@ def main_page():
     ]
     menu_items = []
     for items in menu_items_metadata:
-        # 项目资料总表使用稳定权限控制入口，旧 Excel 环境仍允许所有登录用户查看。
+        # 项目资料总表使用稳定权限控制入口。
         if items[3] == "/project_table" and not can_view_project_table(
             current_role,
             current_user,
@@ -216,43 +216,43 @@ def main_page():
             current_user,
         ):
             continue
-        # 需求项结构使用稳定权限控制入口，旧 Excel 模式继续兼容原角色关键词。
+        # 需求项结构使用稳定权限控制入口。
         elif items[3] == "/question_tree_tabs" and not can_view_question_tree(
             current_role,
             current_user,
         ):
             continue
-        # 统计信息入口使用稳定权限，旧 Excel 模式继续沿用原角色关键词。
+        # 统计信息入口使用稳定权限。
         elif items[3] == "/statistics" and not can_view_statistics(
             current_role,
             current_user,
         ):
             continue
-        # 批量产品问题跟进使用稳定权限控制入口，旧 Excel 环境仍沿用原角色关键词。
+        # 批量产品问题跟进使用稳定权限控制入口。
         elif items[3] == "/error_management" and not can_view_error_management(
             current_role,
             current_user,
         ):
             continue
-        # 样品问题跟进使用稳定权限控制入口，旧 Excel 环境仍沿用原角色关键词。
+        # 样品问题跟进使用稳定权限控制入口。
         elif items[3] == "/sample_issue_collection" and not can_view_sample_issue_collection(
             current_role,
             current_user,
         ):
             continue
-        # 设计知识库使用稳定权限控制入口，旧 Excel 环境仍沿用原角色关键词。
+        # 设计知识库使用稳定权限控制入口。
         elif items[3] == "/design_knowledge" and not can_view_design_knowledge(
             current_role,
             current_user,
         ):
             continue
-        # 样品单执行看板使用稳定权限控制入口，旧 Excel 环境仍沿用原角色关键词。
+        # 样品单执行看板使用稳定权限控制入口。
         elif items[3] == "/sample_order_dashboard" and not can_view_sample_order_dashboard(
             current_role,
             current_user,
         ):
             continue
-        # ECN 工程变更入口使用稳定权限控制，旧 Excel 环境继续允许登录用户进入。
+        # ECN 工程变更入口使用稳定权限控制。
         elif items[3] == "/ecn_management" and not can_view_ecn(
             current_role,
             current_user,

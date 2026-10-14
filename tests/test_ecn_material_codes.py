@@ -26,6 +26,7 @@ from src.permission_catalog import (
     PERMISSION_CODES,
     build_legacy_default_grants,
 )
+from src.user_service import UserService
 from tests.test_error_management_concurrency import load_isolated_db_storage
 
 
@@ -49,12 +50,25 @@ def material_item(item_id: str, name: str) -> dict:
 class ECNMaterialCodeTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.temp = tempfile.TemporaryDirectory()
+        db_path = Path(self.temp.name) / "ecn.db"
         self.storage = load_isolated_db_storage(
             "ecn_material_code_db",
-            Path(self.temp.name) / "ecn.db",
+            db_path,
         )
         await self.storage.init_db()
-        self.service = SimpleNamespace(storage_mode="legacy_excel")
+        self.service = UserService(db_path=db_path, password_iterations=1_000)
+        self.service.modify_user("add", "assistant", "123456", "研发助理")
+        permission_codes = [
+            item["code"]
+            for item in self.service.list_permissions()
+            if item.get("module") == "ecn"
+        ]
+        role_id = self.service.create_security_role(
+            code="test.ecn.material.all",
+            name="ECN物料测试权限",
+            permission_codes=permission_codes,
+        )
+        self.service.set_user_security_roles("assistant", [role_id])
         self.record = get_ecn_template()
         self.record["ecn_id"] = "ECN-code"
         self.record["basic_info"].update(applicant="engineer", file_no="ECN-code")
@@ -195,8 +209,6 @@ class ECNMaterialCodeTests(unittest.IsolatedAsyncioTestCase):
 
     def test_new_permission_drives_home_pending_and_notification_content(self):
         class Users:
-            storage_mode = "database"
-
             @staticmethod
             def load_users():
                 return {

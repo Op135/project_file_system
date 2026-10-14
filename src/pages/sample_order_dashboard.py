@@ -628,7 +628,7 @@ def _has_sample_order_permission(
     permission_code: str,
     legacy_allowed_roles: list[str],
 ) -> bool:
-    """按稳定权限判断操作；旧 Excel 环境继续使用原角色配置。"""
+    """应用运行时按稳定权限判断操作。"""
     user_service = getattr(app.state, "user_service", None)
     if user_service is None or not option_text(username):
         # 无应用上下文时保留纯函数兼容，便于历史脚本和单元测试调用。
@@ -2358,7 +2358,7 @@ async def sample_order_dashboard_page(record_id: str = "", view: str = "") -> No
         return
 
     current_user = option_text(app.storage.user.get("current_user"), "未知用户")
-    # 用户会话会跨服务器重启保留；进入页面时同步兼容角色文本，供旧 Excel 模式和操作留痕使用。
+    # 用户会话会跨服务器重启保留；进入页面时同步当前岗位文本供操作留痕使用。
     current_role = option_text(sync_current_user_role(), "未知角色")
     if not can_view_sample_order_dashboard(current_role, current_user):
         ui.notify("当前用户没有查看样品单执行看板的权限", type="warning")

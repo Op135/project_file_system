@@ -127,13 +127,12 @@ def generate_initial_ecn_data(
     # 正式编号仅在首次保存的数据库事务中分配。
     ecn_id = ""
     applicant_dept = ""
-    if user_service is not None and getattr(user_service, "storage_mode", "legacy_excel") == "database":
+    if user_service is not None:
         membership = user_service.get_primary_membership(applicant)
         if isinstance(membership, dict):
             applicant_dept = str(membership.get("org_name") or "").strip()
-    # 旧 Excel 模式没有组织架构，继续用原角色关键词推导显示部门。
     if not applicant_dept:
-        applicant_dept = get_dept_from_role(role)
+        applicant_dept = "其它部门"
 
     new_data = get_ecn_template()
     new_data["ecn_id"] = ecn_id  # 初始化ECN编号

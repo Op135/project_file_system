@@ -62,6 +62,7 @@ warnings.filterwarnings("ignore", category=UserWarning, module="openpyxl")
 # 初始化服务并将实例附加到 app.state
 # 将用户配置初始化到app.state.users_data
 app.state.user_service = UserService()
+app.state.user_service.require_database_users()
 app.state.users_data = app.state.user_service.load_users()
 # 将config_service.json配置初始化到app.state.init_config_data
 app.state.config_service = ConfigService()

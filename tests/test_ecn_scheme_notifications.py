@@ -5,8 +5,6 @@ from src.modules.ecn import scheme_notifications
 
 
 class SchemeSalesUsers:
-    storage_mode = "database"
-
     def __init__(self):
         self.users = {
             "admin": {"role": "admin", "status": "active"},

@@ -7,9 +7,6 @@ from typing import Any, Iterable
 
 from nicegui import app
 
-from .legacy_compatibility import record_legacy_compatibility_hit
-from .wecom_service import resolve_wecom_recipients
-
 logger = logging.getLogger(__name__)
 SYSTEM_ADMIN_USERNAME = "admin"
 
@@ -39,23 +36,12 @@ async def resolve_permission_wecom_recipients(
     fallback_touser: str = "",
     user_service=None,
 ) -> str:
-    """按通知接收权限解析企业微信账号，并兼容尚未迁移的 Excel 用户模式。
-
-    数据库模式只信任稳定权限和系统用户的企业微信绑定，不再读取旧 JSON 中的角色、
-    职务接收规则。Excel 模式仍使用旧规则，保证服务器执行用户迁移前可安全部署新代码。
-    """
+    """按稳定通知权限和企业微信绑定解析收件账号。"""
+    del legacy_targets
     service = user_service or getattr(app.state, "user_service", None)
-    if service is None or getattr(service, "storage_mode", "legacy_excel") != "database":
-        target_count = len(legacy_targets) if isinstance(legacy_targets, (list, tuple, set)) else 0
-        record_legacy_compatibility_hit(
-            "legacy_notification_route",
-            str(permission_code or "unknown").strip().lower(),
-            detail=f"legacy_targets={target_count}; fallback={bool(fallback_touser)}",
-        )
-        return await resolve_wecom_recipients(
-            legacy_targets or [],
-            fallback_touser=fallback_touser,
-        )
+    if service is None:
+        logger.error("身份服务不可用，无法解析通知权限：permission=%s", permission_code)
+        return "|".join(_unique_values(str(fallback_touser or "").split("|")))
 
     usernames = service.list_usernames_with_permission(
         permission_code,
@@ -122,8 +108,8 @@ async def resolve_position_wecom_recipients(
 ) -> str:
     """把流程完成抄送岗位解析为已绑定的企业微信成员账号。"""
     service = user_service or getattr(app.state, "user_service", None)
-    if service is None or getattr(service, "storage_mode", "legacy_excel") != "database":
-        logger.warning("流程完成抄送岗位只支持数据库身份模式")
+    if service is None:
+        logger.warning("身份服务不可用，无法解析流程完成抄送岗位")
         return ""
 
     usernames, missing_positions = resolve_position_usernames(

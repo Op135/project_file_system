@@ -7,27 +7,19 @@
 3. 妥善保存配置包。文件不含密码，但包含用户名、组织关系和企业微信 userid，应按内部资料管理。
 4. 提交并推送代码及根目录业务 JSON。配置迁移包不代替 `ecn_management_config.json`、
    `overview_config.json` 等业务配置文件的代码部署。
-5. 备份服务器项目目录、SQLite 数据库、`.nicegui` 存储、附件目录和服务器自己的
-   `data/users.xlsx`。
+5. 备份服务器当前源代码、`db/nicegui_storage.db`、`.nicegui` 存储和全部附件目录。
 
 ## 二、代码部署原则
 
-- 不要把本地 `db/`、`data/users.xlsx`、`.nicegui/`、`files/`、`over/`、`req/`、
+- 不要把本地 `db/`、`.nicegui/`、`files/`、`over/`、`req/`、
   `uploads/`、`logs/` 或 `backups/` 覆盖到服务器。
 - 使用服务器原有环境变量，尤其是 `STORAGE_SECRET` 和企业微信相关密钥。
 - 本地测试用户统一密码不会进入配置包，也不会覆盖服务器身份数据库中的密码哈希。
 
 ## 三、服务器执行顺序
 
-1. 在低使用量维护窗口部署新代码并启动一次，确认数据库结构初始化成功。
-2. 如果服务器仍是旧 Excel 用户模式，在服务器项目根目录执行：
-
-   ```powershell
-   D:\miniforge3\envs\python_nicegui\python.exe scripts\migrate_users_to_iam.py
-   ```
-
-   普通部署不要添加 `--refresh-existing-passwords`。该命令读取服务器自己的
-   `data/users.xlsx`，并保留数据库中已经存在的密码哈希。
+1. 在低使用量维护窗口停止服务，部署新代码，并保留服务器原有的 `db/nicegui_storage.db`。
+2. 启动应用。系统会检查 `iam_users` 非空；若报“身份数据库中没有用户”，立即停止并恢复备份数据库，不要创建临时 Excel 账号源。
 3. 使用 `admin` 登录 `/manage`，进入“配置迁移”，上传本地导出的 JSON。
 4. 检查预检结果：
    - 目标服务器必须已经拥有配置包引用的全部稳定权限；
@@ -66,9 +58,9 @@
 至少准备以下四类非管理员账号进行冒烟测试：普通只读用户、业务维护用户、审批人、通知接收人。
 `admin` 自动拥有已注册系统权限，只适合检查管理入口，不能替代普通用户的权限验证。
 
-## 七、旧兼容分支观察
+## 七、历史数据兼容观察
 
-系统只在旧兼容逻辑实际放行或被采用时写入带 `LEGACY_COMPAT_HIT` 标记的警告日志。同一类别、功能和用户首次命中立即记录，之后默认每三十分钟汇总一次，避免高频页面检查刷满日志。
+系统对历史单据快照的兼容收尾会写入带 `LEGACY_COMPAT_HIT` 标记的警告日志。同一类别、功能和用户首次命中立即记录，之后默认每三十分钟汇总一次，避免高频页面检查刷满日志。
 
 可在服务器项目根目录执行：
 
@@ -78,10 +70,6 @@ Select-String -Path logs\app.log* -Pattern "LEGACY_COMPAT_HIT"
 
 日志类别含义：
 
-- `excel_user_store`：仍从 `data/users.xlsx` 加载用户或完成登录认证；
-- `legacy_role_grant`：旧角色名称或关键词规则实际授予了权限；
-- `legacy_notification_route`：固定通知仍采用旧 JSON 职位目标；
-- `legacy_workflow_route`：新申请仍采用旧 JSON 审批路由；
 - `legacy_approval_snapshot`：迁移前待审记录仍按旧角色快照收尾。
 
 建议至少观察一个覆盖月度提醒、审批和低频业务的完整周期，并结合轮转文件 `app.log.1` 至 `app.log.5` 检查。零命中只是清理依据之一；正式删除前仍需做全仓引用检查、业务回归和可回滚备份。需要调整限频时，可在服务器环境中设置 `LEGACY_COMPAT_LOG_INTERVAL_SECONDS`，单位为秒，默认 `1800`。

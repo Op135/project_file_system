@@ -151,8 +151,8 @@ async def reassign_ecn_approval_reviewer(
         return ECNResult(False, "请选择原审核人和接手人。")
 
     async def operation(record, connection):
-        if user_service is None or getattr(user_service, "storage_mode", "") != "database":
-            raise ECNConflict("审批人调整只支持数据库身份与审批流程。")
+        if user_service is None:
+            raise ECNConflict("身份服务不可用，无法调整审批人。")
         if Path(user_service.identity_store.db_path).resolve() != Path(storage.DB_PATH).resolve():
             raise ECNConflict("ECN审批需要身份数据与业务数据使用同一数据库。")
         actor_role = await _actor_role(connection, actor_username)

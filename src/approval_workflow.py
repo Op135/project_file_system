@@ -388,9 +388,6 @@ def resolve_approval_workflow(
     event_definition = get_workflow_event_definition(module, event)
     if event_definition is None:
         return {"status": "unsupported_event", "message": "业务模块尚未注册该审批事件"}
-    if getattr(user_service, "storage_mode", "legacy_excel") != "database":
-        return {"status": "legacy_mode", "message": "旧 Excel 模式继续使用原业务审批规则"}
-
     requester_membership = user_service.get_primary_membership(requester_username)
     if not requester_membership:
         return {"status": "missing_membership", "message": "申请人尚未配置主部门和主岗位"}

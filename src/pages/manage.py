@@ -767,53 +767,8 @@ def manage_page():
 
         dialog.open()
 
-    def open_user_migration_dialog():
-        """迁移当前机器上的用户工作簿，不对其中密码作任何预设。"""
-        user_svc = app.state.user_service
-        mode_text = "身份数据库" if user_svc.storage_mode == "database" else "旧版 Excel"
-
-        with ui.dialog() as migration_dialog, ui.card().classes("w-[42rem] max-w-[95vw] p-6"):
-            ui.label("一键迁移用户到身份数据库").classes("text-xl font-bold")
-            ui.label(f"当前模式：{mode_text}").classes("text-sm text-gray-600")
-            ui.label(
-                "系统读取当前部署机器上的 data/users.xlsx，将其中实际密码转换为不可逆哈希。"
-                "不会写回或删除 Excel；迁移前会额外生成备份。"
-            ).classes("text-sm leading-6")
-            ui.label(
-                "普通重复执行只补充新用户、同步兼容角色，不覆盖数据库中已有密码。因此本地测试密码不会被带到服务器。"
-            ).classes("text-sm text-blue-800 bg-blue-50 rounded p-3")
-            result_label = ui.label().classes("text-sm whitespace-pre-line")
-
-            async def run_migration(event):
-                event.sender.disable()
-                notice = ui.notification("正在迁移并计算密码哈希...", timeout=None, spinner=True)
-                try:
-                    result = await run.io_bound(user_svc.migrate_legacy_users)
-                    app.state.users_data = user_svc.load_users()
-                    result_label.set_text(
-                        f"迁移完成：总计 {result.total} 人；新增 {result.imported}；"
-                        f"更新 {result.updated}；未变化 {result.unchanged}。\n"
-                        f"Excel 备份：{result.backup_path or '未生成'}"
-                    )
-                    ui.notify("用户已切换到身份数据库。", type="positive")
-                except Exception as exc:
-                    logger.exception("用户迁移失败")
-                    result_label.set_text(f"迁移失败：{exc}")
-                    ui.notify(f"用户迁移失败：{exc}", type="negative", multi_line=True)
-                finally:
-                    notice.dismiss()
-                    event.sender.enable()
-
-            with ui.row().classes("w-full justify-end gap-3"):
-                ui.button("关闭", on_click=migration_dialog.close).props("flat")
-                ui.button("开始安全迁移", on_click=run_migration).props("color=primary icon=database")
-        migration_dialog.open()
-
     def open_organization_management_dialog():
         user_svc = app.state.user_service
-        if user_svc.storage_mode != "database":
-            ui.notify("请先执行用户一键迁移，再维护组织架构。", type="warning")
-            return
 
         with (
             ui.dialog().props("maximized") as org_dialog,
@@ -1592,9 +1547,6 @@ def manage_page():
     def open_security_role_management_dialog():
         """统一配置岗位权限、附加权限组和审批流程。"""
         user_svc = app.state.user_service
-        if user_svc.storage_mode != "database":
-            ui.notify("请先执行用户一键迁移，再维护岗位与权限。", type="warning")
-            return
         try:
             user_svc.sync_permission_catalog(strict_overview=True)
         except Exception as exc:
@@ -3931,9 +3883,7 @@ def manage_page():
             with ui.row().classes("w-full items-center justify-between shrink-0 mb-2"):
                 with ui.column().classes("gap-0"):
                     ui.label("用户、账号及外部身份管理").classes("text-xl font-bold")
-                    ui.label(
-                        f"当前用户数据源：{'身份数据库' if app.state.user_service.storage_mode == 'database' else '旧版 Excel'}"
-                    ).classes("text-xs text-gray-500")
+                    ui.label("当前用户数据源：身份数据库").classes("text-xs text-gray-500")
                     ui.label("绿色：资料完整 ｜ 黄色：仍有待补项 ｜ 灰色：已停用或离职").classes(
                         "text-xs text-gray-500"
                     )
@@ -4004,9 +3954,6 @@ def manage_page():
                 form_dialog.open()
 
             def open_wecom_binding_form(target_user):
-                if app.state.user_service.storage_mode != "database":
-                    ui.notify("请先执行一键迁移，再绑定企业微信账号。", type="warning")
-                    return
                 is_admin_route = str(target_user).strip().casefold() == "admin"
 
                 cache_data = load_wecom_contacts_cache()
@@ -4109,9 +4056,6 @@ def manage_page():
                 binding_dialog.open()
 
             def open_membership_form(target_user):
-                if app.state.user_service.storage_mode != "database":
-                    ui.notify("请先执行一键迁移，再分配部门和岗位。", type="warning")
-                    return
                 units = app.state.user_service.list_org_units()
                 if not units:
                     ui.notify("请先在组织架构管理中建立部门。", type="warning")
@@ -4219,9 +4163,6 @@ def manage_page():
                 membership_dialog.open()
 
             def open_auto_match_dialog():
-                if app.state.user_service.storage_mode != "database":
-                    ui.notify("请先执行一键迁移，再自动匹配企业微信账号。", type="warning")
-                    return
                 cache_data = load_wecom_contacts_cache()
                 contacts = cache_data.get("contacts", [])
                 if not contacts:
@@ -4303,10 +4244,6 @@ def manage_page():
             def confirm_delete(target_user):
                 if target_user == "admin":
                     ui.notify("系统安全限制：禁止删除超级管理员账号", type="warning")
-                    return
-
-                if app.state.user_service.storage_mode != "database":
-                    ui.notify("请先迁移到身份数据库；旧 Excel 模式不再执行人员删除。", type="warning")
                     return
 
                 with ui.dialog() as confirm_dialog, ui.card().classes("p-6"):
@@ -4845,9 +4782,6 @@ def manage_page():
     def open_identity_config_transfer_dialog():
         """导出本地身份配置，或在服务器预检并合并配置包。"""
         user_svc = app.state.user_service
-        if user_svc.storage_mode != "database":
-            ui.notify("请先完成当前环境的身份数据库迁移。", type="warning")
-            return
 
         state = {"package": None, "preview": None, "file_name": ""}
         with ui.dialog() as dialog, ui.card().classes("w-full max-w-5xl max-h-[92vh] p-5"):
@@ -5071,13 +5005,12 @@ def manage_page():
         dialog.open()
 
     def open_identity_management_center():
-        """以单一入口汇总用户、组织、权限、企业微信与迁移维护。"""
+        """以单一入口汇总用户、组织、权限与企业微信维护。"""
         user_svc = app.state.user_service
-        database_mode = user_svc.storage_mode == "database"
         user_count = len(app.state.users_data)
-        binding_count = len(user_svc.list_wecom_bindings()) if database_mode else 0
-        org_count = len(user_svc.list_org_units()) if database_mode else 0
-        position_count = len(user_svc.list_positions()) if database_mode else 0
+        binding_count = len(user_svc.list_wecom_bindings())
+        org_count = len(user_svc.list_org_units())
+        position_count = len(user_svc.list_positions())
 
         with (
             ui.dialog().props("maximized") as center_dialog,
@@ -5094,15 +5027,14 @@ def manage_page():
 
             with ui.row().classes("w-full gap-3 shrink-0"):
                 ui.chip(
-                    "身份数据库" if database_mode else "旧版 Excel",
-                    color="positive" if database_mode else "warning",
+                    "身份数据库",
+                    color="positive",
                     icon="database",
                 )
                 ui.chip(f"系统用户 {user_count} 人", icon="group").props("outline")
-                if database_mode:
-                    ui.chip(f"微信已绑定 {binding_count} 人", icon="link").props("outline")
-                    ui.chip(f"部门 {org_count} 个", icon="account_tree").props("outline")
-                    ui.chip(f"岗位 {position_count} 个", icon="badge").props("outline")
+                ui.chip(f"微信已绑定 {binding_count} 人", icon="link").props("outline")
+                ui.chip(f"部门 {org_count} 个", icon="account_tree").props("outline")
+                ui.chip(f"岗位 {position_count} 个", icon="badge").props("outline")
 
             ui.label("管理功能").classes("text-lg font-bold text-slate-700 mt-4")
             with ui.grid().classes(
@@ -5135,7 +5067,7 @@ def manage_page():
                     "account_tree",
                     "cyan",
                     lambda: open_organization_management_dialog(),
-                    f"{org_count} 部门 / {position_count} 岗位" if database_mode else "迁移后可用",
+                    f"{org_count} 部门 / {position_count} 岗位",
                 )
                 management_card(
                     "岗位、权限与审批流程",
@@ -5143,7 +5075,7 @@ def manage_page():
                     "admin_panel_settings",
                     "deep-purple",
                     lambda: open_security_role_management_dialog(),
-                    "迁移后可用" if not database_mode else "权限配置",
+                    "权限配置",
                 )
                 management_card(
                     "企业微信通讯录",
@@ -5151,15 +5083,7 @@ def manage_page():
                     "contacts",
                     "teal",
                     lambda: open_wecom_contacts_dialog(),
-                    f"已绑定 {binding_count} 人" if database_mode else "通讯录",
-                )
-                management_card(
-                    "身份数据库迁移",
-                    "将当前部署机器的用户安全迁移到身份数据库，不覆盖已有数据库密码。",
-                    "database",
-                    "indigo",
-                    lambda: open_user_migration_dialog(),
-                    "已迁移" if database_mode else "待迁移",
+                    f"已绑定 {binding_count} 人",
                 )
                 management_card(
                     "配置迁移",
@@ -5167,7 +5091,7 @@ def manage_page():
                     "move_to_inbox",
                     "orange",
                     open_identity_config_transfer_dialog,
-                    "部署工具" if database_mode else "迁移后可用",
+                    "部署工具",
                 )
 
                 def refresh_users():

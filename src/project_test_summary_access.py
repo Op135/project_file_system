@@ -20,7 +20,7 @@ def can_view_project_test_summary(
     *,
     user_service=None,
 ) -> bool:
-    """数据库模式按稳定权限授权，旧 Excel 模式保持登录用户均可查看。"""
+    """按身份数据库中的稳定权限授权。"""
     return can(
         _service(user_service),
         current_user,

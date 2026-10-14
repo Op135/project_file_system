@@ -1840,21 +1840,16 @@ class InteractiveButton:
             ui.notify("当前角色没有该概述项的纠错申请权限。", type="negative")
             return
         reviewer_roles = get_correction_reviewer_roles(current_role)
-        database_mode = getattr(app.state.user_service, "storage_mode", "legacy_excel") == "database"
-        if not reviewer_roles and not database_mode:
-            ui.notify("当前角色尚未配置纠错审批角色。", type="negative")
+        workflow_result = resolve_project_overview_workflow("correction", current_user)
+        if workflow_result.get("status") != "matched":
+            ui.notify(
+                overview_workflow_error_message(workflow_result, "概述纠错申请"),
+                type="negative",
+                multi_line=True,
+            )
             return
-        workflow_assignment = {}
-        if database_mode:
-            workflow_result = resolve_project_overview_workflow("correction", current_user)
-            if workflow_result.get("status") != "matched":
-                ui.notify(
-                    overview_workflow_error_message(workflow_result, "概述纠错申请"),
-                    type="negative",
-                    multi_line=True,
-                )
-                return
-            workflow_assignment = workflow_result["assignment"]
+        workflow_assignment = workflow_result["assignment"]
+        reviewer_roles = list(workflow_assignment.get("assignee_names", reviewer_roles))
 
         requests = db_storage.get_item(OVERVIEW_CORRECTION_REQUESTS_KEY, {}) or {}
         existing = find_active_correction_for_chip(requests, self.project, self.label, str(chip_info.get("id") or ""))
@@ -8188,21 +8183,16 @@ class OverviewTableGroup:
             ui.notify("当前角色没有该概述项的纠错申请权限。", type="negative")
             return
         reviewer_roles = get_correction_reviewer_roles(current_role)
-        database_mode = getattr(app.state.user_service, "storage_mode", "legacy_excel") == "database"
-        if not reviewer_roles and not database_mode:
-            ui.notify("当前角色尚未配置纠错审批角色。", type="negative")
+        workflow_result = resolve_project_overview_workflow("correction", current_user)
+        if workflow_result.get("status") != "matched":
+            ui.notify(
+                overview_workflow_error_message(workflow_result, "概述纠错申请"),
+                type="negative",
+                multi_line=True,
+            )
             return
-        workflow_assignment = {}
-        if database_mode:
-            workflow_result = resolve_project_overview_workflow("correction", current_user)
-            if workflow_result.get("status") != "matched":
-                ui.notify(
-                    overview_workflow_error_message(workflow_result, "概述纠错申请"),
-                    type="negative",
-                    multi_line=True,
-                )
-                return
-            workflow_assignment = workflow_result["assignment"]
+        workflow_assignment = workflow_result["assignment"]
+        reviewer_roles = list(workflow_assignment.get("assignee_names", reviewer_roles))
 
         label = str(config.get("label") or "")
         chip_id = str(chip_info.get("id") or "")

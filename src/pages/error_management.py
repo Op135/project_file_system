@@ -122,7 +122,7 @@ class ErrorUpdateResult:
 
 
 async def resolve_error_notify_recipients(permission_code: str, legacy_targets) -> str:
-    """数据库模式按通知权限找人，Excel 模式继续使用旧企业微信目标规则。"""
+    """按通知权限和企业微信绑定找人。"""
     touser = await resolve_permission_wecom_recipients(
         permission_code,
         legacy_targets=legacy_targets,
@@ -282,7 +282,7 @@ def _has_error_permission(
     permission_code: str,
     legacy_allowed_roles: list[str],
 ) -> bool:
-    """按稳定权限判断异常模块操作；旧 Excel 环境继续使用原角色配置。"""
+    """应用运行时按稳定权限判断异常模块操作。"""
     user_service = getattr(app.state, "user_service", None)
     role_text = str(role or "").strip()
     if user_service is None or not str(username or "").strip():

@@ -323,15 +323,11 @@ async def resolve_delivery_targets(pending: dict[str, str], config: dict, servic
         touser = await resolve_wecom_recipients(config["test_notify_targets"], fallback_touser="")
         return {userid: list(pending) for userid in touser.split("|") if userid and userid != "@all"}
     result: dict[str, list[str]] = {}
-    database_mode = getattr(service, "storage_mode", "legacy_excel") == "database"
-    bindings = service.list_wecom_bindings() if database_mode else {}
+    bindings = service.list_wecom_bindings()
     for name in pending:
         if is_system_admin_username(name):
             continue
-        if database_mode:
-            touser = str(bindings.get(name, {}).get("external_userid") or "").strip()
-        else:
-            touser = await resolve_wecom_recipients([{"name": name}], fallback_touser="")
+        touser = str(bindings.get(name, {}).get("external_userid") or "").strip()
         if not touser:
             logger.warning("ECN待办人员未匹配到企业微信账号，跳过：%s", name)
         for userid in touser.split("|"):

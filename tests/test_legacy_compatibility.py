@@ -1,14 +1,9 @@
 import logging
 import unittest
-from types import SimpleNamespace
-from typing import Any
-
 from src.legacy_compatibility import (
     record_legacy_compatibility_hit,
     reset_legacy_compatibility_telemetry,
 )
-from src.user_service import UserService
-
 
 class LegacyCompatibilityTelemetryTests(unittest.TestCase):
     def setUp(self):
@@ -70,29 +65,12 @@ class LegacyCompatibilityTelemetryTests(unittest.TestCase):
         """动态说明保持单行，便于服务器按标记检索和统计。"""
         with self.assertLogs("src.legacy_compatibility", level=logging.WARNING) as captured:
             record_legacy_compatibility_hit(
-                "excel_user_store",
-                "authenticate",
+                "legacy_workflow_route",
+                "project_overview.batch_change",
                 detail="第一行\n第二行",
             )
 
         self.assertIn("detail=第一行 第二行", captured.output[0])
-
-    def test_legacy_user_service_grant_is_observable(self):
-        """旧角色确实放行权限时通过统一服务写入可定位的功能编码。"""
-        service: Any = UserService.__new__(UserService)
-        service.identity_store = SimpleNamespace(has_database_users=lambda: False)
-
-        with self.assertLogs("src.legacy_compatibility", level=logging.WARNING) as captured:
-            allowed = service.has_permission(
-                "张三",
-                "sample_issue.view",
-                legacy_role="研发硬件",
-                legacy_allowed_roles=["研发硬件"],
-            )
-
-        self.assertTrue(allowed)
-        self.assertIn("category=legacy_role_grant", captured.output[0])
-        self.assertIn("feature=sample_issue.view", captured.output[0])
 
 
 if __name__ == "__main__":

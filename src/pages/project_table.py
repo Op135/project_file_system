@@ -17,7 +17,6 @@ from ..config import (
     PRESET_AVATARS,
     PROJECT_STATE_LIST,
     PROJECT_TABLE_STATE_FILTER_ALLOWED_STATES,
-    PROJECT_TABLE_STATE_FILTER_ROLE_KEYWORDS,
     REQ_DIR,
     TABLE_IGNORE_REGULAR,
 )
@@ -78,9 +77,6 @@ def can_view_all_project_states(
     service = user_service or getattr(app.state, "user_service", None)
     if service is None or not current_user:
         return False
-    if getattr(service, "storage_mode", "legacy_excel") != "database":
-        role_text = str(current_role or "")
-        return not any(keyword in role_text for keyword in PROJECT_TABLE_STATE_FILTER_ROLE_KEYWORDS)
     return can(service, current_user, PROJECT_ALL_STATES_VIEW_PERMISSION)
 
 

@@ -52,7 +52,7 @@ def get_correction_reviewer_roles(applicant_role: str) -> list[str]:
 
 def can_review_correction_request(request: dict, reviewer: str, reviewer_role: str) -> bool:
     service = getattr(app.state, "user_service", None)
-    if service is not None and getattr(service, "storage_mode", "legacy_excel") == "database":
+    if service is not None:
         return can_review_overview_correction(request, reviewer_role, reviewer, user_service=service)
     configured_roles = get_correction_reviewer_roles(str(request.get("submitter_role") or ""))
     return bool(

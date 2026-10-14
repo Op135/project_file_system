@@ -30,6 +30,7 @@ from src.modules.ecn.approval_reassignment import reassign_ecn_approval_reviewer
 from src.modules.ecn.editing import ECNConflict, merge_fields, sync_review_snapshot
 from src.modules.ecn.models import get_ecn_template
 from src.modules.ecn.repository import delete_record
+from src.user_service import UserService
 from tests.test_error_management_concurrency import load_isolated_db_storage
 
 
@@ -109,7 +110,19 @@ class ECNConcurrencyTests(unittest.IsolatedAsyncioTestCase):
         self.right = load_isolated_db_storage("ecn_right", path)
         await self.left.init_db()
         await self.right.init_db()
-        self.service = SimpleNamespace(storage_mode="legacy_excel")
+        self.service = UserService(db_path=path, password_iterations=1_000)
+        self.service.modify_user("add", "张三", "123456", "研发经理")
+        permission_codes = [
+            item["code"]
+            for item in self.service.list_permissions()
+            if item.get("module") == "ecn"
+        ]
+        role_id = self.service.create_security_role(
+            code="test.ecn.all",
+            name="ECN测试全权限",
+            permission_codes=permission_codes,
+        )
+        self.service.set_user_security_roles("张三", [role_id])
 
     async def asyncTearDown(self):
         await self.left.close_db()

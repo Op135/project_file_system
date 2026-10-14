@@ -2,8 +2,6 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import pandas as pd
-
 from src.overview_permission_mapping import (
     build_overview_position_permission_plan,
     collect_legacy_overview_role_usage,
@@ -41,22 +39,12 @@ class OverviewPermissionMappingTests(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         root = Path(self.temp_dir.name)
-        data_dir = root / "data"
-        data_dir.mkdir()
-        excel_path = data_dir / "users.xlsx"
-        pd.DataFrame(
-            [
-                {"用户名": "admin", "密码": "123456", "角色": "admin"},
-                {"用户名": "张三", "密码": "123456", "角色": "质量"},
-            ]
-        ).to_excel(excel_path, index=False, engine="openpyxl")
         self.service = UserService(
-            excel_path=excel_path,
             db_path=root / "identity.db",
-            backup_dir=root / "backups",
             password_iterations=1_000,
         )
-        self.service.migrate_legacy_users()
+        self.service.modify_user("add", "admin", "123456", "admin")
+        self.service.modify_user("add", "张三", "123456", "质量")
         self.service.sync_permission_catalog(strict_overview=True, overview_config=OVERVIEW_CONFIG)
         self.quality_position = self.service.save_position(code="quality.engineer", name="质量工程师")
         self.manager_position = self.service.save_position(code="quality.manager", name="质量主管")

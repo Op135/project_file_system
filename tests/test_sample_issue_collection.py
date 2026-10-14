@@ -12,6 +12,8 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
+from src.user_service import UserService
+
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 DB_STORAGE_PATH = ROOT_DIR / "src" / "db_storage.py"
@@ -736,14 +738,68 @@ class SampleIssueCollectionConfigTests(unittest.TestCase):
 
 class SampleIssueCollectionConcurrencyTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
-        """并发测试只验证旧 Excel 兼容路径，隔离主程序已经初始化的数据库用户服务。"""
+        """使用独立身份数据库验证稳定权限和具体审批待办。"""
         from nicegui import app
         from src.pages import sample_issue_collection as sample_issue
 
         self.original_user_service = getattr(app.state, "user_service", None)
         self.original_can_create_sample_issue = sample_issue.can_create_sample_issue
         self.original_can_view_sample_issue_collection = sample_issue.can_view_sample_issue_collection
-        app.state.user_service = None
+        self.identity_temp = tempfile.TemporaryDirectory()
+        self.user_service = UserService(
+            db_path=Path(self.identity_temp.name) / "identity.db",
+            password_iterations=1_000,
+        )
+        for username, role in [
+            ("张三", "测试工程师"),
+            ("李四", "测试工程师"),
+            ("王五", "测试工程师"),
+            ("经理", "研发经理"),
+            ("赵六", "测试工程师"),
+            ("品质经理A", "品质经理"),
+            ("杨铁华", "NPI工程"),
+        ]:
+            self.user_service.modify_user("add", username, "123456", role)
+        org_unit_id = self.user_service.save_org_unit(
+            code="org.sample.issue.test",
+            name="样品问题测试部",
+        )
+        requester_position_id = self.user_service.save_position(
+            code="position.sample.issue.requester",
+            name="样品问题责任岗位",
+            org_unit_ids=[org_unit_id],
+        )
+        self.user_service.set_primary_membership(
+            "李四",
+            org_unit_id=org_unit_id,
+            position_id=requester_position_id,
+        )
+        self.user_service.set_primary_membership(
+            "杨铁华",
+            org_unit_id=org_unit_id,
+            position_id=requester_position_id,
+        )
+        approver_role_id = self.user_service.create_security_role(
+            code="test.sample.issue.close.approver",
+            name="样品问题关闭测试审批人",
+            permission_codes=["sample_issue.close.approve"],
+        )
+        self.user_service.set_user_security_roles("经理", [approver_role_id])
+        users = self.user_service.load_users()
+        workflow_id, _version_id = self.user_service.save_approval_workflow_draft(
+            code="sample_issue.close.test",
+            module="sample_issue",
+            event="close_request",
+            name="样品问题关闭测试流程",
+            priority=1,
+            condition={"requester_org_unit_ids": [org_unit_id]},
+            approver={"strategy": "users", "user_ids": [users["经理"]["user_id"]]},
+            required_permission_code="sample_issue.close.approve",
+            approval_mode="any",
+            actor_username="经理",
+        )
+        self.user_service.publish_approval_workflow(workflow_id, actor_username="经理")
+        app.state.user_service = self.user_service
         sample_issue.can_create_sample_issue = lambda role, username="": True
         sample_issue.can_view_sample_issue_collection = lambda role, username="": True
 
@@ -755,6 +811,7 @@ class SampleIssueCollectionConcurrencyTests(unittest.IsolatedAsyncioTestCase):
         app.state.user_service = self.original_user_service
         sample_issue.can_create_sample_issue = self.original_can_create_sample_issue
         sample_issue.can_view_sample_issue_collection = self.original_can_view_sample_issue_collection
+        self.identity_temp.cleanup()
 
     async def test_admin_delete_preserves_concurrent_record_and_rejects_other_roles(self):
         """admin 删除单张样品问题时应保留其它实例的并发新增，非 admin 不能删除。"""
@@ -964,7 +1021,7 @@ class SampleIssueCollectionConcurrencyTests(unittest.IsolatedAsyncioTestCase):
                         "王五",
                         "测试工程师",
                     )
-                    self.assertEqual(forbidden.code, "permission_changed")
+                    self.assertEqual(forbidden.code, "workflow_missing_membership")
 
                     requested = await sample_issue.submit_sample_close_request(
                         issue_id,
@@ -1218,107 +1275,6 @@ class SampleIssueCollectionConcurrencyTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(catalog["流程问题"]["use_count"], 1)
                 finally:
                     sample_issue.db_storage = original_db_storage
-            finally:
-                await isolated_db.close_db()
-
-    async def test_close_request_approval_uses_requester_role_route(self):
-        """关闭申请应按申请人角色关键词固定到配置的审批角色。"""
-        with tempfile.TemporaryDirectory() as temp_dir:
-            isolated_db = load_isolated_db_storage(
-                "test_sample_issue_close_route_db_storage",
-                Path(temp_dir) / "sample_issue_close_route.db",
-            )
-            try:
-                await isolated_db.init_db()
-                from src.pages import sample_issue_collection as sample_issue
-
-                original_db_storage = sample_issue.db_storage
-                original_route_values = {
-                    "SAMPLE_CLOSE_APPROVER_ROLES": sample_issue.SAMPLE_CLOSE_APPROVER_ROLES,
-                    "SAMPLE_CLOSE_NOTIFY_TARGETS": sample_issue.SAMPLE_CLOSE_NOTIFY_TARGETS,
-                    "SAMPLE_CLOSE_NOTIFY_REQUESTER_ON_APPROVAL": sample_issue.SAMPLE_CLOSE_NOTIFY_REQUESTER_ON_APPROVAL,
-                    "SAMPLE_CLOSE_ROUTING_RULES": sample_issue.SAMPLE_CLOSE_ROUTING_RULES,
-                }
-                sample_issue.db_storage = isolated_db
-                sample_issue.SAMPLE_CLOSE_APPROVER_ROLES = ["研发经理", "admin"]
-                sample_issue.SAMPLE_CLOSE_NOTIFY_TARGETS = [{"position": "研发经理"}]
-                sample_issue.SAMPLE_CLOSE_NOTIFY_REQUESTER_ON_APPROVAL = True
-                sample_issue.SAMPLE_CLOSE_ROUTING_RULES = [
-                    {
-                        "key": "pie_to_quality",
-                        "label": "PIE关闭审批",
-                        "requester_role_keywords": ["PIE"],
-                        "approver_roles": ["品质经理"],
-                        "notify_targets": [{"position": "品质经理"}],
-                        "notify_requester_on_approval": True,
-                    }
-                ]
-                try:
-                    draft = sample_issue.generate_initial_sample_issue_data("张三", "PIE工程师")
-                    draft["basic_info"].update(
-                        {
-                            "product_model": "MODEL-ROUTE",
-                            "issue_description": "样机外观划伤",
-                            "sample_order_no": "SAMPLE-ROUTE",
-                            "record_date": "2026-07-10",
-                            "assembled_qty": "3",
-                            "issue_qty": "1",
-                            "recorder_name": "张三",
-                        }
-                    )
-                    draft["countermeasure"].update(
-                        {
-                            "owner": "PIE工程师",
-                            "reason_analysis": "周转防护不足",
-                            "temporary_action": "增加隔离袋",
-                            "corrective_preventive_action": "更新周转规范",
-                            "due_date": "2026-07-15",
-                        }
-                    )
-                    created = await sample_issue.save_sample_issue_record(
-                        draft,
-                        "张三",
-                        "PIE工程师",
-                        is_new=True,
-                    )
-                    self.assertTrue(created.changed)
-                    assert created.record is not None
-                    issue_id = created.record["issue_id"]
-
-                    requested = await sample_issue.submit_sample_close_request(issue_id, "李四", "PIE工程师")
-
-                    self.assertTrue(requested.changed)
-                    assert requested.record is not None
-                    close_request = sample_issue.get_pending_close_request(requested.record["countermeasure"])
-                    assert close_request is not None
-                    self.assertEqual(close_request["key"], "pie_to_quality")
-                    self.assertEqual(close_request["approver_roles"], ["品质经理"])
-
-                    old_default_approver = await sample_issue.approve_sample_close_request(
-                        issue_id,
-                        close_request["id"],
-                        True,
-                        "经理",
-                        "研发经理",
-                        "流程问题",
-                    )
-                    self.assertEqual(old_default_approver.code, "forbidden")
-
-                    routed_approver = await sample_issue.approve_sample_close_request(
-                        issue_id,
-                        close_request["id"],
-                        True,
-                        "品质经理A",
-                        "品质经理",
-                        "流程问题",
-                    )
-                    self.assertTrue(routed_approver.changed)
-                    assert routed_approver.record is not None
-                    self.assertEqual(routed_approver.record["countermeasure"]["closed_by"], "品质经理A")
-                finally:
-                    sample_issue.db_storage = original_db_storage
-                    for name, value in original_route_values.items():
-                        setattr(sample_issue, name, value)
             finally:
                 await isolated_db.close_db()
 

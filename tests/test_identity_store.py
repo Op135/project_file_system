@@ -3,52 +3,40 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import pandas as pd
-
 from src.identity_store import verify_password
 from src.user_service import UserService
 
 
-class IdentityStoreMigrationTests(unittest.TestCase):
+class IdentityStoreTests(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         root = Path(self.temp_dir.name)
-        self.excel_path = root / "users.xlsx"
         self.db_path = root / "identity.db"
-        self.backup_dir = root / "backups"
-        self._write_users(
-            [
-                {"用户名": "admin", "密码": "server-admin-pass", "角色": "admin"},
-                {"用户名": "张三", "密码": "123456", "角色": "研发硬件"},
-            ]
-        )
         self.service = UserService(
-            excel_path=self.excel_path,
             db_path=self.db_path,
-            backup_dir=self.backup_dir,
             password_iterations=1_000,
         )
+        self.service.modify_user("add", "admin", "server-admin-pass", "admin")
+        self.service.modify_user("add", "张三", "123456", "研发硬件")
 
     def tearDown(self):
         self.temp_dir.cleanup()
 
-    def _write_users(self, rows):
-        pd.DataFrame(rows).to_excel(self.excel_path, index=False, engine="openpyxl")
-
-    def test_legacy_mode_remains_available_until_explicit_migration(self):
-        self.assertEqual(self.service.storage_mode, "legacy_excel")
+    def test_database_authentication(self):
         self.assertTrue(self.service.authenticate("张三", "123456"))
         self.assertFalse(self.service.authenticate("张三", "bad-password"))
 
-    def test_delete_mistaken_user_in_excel_mode(self):
-        self.service.modify_user("add", "错别字", "123456", "普通用户")
-        self.assertTrue(self.service.modify_user("delete", "错别字"))
-        self.assertNotIn("错别字", self.service.load_users())
-        with self.assertRaisesRegex(ValueError, "系统管理员"):
-            self.service.modify_user("delete", "admin")
+    def test_application_startup_rejects_empty_identity_database(self):
+        empty_service = UserService(
+            db_path=Path(self.temp_dir.name) / "empty.db",
+            password_iterations=1_000,
+        )
+        with self.assertRaisesRegex(RuntimeError, "身份数据库中没有用户"):
+            empty_service.require_database_users()
 
-    def test_delete_mistaken_user_in_database_mode(self):
-        self.service.migrate_legacy_users()
+        self.service.require_database_users()
+
+    def test_delete_mistaken_user(self):
         self.service.modify_user("add", "错别字", "123456", "普通用户")
         self.assertTrue(self.service.modify_user("delete", "错别字"))
         self.assertNotIn("错别字", self.service.load_users())
@@ -57,7 +45,6 @@ class IdentityStoreMigrationTests(unittest.TestCase):
             self.service.modify_user("delete", "ADMIN")
 
     def test_delete_refuses_user_with_business_assignment(self):
-        self.service.migrate_legacy_users()
         self.service.modify_user("add", "错别字", "123456", "普通用户")
         connection = sqlite3.connect(self.db_path)
         try:
@@ -78,15 +65,7 @@ class IdentityStoreMigrationTests(unittest.TestCase):
             self.service.modify_user("delete", "错别字")
         self.assertIn("错别字", self.service.load_users())
 
-    def test_migration_hashes_the_passwords_from_the_current_workbook(self):
-        result = self.service.migrate_legacy_users()
-
-        self.assertEqual(result.imported, 2)
-        self.assertEqual(result.total, 2)
-        self.assertIsNotNone(result.backup_path)
-        assert result.backup_path is not None
-        self.assertTrue(Path(result.backup_path).exists())
-        self.assertEqual(self.service.storage_mode, "database")
+    def test_database_hashes_passwords(self):
         self.assertTrue(self.service.authenticate("admin", "server-admin-pass"))
         self.assertTrue(self.service.authenticate("张三", "123456"))
         self.assertIsNone(self.service.get_user("张三")["password"])
@@ -102,46 +81,13 @@ class IdentityStoreMigrationTests(unittest.TestCase):
         self.assertTrue(verify_password("123456", encoded))
 
     def test_batch_active_permissions_match_single_user_lookup(self):
-        self.service.migrate_legacy_users()
         batch = self.service.list_active_user_permission_codes()
         self.assertEqual(batch["admin"], self.service.get_user_permission_codes("admin"))
         self.assertEqual(batch["张三"], self.service.get_user_permission_codes("张三"))
         self.service.modify_user("deactivate", "张三")
         self.assertNotIn("张三", self.service.list_active_user_permission_codes())
 
-    def test_safe_repeat_does_not_replace_a_migrated_server_password(self):
-        self.service.migrate_legacy_users()
-        self._write_users(
-            [
-                {"用户名": "admin", "密码": "local-accidental-value", "角色": "admin"},
-                {"用户名": "张三", "密码": "changed-in-excel", "角色": "研发软件"},
-            ]
-        )
-
-        result = self.service.migrate_legacy_users()
-
-        self.assertEqual(result.password_refreshed, 0)
-        self.assertTrue(self.service.authenticate("admin", "server-admin-pass"))
-        self.assertFalse(self.service.authenticate("admin", "local-accidental-value"))
-        self.assertEqual(self.service.get_user("张三")["role"], "研发软件")
-
-    def test_explicit_refresh_can_make_the_workbook_authoritative_again(self):
-        self.service.migrate_legacy_users()
-        self._write_users(
-            [
-                {"用户名": "admin", "密码": "new-server-password", "角色": "admin"},
-                {"用户名": "张三", "密码": "new-user-password", "角色": "研发硬件"},
-            ]
-        )
-
-        result = self.service.migrate_legacy_users(refresh_existing_passwords=True)
-
-        self.assertEqual(result.password_refreshed, 2)
-        self.assertTrue(self.service.authenticate("admin", "new-server-password"))
-        self.assertFalse(self.service.authenticate("admin", "server-admin-pass"))
-
     def test_manual_wecom_binding_is_unique_and_user_can_be_disabled(self):
-        self.service.migrate_legacy_users()
         self.service.bind_wecom_user(
             "张三",
             {
@@ -165,7 +111,6 @@ class IdentityStoreMigrationTests(unittest.TestCase):
         self.assertEqual(self.service.get_user("张三")["status"], "disabled")
 
     def test_admin_notification_wecom_route_can_share_employee_contact(self):
-        self.service.migrate_legacy_users()
         contact = {"userid": "shared-wecom-id", "name": "收件人", "is_active": True}
         self.service.bind_wecom_user("张三", contact)
         self.service.bind_wecom_user("admin", contact)
@@ -189,7 +134,6 @@ class IdentityStoreMigrationTests(unittest.TestCase):
         )
 
     def test_admin_route_does_not_reserve_contact_for_employee_matching(self):
-        self.service.migrate_legacy_users()
         contact = {"userid": "employee-wecom-id", "name": "李四", "is_active": True}
         self.service.bind_wecom_user("admin", contact)
         self.service.modify_user("add", "李四", "123456", "普通用户")
@@ -198,7 +142,6 @@ class IdentityStoreMigrationTests(unittest.TestCase):
         self.assertEqual(matched_user["status"], "matched")
 
     def test_org_import_position_and_direct_manager_membership(self):
-        self.service.migrate_legacy_users()
         inserted, updated = self.service.import_wecom_departments(
             [
                 {"id": "1", "name": "公司", "parentid": "0", "order": 1},
@@ -258,7 +201,6 @@ class IdentityStoreMigrationTests(unittest.TestCase):
 
     def test_wecom_departments_and_positions_support_selected_batch_import(self):
         """管理员分批勾选时只导入所选项，并复用系统中已有的父部门。"""
-        self.service.migrate_legacy_users()
         departments = [
             {"id": "1", "name": "公司", "parentid": "0", "order": 1},
             {"id": "2", "name": "研发部", "parentid": "1", "order": 2},
@@ -299,7 +241,6 @@ class IdentityStoreMigrationTests(unittest.TestCase):
 
     def test_positions_are_scoped_and_filtered_by_department(self):
         """岗位支持多部门归属，任职时不能选择其他部门的岗位。"""
-        self.service.migrate_legacy_users()
         rd_unit_id = self.service.save_org_unit(code="org.rd.scope", name="研发部")
         engineering_unit_id = self.service.save_org_unit(
             code="org.engineering.scope",
@@ -338,7 +279,6 @@ class IdentityStoreMigrationTests(unittest.TestCase):
 
     def test_position_can_only_be_deleted_without_active_members(self):
         """有有效任职用户时拒绝删除，无人任职时清理岗位及关联配置。"""
-        self.service.migrate_legacy_users()
         org_unit_id = self.service.save_org_unit(code="org.position.delete", name="删除测试部")
         assigned_position_id = self.service.save_position(
             code="position.delete.assigned",
@@ -402,7 +342,6 @@ class IdentityStoreMigrationTests(unittest.TestCase):
 
     def test_old_position_can_be_deleted_after_user_changes_primary_position(self):
         """用户更换主岗位后，旧关系应结束且不再阻止岗位删除。"""
-        self.service.migrate_legacy_users()
         org_unit_id = self.service.save_org_unit(code="org.position.change", name="换岗测试部")
         old_position_id = self.service.save_position(
             code="position.change.old",
@@ -441,7 +380,6 @@ class IdentityStoreMigrationTests(unittest.TestCase):
         )
 
     def test_wecom_position_import_is_sorted_deduplicated_and_preserves_manual_edit(self):
-        self.service.migrate_legacy_users()
         contacts = [
             {"userid": "2", "position": "软件工程师", "is_active": True},
             {"userid": "1", "position": "硬件工程师", "is_active": True},
@@ -468,7 +406,6 @@ class IdentityStoreMigrationTests(unittest.TestCase):
         self.assertEqual(software["manual_override"], 1)
 
     def test_manual_codes_are_normalized_validated_and_checked_for_duplicates(self):
-        self.service.migrate_legacy_users()
         org_unit_id = self.service.save_org_unit(
             code="ORG.Sales",
             name="销售部",
@@ -512,7 +449,6 @@ class IdentityStoreMigrationTests(unittest.TestCase):
             self.service.create_security_role(code="ecn.reviewer", name="重复审核员")
 
     def test_safe_match_plan_binds_and_fills_only_missing_org_membership(self):
-        self.service.migrate_legacy_users()
         departments = [
             {"id": "1", "name": "公司", "parentid": "0", "order": 1},
             {"id": "2", "name": "研发部", "parentid": "1", "order": 2},

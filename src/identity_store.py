@@ -1,9 +1,4 @@
-"""关系型身份、组织、权限与外部账号存储。
-
-系统过去将用户保存在 ``data/users.xlsx``。本模块提供目标 SQLite 架构，并确保迁移
-需要显式执行且可以安全重复：迁移读取执行机器上的工作簿，因此开发环境与生产环境的
-密码不会混用。
-"""
+"""关系型身份、组织、权限与外部账号存储。"""
 
 from __future__ import annotations
 
@@ -11,17 +6,13 @@ import base64
 import hashlib
 import hmac
 import json
-import shutil
 import sqlite3
 import threading
 import uuid
 from contextlib import contextmanager
-from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterable
-
-import pandas as pd
 
 from .permission_catalog import ignores_legacy_role_grants
 from .identity_codes import normalize_stable_code, validate_stable_code
@@ -101,20 +92,6 @@ def verify_password(password: str, encoded: str | None) -> bool:
         return hmac.compare_digest(actual, expected)
     except (TypeError, ValueError):
         return False
-
-
-@dataclass(frozen=True)
-class UserMigrationResult:
-    source_path: str
-    backup_path: str | None
-    imported: int
-    updated: int
-    unchanged: int
-    password_refreshed: int
-    total: int
-
-    def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
 
 
 class IdentityStore:
@@ -488,150 +465,6 @@ class IdentityStore:
             (role_id, code, role_name, now, now),
         )
         return role_id
-
-    def migrate_legacy_users(
-        self,
-        excel_path: Path | str,
-        *,
-        backup_dir: Path | str | None = None,
-        refresh_existing_passwords: bool = False,
-    ) -> UserMigrationResult:
-        """以原子且可重复执行的方式导入当前机器上的用户工作簿。
-
-        除非明确传入 ``refresh_existing_passwords``，否则保留数据库中已有的密码哈希，
-        确保部署后可以安全地重复执行普通一键迁移。
-        """
-        source = Path(excel_path)
-        if not source.exists():
-            raise FileNotFoundError(f"用户文件不存在：{source}")
-        frame = pd.read_excel(source, engine="openpyxl", dtype=str)
-        required_columns = {"用户名", "密码", "角色"}
-        missing = required_columns - set(frame.columns)
-        if missing:
-            raise ValueError(f"用户文件缺少列：{'、'.join(sorted(missing))}")
-
-        records: list[tuple[str, str, str]] = []
-        seen_usernames: set[str] = set()
-        for _, row in frame.iterrows():
-            # 转成普通字典后再处理单元格，避免 pandas 类型定义把标量推断成 Series。
-            # pandas 将列名声明为 Hashable，这里显式收窄为系统实际使用的字符串列名。
-            record = {str(key): value for key, value in row.to_dict().items()}
-            raw_username = record.get("用户名")
-            username = "" if bool(pd.isna(raw_username)) else str(raw_username).strip()
-            if not username:
-                continue
-            normalized = username.casefold()
-            if normalized in seen_usernames:
-                raise ValueError(f"用户文件存在重复用户名：{username}")
-            seen_usernames.add(normalized)
-            raw_password = record.get("密码")
-            password = "" if bool(pd.isna(raw_password)) else str(raw_password).strip()
-            raw_role = record.get("角色")
-            role = (
-                "普通用户"
-                if bool(pd.isna(raw_role)) or not str(raw_role).strip()
-                else str(raw_role).strip()
-            )
-            records.append((username, password, role))
-        if not records:
-            raise ValueError("用户文件中没有可迁移的用户")
-
-        backup_path: Path | None = None
-        if backup_dir is not None:
-            target_dir = Path(backup_dir)
-            target_dir.mkdir(parents=True, exist_ok=True)
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            backup_path = target_dir / f"users_before_iam_{timestamp}.xlsx"
-            shutil.copy2(source, backup_path)
-
-        imported = updated = unchanged = password_refreshed = 0
-        now = _now_text()
-        with self._lock, self._connect() as connection:
-            connection.execute("BEGIN IMMEDIATE")
-            try:
-                for username, password, role in records:
-                    existing = connection.execute(
-                        "SELECT user_id, password_hash, legacy_role, display_name, status "
-                        "FROM iam_users WHERE username=? COLLATE NOCASE",
-                        (username,),
-                    ).fetchone()
-                    role_id = self._ensure_legacy_role(connection, role)
-                    if existing is None:
-                        user_id = str(uuid.uuid4())
-                        encoded = hash_password(password, iterations=self.password_iterations) if password else None
-                        connection.execute(
-                            "INSERT INTO iam_users(user_id, username, display_name, password_hash, legacy_role, "
-                            "status, must_change_password, created_at, updated_at) "
-                            "VALUES(?, ?, ?, ?, ?, 'active', 0, ?, ?)",
-                            (user_id, username, username, encoded, role, now, now),
-                        )
-                        imported += 1
-                    else:
-                        user_id = existing["user_id"]
-                        fields_changed = existing["legacy_role"] != role
-                        new_hash = existing["password_hash"]
-                        if refresh_existing_passwords:
-                            new_hash = (
-                                hash_password(password, iterations=self.password_iterations) if password else None
-                            )
-                            password_refreshed += 1
-                            fields_changed = True
-                        if fields_changed:
-                            connection.execute(
-                                "UPDATE iam_users SET legacy_role=?, password_hash=?, updated_at=? WHERE user_id=?",
-                                (role, new_hash, now, user_id),
-                            )
-                            updated += 1
-                        else:
-                            unchanged += 1
-                    # 每个迁移用户只保留一个兼容角色，后续可另外叠加不依赖它的新权限角色。
-                    legacy_role_ids = connection.execute(
-                        "SELECT ur.role_id FROM iam_user_roles ur "
-                        "JOIN iam_security_roles r ON r.role_id=ur.role_id "
-                        "WHERE ur.user_id=? AND r.code LIKE 'legacy.%'",
-                        (user_id,),
-                    ).fetchall()
-                    for old_role in legacy_role_ids:
-                        if old_role["role_id"] != role_id:
-                            connection.execute(
-                                "DELETE FROM iam_user_roles WHERE user_id=? AND role_id=?",
-                                (user_id, old_role["role_id"]),
-                            )
-                    connection.execute(
-                        "INSERT OR IGNORE INTO iam_user_roles(user_id, role_id, created_at) VALUES(?, ?, ?)",
-                        (user_id, role_id, now),
-                    )
-                detail = {
-                    "source": str(source),
-                    "imported": imported,
-                    "updated": updated,
-                    "unchanged": unchanged,
-                    "password_refreshed": password_refreshed,
-                }
-                connection.execute(
-                    "INSERT INTO iam_meta(key, value, updated_at) VALUES('users_storage_mode', 'database', ?) "
-                    "ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at",
-                    (now,),
-                )
-                connection.execute(
-                    "INSERT INTO iam_audit_logs(audit_id, actor_user_id, action, target_type, target_id, "
-                    "detail_json, created_at) VALUES(?, NULL, 'legacy_users_migrated', 'system', 'iam_users', ?, ?)",
-                    (str(uuid.uuid4()), json.dumps(detail, ensure_ascii=False), now),
-                )
-                connection.commit()
-            except Exception:
-                connection.rollback()
-                raise
-
-        return UserMigrationResult(
-            source_path=str(source),
-            backup_path=str(backup_path) if backup_path else None,
-            imported=imported,
-            updated=updated,
-            unchanged=unchanged,
-            password_refreshed=password_refreshed,
-            total=len(records),
-        )
 
     def create_user(self, username: str, password: str, role: str) -> bool:
         username = str(username).strip()

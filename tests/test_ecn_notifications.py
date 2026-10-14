@@ -12,8 +12,6 @@ from tests.test_error_management_concurrency import load_isolated_db_storage
 
 
 class Users:
-    storage_mode = "database"
-
     def load_users(self):
         return {
             "admin": {"role": "admin", "status": "active"},

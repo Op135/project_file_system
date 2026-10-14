@@ -3,7 +3,6 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import pandas as pd
 from nicegui import app
 
 from src import db_storage
@@ -22,21 +21,17 @@ class DesignKnowledgeWorkflowTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         root = Path(self.temp_dir.name)
-        excel_path = root / "users.xlsx"
-        pd.DataFrame(
-            [
-                {"用户名": "admin", "密码": "admin-pass", "角色": "admin"},
-                {"用户名": "张三", "密码": "123456", "角色": "研发硬件"},
-                {"用户名": "李四", "密码": "123456", "角色": "电子主管"},
-                {"用户名": "王五", "密码": "123456", "角色": "质量主管"},
-            ]
-        ).to_excel(excel_path, index=False, engine="openpyxl")
         self.service = UserService(
-            excel_path=excel_path,
             db_path=root / "identity.db",
             password_iterations=1_000,
         )
-        self.service.migrate_legacy_users()
+        for username, password, role in [
+            ("admin", "admin-pass", "admin"),
+            ("张三", "123456", "研发硬件"),
+            ("李四", "123456", "电子主管"),
+            ("王五", "123456", "质量主管"),
+        ]:
+            self.service.modify_user("add", username, password, role)
         org_unit_id = self.service.save_org_unit(code="org.design.flow", name="设计流程部")
         requester_position_id = self.service.save_position(
             code="position.design.requester",

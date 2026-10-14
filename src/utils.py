@@ -1406,7 +1406,7 @@ def updata_overview_config(*, show_notification: bool = True) -> bool:
             # 在覆盖内存配置前先校验全部 label，避免重复或非法标识污染运行数据和权限目录。
             project_overview_permission_definitions(over_config_data)
             user_service = getattr(app.state, "user_service", None)
-            if user_service is not None and getattr(user_service, "storage_mode", "legacy_excel") == "database":
+            if user_service is not None:
                 # 先完成数据库目录同步；同步失败时不覆盖当前进程仍在使用的概述配置。
                 user_service.sync_permission_catalog(
                     strict_overview=True,

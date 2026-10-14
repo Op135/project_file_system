@@ -523,7 +523,7 @@ def _has_sample_permission(
     permission_code: str,
     legacy_allowed_roles: list[str],
 ) -> bool:
-    """数据库模式按稳定权限判断；旧 Excel 模式继续兼容原角色关键词。"""
+    """应用运行时按稳定权限判断。"""
     user_service = getattr(app.state, "user_service", None)
     role_text = str(role or "").strip()
     if user_service is None or not str(username or "").strip():
@@ -579,13 +579,11 @@ def get_default_sample_close_approval_route() -> dict:
 
 
 def get_sample_close_approval_route(requester_role: str, requester_username: str = "") -> dict:
-    """数据库模式按申请人主岗位匹配路由；旧 Excel 模式继续使用角色文本。"""
+    """优先按申请人当前主岗位匹配路由。"""
     role_text = str(requester_role or "")
     user_service = getattr(app.state, "user_service", None)
     if (
-        user_service is not None
-        and getattr(user_service, "storage_mode", "legacy_excel") == "database"
-        and requester_username
+        user_service is not None and requester_username
     ):
         membership = user_service.get_primary_membership(requester_username)
         role_text = str(membership.get("position_name", ""))
@@ -636,7 +634,6 @@ def is_sample_close_approver(
             isinstance(workflow_assignment, dict)
             and workflow_assignment.get("task_key")
             and user_service is not None
-            and getattr(user_service, "storage_mode", "legacy_excel") == "database"
         ):
             permission_code = normalize_sample_close_approval_permission(
                 workflow_assignment.get("required_permission_code", "")
@@ -682,10 +679,7 @@ def is_sample_close_approver(
             )
         route = get_sample_close_approval_route_for_request(close_request)
         user_service = getattr(app.state, "user_service", None)
-        if (
-            user_service is not None
-            and getattr(user_service, "storage_mode", "legacy_excel") == "database"
-        ):
+        if user_service is not None:
             if not _has_sample_permission(
                 username,
                 role,
@@ -1373,7 +1367,7 @@ def get_sample_issue_collection_url(issue_id: str = "") -> str:
 
 
 async def resolve_sample_notify_recipients(permission_code: str, legacy_targets=None) -> str:
-    """按稳定通知权限解析收件人，旧 Excel 模式兼容原 JSON 规则。"""
+    """按稳定通知权限和企业微信绑定解析收件人。"""
     touser = await resolve_permission_wecom_recipients(
         permission_code,
         legacy_targets=legacy_targets,
@@ -1884,37 +1878,34 @@ async def submit_sample_close_request(
     note = close_note.strip()
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     close_route = get_sample_close_approval_route(role, user)
-    workflow_result = None
     user_service = getattr(app.state, "user_service", None)
-    if user_service is not None and getattr(user_service, "storage_mode", "legacy_excel") == "database":
-        workflow_result = resolve_approval_workflow(
-            user_service,
-            module="sample_issue",
-            event="close_request",
-            requester_username=user,
+    if user_service is None:
+        return SampleIssueUpdateResult(
+            db_success=False,
+            changed=False,
+            code="identity_service_unavailable",
         )
-        if workflow_result.get("status") != "matched":
-            return SampleIssueUpdateResult(
-                db_success=False,
-                changed=False,
-                code=f"workflow_{workflow_result.get('status', 'error')}",
-                record=workflow_result,
-            )
-        close_route = {
-            **close_route,
-            "label": workflow_result["workflow"]["name"],
-            "approver_roles": [
-                item.get("position_name") or item.get("display_name") or item["username"]
-                for item in workflow_result["approvers"]
-            ],
-        }
-    else:
-        record_legacy_compatibility_hit(
-            "legacy_workflow_route",
-            "sample_issue.close_request",
-            username=user,
-            detail="旧 Excel 模式使用 sample_issue_config.json 关闭审批路由",
+    workflow_result = resolve_approval_workflow(
+        user_service,
+        module="sample_issue",
+        event="close_request",
+        requester_username=user,
+    )
+    if workflow_result.get("status") != "matched":
+        return SampleIssueUpdateResult(
+            db_success=False,
+            changed=False,
+            code=f"workflow_{workflow_result.get('status', 'error')}",
+            record=workflow_result,
         )
+    close_route = {
+        **close_route,
+        "label": workflow_result["workflow"]["name"],
+        "approver_roles": [
+            item.get("position_name") or item.get("display_name") or item["username"]
+            for item in workflow_result["approvers"]
+        ],
+    }
     request_id = f"close_{uuid.uuid4().hex[:8]}"
     task_key = f"close_approval:{request_id}"
     close_request = {
@@ -2142,7 +2133,6 @@ async def approve_sample_close_request(
         if (
             workflow_assignment.get("task_key")
             and user_service is not None
-            and getattr(user_service, "storage_mode", "legacy_excel") == "database"
         ):
             try:
                 user_service.complete_work_assignment(

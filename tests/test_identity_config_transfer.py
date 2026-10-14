@@ -4,8 +4,6 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import pandas as pd
-
 from src.identity_config_transfer import PACKAGE_KIND
 from src.user_service import UserService
 
@@ -18,8 +16,6 @@ class IdentityConfigurationTransferTests(unittest.TestCase):
         self.root = Path(self.temp_dir.name)
         self.source = self._create_service("source", "local-password")
         self.target = self._create_service("target", "server-password", include_extra_user=True)
-        self.source.migrate_legacy_users()
-        self.target.migrate_legacy_users()
         self._configure_source()
 
     def tearDown(self):
@@ -37,14 +33,18 @@ class IdentityConfigurationTransferTests(unittest.TestCase):
         ]
         if include_extra_user:
             rows.append({"用户名": "服务器用户", "密码": "server-only", "角色": "普通用户"})
-        excel_path = directory / "users.xlsx"
-        pd.DataFrame(rows).to_excel(excel_path, index=False, engine="openpyxl")
-        return UserService(
-            excel_path=excel_path,
+        service = UserService(
             db_path=directory / "identity.db",
-            backup_dir=directory / "migration_backups",
             password_iterations=1_000,
         )
+        for row in rows:
+            service.modify_user(
+                "add",
+                row["用户名"],
+                row["密码"],
+                row["角色"],
+            )
+        return service
 
     def _configure_source(self) -> None:
         root_id = self.source.save_org_unit(code="company", name="公司")

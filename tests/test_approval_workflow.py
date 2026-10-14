@@ -4,8 +4,6 @@ import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock
 
-import pandas as pd
-
 from src.approval_workflow import (
     advance_approval_sequence,
     create_approval_assignments,
@@ -47,21 +45,17 @@ class ApprovalWorkflowTests(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         root = Path(self.temp_dir.name)
-        excel_path = root / "users.xlsx"
-        pd.DataFrame(
-            [
-                {"用户名": "admin", "密码": "admin-pass", "角色": "admin"},
-                {"用户名": "张三", "密码": "123456", "角色": "研发硬件"},
-                {"用户名": "李四", "密码": "123456", "角色": "电子主管"},
-                {"用户名": "王五", "密码": "123456", "角色": "质量主管"},
-            ]
-        ).to_excel(excel_path, index=False, engine="openpyxl")
         self.service = UserService(
-            excel_path=excel_path,
             db_path=root / "identity.db",
             password_iterations=1_000,
         )
-        self.service.migrate_legacy_users()
+        for username, password, role in [
+            ("admin", "admin-pass", "admin"),
+            ("张三", "123456", "研发硬件"),
+            ("李四", "123456", "电子主管"),
+            ("王五", "123456", "质量主管"),
+        ]:
+            self.service.modify_user("add", username, password, role)
 
         self.org_unit_id = self.service.save_org_unit(
             code="org.workflow.test",
@@ -1022,21 +1016,17 @@ class SampleIssueWorkflowIntegrationTests(unittest.IsolatedAsyncioTestCase):
         self.original_can_view = sample_issue.can_view_sample_issue_collection
         self.temp_dir = tempfile.TemporaryDirectory()
         root = Path(self.temp_dir.name)
-        excel_path = root / "users.xlsx"
-        pd.DataFrame(
-            [
-                {"用户名": "admin", "密码": "admin-pass", "角色": "admin"},
-                {"用户名": "张三", "密码": "123456", "角色": "申请人"},
-                {"用户名": "李四", "密码": "123456", "角色": "审批人"},
-                {"用户名": "王五", "密码": "123456", "角色": "旁观者"},
-            ]
-        ).to_excel(excel_path, index=False, engine="openpyxl")
         self.service = UserService(
-            excel_path=excel_path,
             db_path=root / "identity.db",
             password_iterations=1_000,
         )
-        self.service.migrate_legacy_users()
+        for username, password, role in [
+            ("admin", "admin-pass", "admin"),
+            ("张三", "123456", "申请人"),
+            ("李四", "123456", "审批人"),
+            ("王五", "123456", "旁观者"),
+        ]:
+            self.service.modify_user("add", username, password, role)
         org_unit_id = self.service.save_org_unit(code="org.sample.flow", name="样品流程部")
         requester_position_id = self.service.save_position(
             code="position.sample.requester",

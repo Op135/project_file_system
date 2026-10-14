@@ -30,7 +30,7 @@ def _service(user_service=None):
 
 def _database_mode(user_service=None) -> bool:
     service = _service(user_service)
-    return service is not None and getattr(service, "storage_mode", "legacy_excel") == "database"
+    return service is not None
 
 
 def _permission_roles(config: dict, action: str) -> tuple[str, ...]:
@@ -245,14 +245,14 @@ def can_review_overview_correction(request: dict, current_role: object, current_
 
 
 def resolve_project_overview_workflow(event: str, requester_username: str, *, user_service=None) -> dict:
-    """数据库模式解析并固化概述审批人；旧模式返回兼容标记。"""
+    """解析并固化概述审批人。"""
     service = _service(user_service)
     if not _database_mode(service):
         record_legacy_compatibility_hit(
             "legacy_workflow_route",
             f"project_overview.{str(event or 'unknown')}",
             username=requester_username,
-            detail="旧 Excel 模式使用 JSON 审批路由",
+            detail="无身份服务的历史数据转换使用 JSON 审批路由",
         )
         return {"status": "legacy_mode", "assignment": {}}
     result = resolve_approval_workflow(

@@ -68,7 +68,6 @@ from ..overview_batch_operations import (
     create_batch_overview_request,
     filter_batch_projects,
     find_projects_without_row_anchors,
-    get_batch_overview_reviewer_roles,
     insert_overview_chip,
     is_table_child_state_allowed,
     overview_state_rank,
@@ -3903,22 +3902,16 @@ async def requirement_page(
             if not can_submit_batch_overview(current_role, current_user, BATCH_OVERVIEW_TOOL_ROLES):
                 ui.notify("当前角色无权提交批量概述申请。", type="negative")
                 return
-            reviewer_roles = get_batch_overview_reviewer_roles(str(current_role or ""))
-            database_mode = getattr(app.state.user_service, "storage_mode", "legacy_excel") == "database"
-            if not reviewer_roles and not database_mode:
-                ui.notify("当前角色尚未配置批量概述审批角色，无法提交申请。", type="negative")
+            workflow_result = resolve_project_overview_workflow("batch_change", current_user)
+            if workflow_result.get("status") != "matched":
+                ui.notify(
+                    overview_workflow_error_message(workflow_result, "批量概述申请"),
+                    type="negative",
+                    multi_line=True,
+                )
                 return
-            workflow_assignment = {}
-            if database_mode:
-                workflow_result = resolve_project_overview_workflow("batch_change", current_user)
-                if workflow_result.get("status") != "matched":
-                    ui.notify(
-                        overview_workflow_error_message(workflow_result, "批量概述申请"),
-                        type="negative",
-                        multi_line=True,
-                    )
-                    return
-                workflow_assignment = workflow_result["assignment"]
+            workflow_assignment = workflow_result["assignment"]
+            reviewer_roles = list(workflow_assignment.get("assignee_names", []))
             config = get_config()
             if not config:
                 ui.notify("请选择具体概述项。", type="warning")

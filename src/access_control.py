@@ -18,8 +18,7 @@ def can(
 ) -> bool:
     """判断用户是否拥有指定的稳定权限。
 
-    只有部署环境仍使用 ``users.xlsx`` 时才读取兼容参数；完成用户迁移后，以数据库中
-    的角色与权限关系为唯一依据。
+    ``legacy_*`` 参数暂时保留调用兼容性，但不再参与授权。
     """
     if user_service is None or not username:
         return False

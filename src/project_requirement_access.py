@@ -80,9 +80,6 @@ def has_assigned_requirement_review_permission(
     service = _service(user_service)
     if service is None or not current_user:
         return False
-    if getattr(service, "storage_mode", "legacy_excel") != "database":
-        # 旧模式只要被项目明确指定为工程师即可审批，不另设角色白名单。
-        return True
     return can(service, current_user, PROJECT_REQUIREMENT_REVIEW_ASSIGNED_PERMISSION)
 
 

@@ -4,8 +4,6 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import pandas as pd
-
 from src.access_control import can_use_tool
 from src.ecn_management_config import ECNState
 from src.ecn_access import (
@@ -131,9 +129,6 @@ class AccessControlTests(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
         root = Path(self.temp_dir.name)
-        data_dir = root / "data"
-        data_dir.mkdir()
-        self.excel_path = data_dir / "users.xlsx"
         self.db_path = root / "identity.db"
         (root / "tools_permission.json").write_text(
             json.dumps(
@@ -145,22 +140,18 @@ class AccessControlTests(unittest.TestCase):
             ),
             encoding="utf-8",
         )
-        pd.DataFrame(
-            [
-                {"用户名": "admin", "密码": "admin-pass", "角色": "admin"},
-                {"用户名": "张三", "密码": "123456", "角色": "研发硬件"},
-            ]
-        ).to_excel(self.excel_path, index=False, engine="openpyxl")
         self.service = UserService(
-            excel_path=self.excel_path,
             db_path=self.db_path,
+            config_root=root,
             password_iterations=1_000,
         )
+        self.service.modify_user("add", "admin", "admin-pass", "admin")
+        self.service.modify_user("add", "张三", "123456", "研发硬件")
 
     def tearDown(self):
         self.temp_dir.cleanup()
 
-    def test_excel_mode_uses_exact_legacy_fallback(self):
+    def test_database_permissions_ignore_legacy_call_arguments(self):
         self.assertTrue(
             self.service.has_permission(
                 "admin",
@@ -169,7 +160,7 @@ class AccessControlTests(unittest.TestCase):
                 legacy_allowed_roles=[],
             )
         )
-        self.assertTrue(
+        self.assertFalse(
             can_use_tool(
                 self.service,
                 "张三",
@@ -189,7 +180,6 @@ class AccessControlTests(unittest.TestCase):
         )
 
     def test_migration_registers_stable_permissions(self):
-        self.service.migrate_legacy_users()
 
         codes = {item["code"] for item in self.service.list_permissions()}
         self.assertIn(tool_permission_code("mode_calc"), codes)
@@ -204,7 +194,6 @@ class AccessControlTests(unittest.TestCase):
         self.assertFalse(self.service.has_permission("张三", "system.manage"))
 
     def test_database_mode_does_not_fall_back_to_legacy_role_lists(self):
-        self.service.migrate_legacy_users()
 
         self.assertFalse(
             self.service.has_permission(
@@ -215,39 +204,8 @@ class AccessControlTests(unittest.TestCase):
             )
         )
 
-    def test_ecn_legacy_mode_does_not_restore_removed_permissions(self):
-        """旧身份模式不能靠岗位名恢复已迁移的方案权限或执行路线。"""
-        self.assertTrue(can_view_ecn("行政专员", "张三", user_service=self.service))
-        self.assertTrue(can_create_ecn_request("行政专员", "张三", user_service=self.service))
-        self.assertFalse(can_edit_ecn_impact("研发硬件", "张三", user_service=self.service))
-        self.assertFalse(can_edit_ecn_scheme("质量工程师", "张三", user_service=self.service))
-        self.assertFalse(
-            can_submit_ecn_scheme_review("研发经理", "张三", user_service=self.service)
-        )
-        self.assertFalse(receives_ecn_initial_impact_reminder("研发助理", "张三", user_service=self.service))
-        self.assertFalse(
-            can_view_ecn_scheme_non_image_file(
-                {"scheme_category": "ordinary_document", "change_type": "图纸更新"},
-                "研发硬件",
-                "张三",
-                user_service=self.service,
-            )
-        )
-        self.assertFalse(
-            can_execute_ecn_assistant_stage("研发助理", "张三", user_service=self.service)
-        )
-        self.assertTrue(
-            has_ecn_material_execution_qualification(
-                "任意执行岗位",
-                "张三",
-                user_service=self.service,
-            )
-        )
-        self.assertFalse(can_delete_ecn("研发经理", "张三", user_service=self.service))
-
     def test_ecn_database_mode_uses_independent_stable_permissions(self):
         """数据库模式不再因旧角色文本命中 ECN 权限，并允许逐项授权。"""
-        self.service.migrate_legacy_users()
         org_unit_id = self.service.save_org_unit(code="org.ecn", name="ECN测试部")
         position_id = self.service.save_position(code="ecn.tester", name="ECN测试岗位")
         self.service.set_primary_membership(
@@ -307,7 +265,6 @@ class AccessControlTests(unittest.TestCase):
 
     def test_ecn_database_mode_uses_attachment_category_permission(self):
         """ECN 特定事项附件按变更分类独立授权。"""
-        self.service.migrate_legacy_users()
         org_unit_id = self.service.save_org_unit(code="org.ecn.files", name="ECN附件测试部")
         position_id = self.service.save_position(code="ecn.file.viewer", name="ECN附件查看岗位")
         self.service.set_primary_membership(
@@ -342,7 +299,6 @@ class AccessControlTests(unittest.TestCase):
         )
 
     def test_ecn_initial_reminder_and_pending_count_use_database_permission(self):
-        self.service.migrate_legacy_users()
         org_unit_id = self.service.save_org_unit(code="org.ecn.reminder", name="ECN提醒部")
         position_id = self.service.save_position(code="ecn.reminder", name="普通提醒岗位")
         self.service.set_primary_membership(
@@ -375,7 +331,6 @@ class AccessControlTests(unittest.TestCase):
 
     def test_ecn_material_responsibility_uses_permissions_in_database_mode(self):
         """数据库模式按稳定责任权限和明确项目销售判断，不读取岗位显示名称。"""
-        self.service.migrate_legacy_users()
         org_unit_id = self.service.save_org_unit(code="org.ecn.execution", name="ECN执行部")
         position_id = self.service.save_position(code="ecn.execution", name="普通执行岗位")
         self.service.set_primary_membership(
@@ -444,23 +399,8 @@ class AccessControlTests(unittest.TestCase):
             )
         )
 
-    def test_statistics_legacy_mode_keeps_entry_and_overview_role_rules(self):
-        """旧 Excel 模式保留统计入口关键词及概述统计精确角色。"""
-        self.assertTrue(can_view_statistics("质量经理", "张三", user_service=self.service))
-        self.assertFalse(can_view_statistics("研发光学", "张三", user_service=self.service))
-        self.assertTrue(
-            can_view_overview_statistics("研发经理", "张三", user_service=self.service)
-        )
-        self.assertFalse(
-            can_view_overview_statistics("质量经理", "张三", user_service=self.service)
-        )
-        self.assertTrue(
-            can_manage_overview_owners("研发电子主管", "张三", user_service=self.service)
-        )
-
     def test_statistics_database_mode_uses_three_independent_permissions(self):
         """数据库模式下统计入口、全员概述统计和负责人配置互不隐含。"""
-        self.service.migrate_legacy_users()
         org_unit_id = self.service.save_org_unit(code="org.statistics", name="统计测试部")
         position_id = self.service.save_position(code="statistics.viewer", name="统计查看岗位")
         self.service.set_primary_membership(
@@ -499,15 +439,8 @@ class AccessControlTests(unittest.TestCase):
             can_manage_overview_owners("普通岗位", "张三", user_service=self.service)
         )
 
-    def test_project_todo_legacy_mode_keeps_original_entry_keywords(self):
-        """旧 Excel 模式继续按原角色关键词开放项目待办入口。"""
-        self.assertTrue(can_view_project_todo("质量工程师", "张三", user_service=self.service))
-        self.assertTrue(can_view_project_todo("研发硬件", "张三", user_service=self.service))
-        self.assertFalse(can_view_project_todo("行政专员", "张三", user_service=self.service))
-
     def test_project_todo_database_mode_requires_stable_entry_permission(self):
         """数据库模式不得因岗位名称碰巧包含旧关键词而开放项目待办。"""
-        self.service.migrate_legacy_users()
         org_unit_id = self.service.save_org_unit(code="org.todo", name="待办测试部")
         position_id = self.service.save_position(code="todo.viewer", name="研发待办查看岗位")
         self.service.set_primary_membership(
@@ -526,6 +459,23 @@ class AccessControlTests(unittest.TestCase):
 
     def test_project_todo_only_keeps_actionable_overview_labels(self):
         """个人概述待办只显示当前角色真正可以维护的 label。"""
+        edit_code = project_overview_item_permission("hardware_summary", "edit")
+        self.service.identity_store.seed_permission_catalog(
+            [
+                {
+                    "code": edit_code,
+                    "name": "硬件概述维护",
+                    "module": "project_overview",
+                    "description": "测试权限",
+                }
+            ]
+        )
+        org_unit_id = self.service.save_org_unit(code="org.todo.overview", name="概述待办测试部")
+        position_id = self.service.save_position(code="todo.overview.editor", name="概述维护岗位")
+        self.service.set_primary_membership(
+            "张三", org_unit_id=org_unit_id, position_id=position_id
+        )
+        self.service.set_position_permissions(position_id, [edit_code], actor_username="admin")
         pending = {
             "P100": {
                 "hardware_summary": "缺必填",
@@ -555,15 +505,8 @@ class AccessControlTests(unittest.TestCase):
             {"P100": {"hardware_summary": "缺必填"}},
         )
 
-    def test_question_tree_legacy_mode_keeps_original_role_keywords(self):
-        """旧 Excel 模式继续按原关键词开放需求项结构及打印清单。"""
-        self.assertTrue(can_view_question_tree("销售主管", "张三", user_service=self.service))
-        self.assertTrue(can_view_question_tree("研发硬件", "张三", user_service=self.service))
-        self.assertFalse(can_view_question_tree("质量经理", "张三", user_service=self.service))
-
     def test_question_tree_database_mode_requires_stable_view_permission(self):
         """数据库模式不得因岗位名称包含旧关键词而开放需求项结构。"""
-        self.service.migrate_legacy_users()
         org_unit_id = self.service.save_org_unit(code="org.question_tree", name="需求结构测试部")
         position_id = self.service.save_position(code="question_tree.viewer", name="研发结构查看岗位")
         self.service.set_primary_membership(
@@ -580,13 +523,8 @@ class AccessControlTests(unittest.TestCase):
         )
         self.assertTrue(can_view_question_tree("普通岗位", "张三", user_service=self.service))
 
-    def test_project_test_summary_legacy_mode_keeps_login_user_access(self):
-        """旧 Excel 模式保持原有登录用户均可查看测试项汇总的行为。"""
-        self.assertTrue(can_view_project_test_summary("行政专员", "张三", user_service=self.service))
-
     def test_project_test_summary_database_mode_requires_stable_view_permission(self):
         """数据库模式必须明确授权，旧角色和登录状态本身不再开放报表。"""
-        self.service.migrate_legacy_users()
         org_unit_id = self.service.save_org_unit(code="org.test_summary", name="测试汇总部")
         position_id = self.service.save_position(code="test_summary.viewer", name="测试汇总查看岗位")
         self.service.set_primary_membership(
@@ -616,33 +554,8 @@ class AccessControlTests(unittest.TestCase):
             "/report/test_summary?project_name=%E6%B5%8B%E8%AF%95+%E9%A1%B9%E7%9B%AE%2F01",
         )
 
-    def test_project_table_legacy_mode_keeps_original_role_behavior(self):
-        """旧 Excel 模式仍允许登录用户查看，并保留原项目维护和状态范围规则。"""
-        self.assertTrue(
-            can_view_project_table("普通用户", "张三", user_service=self.service)
-        )
-        self.assertTrue(
-            can_manage_project_records("研发经理", "张三", user_service=self.service)
-        )
-        self.assertFalse(
-            can_manage_project_records("研发硬件", "张三", user_service=self.service)
-        )
-        self.assertTrue(
-            can_edit_project_status("研发助理", "张三", user_service=self.service)
-        )
-        self.assertTrue(
-            can_assign_all_project_engineers("研发经理", "张三", user_service=self.service)
-        )
-        self.assertFalse(
-            can_view_all_project_states("工程IE", "张三", user_service=self.service)
-        )
-        self.assertTrue(
-            can_view_all_project_states("研发硬件", "张三", user_service=self.service)
-        )
-
     def test_project_table_database_mode_uses_only_stable_permissions(self):
         """项目资料迁移后不得从旧角色名称获得查看或维护能力。"""
-        self.service.migrate_legacy_users()
 
         self.assertFalse(
             can_view_project_table("研发经理", "张三", user_service=self.service)
@@ -725,7 +638,6 @@ class AccessControlTests(unittest.TestCase):
 
     def test_legacy_project_manage_grant_expands_to_three_independent_permissions(self):
         """上一版项目维护授权只迁移一次，拆为基础资料、状态和工程师指定。"""
-        self.service.migrate_legacy_users()
         position_id = self.service.save_position(code="project.legacy.manager", name="旧项目管理员")
         self.service.identity_store.seed_permission_catalog(
             [
@@ -754,47 +666,8 @@ class AccessControlTests(unittest.TestCase):
             }.issubset(permission_codes)
         )
 
-    def test_project_requirement_legacy_mode_keeps_editor_and_assignee_rules(self):
-        """旧模式继续按销售编辑、研发经理全审和项目工程师具体分配运行。"""
-        engineers = {"P1": "张三", "P2": "李四"}
-        self.assertTrue(
-            can_view_project_requirement("普通用户", "张三", user_service=self.service)
-        )
-        self.assertTrue(
-            can_edit_project_requirement("销售", "张三", user_service=self.service)
-        )
-        self.assertTrue(
-            can_review_project_requirement(
-                "研发硬件",
-                "张三",
-                "P1",
-                engineers,
-                user_service=self.service,
-            )
-        )
-        self.assertFalse(
-            can_review_project_requirement(
-                "研发硬件",
-                "张三",
-                "P2",
-                engineers,
-                user_service=self.service,
-            )
-        )
-        self.assertTrue(
-            can_review_all_project_requirements("研发经理", "张三", user_service=self.service)
-        )
-        self.assertTrue(
-            can_revoke_project_requirement_approval(
-                "研发经理",
-                "张三",
-                user_service=self.service,
-            )
-        )
-
     def test_project_requirement_database_mode_uses_stable_and_assigned_permissions(self):
         """数据库模式同时校验稳定资格和项目工程师的具体责任。"""
-        self.service.migrate_legacy_users()
         engineers = {"P1": "张三", "P2": "李四"}
         self.assertFalse(
             can_edit_project_requirement("销售", "张三", user_service=self.service)
@@ -879,23 +752,8 @@ class AccessControlTests(unittest.TestCase):
             )
         )
 
-    def test_project_overview_legacy_mode_keeps_item_role_rules(self):
-        """旧 Excel 模式继续读取概述项自身的读写角色配置。"""
-        config = {
-            "role": "硬件",
-            "permission": {
-                "read_role": ["研发结构"],
-                "edit_role": ["研发硬件"],
-            },
-        }
-        self.assertTrue(can_view_overview_item(config, "研发结构", "张三", user_service=self.service))
-        self.assertTrue(can_view_overview_item(config, "研发硬件", "张三", user_service=self.service))
-        self.assertTrue(can_edit_overview_item(config, "研发硬件", "张三", user_service=self.service))
-        self.assertFalse(can_edit_overview_item(config, "研发结构", "张三", user_service=self.service))
-
     def test_project_overview_database_mode_uses_label_and_assignment_permissions(self):
         """数据库模式按 label 授权，审批同时限制为流程快照中的具体人员。"""
-        self.service.migrate_legacy_users()
         org_unit_id = self.service.save_org_unit(code="org.overview", name="概述测试部")
         position_id = self.service.save_position(code="overview.hardware", name="硬件概述岗位")
         self.service.set_primary_membership("张三", org_unit_id=org_unit_id, position_id=position_id)
@@ -950,7 +808,6 @@ class AccessControlTests(unittest.TestCase):
 
     def test_project_overview_label_catalog_detects_new_items_and_preserves_grants(self):
         """新增 label 自动登记且默认不授权，title 改名不会破坏原权限关系。"""
-        self.service.migrate_legacy_users()
         org_unit_id = self.service.save_org_unit(code="org.dynamic.overview", name="动态概述部")
         position_id = self.service.save_position(code="overview.dynamic", name="动态概述岗位")
         self.service.set_primary_membership("张三", org_unit_id=org_unit_id, position_id=position_id)
@@ -1009,7 +866,6 @@ class AccessControlTests(unittest.TestCase):
 
     def test_project_overview_dimension_grants_expand_once_to_current_labels(self):
         """上一版专业级权限升级时展开到当前 label，之后不再重复覆盖管理员调整。"""
-        self.service.migrate_legacy_users()
         org_unit_id = self.service.save_org_unit(code="org.overview.upgrade", name="概述升级部")
         position_id = self.service.save_position(code="overview.upgrade", name="概述升级岗位")
         old_code = project_overview_dimension_permission("hardware", "edit")
@@ -1026,7 +882,6 @@ class AccessControlTests(unittest.TestCase):
         self.assertIn(project_overview_item_permission("electronic_testing", "edit"), current_codes)
 
     def test_admin_automatically_has_every_registered_permission(self):
-        self.service.migrate_legacy_users()
         legacy_admin_role = next(
             role
             for role in self.service.get_user_security_roles("admin")
@@ -1044,7 +899,6 @@ class AccessControlTests(unittest.TestCase):
         self.assertFalse(self.service.has_permission("admin", "permission.code.does_not_exist"))
 
     def test_custom_role_can_be_assigned_and_combined(self):
-        self.service.migrate_legacy_users()
         permission_code = tool_permission_code("mode_calc")
         role_id = self.service.create_security_role(
             code="tools.mode.reviewer",
@@ -1082,7 +936,6 @@ class AccessControlTests(unittest.TestCase):
         self.assertIn("user_security_roles_updated", actions)
 
     def test_manual_permission_removal_is_not_reversed_by_resync(self):
-        self.service.migrate_legacy_users()
         legacy_role = next(
             role
             for role in self.service.get_user_security_roles("张三")
@@ -1108,7 +961,6 @@ class AccessControlTests(unittest.TestCase):
         self.assertFalse(self.service.has_permission("张三", permission_code))
 
     def test_disabled_role_no_longer_grants_permission(self):
-        self.service.migrate_legacy_users()
         permission_code = tool_permission_code("mode_calc")
         role_id = self.service.create_security_role(
             code="tools.temporary",
@@ -1137,7 +989,6 @@ class AccessControlTests(unittest.TestCase):
         self.assertFalse(self.service.has_permission("张三", permission_code))
 
     def test_primary_position_grants_default_permission(self):
-        self.service.migrate_legacy_users()
         permission_code = tool_permission_code("pixel_statistics")
         org_unit_id = self.service.save_org_unit(code="org.rd", name="研发部")
         position_id = self.service.save_position(code="rd.engineer", name="研发工程师")
@@ -1167,7 +1018,6 @@ class AccessControlTests(unittest.TestCase):
 
     def test_notification_subscription_uses_stable_permission_and_excludes_admin(self):
         """通知订阅按岗位权限找在职用户，系统管理员不会因全权限被自动订阅。"""
-        self.service.migrate_legacy_users()
         org_unit_id = self.service.save_org_unit(code="org.notice", name="通知测试部")
         position_id = self.service.save_position(code="notice.receiver", name="通知接收岗")
         self.service.set_primary_membership(
@@ -1197,7 +1047,6 @@ class AccessControlTests(unittest.TestCase):
 
     def test_notification_permissions_are_grouped_by_business_module(self):
         """各业务模块通知应在权限界面形成互相独立的分组。"""
-        self.service.migrate_legacy_users()
         notification_modules = {
             item["module"]
             for item in self.service.list_permissions()
@@ -1214,7 +1063,6 @@ class AccessControlTests(unittest.TestCase):
 
     def test_sample_issue_database_mode_ignores_legacy_role_and_uses_position_permissions(self):
         """样品问题模块迁移后只认稳定岗位权限，不再叠加旧角色授权。"""
-        self.service.migrate_legacy_users()
         org_unit_id = self.service.save_org_unit(code="org.sample.issue", name="样品问题测试部")
         position_id = self.service.save_position(code="sample.issue.owner", name="样品问题岗位")
         self.service.set_primary_membership(
@@ -1241,7 +1089,6 @@ class AccessControlTests(unittest.TestCase):
 
     def test_design_knowledge_database_mode_uses_only_stable_permissions(self):
         """设计知识库迁移后不再从研发角色名称自动获得权限。"""
-        self.service.migrate_legacy_users()
         org_unit_id = self.service.save_org_unit(code="org.design.knowledge", name="知识测试部")
         position_id = self.service.save_position(code="design.knowledge.editor", name="知识录入岗位")
         self.service.set_primary_membership(
@@ -1273,7 +1120,6 @@ class AccessControlTests(unittest.TestCase):
 
     def test_broad_notification_permission_is_split_without_losing_assignments(self):
         """上一版宽权限应迁移到全部对应事件权限，并从管理目录移除。"""
-        self.service.migrate_legacy_users()
         old_code = "notifications.sample_order.attention.receive"
         self.service.identity_store.seed_permission_catalog(
             [
@@ -1308,7 +1154,6 @@ class AccessControlTests(unittest.TestCase):
 
     def test_sample_close_permissions_are_merged_and_workflow_references_are_updated(self):
         """两项旧关闭权限应合并，并同步迁移已保存流程的资格权限。"""
-        self.service.migrate_legacy_users()
         self.service.identity_store.seed_permission_catalog(
             [
                 {
@@ -1383,7 +1228,6 @@ class AccessControlTests(unittest.TestCase):
 
     def test_sample_order_permission_requires_new_position_or_additional_group(self):
         """样品单完成迁移后不得继续从兼容角色继承操作权限。"""
-        self.service.migrate_legacy_users()
         registered_codes = {item["code"] for item in self.service.list_permissions()}
         self.assertIn(SAMPLE_ORDER_BASE_EDIT_PERMISSION, registered_codes)
         self.assertIn(SAMPLE_ORDER_VIEW_PERMISSION, registered_codes)
@@ -1420,7 +1264,6 @@ class AccessControlTests(unittest.TestCase):
 
     def test_error_permission_requires_new_position_or_additional_group(self):
         """异常模块迁移后不得继续从兼容角色继承操作权限。"""
-        self.service.migrate_legacy_users()
         registered_codes = {item["code"] for item in self.service.list_permissions()}
         self.assertIn(ERROR_VIEW_PERMISSION, registered_codes)
         self.assertIn(ERROR_RECORD_EDIT_PERMISSION, registered_codes)

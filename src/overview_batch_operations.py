@@ -43,7 +43,7 @@ def get_batch_overview_reviewer_roles(applicant_role: str) -> list[str]:
 def can_review_batch_overview_request(request: dict, reviewer: str, reviewer_role: str) -> bool:
     """判断当前用户能否审核申请；同一用户不能自审。"""
     service = getattr(app.state, "user_service", None)
-    if service is not None and getattr(service, "storage_mode", "legacy_excel") == "database":
+    if service is not None:
         return has_batch_overview_review_access(request, reviewer_role, reviewer, user_service=service)
     configured_roles = get_batch_overview_reviewer_roles(str(request.get("submitter_role") or ""))
     return bool(

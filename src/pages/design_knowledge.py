@@ -417,7 +417,7 @@ def get_level_options_for_content_type(content_type: str) -> list[str]:
 
 
 def _design_role_matches(role: object, keywords: list[str]) -> bool:
-    """只供旧 Excel 模式兼容原角色关键词。"""
+    """匹配历史记录中的角色快照。"""
     role_text = str(role or "").strip().casefold()
     return any(
         str(keyword).strip().casefold() in role_text
@@ -432,7 +432,7 @@ def _has_design_permission(
     permission_code: str,
     legacy_keywords: list[str],
 ) -> bool:
-    """数据库模式只认稳定权限；旧 Excel 模式继续兼容原角色规则。"""
+    """应用运行时只认身份数据库中的稳定权限。"""
     role_text = str(role or "").strip()
     user_service = getattr(app.state, "user_service", None)
     if user_service is None or not str(username or "").strip():
@@ -535,7 +535,6 @@ def _restore_pending_assignment(submission: dict) -> list[str]:
         not isinstance(assignment, dict)
         or not assignment.get("task_key")
         or user_service is None
-        or getattr(user_service, "storage_mode", "legacy_excel") != "database"
     ):
         return []
     entity_id = str(submission.get("request_id") or submission.get("knowledge_id") or "")
@@ -586,7 +585,7 @@ def can_review_submission(
         return False
 
     user_service = getattr(app.state, "user_service", None)
-    if user_service is None or getattr(user_service, "storage_mode", "legacy_excel") != "database":
+    if user_service is None:
         return legacy_allowed
     assignment = submission.get("workflow_assignment", {})
     if not isinstance(assignment, dict) or not assignment.get("task_key"):
@@ -674,9 +673,9 @@ def get_design_knowledge_dashboard_pending_count(
 
 
 def _resolve_design_workflow(event: str, requester_username: str) -> Optional[dict]:
-    """数据库身份模式必须命中已发布流程；旧 Excel 模式返回空值。"""
+    """使用身份数据库中已发布的流程解析具体审批人。"""
     user_service = getattr(app.state, "user_service", None)
-    if user_service is None or getattr(user_service, "storage_mode", "legacy_excel") != "database":
+    if user_service is None:
         return None
     return resolve_approval_workflow(
         user_service,
@@ -731,7 +730,7 @@ def _workflow_approver_text(submission: dict) -> str:
 def _persist_workflow_assignments(entity_id: str, assignment: dict) -> None:
     """创建具体审批待办；失败时保留单据快照供页面自动恢复。"""
     user_service = getattr(app.state, "user_service", None)
-    if user_service is None or getattr(user_service, "storage_mode", "legacy_excel") != "database":
+    if user_service is None:
         return
     try:
         user_service.replace_work_assignments(
@@ -755,7 +754,6 @@ def _complete_workflow_assignment(submission: dict, current_user: str) -> None:
         not isinstance(assignment, dict)
         or not assignment.get("task_key")
         or user_service is None
-        or getattr(user_service, "storage_mode", "legacy_excel") != "database"
     ):
         return
     entity_id = str(submission.get("request_id") or submission.get("knowledge_id") or "")
@@ -913,12 +911,12 @@ async def save_knowledge_record(
                 record["approver_roles"] = copy.deepcopy(workflow_assignment["assignee_names"])
                 record["workflow_assignment"] = copy.deepcopy(workflow_assignment)
             elif not record.get("workflow_assignment"):
-                # 旧 Excel 模式仍按原 JSON 路由固化审核角色。
+                # 仅供无应用身份上下文的历史数据转换调用。
                 record_legacy_compatibility_hit(
                     "legacy_workflow_route",
                     f"design_knowledge.{DESIGN_KNOWLEDGE_REVIEW_EVENT}",
                     username=current_user,
-                    detail="旧 Excel 模式使用 design_knowledge_config.json 审批路由",
+                    detail="历史数据转换使用 design_knowledge_config.json 审批路由",
                 )
                 route = get_review_route(record.get("created_role", current_role))
                 record["review_route_key"] = route["key"]
@@ -1031,7 +1029,7 @@ async def submit_tag_request(
             "legacy_workflow_route",
             f"design_knowledge.{DESIGN_TAG_REVIEW_EVENT}",
             username=current_user,
-            detail="旧 Excel 模式使用 design_knowledge_config.json 审批路由",
+            detail="历史数据转换使用 design_knowledge_config.json 审批路由",
         )
         review_route = get_review_route(current_role)
     else:

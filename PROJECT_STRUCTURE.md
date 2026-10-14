@@ -11,16 +11,16 @@
 | `tests/` | 自动化回归测试 | 建议随代码保留，部署包可按运维策略排除 |
 | `scripts/` | 一次性迁移、修复和离线转换工具 | 建议部署，执行前阅读脚本说明 |
 | `img/` | 页面图标、Logo 和预设头像 | 必须部署 |
-| `data/` | 旧用户工作簿及少量静态数据 | 服务器 `users.xlsx` 是服务器自己的数据，不能被本地文件覆盖 |
+| `data/` | 少量静态数据 | 用户身份只保存在 `db/nicegui_storage.db`，本目录不再承载登录账号 |
 | `db/` | SQLite 运行数据库 | 环境数据，不进入 Git，不可用本地数据库覆盖服务器数据库 |
-| `backups/` | 自动备份、用户迁移备份和配置导入前备份 | 环境数据，不进入 Git |
+| `backups/` | 自动备份和配置导入前备份 | 环境数据，不进入 Git |
 | `files/`、`over/`、`req/`、`uploads/` | 业务附件和上传内容 | 环境数据，部署时保留服务器原目录 |
 | `logs/` | 运行日志 | 环境数据，不进入 Git |
 | `.nicegui/` | NiceGUI 本地存储文件 | 环境数据，部署时保留服务器原目录 |
 | `.overview_*_staging/` | 概述批量操作临时目录 | 临时数据，不进入 Git |
 
 根目录的 `*_config.json`、`overview_config.json`、`tools_permission.json` 等文件仍有运行时读取路径。
-其中仍包含其它模块的旧 Excel 模式兼容配置，不能集中移动或删除；ECN 配置中的审批与执行路线已经删除。
+其中部分历史角色字段只用于既有记录展示、流程草稿导入或权限整理，不再作为登录和运行时授权来源；ECN 配置中的审批与执行路线已经删除。
 
 ## `src/` 主要边界
 
@@ -30,7 +30,7 @@
 | `system_lifecycle.py` | 管理端重启/关闭前备份校验、优雅退出与跨热重载进程重启协调 |
 | `db_storage.py` | 通用业务 JSON/实体的异步 SQLite 存储 |
 | `identity_store.py` | 用户、组织、岗位、权限、流程和具体待办的同步 SQLite 数据层 |
-| `user_service.py` | 旧 Excel 与身份数据库之间的统一服务门面 |
+| `user_service.py` | 数据库用户、组织、权限和审批服务门面 |
 | `legacy_compatibility.py` | 旧身份、角色授权、通知和审批路由实际命中的统一限频日志 |
 | `identity_config_transfer.py` | 跨环境配置包导出、预检、备份和事务导入 |
 | `permission_catalog.py` | 全系统稳定权限编码目录 |
@@ -53,7 +53,6 @@
 
 | 文件 | 用途 |
 | --- | --- |
-| `migrate_users_to_iam.py` | 把当前机器的 `data/users.xlsx` 安全迁移到身份数据库，默认不覆盖已有密码 |
 | `admin_fix_storage_project_states.ps1` | 管理员按脚本说明修复特定项目状态数据 |
 | `convert_excel_to_json.py` | 通用 Excel 转 JSON 离线工具，不被应用运行时代码引用 |
 
