@@ -31,21 +31,35 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Python: 运行 NiceGUI (模块模式)",
+            "name": "Python: 本地调试 NiceGUI（身份切换与消息拦截）",
             "type": "debugpy",
             "request": "launch",
-            // 关键：告诉 VS Code 运行 "python -m src.main"
+            "program": "${workspaceFolder}/run_local_debug.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "subProcess": true,
+            // 密码和企业微信 userid 白名单只保存在本机，不提交 Git。
+            "envFile": "${workspaceFolder}/.env.local",
+            "env": {
+                "NICEGUI_RELOAD": "true",
+                "WATCHFILES_FORCE_POLLING": "true",
+                "WATCHFILES_POLL_DELAY_MS": "200"
+            },
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "name": "Python: 正式入口 NiceGUI（不加载本地调试模块）",
+            "type": "debugpy",
+            "request": "launch",
             "module": "src.main",
             "console": "integratedTerminal",
             "justMyCode": true,
-            // NiceGUI 热重载会创建子进程，让 debugpy 自动跟随新的应用进程。
             "subProcess": true,
             "env": {
                 "NICEGUI_RELOAD": "true",
                 "WATCHFILES_FORCE_POLLING": "true",
                 "WATCHFILES_POLL_DELAY_MS": "200"
             },
-            // 确保工作目录是项目根目录
             "cwd": "${workspaceFolder}"
         },
         {

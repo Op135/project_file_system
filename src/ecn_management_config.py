@@ -307,7 +307,7 @@ class ECNState:
 _DEFAULT_CONFIG: dict[str, Any] = {
     "wecom": {
         "enabled": True,
-        "test_mode": True,
+        "test_mode": False,
         "cc_manager_enabled": True,
         "test_notify_targets": [{"position": "研发经理"}],
         "public_base_url": "",

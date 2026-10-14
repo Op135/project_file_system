@@ -28,6 +28,7 @@ from ..project_todo_access import (
     get_requirement_todo_keys_by_state,
 )
 from ..question_tree_access import can_view_question_tree
+from ..runtime_controls import has_runtime_effect_policy
 from ..statistics_access import can_view_statistics
 from ..utils import (
     build_online_users_tooltip,
@@ -304,6 +305,15 @@ def main_page():
                     ui.menu_item("系统管理", on_click=lambda: ui.navigate.to("/manage"))
                 ui.separator().props("size=1px")
                 ui.menu_item("注销登录", on_click=lambda: logout())
+
+    if has_runtime_effect_policy():
+        ui.button(
+            "调试控制中心",
+            icon="developer_mode",
+            on_click=lambda: ui.navigate.to("/dev/identity-switcher"),
+        ).props("color=amber-8 unelevated").classes(
+            "fixed right-5 bottom-5 z-50 shadow-lg"
+        ).tooltip("切换身份、控制企业微信发送与后台任务")
 
     # 限制内容区高度并开启局部滚动。
     with ui.column().classes("w-full h-[calc(100vh-3rem)] overflow-y-auto items-center justify-center"):

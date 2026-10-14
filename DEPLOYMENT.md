@@ -15,6 +15,7 @@
   `uploads/`、`logs/` 或 `backups/` 覆盖到服务器。
 - 使用服务器原有环境变量，尤其是 `STORAGE_SECRET` 和企业微信相关密钥。
 - 本地测试用户统一密码不会进入配置包，也不会覆盖服务器身份数据库中的密码哈希。
+- 生产部署包排除 `run_local_debug.py` 和 `src/modules/dev_identity_switcher/`，且不得设置 `ENABLE_DEV_IDENTITY_SWITCHER`、`DEV_TOOLS_PASSWORD` 或 `DEV_WECOM_RECIPIENT_ALLOWLIST`。正式服务只从 `src/main.py` 启动。
 
 ## 三、服务器执行顺序
 

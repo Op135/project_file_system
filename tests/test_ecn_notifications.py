@@ -45,6 +45,9 @@ class ECNNotificationTests(unittest.IsolatedAsyncioTestCase):
         self.storage = load_isolated_db_storage("ecn_notification_test_db", Path(self.temp.name) / "ecn.db")
         await self.storage.init_db()
         self.settings = load_ecn_config()["wecom"]
+        # Most routing cases in this class exercise the legacy ECN test route explicitly;
+        # do not couple those cases to the checked-in deployment default.
+        self.settings.update(test_mode=True, cc_manager_enabled=True)
         self.settings["public_base_url"] = "https://example.test"
         self.service = Users()
         self.record = get_ecn_template()
@@ -416,11 +419,11 @@ class ECNNotificationTests(unittest.IsolatedAsyncioTestCase):
 
 
 class ECNWecomConfigTests(unittest.TestCase):
-    def test_default_is_debug_and_invalid_switch_does_not_enable_production(self):
+    def test_default_uses_production_recipients_and_invalid_switch_keeps_default(self):
         config = load_ecn_config({"wecom": {"test_mode": "false", "enabled": False, "check_interval_seconds": -1}})[
             "wecom"
         ]
-        self.assertTrue(config["test_mode"])
+        self.assertFalse(config["test_mode"])
         self.assertTrue(config["cc_manager_enabled"])
         self.assertFalse(config["enabled"])
         self.assertEqual(config["check_interval_seconds"], 60)
@@ -429,7 +432,7 @@ class ECNWecomConfigTests(unittest.TestCase):
     def test_cc_switch_can_be_disabled_independently(self):
         config = load_ecn_config({"wecom": {"cc_manager_enabled": False}})["wecom"]
         self.assertFalse(config["cc_manager_enabled"])
-        self.assertTrue(config["test_mode"])
+        self.assertFalse(config["test_mode"])
 
 
 class ECNReminderScheduleTests(unittest.IsolatedAsyncioTestCase):

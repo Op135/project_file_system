@@ -35,6 +35,7 @@ from .pages.sample_order_dashboard import (
     check_and_send_sample_order_overdue_reminders,
     initialize_sample_order_storage,
 )
+from .runtime_controls import allows_background_task
 from .sample_issue_config import (
     SAMPLE_BACKGROUND_REMINDER_ENABLED,
     SAMPLE_BACKGROUND_REMINDER_INITIAL_DELAY_SECONDS,
@@ -197,6 +198,8 @@ def init_wecom_retry_task():
     """初始化企业微信失败消息全局重试任务。"""
 
     async def retry_wecom_messages():
+        if not allows_background_task("wecom.retry"):
+            return
         success_count, fail_count = await retry_failed_wecom_messages()
         if success_count or fail_count:
             logger.info("企业微信失败消息重试完成：成功 %s 条，仍失败 %s 条", success_count, fail_count)
@@ -210,6 +213,8 @@ def init_wecom_contacts_task():
     """初始化企业微信通讯录缓存刷新任务。"""
 
     async def refresh_wecom_contacts():
+        if not allows_background_task("wecom.contacts.refresh"):
+            return
         success, message = await refresh_wecom_contacts_if_stale()
         if success:
             logger.info(message)
@@ -233,6 +238,8 @@ def init_error_reminder_task():
         return
 
     async def check_error_reminders():
+        if not allows_background_task("error.reminders"):
+            return
         if not is_scheduled_wecom_reminder_time():
             logger.info("生产异常提醒检查已跳过：当前时间不在全局窗口 08:30-18:30。")
             return
@@ -272,6 +279,8 @@ def init_sample_issue_reminder_task():
         return
 
     async def check_sample_issue_reminders():
+        if not allows_background_task("sample_issue.reminders"):
+            return
         if not is_scheduled_wecom_reminder_time():
             logger.info("样品问题提醒检查已跳过：当前时间不在全局窗口 08:30-18:30。")
             return
@@ -307,6 +316,8 @@ def init_sample_order_overdue_reminder_task():
     """初始化样品订单逾期未填新交期提醒。"""
 
     async def check_sample_order_overdue_reminders():
+        if not allows_background_task("sample_order.reminders"):
+            return
         if not is_scheduled_wecom_reminder_time():
             logger.info("样品订单逾期提醒检查已跳过：当前时间不在全局窗口 08:30-18:30。")
             return
@@ -481,8 +492,8 @@ if __name__ in {"__main__", "__mp_main__"}:
     # ==========================================================
     # 本地开发时保持为 False；部署到服务器时改为 True。
     # 只需修改这一行，不需要在 ui.run() 内反复注释/取消注释多个参数。
-    PRODUCTION_MODE = False
-    # PRODUCTION_MODE = True
+    # PRODUCTION_MODE = False
+    PRODUCTION_MODE = True
     # 默认启用热重载；需要临时关闭时可显式设置 NICEGUI_RELOAD=false。
     DEVELOPMENT_RELOAD = os.environ.get("NICEGUI_RELOAD", "true").strip().lower() not in {
         "0",

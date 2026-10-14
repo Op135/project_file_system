@@ -26,7 +26,7 @@ _DEFAULT_CONFIG: dict[str, Any] = {
     "special_status_reason_required": True,
     "delay_attention_threshold": 2,
     "wecom": {
-        "redirect_applicant_notifications_to_manager": True,
+        "redirect_applicant_notifications_to_manager": False,
         "notify_applicant_on_extension": True,
         "notify_applicant_on_special_status": True,
         "manager_notify_targets": [{"position": "研发经理"}],

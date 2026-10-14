@@ -22,7 +22,7 @@
         "ui.overview_conflict_auto_close_seconds": "概述新增数据与同格已有数据冲突时，警告浮层首次自动弹出的停留秒数。",
         "schema": "ECN申请与影响表单使用的原因、影响、资料类型和物料选项。",
         "wecom.enabled": "ECN企业微信待办提醒总开关；关闭不影响首页角标。",
-        "wecom.test_mode": "true为调试模式，只发送给test_notify_targets；false按与首页角标一致的实际待办人员发送。修改后重启生效。",
+        "wecom.test_mode": "旧调试转发开关；服务器和本地均保持false。本地调试统一由 /dev/identity-switcher 的运行时策略拦截或转发。修改后重启生效。",
         "wecom.cc_manager_enabled": "正式模式下是否同时抄送通讯录职务为研发经理的人员，默认true；观察结束改false并重启。抄送按原待办人员逐人镜像，不汇总多人内容；研发经理本人就是实际收件人时不重复抄送。调试模式不额外抄送。",
         "wecom.test_notify_targets": "调试收件人，默认精确匹配企业微信通讯录职务“研发经理”；没有匹配对象则跳过，不回退给其它人员。",
         "wecom.public_base_url": "员工浏览器可访问的HTTP/HTTPS系统地址；ECN卡片底部查看详情打开ECN列表。为空时回退文字提醒且不附跳转链接。",
@@ -223,7 +223,7 @@
     },
     "wecom": {
         "enabled": true,
-        "test_mode": true,
+        "test_mode": false,
         "cc_manager_enabled": true,
         "test_notify_targets": [
             {

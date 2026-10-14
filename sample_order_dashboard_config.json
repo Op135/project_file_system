@@ -11,7 +11,7 @@
         "special_statuses": "订单特殊状态的可选值列表；正常状态必须保留。",
         "special_status_reason_required": "设置非正常特殊状态时是否强制填写原因，true为必须填写。",
         "delay_attention_threshold": "多次延期关注阈值；延期次数超过该数字时突出显示并提醒研发经理。",
-        "wecom.redirect_applicant_notifications_to_manager": "调试开关；true时原本发给申请人的企业微信消息改发给研发经理，上线后改为false。",
+        "wecom.redirect_applicant_notifications_to_manager": "旧调试转发开关，服务器和本地均保持false；本地调试转发统一由 /dev/identity-switcher 控制。",
         "wecom.notify_applicant_on_extension": "新增延期记录时是否发送企业微信通知。",
         "wecom.notify_applicant_on_special_status": "设置订单特殊状态时是否发送企业微信通知。",
         "wecom.manager_notify_targets": "仅旧 Excel 用户模式使用：样品单延期关注和特殊状态通知对象列表。数据库模式分别使用“接收样品单延期关注通知”和“接收样品单特殊状态通知”权限。"
@@ -45,7 +45,7 @@
     "special_status_reason_required": true,
     "delay_attention_threshold": 1,
     "wecom": {
-        "redirect_applicant_notifications_to_manager": true,
+        "redirect_applicant_notifications_to_manager": false,
         "notify_applicant_on_extension": true,
         "notify_applicant_on_special_status": true,
         "manager_notify_targets": [

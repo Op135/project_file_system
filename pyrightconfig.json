@@ -1,7 +1,8 @@
 {
   "include": [
     "src",
-    "tests"
+    "tests",
+    "run_local_debug.py"
   ],
   "exclude": [
     "**/node_modules",

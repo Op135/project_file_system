@@ -43,11 +43,14 @@
 | `*_config.py` | 对应根目录 JSON 的校验、默认值和业务配置读取 |
 | `pages/` | NiceGUI 路由、页面组合和业务交互 |
 | `modules/ecn/` | ECN 数据模型、事务、协作编辑、流程服务与页面组件 |
+| `modules/dev_identity_switcher/` | 仅由本地启动器注册的身份切换、企业微信拦截/转发和后台通知任务控制；生产部署排除 |
 | `tools/` | 独立分析工具的界面和计算实现 |
 
 照度/辐照度转强度分布工具位于 `src/tools/intensity_distribution.py`，复用像素统计工具的文件读取、中心定位和 `N×N` 块平均合并；工具页与权限目录分别负责入口和 `tools.intensity_distribution.use` 授权。
 
 更详细的权限迁移状态、每个业务页面职责和历史兼容边界见 `PROJECT_CONTEXT.md`。
+
+根目录 `run_local_debug.py` 是本地专用启动入口，固定绑定回环地址并加载上述调试模块；服务器仍使用 `src/main.py`。
 
 ## `scripts/` 工具
 

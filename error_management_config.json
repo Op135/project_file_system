@@ -9,7 +9,7 @@
         "wecom.extension.approver_roles": "仅旧 Excel 用户模式使用：可以通过或驳回延期、关闭申请的角色关键字列表。",
         "wecom.extension.notify_targets": "仅旧 Excel 用户模式使用：延期申请、延期审批结果、关闭申请和关闭审批结果的通知接收人规则。数据库模式分别使用对应事件的四项通知接收权限。",
         "wecom.extension.notify_requester_on_approval": "审批通过或驳回后，是否同时通知本次延期申请人。",
-        "reminders.background_enabled": "调试开关，是否在系统启动后自动运行到期提醒检查，部署到服务器时设置为true。",
+        "reminders.background_enabled": "业务后台提醒总开关，通常保持true；本地调试是否实际运行由 /dev/identity-switcher 的运行时总闸门控制。",
         "reminders.initial_delay_seconds": "系统启动多少秒后执行第一次提醒检查，必须为正整数。",
         "reminders.check_interval_seconds": "后台提醒检查间隔秒数，必须为正整数。",
         "reminders.check_window": "后台提醒检查时间窗口。enabled=false 表示不限制时间；start/end 使用 HH:MM，支持跨午夜窗口。",
@@ -56,7 +56,7 @@
         }
     },
     "reminders": {
-        "background_enabled": false,
+        "background_enabled": true,
         "initial_delay_seconds": 60,
         "check_interval_seconds": 3600,
         "check_window": {

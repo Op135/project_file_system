@@ -14,8 +14,9 @@ uploads/
 .ruff_cache/
 .agents/
 .codex/
+.local/
+.env.local
 .pyright_tool/
 *.pyc
 # 忽略 Python 字节码缓存
 __pycache__/
-data/users.xlsx

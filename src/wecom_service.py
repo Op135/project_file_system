@@ -23,6 +23,7 @@ from .config import (
     WECOM_LOG_RETENTION_DAYS,
     WECOM_MAX_RETRY_COUNT,
 )
+from .runtime_controls import decide_wecom_delivery
 
 logger = logging.getLogger(__name__)
 
@@ -577,6 +578,43 @@ async def send_wecom_textcard_message(
     message_type: str = "pending",
 ) -> tuple[bool, str]:
     """发送文本卡片并记录日志；调用方负责按最新业务状态重试，不进入公共重试队列。"""
+    original_recipients = tuple(split_wecom_users(touser))
+    decision = decide_wecom_delivery(
+        original_recipients,
+        module=module,
+        business_key=business_key,
+        message_type=message_type,
+    )
+    if not decision.allowed:
+        await _append_log(
+            {
+                "log_id": uuid.uuid4().hex,
+                "time": _now_str(),
+                "module": module,
+                "business_key": business_key,
+                "message_type": message_type,
+                "recipient": "|".join(original_recipients),
+                "content": description,
+                "content_hash": _content_hash(description),
+                "success": True,
+                "suppressed": True,
+                "message": decision.reason,
+            }
+        )
+        return True, decision.reason
+    recipients = list(decision.recipients)
+    if not recipients:
+        return False, "企业微信卡片没有收件人"
+    if decision.content_prefix:
+        title = f"【本地调试】{title}"
+        description = f"{decision.content_prefix}{description}"
+    if decision.redirected and decision.replacement_link_base:
+        original_url = urlsplit(link_url)
+        suffix = original_url.path or "/"
+        if original_url.query:
+            suffix = f"{suffix}?{original_url.query}"
+        link_url = f"{decision.replacement_link_base}{suffix}"
+
     url = urlsplit(link_url)
     if url.scheme not in {"http", "https"} or not url.netloc:
         return False, "企业微信卡片需要有效的系统 HTTP/HTTPS 地址"
@@ -586,9 +624,6 @@ async def send_wecom_textcard_message(
         or len(link_url.encode("utf-8")) > 2048
     ):
         return False, "企业微信卡片标题、摘要或链接超出长度限制"
-    recipients = split_wecom_users(touser)
-    if not recipients:
-        return False, "企业微信卡片没有收件人"
     body = {"title": title, "description": description, "url": link_url, "btntxt": "查看详情"}
     results = []
     overall_success = True
@@ -606,6 +641,8 @@ async def send_wecom_textcard_message(
                 "content": description,
                 "content_hash": _content_hash(description),
                 "textcard": body,
+                "original_recipients": list(original_recipients),
+                "redirected": decision.redirected,
                 "success": success,
                 "message": message,
             }
@@ -626,10 +663,38 @@ async def send_wecom_text_message(
     retry_tracking: bool = True,
     alert_on_max_failure: bool = True,
 ) -> tuple[bool, str]:
+    original_recipients = tuple(split_wecom_users(touser))
+    decision = decide_wecom_delivery(
+        original_recipients,
+        module=module,
+        business_key=business_key,
+        message_type=message_type,
+    )
+    if not decision.allowed:
+        await _append_log(
+            {
+                "log_id": uuid.uuid4().hex,
+                "time": _now_str(),
+                "module": module,
+                "business_key": business_key,
+                "message_type": message_type,
+                "recipient": "|".join(original_recipients),
+                "content_hash": _content_hash(content),
+                "content": content,
+                "success": True,
+                "suppressed": True,
+                "message": decision.reason,
+            }
+        )
+        return True, decision.reason
+    if decision.content_prefix:
+        content = f"{decision.content_prefix}{content}"
     if link_url and link_url not in content:
         content = f"{content.rstrip()}\n{link_label}：{link_url}"
 
-    recipients = split_wecom_users(touser)
+    recipients = list(decision.recipients)
+    if not recipients:
+        return False, "企业微信消息没有收件人"
     results = []
     overall_success = True
 
@@ -645,6 +710,8 @@ async def send_wecom_text_message(
             "recipient": recipient,
             "content_hash": _content_hash(content),
             "content": content,
+            "original_recipients": list(original_recipients),
+            "redirected": decision.redirected,
             "success": success,
             "message": message,
         }
