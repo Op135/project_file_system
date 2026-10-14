@@ -1,4 +1,4 @@
-"""ECN 企业微信待办提醒：复用首页角标规则，调试转发与正式收件人严格分离。"""
+"""ECN 企业微信待办提醒：复用首页角标规则并支持研发经理观察抄送。"""
 
 import asyncio
 import hashlib
@@ -274,8 +274,6 @@ def build_notification_fingerprint(record: dict, tasks: dict, config: dict) -> s
             for key, item in get_ecn_special_confirmations(record.get("execution_info")).items()
             if item.get("assignee") and item.get("confirmed") is not True
         },
-        "test_mode": config["test_mode"],
-        "test_notify_targets": config["test_notify_targets"] if config["test_mode"] else [],
     }
     return hashlib.sha256(json.dumps(payload, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
@@ -319,10 +317,8 @@ def build_personal_notification_fingerprint(name: str, task_tokens: list[str]) -
 
 
 async def resolve_delivery_targets(pending: dict[str, str], config: dict, service) -> dict[str, list[str]]:
-    """返回企业微信账号到原始待办用户名的映射；调试解析失败绝不回退到正式人员。"""
-    if config["test_mode"]:
-        touser = await resolve_wecom_recipients(config["test_notify_targets"], fallback_touser="")
-        return {userid: list(pending) for userid in touser.split("|") if userid and userid != "@all"}
+    """返回企业微信账号到原始待办用户名的映射。"""
+    del config
     result: dict[str, list[str]] = {}
     bindings = service.list_wecom_bindings()
     for name in pending:
@@ -342,20 +338,16 @@ def build_notification_content(
 ) -> str:
     basic = record.get("basic_info", {})
     lines = [
-        "【ECN待办提醒 · 调试转发】"
-        if config["test_mode"]
-        else ("【ECN待办提醒 · 研发经理抄送】" if is_cc else "【ECN待办提醒】"),
+        "【ECN待办提醒 · 研发经理抄送】" if is_cc else "【ECN待办提醒】",
         f"单号：{record.get('ecn_id', '')}",
         f"主题：{basic.get('title') or '工程变更申请'}",
         f"申请人：{basic.get('applicant', '')}",
         f"当前状态：{record.get('workflow', {}).get('current_state', '')}",
-        f"{'原应通知人员' if config['test_mode'] else '待处理人员'}：{'、'.join(names)}",
+        f"待处理人员：{'、'.join(names)}",
     ]
     for name in names:
         lines.append(f"{name}：{'；'.join(tasks.get(name, []))}")
-    if config["test_mode"]:
-        lines.append("调试模式：本消息仅发给配置的调试收件人，未发给上述实际待办人员。")
-    elif is_cc:
+    if is_cc:
         lines.append("观察抄送：汇总上述人员的待办提醒，便于观察提醒内容及频度；如含本人待办，请按原职责处理。")
     text = "\n".join(lines)
     # 企业微信文本有长度限制；完整责任项可从系统列表查看。
@@ -379,7 +371,6 @@ def build_notification_card(
         return build_special_card(
             record,
             special,
-            test_mode=config["test_mode"],
             is_cc=is_cc,
             observer_names=names,
         )
@@ -402,11 +393,7 @@ def build_notification_card(
     ):
         event = "特定事项待确认"
     title = f"🔧【ECN工程变更】{event}"
-    nature = (
-        "调试转发 · 未通知实际处理人"
-        if config["test_mode"]
-        else ("研发经理抄送 · 含本人待办时请处理" if is_cc else "待办提醒")
-    )
+    nature = "研发经理抄送 · 含本人待办时请处理" if is_cc else "待办提醒"
     basic = record.get("basic_info", {})
     display_names = list(dict.fromkeys(names))
     names_text = "、".join(display_names)
@@ -415,7 +402,7 @@ def build_notification_card(
     lines = [
         f"单号：{record.get('ecn_id', '')}",
         f"主题：{str(basic.get('title') or '工程变更申请')[:45]}",
-        f"{'原应通知人员' if config['test_mode'] else '待处理人员'}：{names_text}",
+        f"待处理人员：{names_text}",
         *[f"待办：{task}" for task in display_tasks],
     ]
     if len(all_tasks) > len(display_tasks):
@@ -506,7 +493,7 @@ async def check_and_send_ecn_reminders(
                     if name in initial_targets:
                         initial_targets[name][recipient] = [name]
             cc_recipients: set[str] = set()
-            if not settings["test_mode"] and settings["cc_manager_enabled"]:
+            if settings["cc_manager_enabled"]:
                 try:
                     cc_users = await resolve_wecom_recipients([{"position": "研发经理"}], fallback_touser="")
                     cc_recipients = {userid for userid in cc_users.split("|") if userid and userid != "@all"}
@@ -575,16 +562,15 @@ async def check_and_send_ecn_reminders(
                 delivery_jobs: dict[str, bool] = {
                     recipient: False for recipient in personal_targets
                 }
-                if personal_targets and not settings["test_mode"]:
+                if personal_targets:
                     for recipient in cc_recipients:
                         # 研发经理本人就是实际收件人时只发实际待办，不重复抄送。
                         delivery_jobs.setdefault(recipient, True)
                 if not delivery_jobs:
                     logger.warning(
-                        "ECN个人待办没有可用收件人，未发送：%s %s（test_mode=%s）",
+                        "ECN个人待办没有可用收件人，未发送：%s %s",
                         ecn_id,
                         name,
-                        settings["test_mode"],
                     )
                     continue
 

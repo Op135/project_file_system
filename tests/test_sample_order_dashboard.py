@@ -37,6 +37,22 @@ def make_record() -> dict:
 
 
 class SampleOrderCalculationTests(unittest.TestCase):
+    def setUp(self):
+        fake_app = SimpleNamespace(state=SimpleNamespace(user_service=object()))
+        app_patcher = patch.object(dashboard, "app", fake_app)
+        permission_patcher = patch.object(
+            dashboard,
+            "can",
+            side_effect=lambda _service, username, permission: (
+                (username == "组长" and permission == dashboard.SAMPLE_ORDER_DELAY_EDIT_PERMISSION)
+                or (username == "经理" and permission == dashboard.SAMPLE_ORDER_DELAY_NATURE_EDIT_PERMISSION)
+            ),
+        )
+        app_patcher.start()
+        permission_patcher.start()
+        self.addCleanup(app_patcher.stop)
+        self.addCleanup(permission_patcher.stop)
+
     def test_empty_actual_delivery_date_displays_as_undelivered(self):
         self.assertEqual(dashboard.sample_order_delivery_display(""), "未交样")
         self.assertEqual(
@@ -576,6 +592,7 @@ class SampleOrderCalculationTests(unittest.TestCase):
             dashboard.get_sample_order_dashboard_pending_count(
                 records,
                 date(2026, 7, 21),
+                current_user="组长",
                 current_role="研发样品组长",
             ),
             1,
@@ -604,6 +621,7 @@ class SampleOrderCalculationTests(unittest.TestCase):
             dashboard.get_sample_order_dashboard_pending_count(
                 records,
                 date(2026, 7, 21),
+                current_user="组长",
                 current_role="研发样品组长",
             ),
             1,
@@ -674,6 +692,7 @@ class SampleOrderCalculationTests(unittest.TestCase):
             dashboard.get_sample_order_dashboard_pending_count(
                 records,
                 date(2026, 7, 21),
+                current_user="经理",
                 current_role="研发经理",
             ),
             1,
@@ -682,6 +701,7 @@ class SampleOrderCalculationTests(unittest.TestCase):
             dashboard.get_sample_order_dashboard_pending_count(
                 records,
                 date(2026, 7, 21),
+                current_user="助理",
                 current_role="研发助理",
             ),
             0,
@@ -690,6 +710,7 @@ class SampleOrderCalculationTests(unittest.TestCase):
             dashboard.get_sample_order_dashboard_pending_count(
                 records,
                 date(2026, 7, 21),
+                current_user="组长",
                 current_role="研发样品组长",
             ),
             1,
@@ -918,20 +939,6 @@ class SampleOrderValidationTests(unittest.TestCase):
             "",
         )
 
-    def test_role_permissions_are_separated(self):
-        self.assertTrue(dashboard.is_sample_order_base_editor("研发助理"))
-        self.assertFalse(dashboard.is_sample_order_delay_editor("研发助理"))
-        self.assertTrue(dashboard.is_sample_order_delay_editor("研发样品组长"))
-        self.assertFalse(dashboard.is_sample_order_base_editor("研发样品组长"))
-        self.assertTrue(dashboard.is_sample_order_special_status_editor("研发样品组长"))
-        self.assertTrue(dashboard.is_sample_order_delay_nature_marker("研发经理"))
-        self.assertFalse(dashboard.is_sample_order_delay_nature_marker("研发样品组长"))
-        self.assertTrue(dashboard.is_sample_order_admin("admin"))
-        self.assertTrue(dashboard.can_view_sample_order_average_score("研发样品组长"))
-        self.assertTrue(dashboard.can_view_sample_order_average_score("研发经理"))
-        self.assertFalse(dashboard.can_view_sample_order_average_score("研发助理"))
-        self.assertFalse(dashboard.can_view_sample_order_average_score("admin"))
-
     def test_database_runtime_uses_stable_permission_instead_of_role_text(self):
         """存在用户服务时，页面权限判断必须委托给稳定权限入口。"""
         fake_app = SimpleNamespace(state=SimpleNamespace(user_service=object()))
@@ -1038,6 +1045,29 @@ class SampleOrderValidationTests(unittest.TestCase):
 
 
 class SampleOrderAtomicSaveTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        fake_app = SimpleNamespace(state=SimpleNamespace(user_service=object()))
+        grants = {
+            "助理A": {dashboard.SAMPLE_ORDER_BASE_EDIT_PERMISSION},
+            "组长A": {
+                dashboard.SAMPLE_ORDER_DELAY_EDIT_PERMISSION,
+                dashboard.SAMPLE_ORDER_SPECIAL_STATUS_EDIT_PERMISSION,
+            },
+            "经理A": {dashboard.SAMPLE_ORDER_DELAY_NATURE_EDIT_PERMISSION},
+        }
+        self.app_patcher = patch.object(dashboard, "app", fake_app)
+        self.permission_patcher = patch.object(
+            dashboard,
+            "can",
+            side_effect=lambda _service, username, permission: permission in grants.get(username, set()),
+        )
+        self.app_patcher.start()
+        self.permission_patcher.start()
+
+    async def asyncTearDown(self):
+        self.permission_patcher.stop()
+        self.app_patcher.stop()
+
     async def test_sample_leader_can_save_manual_project_engineer_assignment(self):
         stored = make_record()
         submitted = copy.deepcopy(stored)
@@ -1470,7 +1500,6 @@ class SampleOrderNotificationTests(unittest.IsolatedAsyncioTestCase):
         with (
             patch.object(dashboard, "resolve_wecom_recipients", side_effect=fake_resolve),
             patch.object(dashboard, "send_wecom_text_message", new=send_message),
-            patch.object(dashboard, "SAMPLE_ORDER_REDIRECT_APPLICANT_NOTIFICATIONS_TO_MANAGER", False),
         ):
             failures = await dashboard._send_sample_order_change_notifications(record, [event], None)
 
@@ -1660,7 +1689,6 @@ class SampleOrderNotificationTests(unittest.IsolatedAsyncioTestCase):
                 new=permission_resolver,
             ),
             patch.object(dashboard, "send_wecom_text_message", new=send_message),
-            patch.object(dashboard, "SAMPLE_ORDER_REDIRECT_APPLICANT_NOTIFICATIONS_TO_MANAGER", False),
         ):
             failures = await dashboard._send_sample_order_change_notifications(record, [event], None)
 
@@ -1698,7 +1726,6 @@ class SampleOrderNotificationTests(unittest.IsolatedAsyncioTestCase):
             ),
             patch.object(dashboard, "send_wecom_text_message", new=send_message),
             patch.object(dashboard, "SAMPLE_ORDER_NOTIFY_APPLICANT_ON_EXTENSION", False),
-            patch.object(dashboard, "SAMPLE_ORDER_REDIRECT_APPLICANT_NOTIFICATIONS_TO_MANAGER", False),
         ):
             failures = await dashboard._send_sample_order_change_notifications(record, [event], None)
 
@@ -1708,144 +1735,17 @@ class SampleOrderNotificationTests(unittest.IsolatedAsyncioTestCase):
         assert sent_call is not None
         self.assertEqual(sent_call.args[1], "leader_userid")
 
-    async def test_debug_mode_redirects_all_extension_notifications_to_manager(self):
-        record = make_record()
-
-        send_message = AsyncMock(return_value=(True, "已发送"))
-        events = [
-            {
-                "extension_id": "extension-1",
-                "extension_number": 1,
-                "target_date": "2026-07-25",
-                "reason": "第一次延期",
-                "created_by": "组长A",
-                "created_role": "研发样品组长",
-            },
-            {
-                "extension_id": "extension-3",
-                "extension_number": 3,
-                "target_date": "2026-08-05",
-                "reason": "第三次延期",
-                "created_by": "组长A",
-                "created_role": "研发样品组长",
-            },
-        ]
-        permission_resolver = AsyncMock(return_value="manager_userid")
-        with (
-            patch.object(
-                dashboard,
-                "resolve_permission_wecom_recipients",
-                new=permission_resolver,
-            ),
-            patch.object(dashboard, "send_wecom_text_message", new=send_message),
-            patch.object(dashboard, "SAMPLE_ORDER_REDIRECT_APPLICANT_NOTIFICATIONS_TO_MANAGER", True),
-        ):
-            failures = await dashboard._send_sample_order_change_notifications(record, events, None)
-
-        self.assertEqual(failures, ())
-        first_recipients = send_message.await_args_list[0].args[1]
-        third_recipients = send_message.await_args_list[1].args[1]
-        self.assertEqual(first_recipients, "manager_userid")
-        self.assertEqual(third_recipients, "manager_userid")
-        permission_call = permission_resolver.await_args
-        assert permission_call is not None
-        self.assertEqual(
-            permission_call.args[0],
-            dashboard.SAMPLE_ORDER_EXTENSION_NOTIFY_PERMISSION,
-        )
-
-    async def test_debug_mode_redirects_special_status_notification_to_manager(self):
-        record = make_record()
-
-        send_message = AsyncMock(return_value=(True, "已发送"))
-        status_event = {
-            "history_id": "status-1",
-            "old_status": "正常",
-            "status": "作废",
-            "reason": "客户取消",
-            "updated_by": "组长A",
-            "updated_role": "研发样品组长",
-        }
-        permission_resolver = AsyncMock(return_value="manager_userid")
-        with (
-            patch.object(
-                dashboard,
-                "resolve_permission_wecom_recipients",
-                new=permission_resolver,
-            ),
-            patch.object(dashboard, "send_wecom_text_message", new=send_message),
-            patch.object(dashboard, "SAMPLE_ORDER_REDIRECT_APPLICANT_NOTIFICATIONS_TO_MANAGER", True),
-        ):
-            failures = await dashboard._send_sample_order_change_notifications(record, [], status_event)
-
-        self.assertEqual(failures, ())
-        send_message.assert_awaited_once()
-        awaited_call = send_message.await_args
-        assert awaited_call is not None
-        recipients = awaited_call.args[1]
-        self.assertEqual(recipients, "manager_userid")
-        permission_call = permission_resolver.await_args
-        assert permission_call is not None
-        self.assertEqual(
-            permission_call.args[0],
-            dashboard.SAMPLE_ORDER_SPECIAL_STATUS_NOTIFY_PERMISSION,
-        )
-
-    async def test_disabling_debug_redirect_restores_applicant_notification(self):
-        record = make_record()
-
-        async def fake_resolve(targets, fallback_touser="", **_kwargs):
-            if isinstance(targets, list) and targets and isinstance(targets[0], dict) and "names" in targets[0]:
-                return "applicant_userid"
-            return "manager_userid"
-
-        send_message = AsyncMock(return_value=(True, "已发送"))
-        events = [
-            {
-                "extension_id": "extension-1",
-                "extension_number": 1,
-                "target_date": "2026-07-25",
-                "reason": "第一次延期",
-                "created_by": "组长A",
-                "created_role": "研发样品组长",
-            }
-        ]
-        with (
-            patch.object(
-                dashboard,
-                "SAMPLE_ORDER_REDIRECT_APPLICANT_NOTIFICATIONS_TO_MANAGER",
-                False,
-            ),
-            patch.object(dashboard, "resolve_wecom_recipients", side_effect=fake_resolve),
-            patch.object(dashboard, "send_wecom_text_message", new=send_message),
-        ):
-            failures = await dashboard._send_sample_order_change_notifications(record, events, None)
-
-        self.assertEqual(failures, ())
-        send_message.assert_awaited_once()
-        awaited_call = send_message.await_args
-        assert awaited_call is not None
-        self.assertEqual(awaited_call.args[1], "applicant_userid")
-
-
 class SampleOrderConfigTests(unittest.TestCase):
-    def test_json_configuration_controls_warning_and_roles(self):
+    def test_json_configuration_controls_business_options(self):
         custom_config = {
             "public_base_url": "http://example.test/",
             "warning_days": 5,
-            "base_editor_roles": ["助理测试角色"],
-            "delay_editor_roles": ["组长测试角色"],
-            "special_status_editor_roles": ["状态测试角色"],
-            "delay_nature_marker_roles": ["性质测试角色"],
-            "admin_roles": ["管理员测试角色"],
             "special_statuses": ["暂停", "作废"],
             "special_status_reason_required": False,
             "delay_attention_threshold": 3,
             "wecom": {
-                "redirect_applicant_notifications_to_manager": True,
                 "notify_applicant_on_extension": False,
                 "notify_applicant_on_special_status": True,
-                "manager_notify_targets": [{"position": "经理测试职位"}],
             },
         }
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -1854,11 +1754,8 @@ class SampleOrderConfigTests(unittest.TestCase):
             loaded = dashboard_config.load_sample_order_dashboard_config(config_path)
 
         self.assertEqual(loaded["warning_days"], 5)
-        self.assertEqual(loaded["base_editor_roles"], ["助理测试角色"])
-        self.assertEqual(loaded["delay_nature_marker_roles"], ["性质测试角色"])
         self.assertEqual(loaded["delay_attention_threshold"], 3)
         self.assertEqual(loaded["special_statuses"][0], "正常")
-        self.assertTrue(loaded["wecom"]["redirect_applicant_notifications_to_manager"])
         self.assertFalse(loaded["wecom"]["notify_applicant_on_extension"])
 
 

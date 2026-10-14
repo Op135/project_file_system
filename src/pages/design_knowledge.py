@@ -38,17 +38,11 @@ from ..design_knowledge_config import (
     DESIGN_ATTACHMENT_DIR_NAME,
     DESIGN_ATTACHMENT_PARENTS_H,
     DESIGN_DOMAINS,
-    DESIGN_KNOWLEDGE_EDITOR_ROLE_KEYWORDS,
-    DESIGN_KNOWLEDGE_TAG_MANAGER_ROLE_KEYWORDS,
     ERROR_SEVERITY_LEVELS,
     PRACTICE_VALUE_LEVELS,
     PROJECT_CATEGORIES,
     RULE_LEVELS,
-    can_review_design_knowledge_submission as can_review_legacy_submission,
-    is_design_knowledge_review_approver_role as is_review_approver_role,
-    resolve_design_knowledge_review_route as get_review_route,
 )
-from ..legacy_compatibility import record_legacy_compatibility_hit
 from ..issue_workflow_utils import schedule_background_task
 from ..permission_catalog import (
     DESIGN_KNOWLEDGE_CREATE_PERMISSION,
@@ -78,7 +72,6 @@ DESIGN_ATTACHMENT_ACCEPT = ",".join(["image/*", *sorted(REQ_UPLOADS_FILE_TYPE)])
 DESIGN_KNOWLEDGE_MODULE = "design_knowledge"
 DESIGN_KNOWLEDGE_REVIEW_EVENT = "knowledge_review"
 DESIGN_TAG_REVIEW_EVENT = "tag_review"
-DESIGN_KNOWLEDGE_LEGACY_VIEW_ROLE_KEYWORDS = ["质量", "销售", "工程", "研发", "boss", "admin"]
 
 RECORD_STATUS_DRAFT = "草稿"
 RECORD_STATUS_REVIEW = "待审核"
@@ -237,7 +230,6 @@ def get_design_knowledge_template() -> dict:
         "status": RECORD_STATUS_DRAFT,
         "review_route_key": "",
         "review_route_label": "",
-        "approver_roles": [],
         "workflow_assignment": {},
         "created_by": "",
         "created_role": "",
@@ -260,7 +252,6 @@ def merge_with_knowledge_template(db_data: Any) -> dict:
             "tags",
             "reference_projects",
             "attachments",
-            "approver_roles",
             "operation_log",
         }:
             merged[key] = copy.deepcopy(value) if isinstance(value, list) else []
@@ -416,109 +407,48 @@ def get_level_options_for_content_type(content_type: str) -> list[str]:
     return [*RULE_LEVELS, *ERROR_SEVERITY_LEVELS, *PRACTICE_VALUE_LEVELS]
 
 
-def _design_role_matches(role: object, keywords: list[str]) -> bool:
-    """匹配历史记录中的角色快照。"""
-    role_text = str(role or "").strip().casefold()
-    return any(
-        str(keyword).strip().casefold() in role_text
-        for keyword in keywords
-        if str(keyword).strip()
-    )
-
-
-def _has_design_permission(
-    username: str,
-    role: object,
-    permission_code: str,
-    legacy_keywords: list[str],
-) -> bool:
+def _has_design_permission(username: str, permission_code: str) -> bool:
     """应用运行时只认身份数据库中的稳定权限。"""
-    role_text = str(role or "").strip()
     user_service = getattr(app.state, "user_service", None)
     if user_service is None or not str(username or "").strip():
-        return _design_role_matches(role_text, legacy_keywords)
-    matched_roles = [role_text] if _design_role_matches(role_text, legacy_keywords) else []
-    return can(
-        user_service,
-        str(username).strip(),
-        permission_code,
-        legacy_role=role_text,
-        legacy_allowed_roles=matched_roles,
-    )
+        return False
+    return can(user_service, str(username).strip(), permission_code)
 
 
 def can_view_design_knowledge(role: object, username: str = "") -> bool:
-    return _has_design_permission(
-        username,
-        role,
-        DESIGN_KNOWLEDGE_VIEW_PERMISSION,
-        DESIGN_KNOWLEDGE_LEGACY_VIEW_ROLE_KEYWORDS,
-    )
+    del role
+    return _has_design_permission(username, DESIGN_KNOWLEDGE_VIEW_PERMISSION)
 
 
 def can_create_design_knowledge(role: object, username: str = "") -> bool:
-    return _has_design_permission(
-        username,
-        role,
-        DESIGN_KNOWLEDGE_CREATE_PERMISSION,
-        DESIGN_KNOWLEDGE_EDITOR_ROLE_KEYWORDS,
-    )
+    del role
+    return _has_design_permission(username, DESIGN_KNOWLEDGE_CREATE_PERMISSION)
 
 
 def is_knowledge_editor(current_user: str, current_role: str) -> bool:
-    return _has_design_permission(
-        current_user,
-        current_role,
-        DESIGN_KNOWLEDGE_EDIT_PERMISSION,
-        DESIGN_KNOWLEDGE_EDITOR_ROLE_KEYWORDS,
-    )
+    del current_role
+    return _has_design_permission(current_user, DESIGN_KNOWLEDGE_EDIT_PERMISSION)
 
 
 def is_tag_manager(current_user: str, current_role: str) -> bool:
-    return _has_design_permission(
-        current_user,
-        current_role,
-        DESIGN_KNOWLEDGE_TAG_MANAGE_PERMISSION,
-        DESIGN_KNOWLEDGE_TAG_MANAGER_ROLE_KEYWORDS,
-    )
+    del current_role
+    return _has_design_permission(current_user, DESIGN_KNOWLEDGE_TAG_MANAGE_PERMISSION)
 
 
 def can_review_design_knowledge(current_user: str, current_role: str) -> bool:
-    legacy_roles = [
-        str(current_role)
-        if is_review_approver_role(current_role)
-        else ""
-    ]
-    return _has_design_permission(
-        current_user,
-        current_role,
-        DESIGN_KNOWLEDGE_REVIEW_PERMISSION,
-        legacy_roles,
-    )
+    del current_role
+    return _has_design_permission(current_user, DESIGN_KNOWLEDGE_REVIEW_PERMISSION)
 
 
 def can_review_design_tag(current_user: str, current_role: str) -> bool:
-    legacy_roles = [
-        str(current_role)
-        if is_review_approver_role(current_role)
-        else ""
-    ]
-    return _has_design_permission(
-        current_user,
-        current_role,
-        DESIGN_KNOWLEDGE_TAG_REVIEW_PERMISSION,
-        legacy_roles,
-    )
+    del current_role
+    return _has_design_permission(current_user, DESIGN_KNOWLEDGE_TAG_REVIEW_PERMISSION)
 
 
 def is_design_knowledge_admin(current_user: str, current_role: str) -> bool:
     """判断用户是否拥有永久删除设计知识的高风险权限。"""
-    return _has_design_permission(
-        current_user,
-        current_role,
-        DESIGN_KNOWLEDGE_DELETE_PERMISSION,
-        ["admin"],
-    )
+    del current_role
+    return _has_design_permission(current_user, DESIGN_KNOWLEDGE_DELETE_PERMISSION)
 
 
 def _submission_event_and_permission(submission_type: str) -> tuple[str, str]:
@@ -568,36 +498,20 @@ def can_review_submission(
     *,
     submission_type: str = "knowledge",
 ) -> bool:
-    """数据库模式校验稳定权限和本单待办；旧记录继续兼容固化角色快照。"""
+    """校验稳定审批权限和本单具体待办。"""
     if not isinstance(submission, dict):
         return False
     permission_code = _submission_event_and_permission(submission_type)[1]
-    legacy_allowed = (
-        can_review_legacy_submission(submission, current_user, current_role)
-    )
-    legacy_roles = [str(current_role)] if legacy_allowed else []
-    if not _has_design_permission(
-        current_user,
-        current_role,
-        permission_code,
-        legacy_roles,
-    ):
+    del current_role
+    if not _has_design_permission(current_user, permission_code):
         return False
 
     user_service = getattr(app.state, "user_service", None)
     if user_service is None:
-        return legacy_allowed
+        return False
     assignment = submission.get("workflow_assignment", {})
     if not isinstance(assignment, dict) or not assignment.get("task_key"):
-        # 只有迁移前已经处于待审核状态的记录才允许按原审批角色快照收尾。
-        if legacy_allowed:
-            record_legacy_compatibility_hit(
-                "legacy_approval_snapshot",
-                f"design_knowledge.{submission_type}.review",
-                username=current_user,
-                detail="数据库模式旧记录缺少具体审批待办，使用固化角色快照",
-            )
-        return legacy_allowed
+        return False
     _restore_pending_assignment(submission)
     entity_id = str(submission.get("request_id") or submission.get("knowledge_id") or "")
     return is_assigned_approver(
@@ -724,7 +638,7 @@ def _workflow_approver_text(submission: dict) -> str:
     assignment = submission.get("workflow_assignment", {})
     if isinstance(assignment, dict) and assignment.get("assignee_names"):
         return "、".join(str(value) for value in assignment["assignee_names"] if str(value))
-    return "、".join(submission.get("approver_roles", [])) or "未配置"
+    return "未配置"
 
 
 def _persist_workflow_assignments(entity_id: str, assignment: dict) -> None:
@@ -855,13 +769,14 @@ async def save_knowledge_record(
     )
     if starts_new_review:
         workflow_result = _resolve_design_workflow(DESIGN_KNOWLEDGE_REVIEW_EVENT, current_user)
-        if workflow_result is not None:
-            if workflow_result.get("status") != "matched":
-                return False, _workflow_error_message(workflow_result, "设计知识"), None
-            workflow_assignment = _build_workflow_assignment(
-                workflow_result,
-                f"knowledge_review:{uuid.uuid4().hex[:12]}",
-            )
+        if workflow_result is None:
+            return False, "设计知识无法提交：身份服务不可用", None
+        if workflow_result.get("status") != "matched":
+            return False, _workflow_error_message(workflow_result, "设计知识"), None
+        workflow_assignment = _build_workflow_assignment(
+            workflow_result,
+            f"knowledge_review:{uuid.uuid4().hex[:12]}",
+        )
 
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     result: dict[str, Any] = {"code": "", "record": None}
@@ -908,20 +823,7 @@ async def save_knowledge_record(
             if workflow_assignment is not None and workflow_result is not None:
                 record["review_route_key"] = workflow_result["workflow"]["code"]
                 record["review_route_label"] = workflow_result["workflow"]["name"]
-                record["approver_roles"] = copy.deepcopy(workflow_assignment["assignee_names"])
                 record["workflow_assignment"] = copy.deepcopy(workflow_assignment)
-            elif not record.get("workflow_assignment"):
-                # 仅供无应用身份上下文的历史数据转换调用。
-                record_legacy_compatibility_hit(
-                    "legacy_workflow_route",
-                    f"design_knowledge.{DESIGN_KNOWLEDGE_REVIEW_EVENT}",
-                    username=current_user,
-                    detail="历史数据转换使用 design_knowledge_config.json 审批路由",
-                )
-                route = get_review_route(record.get("created_role", current_role))
-                record["review_route_key"] = route["key"]
-                record["review_route_label"] = route["label"]
-                record["approver_roles"] = copy.deepcopy(route["approver_roles"])
         record["updated_by"] = current_user
         record["updated_at"] = now_str
         record["operation_log"].append({"user": current_user, "role": current_role, "action": action, "time": now_str})
@@ -1016,31 +918,18 @@ async def submit_tag_request(
 
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     workflow_result = _resolve_design_workflow(DESIGN_TAG_REVIEW_EVENT, current_user)
-    workflow_assignment = None
-    if workflow_result is not None:
-        if workflow_result.get("status") != "matched":
-            return False, _workflow_error_message(workflow_result, "新标签申请")
-        workflow_assignment = _build_workflow_assignment(
-            workflow_result,
-            f"tag_review:{uuid.uuid4().hex[:12]}",
-        )
     if workflow_result is None:
-        record_legacy_compatibility_hit(
-            "legacy_workflow_route",
-            f"design_knowledge.{DESIGN_TAG_REVIEW_EVENT}",
-            username=current_user,
-            detail="历史数据转换使用 design_knowledge_config.json 审批路由",
-        )
-        review_route = get_review_route(current_role)
-    else:
-        # 流程匹配成功时上方必然已经生成具体审批人快照，这里显式收窄供运行时和类型检查共同验证。
-        if workflow_assignment is None:
-            return False, "新标签申请审批人快照生成失败"
-        review_route = {
-            "key": workflow_result["workflow"]["code"],
-            "label": workflow_result["workflow"]["name"],
-            "approver_roles": copy.deepcopy(workflow_assignment["assignee_names"]),
-        }
+        return False, "新标签申请无法提交：身份服务不可用"
+    if workflow_result.get("status") != "matched":
+        return False, _workflow_error_message(workflow_result, "新标签申请")
+    workflow_assignment = _build_workflow_assignment(
+        workflow_result,
+        f"tag_review:{uuid.uuid4().hex[:12]}",
+    )
+    review_route = {
+        "key": workflow_result["workflow"]["code"],
+        "label": workflow_result["workflow"]["name"],
+    }
     saved_request: dict[str, Any] = {}
 
     def update_requests(all_requests: Any) -> Any:
@@ -1058,22 +947,18 @@ async def submit_tag_request(
             "created_at": now_str,
             "review_route_key": review_route["key"],
             "review_route_label": review_route["label"],
-            "approver_roles": copy.deepcopy(review_route["approver_roles"]),
             "handled_by": "",
             "handled_at": "",
         }
-        if workflow_assignment is not None:
-            request["workflow_assignment"] = copy.deepcopy(workflow_assignment)
+        request["workflow_assignment"] = copy.deepcopy(workflow_assignment)
         requests[request_id] = request
         saved_request = copy.deepcopy(request)
         return requests
 
     success = await db_storage.atomic_deep_update([DESIGN_TAG_REQUESTS_KEY], update_requests)
-    if success and workflow_assignment is not None and saved_request:
+    if success and saved_request:
         _persist_workflow_assignments(saved_request["request_id"], workflow_assignment)
-    approver_text = _workflow_approver_text(saved_request) if saved_request else (
-        "、".join(review_route["approver_roles"]) or "未配置"
-    )
+    approver_text = _workflow_approver_text(saved_request) if saved_request else "未配置"
     self_review_hint = ""
     if success:
         if can_review_submission(

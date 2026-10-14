@@ -9,6 +9,7 @@ import tempfile
 import unittest
 from datetime import datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
@@ -33,6 +34,21 @@ def load_isolated_db_storage(module_name: str, db_path: Path) -> Any:
 
 
 class SampleIssueCollectionDataTests(unittest.TestCase):
+    def setUp(self):
+        from src.pages import sample_issue_collection as sample_issue
+
+        fake_app = SimpleNamespace(state=SimpleNamespace(user_service=object()))
+        app_patcher = patch.object(sample_issue, "app", fake_app)
+        permission_patcher = patch.object(
+            sample_issue,
+            "can",
+            side_effect=lambda _service, username, _permission: username == "经理",
+        )
+        app_patcher.start()
+        permission_patcher.start()
+        self.addCleanup(app_patcher.stop)
+        self.addCleanup(permission_patcher.stop)
+
     def test_assembly_lag_statistics_filters_by_record_date_and_fills_empty_days(self):
         """时效统计按记录日期取区间，并保留中间为零的自然日桶。"""
         from src.pages import sample_issue_collection as sample_issue
@@ -317,7 +333,7 @@ class SampleIssueCollectionDataTests(unittest.TestCase):
 
         self.assertEqual(sample_issue.get_sample_dashboard_pending_count(all_issues, "李四", "测试工程师"), 2)
         self.assertEqual(sample_issue.get_sample_dashboard_pending_count(all_issues, "王五", "QE工程师"), 1)
-        self.assertEqual(sample_issue.get_sample_dashboard_pending_count(all_issues, "经理", "研发经理"), 2)
+        self.assertEqual(sample_issue.get_sample_dashboard_pending_count(all_issues, "经理", "研发经理"), 1)
         self.assertTrue(sample_issue.is_sample_issue_pending_for_user(all_issues["SPI-1"], "李四", "测试工程师"))
         self.assertFalse(sample_issue.is_sample_issue_pending_for_user(all_issues["SPI-3"], "李四", "测试工程师"))
         self.assertTrue(sample_issue.is_sample_issue_pending_for_user(all_issues["SPI-3"], "经理", "研发经理"))
@@ -357,24 +373,24 @@ class SampleIssueCollectionDataTests(unittest.TestCase):
 
         self.assertTrue(
             sample_issue.is_sample_issue_overdue_without_request_for_reviewer(
-                overdue, "研发经理", reference_date
+                overdue, "研发经理", reference_date, "经理"
             )
         )
         self.assertFalse(
             sample_issue.is_sample_issue_overdue_without_request_for_reviewer(
-                overdue, "测试工程师", reference_date
+                overdue, "测试工程师", reference_date, "测试员"
             )
         )
         self.assertFalse(
             sample_issue.is_sample_issue_overdue_without_request_for_reviewer(
-                pending, "研发经理", reference_date
+                pending, "研发经理", reference_date, "经理"
             )
         )
         close_pending = copy.deepcopy(overdue)
         close_pending["countermeasure"]["close_requests"] = [{"id": "close-1", "status": "待审批"}]
         self.assertFalse(
             sample_issue.is_sample_issue_overdue_without_request_for_reviewer(
-                close_pending, "研发经理", reference_date
+                close_pending, "研发经理", reference_date, "经理"
             )
         )
 
@@ -415,19 +431,19 @@ class SampleIssueCollectionDataTests(unittest.TestCase):
 
         self.assertTrue(
             sample_issue.is_sample_issue_missing_due_date_for_reviewer(
-                missing_due_date, "研发经理"
+                missing_due_date, "研发经理", "经理"
             )
         )
         self.assertFalse(
             sample_issue.is_sample_issue_missing_due_date_for_reviewer(
-                missing_due_date, "测试工程师"
+                missing_due_date, "测试工程师", "测试员"
             )
         )
         unassigned = copy.deepcopy(missing_due_date)
         unassigned["countermeasure"]["owner"] = ""
         self.assertFalse(
             sample_issue.is_sample_issue_missing_due_date_for_reviewer(
-                unassigned, "研发经理"
+                unassigned, "研发经理", "经理"
             )
         )
 
@@ -606,7 +622,6 @@ class SampleIssueCollectionConfigTests(unittest.TestCase):
         config = sample_issue_config.SAMPLE_ISSUE_CONFIG
 
         self.assertTrue(config["public_base_url"].startswith("http"))
-        self.assertTrue(config["editor_roles"])
         self.assertEqual(config["filter_states"][0], "全部")
         self.assertEqual(config["filter_states"][1], "未关闭")
         self.assertIn("延期申请中", config["filter_states"])
@@ -618,11 +633,7 @@ class SampleIssueCollectionConfigTests(unittest.TestCase):
         self.assertEqual(config["special_preparation"]["default_owner_name"], "杨铁华")
         self.assertEqual(config["special_preparation"]["default_owner_userid"], "YangTieHua")
         self.assertTrue(config["special_preparation"]["default_actions"])
-        self.assertTrue(config["wecom"]["default_notify_targets"])
-        self.assertTrue(config["wecom"]["extension"]["approver_roles"])
-        self.assertNotIn("approval_notify_targets", config["wecom"]["extension"])
         self.assertTrue(config["wecom"]["extension"]["notify_requester_on_approval"])
-        self.assertTrue(config["wecom"]["close"]["approver_roles"])
         self.assertIn("routing_rules", config["wecom"]["close"])
         self.assertIsInstance(config["reminders"]["background_enabled"], bool)
         self.assertEqual(config["reminders"]["check_window"], {"enabled": True, "start": "08:30", "end": "18:30"})
@@ -636,21 +647,16 @@ class SampleIssueCollectionConfigTests(unittest.TestCase):
 
         test_config = {
             "public_base_url": "",
-            "editor_roles": "invalid",
             "filter_states": ["措施执行中"],
             "wecom": {
-                "default_notify_targets": "invalid",
                 "extension": {
-                    "approver_roles": ["样品经理"],
                     "notify_requester_on_approval": "false",
                 },
                 "close": {
-                    "approver_roles": ["默认关闭审批"],
                     "routing_rules": [
                         {
                             "key": "pie_to_quality",
                             "requester_role_keywords": ["PIE"],
-                            "approver_roles": ["品质经理"],
                             "notify_requester_on_approval": False,
                         },
                         {"key": "bad_rule", "requester_role_keywords": ["QE"]},
@@ -698,7 +704,6 @@ class SampleIssueCollectionConfigTests(unittest.TestCase):
                 loaded = sample_issue_config.load_sample_issue_config()
 
         self.assertEqual(loaded["public_base_url"], "http://192.168.1.102:8080")
-        self.assertEqual(loaded["editor_roles"], ["研发经理", "admin", "研发助理"])
         self.assertEqual(
             loaded["filter_states"],
             [
@@ -711,13 +716,8 @@ class SampleIssueCollectionConfigTests(unittest.TestCase):
                 "已关闭",
             ],
         )
-        self.assertEqual(loaded["wecom"]["default_notify_targets"], [{"position": "研发经理"}])
-        self.assertEqual(loaded["wecom"]["extension"]["approver_roles"], ["样品经理"])
         self.assertTrue(loaded["wecom"]["extension"]["notify_requester_on_approval"])
-        self.assertEqual(loaded["wecom"]["close"]["approver_roles"], ["默认关闭审批"])
         self.assertEqual(loaded["wecom"]["close"]["routing_rules"][0]["key"], "pie_to_quality")
-        self.assertEqual(loaded["wecom"]["close"]["routing_rules"][0]["approver_roles"], ["品质经理"])
-        self.assertEqual(loaded["wecom"]["close"]["routing_rules"][0]["notify_targets"], [{"position": "品质经理"}])
         self.assertFalse(loaded["wecom"]["close"]["routing_rules"][0]["notify_requester_on_approval"])
         self.assertTrue(loaded["reminders"]["background_enabled"])
         self.assertEqual(loaded["reminders"]["initial_delay_seconds"], 60)
@@ -751,6 +751,7 @@ class SampleIssueCollectionConcurrencyTests(unittest.IsolatedAsyncioTestCase):
             password_iterations=1_000,
         )
         for username, role in [
+            ("admin", "admin"),
             ("张三", "测试工程师"),
             ("李四", "测试工程师"),
             ("王五", "测试工程师"),
@@ -834,11 +835,11 @@ class SampleIssueCollectionConcurrencyTests(unittest.IsolatedAsyncioTestCase):
                 original_db_storage = sample_issue.db_storage
                 sample_issue.db_storage = admin_instance
                 try:
-                    forbidden = await sample_issue.delete_sample_issue_record("DELETE-ME", "研发经理")
+                    forbidden = await sample_issue.delete_sample_issue_record("DELETE-ME", "研发经理", "经理")
                     self.assertEqual(forbidden.code, "forbidden")
 
                     deleted, added = await asyncio.gather(
-                        sample_issue.delete_sample_issue_record("DELETE-ME", "admin"),
+                        sample_issue.delete_sample_issue_record("DELETE-ME", "admin", "admin"),
                         other_instance.atomic_deep_update(
                             [sample_issue.SAMPLE_ISSUE_DATA_KEY, "ADDED-CONCURRENTLY"],
                             lambda _: {"issue_id": "ADDED-CONCURRENTLY"},

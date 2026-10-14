@@ -1,9 +1,5 @@
 # -*- encoding: utf-8 -*-
-"""设计知识库模块的业务配置及旧身份模式兼容加载器。
-
-身份数据库模式下，权限与审批流程由系统管理页面维护；根目录 JSON 中的角色字段
-只供历史待审数据收尾和一次性流程草稿导入使用。其它业务选项修改后仍需重启服务。
-"""
+"""设计知识库模块的业务配置加载器。"""
 
 import copy
 import json
@@ -57,30 +53,6 @@ _DEFAULT_CONFIG = {
         "试产导入",
         "量产维护",
     ],
-    "knowledge_editor_role_keywords": ["研发", "工程", "质量", "boss", "admin"],
-    "tag_manager_role_keywords": ["经理", "主管", "总监", "boss", "admin"],
-    "review_routing_rules": [
-        {
-            "key": "rd_electronics",
-            "label": "研发电子组审核",
-            "submitter_role_keywords": ["研发硬件", "研发软件"],
-            "approver_roles": ["研发电子主管"],
-        },
-        {
-            "key": "rd_structure",
-            "label": "研发结构组审核",
-            "submitter_role_keywords": ["研发结构"],
-            "approver_roles": ["研发结构组长"],
-        },
-        {
-            "key": "rd_other",
-            "label": "研发其它审核",
-            "submitter_role_keywords": ["研发"],
-            "approver_roles": ["研发经理"],
-        },
-    ],
-    "review_fallback_approver_roles": ["经理", "主管", "总监", "boss", "admin"],
-    "allow_self_review_for_approver_roles": True,
     "attachment": {
         "dir_name": "design_knowledge",
         "parents_h": 12,
@@ -177,15 +149,6 @@ def _positive_int(config: dict, key: str, default: int) -> int:
     return default
 
 
-def _bool_value(config: dict, key: str, default: bool) -> bool:
-    """读取严格布尔值，避免字符串 ``"false"`` 被误认为已关闭。"""
-    value = config.get(key)
-    if isinstance(value, bool):
-        return value
-    logger.warning("设计知识库配置 %s 无效，已使用默认值", key)
-    return default
-
-
 def _string_value(config: dict, key: str, default: str) -> str:
     value = config.get(key)
     if isinstance(value, str) and value.strip():
@@ -218,41 +181,6 @@ def _tag_catalog(config: dict, domains: list[str]) -> dict[str, list[str]]:
         default_tags = default_catalog.get(domain, [])
         normalized[domain] = _string_list(raw_catalog, domain, default_tags, allow_empty=True)
     return normalized
-
-
-def _review_routing_rules(config: dict) -> list[dict[str, Any]]:
-    """读取按提交者角色关键字匹配的审核路由；规则按配置顺序优先匹配。"""
-    value = config.get("review_routing_rules", _DEFAULT_CONFIG["review_routing_rules"])
-    if not isinstance(value, list):
-        logger.warning("设计知识库配置 review_routing_rules 必须是列表，已使用默认值")
-        value = _DEFAULT_CONFIG["review_routing_rules"]
-
-    normalized_rules: list[dict[str, Any]] = []
-    seen_keys: set[str] = set()
-    for index, rule in enumerate(value):
-        if not isinstance(rule, dict) or rule.get("enabled", True) is False:
-            continue
-        role_keywords = _string_list(
-            rule,
-            "submitter_role_keywords",
-            [],
-            allow_empty=True,
-        )
-        approver_roles = _string_list(rule, "approver_roles", [], allow_empty=True)
-        key = str(rule.get("key") or f"review_route_{index + 1}").strip()
-        if not key or key in seen_keys or not role_keywords or not approver_roles:
-            logger.warning("设计知识库审核路由第 %s 项无效或重复，已忽略", index + 1)
-            continue
-        normalized_rules.append(
-            {
-                "key": key,
-                "label": str(rule.get("label") or key).strip(),
-                "submitter_role_keywords": role_keywords,
-                "approver_roles": approver_roles,
-            }
-        )
-        seen_keys.add(key)
-    return normalized_rules
 
 
 def _content_type_copy(config: dict, content_types: list[str]) -> dict[str, dict[str, str]]:
@@ -301,88 +229,10 @@ def load_design_knowledge_config() -> dict[str, Any]:
         ),
         "project_categories": _string_list(raw_config, "project_categories", _DEFAULT_CONFIG["project_categories"]),
         "applicable_phases": _string_list(raw_config, "applicable_phases", _DEFAULT_CONFIG["applicable_phases"]),
-        "knowledge_editor_role_keywords": _string_list(
-            raw_config,
-            "knowledge_editor_role_keywords",
-            _DEFAULT_CONFIG["knowledge_editor_role_keywords"],
-        ),
-        "tag_manager_role_keywords": _string_list(
-            raw_config,
-            "tag_manager_role_keywords",
-            _DEFAULT_CONFIG["tag_manager_role_keywords"],
-        ),
-        "review_routing_rules": _review_routing_rules(raw_config),
-        "review_fallback_approver_roles": _string_list(
-            raw_config,
-            "review_fallback_approver_roles",
-            _DEFAULT_CONFIG["review_fallback_approver_roles"],
-        ),
-        "allow_self_review_for_approver_roles": _bool_value(
-            raw_config,
-            "allow_self_review_for_approver_roles",
-            _DEFAULT_CONFIG["allow_self_review_for_approver_roles"],
-        ),
         "attachment": attachment,
         "default_tag_catalog": _tag_catalog(raw_config, domains),
         "content_type_copy": _content_type_copy(raw_config, content_types),
     }
-
-
-def resolve_design_knowledge_review_route(submitter_role: str) -> dict[str, Any]:
-    """按配置顺序解析审核路由；未命中时返回兜底角色。"""
-    role_text = str(submitter_role or "")
-    for rule in DESIGN_KNOWLEDGE_REVIEW_ROUTING_RULES:
-        if any(keyword in role_text for keyword in rule.get("submitter_role_keywords", [])):
-            return copy.deepcopy(rule)
-    return {
-        "key": "fallback",
-        "label": "默认审核",
-        "submitter_role_keywords": [],
-        "approver_roles": copy.deepcopy(DESIGN_KNOWLEDGE_REVIEW_FALLBACK_APPROVER_ROLES),
-    }
-
-
-def resolve_design_knowledge_submission_review_route(submission: Any) -> dict[str, Any]:
-    """优先读取提交时固化的路由；旧记录按创建者角色重新匹配。"""
-    if not isinstance(submission, dict):
-        return resolve_design_knowledge_review_route("")
-
-    route = resolve_design_knowledge_review_route(submission.get("created_role", ""))
-    stored_roles = submission.get("approver_roles")
-    if isinstance(stored_roles, list):
-        normalized_roles = list(
-            dict.fromkeys(str(role).strip() for role in stored_roles if isinstance(role, str) and role.strip())
-        )
-        if normalized_roles:
-            route["approver_roles"] = normalized_roles
-            stored_key = str(submission.get("review_route_key") or "").strip()
-            stored_label = str(submission.get("review_route_label") or "").strip()
-            route["key"] = stored_key or route["key"]
-            route["label"] = stored_label or route["label"]
-    return route
-
-
-def is_design_knowledge_review_approver_role(current_role: str) -> bool:
-    """判断角色是否出现在任一审核路由中，用于显示审核入口。"""
-    approver_roles = list(DESIGN_KNOWLEDGE_REVIEW_FALLBACK_APPROVER_ROLES)
-    for rule in DESIGN_KNOWLEDGE_REVIEW_ROUTING_RULES:
-        approver_roles.extend(rule.get("approver_roles", []))
-    return any(role_key in str(current_role or "") for role_key in dict.fromkeys(approver_roles))
-
-
-def can_review_design_knowledge_submission(submission: Any, current_user: str, current_role: str) -> bool:
-    """判断用户能否审核指定知识或标签申请；自审是否允许由 JSON 配置决定。"""
-    if str(current_user or "").strip().lower() == "admin" or str(current_role or "").strip().lower() == "admin":
-        return True
-    if not isinstance(submission, dict):
-        return False
-    route = resolve_design_knowledge_submission_review_route(submission)
-    role_matches = any(role_key in str(current_role or "") for role_key in route.get("approver_roles", []))
-    if not role_matches:
-        return False
-    if submission.get("created_by") == current_user and not DESIGN_KNOWLEDGE_ALLOW_SELF_REVIEW_FOR_APPROVER_ROLES:
-        return False
-    return True
 
 
 DESIGN_KNOWLEDGE_CONFIG = load_design_knowledge_config()
@@ -393,13 +243,6 @@ ERROR_SEVERITY_LEVELS = DESIGN_KNOWLEDGE_CONFIG["error_severity_levels"]
 PRACTICE_VALUE_LEVELS = DESIGN_KNOWLEDGE_CONFIG["practice_value_levels"]
 PROJECT_CATEGORIES = DESIGN_KNOWLEDGE_CONFIG["project_categories"]
 APPLICABLE_PHASES = DESIGN_KNOWLEDGE_CONFIG["applicable_phases"]
-DESIGN_KNOWLEDGE_EDITOR_ROLE_KEYWORDS = DESIGN_KNOWLEDGE_CONFIG["knowledge_editor_role_keywords"]
-DESIGN_KNOWLEDGE_TAG_MANAGER_ROLE_KEYWORDS = DESIGN_KNOWLEDGE_CONFIG["tag_manager_role_keywords"]
-DESIGN_KNOWLEDGE_REVIEW_ROUTING_RULES = DESIGN_KNOWLEDGE_CONFIG["review_routing_rules"]
-DESIGN_KNOWLEDGE_REVIEW_FALLBACK_APPROVER_ROLES = DESIGN_KNOWLEDGE_CONFIG["review_fallback_approver_roles"]
-DESIGN_KNOWLEDGE_ALLOW_SELF_REVIEW_FOR_APPROVER_ROLES = DESIGN_KNOWLEDGE_CONFIG[
-    "allow_self_review_for_approver_roles"
-]
 DESIGN_ATTACHMENT_DIR_NAME = DESIGN_KNOWLEDGE_CONFIG["attachment"]["dir_name"]
 DESIGN_ATTACHMENT_PARENTS_H = DESIGN_KNOWLEDGE_CONFIG["attachment"]["parents_h"]
 DEFAULT_TAG_CATALOG = DESIGN_KNOWLEDGE_CONFIG["default_tag_catalog"]

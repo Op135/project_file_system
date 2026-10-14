@@ -1,6 +1,5 @@
 # -*- encoding: utf-8 -*-
 import copy
-import json
 import logging
 import os
 from collections.abc import Iterable, Mapping, Sequence
@@ -269,14 +268,6 @@ def statistics_page():
     current_user = stored_current_user
     current_role = sync_current_user_role()
 
-    # 读取配置文件
-    try:
-        with open(f"{BASE_DIR}/module_show_role.json", "r", encoding="utf-8") as f:
-            module_show_data = json.load(f)
-    except Exception as e:
-        logger.error(f"无法读取权限配置: {e}")
-        module_show_data = {}  # 防止报错
-    legacy_overview_roles = module_show_data.get("overview_charge_pending_statistics", [])
     if not can_view_statistics(current_role, current_user):
         ui.notify("当前账号没有查看统计信息的权限", type="negative")
         ui.navigate.to("/main")
@@ -284,12 +275,10 @@ def statistics_page():
     can_view_overview_stats = can_view_overview_statistics(
         current_role,
         current_user,
-        legacy_allowed_roles=legacy_overview_roles,
     )
     can_manage_overview_owner_data = can_manage_overview_owners(
         current_role,
         current_user,
-        legacy_allowed_roles=legacy_overview_roles,
     )
 
     # 头像处理
@@ -302,7 +291,6 @@ def statistics_page():
         if not can_manage_overview_owners(
             sync_current_user_role(),
             current_user,
-            legacy_allowed_roles=legacy_overview_roles,
         ):
             ui.notify("当前账号没有配置项目概述负责人的权限", type="negative")
             return
@@ -362,7 +350,6 @@ def statistics_page():
                     if not can_manage_overview_owners(
                         sync_current_user_role(),
                         current_user,
-                        legacy_allowed_roles=legacy_overview_roles,
                     ):
                         ui.notify("当前账号没有配置项目概述负责人的权限", type="negative")
                         return

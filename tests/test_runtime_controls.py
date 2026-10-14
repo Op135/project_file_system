@@ -42,10 +42,10 @@ class CheckedInBusinessConfigTests(unittest.TestCase):
         assert isinstance(error_reminders, dict)
         assert isinstance(sample_issue_reminders, dict)
         assert isinstance(sample_order_wecom, dict)
-        self.assertFalse(ecn_wecom.get("test_mode"))
+        self.assertNotIn("test_mode", ecn_wecom)
         self.assertTrue(error_reminders.get("background_enabled"))
         self.assertTrue(sample_issue_reminders.get("background_enabled"))
-        self.assertFalse(sample_order_wecom.get("redirect_applicant_notifications_to_manager"))
+        self.assertNotIn("redirect_applicant_notifications_to_manager", sample_order_wecom)
 
 
 class RuntimeControlTests(unittest.IsolatedAsyncioTestCase):

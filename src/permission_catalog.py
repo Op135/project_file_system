@@ -755,7 +755,7 @@ NOTIFICATION_PERMISSIONS = (
         SAMPLE_ORDER_EXTENSION_NOTIFY_PERMISSION,
         "告知 — 所有样品单 — 延期关注",
         SAMPLE_ORDER_NOTIFICATION_MODULE,
-        "接收样品单超过延期次数阈值的关注通知；调试转发开启时也接收申请人延期通知",
+        "接收样品单超过延期次数阈值的关注通知",
     ),
     PermissionDefinition(
         SAMPLE_ORDER_SPECIAL_STATUS_NOTIFY_PERMISSION,
@@ -985,56 +985,13 @@ def ignores_legacy_role_grants(permission_code: str) -> bool:
     )
 
 
-def load_tool_role_mapping(path: Path | str) -> dict[str, list[str]] | None:
-    """读取旧工具角色文件，用于单向初始化兼容授权。
-
-    返回 ``None`` 表示文件不存在，沿用原有语义：所有兼容角色均可使用全部工具。
-    文件内容无效时采用安全关闭策略，返回空映射。
-    """
-    source = Path(path)
-    if not source.exists():
-        return None
-    try:
-        raw = json.loads(source.read_text(encoding="utf-8"))
-    except Exception:
-        logger.exception("读取旧工具权限配置失败：%s", source)
-        return {}
-    if not isinstance(raw, dict):
-        return {}
-    result: dict[str, list[str]] = {}
-    for tool_key, roles in raw.items():
-        if tool_key not in _TOOL_NAMES or not isinstance(roles, list):
-            continue
-        result[tool_key] = list(dict.fromkeys(str(role).strip() for role in roles if str(role).strip()))
-    return result
-
-
-def build_legacy_default_grants(
-    tool_role_mapping: dict[str, list[str]] | None,
-    *,
-    known_role_names: list[str] | None = None,
-) -> dict[str, set[str]]:
-    """按旧显示角色名称生成初始授权。
-
-    每一组角色与权限关系只初始化一次。该映射不是运行时授权规则，因此不会在已经
-    迁移的模块中重新引入角色关键词匹配。
-    """
-    grants: dict[str, set[str]] = {
+def build_default_grants() -> dict[str, set[str]]:
+    """Return the small set of non-legacy grants applied once on registration."""
+    return {
         "admin": {item.code for item in CORE_PERMISSIONS},
         # 新权限首次注册时延续当前业务责任；一次性标记保证管理员后续移除不会被重启恢复。
         "研发助理": {ECN_MATERIAL_CODE_EDIT_PERMISSION},
     }
-    if tool_role_mapping is None:
-        for role_name in known_role_names or []:
-            grants.setdefault(role_name, set()).update(item.code for item in TOOL_PERMISSIONS)
-        return grants
-    for tool_key, role_names in tool_role_mapping.items():
-        permission_code = tool_permission_code(tool_key)
-        if permission_code not in PERMISSION_CODES:
-            continue
-        for role_name in role_names:
-            grants.setdefault(role_name, set()).add(permission_code)
-    return grants
 
 
 def permission_catalog_rows(

@@ -4,8 +4,7 @@ from pathlib import Path
 
 from nicegui import app
 
-# 生产异常模块拥有独立的根目录 JSON 配置和校验加载器。
-# 此处仅保留旧常量别名，兼容项目中可能仍从 src.config 导入这些名称的其它模块。
+# 系统页面链接暂时复用异常模块的公开访问地址。
 from . import error_management_config as _error_management_config
 from .ecn_management_config import (
     ECN_ALLOWED_PROJECT_STATES,
@@ -31,10 +30,7 @@ WECOM_CONTACT_CACHE_TTL_SECONDS = int(os.environ.get("WECOM_CONTACT_CACHE_TTL_SE
 # 企业微信发送日志保留天数和失败重试次数
 WECOM_LOG_RETENTION_DAYS = int(os.environ.get("WECOM_LOG_RETENTION_DAYS", "90"))
 WECOM_MAX_RETRY_COUNT = int(os.environ.get("WECOM_MAX_RETRY_COUNT", "3"))
-# 新代码应直接从 src.error_management_config 导入；以下别名可在确认无旧调用后逐步移除。
 SYSTEM_PUBLIC_BASE_URL = _error_management_config.ERROR_PUBLIC_BASE_URL
-ERROR_EXTENSION_APPROVER_ROLES = _error_management_config.ERROR_EXTENSION_APPROVER_ROLES
-ERROR_EXTENSION_NOTIFY_TARGETS = _error_management_config.ERROR_EXTENSION_NOTIFY_TARGETS
 SVN_USERNAME = "temp_t1"
 
 SVN_PASSWORD = "123456"

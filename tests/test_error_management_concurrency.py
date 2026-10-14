@@ -13,7 +13,9 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
+from unittest.mock import patch
 
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -34,6 +36,39 @@ def load_isolated_db_storage(module_name: str, db_path: Path) -> Any:
 
 
 class ErrorManagementConcurrencyTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        from src.pages import error_management
+
+        fake_app = SimpleNamespace(state=SimpleNamespace(user_service=object()))
+        grants = {
+            "editor-a": {error_management.ERROR_RECORD_EDIT_PERMISSION},
+            "editor-b": {error_management.ERROR_RECORD_EDIT_PERMISSION},
+            "assistant-a": {error_management.ERROR_RECORD_EDIT_PERMISSION},
+            "manager": {error_management.ERROR_REQUEST_APPROVE_PERMISSION},
+            "admin-user": {
+                error_management.ERROR_RECORD_EDIT_PERMISSION,
+                error_management.ERROR_RECORD_RENAME_PERMISSION,
+                error_management.ERROR_RECORD_DELETE_PERMISSION,
+            },
+            "admin": {
+                error_management.ERROR_RECORD_EDIT_PERMISSION,
+                error_management.ERROR_RECORD_RENAME_PERMISSION,
+                error_management.ERROR_RECORD_DELETE_PERMISSION,
+            },
+        }
+        self.app_patcher = patch.object(error_management, "app", fake_app)
+        self.permission_patcher = patch.object(
+            error_management,
+            "can",
+            side_effect=lambda _service, username, permission: permission in grants.get(username, set()),
+        )
+        self.app_patcher.start()
+        self.permission_patcher.start()
+
+    async def asyncTearDown(self):
+        self.permission_patcher.stop()
+        self.app_patcher.stop()
+
     async def test_atomic_deep_update_preserves_cross_instance_writes(self):
         """两个实例同时累加同一字段时，80 次更新应全部保留，旁边字段也不能丢失。"""
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -392,11 +427,13 @@ class ErrorManagementConcurrencyTests(unittest.IsolatedAsyncioTestCase):
                 original_db_storage = error_management.db_storage
                 error_management.db_storage = admin_instance
                 try:
-                    forbidden = await error_management.delete_error_record("DELETE-ME", "研发经理")
+                    forbidden = await error_management.delete_error_record(
+                        "DELETE-ME", "研发经理", user="manager"
+                    )
                     self.assertEqual(forbidden.code, "forbidden")
 
                     deleted, added = await asyncio.gather(
-                        error_management.delete_error_record("DELETE-ME", "admin"),
+                        error_management.delete_error_record("DELETE-ME", "admin", user="admin"),
                         other_instance.atomic_deep_update(
                             [error_management.ERROR_DATA_KEY, "ADDED-CONCURRENTLY"],
                             lambda _: {"error_id": "ADDED-CONCURRENTLY"},

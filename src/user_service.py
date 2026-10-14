@@ -9,8 +9,7 @@ from .identity_store import IdentityStore
 from .identity_matching import build_wecom_user_match_plan, suggest_contact_for_user
 from .permission_catalog import (
     DEPRECATED_PERMISSION_REPLACEMENTS,
-    build_legacy_default_grants,
-    load_tool_role_mapping,
+    build_default_grants,
     permission_catalog_rows,
 )
 
@@ -91,17 +90,13 @@ class UserService:
         strict_overview: bool = False,
         overview_config: dict[str, Any] | None = None,
     ) -> tuple[int, int]:
-        """以幂等方式注册稳定权限和旧角色初始授权。"""
-        roles = self.identity_store.list_security_roles()
-        role_names = [str(item.get("name", "")) for item in roles]
-        tool_mapping = load_tool_role_mapping(self.base_dir / "tools_permission.json")
-        grants = build_legacy_default_grants(tool_mapping, known_role_names=role_names)
+        """以幂等方式注册稳定权限及必要的系统默认授权。"""
         result = self.identity_store.seed_permission_catalog(
             permission_catalog_rows(
                 overview_config=overview_config,
                 strict_overview=strict_overview,
             ),
-            grants,
+            build_default_grants(),
         )
         self.identity_store.replace_permission_codes(DEPRECATED_PERMISSION_REPLACEMENTS)
         return result

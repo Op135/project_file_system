@@ -28,15 +28,11 @@ class ErrorManagementConfigTests(unittest.TestCase):
         config = error_management_config.ERROR_MANAGEMENT_CONFIG
 
         self.assertTrue(config["public_base_url"].startswith("http"))
-        self.assertTrue(config["editor_roles"])
         self.assertEqual(config["product_states"], ["试产异常", "量产异常", "客诉"])
         self.assertEqual(config["filter_states"][0], "全部")
         self.assertEqual(config["filter_states"][1], "未关闭")
         self.assertIn("延期申请中", config["filter_states"])
         self.assertIn("关闭申请中", config["filter_states"])
-        self.assertEqual(config["wecom"]["default_notify_targets"], [{"position": "研发经理"}])
-        self.assertTrue(config["wecom"]["extension"]["approver_roles"])
-        self.assertNotIn("approval_notify_targets", config["wecom"]["extension"])
         self.assertTrue(config["wecom"]["extension"]["notify_requester_on_approval"])
         self.assertEqual(config["reminders"]["check_window"], {"enabled": True, "start": "08:30", "end": "18:30"})
         self.assertTrue(config["reminders"]["rules"])
@@ -46,7 +42,6 @@ class ErrorManagementConfigTests(unittest.TestCase):
         """坏字段应逐项回退；合法字段继续生效；禁用提醒规则不进入运行时列表。"""
         test_config = {
             "public_base_url": "",
-            "editor_roles": "invalid",
             "filter_states": ["已关闭"],
             "reminders": {
                 "initial_delay_seconds": -1,
@@ -77,10 +72,7 @@ class ErrorManagementConfigTests(unittest.TestCase):
                 loaded = error_management_config.load_error_management_config()
 
         self.assertEqual(loaded["public_base_url"], "http://192.168.1.102:8080")
-        self.assertEqual(loaded["editor_roles"], ["研发经理", "admin", "研发助理"])
         self.assertEqual(loaded["filter_states"], ["全部", "未关闭", "已关闭"])
-        self.assertEqual(loaded["wecom"]["default_notify_targets"], [{"position": "研发经理"}])
-        self.assertNotIn("approval_notify_targets", loaded["wecom"]["extension"])
         self.assertEqual(loaded["reminders"]["initial_delay_seconds"], 60)
         self.assertEqual(loaded["reminders"]["check_interval_seconds"], 120)
         self.assertEqual(loaded["reminders"]["check_window"], {"enabled": True, "start": "09:00", "end": "17:30"})
@@ -174,6 +166,17 @@ class ErrorManagementNotificationTests(unittest.IsolatedAsyncioTestCase):
 
 class ErrorManagementDashboardPendingTests(unittest.TestCase):
     def setUp(self):
+        fake_app = SimpleNamespace(state=SimpleNamespace(user_service=object()))
+        app_patcher = patch.object(error_management, "app", fake_app)
+        permission_patcher = patch.object(
+            error_management,
+            "can",
+            side_effect=lambda _service, username, _permission: username == "经理",
+        )
+        app_patcher.start()
+        permission_patcher.start()
+        self.addCleanup(app_patcher.stop)
+        self.addCleanup(permission_patcher.stop)
         self.all_errors = {
             "ERR-001": {
                 "error_id": "ERR-001",
@@ -312,17 +315,17 @@ class ErrorManagementDashboardPendingTests(unittest.TestCase):
 
         self.assertTrue(
             error_management.has_error_overdue_without_request_for_reviewer(
-                overdue, "研发经理", reference_date
+                overdue, "研发经理", reference_date, "经理"
             )
         )
         self.assertFalse(
             error_management.has_error_overdue_without_request_for_reviewer(
-                overdue, "测试工程师", reference_date
+                overdue, "测试工程师", reference_date, "测试员"
             )
         )
         self.assertFalse(
             error_management.has_error_overdue_without_request_for_reviewer(
-                pending, "研发经理", reference_date
+                pending, "研发经理", reference_date, "经理"
             )
         )
         close_pending = {
@@ -339,7 +342,7 @@ class ErrorManagementDashboardPendingTests(unittest.TestCase):
         }
         self.assertFalse(
             error_management.has_error_overdue_without_request_for_reviewer(
-                close_pending, "研发经理", reference_date
+                close_pending, "研发经理", reference_date, "经理"
             )
         )
 
@@ -396,10 +399,8 @@ class ErrorManagementDashboardPendingTests(unittest.TestCase):
 
     def test_manual_reminder_check_is_rd_manager_only(self):
         """人工检查提醒入口只对研发经理角色开放。"""
-        self.assertTrue(error_management.is_error_rd_manager("研发经理"))
-        self.assertTrue(error_management.is_error_rd_manager("研发经理兼项目负责人"))
-        self.assertFalse(error_management.is_error_rd_manager("admin"))
-        self.assertFalse(error_management.is_error_rd_manager("研发助理"))
+        self.assertTrue(error_management.is_error_rd_manager("研发经理", "经理"))
+        self.assertFalse(error_management.is_error_rd_manager("研发经理", "其他人"))
 
     def test_database_runtime_uses_stable_permission_instead_of_role_text(self):
         """存在用户服务时，异常模块必须委托给稳定权限入口。"""

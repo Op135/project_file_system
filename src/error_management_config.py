@@ -25,7 +25,6 @@ ERROR_MANAGEMENT_CONFIG_PATH = Path(__file__).parent.parent / "error_management_
 # 正常业务维护应修改根目录 JSON，而不是直接修改这里。
 _DEFAULT_CONFIG = {
     "public_base_url": "http://192.168.1.102:8080",
-    "editor_roles": ["研发经理", "admin", "研发助理"],
     "product_states": ["试产异常", "量产异常", "客诉"],
     "filter_states": [
         "全部",
@@ -38,14 +37,7 @@ _DEFAULT_CONFIG = {
         "关闭申请中",
         "已关闭",
     ],
-    "wecom": {
-        "default_notify_targets": [{"position": "研发经理"}],
-        "extension": {
-            "approver_roles": ["研发经理", "admin"],
-            "notify_targets": [{"position": "研发经理"}],
-            "notify_requester_on_approval": True,
-        },
-    },
+    "wecom": {"extension": {"notify_requester_on_approval": True}},
     "reminders": {
         "background_enabled": True,
         "initial_delay_seconds": 60,
@@ -124,15 +116,6 @@ def _bool_value(config: dict, key: str, default: bool) -> bool:
     return default
 
 
-def _notify_targets(config: dict, key: str, default: list) -> list:
-    """读取企业微信接收人规则；每项可以是直接账号字符串或成员筛选条件字典。"""
-    value = config.get(key)
-    if isinstance(value, list) and all(isinstance(item, (str, dict)) for item in value):
-        return copy.deepcopy(value)
-    logger.warning("产品问题跟进配置 %s 无效，已使用默认值", key)
-    return copy.deepcopy(default)
-
-
 def _time_window(config: dict, key: str, default: dict) -> dict:
     """读取后台提醒检查时间窗口；enabled=false 表示不限制检查时间。"""
     normalized = normalize_time_window(config.get(key), default)
@@ -204,26 +187,10 @@ def load_error_management_config() -> dict[str, Any]:
 
     return {
         "public_base_url": _string_value(raw_config, "public_base_url", _DEFAULT_CONFIG["public_base_url"]).rstrip("/"),
-        "editor_roles": _string_list(raw_config, "editor_roles", _DEFAULT_CONFIG["editor_roles"]),
         "product_states": _string_list(raw_config, "product_states", _DEFAULT_CONFIG["product_states"]),
         "filter_states": _filter_states(raw_config, _DEFAULT_CONFIG["filter_states"]),
         "wecom": {
-            "default_notify_targets": _notify_targets(
-                raw_wecom,
-                "default_notify_targets",
-                default_wecom["default_notify_targets"],
-            ),
             "extension": {
-                "approver_roles": _string_list(
-                    raw_extension,
-                    "approver_roles",
-                    default_extension["approver_roles"],
-                ),
-                "notify_targets": _notify_targets(
-                    raw_extension,
-                    "notify_targets",
-                    default_extension["notify_targets"],
-                ),
                 "notify_requester_on_approval": _bool_value(
                     raw_extension,
                     "notify_requester_on_approval",
@@ -261,7 +228,6 @@ def load_error_management_config() -> dict[str, Any]:
 # 这样可避免同一次运行中不同位置读取到互相矛盾的配置。
 ERROR_MANAGEMENT_CONFIG = load_error_management_config()
 ERROR_PUBLIC_BASE_URL = ERROR_MANAGEMENT_CONFIG["public_base_url"]
-ERROR_EDITOR_ROLES = ERROR_MANAGEMENT_CONFIG["editor_roles"]
 ERROR_PRODUCT_STATES = ERROR_MANAGEMENT_CONFIG["product_states"]
 ERROR_FILTER_STATES = ERROR_MANAGEMENT_CONFIG["filter_states"]
 ERROR_FILTER_ALL_STATE = "全部"
@@ -269,9 +235,6 @@ ERROR_FILTER_OPEN_STATE = "未关闭"
 ERROR_FILTER_CLOSED_STATE = "已关闭"
 ERROR_FILTER_PENDING_EXTENSION_STATE = "延期申请中"
 ERROR_FILTER_PENDING_CLOSE_STATE = "关闭申请中"
-ERROR_DEFAULT_NOTIFY_TARGETS = ERROR_MANAGEMENT_CONFIG["wecom"]["default_notify_targets"]
-ERROR_EXTENSION_APPROVER_ROLES = ERROR_MANAGEMENT_CONFIG["wecom"]["extension"]["approver_roles"]
-ERROR_EXTENSION_NOTIFY_TARGETS = ERROR_MANAGEMENT_CONFIG["wecom"]["extension"]["notify_targets"]
 ERROR_EXTENSION_NOTIFY_REQUESTER_ON_APPROVAL = ERROR_MANAGEMENT_CONFIG["wecom"]["extension"][
     "notify_requester_on_approval"
 ]

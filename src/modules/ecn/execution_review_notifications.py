@@ -115,26 +115,18 @@ async def send_execution_review_notices(
             continue
         recipients, escalated = resolve_review_notice_recipients(notice, service)
         target_ids: dict[str, str] = {}
-        debug_ids: set[str] = set()
         cc_ids: set[str] = set()
-        if settings.get("test_mode") is True:
+        for username in recipients:
+            userid = str(bindings.get(username, {}).get("external_userid") or "").strip()
+            if userid:
+                target_ids[userid] = "原确认人不可送达 · 已沿直属上级传导" if escalated else "执行确认被复核撤销"
+        if settings.get("cc_manager_enabled") is True:
             resolved = await notify.resolve_wecom_recipients(
-                settings.get("test_notify_targets", []), fallback_touser=""
+                [{"position": "研发经理"}], fallback_touser=""
             )
-            debug_ids = {value for value in resolved.split("|") if value and value != "@all"}
-            target_ids = {value: "调试转发 · 未通知实际确认人或其上级" for value in debug_ids}
-        else:
-            for username in recipients:
-                userid = str(bindings.get(username, {}).get("external_userid") or "").strip()
-                if userid:
-                    target_ids[userid] = "原确认人不可送达 · 已沿直属上级传导" if escalated else "执行确认被复核撤销"
-            if settings.get("cc_manager_enabled") is True:
-                resolved = await notify.resolve_wecom_recipients(
-                    [{"position": "研发经理"}], fallback_touser=""
-                )
-                cc_ids = {value for value in resolved.split("|") if value and value != "@all"}
-                for value in cc_ids:
-                    target_ids[value] = "研发经理观察抄送"
+            cc_ids = {value for value in resolved.split("|") if value and value != "@all"}
+            for value in cc_ids:
+                target_ids[value] = "研发经理观察抄送"
         if not target_ids:
             logger.warning("ECN执行复核撤销通知没有可送达人员：%s %s", ecn_id, event_id)
             continue

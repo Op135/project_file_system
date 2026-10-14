@@ -20,7 +20,7 @@ async def send_transfer_cancellations(ecn_id: str, record: dict, settings: dict,
     sent, failed = 0, 0
     route = hashlib.sha256(
         json.dumps(
-            [settings["test_mode"], settings["test_notify_targets"] if settings["test_mode"] else []],
+            [bool(settings.get("cc_manager_enabled"))],
             ensure_ascii=False,
         ).encode()
     ).hexdigest()
@@ -33,7 +33,7 @@ async def send_transfer_cancellations(ecn_id: str, record: dict, settings: dict,
             continue
         targets = await notify.resolve_delivery_targets({name: str(user.get("role") or "")}, settings, service)
         cc_ids: set[str] = set()
-        if not settings["test_mode"] and settings["cc_manager_enabled"]:
+        if settings["cc_manager_enabled"]:
             try:
                 cc_ids = {
                     value
@@ -83,7 +83,6 @@ async def send_transfer_cancellations(ecn_id: str, record: dict, settings: dict,
                     _, description = build_special_card(
                         fresh,
                         [item],
-                        test_mode=settings["test_mode"],
                         is_cc=recipient in cc_ids,
                         cancelled=True,
                         observer_names=[name],

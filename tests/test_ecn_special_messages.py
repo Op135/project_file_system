@@ -27,7 +27,7 @@ class SpecialMessageTests(unittest.TestCase):
             ],
             "execution_info": {"ordinary_confirmations": {"internal-uuid": {"assignee": "接收人", "confirmed": False}}},
         }
-        self.config = {"test_mode": True}
+        self.config = {}
 
     def test_card_prioritizes_execution_table_fields_over_generic_tasks(self):
         title, body = build_notification_card(
@@ -70,8 +70,8 @@ class SpecialMessageTests(unittest.TestCase):
 
     def test_cancel_card_uses_business_fields_instead_of_internal_id(self):
         item = get_special_message_item(self.record, "internal-uuid", "原负责人")
-        for debug, cc in ((True, False), (False, True), (False, False)):
-            title, body = build_special_card(self.record, [item], test_mode=debug, is_cc=cc, cancelled=True)
+        for cc in (True, False):
+            title, body = build_special_card(self.record, [item], is_cc=cc, cancelled=True)
             self.assertIn("取消", title)
             self.assertIn("已取消，无需继续处理", body)
             self.assertIn("事项/方案：", body)
@@ -80,7 +80,7 @@ class SpecialMessageTests(unittest.TestCase):
             self.assertNotIn("internal-uuid", body)
             self.assertLessEqual(len(body.encode("utf-8")), 512)
         item.update(subject="<事项>" * 100, projects="项目" * 100, content="&内容" * 100)
-        _, body = build_special_card(self.record, [item], test_mode=True, is_cc=False, cancelled=True)
+        _, body = build_special_card(self.record, [item], is_cc=False, cancelled=True)
         self.assertLessEqual(len(body.encode("utf-8")), 512)
         self.assertIn("应执行内容：", body)
         self.assertEqual(body.count("<div "), body.count("</div>"))

@@ -206,7 +206,7 @@ async def send_scheme_sales_completion_notifications(
     config: dict | None = None,
     user_service,
 ) -> tuple[int, int]:
-    """方案评审全部通过时通知项目销售；遵循ECN调试转发和经理观察抄送设置。"""
+    """方案评审全部通过时通知项目销售，并按配置抄送研发经理。"""
     settings = config if config is not None else ECN_WECOM_CONFIG
     if not settings.get("enabled", False):
         return 0, 0
@@ -219,32 +219,21 @@ async def send_scheme_sales_completion_notifications(
         return 0, 0
     bindings = user_service.list_wecom_bindings()
     targets: dict[str, list[dict[str, Any]]] = {}
-    debug_recipients: set[str] = set()
     cc_recipients: set[str] = set()
-    if settings.get("test_mode") is True:
+    for route in routes:
+        for username in route.get("recipient_usernames", []):
+            userid = str(bindings.get(username, {}).get("external_userid") or "").strip()
+            if userid:
+                targets.setdefault(userid, []).append(route)
+    if settings.get("cc_manager_enabled") is True:
         resolved = await resolve_wecom_recipients(
-            settings.get("test_notify_targets", []), fallback_touser=""
+            [{"position": "研发经理"}], fallback_touser=""
         )
-        debug_recipients = {
+        cc_recipients = {
             userid for userid in resolved.split("|") if userid and userid != "@all"
         }
-        for userid in debug_recipients:
+        for userid in cc_recipients:
             targets[userid] = routes
-    else:
-        for route in routes:
-            for username in route.get("recipient_usernames", []):
-                userid = str(bindings.get(username, {}).get("external_userid") or "").strip()
-                if userid:
-                    targets.setdefault(userid, []).append(route)
-        if settings.get("cc_manager_enabled") is True:
-            resolved = await resolve_wecom_recipients(
-                [{"position": "研发经理"}], fallback_touser=""
-            )
-            cc_recipients = {
-                userid for userid in resolved.split("|") if userid and userid != "@all"
-            }
-            for userid in cc_recipients:
-                targets[userid] = routes
     if not targets:
         logger.warning("ECN方案评审通过通知没有可送达人员：%s", record.get("ecn_id"))
         return 0, 0
@@ -256,9 +245,7 @@ async def send_scheme_sales_completion_notifications(
     )
     sent = failed = 0
     for recipient, recipient_routes in targets.items():
-        if recipient in debug_recipients:
-            note = "调试转发 · 未通知实际项目销售或其上级"
-        elif recipient in cc_recipients:
+        if recipient in cc_recipients:
             note = "研发经理观察抄送 · 汇总全部项目销售通知"
         elif any(route.get("escalated") is True for route in recipient_routes):
             note = "项目销售通知 · 由上级代收"

@@ -1,13 +1,9 @@
 {
-    "_说明": "批量产品问题跟进模块业务配置。修改后需要重启系统才能生效。数据库用户模式的权限与固定通知接收人均在用户、组织与权限中心维护；本文件中的角色和固定接收目标仅供旧 Excel 用户模式兼容。",
+    "_说明": "批量产品问题跟进模块业务配置。修改后需要重启系统才能生效。权限与固定通知接收人在用户、组织与权限中心维护。",
     "_字段说明": {
         "public_base_url": "企业微信消息中的页面跳转地址，不要以 / 结尾；必须是员工浏览器能够访问的地址。",
-        "editor_roles": "仅旧 Excel 用户模式使用：可以录入新单据、修改全部字段的角色关键字列表。",
         "product_states": "基础信息中“单据分类”下拉框的可选项。",
         "filter_states": "总览页状态筛选项；“全部”即使遗漏，加载器也会自动补到第一项。“延期申请中”和“关闭申请中”分别用于筛选存在对应待审批申请的单据。",
-        "wecom.default_notify_targets": "仅旧 Excel 用户模式使用：异常负责人缺失时的默认通知对象。数据库模式改用“接收异常措施无负责人兜底提醒”权限。",
-        "wecom.extension.approver_roles": "仅旧 Excel 用户模式使用：可以通过或驳回延期、关闭申请的角色关键字列表。",
-        "wecom.extension.notify_targets": "仅旧 Excel 用户模式使用：延期申请、延期审批结果、关闭申请和关闭审批结果的通知接收人规则。数据库模式分别使用对应事件的四项通知接收权限。",
         "wecom.extension.notify_requester_on_approval": "审批通过或驳回后，是否同时通知本次延期申请人。",
         "reminders.background_enabled": "业务后台提醒总开关，通常保持true；本地调试是否实际运行由 /dev/identity-switcher 的运行时总闸门控制。",
         "reminders.initial_delay_seconds": "系统启动多少秒后执行第一次提醒检查，必须为正整数。",
@@ -16,11 +12,6 @@
         "reminders.rules": "提醒策略列表。days_until_due 表示恰好提前几天，max_days_until_due 表示小于等于几天；每条规则只能配置其中一种。enabled=false 可临时停用。"
     },
     "public_base_url": "http://192.168.1.102:8080",
-    "editor_roles": [
-        "研发经理",
-        "admin",
-        "研发助理"
-    ],
     "product_states": [
         "试产异常",
         "量产异常",
@@ -37,21 +28,7 @@
         "已关闭"
     ],
     "wecom": {
-        "default_notify_targets": [
-            {
-                "position": "研发经理"
-            }
-        ],
         "extension": {
-            "approver_roles": [
-                "研发经理",
-                "admin"
-            ],
-            "notify_targets": [
-                {
-                    "position": "研发助理"
-                }
-            ],
             "notify_requester_on_approval": true
         }
     },

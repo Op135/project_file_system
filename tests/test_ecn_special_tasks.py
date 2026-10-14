@@ -207,7 +207,7 @@ class SpecialTasksTests(unittest.IsolatedAsyncioTestCase):
         await self.update(username="writer", assignee="manager")
         await self.material_stage()
         settings = load_ecn_config()["wecom"]
-        settings.update(test_mode=False, cc_manager_enabled=False, public_base_url="https://example.test")
+        settings.update(cc_manager_enabled=False, public_base_url="https://example.test")
         sender = AsyncMock(return_value=(True, "ok"))
         with patch.object(notifications, "send_wecom_textcard_message", sender):
             count = await notifications.check_and_send_ecn_reminders(
@@ -237,25 +237,6 @@ class SpecialTasksTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse((await self.update(assignee="writer")).ok)
         self.assertNotIn("assignee", self.item())
 
-    async def test_debug_cancellation_and_assignment_never_reach_actual_people(self):
-        await self.update(assignee="writer")
-        await self.update(username="writer", assignee="manager")
-        await self.material_stage()
-        settings = load_ecn_config()["wecom"]
-        settings.update(test_mode=True, cc_manager_enabled=True, public_base_url="https://example.test")
-        sender = AsyncMock(return_value=(True, "ok"))
-        with (
-            patch.object(notifications, "send_wecom_textcard_message", sender),
-            patch.object(notifications, "resolve_wecom_recipients", AsyncMock(return_value="debug_wx")),
-        ):
-            self.assertEqual(
-                await notifications.check_and_send_ecn_reminders(
-                    config=settings, user_service=self.service, storage=self.storage
-                ),
-                (2, 0),
-            )
-            self.assertEqual({call.args[1] for call in sender.await_args_list}, {"debug_wx"})
-
     async def test_failed_cancellation_retries_without_resending_new_owner(self):
         from src.modules.ecn.transfer_notifications import STATE_KEY
 
@@ -263,7 +244,7 @@ class SpecialTasksTests(unittest.IsolatedAsyncioTestCase):
         await self.update(username="writer", assignee="manager")
         await self.material_stage()
         settings = load_ecn_config()["wecom"]
-        settings.update(test_mode=False, cc_manager_enabled=False, public_base_url="https://example.test")
+        settings.update(cc_manager_enabled=False, public_base_url="https://example.test")
         sender = AsyncMock(side_effect=[(False, "失败"), (True, "ok")])
         with patch.object(notifications, "send_wecom_textcard_message", sender):
             self.assertEqual(
@@ -329,7 +310,7 @@ class SpecialTasksTests(unittest.IsolatedAsyncioTestCase):
                 tasks = notifications.pending_task_details(self.record, pending, self.service)
                 self.assertEqual(tasks["manager"], [])
                 settings = load_ecn_config()["wecom"]
-                settings.update(test_mode=False, cc_manager_enabled=False, public_base_url="https://example.test")
+                settings.update(cc_manager_enabled=False, public_base_url="https://example.test")
                 sender = AsyncMock(return_value=(True, "ok"))
                 with patch.object(notifications, "send_wecom_textcard_message", sender):
                     await notifications.check_and_send_ecn_reminders(

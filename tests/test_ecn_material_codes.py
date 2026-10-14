@@ -24,7 +24,7 @@ from src.permission_catalog import (
     ECN_MATERIAL_CODE_EDIT_PERMISSION,
     ECN_VIEW_PERMISSION,
     PERMISSION_CODES,
-    build_legacy_default_grants,
+    build_default_grants,
 )
 from src.user_service import UserService
 from tests.test_error_management_concurrency import load_isolated_db_storage
@@ -228,7 +228,7 @@ class ECNMaterialCodeTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(ECN_MATERIAL_CODE_EDIT_PERMISSION, PERMISSION_CODES)
         self.assertIn(
             ECN_MATERIAL_CODE_EDIT_PERMISSION,
-            build_legacy_default_grants({}, known_role_names=["研发助理"])["研发助理"],
+            build_default_grants()["研发助理"],
         )
         self.assertTrue(
             is_ecn_pending_for_user(

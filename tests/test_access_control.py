@@ -1,4 +1,3 @@
-import json
 import sqlite3
 import tempfile
 import unittest
@@ -130,16 +129,6 @@ class AccessControlTests(unittest.TestCase):
         self.temp_dir = tempfile.TemporaryDirectory()
         root = Path(self.temp_dir.name)
         self.db_path = root / "identity.db"
-        (root / "tools_permission.json").write_text(
-            json.dumps(
-                {
-                    "mode_calc": ["admin", "研发硬件"],
-                    "pixel_statistics": ["admin"],
-                },
-                ensure_ascii=False,
-            ),
-            encoding="utf-8",
-        )
         self.service = UserService(
             db_path=self.db_path,
             config_root=root,
@@ -179,7 +168,7 @@ class AccessControlTests(unittest.TestCase):
             )
         )
 
-    def test_migration_registers_stable_permissions(self):
+    def test_catalog_registers_tool_permissions_without_legacy_role_grants(self):
 
         codes = {item["code"] for item in self.service.list_permissions()}
         self.assertIn(tool_permission_code("mode_calc"), codes)
@@ -188,7 +177,7 @@ class AccessControlTests(unittest.TestCase):
             for role in self.service.get_user_security_roles("张三")
             if role["code"].startswith("legacy.")
         )
-        self.assertIn(tool_permission_code("mode_calc"), legacy_role["permission_codes"])
+        self.assertNotIn(tool_permission_code("mode_calc"), legacy_role["permission_codes"])
         self.assertFalse(self.service.has_permission("张三", tool_permission_code("mode_calc")))
         self.assertTrue(self.service.has_permission("admin", "system.manage"))
         self.assertFalse(self.service.has_permission("张三", "system.manage"))
@@ -942,6 +931,17 @@ class AccessControlTests(unittest.TestCase):
             if role["code"].startswith("legacy.")
         )
         permission_code = tool_permission_code("mode_calc")
+        self.service.update_security_role(
+            legacy_role["role_id"],
+            name=legacy_role["name"],
+            permission_codes=[permission_code],
+            actor_username="admin",
+        )
+        legacy_role = next(
+            role
+            for role in self.service.get_user_security_roles("张三")
+            if role["role_id"] == legacy_role["role_id"]
+        )
         self.assertIn(permission_code, legacy_role["permission_codes"])
 
         self.service.update_security_role(

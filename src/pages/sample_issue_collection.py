@@ -33,7 +33,6 @@ from ..issue_workflow_utils import (
     split_people,
     unique_nonempty_texts,
 )
-from ..legacy_compatibility import record_legacy_compatibility_hit
 from ..notification_recipients import resolve_permission_wecom_recipients
 from ..permission_catalog import (
     SAMPLE_ISSUE_CLOSE_APPROVE_PERMISSION,
@@ -57,15 +56,9 @@ from ..permission_catalog import (
     SAMPLE_ISSUE_VIEW_PERMISSION,
 )
 from ..sample_issue_config import (
-    SAMPLE_CLOSE_APPROVER_ROLES,
     SAMPLE_CLOSE_NOTIFY_REQUESTER_ON_APPROVAL,
-    SAMPLE_CLOSE_NOTIFY_TARGETS,
     SAMPLE_CLOSE_ROUTING_RULES,
-    SAMPLE_DEFAULT_NOTIFY_TARGETS,
-    SAMPLE_EDITOR_ROLES,
-    SAMPLE_EXTENSION_APPROVER_ROLES,
     SAMPLE_EXTENSION_NOTIFY_REQUESTER_ON_APPROVAL,
-    SAMPLE_EXTENSION_NOTIFY_TARGETS,
     SAMPLE_FILTER_ALL_STATE,
     SAMPLE_FILTER_CLOSED_STATE,
     SAMPLE_FILTER_OPEN_STATE,
@@ -117,8 +110,6 @@ SAMPLE_ATTACHMENT_DIR_NAME = "sample_issue"
 SAMPLE_ATTACHMENT_ACCEPT = ",".join(["image/*", *sorted(REQ_UPLOADS_FILE_TYPE)])
 SAMPLE_ATTACHMENT_PARENTS_H = 12
 SAMPLE_FILTER_MY_PENDING_STATE = "我的待办"
-SAMPLE_LEGACY_VIEW_ROLE_KEYWORDS = ["质量", "销售", "工程", "研发", "boss", "admin"]
-SAMPLE_LEGACY_ADMIN_ROLES = ["admin"]
 SAMPLE_LEGACY_CLOSE_APPROVE_PERMISSION_CODES = {
     SAMPLE_ISSUE_LEGACY_CLOSE_DEFAULT_APPROVE_PERMISSION,
     SAMPLE_ISSUE_LEGACY_CLOSE_ELECTRON_APPROVE_PERMISSION,
@@ -512,58 +503,34 @@ def generate_initial_sample_issue_data(current_user: str, current_role: str) -> 
     return data
 
 
-def _sample_role_matches(role: object, allowed_roles: list[str]) -> bool:
-    role_text = str(role or "").strip().casefold()
-    return any(str(role_key).strip().casefold() in role_text for role_key in allowed_roles)
-
-
-def _has_sample_permission(
-    username: str,
-    role: object,
-    permission_code: str,
-    legacy_allowed_roles: list[str],
-) -> bool:
+def _has_sample_permission(username: str, permission_code: str) -> bool:
     """应用运行时按稳定权限判断。"""
     user_service = getattr(app.state, "user_service", None)
-    role_text = str(role or "").strip()
     if user_service is None or not str(username or "").strip():
-        return _sample_role_matches(role_text, legacy_allowed_roles)
-    matched_roles = [role_text] if _sample_role_matches(role_text, legacy_allowed_roles) else []
-    return can(
-        user_service,
-        str(username).strip(),
-        permission_code,
-        legacy_role=role_text,
-        legacy_allowed_roles=matched_roles,
-    )
+        return False
+    return can(user_service, str(username).strip(), permission_code)
 
 
 def can_view_sample_issue_collection(role: object, username: str = "") -> bool:
-    return _has_sample_permission(
-        username,
-        role,
-        SAMPLE_ISSUE_VIEW_PERMISSION,
-        SAMPLE_LEGACY_VIEW_ROLE_KEYWORDS,
-    )
+    del role
+    return _has_sample_permission(username, SAMPLE_ISSUE_VIEW_PERMISSION)
 
 
 def can_create_sample_issue(role: object, username: str = "") -> bool:
-    return _has_sample_permission(username, role, SAMPLE_ISSUE_CREATE_PERMISSION, SAMPLE_EDITOR_ROLES)
+    del role
+    return _has_sample_permission(username, SAMPLE_ISSUE_CREATE_PERMISSION)
 
 
 def is_sample_editor(role: object, username: str = "") -> bool:
     """判断用户是否可以协助维护全部样品问题。"""
-    return _has_sample_permission(username, role, SAMPLE_ISSUE_EDIT_ALL_PERMISSION, SAMPLE_EDITOR_ROLES)
+    del role
+    return _has_sample_permission(username, SAMPLE_ISSUE_EDIT_ALL_PERMISSION)
 
 
 def is_sample_extension_approver(role: object, username: str = "") -> bool:
     """判断用户是否可以审批样品问题延期申请。"""
-    return _has_sample_permission(
-        username,
-        role,
-        SAMPLE_ISSUE_EXTENSION_APPROVE_PERMISSION,
-        SAMPLE_EXTENSION_APPROVER_ROLES,
-    )
+    del role
+    return _has_sample_permission(username, SAMPLE_ISSUE_EXTENSION_APPROVE_PERMISSION)
 
 
 def get_default_sample_close_approval_route() -> dict:
@@ -572,8 +539,6 @@ def get_default_sample_close_approval_route() -> dict:
         "key": "default",
         "label": "默认关闭审批",
         "requester_role_keywords": [],
-        "approver_roles": copy.deepcopy(SAMPLE_CLOSE_APPROVER_ROLES),
-        "notify_targets": copy.deepcopy(SAMPLE_CLOSE_NOTIFY_TARGETS),
         "notify_requester_on_approval": SAMPLE_CLOSE_NOTIFY_REQUESTER_ON_APPROVAL,
     }
 
@@ -605,9 +570,6 @@ def get_sample_close_approval_route_for_request(close_request: Optional[dict]) -
     for key in ["key", "label"]:
         if isinstance(close_request.get(key), str) and close_request[key].strip():
             route[key] = close_request[key].strip()
-    for key in ["approver_roles", "notify_targets"]:
-        if isinstance(close_request.get(key), list):
-            route[key] = copy.deepcopy(close_request[key])
     if isinstance(close_request.get("notify_requester_on_approval"), bool):
         route["notify_requester_on_approval"] = close_request["notify_requester_on_approval"]
     return route
@@ -640,12 +602,7 @@ def is_sample_close_approver(
             )
             if (
                 permission_code != SAMPLE_ISSUE_CLOSE_APPROVE_PERMISSION
-                or not _has_sample_permission(
-                    username,
-                    role,
-                    SAMPLE_ISSUE_CLOSE_APPROVE_PERMISSION,
-                    [],
-                )
+                or not _has_sample_permission(username, SAMPLE_ISSUE_CLOSE_APPROVE_PERMISSION)
             ):
                 return False
             pending_usernames = user_service.list_pending_assignment_usernames(
@@ -677,59 +634,10 @@ def is_sample_close_approver(
                 task_key=str(workflow_assignment["task_key"]),
                 username=username,
             )
-        route = get_sample_close_approval_route_for_request(close_request)
-        user_service = getattr(app.state, "user_service", None)
-        if user_service is not None:
-            if not _has_sample_permission(
-                username,
-                role,
-                SAMPLE_ISSUE_CLOSE_APPROVE_PERMISSION,
-                [],
-            ):
-                return False
-            if str(username or "").strip().casefold() == "admin":
-                record_legacy_compatibility_hit(
-                    "legacy_approval_snapshot",
-                    "sample_issue.close_request.missing_assignment",
-                    username=username,
-                    detail="数据库模式旧申请缺少审批待办，admin 按历史快照收尾",
-                )
-                return True
-            membership = user_service.get_primary_membership(username)
-            effective_role = str(membership.get("position_name") or role or "")
-            allowed = _sample_role_matches(effective_role, route.get("approver_roles", []))
-            if allowed:
-                record_legacy_compatibility_hit(
-                    "legacy_approval_snapshot",
-                    "sample_issue.close_request.missing_assignment",
-                    username=username,
-                    detail=f"position={effective_role or '-'}; 使用历史审批角色快照",
-                )
-            return allowed
-        return _has_sample_permission(
-            username,
-            role,
-            SAMPLE_ISSUE_CLOSE_APPROVE_PERMISSION,
-            route.get("approver_roles", []),
-        )
+        return False
 
-    all_roles = [*SAMPLE_CLOSE_APPROVER_ROLES]
-    for rule in SAMPLE_CLOSE_ROUTING_RULES:
-        all_roles.extend(rule.get("approver_roles", []))
-    return _has_sample_permission(
-        username,
-        role,
-        SAMPLE_ISSUE_CLOSE_APPROVE_PERMISSION,
-        list(dict.fromkeys(all_roles)),
-    )
-
-
-def get_all_sample_close_approver_roles() -> list[str]:
-    """返回所有可能的关闭审批角色，用于人员输入白名单提示。"""
-    roles = [*SAMPLE_CLOSE_APPROVER_ROLES]
-    for rule in SAMPLE_CLOSE_ROUTING_RULES:
-        roles.extend(rule.get("approver_roles", []))
-    return list(dict.fromkeys(roles))
+    del role
+    return _has_sample_permission(username, SAMPLE_ISSUE_CLOSE_APPROVE_PERMISSION)
 
 
 def get_sample_close_approval_additional_people(
@@ -747,22 +655,14 @@ def get_sample_close_approval_additional_people(
 
 
 def can_check_sample_reminders(role: object, username: str = "") -> bool:
-    return _has_sample_permission(
-        username,
-        role,
-        SAMPLE_ISSUE_REMINDER_CHECK_PERMISSION,
-        SAMPLE_EXTENSION_APPROVER_ROLES,
-    )
+    del role
+    return _has_sample_permission(username, SAMPLE_ISSUE_REMINDER_CHECK_PERMISSION)
 
 
 def is_sample_admin(role: object, username: str = "") -> bool:
     """判断用户是否拥有删除样品问题的高风险权限。"""
-    return _has_sample_permission(
-        username,
-        role,
-        SAMPLE_ISSUE_DELETE_PERMISSION,
-        SAMPLE_LEGACY_ADMIN_ROLES,
-    )
+    del role
+    return _has_sample_permission(username, SAMPLE_ISSUE_DELETE_PERMISSION)
 
 
 def can_edit_sample_base(issue_data: dict, current_user: str, current_role: str) -> bool:
@@ -1366,11 +1266,10 @@ def get_sample_issue_collection_url(issue_id: str = "") -> str:
     return f"{page_url}?issue_id={quote(issue_id, safe='')}" if issue_id else page_url
 
 
-async def resolve_sample_notify_recipients(permission_code: str, legacy_targets=None) -> str:
+async def resolve_sample_notify_recipients(permission_code: str) -> str:
     """按稳定通知权限和企业微信绑定解析收件人。"""
     touser = await resolve_permission_wecom_recipients(
         permission_code,
-        legacy_targets=legacy_targets,
         fallback_touser="",
     )
     if not touser:
@@ -1384,7 +1283,6 @@ async def format_people_for_wecom(value: str) -> str:
     if not people:
         return await resolve_sample_notify_recipients(
             SAMPLE_ISSUE_FALLBACK_REMINDER_PERMISSION,
-            SAMPLE_DEFAULT_NOTIFY_TARGETS,
         )
     direct_value = "|".join(people)
     return await resolve_wecom_recipients(
@@ -1666,7 +1564,6 @@ async def send_sample_extension_wecom_message(
     business_key: str,
     message_type: str,
     route_key: str = "default",
-    notify_targets=None,
     additional_people: str = "",
     include_approved_recipients: bool = False,
     workflow_assignment: Optional[dict] = None,
@@ -1674,7 +1571,6 @@ async def send_sample_extension_wecom_message(
     """按事件和关闭路由发送样品问题企业微信通知。"""
     if message_type in SAMPLE_EXTENSION_NOTIFY_PERMISSION_BY_MESSAGE_TYPE:
         permission_code = SAMPLE_EXTENSION_NOTIFY_PERMISSION_BY_MESSAGE_TYPE[message_type]
-        legacy_targets = notify_targets or SAMPLE_EXTENSION_NOTIFY_TARGETS
         approved_permission = SAMPLE_ISSUE_EXTENSION_APPROVED_NOTIFY_PERMISSION
     else:
         route_permissions = SAMPLE_CLOSE_NOTIFY_PERMISSIONS_BY_ROUTE.get(
@@ -1685,15 +1581,13 @@ async def send_sample_extension_wecom_message(
             message_type,
             SAMPLE_ISSUE_CLOSE_DEFAULT_RESULT_NOTIFY_PERMISSION,
         )
-        legacy_targets = notify_targets or SAMPLE_CLOSE_NOTIFY_TARGETS
         approved_permission = route_permissions["approved"]
 
-    role_recipients = await resolve_sample_notify_recipients(permission_code, legacy_targets)
+    role_recipients = await resolve_sample_notify_recipients(permission_code)
     additional_role_recipients = ""
     if include_approved_recipients:
         additional_role_recipients = await resolve_sample_notify_recipients(
             approved_permission,
-            None,
         )
     people_recipients = await format_people_for_wecom(additional_people) if additional_people else ""
     completion_cc_recipients = (
@@ -1901,10 +1795,6 @@ async def submit_sample_close_request(
     close_route = {
         **close_route,
         "label": workflow_result["workflow"]["name"],
-        "approver_roles": [
-            item.get("position_name") or item.get("display_name") or item["username"]
-            for item in workflow_result["approvers"]
-        ],
     }
     request_id = f"close_{uuid.uuid4().hex[:8]}"
     task_key = f"close_approval:{request_id}"
@@ -1918,8 +1808,6 @@ async def submit_sample_close_request(
         "requested_at": now_str,
         "key": close_route.get("key", "default"),
         "label": close_route.get("label", "默认关闭审批"),
-        "approver_roles": copy.deepcopy(close_route.get("approver_roles", SAMPLE_CLOSE_APPROVER_ROLES)),
-        "notify_targets": copy.deepcopy(close_route.get("notify_targets", SAMPLE_CLOSE_NOTIFY_TARGETS)),
         "notify_requester_on_approval": close_route.get(
             "notify_requester_on_approval",
             SAMPLE_CLOSE_NOTIFY_REQUESTER_ON_APPROVAL,
@@ -2509,12 +2397,7 @@ async def sample_issue_collection_page(issue_id: str = "", view: str = ""):
             )
         )
         can_save_record = can_edit_base or can_edit_countermeasure
-        owner_allowed_values = [
-            *SAMPLE_EDITOR_ROLES,
-            *SAMPLE_EXTENSION_APPROVER_ROLES,
-            *get_all_sample_close_approver_roles(),
-            current_role,
-        ]
+        owner_allowed_values = [current_role]
 
         def bind_input(label, target, key, classes="w-full", readonly=False):
             props = "outlined dense"
@@ -3344,7 +3227,6 @@ async def sample_issue_collection_page(issue_id: str = "", view: str = ""):
                 business_key=f"{result.record['issue_id']}:{fresh_request['id']}:close_request",
                 message_type="close_request",
                 route_key=str(close_route.get("key", "default")),
-                notify_targets=close_route.get("notify_targets"),
                 additional_people=assigned_people,
             )
             ui.notify("关闭申请已提交", type="positive", position="bottom")
@@ -3430,7 +3312,6 @@ async def sample_issue_collection_page(issue_id: str = "", view: str = ""):
                     business_key=f"{result.record['issue_id']}:{fresh_request['id']}:close_approval",
                     message_type="close_approval",
                     route_key=str(close_route.get("key", "default")),
-                    notify_targets=close_route.get("notify_targets"),
                     additional_people=approval_additional_people,
                     include_approved_recipients=approved,
                     workflow_assignment=fresh_request.get("workflow_assignment"),
@@ -3622,7 +3503,7 @@ async def sample_issue_collection_page(issue_id: str = "", view: str = ""):
                         ).classes("text-xs text-purple-600")
                     else:
                         ui.label(
-                            f"审批角色：{', '.join(pending_close_route.get('approver_roles', []))}"
+                            "审批人员：历史申请缺少流程待办，不能继续审批"
                         ).classes("text-xs text-purple-600")
                     if is_sample_close_approver(current_role, pending_close, current_user):
 

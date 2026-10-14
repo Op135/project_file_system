@@ -19,8 +19,8 @@
 | `.nicegui/` | NiceGUI 本地存储文件 | 环境数据，部署时保留服务器原目录 |
 | `.overview_*_staging/` | 概述批量操作临时目录 | 临时数据，不进入 Git |
 
-根目录的 `*_config.json`、`overview_config.json`、`tools_permission.json` 等文件仍有运行时读取路径。
-其中部分历史角色字段只用于既有记录展示、流程草稿导入或权限整理，不再作为登录和运行时授权来源；ECN 配置中的审批与执行路线已经删除。
+根目录的 `*_config.json`、`overview_config.json` 等业务配置仍有运行时读取路径。
+`module_show_role.json` 与 `tools_permission.json` 已删除；工具授权、页面权限和审批流程统一由身份数据库维护。
 
 ## `src/` 主要边界
 

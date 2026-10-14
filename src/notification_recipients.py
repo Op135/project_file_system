@@ -32,12 +32,10 @@ def _unique_values(values: Iterable[Any]) -> list[str]:
 async def resolve_permission_wecom_recipients(
     permission_code: str,
     *,
-    legacy_targets=None,
     fallback_touser: str = "",
     user_service=None,
 ) -> str:
     """按稳定通知权限和企业微信绑定解析收件账号。"""
-    del legacy_targets
     service = user_service or getattr(app.state, "user_service", None)
     if service is None:
         logger.error("身份服务不可用，无法解析通知权限：permission=%s", permission_code)

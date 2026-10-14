@@ -307,9 +307,7 @@ class ECNState:
 _DEFAULT_CONFIG: dict[str, Any] = {
     "wecom": {
         "enabled": True,
-        "test_mode": False,
         "cc_manager_enabled": True,
-        "test_notify_targets": [{"position": "研发经理"}],
         "public_base_url": "",
         "initial_delay_seconds": 30,
         "check_interval_seconds": 60,
@@ -543,16 +541,13 @@ def load_ecn_config(raw_config: dict | None = None) -> dict:
     raw_wecom = raw.get("wecom", {})
     if not isinstance(raw_wecom, dict):
         raw_wecom = {}
-    for key in ("enabled", "test_mode", "cc_manager_enabled"):
+    for key in ("enabled", "cc_manager_enabled"):
         result["wecom"][key] = _bool_value(raw_wecom.get(key), _DEFAULT_CONFIG["wecom"][key], f"wecom.{key}")
     for key in ("initial_delay_seconds", "check_interval_seconds", "repeat_hours", "retry_seconds"):
         result["wecom"][key] = _positive_number(raw_wecom.get(key), _DEFAULT_CONFIG["wecom"][key], f"wecom.{key}")
     raw_url = raw_wecom.get("public_base_url")
     if isinstance(raw_url, str):
         result["wecom"]["public_base_url"] = raw_url.strip().rstrip("/")
-    targets = raw_wecom.get("test_notify_targets")
-    if isinstance(targets, list) and targets and all(isinstance(target, (str, dict)) and target for target in targets):
-        result["wecom"]["test_notify_targets"] = copy.deepcopy(targets)
     raw_attachments = raw.get("attachments", {})
     if isinstance(raw_attachments, dict):
         storage_path = raw_attachments.get("storage_path")

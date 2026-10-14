@@ -34,11 +34,7 @@ from ..config import (
     UPLOADS_DIR,
 )
 from ..error_management_config import (
-    ERROR_DEFAULT_NOTIFY_TARGETS as ERROR_LEGACY_DEFAULT_NOTIFY_TARGETS,
-    ERROR_EDITOR_ROLES as ERROR_LEGACY_EDITOR_ROLES,
-    ERROR_EXTENSION_APPROVER_ROLES as ERROR_LEGACY_EXTENSION_APPROVER_ROLES,
     ERROR_EXTENSION_NOTIFY_REQUESTER_ON_APPROVAL,
-    ERROR_EXTENSION_NOTIFY_TARGETS as ERROR_LEGACY_EXTENSION_NOTIFY_TARGETS,
     ERROR_FILTER_ALL_STATE,
     ERROR_FILTER_CLOSED_STATE,
     ERROR_FILTER_OPEN_STATE,
@@ -96,9 +92,6 @@ ERROR_VERSION_KEY = "error_management_version_stamp"
 ERROR_CLOSURE_NATURE_CATALOG_KEY = "error_closure_nature_catalog"
 ERROR_GRID_PAGE_SIZE = 30
 ERROR_FILTER_MY_PENDING_STATE = "我的待办"
-ERROR_LEGACY_VIEW_ROLE_KEYWORDS = ["质量", "销售", "工程", "研发", "boss", "admin"]
-ERROR_LEGACY_ADMIN_ROLES = ["admin"]
-ERROR_LEGACY_REMINDER_CHECK_ROLES = ["研发经理"]
 ERROR_NOTIFY_PERMISSION_BY_MESSAGE_TYPE = {
     "extension_request": ERROR_EXTENSION_REQUEST_NOTIFY_PERMISSION,
     "extension_approval": ERROR_EXTENSION_RESULT_NOTIFY_PERMISSION,
@@ -121,18 +114,16 @@ class ErrorUpdateResult:
     record: Optional[dict] = None
 
 
-async def resolve_error_notify_recipients(permission_code: str, legacy_targets) -> str:
+async def resolve_error_notify_recipients(permission_code: str) -> str:
     """按通知权限和企业微信绑定找人。"""
     touser = await resolve_permission_wecom_recipients(
         permission_code,
-        legacy_targets=legacy_targets,
         fallback_touser="",
     )
     if not touser:
         logger.error(
-            "产品问题通知权限未匹配到已绑定成员：permission=%s, legacy_targets=%s",
+            "产品问题通知权限未匹配到已绑定成员：permission=%s",
             permission_code,
-            legacy_targets,
         )
     return touser
 
@@ -150,16 +141,10 @@ async def send_error_extension_wecom_message(
     primary_permission = ERROR_NOTIFY_PERMISSION_BY_MESSAGE_TYPE.get(message_type)
     if not primary_permission:
         return False, f"未配置异常通知类型对应的接收权限：{message_type}"
-    primary_recipients = await resolve_error_notify_recipients(
-        primary_permission,
-        ERROR_LEGACY_EXTENSION_NOTIFY_TARGETS,
-    )
+    primary_recipients = await resolve_error_notify_recipients(primary_permission)
     approved_permission = ERROR_APPROVED_NOTIFY_PERMISSION_BY_MESSAGE_TYPE.get(message_type)
     approved_recipients = (
-        await resolve_error_notify_recipients(
-            approved_permission,
-            None,
-        )
+        await resolve_error_notify_recipients(approved_permission)
         if include_approval_recipients and approved_permission
         else ""
     )
@@ -271,30 +256,18 @@ def calculate_error_status(error_data: dict) -> str:
     return "异常录入"
 
 
-def _error_role_matches(role: object, allowed_roles: list[str]) -> bool:
-    role_text = str(role or "").strip().casefold()
-    return any(str(role_key).strip().casefold() in role_text for role_key in allowed_roles)
-
-
 def _has_error_permission(
     username: str,
-    role: object,
     permission_code: str,
-    legacy_allowed_roles: list[str],
 ) -> bool:
     """应用运行时按稳定权限判断异常模块操作。"""
     user_service = getattr(app.state, "user_service", None)
-    role_text = str(role or "").strip()
     if user_service is None or not str(username or "").strip():
-        # 无应用上下文时保留纯函数兼容，供历史脚本和单元测试使用。
-        return _error_role_matches(role_text, legacy_allowed_roles)
-    matched_legacy_roles = [role_text] if _error_role_matches(role_text, legacy_allowed_roles) else []
+        return False
     return can(
         user_service,
         str(username).strip(),
         permission_code,
-        legacy_role=role_text,
-        legacy_allowed_roles=matched_legacy_roles,
     )
 
 
@@ -302,9 +275,7 @@ def can_view_error_management(role: object, username: str = "") -> bool:
     """判断用户是否可以进入批量产品问题跟进模块。"""
     return _has_error_permission(
         username,
-        role,
         ERROR_VIEW_PERMISSION,
-        ERROR_LEGACY_VIEW_ROLE_KEYWORDS,
     )
 
 
@@ -312,9 +283,7 @@ def is_error_editor(role: object, username: str = "") -> bool:
     """判断用户是否可以维护整张异常单。"""
     return _has_error_permission(
         username,
-        role,
         ERROR_RECORD_EDIT_PERMISSION,
-        list(dict.fromkeys([*ERROR_LEGACY_EDITOR_ROLES, *ERROR_LEGACY_ADMIN_ROLES])),
     )
 
 
@@ -322,13 +291,7 @@ def can_approve_error_requests(role: object, username: str = "") -> bool:
     """判断用户是否可以审批延期和措施关闭申请。"""
     return _has_error_permission(
         username,
-        role,
         ERROR_REQUEST_APPROVE_PERMISSION,
-        list(
-            dict.fromkeys(
-                [*ERROR_LEGACY_EXTENSION_APPROVER_ROLES, *ERROR_LEGACY_ADMIN_ROLES]
-            )
-        ),
     )
 
 
@@ -341,9 +304,7 @@ def can_check_error_reminders(role: object, username: str = "") -> bool:
     """判断用户是否可以人工触发异常提醒检查。"""
     return _has_error_permission(
         username,
-        role,
         ERROR_REMINDER_CHECK_PERMISSION,
-        ERROR_LEGACY_REMINDER_CHECK_ROLES,
     )
 
 
@@ -351,9 +312,7 @@ def can_rename_error_record(role: object, username: str = "") -> bool:
     """判断用户是否可以修改已有异常单号。"""
     return _has_error_permission(
         username,
-        role,
         ERROR_RECORD_RENAME_PERMISSION,
-        ERROR_LEGACY_ADMIN_ROLES,
     )
 
 
@@ -366,9 +325,7 @@ def can_delete_error_record(role: object, username: str = "") -> bool:
     """判断用户是否拥有删除整张异常单的高风险权限。"""
     return _has_error_permission(
         username,
-        role,
         ERROR_RECORD_DELETE_PERMISSION,
-        ERROR_LEGACY_ADMIN_ROLES,
     )
 
 
@@ -381,10 +338,7 @@ async def format_people_for_wecom(value: str) -> str:
     """把负责人姓名解析成企业微信账号；解析不到时保留直接输入值作为发送兜底。"""
     people = split_people(value)
     if not people:
-        return await resolve_error_notify_recipients(
-            ERROR_OWNER_MISSING_REMINDER_PERMISSION,
-            ERROR_LEGACY_DEFAULT_NOTIFY_TARGETS,
-        )
+        return await resolve_error_notify_recipients(ERROR_OWNER_MISSING_REMINDER_PERMISSION)
     direct_value = "|".join(people)
     return await resolve_wecom_recipients(
         [{"names": people}],
@@ -1501,11 +1455,7 @@ async def error_management_page(error_id: str = "", view: str = ""):
             item.setdefault("extension_requests", [])
 
         read_only = not can_edit_all
-        owner_allowed_values = [
-            *ERROR_LEGACY_EDITOR_ROLES,
-            *ERROR_LEGACY_EXTENSION_APPROVER_ROLES,
-            current_role,
-        ]
+        owner_allowed_values = [current_role]
 
         def bind_input(label, target, key, classes="w-full", readonly=None):
             field_readonly = read_only if readonly is None else readonly

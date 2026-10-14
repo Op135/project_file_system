@@ -30,7 +30,6 @@ _LEGACY_FILTER_STATE_RENAMES = {
 
 _DEFAULT_CONFIG = {
     "public_base_url": "http://192.168.1.102:8080",
-    "editor_roles": ["研发经理", "admin", "研发助理"],
     "filter_states": [
         "全部",
         "未关闭",
@@ -50,15 +49,8 @@ _DEFAULT_CONFIG = {
         "default_actions": ["试产前落实工装治具", "试产前落实到SOP"],
     },
     "wecom": {
-        "default_notify_targets": [{"position": "研发经理"}],
-        "extension": {
-            "approver_roles": ["研发经理", "admin"],
-            "notify_targets": [{"position": "研发经理"}],
-            "notify_requester_on_approval": True,
-        },
+        "extension": {"notify_requester_on_approval": True},
         "close": {
-            "approver_roles": ["研发经理", "admin"],
-            "notify_targets": [{"position": "研发经理"}],
             "notify_requester_on_approval": True,
             "routing_rules": [],
         },
@@ -159,15 +151,6 @@ def _positive_int(config: dict, key: str, default: int) -> int:
     return default
 
 
-def _notify_targets(config: dict, key: str, default: list) -> list:
-    """读取企业微信接收人规则；每项可以是直接账号字符串或成员筛选条件字典。"""
-    value = config.get(key)
-    if isinstance(value, list) and all(isinstance(item, (str, dict)) for item in value):
-        return copy.deepcopy(value)
-    logger.warning("样品问题配置 %s 无效，已使用默认值", key)
-    return copy.deepcopy(default)
-
-
 def _string_values(value) -> list[str]:
     """标准化配置中的字符串或字符串列表。"""
     if isinstance(value, str) and value.strip():
@@ -175,11 +158,6 @@ def _string_values(value) -> list[str]:
     if isinstance(value, list) and all(isinstance(item, str) and item.strip() for item in value):
         return list(dict.fromkeys(item.strip() for item in value))
     return []
-
-
-def _notify_targets_from_roles(roles: list[str]) -> list[dict]:
-    """把审批角色按企业微信职位规则转换为通知对象；admin 不作为职位推送。"""
-    return [{"position": role} for role in roles if role.lower() != "admin"]
 
 
 def _time_window(config: dict, key: str, default: dict) -> dict:
@@ -192,7 +170,7 @@ def _time_window(config: dict, key: str, default: dict) -> dict:
 
 
 def _close_routing_rules(config: dict, default_close: dict) -> list[dict]:
-    """读取按申请人角色关键词路由的关闭审批规则。"""
+    """读取按申请人系统主岗位关键词区分通知事件的关闭规则。"""
     value = config.get("routing_rules", [])
     if not isinstance(value, list):
         logger.warning("样品问题关闭审批路由 routing_rules 必须是列表，已忽略")
@@ -212,9 +190,8 @@ def _close_routing_rules(config: dict, default_close: dict) -> list[dict]:
             or rule.get("requester_role_contains")
             or rule.get("role_keywords")
         )
-        approver_roles = _string_values(rule.get("approver_roles"))
-        if not role_keywords or not approver_roles:
-            logger.warning("样品问题关闭审批路由第 %s 项缺少角色关键词或审批角色，已忽略", index + 1)
+        if not role_keywords:
+            logger.warning("样品问题关闭审批路由第 %s 项缺少岗位关键词，已忽略", index + 1)
             continue
 
         key = str(rule.get("key") or f"close_route_{index + 1}").strip()
@@ -222,14 +199,11 @@ def _close_routing_rules(config: dict, default_close: dict) -> list[dict]:
             logger.warning("样品问题关闭审批路由第 %s 项 key 无效或重复，已忽略", index + 1)
             continue
 
-        default_notify_targets = _notify_targets_from_roles(approver_roles) or default_close["notify_targets"]
         normalized_rules.append(
             {
                 "key": key,
                 "label": str(rule.get("label") or key).strip(),
                 "requester_role_keywords": role_keywords,
-                "approver_roles": approver_roles,
-                "notify_targets": _notify_targets(rule, "notify_targets", default_notify_targets),
                 "notify_requester_on_approval": _bool_value(
                     rule,
                     "notify_requester_on_approval",
@@ -348,17 +322,7 @@ def load_sample_issue_config() -> dict[str, Any]:
     default_close = default_wecom["close"]
     default_special_preparation = _DEFAULT_CONFIG["special_preparation"]
 
-    close_config = {
-        "approver_roles": _string_list(
-            raw_close,
-            "approver_roles",
-            default_close["approver_roles"],
-        ),
-        "notify_targets": _notify_targets(
-            raw_close,
-            "notify_targets",
-            default_close["notify_targets"],
-        ),
+    close_config: dict[str, Any] = {
         "notify_requester_on_approval": _bool_value(
             raw_close,
             "notify_requester_on_approval",
@@ -369,7 +333,6 @@ def load_sample_issue_config() -> dict[str, Any]:
 
     return {
         "public_base_url": _string_value(raw_config, "public_base_url", _DEFAULT_CONFIG["public_base_url"]).rstrip("/"),
-        "editor_roles": _string_list(raw_config, "editor_roles", _DEFAULT_CONFIG["editor_roles"]),
         "filter_states": _filter_states(raw_config, _DEFAULT_CONFIG["filter_states"]),
         "special_preparation": {
             "owner_role": _string_value(
@@ -399,22 +362,7 @@ def load_sample_issue_config() -> dict[str, Any]:
             ),
         },
         "wecom": {
-            "default_notify_targets": _notify_targets(
-                raw_wecom,
-                "default_notify_targets",
-                default_wecom["default_notify_targets"],
-            ),
             "extension": {
-                "approver_roles": _string_list(
-                    raw_extension,
-                    "approver_roles",
-                    default_extension["approver_roles"],
-                ),
-                "notify_targets": _notify_targets(
-                    raw_extension,
-                    "notify_targets",
-                    default_extension["notify_targets"],
-                ),
                 "notify_requester_on_approval": _bool_value(
                     raw_extension,
                     "notify_requester_on_approval",
@@ -455,7 +403,6 @@ def load_sample_issue_config() -> dict[str, Any]:
 
 SAMPLE_ISSUE_CONFIG = load_sample_issue_config()
 SAMPLE_PUBLIC_BASE_URL = SAMPLE_ISSUE_CONFIG["public_base_url"]
-SAMPLE_EDITOR_ROLES = SAMPLE_ISSUE_CONFIG["editor_roles"]
 SAMPLE_FILTER_STATES = SAMPLE_ISSUE_CONFIG["filter_states"]
 SAMPLE_FILTER_ALL_STATE = "全部"
 SAMPLE_FILTER_OPEN_STATE = "未关闭"
@@ -473,19 +420,9 @@ SAMPLE_SPECIAL_PREPARATION_DEFAULT_OWNER_USERID = SAMPLE_ISSUE_CONFIG["special_p
     "default_owner_userid"
 ]
 SAMPLE_SPECIAL_PREPARATION_DEFAULT_ACTIONS = SAMPLE_ISSUE_CONFIG["special_preparation"]["default_actions"]
-SAMPLE_DEFAULT_NOTIFY_TARGETS = SAMPLE_ISSUE_CONFIG["wecom"]["default_notify_targets"]
-SAMPLE_EXTENSION_APPROVER_ROLES = SAMPLE_ISSUE_CONFIG["wecom"]["extension"]["approver_roles"]
-SAMPLE_EXTENSION_NOTIFY_TARGETS = SAMPLE_ISSUE_CONFIG["wecom"]["extension"]["notify_targets"]
 SAMPLE_EXTENSION_NOTIFY_REQUESTER_ON_APPROVAL = SAMPLE_ISSUE_CONFIG["wecom"]["extension"][
     "notify_requester_on_approval"
 ]
-_sample_close_approver_roles = SAMPLE_ISSUE_CONFIG["wecom"]["close"]["approver_roles"]
-SAMPLE_CLOSE_APPROVER_ROLES: list[str] = (
-    [str(value) for value in _sample_close_approver_roles if str(value).strip()]
-    if isinstance(_sample_close_approver_roles, list)
-    else []
-)
-SAMPLE_CLOSE_NOTIFY_TARGETS = SAMPLE_ISSUE_CONFIG["wecom"]["close"]["notify_targets"]
 SAMPLE_CLOSE_NOTIFY_REQUESTER_ON_APPROVAL = SAMPLE_ISSUE_CONFIG["wecom"]["close"]["notify_requester_on_approval"]
 SAMPLE_CLOSE_ROUTING_RULES = SAMPLE_ISSUE_CONFIG["wecom"]["close"]["routing_rules"]
 SAMPLE_BACKGROUND_REMINDER_ENABLED = SAMPLE_ISSUE_CONFIG["reminders"]["background_enabled"]

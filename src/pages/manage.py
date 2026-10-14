@@ -13,9 +13,7 @@ from ..approval_workflow import (
     APPROVAL_WORKFLOW_EVENTS,
     APPROVER_STRATEGY_NAMES,
     get_approval_workflow_editor_nodes,
-    import_design_knowledge_legacy_workflows,
     import_project_overview_legacy_workflows,
-    import_sample_issue_legacy_workflows,
     resolve_approval_workflow,
 )
 from ..config import BASE_DIR, IMG_DIR, PRESET_AVATARS
@@ -2611,20 +2609,6 @@ def manage_page():
                                 icon="move_to_inbox",
                             ).props("outline dense no-caps").classes("self-start shrink-0"):
                                 with ui.menu().props("auto-close"):
-                                    ui.menu_item(
-                                        "样品问题旧配置",
-                                        on_click=lambda: import_legacy_workflows(
-                                            import_sample_issue_legacy_workflows,
-                                            "样品问题",
-                                        ),
-                                    )
-                                    ui.menu_item(
-                                        "设计知识旧配置",
-                                        on_click=lambda: import_legacy_workflows(
-                                            import_design_knowledge_legacy_workflows,
-                                            "设计知识",
-                                        ),
-                                    )
                                     ui.menu_item(
                                         "项目概述旧配置",
                                         on_click=lambda: import_legacy_workflows(

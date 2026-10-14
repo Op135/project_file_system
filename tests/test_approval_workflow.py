@@ -10,7 +10,6 @@ from src.approval_workflow import (
     create_approval_sequence_assignments,
     get_workflow_event_definition,
     get_approval_workflow_editor_nodes,
-    import_design_knowledge_legacy_workflows,
     import_project_overview_legacy_workflows,
     is_assigned_approver,
     resolve_approval_workflow,
@@ -938,7 +937,7 @@ class ApprovalWorkflowTests(unittest.TestCase):
         self.assertEqual(after["active_version"]["version_number"], 2)
         self.assertEqual(after["active_version"]["priority"], 20)
 
-    def test_design_knowledge_events_and_legacy_import_are_idempotent(self):
+    def test_design_knowledge_events_use_stable_permissions(self):
         knowledge_event = get_workflow_event_definition(
             "design_knowledge",
             "knowledge_review",
@@ -959,24 +958,6 @@ class ApprovalWorkflowTests(unittest.TestCase):
             tag_event.permission_codes,
             (DESIGN_KNOWLEDGE_TAG_REVIEW_PERMISSION,),
         )
-
-        created, warnings = import_design_knowledge_legacy_workflows(
-            self.service,
-            actor_username="admin",
-        )
-        self.assertGreater(created, 0)
-        self.assertTrue(warnings)
-        imported = self.service.list_approval_workflows(module="design_knowledge")
-        self.assertEqual(len(imported), created)
-        self.assertEqual(
-            {item["event"] for item in imported},
-            {"knowledge_review", "tag_review"},
-        )
-        created_again, _warnings_again = import_design_knowledge_legacy_workflows(
-            self.service,
-            actor_username="admin",
-        )
-        self.assertEqual(created_again, 0)
 
     def test_project_overview_events_and_legacy_import_are_idempotent(self):
         """概述两类审批事件可在管理界面配置，旧 JSON 只能单向生成草稿。"""

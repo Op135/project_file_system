@@ -84,46 +84,9 @@ class SchemeSalesNotificationTests(unittest.IsolatedAsyncioTestCase):
             for username in route["recipient_usernames"]
         })
 
-    async def test_test_mode_only_sends_manager_and_lists_intended_people(self):
-        config = {
-            "enabled": True,
-            "test_mode": True,
-            "test_notify_targets": [{"position": "研发经理"}],
-            "cc_manager_enabled": True,
-            "public_base_url": "https://example.test",
-        }
-        with (
-            patch.object(
-                scheme_notifications,
-                "resolve_wecom_recipients",
-                AsyncMock(return_value="wx-rd-manager"),
-            ),
-            patch.object(
-                scheme_notifications,
-                "send_wecom_textcard_message",
-                AsyncMock(return_value=(True, "ok")),
-            ) as sender,
-        ):
-            result = await scheme_notifications.send_scheme_sales_completion_notifications(
-                self.record,
-                {"P1": "sales", "P2": "sales"},
-                approval_round="round-1",
-                config=config,
-                user_service=self.service,
-            )
-
-        self.assertEqual(result, (1, 0))
-        await_args = sender.await_args
-        assert await_args is not None
-        self.assertEqual(await_args.args[1], "wx-rd-manager")
-        self.assertIn("未通知实际项目销售", await_args.args[0])
-        self.assertIn("通知人员：sales", await_args.args[0])
-
     async def test_production_merges_projects_for_same_sales_person(self):
         config = {
             "enabled": True,
-            "test_mode": False,
-            "test_notify_targets": [],
             "cc_manager_enabled": False,
             "public_base_url": "https://example.test",
         }

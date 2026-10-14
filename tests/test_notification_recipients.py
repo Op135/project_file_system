@@ -32,21 +32,18 @@ class NotificationRecipientTests(unittest.IsolatedAsyncioTestCase):
         )
         recipients = await notification_recipients.resolve_permission_wecom_recipients(
             "notifications.sample_order.extension.receive",
-            legacy_targets=[{"position": "研发经理"}],
             user_service=service,
         )
 
         self.assertEqual(recipients, "wecom-zhangsan")
 
-    async def test_database_mode_does_not_fall_back_to_legacy_role_targets(self):
-        """数据库模式无订阅人时保持为空，避免旧职位规则重新参与路由。"""
+    async def test_database_mode_without_subscribers_returns_empty(self):
         service = SimpleNamespace(
             list_usernames_with_permission=lambda *_args, **_kwargs: [],
             list_wecom_bindings=lambda: {},
         )
         recipients = await notification_recipients.resolve_permission_wecom_recipients(
             "notifications.error.extension.request.receive",
-            legacy_targets=[{"position": "研发助理"}],
             user_service=service,
         )
 

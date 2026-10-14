@@ -46,17 +46,10 @@ from ..permission_catalog import (
     SAMPLE_ORDER_VIEW_PERMISSION,
 )
 from ..sample_order_dashboard_config import (
-    SAMPLE_ORDER_ADMIN_ROLES as SAMPLE_ORDER_LEGACY_ADMIN_ROLES,
-    SAMPLE_ORDER_BASE_EDITOR_ROLES as SAMPLE_ORDER_LEGACY_BASE_EDITOR_ROLES,
     SAMPLE_ORDER_DELAY_ATTENTION_THRESHOLD,
-    SAMPLE_ORDER_DELAY_EDITOR_ROLES as SAMPLE_ORDER_LEGACY_DELAY_EDITOR_ROLES,
-    SAMPLE_ORDER_DELAY_NATURE_MARKER_ROLES as SAMPLE_ORDER_LEGACY_DELAY_NATURE_MARKER_ROLES,
-    SAMPLE_ORDER_MANAGER_NOTIFY_TARGETS as SAMPLE_ORDER_LEGACY_MANAGER_NOTIFY_TARGETS,
     SAMPLE_ORDER_NOTIFY_APPLICANT_ON_EXTENSION,
     SAMPLE_ORDER_NOTIFY_APPLICANT_ON_SPECIAL_STATUS,
     SAMPLE_ORDER_PUBLIC_BASE_URL,
-    SAMPLE_ORDER_REDIRECT_APPLICANT_NOTIFICATIONS_TO_MANAGER,
-    SAMPLE_ORDER_SPECIAL_STATUS_EDITOR_ROLES as SAMPLE_ORDER_LEGACY_SPECIAL_STATUS_EDITOR_ROLES,
     SAMPLE_ORDER_SPECIAL_STATUS_REASON_REQUIRED,
     SAMPLE_ORDER_SPECIAL_STATUSES,
     SAMPLE_ORDER_WARNING_DAYS,
@@ -69,7 +62,6 @@ SAMPLE_ORDER_ENTITY_NAMESPACE = "sample_order_dashboard"
 SAMPLE_ORDER_VERSION_KEY = "sample_order_dashboard_version_stamp"
 SAMPLE_ORDER_OVERDUE_NOTIFICATION_STATE_KEY = "sample_order_overdue_notification_state"
 SAMPLE_ORDER_EXCEL_IMPORT_OWNER = "叶子浩"
-SAMPLE_ORDER_LEGACY_VIEW_ROLE_KEYWORDS = ["销售", "工程", "研发", "boss", "admin"]
 
 logger = logging.getLogger(__name__)
 
@@ -617,30 +609,18 @@ def parse_sample_order_excel(content: bytes, source_name: str = "") -> SampleOrd
     return SampleOrderImportPreview(records, errors, import_warnings, source_name, total_rows)
 
 
-def _role_matches(role: object, allowed_roles: list[str]) -> bool:
-    role_text = option_text(role).lower()
-    return any(allowed.lower() in role_text for allowed in allowed_roles)
-
-
 def _has_sample_order_permission(
     username: str,
-    role: object,
     permission_code: str,
-    legacy_allowed_roles: list[str],
 ) -> bool:
     """应用运行时按稳定权限判断操作。"""
     user_service = getattr(app.state, "user_service", None)
     if user_service is None or not option_text(username):
-        # 无应用上下文时保留纯函数兼容，便于历史脚本和单元测试调用。
-        return _role_matches(role, legacy_allowed_roles)
-    role_text = option_text(role)
-    matched_legacy_roles = [role_text] if _role_matches(role_text, legacy_allowed_roles) else []
+        return False
     return can(
         user_service,
         option_text(username),
         permission_code,
-        legacy_role=role_text,
-        legacy_allowed_roles=matched_legacy_roles,
     )
 
 
@@ -648,9 +628,7 @@ def can_view_sample_order_dashboard(role: object, username: str = "") -> bool:
     """判断用户是否可以进入样品单执行看板。"""
     return _has_sample_order_permission(
         username,
-        role,
         SAMPLE_ORDER_VIEW_PERMISSION,
-        SAMPLE_ORDER_LEGACY_VIEW_ROLE_KEYWORDS,
     )
 
 
@@ -658,9 +636,7 @@ def is_sample_order_admin(role: object, username: str = "") -> bool:
     """判断用户是否拥有删除样品单权限。"""
     return _has_sample_order_permission(
         username,
-        role,
         SAMPLE_ORDER_DELETE_PERMISSION,
-        SAMPLE_ORDER_LEGACY_ADMIN_ROLES,
     )
 
 
@@ -668,13 +644,7 @@ def is_sample_order_base_editor(role: object, username: str = "") -> bool:
     """判断用户是否可以录入和维护基础信息。"""
     return _has_sample_order_permission(
         username,
-        role,
         SAMPLE_ORDER_BASE_EDIT_PERMISSION,
-        list(
-            dict.fromkeys(
-                [*SAMPLE_ORDER_LEGACY_BASE_EDITOR_ROLES, *SAMPLE_ORDER_LEGACY_ADMIN_ROLES]
-            )
-        ),
     )
 
 
@@ -682,13 +652,7 @@ def is_sample_order_delay_editor(role: object, username: str = "") -> bool:
     """判断用户是否可以维护制样执行与延期信息。"""
     return _has_sample_order_permission(
         username,
-        role,
         SAMPLE_ORDER_DELAY_EDIT_PERMISSION,
-        list(
-            dict.fromkeys(
-                [*SAMPLE_ORDER_LEGACY_DELAY_EDITOR_ROLES, *SAMPLE_ORDER_LEGACY_ADMIN_ROLES]
-            )
-        ),
     )
 
 
@@ -696,16 +660,7 @@ def is_sample_order_special_status_editor(role: object, username: str = "") -> b
     """判断用户是否可以设置暂停、作废等特殊状态。"""
     return _has_sample_order_permission(
         username,
-        role,
         SAMPLE_ORDER_SPECIAL_STATUS_EDIT_PERMISSION,
-        list(
-            dict.fromkeys(
-                [
-                    *SAMPLE_ORDER_LEGACY_SPECIAL_STATUS_EDITOR_ROLES,
-                    *SAMPLE_ORDER_LEGACY_ADMIN_ROLES,
-                ]
-            )
-        ),
     )
 
 
@@ -713,16 +668,7 @@ def is_sample_order_delay_nature_marker(role: object, username: str = "") -> boo
     """判断用户是否可以为已完成延期订单标记性质。"""
     return _has_sample_order_permission(
         username,
-        role,
         SAMPLE_ORDER_DELAY_NATURE_EDIT_PERMISSION,
-        list(
-            dict.fromkeys(
-                [
-                    *SAMPLE_ORDER_LEGACY_DELAY_NATURE_MARKER_ROLES,
-                    *SAMPLE_ORDER_LEGACY_ADMIN_ROLES,
-                ]
-            )
-        ),
     )
 
 
@@ -730,9 +676,7 @@ def can_view_sample_order_average_score(role: object, username: str = "") -> boo
     """判断用户是否可以查看平均考核分。"""
     return _has_sample_order_permission(
         username,
-        role,
         SAMPLE_ORDER_AVERAGE_SCORE_VIEW_PERMISSION,
-        ["研发样品组长", "研发经理"],
     )
 
 
@@ -1094,16 +1038,14 @@ async def _send_sample_order_change_notifications(
     applicant_needed = bool(extension_events and SAMPLE_ORDER_NOTIFY_APPLICANT_ON_EXTENSION) or bool(
         status_event and SAMPLE_ORDER_NOTIFY_APPLICANT_ON_SPECIAL_STATUS
     )
-    redirect_applicant = bool(applicant_needed and SAMPLE_ORDER_REDIRECT_APPLICANT_NOTIFICATIONS_TO_MANAGER)
     applicant_recipient = ""
-    if applicant and applicant_needed and not redirect_applicant:
+    if applicant and applicant_needed:
         applicant_recipient = await resolve_wecom_recipients(
             [{"names": [applicant]}],
             fallback_touser="",
         )
     needs_extension_subscribers = bool(extension_events) and (
-        redirect_applicant
-        or any(
+        any(
             normalize_int(event.get("extension_number"), 0)
             > SAMPLE_ORDER_DELAY_ATTENTION_THRESHOLD
             for event in extension_events
@@ -1113,7 +1055,6 @@ async def _send_sample_order_change_notifications(
     if needs_extension_subscribers:
         extension_subscribers = await resolve_permission_wecom_recipients(
             SAMPLE_ORDER_EXTENSION_NOTIFY_PERMISSION,
-            legacy_targets=SAMPLE_ORDER_LEGACY_MANAGER_NOTIFY_TARGETS,
             fallback_touser="",
         )
     sample_leader_recipients = ""
@@ -1121,7 +1062,6 @@ async def _send_sample_order_change_notifications(
     if engineer_extension_events:
         sample_leader_recipients = await resolve_permission_wecom_recipients(
             SAMPLE_ORDER_DELAY_EDIT_PERMISSION,
-            legacy_targets=[{"position": "研发样品组长"}],
             fallback_touser="",
         )
     if sample_leader_extension_events and project_engineer:
@@ -1133,12 +1073,11 @@ async def _send_sample_order_change_notifications(
     if status_event:
         special_status_subscribers = await resolve_permission_wecom_recipients(
             SAMPLE_ORDER_SPECIAL_STATUS_NOTIFY_PERMISSION,
-            legacy_targets=SAMPLE_ORDER_LEGACY_MANAGER_NOTIFY_TARGETS,
             fallback_touser="",
         )
 
     failures: list[str] = []
-    if applicant_needed and not redirect_applicant and not applicant_recipient:
+    if applicant_needed and not applicant_recipient:
         failures.append(f"申请人“{applicant or '未填写'}”未匹配到企业微信成员")
     if needs_extension_subscribers and not extension_subscribers:
         failures.append("样品单延期关注通知权限未匹配到已绑定企业微信成员")
@@ -1152,8 +1091,8 @@ async def _send_sample_order_change_notifications(
         extension_number = normalize_int(event.get("extension_number"), 0)
         notify_manager = extension_number > SAMPLE_ORDER_DELAY_ATTENTION_THRESHOLD
         recipients = merge_wecom_recipients(
-            applicant_recipient if SAMPLE_ORDER_NOTIFY_APPLICANT_ON_EXTENSION and not redirect_applicant else "",
-            extension_subscribers if notify_manager or redirect_applicant else "",
+            applicant_recipient if SAMPLE_ORDER_NOTIFY_APPLICANT_ON_EXTENSION else "",
+            extension_subscribers if notify_manager else "",
             sample_leader_recipients if event in engineer_extension_events else "",
             project_engineer_recipients if event in sample_leader_extension_events else "",
         )
@@ -1190,7 +1129,7 @@ async def _send_sample_order_change_notifications(
 
     if status_event:
         recipients = merge_wecom_recipients(
-            applicant_recipient if SAMPLE_ORDER_NOTIFY_APPLICANT_ON_SPECIAL_STATUS and not redirect_applicant else "",
+            applicant_recipient if SAMPLE_ORDER_NOTIFY_APPLICANT_ON_SPECIAL_STATUS else "",
             special_status_subscribers,
         )
         if not recipients:
@@ -1249,7 +1188,6 @@ async def check_and_send_sample_order_overdue_reminders(
     today_value = today or date.today()
     sample_leader_recipients = await resolve_permission_wecom_recipients(
         SAMPLE_ORDER_DELAY_EDIT_PERMISSION,
-        legacy_targets=[{"position": "研发样品组长"}],
         fallback_touser="",
     )
     sent_count = 0

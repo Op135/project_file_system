@@ -17,8 +17,7 @@ from src.tools.spectral_analyzer import SpectralAnalyzerTool
 from src.tools.spherical_lens_calculator import SphericalLensCalculator
 
 from ..access_control import can_use_tool
-from ..config import BASE_DIR, IMG_DIR, PRESET_AVATARS
-from ..permission_catalog import load_tool_role_mapping
+from ..config import IMG_DIR, PRESET_AVATARS
 from ..utils import (
     get_cache_busted_path,
     logout,
@@ -155,11 +154,6 @@ def tool_page():
         },
     ]
 
-    # --- 新增：加载权限配置的函数 ---
-    def load_tool_permissions():
-        """加载旧角色名称，仅作为迁移前的兼容兜底。"""
-        return load_tool_role_mapping(BASE_DIR / "tools_permission.json")
-
     # --- 辅助函数：创建一致的卡片 ---
     def create_tool_card(title, subtitle, icon, color, click_handler):
         with (
@@ -180,13 +174,11 @@ def tool_page():
 
     # --- 通用 Dialog 打开器 ---
     def has_tool_permission(tool_key, role):
-        legacy_allowed_roles = None if permissions_config is None else permissions_config.get(tool_key, [])
         return can_use_tool(
             app.state.user_service,
             current_user,
             tool_key,
             legacy_role=role,
-            legacy_allowed_roles=legacy_allowed_roles,
         )
 
     def open_tool(ToolClass, tool_key):
@@ -210,8 +202,6 @@ def tool_page():
                 logger.error(f"工具加载失败: {e}", exc_info=True)
         dialog.open()
 
-    # 加载权限配置
-    permissions_config = load_tool_permissions()
     # 主界面
     header = ui.header(elevated=True).classes("flex justify-between items-center bg-blue-500 h-12 px-4")
     with header:

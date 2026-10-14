@@ -54,24 +54,22 @@ def build_special_card(
     record: dict,
     items: list[dict[str, str]],
     *,
-    test_mode: bool,
     is_cc: bool,
     cancelled: bool = False,
     observer_names: list[str] | None = None,
 ) -> tuple[str, str]:
     """优先分配三项业务字段的空间，接收人和单号放在后面。"""
     first = items[0]
-    nature = "调试转发 · 未通知实际处理人" if test_mode else "研发经理抄送" if is_cc else "移交待办"
-    if cancelled and not test_mode and not is_cc:
+    nature = "研发经理抄送" if is_cc else "移交待办"
+    if cancelled and not is_cc:
         nature = "取消告知"
     prefix = f'<div class="gray">{nature}</div>'
     if cancelled:
         prefix += '<div class="normal">已取消，无需继续处理</div>'
     observer_footer = ""
-    if test_mode or is_cc:
+    if is_cc:
         names = list(dict.fromkeys(observer_names or [item["assignee"] for item in items]))
-        names_label = "原应通知人员" if test_mode else "待处理人员"
-        observer_footer = f'<div class="gray">{names_label}：{escape("、".join(names))}</div>'
+        observer_footer = f'<div class="gray">待处理人员：{escape("、".join(names))}</div>'
     footer = observer_footer + (
         f'<div class="gray">{"原负责人" if cancelled else "接收人"}：{_escaped_summary(first["assignee"], 30)}</div>'
         f'<div class="gray">单号：{_escaped_summary(str(record.get("ecn_id") or ""), 40)}</div>'
