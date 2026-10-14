@@ -25,8 +25,6 @@ from nicegui.client import Client
 from nicegui.events import KeyEventArguments
 
 from . import db_storage
-from .permission_catalog import project_overview_permission_definitions
-from .project_catalog import match_other_project_name
 
 # import config
 from .config import (
@@ -42,18 +40,20 @@ from .config import (
     SVN_PASSWORD,
     SVN_USERNAME,
 )
+from .overview_operation import (
+    append_overview_timestamp,
+    get_automatic_overview_reason,
+    get_latest_overview_operator,
+    get_latest_overview_record,
+)
+from .permission_catalog import project_overview_permission_definitions
+from .project_catalog import match_other_project_name
 from .requirement_overview_impact import (
     REQUIREMENT_OVERVIEW_IMPACT_STORAGE_KEY,
     RequirementOverviewImpactConfigError,
     collect_requirement_change_node_ids,
     load_requirement_overview_impact_config,
     resolve_requirement_overview_impacts,
-)
-from .overview_operation import (
-    append_overview_timestamp,
-    get_automatic_overview_reason,
-    get_latest_overview_operator,
-    get_latest_overview_record,
 )
 
 # 获取一个以此模块命名的 logger
@@ -71,6 +71,7 @@ def get_overview_latest_responsible(project_name: str, label: str, chip_data: di
     if latest_user and latest_user != "——":
         return latest_user
     return str((chip_data or {}).get("creator") or "待定负责人")
+
 
 PAGE_MODULE_LABELS = {
     "main": "首页",
@@ -150,7 +151,9 @@ def _timestamp(value: object) -> float:
     return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else 0.0
 
 
-def summarize_online_users(current_time: float | None = None, threshold_seconds: float = 60.0) -> list[OnlineUserSummary]:
+def summarize_online_users(
+    current_time: float | None = None, threshold_seconds: float = 60.0
+) -> list[OnlineUserSummary]:
     """按用户名合并在线标签页，并以最近操作的标签页作为当前模块。"""
     now = time.time() if current_time is None else current_time
     active_by_username: dict[str, list[OnlineUserRecord]] = {}
@@ -209,7 +212,7 @@ def build_online_users_tooltip(summaries: list[OnlineUserSummary]) -> str:
         )
         username = escape(user["username"])
         current_page = escape(user["current_page"])
-        line = f"{username} — {current_page} — 最后操作: {activity_time}"
+        line = f"{username} — 最后操作: {activity_time} — {current_page}"
         other_pages = [page for page in user["open_pages"] if page != user["current_page"]]
         if other_pages:
             open_pages = "、".join(escape(page) for page in other_pages)
@@ -525,9 +528,7 @@ async def validate_svn_url(content: str, config: dict, projects: list, pending_o
         for project_data in project_summary.values()
         if isinstance(project_data, dict)
     ]
-    special_project_folder, special_project_matches = match_other_project_name(
-        content, other_project_names
-    )
+    special_project_folder, special_project_matches = match_other_project_name(content, other_project_names)
 
     according_folder_name = []
     target_url_li = []
@@ -1247,12 +1248,8 @@ def merge_data_with_template(user_data_full, template_data_full):
                     break
             if not structure_changed:
                 for key in dependency_structural_keys:
-                    old_dependency = _resolve_requirement_dependency(
-                        old_item.get(key), old_sequence_to_node_id
-                    )
-                    new_dependency = _resolve_requirement_dependency(
-                        new_item.get(key), new_sequence_to_node_id
-                    )
+                    old_dependency = _resolve_requirement_dependency(old_item.get(key), old_sequence_to_node_id)
+                    new_dependency = _resolve_requirement_dependency(new_item.get(key), new_sequence_to_node_id)
                     if old_dependency != new_dependency:
                         structure_changed = True
                         break
@@ -1844,6 +1841,7 @@ def overview_role_update(project_name, input_role="all_update"):
     """
     # 将服务器概述资料获取到
     OVERVIEW_DATA = db_storage.get_item(f"{project_name}_over_data", {})
+
     # ---------------------------------------------------------
     # 核心新增：封装交接逻辑闭包函数，用于处理待办数据的抹除与继承
     # ---------------------------------------------------------
@@ -2612,9 +2610,7 @@ def restore_file_bytes(file_path: str | Path, existed: bool, content: bytes) -> 
 
 def create_requirement_overview_candidate_path(project_name: str, version: str) -> str:
     version_key = _canonical_requirement_version(version)
-    return str(
-        Path(OVER_DIR) / f".{project_name}_概述整理_V{version_key}_{uuid.uuid4().hex}.pending.json"
-    )
+    return str(Path(OVER_DIR) / f".{project_name}_概述整理_V{version_key}_{uuid.uuid4().hex}.pending.json")
 
 
 # 根据传入的需求配置文件清单，核对检查是否有新需求配置未更新到概述文件里，并做相应整理，更新概述整理文件
@@ -2646,8 +2642,7 @@ async def requirement_version_tidy(
         return ""
 
     project_exists_file = {
-        _canonical_requirement_version(version): file_info
-        for version, file_info in project_exists_file_raw.items()
+        _canonical_requirement_version(version): file_info for version, file_info in project_exists_file_raw.items()
     }
     available_versions = sorted(int(float(version)) for version in project_exists_file)
     wait_review_data = app.storage.general.get("wait_review", {}).get(project_name, {})
@@ -2663,8 +2658,7 @@ async def requirement_version_tidy(
             _canonical_requirement_version(version)
             for version in available_versions
             if version < target_version_number
-            and wait_review_data.get(_canonical_requirement_version(version), {"state": "已审"}).get("state")
-            != "已审"
+            and wait_review_data.get(_canonical_requirement_version(version), {"state": "已审"}).get("state") != "已审"
         ]
         if lower_unapproved:
             logger.error(
@@ -2755,8 +2749,8 @@ async def requirement_version_tidy(
         overview_data["version"] = version_key
         overview_data["first_create"] = overview_version is None
 
-    destination = Path(output_path) if output_path is not None else (
-        overview_file_path_temp if review else overview_file_path
+    destination = (
+        Path(output_path) if output_path is not None else (overview_file_path_temp if review else overview_file_path)
     )
     try:
         _write_json_atomic(destination, overview_data)
