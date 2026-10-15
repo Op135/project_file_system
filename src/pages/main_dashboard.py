@@ -14,6 +14,7 @@ from ..overview_batch_operations import (
     BATCH_OVERVIEW_REQUESTS_KEY,
     get_batch_overview_pending_count,
 )
+from ..overview_add_approval import OVERVIEW_ADD_REQUESTS_KEY, get_overview_add_pending_count
 from ..overview_corrections import OVERVIEW_CORRECTION_REQUESTS_KEY, get_correction_pending_count
 from ..project_overview_access import can_review_overview_correction
 from ..project_requirement_access import (
@@ -402,6 +403,10 @@ def main_page():
                 current_user,
                 str(current_role or ""),
             )
+            overview_add_task_count = get_overview_add_pending_count(
+                db_storage.get_item(OVERVIEW_ADD_REQUESTS_KEY, {}) or {},
+                current_user,
+            )
 
             change_task_count = sum(
                 1
@@ -426,6 +431,7 @@ def main_page():
                         + change_task_count
                         + batch_change_task_count
                         + correction_task_count
+                        + overview_add_task_count
                     )
                     pending_count = len(requirement_pending_keys) + overview_pending_count
                 elif target == "/ecn_management":

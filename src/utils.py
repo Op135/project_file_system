@@ -1400,6 +1400,9 @@ def updata_overview_config(*, show_notification: bool = True) -> bool:
         with open(f"{BASE_DIR}/overview_config.json", "r", encoding="utf-8") as f:
             # 使用 json.load() 读取文件内容并解析
             over_config_data = json.load(f)
+            from .overview_add_approval import validate_overview_add_approval_config
+
+            validate_overview_add_approval_config(over_config_data)
             # 在覆盖内存配置前先校验全部 label，避免重复或非法标识污染运行数据和权限目录。
             project_overview_permission_definitions(over_config_data)
             user_service = getattr(app.state, "user_service", None)
@@ -2788,6 +2791,7 @@ def build_overview_page_url(
     project_name: str = "",
     correction_label: str = "",
     correction_chip_id: str = "",
+    add_request_id: str = "",
 ) -> str:
     """构造概述页地址，并可携带一次性的纠错弹窗定位参数。"""
     query = {
@@ -2800,6 +2804,8 @@ def build_overview_page_url(
     if correction_label and correction_chip_id:
         query["correction_label"] = correction_label
         query["correction_chip_id"] = correction_chip_id
+    if add_request_id:
+        query["add_request_id"] = add_request_id
     return f"/main/requirement?{urlencode(query)}"
 
 
@@ -2809,6 +2815,7 @@ async def get_overviow_page(
     *,
     correction_label: str = "",
     correction_chip_id: str = "",
+    add_request_id: str = "",
 ):
     """
     project_name： 项目名。
@@ -2823,6 +2830,7 @@ async def get_overviow_page(
                 overview_file_path=overview_file_path,
                 correction_label=correction_label,
                 correction_chip_id=correction_chip_id,
+                add_request_id=add_request_id,
             )
         )
     else:
@@ -2832,6 +2840,7 @@ async def get_overviow_page(
                 project_name=project_name,
                 correction_label=correction_label,
                 correction_chip_id=correction_chip_id,
+                add_request_id=add_request_id,
             )
         )
 

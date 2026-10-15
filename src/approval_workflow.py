@@ -10,6 +10,7 @@ from .permission_catalog import (
     DESIGN_KNOWLEDGE_REVIEW_PERMISSION,
     DESIGN_KNOWLEDGE_TAG_REVIEW_PERMISSION,
     PROJECT_OVERVIEW_BATCH_REVIEW_PERMISSION,
+    PROJECT_OVERVIEW_ADD_REVIEW_PERMISSION,
     PROJECT_OVERVIEW_CORRECTION_REVIEW_PERMISSION,
     SAMPLE_ISSUE_CLOSE_APPROVE_PERMISSION,
     ECN_ECR_APPROVE_PERMISSION,
@@ -78,6 +79,13 @@ APPROVAL_WORKFLOW_EVENTS = (
         event="correction",
         name="项目概述原记录纠错",
         permission_codes=(PROJECT_OVERVIEW_CORRECTION_REVIEW_PERMISSION,),
+    ),
+    ApprovalWorkflowEventDefinition(
+        module="project_overview",
+        event="add_review",
+        name="项目概述添加审批",
+        permission_codes=(PROJECT_OVERVIEW_ADD_REVIEW_PERMISSION,),
+        supports_sequential=True,
     ),
     ApprovalWorkflowEventDefinition(
         module="ecn",
@@ -291,26 +299,88 @@ def _resolve_approver_candidates(
             selected_org_ids = {str(requester_membership.get("org_unit_id", ""))}
         elif org_scope == "any":
             selected_org_ids = set()
-        for username, user in users.items():
-            if user.get("status", "active") != "active":
-                continue
-            membership = user_service.get_primary_membership(username)
-            if str(membership.get("position_id", "")) not in selected_position_ids:
-                continue
-            if selected_org_ids and str(membership.get("org_unit_id", "")) not in selected_org_ids:
-                continue
-            usernames.append(username)
+        if org_scope != "fixed" or selected_org_ids:
+            for username, user in users.items():
+                if user.get("status", "active") != "active":
+                    continue
+                membership = user_service.get_primary_membership(username)
+                if str(membership.get("position_id", "")) not in selected_position_ids:
+                    continue
+                if selected_org_ids and str(membership.get("org_unit_id", "")) not in selected_org_ids:
+                    continue
+                usernames.append(username)
 
-    candidates = _candidate_details(user_service, list(dict.fromkeys(usernames)))
-    eligible: list[dict[str, Any]] = []
-    excluded: list[dict[str, Any]] = []
-    for candidate in candidates:
-        if user_service.has_permission(candidate["username"], required_permission_code):
-            eligible.append(candidate)
-        else:
-            missing = dict(candidate)
-            missing["excluded_reason"] = "缺少流程要求的审批权限"
-            excluded.append(missing)
+    def split_by_permission(candidate_usernames: list[str]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        candidate_details = _candidate_details(
+            user_service,
+            list(dict.fromkeys(candidate_usernames)),
+        )
+        accepted: list[dict[str, Any]] = []
+        rejected: list[dict[str, Any]] = []
+        for candidate in candidate_details:
+            if user_service.has_permission(candidate["username"], required_permission_code):
+                accepted.append(candidate)
+            else:
+                missing = dict(candidate)
+                missing["excluded_reason"] = "缺少流程要求的审批权限"
+                rejected.append(missing)
+        return accepted, rejected
+
+    eligible, excluded = split_by_permission(usernames)
+    if (
+        strategy == "position"
+        and not eligible
+        and approver.get("escalate_to_parent_org") is True
+    ):
+        selected_position_ids = {
+            str(value) for value in approver.get("position_ids", []) if str(value)
+        }
+        org_scope = str(approver.get("org_scope", "any")).strip().lower()
+        selected_org_ids = {
+            str(value) for value in approver.get("org_unit_ids", []) if str(value)
+        }
+        if org_scope == "requester":
+            requester_org_id = str(requester_membership.get("org_unit_id", ""))
+            selected_org_ids = {requester_org_id} if requester_org_id else set()
+        if org_scope in {"requester", "fixed"} and selected_org_ids:
+            org_units = user_service.list_org_units()
+            parent_by_org_id = {
+                str(unit.get("org_unit_id", "")): str(unit.get("parent_org_unit_id", ""))
+                for unit in org_units
+                if str(unit.get("org_unit_id", ""))
+            }
+            frontier = {
+                parent_by_org_id.get(org_unit_id, "")
+                for org_unit_id in selected_org_ids
+            }
+            visited = set(selected_org_ids)
+            while frontier:
+                current_org_ids = {
+                    org_unit_id
+                    for org_unit_id in frontier
+                    if org_unit_id and org_unit_id not in visited
+                }
+                if not current_org_ids:
+                    break
+                visited.update(current_org_ids)
+                level_usernames: list[str] = []
+                for username, user in users.items():
+                    if user.get("status", "active") != "active":
+                        continue
+                    membership = user_service.get_primary_membership(username)
+                    if str(membership.get("position_id", "")) not in selected_position_ids:
+                        continue
+                    if str(membership.get("org_unit_id", "")) in current_org_ids:
+                        level_usernames.append(username)
+                level_eligible, level_excluded = split_by_permission(level_usernames)
+                excluded.extend(level_excluded)
+                if level_eligible:
+                    eligible = level_eligible
+                    break
+                frontier = {
+                    parent_by_org_id.get(org_unit_id, "")
+                    for org_unit_id in current_org_ids
+                }
     return eligible, excluded
 
 

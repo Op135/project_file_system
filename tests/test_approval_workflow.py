@@ -33,6 +33,7 @@ from src.permission_catalog import (
     ECN_EXECUTION_SALES_SUPERVISOR_CONFIRM_PERMISSION,
     ECN_SCHEME_APPROVE_PERMISSION,
     PROJECT_OVERVIEW_BATCH_REVIEW_PERMISSION,
+    PROJECT_OVERVIEW_ADD_REVIEW_PERMISSION,
     PROJECT_OVERVIEW_CORRECTION_REVIEW_PERMISSION,
     SAMPLE_ISSUE_CLOSE_APPROVE_PERMISSION,
     SAMPLE_ISSUE_LEGACY_CLOSE_ELECTRON_APPROVE_PERMISSION,
@@ -157,6 +158,70 @@ class ApprovalWorkflowTests(unittest.TestCase):
         )
         self.assertEqual(second["status"], "matched")
         self.assertEqual([item["username"] for item in second["approvers"]], ["李四"])
+
+    def test_position_approver_can_escalate_to_parent_department(self):
+        parent_org_id = self.service.save_org_unit(
+            code="org.workflow.parent",
+            name="上级事业部",
+        )
+        child_org_id = self.service.save_org_unit(
+            code="org.workflow.child",
+            name="下级研发部",
+            parent_org_unit_id=parent_org_id,
+        )
+        scoped_position_id = self.service.save_position(
+            code="position.workflow.overview_reviewer",
+            name="概述审核岗",
+            org_unit_ids=[parent_org_id, child_org_id],
+        )
+        child_requester_position_id = self.service.save_position(
+            code="position.workflow.child_requester",
+            name="下级申请岗",
+            org_unit_ids=[child_org_id],
+        )
+        self.service.set_primary_membership(
+            "张三",
+            org_unit_id=child_org_id,
+            position_id=child_requester_position_id,
+        )
+        self.service.set_primary_membership(
+            "李四",
+            org_unit_id=parent_org_id,
+            position_id=scoped_position_id,
+        )
+        self.service.set_position_permissions(
+            scoped_position_id,
+            [PROJECT_OVERVIEW_ADD_REVIEW_PERMISSION],
+        )
+        workflow_id, _version_id = self.service.save_approval_workflow_draft(
+            code="project_overview.add.parent_escalation",
+            module="project_overview",
+            event="add_review",
+            name="关键概述新增上交测试",
+            priority=5,
+            condition={},
+            approver={
+                "strategy": "position",
+                "position_ids": [scoped_position_id],
+                "org_scope": "fixed",
+                "org_unit_ids": [child_org_id],
+                "escalate_to_parent_org": True,
+            },
+            required_permission_code=PROJECT_OVERVIEW_ADD_REVIEW_PERMISSION,
+            approval_mode="any",
+            actor_username="admin",
+        )
+        self.service.publish_approval_workflow(workflow_id, actor_username="admin")
+
+        result = resolve_approval_workflow(
+            self.service,
+            module="project_overview",
+            event="add_review",
+            requester_username="张三",
+        )
+
+        self.assertEqual(result["status"], "matched")
+        self.assertEqual([item["username"] for item in result["approvers"]], ["李四"])
 
     def test_ecn_scheme_workflow_can_match_any_scheme_author_membership(self):
         author_org_id = self.service.save_org_unit(

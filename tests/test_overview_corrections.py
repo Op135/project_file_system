@@ -13,6 +13,7 @@ from src.overview_corrections import (
     build_correction_changes,
     build_media_file_audit,
     build_test_field_changes,
+    configured_test_field_definitions,
     can_review_correction_request,
     chip_correction_guard_fingerprint,
     chip_snapshot_fingerprint,
@@ -25,6 +26,24 @@ from src.utils import build_overview_page_url
 
 
 class OverviewCorrectionTests(unittest.TestCase):
+    def test_unconfigured_test_fields_are_hidden_even_when_snapshot_contains_none(self):
+        config = {
+            "test_nature_options": ["抽检"],
+            "instrument_options": ["游标卡尺"],
+        }
+        snapshot = {
+            "test_nature_select": "抽检",
+            "state_select": None,
+            "node_select": None,
+            "instrument_select": "游标卡尺",
+        }
+
+        fields = configured_test_field_definitions(config)
+        changes = build_test_field_changes(snapshot, snapshot, config)
+
+        self.assertEqual([title for _, title, _ in fields], ["测试性质", "工具/仪器/治具"])
+        self.assertEqual([change["title"] for change in changes], ["测试性质", "工具/仪器/治具"])
+
     def test_test_diff_keeps_unchanged_fields_visible(self):
         config = {
             "test_nature_options": ["功能"],
@@ -121,6 +140,18 @@ class OverviewCorrectionTests(unittest.TestCase):
         self.assertEqual(query["json_path"], [r"F:\项目资料\RFFM-1007-A.json"])
         self.assertEqual(query["correction_label"], ["结构/材料"])
         self.assertEqual(query["correction_chip_id"], ["chip 01"])
+
+    def test_overview_return_url_keeps_rejected_add_request_target(self):
+        url = build_overview_page_url(
+            review=False,
+            project_name="RFFM-1007-A",
+            add_request_id="request 01",
+        )
+
+        query = parse_qs(urlparse(url).query)
+        self.assertEqual(query["type"], ["overview"])
+        self.assertEqual(query["project_name"], ["RFFM-1007-A"])
+        self.assertEqual(query["add_request_id"], ["request 01"])
 
     def test_media_audit_records_original_and_staged_file_hashes(self):
         with tempfile.TemporaryDirectory() as temp_value:

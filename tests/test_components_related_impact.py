@@ -10,11 +10,65 @@ from src.components import (
     _get_active_chip_icon,
     _get_image_status_visuals,
     _has_real_related_selection,
+    _missing_configured_test_selection,
+    _missing_test_other_text,
     _normalize_related_labels,
 )
 
 
 class RelatedImpactSelectionTests(unittest.TestCase):
+    def test_test_validation_ignores_unconfigured_none_fields(self):
+        test_data = {
+            "test_nature_select": "抽检",
+            "state_select": None,
+            "node_select": None,
+            "instrument_select": "游标卡尺",
+        }
+        option_lists = {
+            "test_nature": ["抽检", "全检"],
+            "state": [],
+            "node": [],
+            "instrument": ["游标卡尺"],
+        }
+
+        self.assertFalse(_missing_configured_test_selection(test_data, option_lists))
+
+    def test_test_validation_requires_only_rendered_options(self):
+        test_data = {
+            "test_nature_select": None,
+            "state_select": None,
+            "node_select": None,
+            "instrument_select": "游标卡尺",
+        }
+        option_lists = {
+            "test_nature": ["抽检", "全检"],
+            "state": [],
+            "node": [],
+            "instrument": ["游标卡尺"],
+        }
+
+        self.assertTrue(_missing_configured_test_selection(test_data, option_lists))
+
+    def test_other_text_is_required_only_for_configured_other_selection(self):
+        test_data = {
+            "test_nature_select": "其它",
+            "test_nature_other_text": "",
+            "state_select": "其它",
+            "state_other_text": "",
+        }
+        self.assertTrue(
+            _missing_test_other_text(
+                test_data,
+                {"test_nature": ["其它"], "state": [], "node": [], "instrument": []},
+            )
+        )
+        self.assertFalse(
+            _missing_test_other_text(
+                test_data,
+                {"test_nature": [], "state": [], "node": [], "instrument": []},
+            )
+        )
+
     def test_autofill_dialog_accepts_multiple_project_candidates(self):
         table = OverviewTableGroup.__new__(OverviewTableGroup)
         table.autofill_dialog = ui.dialog()

@@ -15,6 +15,7 @@ import sys
 import time
 import uuid
 from collections import defaultdict
+from collections.abc import Mapping
 from copy import deepcopy
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -63,6 +64,12 @@ from .overview_corrections import (
     update_correction_request,
     validate_test_correction,
 )
+from .overview_add_approval import (
+    OverviewAddSaveResult,
+    requires_overview_add_approval,
+    resubmit_overview_add_request,
+    save_or_submit_overview_addition,
+)
 from .project_overview_access import (
     can_edit_overview_item,
     can_view_overview_item,
@@ -96,6 +103,118 @@ from .utils import (
 # 获取一个以此模块命名的 logger
 # 比如：如果你的文件是 src/components.py，这个 logger 的名字就会是 "src.components"
 logger = logging.getLogger(__name__)
+
+
+def _overview_add_config(config: dict, chip: dict) -> dict:
+    """为审批快照补齐表格分组元数据。"""
+    normalized = copy.deepcopy(config)
+    role = str(normalized.get("role") or "")
+    group_name = str(normalized.get("group_name") or "")
+    group_items = (
+        app.storage.general.get("over_config_data", {})
+        .get(role, {})
+        .get(group_name, [])
+    )
+    if "row_id" in chip and isinstance(group_items, list) and group_items:
+        first_item = group_items[0]
+        normalized["is_table_group"] = True
+        if isinstance(first_item, dict):
+            normalized["first_col_label"] = str(first_item.get("label") or "")
+    return normalized
+
+
+def _overview_chip_latest_reason(chip: object) -> str:
+    if not isinstance(chip, dict):
+        return ""
+    timestamps = chip.get("timestamp")
+    if not isinstance(timestamps, dict) or not timestamps:
+        return ""
+    latest_key = max(timestamps, key=lambda value: str(value))
+    latest_record = timestamps.get(latest_key)
+    return str(latest_record.get("reason") or "") if isinstance(latest_record, dict) else ""
+
+
+_TEST_FIELD_PREFIXES = ("test_nature", "state", "node", "instrument")
+
+
+def _missing_configured_test_selection(test_data: dict, option_lists: Mapping[str, object]) -> bool:
+    """只要求实际配置了选项并渲染到弹窗中的测试字段。"""
+    return any(
+        isinstance(option_lists.get(prefix), list)
+        and bool(option_lists[prefix])
+        and not str(test_data.get(f"{prefix}_select") or "").strip()
+        for prefix in _TEST_FIELD_PREFIXES
+    )
+
+
+def _missing_test_other_text(test_data: dict, option_lists: Mapping[str, object]) -> bool:
+    return any(
+        isinstance(option_lists.get(prefix), list)
+        and bool(option_lists[prefix])
+        and test_data.get(f"{prefix}_select") == "其它"
+        and not str(test_data.get(f"{prefix}_other_text") or "").strip()
+        for prefix in _TEST_FIELD_PREFIXES
+    )
+
+
+async def _save_or_queue_overview_addition(
+    *,
+    project: str,
+    label: str,
+    chip: dict,
+    config: dict,
+    uploaded_file_path: Path | None = None,
+) -> OverviewAddSaveResult:
+    """统一处理普通新增和需要审批的关键新增，并给出页面提示。"""
+    normalized_config = _overview_add_config(config, chip)
+    current_user = str(app.storage.user.get("current_user") or "匿名用户")
+    resubmit_target = app.storage.client.get("overview_add_resubmit_auto_open", {})
+    is_resubmission = (
+        isinstance(resubmit_target, dict)
+        and str(resubmit_target.get("project") or "") == project
+        and str(resubmit_target.get("label") or "") == label
+        and bool(str(resubmit_target.get("request_id") or ""))
+    )
+    impact_mode = "none"
+    related_labels: list[str] = []
+    if requires_overview_add_approval(normalized_config):
+        initial_mode = str(resubmit_target.get("impact_mode") or "none") if is_resubmission else "none"
+        initial_labels = resubmit_target.get("related_labels") if is_resubmission else []
+        impact_mode, related_labels = await _select_pending_add_related_impacts(
+            normalized_config,
+            initial_mode=initial_mode,
+            initial_labels=initial_labels if isinstance(initial_labels, list) else [],
+        )
+    if is_resubmission:
+        request_id = str(resubmit_target.get("request_id") or "")
+        result = await resubmit_overview_add_request(
+            request_id,
+            current_user,
+            chip=chip,
+            config=normalized_config,
+            uploaded_file_path=uploaded_file_path,
+            impact_mode=impact_mode,
+            related_labels=related_labels,
+        )
+        if result.pending:
+            app.storage.client.pop("overview_add_resubmit_auto_open", None)
+    else:
+        result = await save_or_submit_overview_addition(
+            project=project,
+            label=label,
+            chip=chip,
+            config=normalized_config,
+            requester_username=current_user,
+            requester_role=str(app.storage.user.get("current_role") or ""),
+            uploaded_file_path=uploaded_file_path,
+            impact_mode=impact_mode,
+            related_labels=related_labels,
+        )
+    if result.pending:
+        ui.notify(result.message, type="positive", position="center", timeout=3000)
+    elif result.status == "error":
+        ui.notify(result.message, type="negative", position="center", timeout=0, close_button="✖")
+    return result
 
 
 async def _fetch_svn_file_http_async(
@@ -361,6 +480,15 @@ def _clear_correction_navigation_query() -> None:
         url.searchParams.delete('correction_label');
         url.searchParams.delete('correction_chip_id');
         window.history.replaceState({}, '', url.toString());
+    """)
+
+
+def _clear_overview_add_resubmit_navigation_query() -> None:
+    """清除一次性的关键概述重提定位参数。"""
+    ui.run_javascript("""
+    const url = new URL(window.location.href);
+    url.searchParams.delete('add_request_id');
+    window.history.replaceState({}, '', url.toString());
     """)
 
 
@@ -741,6 +869,65 @@ def _has_real_related_selection(related_select_dic: dict) -> bool:
 def _can_skip_related_impact(operation_type: str) -> bool:
     """新增概述和修改激活状态均允许明确选择不影响其它项。"""
     return operation_type in {"activ_change", "add_chip"}
+
+
+async def _select_pending_add_related_impacts(
+    config: dict,
+    *,
+    initial_mode: str = "none",
+    initial_labels: list | None = None,
+) -> tuple[str, list[str]]:
+    """关键概述送审前固化关联影响选择，实际变更延迟到审批通过后。"""
+    configured = _normalize_related_labels(config.get("impact_list"))
+    if not configured:
+        return "none", []
+    selected_initial = {str(label) for label in (initial_labels or []) if str(label) in configured}
+    selected = {label: label in selected_initial for label in configured}
+    result: asyncio.Future[tuple[str, list[str]]] = asyncio.get_running_loop().create_future()
+    dialog = ui.dialog().props("persistent")
+
+    def finish(mode: str, labels: list[str]) -> None:
+        if result.done():
+            return
+        dialog.close()
+        result.set_result((mode, labels))
+
+    def submit_selected() -> None:
+        labels = [label for label in configured if selected.get(label) is True]
+        if not labels:
+            ui.notify("请至少勾选一个确实受影响的概述项。", type="warning")
+            return
+        finish("selected", labels)
+
+    if initial_mode == "all":
+        for label in configured:
+            selected[label] = True
+
+    with dialog, ui.card().classes("w-full max-w-[800px]"):
+        ui.label("选择本次新增可能影响的其它概述项：").classes("text-lg font-bold")
+        ui.label(
+            "本次只记录影响范围；审批全部通过后，选中概述项中的激活内容才会转为待确认。"
+        ).classes("text-base text-brown font-bold -mt-4")
+        with ui.grid(columns=3).classes("w-full gap-0"):
+            for related_label in configured:
+                title = (
+                    app.storage.general.get("over_config_data_flat", {})
+                    .get(related_label, {})
+                    .get("title", "未知项")
+                )
+                ui.checkbox(text=title).bind_value(selected, related_label)
+        with ui.row().classes("w-full justify-end items-center"):
+            ui.button(
+                "本次不影响其它项",
+                color="grey",
+                on_click=lambda _=None: _show_no_related_impact_confirmation(
+                    lambda: finish("none", [])
+                ),
+            ).props("flat")
+            ui.button("勾选的受影响", color="green", on_click=submit_selected)
+            ui.button("全部受影响", color="blue", on_click=lambda: finish("all", configured))
+    dialog.open()
+    return await result
 
 
 def _render_bulk_related_dialog(
@@ -1576,6 +1763,15 @@ class InteractiveButton:
         self.auto_open_correction_chip_id = auto_open_correction_chip_id or (
             str(auto_open_target.get("chip_id") or "") if str(auto_open_target.get("label") or "") == self.label else ""
         )
+        add_resubmit_target = app.storage.client.get("overview_add_resubmit_auto_open", {})
+        self.auto_open_add_resubmit = (
+            add_resubmit_target
+            if isinstance(add_resubmit_target, dict)
+            and str(add_resubmit_target.get("label") or "") == self.label
+            and str(add_resubmit_target.get("project") or "") == self.project
+            else {}
+        )
+        self.pending_add_resubmit_chip: dict = {}
         self.new_filename_input = None
         self.new_content_input = None
         self.last_temp_upload_path = None
@@ -1667,6 +1863,8 @@ class InteractiveButton:
         ui.timer(1.0, self._update_chip_display)
         if self.auto_open_correction_chip_id:
             ui.timer(0.25, self._open_requested_correction, once=True)
+        elif self.auto_open_add_resubmit:
+            ui.timer(0.25, self._open_requested_add_resubmission, once=True)
 
     # ==========================================================
     # 1. 核心状态同步与 UI 刷新逻辑
@@ -1682,6 +1880,24 @@ class InteractiveButton:
         else:
             ui.notify("未找到需要继续修改的概述记录，可能已被删除或更新。", type="warning")
         _clear_correction_navigation_query()
+
+    def _open_requested_add_resubmission(self) -> None:
+        chip = self.auto_open_add_resubmit.get("chip")
+        if not isinstance(chip, dict):
+            ui.notify("未找到需要修改的关键概述申请。", type="warning")
+            return
+        self.pending_add_resubmit_chip = copy.deepcopy(chip)
+        if self.processing_type == "text":
+            self._setup_text_chip_dialog()
+        elif self.processing_type == "test":
+            self._setup_test_chip_dialog()
+        elif self.processing_type == "search":
+            self._setup_search_chip_dialog()
+        elif self.processing_type == "svn":
+            self._setup_svn_chip_dialog()
+        else:
+            self._setup_file_notes_dialog()
+        _clear_overview_add_resubmit_navigation_query()
 
     def _generate_signature(self, filtered_dict: dict) -> int:
         """生成数据源状态的轻量级签名，避免高频深度遍历比对"""
@@ -2537,6 +2753,7 @@ class InteractiveButton:
 
     def _setup_text_chip_dialog(self):
         self.chip_dialog.clear()
+        prefill = self.pending_add_resubmit_chip
         with self.chip_dialog, ui.card().classes("w-1/2"):
             ui.label("添加新的概述内容").classes("text-lg font-bold")
             ui.label("注意：一次只添加一个内容/部件，不要填多个。").classes("text-base font-bold text-red")
@@ -2544,7 +2761,7 @@ class InteractiveButton:
             self.chip_label = (
                 ui.input(
                     label=self.dialog_label,
-                    value=self.dialog_placeholder,
+                    value=str(prefill.get("content") or self.dialog_placeholder),
                     autocomplete=INDEX_LIST,
                     placeholder=self.dialog_placeholder,
                 )
@@ -2552,6 +2769,8 @@ class InteractiveButton:
                 .classes("w-full")
             )
             self.chip_notes = OverviewReasonSelector("create")
+            if prefill:
+                self.chip_notes.value = _overview_chip_latest_reason(prefill)
             with ui.row().classes("w-full justify-end items-center"):
                 ui_spinner = ui.spinner(type="hourglass", size="md", color="amber-8", thickness=8.0)
                 ui_spinner.set_visibility(False)
@@ -2560,15 +2779,22 @@ class InteractiveButton:
 
     def _setup_search_chip_dialog(self):
         self.chip_dialog.clear()
+        prefill = self.pending_add_resubmit_chip
         with self.chip_dialog, ui.card().classes("w-1/2"):
             ui.label("添加新的文件引用概述内容").classes("text-lg font-bold")
             ui.label(f"搜寻根目录：{self.upload_path}").classes("text-xs text-brown-7")
             self.chip_label = (
-                ui.input(label=self.dialog_label, placeholder="填入包括后缀的完整文件名")
+                ui.input(
+                    label=self.dialog_label,
+                    value=str(prefill.get("content") or ""),
+                    placeholder="填入包括后缀的完整文件名",
+                )
                 .props("outlined")
                 .classes("w-full")
             )
             self.chip_notes = OverviewReasonSelector("create")
+            if prefill:
+                self.chip_notes.value = _overview_chip_latest_reason(prefill)
             with ui.row().classes("w-full justify-end items-center"):
                 ui_spinner = ui.spinner(type="hourglass", size="md", color="amber-8", thickness=8.0)
                 ui_spinner.set_visibility(False)
@@ -2577,14 +2803,21 @@ class InteractiveButton:
 
     def _setup_svn_chip_dialog(self):
         self.chip_dialog.clear()
+        prefill = self.pending_add_resubmit_chip
         with self.chip_dialog, ui.card().classes("w-1/2"):
             ui.label("添加SVN文件引用概述内容").classes("text-lg font-bold")
             self.chip_label = (
-                ui.input(label=self.dialog_label, placeholder="填入包括后缀的完整文件名")
+                ui.input(
+                    label=self.dialog_label,
+                    value=str(prefill.get("content") or ""),
+                    placeholder="填入包括后缀的完整文件名",
+                )
                 .props("outlined")
                 .classes("w-full")
             )
             self.chip_notes = OverviewReasonSelector("create")
+            if prefill:
+                self.chip_notes.value = _overview_chip_latest_reason(prefill)
             with ui.row().classes("w-full justify-end items-center"):
                 ui_spinner = ui.spinner(type="hourglass", size="md", color="amber-8", thickness=8.0)
                 ui_spinner.set_visibility(False)
@@ -2593,6 +2826,7 @@ class InteractiveButton:
 
     def _setup_file_notes_dialog(self):
         self.chip_dialog.clear()
+        prefill = self.pending_add_resubmit_chip
         with self.chip_dialog, ui.card().classes("w-1/2"):
             ui.label("添加上传文件的注释").classes("text-lg font-bold")
             ui.label(f"保存根目录：{self.upload_path}").classes("text-xs text-brown-7")
@@ -2605,6 +2839,8 @@ class InteractiveButton:
                 .classes("w-full")
             )
             self.chip_notes = OverviewReasonSelector("create")
+            if prefill:
+                self.chip_notes.value = _overview_chip_latest_reason(prefill)
             with ui.row().classes("w-full justify-end items-center"):
                 self.spinner = ui.spinner(type="hourglass", size="md", color="amber-8", thickness=8.0)
                 self.spinner.set_visibility(False)
@@ -2613,6 +2849,7 @@ class InteractiveButton:
 
     def _setup_test_chip_dialog(self):
         self.chip_dialog.clear()
+        prefill = self.pending_add_resubmit_chip
         with self.chip_dialog, ui.card().classes("w-full"):
             ui.label(f"添加产品的{self.title}").classes("text-lg font-bold")
             ui.label("注意：一次只添加一个测试项，不要填多个。").classes("text-base font-bold text-red")
@@ -2626,10 +2863,13 @@ class InteractiveButton:
                 "instrument_select": "",
                 "instrument_other_text": "",
             }
+            existing_test_data = prefill.get("test_select_data")
+            if isinstance(existing_test_data, dict):
+                test_select_data.update(copy.deepcopy(existing_test_data))
             self.chip_label = (
                 ui.textarea(
                     label="检测内容与标准",
-                    value=self.dialog_placeholder,
+                    value=str(prefill.get("content") or self.dialog_placeholder),
                     placeholder=self.dialog_placeholder,
                     validation={"不能空白": lambda v: v.strip() != ""},
                 )
@@ -2656,7 +2896,7 @@ class InteractiveButton:
                             .classes("w-full")
                             .bind_value(test_select_data, f"{key_prefix}_other_text")
                         )
-                        oth.set_visibility(False)
+                        oth.set_visibility(test_select_data.get(f"{key_prefix}_select") == "其它")
                         sel.on_value_change(lambda: self._set_other_ui(oth, sel.value))
 
             build_options(self.test_nature_options, "test_nature", "测试性质")
@@ -2665,6 +2905,8 @@ class InteractiveButton:
             build_options(self.instrument_options, "instrument", "工具/仪器/治具")
 
             self.chip_notes = OverviewReasonSelector("create")
+            if prefill:
+                self.chip_notes.value = _overview_chip_latest_reason(prefill)
             with ui.row().classes("w-full justify-end items-center"):
                 ui_spinner = ui.spinner(type="hourglass", size="md", color="amber-8", thickness=8.0)
                 ui_spinner.set_visibility(False)
@@ -2757,7 +2999,17 @@ class InteractiveButton:
                 },
             }
 
-            await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id], chip_data)
+            save_result = await _save_or_queue_overview_addition(
+                project=self.project,
+                label=self.label,
+                chip=chip_data,
+                config=app.storage.general.get("over_config_data_flat", {}).get(self.label, {}),
+            )
+            if not save_result.effective:
+                if save_result.pending:
+                    self.chip_label.value, self.chip_notes.value = "", ""
+                    self.chip_dialog.close()
+                return
             # 数据写入完毕后，推高全局版本号
             OverviewVersionManager.bump(self.project, self.label)
             await self._update_auto_complete_index(self.label, text)
@@ -2923,7 +3175,17 @@ class InteractiveButton:
                         }
                     },
                 }
-                await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id], chip_data)
+                save_result = await _save_or_queue_overview_addition(
+                    project=self.project,
+                    label=self.label,
+                    chip=chip_data,
+                    config=app.storage.general.get("over_config_data_flat", {}).get(self.label, {}),
+                )
+                if not save_result.effective:
+                    if save_result.pending:
+                        self.chip_label.value, self.chip_notes.value = "", ""
+                        self.chip_dialog.close()
+                    return
                 # 数据写入完毕后，推高全局版本号
                 OverviewVersionManager.bump(self.project, self.label)
                 self.chip_label.value, self.chip_notes.value = "", ""
@@ -3081,7 +3343,17 @@ class InteractiveButton:
                         }
                     },
                 }
-                await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id], chip_data)
+                save_result = await _save_or_queue_overview_addition(
+                    project=self.project,
+                    label=self.label,
+                    chip=chip_data,
+                    config=app.storage.general.get("over_config_data_flat", {}).get(self.label, {}),
+                )
+                if not save_result.effective:
+                    if save_result.pending:
+                        self.chip_label.value, self.chip_notes.value = "", ""
+                        self.chip_dialog.close()
+                    return
                 # 数据写入完毕后，推高全局版本号
                 OverviewVersionManager.bump(self.project, self.label)
                 self.chip_label.value, self.chip_notes.value = "", ""
@@ -3118,15 +3390,13 @@ class InteractiveButton:
             if btn:
                 btn.disable()  # 1. 进门立刻禁用按钮，防止连点
             try:
-                other_bool = False
-                if test_select_data["test_nature_select"] == "其它" and not test_select_data["test_nature_other_text"]:
-                    other_bool = True
-                if test_select_data["state_select"] == "其它" and not test_select_data["state_other_text"]:
-                    other_bool = True
-                if test_select_data["node_select"] == "其它" and not test_select_data["node_other_text"]:
-                    other_bool = True
-                if test_select_data["instrument_select"] == "其它" and not test_select_data["instrument_other_text"]:
-                    other_bool = True
+                option_lists = {
+                    "test_nature": self.test_nature_options,
+                    "state": self.state_options,
+                    "node": self.node_options,
+                    "instrument": self.instrument_options,
+                }
+                other_bool = _missing_test_other_text(test_select_data, option_lists)
                 # 如果填写内容有正则表达式管控，则分析内容是否符合规则
                 regular_bool = False
                 if self.content_regular:
@@ -3146,13 +3416,7 @@ class InteractiveButton:
                         close_button="✖",
                     )
                     return
-                if (
-                    not text
-                    or test_select_data["test_nature_select"] is None
-                    or test_select_data["state_select"] is None
-                    or test_select_data["node_select"] is None
-                    or test_select_data["instrument_select"] is None
-                ):
+                if not text or _missing_configured_test_selection(test_select_data, option_lists):
                     ui.notify(
                         "测试项内容及选项必须填写和选择!",
                         type="warning",
@@ -3230,7 +3494,17 @@ class InteractiveButton:
                     },
                 }
 
-                await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id], chip_data)
+                save_result = await _save_or_queue_overview_addition(
+                    project=self.project,
+                    label=self.label,
+                    chip=chip_data,
+                    config=app.storage.general.get("over_config_data_flat", {}).get(self.label, {}),
+                )
+                if not save_result.effective:
+                    if save_result.pending:
+                        self.chip_notes.value = ""
+                        self.chip_dialog.close()
+                    return
                 # 数据写入完毕后，推高全局版本号
                 OverviewVersionManager.bump(self.project, self.label)
                 self.chip_notes.value = ""
@@ -3399,7 +3673,19 @@ class InteractiveButton:
                     }
                 },
             }
-            await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id], chip_data)
+            save_result = await _save_or_queue_overview_addition(
+                project=self.project,
+                label=self.label,
+                chip=chip_data,
+                config=app.storage.general.get("over_config_data_flat", {}).get(self.label, {}),
+                uploaded_file_path=Path(filepath),
+            )
+            if not save_result.effective:
+                if save_result.pending:
+                    self.chip_notes.value = ""
+                    self.chip_dialog.close()
+                self.spinner.set_visibility(False)
+                return
             # 数据写入完毕后，推高全局版本号
             OverviewVersionManager.bump(self.project, self.label)
             self.chip_notes.value = ""
@@ -3461,7 +3747,14 @@ class InteractiveButton:
         }
         self.chip_notes.value = ""
         self.chip_dialog.close()
-        await db_storage.set_deep_item([f"{self.project}_over_data", self.label, chip_id], chip_data)
+        save_result = await _save_or_queue_overview_addition(
+            project=self.project,
+            label=self.label,
+            chip=chip_data,
+            config=app.storage.general.get("over_config_data_flat", {}).get(self.label, {}),
+        )
+        if not save_result.effective:
+            return
         ui.notify(
             f'文件 "{original_filename}" 显示成功!',
             type="positive",
@@ -4723,6 +5016,16 @@ class OverviewTableGroup:
         self.auto_open_correction_chip_id = auto_open_correction_chip_id or (
             inferred_chip_id if self.auto_open_correction_label else ""
         )
+        add_resubmit_target = app.storage.client.get("overview_add_resubmit_auto_open", {})
+        target_label = str(add_resubmit_target.get("label") or "") if isinstance(add_resubmit_target, dict) else ""
+        self.auto_open_add_resubmit = (
+            add_resubmit_target
+            if isinstance(add_resubmit_target, dict)
+            and target_label in config_labels
+            and str(add_resubmit_target.get("project") or "") == self.project
+            else {}
+        )
+        self.pending_add_resubmit_chip: dict = {}
         # --- 💡 细化权限管控到列层级 ---
         self.current_config = {}  # 当前正在操作的列配置（非常关键，用于让弹窗知道在处理哪个字段）
         self.current_target_row_id = None  # 当前正在操作的单元格所在行id
@@ -4803,6 +5106,8 @@ class OverviewTableGroup:
         ui.timer(1.0, self._update_display)
         if self.auto_open_correction_label and self.auto_open_correction_chip_id:
             ui.timer(0.25, self._open_requested_correction, once=True)
+        elif self.auto_open_add_resubmit:
+            ui.timer(0.25, self._open_requested_add_resubmission, once=True)
 
     def _open_requested_correction(self) -> None:
         config = next(
@@ -4822,6 +5127,17 @@ class OverviewTableGroup:
         else:
             ui.notify("未找到需要继续修改的表格概述记录，可能已被删除或更新。", type="warning")
         _clear_correction_navigation_query()
+
+    def _open_requested_add_resubmission(self) -> None:
+        label = str(self.auto_open_add_resubmit.get("label") or "")
+        config = next((item for item in self.configs if str(item.get("label") or "") == label), None)
+        chip = self.auto_open_add_resubmit.get("chip")
+        if not isinstance(config, dict) or not isinstance(chip, dict):
+            ui.notify("未找到需要修改的关键概述申请。", type="warning")
+            return
+        self.pending_add_resubmit_chip = copy.deepcopy(chip)
+        self._handle_add_click(config, str(chip.get("row_id") or ""))
+        _clear_overview_add_resubmit_navigation_query()
 
     def _compute_row_hash(self, row_data: dict) -> int:
         """为单行数据生成轻量级指纹，用于判断该行是否需要重绘"""
@@ -5842,19 +6158,22 @@ class OverviewTableGroup:
     def _setup_text_chip_dialog(self):
         self.chip_dialog.clear()
         config = self.current_config
+        prefill = self.pending_add_resubmit_chip
         with self.chip_dialog, ui.card().classes("w-1/2"):
             ui.label(f"添加: {config['title']}").classes("text-lg font-bold text-blue-900")
             ui.label("注意：一次只添加一个内容/部件，不要填多个。").classes("text-base font-bold text-red")
             self.chip_label = (
                 ui.textarea(
                     label=config.get("dialog_label", "按规定格式填写"),
-                    value=config.get("dialog_placeholder", ""),
+                    value=str(prefill.get("content") or config.get("dialog_placeholder", "")),
                     placeholder=config.get("dialog_placeholder", ""),
                 )
                 .props("outlined")
                 .classes("w-full")
             )
             self.chip_notes = OverviewReasonSelector("create")
+            if prefill:
+                self.chip_notes.value = _overview_chip_latest_reason(prefill)
             with ui.row().classes("w-full justify-end items-center"):
                 ui_spinner = ui.spinner(type="hourglass", size="md", color="amber-8", thickness=8.0)
                 ui_spinner.set_visibility(False)
@@ -5939,7 +6258,17 @@ class OverviewTableGroup:
                     }
                 },
             }
-            await db_storage.set_deep_item([f"{self.project}_over_data", config["label"], chip_data["id"]], chip_data)
+            save_result = await _save_or_queue_overview_addition(
+                project=self.project,
+                label=config["label"],
+                chip=chip_data,
+                config=config,
+            )
+            if not save_result.effective:
+                if save_result.pending:
+                    self.chip_label.value, self.chip_notes.value = "", ""
+                    self.chip_dialog.close()
+                return
             # 数据写入完毕后，推高全局版本号
             OverviewVersionManager.bump(self.project, config["label"])
             # 这一行是关键：主动调用更新函数，而不是等 1.0s 的 timer
@@ -5969,6 +6298,7 @@ class OverviewTableGroup:
     def _setup_test_chip_dialog(self):
         self.chip_dialog.clear()
         config = self.current_config
+        prefill = self.pending_add_resubmit_chip
         with self.chip_dialog, ui.card().classes("w-full"):
             ui.label(f"添加产品的{config['title']}").classes("text-lg font-bold text-blue-900")
             ui.label("注意：一次只添加一个测试项，不要填多个。").classes("text-base font-bold text-red")
@@ -5982,10 +6312,13 @@ class OverviewTableGroup:
                 "instrument_select": "",
                 "instrument_other_text": "",
             }
+            existing_test_data = prefill.get("test_select_data")
+            if isinstance(existing_test_data, dict):
+                test_select_data.update(copy.deepcopy(existing_test_data))
             self.chip_label = (
                 ui.textarea(
                     label="检测内容与标准",
-                    value=config.get("dialog_placeholder", ""),
+                    value=str(prefill.get("content") or config.get("dialog_placeholder", "")),
                     placeholder=config.get("dialog_placeholder", ""),
                     validation={"不能空白": lambda v: v.strip() != ""},
                 )
@@ -6012,7 +6345,7 @@ class OverviewTableGroup:
                             .classes("w-full")
                             .bind_value(test_select_data, f"{prefix}_other_text")
                         )
-                        oth.set_visibility(False)
+                        oth.set_visibility(test_select_data.get(f"{prefix}_select") == "其它")
                         sel.on_value_change(lambda: self._set_other_ui(oth, sel.value))
 
             bind_select(config.get("test_nature_options", []), "测试性质", "test_nature")
@@ -6021,6 +6354,8 @@ class OverviewTableGroup:
             bind_select(config.get("instrument_options", []), "工具/仪器/治具", "instrument")
 
             self.chip_notes = OverviewReasonSelector("create")
+            if prefill:
+                self.chip_notes.value = _overview_chip_latest_reason(prefill)
             with ui.row().classes("w-full justify-end items-center"):
                 ui_spinner = ui.spinner(type="hourglass", size="md", color="amber-8", thickness=8.0)
                 ui_spinner.set_visibility(False)
@@ -6044,10 +6379,10 @@ class OverviewTableGroup:
                 btn.disable()  # 1. 进门立刻禁用按钮，防止连点
             try:
                 config = self.current_config
-                other_bool = any(
-                    test_select_data[f"{p}_select"] == "其它" and not test_select_data[f"{p}_other_text"]
-                    for p in ["state", "node", "instrument"]
-                )
+                option_lists = {
+                    prefix: config.get(f"{prefix}_options", []) for prefix in _TEST_FIELD_PREFIXES
+                }
+                other_bool = _missing_test_other_text(test_select_data, option_lists)
                 if not notes:
                     ui.notify(
                         "请选择操作原因；选择“其他”时需填写具体原因。",
@@ -6078,11 +6413,7 @@ class OverviewTableGroup:
                         close_button="✖",
                     )
                     return
-                if not text or not all(
-                    test_select_data[f"{p}_select"]
-                    for p in ["state", "node", "instrument"]
-                    if config.get(f"{p}_options")
-                ):
+                if not text or _missing_configured_test_selection(test_select_data, option_lists):
                     ui.notify(
                         "测试项内容及选项必须填写和选择!",
                         type="warning",
@@ -6149,9 +6480,17 @@ class OverviewTableGroup:
                     },
                 }
 
-                await db_storage.set_deep_item(
-                    [f"{self.project}_over_data", config["label"], chip_data["id"]], chip_data
+                save_result = await _save_or_queue_overview_addition(
+                    project=self.project,
+                    label=config["label"],
+                    chip=chip_data,
+                    config=config,
                 )
+                if not save_result.effective:
+                    if save_result.pending:
+                        self.chip_notes.value = ""
+                        self.chip_dialog.close()
+                    return
                 # 数据写入完毕后，推高全局版本号
                 OverviewVersionManager.bump(self.project, config["label"])
                 # 这一行是关键：主动调用更新函数，而不是等 1.0s 的 timer
@@ -6182,6 +6521,7 @@ class OverviewTableGroup:
     def _setup_file_notes_dialog(self):
         self.chip_dialog.clear()
         config = self.current_config
+        prefill = self.pending_add_resubmit_chip
         with self.chip_dialog, ui.card().classes("w-1/2"):
             ui.label(f"添加上传文件的注释: {config['title']}").classes("text-lg font-bold text-blue-900")
             ui.label(f"保存根目录：{config.get('upload_path', '')}").classes("text-xs text-brown-7")
@@ -6194,6 +6534,8 @@ class OverviewTableGroup:
                 .classes("w-full")
             )
             self.chip_notes = OverviewReasonSelector("create")
+            if prefill:
+                self.chip_notes.value = _overview_chip_latest_reason(prefill)
             with ui.row().classes("w-full justify-end items-center"):
                 self.spinner = ui.spinner(type="hourglass", size="md", color="amber-8", thickness=8.0)
                 self.spinner.set_visibility(False)
@@ -6337,16 +6679,24 @@ class OverviewTableGroup:
             return
 
         # 5. 写入成功，创建并绑定数据
-        await self._create_file_chip_data(original_filename, file_type, url_path, config, row_id)
-        ui.notify(
-            f'文件 "{original_filename}" 上传成功!',
-            type="positive",
-            position="bottom",
-            timeout=1000,
-            progress=True,
-            # multi_line=True,
-            close_button="✖",
+        effective = await self._create_file_chip_data(
+            original_filename,
+            file_type,
+            url_path,
+            config,
+            row_id,
+            uploaded_file_path=Path(filepath),
         )
+        if effective:
+            ui.notify(
+                f'文件 "{original_filename}" 上传成功!',
+                type="positive",
+                position="bottom",
+                timeout=1000,
+                progress=True,
+                # multi_line=True,
+                close_button="✖",
+            )
 
     def _select_file_show(self, original_filename, file_type, url_path, config, row_id):
         """询问重复提交文件是否按服务器现有文件显示"""
@@ -6364,18 +6714,27 @@ class OverviewTableGroup:
 
     async def _show_have_file(self, original_filename, file_type, url_path, config, row_id):
         """复用服务器已有文件，直接生成数据记录"""
-        await self._create_file_chip_data(original_filename, file_type, url_path, config, row_id)
-        ui.notify(
-            f'文件 "{original_filename}" 显示成功!',
-            type="positive",
-            position="bottom",
-            timeout=1000,
-            progress=True,
-            # multi_line=True,
-            close_button="✖",
-        )
+        effective = await self._create_file_chip_data(original_filename, file_type, url_path, config, row_id)
+        if effective:
+            ui.notify(
+                f'文件 "{original_filename}" 显示成功!',
+                type="positive",
+                position="bottom",
+                timeout=1000,
+                progress=True,
+                # multi_line=True,
+                close_button="✖",
+            )
 
-    async def _create_file_chip_data(self, original_filename, file_type, url_path, config, row_id):
+    async def _create_file_chip_data(
+        self,
+        original_filename,
+        file_type,
+        url_path,
+        config,
+        row_id,
+        uploaded_file_path: Path | None = None,
+    ) -> bool:
         """内部辅助函数：统一处理文件类型 Chip 数据的生成与共享存储写入"""
         req_max_ver = app.storage.general["project_req_max_ver"].get(self.project, "0.0")
         creator = app.storage.user.get("current_user", "匿名用户")
@@ -6406,8 +6765,20 @@ class OverviewTableGroup:
             },
         }
 
-        # 写入数据库
-        await db_storage.set_deep_item([f"{self.project}_over_data", config["label"], chip_id], chip_data)
+        save_result = await _save_or_queue_overview_addition(
+            project=self.project,
+            label=config["label"],
+            chip=chip_data,
+            config=config,
+            uploaded_file_path=uploaded_file_path,
+        )
+        if not save_result.effective:
+            if save_result.pending:
+                self.chip_notes.value = ""
+                self.chip_dialog.close()
+            if hasattr(self, "spinner"):
+                self.spinner.set_visibility(False)
+            return False
         # 数据写入完毕后，推高全局版本号
         OverviewVersionManager.bump(self.project, config["label"])
         # 这一行是关键：主动调用更新函数，而不是等 1.0s 的 timer
@@ -6422,6 +6793,7 @@ class OverviewTableGroup:
         # 触发关联项选择弹窗
         self._show_related_chip_select_dialog(original_filename, True, "add_chip", config)
         await self._check_and_trigger_autofill(row_id, original_filename, config)
+        return True
 
         # 触发哈希变更与表格重绘
         # self.last_state_hashes = {}
@@ -6431,18 +6803,21 @@ class OverviewTableGroup:
     def _setup_search_chip_dialog(self):
         self.chip_dialog.clear()
         config = self.current_config
+        prefill = self.pending_add_resubmit_chip
         with self.chip_dialog, ui.card().classes("w-1/2"):
             ui.label(f"添加引用: {config['title']}").classes("text-lg font-bold text-blue-900")
             self.chip_label = (
                 ui.input(
                     label=config.get("dialog_label", "填入包括后缀的完整文件名"),
-                    value=config.get("dialog_placeholder", ""),
+                    value=str(prefill.get("content") or config.get("dialog_placeholder", "")),
                     placeholder=config.get("dialog_placeholder", ""),
                 )
                 .props("outlined")
                 .classes("w-full")
             )
             self.chip_notes = OverviewReasonSelector("create")
+            if prefill:
+                self.chip_notes.value = _overview_chip_latest_reason(prefill)
             with ui.row().classes("w-full justify-end items-center"):
                 ui_spinner = ui.spinner(type="hourglass", size="md", color="amber-8", thickness=8.0)
                 ui_spinner.set_visibility(False)
@@ -6594,9 +6969,17 @@ class OverviewTableGroup:
                         }
                     },
                 }
-                await db_storage.set_deep_item(
-                    [f"{self.project}_over_data", config["label"], chip_data["id"]], chip_data
+                save_result = await _save_or_queue_overview_addition(
+                    project=self.project,
+                    label=config["label"],
+                    chip=chip_data,
+                    config=config,
                 )
+                if not save_result.effective:
+                    if save_result.pending:
+                        self.chip_label.value, self.chip_notes.value = "", ""
+                        self.chip_dialog.close()
+                    return
                 # 数据写入完毕后，推高全局版本号
                 OverviewVersionManager.bump(self.project, config["label"])
                 # 这一行是关键：主动调用更新函数，而不是等 1.0s 的 timer
@@ -6959,9 +7342,15 @@ class OverviewTableGroup:
                         }
                     },
                 }
-                await db_storage.set_deep_item([f"{self.project}_over_data", label, chip_id], chip_data)
-                # 数据写入完毕后，推高全局版本号
-                OverviewVersionManager.bump(self.project, label)
+                save_result = await _save_or_queue_overview_addition(
+                    project=self.project,
+                    label=label,
+                    chip=chip_data,
+                    config=col_cfg,
+                )
+                if save_result.effective:
+                    # 数据写入完毕后，推高全局版本号
+                    OverviewVersionManager.bump(self.project, label)
             ui.notify("已自动将同行其他概述列填充为【无】", type="info", position="bottom")
             # self.last_state_hashes = {}
             # await self._update_display()
@@ -7170,9 +7559,15 @@ class OverviewTableGroup:
                         if ext_field in template:
                             chip_data[ext_field] = copy.deepcopy(template[ext_field])
 
-                    await db_storage.set_deep_item([f"{self.project}_over_data", label, chip_id], chip_data)
-                # 数据写入完毕后，推高全局版本号
-                OverviewVersionManager.bump(self.project, label)
+                    save_result = await _save_or_queue_overview_addition(
+                        project=self.project,
+                        label=label,
+                        chip=chip_data,
+                        config=col_cfg,
+                    )
+                    if save_result.effective:
+                        # 数据写入完毕后，推高全局版本号
+                        OverviewVersionManager.bump(self.project, label)
         self.autofill_dialog.close()
         ui.notify("关联数据自动填充成功!", type="positive", position="bottom")
         # self.last_state_hashes = {}
@@ -7935,18 +8330,21 @@ class OverviewTableGroup:
     def _setup_svn_chip_dialog(self):
         self.chip_dialog.clear()
         config = self.current_config
+        prefill = self.pending_add_resubmit_chip
         with self.chip_dialog, ui.card().classes("w-1/2"):
             ui.label(f"添加SVN文件引用: {config['title']}").classes("text-lg font-bold text-blue-900")
             self.chip_label = (
                 ui.input(
                     label=config.get("dialog_label", "填入包括后缀的完整文件名"),
-                    value=config.get("dialog_placeholder", ""),
+                    value=str(prefill.get("content") or config.get("dialog_placeholder", "")),
                     placeholder=config.get("dialog_placeholder", ""),
                 )
                 .props("outlined")
                 .classes("w-full")
             )
             self.chip_notes = OverviewReasonSelector("create")
+            if prefill:
+                self.chip_notes.value = _overview_chip_latest_reason(prefill)
             with ui.row().classes("w-full justify-end items-center"):
                 ui_spinner = ui.spinner(type="hourglass", size="md", color="amber-8", thickness=8.0)
                 ui_spinner.set_visibility(False)
@@ -8092,7 +8490,17 @@ class OverviewTableGroup:
                     },
                 }
 
-                await db_storage.set_deep_item([f"{self.project}_over_data", config["label"], chip_id], chip_data)
+                save_result = await _save_or_queue_overview_addition(
+                    project=self.project,
+                    label=config["label"],
+                    chip=chip_data,
+                    config=config,
+                )
+                if not save_result.effective:
+                    if save_result.pending:
+                        self.chip_label.value, self.chip_notes.value = "", ""
+                        self.chip_dialog.close()
+                    return
                 # 数据写入完毕后，推高全局版本号
                 OverviewVersionManager.bump(self.project, config["label"])
                 # 这一行是关键：主动调用更新函数，而不是等 1.0s 的 timer

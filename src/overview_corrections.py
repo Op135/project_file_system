@@ -37,6 +37,13 @@ TEST_FIELD_DEFINITIONS = (
     ("instrument", "工具/仪器/治具", "instrument_options"),
 )
 
+
+def configured_test_field_definitions(config: object) -> tuple[tuple[str, str, str], ...]:
+    """返回配置中实际启用、会在录入界面展示的测试参数字段。"""
+    if not isinstance(config, dict):
+        return ()
+    return tuple(field for field in TEST_FIELD_DEFINITIONS if config.get(field[2]))
+
 # 激活状态及其显示、操作历史会被需求审批或工程师操作独立更新，不属于原记录纠错的业务对象。
 # 纠错审批的并发保护只忽略这些字段；正文、测试参数、文件信息等其它变化仍会触发冲突。
 CORRECTION_CONCURRENCY_IGNORED_FIELDS = {
@@ -100,19 +107,11 @@ def chip_correction_guard_fingerprint(chip: dict) -> str:
 
 
 def build_test_field_changes(before_data: dict, after_data: dict, config: dict) -> list[dict]:
-    """完整列出测试字段；未变化字段也明确标记，便于检查联动遗漏。"""
+    """列出配置中实际启用的测试字段；未变化字段也明确标记。"""
     changes = []
-    for prefix, title, options_key in TEST_FIELD_DEFINITIONS:
+    for prefix, title, _ in configured_test_field_definitions(config):
         select_key = f"{prefix}_select"
         other_key = f"{prefix}_other_text"
-        if not (
-            config.get(options_key)
-            or select_key in before_data
-            or other_key in before_data
-            or select_key in after_data
-            or other_key in after_data
-        ):
-            continue
         before_select = before_data.get(select_key)
         after_select = after_data.get(select_key)
         before_other = str(before_data.get(other_key) or "")
@@ -232,9 +231,7 @@ def get_project_correction_archives(project: str) -> list[dict]:
 
 
 def validate_test_correction(test_data: dict, config: dict) -> tuple[bool, str]:
-    for prefix, title, options_key in TEST_FIELD_DEFINITIONS:
-        if not config.get(options_key):
-            continue
+    for prefix, title, _ in configured_test_field_definitions(config):
         selected = test_data.get(f"{prefix}_select")
         if not selected:
             return False, f"{title}必须选择"

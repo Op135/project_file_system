@@ -17,6 +17,7 @@ from src.overview_batch_operations import (
     collect_editable_overview_configs,
     can_review_batch_overview_request,
     filter_batch_projects,
+    execute_batch_overview_request,
     find_projects_without_row_anchors,
     get_first_column_row_state,
     get_batch_overview_pending_count,
@@ -56,6 +57,35 @@ class OverviewBatchOperationTests(unittest.TestCase):
         self.assertEqual(get_batch_overview_reviewer_roles("研发结构"), ["研发经理"])
         self.assertEqual(get_batch_overview_reviewer_roles("研发经理"), ["admin"])
         self.assertEqual(get_batch_overview_reviewer_roles("admin"), ["boss"])
+
+    def test_batch_add_cannot_bypass_critical_overview_approval(self):
+        fake_app = SimpleNamespace(
+            storage=SimpleNamespace(
+                general={
+                    "over_config_data_flat": {},
+                    "project_summary": {"P1": {"sub_project": "P1", "state": "研发"}},
+                }
+            )
+        )
+        request = {
+            "submitter": "申请人",
+            "submitter_role": "研发",
+            "payload": {
+                "action": "add",
+                "projects": ["P1"],
+                "label": "critical",
+                "config": {
+                    "label": "critical",
+                    "add_approval_required": True,
+                },
+            },
+        }
+
+        with patch("src.overview_batch_operations.app", fake_app):
+            result = asyncio.run(execute_batch_overview_request(request))
+
+        self.assertFalse(result["ok"])
+        self.assertIn("概述添加审批流", result["message"])
 
     def test_batch_approval_disallows_self_review_and_counts_each_users_tasks(self):
         requests = {

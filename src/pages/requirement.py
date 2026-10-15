@@ -82,6 +82,7 @@ from ..overview_admin_maintenance import (
 )
 from ..overview_corrections import get_project_correction_archives
 from ..overview_operation import append_overview_timestamp, get_automatic_overview_reason
+from ..overview_add_approval import OVERVIEW_ADD_REQUESTS_KEY
 from ..project_access import can_assign_all_project_engineers, can_edit_project_status
 from ..project_overview_access import (
     can_edit_overview_item,
@@ -138,6 +139,7 @@ async def requirement_page(
     project_name="",
     correction_label="",
     correction_chip_id="",
+    add_request_id="",
     readonly="",
 ):
     ui.add_head_html("""
@@ -326,6 +328,30 @@ async def requirement_page(
         }
     else:
         app.storage.client.pop("overview_correction_auto_open", None)
+    if type == "overview" and add_request_id:
+        add_request = db_storage.get_deep_item([OVERVIEW_ADD_REQUESTS_KEY, str(add_request_id)], {})
+        payload = add_request.get("payload") if isinstance(add_request, dict) else None
+        chip = payload.get("chip") if isinstance(payload, dict) else None
+        if (
+            isinstance(add_request, dict)
+            and add_request.get("submitter") == current_user
+            and add_request.get("status") == "rejected"
+            and isinstance(payload, dict)
+            and isinstance(chip, dict)
+        ):
+            app.storage.client["overview_add_resubmit_auto_open"] = {
+                "request_id": str(add_request_id),
+                "project": str(add_request.get("project") or ""),
+                "label": str(add_request.get("label") or ""),
+                "chip": copy.deepcopy(chip),
+                "impact_mode": str(payload.get("impact_mode") or "none"),
+                "related_labels": copy.deepcopy(payload.get("related_labels") or []),
+            }
+        else:
+            app.storage.client.pop("overview_add_resubmit_auto_open", None)
+            ui.notify("关键概述申请不存在、状态已变化或无权修改。", type="warning")
+    else:
+        app.storage.client.pop("overview_add_resubmit_auto_open", None)
     # 需求配置数据字典初始化
     app.storage.client.setdefault("config_data", app.state.init_config_data)
     # 一个空列表，用于存储当前管理的文件列表。可以在这个列表中添加文件路径、文件名或其他文件相关信息
@@ -3902,6 +3928,17 @@ async def requirement_page(
             if not can_submit_batch_overview(current_role, current_user, BATCH_OVERVIEW_TOOL_ROLES):
                 ui.notify("当前角色无权提交批量概述申请。", type="negative")
                 return
+            config = get_config()
+            if not config:
+                ui.notify("请选择具体概述项。", type="warning")
+                return
+            if state["action"] == "add" and config.get("add_approval_required") is True:
+                ui.notify(
+                    "该关键概述请在项目概述页单项添加，系统会使用“项目概述添加审批”流程。",
+                    type="warning",
+                    multi_line=True,
+                )
+                return
             workflow_result = resolve_project_overview_workflow("batch_change", current_user)
             if workflow_result.get("status") != "matched":
                 ui.notify(
@@ -3912,10 +3949,6 @@ async def requirement_page(
                 return
             workflow_assignment = workflow_result["assignment"]
             reviewer_roles = list(workflow_assignment.get("assignee_names", []))
-            config = get_config()
-            if not config:
-                ui.notify("请选择具体概述项。", type="warning")
-                return
             live_summary_by_project = {
                 str(summary.get("sub_project") or key): summary
                 for key, summary in app.storage.general.get("project_summary", {}).items()

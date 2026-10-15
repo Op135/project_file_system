@@ -179,6 +179,7 @@ PROJECT_OVERVIEW_CONTENT_MANAGE_ALL_PERMISSION = "project_overview.content.manag
 PROJECT_OVERVIEW_BATCH_SUBMIT_PERMISSION = "project_overview.batch.submit"
 PROJECT_OVERVIEW_BATCH_REVIEW_PERMISSION = "project_overview.batch.review"
 PROJECT_OVERVIEW_CORRECTION_REVIEW_PERMISSION = "project_overview.correction.review"
+PROJECT_OVERVIEW_ADD_REVIEW_PERMISSION = "project_overview.add.review"
 
 
 def project_overview_dimension_permission(dimension: str, action: str) -> str:
@@ -221,6 +222,12 @@ PROJECT_OVERVIEW_PERMISSIONS = (
         "审批 — 概述原记录纠错",
         "项目概述",
         "允许审批单条概述原记录纠错或删除申请",
+    ),
+    PermissionDefinition(
+        PROJECT_OVERVIEW_ADD_REVIEW_PERMISSION,
+        "审批 — 关键概述新增",
+        "项目概述",
+        "允许审批 overview_config.json 中标记为需要审批的概述新增申请",
     ),
 )
 

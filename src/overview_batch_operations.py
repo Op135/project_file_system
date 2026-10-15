@@ -746,6 +746,14 @@ async def execute_batch_overview_request(request: dict) -> dict:
     ]
     if not config or action not in {"add", "state"}:
         return {"ok": False, "message": "申请数据不完整，无法执行", "successes": [], "skipped": [], "failed": []}
+    if action == "add" and config.get("add_approval_required") is True:
+        return {
+            "ok": False,
+            "message": "该关键概述必须从项目概述页单项提交，并使用概述添加审批流",
+            "successes": [],
+            "skipped": [],
+            "failed": [],
+        }
     if not can_edit_overview_item(config, submitter_role, str(request.get("submitter") or "")):
         return {
             "ok": False,

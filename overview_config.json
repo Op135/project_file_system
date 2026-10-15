@@ -3,6 +3,7 @@
         "光源": [
             {
                 "label": "light_source",
+                "add_approval_required": false,
                 "row_state_follow_excluded_labels": [
                     "light_if",
                     "light_vf",
@@ -78,6 +79,7 @@
             },
             {
                 "label": "light_if",
+                "add_approval_required": false,
                 "nature": "必填",
                 "title": "光源驱动If",
                 "processing_type": "text",
@@ -138,6 +140,7 @@
             },
             {
                 "label": "light_vf",
+                "add_approval_required": false,
                 "nature": "必填",
                 "title": "光源驱动Vf",
                 "processing_type": "text",
@@ -198,6 +201,7 @@
             },
             {
                 "label": "light_threshold_current",
+                "add_approval_required": false,
                 "nature": "必填",
                 "title": "光源阈值电流",
                 "processing_type": "text",
@@ -258,6 +262,7 @@
             },
             {
                 "label": "light_heat",
+                "add_approval_required": false,
                 "nature": "必填",
                 "title": "光源最大热功率",
                 "processing_type": "text",
@@ -305,6 +310,7 @@
             },
             {
                 "label": "light_thermistor",
+                "add_approval_required": false,
                 "nature": "必填",
                 "title": "光源温敏型号",
                 "processing_type": "text",
@@ -355,6 +361,7 @@
             },
             {
                 "label": "light_max_temperature",
+                "add_approval_required": false,
                 "nature": "必填",
                 "title": "光源保护温度",
                 "processing_type": "text",
@@ -410,6 +417,7 @@
             },
             {
                 "label": "light_type_temperature",
+                "add_approval_required": false,
                 "nature": "选填",
                 "title": "光源性能阈温",
                 "processing_type": "text",
@@ -461,6 +469,7 @@
             },
             {
                 "label": "light_pcb_note",
+                "add_approval_required": false,
                 "nature": "选填",
                 "title": "光源基板要求",
                 "processing_type": "text",
@@ -513,6 +522,7 @@
         "光学件": [
             {
                 "label": "optical_materials",
+                "add_approval_required": false,
                 "nature": "必填",
                 "title": "采用光学件",
                 "processing_type": "text",
@@ -560,6 +570,7 @@
             },
             {
                 "label": "optical_sports",
+                "add_approval_required": false,
                 "nature": "必填",
                 "title": "需要运动的光学器件",
                 "processing_type": "text",
@@ -615,6 +626,7 @@
             },
             {
                 "label": "optical_sports_logic",
+                "add_approval_required": false,
                 "nature": "必填",
                 "title": "光学器件运动逻辑说明",
                 "processing_type": "text",
@@ -668,6 +680,7 @@
         "光电传感器": [
             {
                 "label": "photoelectric_sensors",
+                "add_approval_required": false,
                 "nature": "必填",
                 "title": "光电传感器选型",
                 "processing_type": "text",
@@ -727,6 +740,7 @@
         "光输出": [
             {
                 "label": "target_surface",
+                "add_approval_required": false,
                 "nature": "必填",
                 "title": "光输出目标面距离",
                 "processing_type": "text",
@@ -780,6 +794,7 @@
         "配件": [
             {
                 "label": "guide_beam",
+                "add_approval_required": false,
                 "nature": "必填",
                 "title": "导光束要求",
                 "processing_type": "text",
@@ -823,6 +838,7 @@
         "文档标准": [
             {
                 "label": "power_label",
+                "add_approval_required": true,
                 "nature": "必填",
                 "title": "产品标签功率",
                 "processing_type": "text",
@@ -870,6 +886,7 @@
             },
             {
                 "label": "specifications",
+                "add_approval_required": false,
                 "nature": "需填",
                 "title": "产品技术规格书（中文版）",
                 "processing_type": "file",
@@ -910,6 +927,7 @@
             },
             {
                 "label": "optical_testing",
+                "add_approval_required": true,
                 "nature": "必填",
                 "title": "光学测试项",
                 "processing_type": "test",
@@ -1009,6 +1027,7 @@
             },
             {
                 "label": "drive_output_testing",
+                "add_approval_required": true,
                 "nature": "必填",
                 "title": "驱动输出测试项",
                 "processing_type": "test",
@@ -1104,6 +1123,7 @@
         "产品图纸": [
             {
                 "label": "product_simplify_diagram",
+                "add_approval_required": false,
                 "row_state_follow_excluded_labels": [
                     "product_size_diagram",
                     "product_complete_diagram"
@@ -1145,6 +1165,7 @@
             },
             {
                 "label": "product_size_diagram",
+                "add_approval_required": false,
                 "nature": "必填",
                 "title": "产品2D尺寸图（pdf）",
                 "processing_type": "file",
@@ -1187,6 +1208,7 @@
             },
             {
                 "label": "product_complete_diagram",
+                "add_approval_required": false,
                 "nature": "必填",
                 "title": "产品完整3D图（stp）",
                 "processing_type": "file",
@@ -1239,6 +1261,7 @@
         "PCB图纸": [
             {
                 "label": "drive_simplify_diagram",
+                "add_approval_required": false,
                 "row_state_follow_excluded_labels": [
                     "drive_size_diagram"
                 ],
@@ -1279,6 +1302,7 @@
             },
             {
                 "label": "drive_size_diagram",
+                "add_approval_required": false,
                 "nature": "必填",
                 "title": "PCBA 2D尺寸图（pdf）",
                 "processing_type": "file",
@@ -1323,6 +1347,7 @@
         "结构重点特征示意图": [
             {
                 "label": "product_output_position",
+                "add_approval_required": false,
                 "nature": "必填",
                 "title": "产品出光口位置示意图",
                 "processing_type": "image",
@@ -1364,6 +1389,7 @@
             },
             {
                 "label": "product_outlet_position",
+                "add_approval_required": false,
                 "nature": "必填",
                 "title": "产品出线位置示意图",
                 "processing_type": "image",
@@ -1405,6 +1431,7 @@
             },
             {
                 "label": "product_wind_diagram",
+                "add_approval_required": false,
                 "nature": "必填",
                 "title": "产品风道示意图",
                 "processing_type": "image",
@@ -1446,6 +1473,7 @@
             },
             {
                 "label": "mechanical_assembly_details",
+                "add_approval_required": false,
                 "nature": "选填",
                 "title": "重点装配细节示意图",
                 "processing_type": "image",
@@ -1491,6 +1519,7 @@
         "材质外观": [
             {
                 "label": "product_material_selection",
+                "add_approval_required": false,
                 "nature": "选填",
                 "title": "产品结构件选材",
                 "processing_type": "text",
@@ -1544,6 +1573,7 @@
             },
             {
                 "label": "product_treatment_process",
+                "add_approval_required": false,
                 "nature": "需填",
                 "title": "产品涉及表面处理工艺",
                 "processing_type": "text",
@@ -1597,6 +1627,7 @@
             },
             {
                 "label": "product_color",
+                "add_approval_required": false,
                 "nature": "必填",
                 "title": "产品外观颜色",
                 "processing_type": "text",
@@ -1643,6 +1674,7 @@
             },
             {
                 "label": "product_weight",
+                "add_approval_required": false,
                 "nature": "必填",
                 "title": "产品实秤重量",
                 "processing_type": "text",
@@ -1692,6 +1724,7 @@
         "环境条件": [
             {
                 "label": "product_type_ambient",
+                "add_approval_required": false,
                 "nature": "必填",
                 "title": "产品实测工作环境温湿度",
                 "processing_type": "text",
@@ -1735,6 +1768,7 @@
             },
             {
                 "label": "product_temperature_rise",
+                "add_approval_required": false,
                 "nature": "选填",
                 "title": "产品实测表面温升/温度",
                 "processing_type": "text",
@@ -1778,6 +1812,7 @@
             },
             {
                 "label": "product_type_noise",
+                "add_approval_required": false,
                 "nature": "选填",
                 "title": "产品实测工作噪声",
                 "processing_type": "text",
@@ -1823,6 +1858,7 @@
         "包材": [
             {
                 "label": "packaging_materials",
+                "add_approval_required": false,
                 "nature": "必填",
                 "title": "产品包材",
                 "processing_type": "text",
@@ -1870,6 +1906,7 @@
         "配件": [
             {
                 "label": "fan_model",
+                "add_approval_required": false,
                 "nature": "必填",
                 "title": "风扇选型",
                 "processing_type": "text",
@@ -1936,6 +1973,7 @@
             },
             {
                 "label": "cooling_type",
+                "add_approval_required": false,
                 "nature": "必填",
                 "title": "散热器类型",
                 "processing_type": "text",
@@ -1992,6 +2030,7 @@
             },
             {
                 "label": "tec_type",
+                "add_approval_required": false,
                 "nature": "必填",
                 "title": "TEC选型",
                 "processing_type": "text",
@@ -2052,6 +2091,7 @@
             },
             {
                 "label": "adapter_options",
+                "add_approval_required": false,
                 "nature": "必填",
                 "title": "转接座选型范围",
                 "processing_type": "text",
@@ -2099,6 +2139,7 @@
             },
             {
                 "label": "sensor_type",
+                "add_approval_required": false,
                 "nature": "必填",
                 "title": "机构传感器选型",
                 "processing_type": "text",
@@ -2152,6 +2193,7 @@
         "补充图档": [
             {
                 "label": "other_drawings",
+                "add_approval_required": false,
                 "nature": "选填",
                 "title": "其它图纸",
                 "processing_type": "file",
@@ -2194,6 +2236,7 @@
         "文档标准": [
             {
                 "label": "product_bom",
+                "add_approval_required": false,
                 "nature": "需填",
                 "title": "研发阶段产品总BOM（xlsx）",
                 "processing_type": "file",
@@ -2231,6 +2274,7 @@
             },
             {
                 "label": "packing_list",
+                "add_approval_required": false,
                 "nature": "必填",
                 "title": "装箱清单（xlsx）",
                 "processing_type": "file",
@@ -2271,6 +2315,7 @@
             },
             {
                 "label": "mechanical_testing",
+                "add_approval_required": true,
                 "nature": "选填",
                 "title": "机械结构测试项",
                 "processing_type": "test",
@@ -2343,6 +2388,7 @@
         "电气参数": [
             {
                 "label": "drive_voltage",
+                "add_approval_required": false,
                 "nature": "必填",
                 "title": "产品输入电压",
                 "processing_type": "text",
@@ -2396,6 +2442,7 @@
             },
             {
                 "label": "drive_power",
+                "add_approval_required": false,
                 "nature": "必填",
                 "title": "产品输入功率",
                 "processing_type": "text",
@@ -2442,6 +2489,7 @@
             },
             {
                 "label": "product_control_mode",
+                "add_approval_required": false,
                 "nature": "必填",
                 "title": "产品输入控制模式",
                 "processing_type": "text",
@@ -2491,6 +2539,7 @@
             },
             {
                 "label": "drive_output_signal",
+                "add_approval_required": false,
                 "nature": "必填",
                 "title": "驱动输出信号类型",
                 "processing_type": "text",
@@ -2540,6 +2589,7 @@
         "驱动板资料": [
             {
                 "label": "drive_pcb",
+                "add_approval_required": false,
                 "row_state_follow_excluded_labels": [
                     "drive_electronic_bom"
                 ],
@@ -2596,6 +2646,7 @@
             },
             {
                 "label": "drive_pcb_principle",
+                "add_approval_required": false,
                 "nature": "必填",
                 "title": "驱动PCB原理图（pdf）",
                 "processing_type": "search",
@@ -2648,6 +2699,7 @@
             },
             {
                 "label": "drive_pcb_silkscreen",
+                "add_approval_required": false,
                 "nature": "必填",
                 "title": "驱动PCB丝印图（pdf）",
                 "processing_type": "search",
@@ -2688,6 +2740,7 @@
             },
             {
                 "label": "drive_pcb_process",
+                "add_approval_required": false,
                 "nature": "必填",
                 "title": "驱动PCB加工工艺说明（xlsx）",
                 "processing_type": "search",
@@ -2726,6 +2779,7 @@
             },
             {
                 "label": "drive_pcb_making",
+                "add_approval_required": false,
                 "nature": "必填",
                 "title": "驱动PCB制板文件压缩包",
                 "processing_type": "search",
@@ -2761,6 +2815,7 @@
             },
             {
                 "label": "drive_complete_diagram",
+                "add_approval_required": false,
                 "nature": "必填",
                 "title": "驱动PCBA完整3D图（stp）",
                 "processing_type": "search",
@@ -2804,6 +2859,7 @@
             },
             {
                 "label": "drive_electronic_bom",
+                "add_approval_required": false,
                 "nature": "必填",
                 "title": "驱动板电子BOM（xlsx）",
                 "processing_type": "search",
@@ -2864,6 +2920,7 @@
         "控制板资料": [
             {
                 "label": "control_pcb",
+                "add_approval_required": false,
                 "row_state_follow_excluded_labels": [
                     "control_electronic_bom"
                 ],
@@ -2921,6 +2978,7 @@
             },
             {
                 "label": "control_pcb_principle",
+                "add_approval_required": false,
                 "nature": "选填",
                 "title": "控制PCB原理图（pdf）",
                 "processing_type": "search",
@@ -2968,6 +3026,7 @@
             },
             {
                 "label": "control_pcb_silkscreen",
+                "add_approval_required": false,
                 "nature": "选填",
                 "title": "控制PCB丝印图（pdf）",
                 "processing_type": "search",
@@ -3008,6 +3067,7 @@
             },
             {
                 "label": "control_pcb_process",
+                "add_approval_required": false,
                 "nature": "选填",
                 "title": "控制PCB加工工艺说明（xlsx）",
                 "processing_type": "search",
@@ -3046,6 +3106,7 @@
             },
             {
                 "label": "control_pcb_making",
+                "add_approval_required": false,
                 "nature": "选填",
                 "title": "控制PCB制板文件压缩包",
                 "processing_type": "search",
@@ -3079,6 +3140,7 @@
             },
             {
                 "label": "control_complete_diagram",
+                "add_approval_required": false,
                 "nature": "选填",
                 "title": "控制PCBA完整3D图（stp）",
                 "processing_type": "search",
@@ -3123,6 +3185,7 @@
             },
             {
                 "label": "control_electronic_bom",
+                "add_approval_required": false,
                 "nature": "选填",
                 "title": "控制板电子BOM（xlsx）",
                 "processing_type": "search",
@@ -3182,6 +3245,7 @@
         "光源基板资料": [
             {
                 "label": "light_pcb",
+                "add_approval_required": false,
                 "row_state_follow_excluded_labels": [
                     "light_electronic_bom"
                 ],
@@ -3233,6 +3297,7 @@
             },
             {
                 "label": "light_pcb_principle",
+                "add_approval_required": false,
                 "nature": "必填",
                 "title": "光源PCB原理图（pdf）",
                 "processing_type": "search",
@@ -3275,6 +3340,7 @@
             },
             {
                 "label": "light_pcb_silkscreen",
+                "add_approval_required": false,
                 "nature": "必填",
                 "title": "光源PCB丝印图（pdf）",
                 "processing_type": "search",
@@ -3315,6 +3381,7 @@
             },
             {
                 "label": "light_pcb_process",
+                "add_approval_required": false,
                 "nature": "必填",
                 "title": "光源PCB加工工艺说明（xlsx）",
                 "processing_type": "search",
@@ -3353,6 +3420,7 @@
             },
             {
                 "label": "light_pcb_making",
+                "add_approval_required": false,
                 "nature": "必填",
                 "title": "光源PCB制板文件压缩包",
                 "processing_type": "search",
@@ -3386,6 +3454,7 @@
             },
             {
                 "label": "light_complete_diagram",
+                "add_approval_required": false,
                 "nature": "必填",
                 "title": "光源PCBA完整3D图（stp）",
                 "processing_type": "search",
@@ -3431,6 +3500,7 @@
             },
             {
                 "label": "light_electronic_bom",
+                "add_approval_required": false,
                 "nature": "必填",
                 "title": "光源板电子BOM（xlsx）",
                 "processing_type": "search",
@@ -3485,6 +3555,7 @@
         "其它类型PCB资料": [
             {
                 "label": "other_pcb",
+                "add_approval_required": false,
                 "row_state_follow_excluded_labels": [
                     "other_electronic_bom"
                 ],
@@ -3528,6 +3599,7 @@
             },
             {
                 "label": "other_pcb_principle",
+                "add_approval_required": false,
                 "nature": "选填",
                 "title": "其它PCB原理图（pdf）",
                 "processing_type": "search",
@@ -3567,6 +3639,7 @@
             },
             {
                 "label": "other_pcb_silkscreen",
+                "add_approval_required": false,
                 "nature": "选填",
                 "title": "其它PCB丝印图（pdf）",
                 "processing_type": "search",
@@ -3607,6 +3680,7 @@
             },
             {
                 "label": "other_pcb_process",
+                "add_approval_required": false,
                 "nature": "选填",
                 "title": "其它PCB加工工艺说明（xlsx）",
                 "processing_type": "search",
@@ -3645,6 +3719,7 @@
             },
             {
                 "label": "other_pcb_making",
+                "add_approval_required": false,
                 "nature": "选填",
                 "title": "其它PCB制板文件压缩包",
                 "processing_type": "search",
@@ -3678,6 +3753,7 @@
             },
             {
                 "label": "other_complete_diagram",
+                "add_approval_required": false,
                 "nature": "选填",
                 "title": "其它PCBA完整3D图（stp）",
                 "processing_type": "search",
@@ -3717,6 +3793,7 @@
             },
             {
                 "label": "other_electronic_bom",
+                "add_approval_required": false,
                 "nature": "选填",
                 "title": "其它电子BOM（xlsx）",
                 "processing_type": "search",
@@ -3767,6 +3844,7 @@
         "配件": [
             {
                 "label": "display_accessories",
+                "add_approval_required": false,
                 "nature": "必填",
                 "title": "显示类配件",
                 "processing_type": "text",
@@ -3827,6 +3905,7 @@
             },
             {
                 "label": "control_accessories",
+                "add_approval_required": false,
                 "nature": "必填",
                 "title": "控制类配件",
                 "processing_type": "text",
@@ -3888,6 +3967,7 @@
             },
             {
                 "label": "wire_accessories",
+                "add_approval_required": false,
                 "nature": "必填",
                 "title": "线材配件",
                 "processing_type": "text",
@@ -3947,6 +4027,7 @@
         "文档标准": [
             {
                 "label": "drive_manual",
+                "add_approval_required": false,
                 "nature": "必填",
                 "title": "硬件使用说明书",
                 "processing_type": "search",
@@ -3995,6 +4076,7 @@
             },
             {
                 "label": "drive_test_report",
+                "add_approval_required": false,
                 "nature": "需填",
                 "title": "硬件测试报告",
                 "processing_type": "search",
@@ -4042,6 +4124,7 @@
             },
             {
                 "label": "wiring_manual",
+                "add_approval_required": false,
                 "nature": "必填",
                 "title": "产品接线说明书",
                 "processing_type": "search",
@@ -4086,6 +4169,7 @@
             },
             {
                 "label": "emc_baseline_test",
+                "add_approval_required": false,
                 "nature": "需填",
                 "title": "EMC摸底测试情况",
                 "processing_type": "text",
@@ -4135,6 +4219,7 @@
             },
             {
                 "label": "electronic_testing",
+                "add_approval_required": true,
                 "nature": "选填",
                 "title": "硬件测试项",
                 "processing_type": "test",
@@ -4210,6 +4295,7 @@
         "软件文档": [
             {
                 "label": "software_executable_file",
+                "add_approval_required": false,
                 "row_state_follow_excluded_labels": [
                     "software_manual",
                     "software_protocol",
@@ -4283,6 +4369,7 @@
             },
             {
                 "label": "software_manual",
+                "add_approval_required": false,
                 "nature": "必填",
                 "title": "固件使用说明书",
                 "processing_type": "svn",
@@ -4334,6 +4421,7 @@
             },
             {
                 "label": "software_protocol",
+                "add_approval_required": false,
                 "nature": "必填",
                 "title": "通讯协议文件",
                 "processing_type": "svn",
@@ -4387,6 +4475,7 @@
             },
             {
                 "label": "software_xml",
+                "add_approval_required": false,
                 "nature": "必填",
                 "title": "XML协议文件",
                 "processing_type": "svn",
@@ -4440,6 +4529,7 @@
         "软件标准": [
             {
                 "label": "software_testing",
+                "add_approval_required": true,
                 "nature": "选填",
                 "title": "软件功能测试项",
                 "processing_type": "test",
@@ -4502,6 +4592,7 @@
         "UI文档": [
             {
                 "label": "ui_execute_file",
+                "add_approval_required": false,
                 "row_state_follow_excluded_labels": [],
                 "nature": "必填",
                 "title": "UI执行文件压缩包",
@@ -4560,6 +4651,7 @@
         "UI标准": [
             {
                 "label": "ui_testing",
+                "add_approval_required": true,
                 "nature": "选填",
                 "title": "UI测试项",
                 "processing_type": "test",
@@ -4622,6 +4714,7 @@
         "文档标准": [
             {
                 "label": "craft_key_requirements",
+                "add_approval_required": false,
                 "nature": "需填",
                 "title": "工艺重点要求",
                 "processing_type": "text",

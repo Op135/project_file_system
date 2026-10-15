@@ -3179,6 +3179,10 @@ def manage_page():
                                                     multiple=True,
                                                     with_input=True,
                                                 ).props("outlined dense use-chips options-dense")
+                                                node_escalation_switch = ui.switch(
+                                                    "本部门无可用审批人时逐级上交至上级部门",
+                                                    value=node_approver.get("escalate_to_parent_org") is True,
+                                                ).props("dense")
                                             with ui.element("div").classes(
                                                 "grid gap-3"
                                             ).style(
@@ -3247,6 +3251,7 @@ def manage_page():
                                                 manager_container=node_manager_hint,
                                                 permission_container=node_permission_hint,
                                                 project_sales_container=node_project_sales_hint,
+                                                escalation_control=node_escalation_switch,
                                             ):
                                                 strategy = strategy_control.value or "permission"
                                                 target.setdefault("approver", {})["strategy"] = strategy
@@ -3255,6 +3260,11 @@ def manage_page():
                                                 manager_container.visible = strategy == "direct_manager"
                                                 permission_container.visible = strategy == "permission"
                                                 project_sales_container.visible = strategy == "project_sales"
+                                                escalation_control.visible = (
+                                                    strategy == "position"
+                                                    and target.setdefault("approver", {}).get("org_scope")
+                                                    in {"requester", "fixed"}
+                                                )
 
                                             def update_node_org_scope(
                                                 _event=None,
@@ -3262,10 +3272,15 @@ def manage_page():
                                                 target=node,
                                                 scope_control=node_org_scope_select,
                                                 org_container=node_org_select,
+                                                escalation_control=node_escalation_switch,
                                             ):
                                                 scope = scope_control.value or "any"
                                                 target.setdefault("approver", {})["org_scope"] = scope
                                                 org_container.visible = scope == "fixed"
+                                                escalation_control.visible = (
+                                                    target.setdefault("approver", {}).get("strategy") == "position"
+                                                    and scope in {"requester", "fixed"}
+                                                )
 
                                             node_permission_select.on_value_change(update_permission)
                                             node_strategy_select.on_value_change(update_strategy)
@@ -3278,6 +3293,13 @@ def manage_page():
                                             node_org_select.on_value_change(
                                                 lambda event, target=node: update_node_approver(
                                                     target, "org_unit_ids", event.value or []
+                                                )
+                                            )
+                                            node_escalation_switch.on_value_change(
+                                                lambda event, target=node: update_node_approver(
+                                                    target,
+                                                    "escalate_to_parent_org",
+                                                    bool(event.value),
                                                 )
                                             )
                                             node_user_select.on_value_change(
@@ -3444,11 +3466,18 @@ def manage_page():
                                     position_ids = source_approver.get("position_ids") or []
                                     if not position_ids:
                                         raise ValueError(f"{node_name}至少需要选择一个审批岗位")
+                                    org_scope = source_approver.get("org_scope") or "any"
+                                    org_unit_ids = source_approver.get("org_unit_ids") or []
+                                    if org_scope == "fixed" and not org_unit_ids:
+                                        raise ValueError(f"{node_name}选择限定部门后至少需要选择一个审批部门")
                                     approver_rule.update(
                                         {
                                             "position_ids": position_ids,
-                                            "org_scope": source_approver.get("org_scope") or "any",
-                                            "org_unit_ids": source_approver.get("org_unit_ids") or [],
+                                            "org_scope": org_scope,
+                                            "org_unit_ids": org_unit_ids,
+                                            "escalate_to_parent_org": (
+                                                source_approver.get("escalate_to_parent_org") is True
+                                            ),
                                         }
                                     )
                                 elif strategy == "users":
