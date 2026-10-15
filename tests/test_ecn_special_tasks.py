@@ -17,6 +17,7 @@ from src.ecn_management_config import (
 )
 from src.modules.ecn import notifications
 from src.modules.ecn.special_tasks import update_special_task, finish_if_complete
+from src.modules.ecn.transfer_notifications import send_transfer_cancellations, STATE_KEY
 from src.modules.ecn.list_view import (
     build_ecn_management_grid_row,
     get_ecn_list_progress_summary,
@@ -232,14 +233,77 @@ class SpecialTasksTests(unittest.IsolatedAsyncioTestCase):
         await self.update(username="writer", confirmed=True)
         self.assertEqual(self.record["workflow"]["current_state"], ECNState.ECN_EXECUTING)
 
+    async def test_cancellation_dedup_is_independent_of_cc_switch(self):
+        await self.update(assignee="writer")
+        await self.update(username="writer", assignee="manager")
+        settings = load_ecn_config()["wecom"]
+        settings.update(cc_manager_enabled=False, public_base_url="https://example.test")
+        sender = AsyncMock(return_value=(True, "ok"))
+        with (
+            patch.object(notifications, "send_wecom_textcard_message", sender),
+            patch.object(notifications, "resolve_wecom_recipients", AsyncMock(return_value="observer_wx")),
+        ):
+            for enabled, expected in ((False, (1, 0)), (True, (1, 0)), (False, (0, 0)), (True, (0, 0))):
+                settings["cc_manager_enabled"] = enabled
+                self.assertEqual(
+                    await send_transfer_cancellations("ECN-test", self.record, settings, self.service, self.storage),
+                    expected,
+                )
+        self.assertEqual([call.args[1] for call in sender.await_args_list], ["writer_wx", "observer_wx"])
+
+    async def test_cancellation_cc_failure_does_not_resend_actual_recipient(self):
+        await self.update(assignee="writer")
+        await self.update(username="writer", assignee="manager")
+        settings = load_ecn_config()["wecom"]
+        settings.update(cc_manager_enabled=True, public_base_url="https://example.test")
+        sender = AsyncMock(side_effect=[(True, "ok"), (False, "失败"), (True, "ok")])
+        with (
+            patch.object(notifications, "send_wecom_textcard_message", sender),
+            patch.object(notifications, "resolve_wecom_recipients", AsyncMock(return_value="observer_wx")),
+        ):
+            self.assertEqual(
+                await send_transfer_cancellations("ECN-test", self.record, settings, self.service, self.storage), (1, 1)
+            )
+            state = await self.storage.get_fresh_item(STATE_KEY, {})
+            for event in state["ECN-test"].values():
+                event["observer_wx"]["attempt"] = 0
+            await self.storage.set_item(STATE_KEY, state)
+            settings["cc_manager_enabled"] = False
+            self.assertEqual(
+                await send_transfer_cancellations("ECN-test", self.record, settings, self.service, self.storage), (0, 0)
+            )
+            settings["cc_manager_enabled"] = True
+            self.assertEqual(
+                await send_transfer_cancellations("ECN-test", self.record, settings, self.service, self.storage), (1, 0)
+            )
+        self.assertEqual(
+            [call.args[1] for call in sender.await_args_list], ["writer_wx", "observer_wx", "observer_wx"]
+        )
+
+    async def test_cancellation_actual_recipient_is_not_labelled_as_cc(self):
+        await self.update(assignee="writer")
+        await self.update(username="writer", assignee="manager")
+        settings = load_ecn_config()["wecom"]
+        settings.update(cc_manager_enabled=True, public_base_url="https://example.test")
+        sender = AsyncMock(return_value=(True, "ok"))
+        with (
+            patch.object(notifications, "send_wecom_textcard_message", sender),
+            patch.object(notifications, "resolve_wecom_recipients", AsyncMock(return_value="writer_wx")),
+        ):
+            self.assertEqual(
+                await send_transfer_cancellations("ECN-test", self.record, settings, self.service, self.storage), (1, 0)
+            )
+        sender.assert_awaited_once()
+        call = sender.await_args
+        assert call is not None
+        self.assertNotIn("抄送", call.args[0])
+
     async def test_permission_revocation_rejects_assignment_and_keeps_record(self):
         with patch.object(self.service, "has_permission", return_value=False):
             self.assertFalse((await self.update(assignee="writer")).ok)
         self.assertNotIn("assignee", self.item())
 
     async def test_failed_cancellation_retries_without_resending_new_owner(self):
-        from src.modules.ecn.transfer_notifications import STATE_KEY
-
         await self.update(assignee="writer")
         await self.update(username="writer", assignee="manager")
         await self.material_stage()
@@ -261,9 +325,8 @@ class SpecialTasksTests(unittest.IsolatedAsyncioTestCase):
             )
             states = await self.storage.get_fresh_item(STATE_KEY, {})
             for event in states["ECN-test"].values():
-                for route in event.values():
-                    for delivery in route.values():
-                        delivery["attempt"] = 0
+                for delivery in event.values():
+                    delivery["attempt"] = 0
             await self.storage.set_item(STATE_KEY, states)
             sender.reset_mock(side_effect=True)
             sender.return_value = (True, "ok")

@@ -3,8 +3,8 @@
     "_字段说明": {
         "public_base_url": "企业微信消息中的页面跳转地址，不要以 / 结尾；必须是员工浏览器能够访问的地址。",
         "filter_states": "总览页状态筛选项；“全部”即使遗漏，加载器也会自动补到第一项。“试产前特殊准备”用于试产评审会主动筛选查看。",
-        "special_preparation.owner_role": "试产前特殊准备的统一跟进角色；该角色可以更新准备动作并申请最终关闭，但这些问题不计入其主页红点。",
-        "special_preparation.owner_role_keywords": "仅用于兼容尚未绑定具体负责人的历史记录，不作为新记录的主要授权依据。",
+        "special_preparation.owner_role": "试产前特殊准备默认负责人的岗位显示名称，不参与授权；仅具体负责人或固定 admin 账号可操作，且必须有模块查看权限。",
+        "special_preparation.owner_role_keywords": "仅用于筛选企业微信通讯录中的 NPI 候选人，不参与负责人授权；缺少具体负责人的记录不再按角色兜底。",
         "special_preparation.default_owner_name": "试产前特殊准备默认负责人姓名。审批时仍可从企业微信 NPI 候选人中改选。",
         "special_preparation.default_owner_userid": "默认负责人的企业微信 userid。",
         "special_preparation.default_actions": "关闭审批判断有后续动作时，供审批人勾选的常用准备动作。",

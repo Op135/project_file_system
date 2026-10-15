@@ -897,16 +897,18 @@ def normalize_sample_special_owner(owner: Any) -> dict[str, str]:
 
 
 def can_manage_sample_special_preparation(issue_data: dict, current_user: str, current_role: str) -> bool:
-    """具体负责人优先授权；无负责人姓名的历史记录才回退到角色关键词。"""
-    if str(current_user).strip().lower() == "admin" or str(current_role).strip().lower() == "admin":
+    """仅在职且有查看权限的具体负责人或固定 admin 账号可操作。"""
+    del current_role
+    username = str(current_user or "").strip().casefold()
+    if not _has_sample_permission(current_user, SAMPLE_ISSUE_VIEW_PERMISSION):
+        return False
+    if username == "admin":
         return True
     special_preparation = issue_data.get("special_preparation", {})
     if not isinstance(special_preparation, dict):
         return False
     owner_name = str(special_preparation.get("owner_name", "")).strip()
-    if owner_name:
-        return str(current_user).strip() == owner_name
-    return any(keyword in str(current_role) for keyword in SAMPLE_SPECIAL_PREPARATION_OWNER_ROLE_KEYWORDS)
+    return bool(owner_name) and username == owner_name.casefold()
 
 
 def are_sample_special_actions_complete(issue_data: dict) -> bool:
@@ -2397,7 +2399,7 @@ async def sample_issue_collection_page(issue_id: str = "", view: str = ""):
             )
         )
         can_save_record = can_edit_base or can_edit_countermeasure
-        owner_allowed_values = [current_role]
+        owner_allowed_values = [current_user]
 
         def bind_input(label, target, key, classes="w-full", readonly=False):
             props = "outlined dense"

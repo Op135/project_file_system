@@ -103,6 +103,7 @@ from src.project_requirement_access import (
 from src.project_todo_access import (
     can_view_project_todo,
     filter_actionable_overview_pending,
+    get_actionable_overview_urgent_projects,
 )
 from src.project_test_summary_access import (
     build_project_test_summary_url,
@@ -447,7 +448,7 @@ class AccessControlTests(unittest.TestCase):
         self.assertTrue(can_view_project_todo("普通岗位", "张三", user_service=self.service))
 
     def test_project_todo_only_keeps_actionable_overview_labels(self):
-        """个人概述待办只显示当前角色真正可以维护的 label。"""
+        """个人概述待办只显示本人有维护权限的 label，首页不按旧角色隐藏。"""
         edit_code = project_overview_item_permission("hardware_summary", "edit")
         self.service.identity_store.seed_permission_catalog(
             [
@@ -492,6 +493,34 @@ class AccessControlTests(unittest.TestCase):
                 user_service=self.service,
             ),
             {"P100": {"hardware_summary": "缺必填"}},
+        )
+
+        pending.update({
+            "VOID": {"hardware_summary": "缺必填"},
+            "WAIT": {"hardware_summary": "缺必填"},
+            "LOW": {"hardware_summary": "缺必填"},
+            "NO-PERMISSION": {"optical_summary": "缺必填"},
+        })
+        project_states = {
+            "P100": "量产", "VOID": "作废", "WAIT": "待定",
+            "LOW": "研发", "NO-PERMISSION": "量产",
+        }
+        for role in ("销售", "销售主管", "销售总监", "研发硬件", "普通用户"):
+            with self.subTest(role=role):
+                self.assertEqual(
+                    get_actionable_overview_urgent_projects(
+                        pending, overview_config, project_states, role, "张三",
+                        user_service=self.service,
+                    ),
+                    [("P100", 4)],
+                )
+        self.service.set_position_permissions(position_id, [], actor_username="admin")
+        self.assertEqual(
+            get_actionable_overview_urgent_projects(
+                pending, overview_config, project_states, "销售", "张三",
+                user_service=self.service,
+            ),
+            [],
         )
 
     def test_question_tree_database_mode_requires_stable_view_permission(self):

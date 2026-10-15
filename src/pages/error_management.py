@@ -582,7 +582,7 @@ def get_error_dashboard_pending_count(all_errors: Any, current_user: str, curren
     """计算总页面“批量产品问题跟进”卡片对当前用户显示的待办角标数量。
 
     - 审批角色：统计所有纠正预防措施中的待审批延期和关闭申请条数。
-    - 其它角色：统计至少有一条未关闭措施由当前用户或当前角色负责的异常单数量；同一异常单
+    - 其它用户：统计至少有一条未关闭措施由当前用户本人负责的异常单数量；同一异常单
       即使有多条措施由该用户负责，也只计为一个待处理异常。
     """
     if not isinstance(all_errors, dict):
@@ -1455,7 +1455,7 @@ async def error_management_page(error_id: str = "", view: str = ""):
             item.setdefault("extension_requests", [])
 
         read_only = not can_edit_all
-        owner_allowed_values = [current_role]
+        owner_allowed_values = [current_user]
 
         def bind_input(label, target, key, classes="w-full", readonly=None):
             field_readonly = read_only if readonly is None else readonly

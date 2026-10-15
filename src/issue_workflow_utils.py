@@ -169,8 +169,7 @@ def is_scheduled_wecom_reminder_time(now: datetime | None = None) -> bool:
 
 
 def is_current_responsible(owner_text: str, current_user: str, current_role: str) -> bool:
-    """负责人字段可填写姓名或角色，因此同时使用当前用户名和当前角色进行匹配。"""
-    for owner in split_people(owner_text):
-        if owner in [current_user, current_role] or owner in str(current_role) or owner in str(current_user):
-            return True
-    return False
+    """按完整用户名匹配具体负责人；旧角色参数仅保留调用兼容性。"""
+    del current_role
+    username = str(current_user or "").strip().casefold()
+    return bool(username) and any(owner.casefold() == username for owner in split_people(owner_text))

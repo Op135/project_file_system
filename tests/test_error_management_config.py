@@ -213,10 +213,13 @@ class ErrorManagementDashboardPendingTests(unittest.TestCase):
         count = error_management.get_error_dashboard_pending_count(self.all_errors, "张三", "QE工程师")
         self.assertEqual(count, 1)
 
-    def test_responsible_role_can_match_owner_field(self):
-        """负责人字段填写角色时，该角色下用户也应看到异常待办。"""
+    def test_responsible_role_cannot_match_owner_field(self):
+        """旧角色不再授予责任；明确指定本人后才计入待办。"""
         count = error_management.get_error_dashboard_pending_count(self.all_errors, "王五", "品质主管")
-        self.assertEqual(count, 2)
+        self.assertEqual(count, 0)
+        self.all_errors["ERR-003"]["preventive_actions"][0]["owner"] = "王五"
+        self.assertEqual(error_management.get_error_dashboard_pending_count(self.all_errors, "王五", "其它岗位"), 1)
+        self.assertEqual(error_management.get_error_dashboard_pending_count(self.all_errors, "王五乙", "品质主管"), 0)
 
     def test_rd_manager_counts_pending_extension_requests(self):
         """研发经理角标按待审批延期申请条数统计，不统计普通负责人待办。"""

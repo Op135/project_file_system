@@ -15,7 +15,6 @@ from ..overview_batch_operations import (
     get_batch_overview_pending_count,
 )
 from ..overview_corrections import OVERVIEW_CORRECTION_REQUESTS_KEY, get_correction_pending_count
-from ..overview_warning import get_urgent_overview_projects
 from ..project_overview_access import can_review_overview_correction
 from ..project_requirement_access import (
     can_edit_project_requirement,
@@ -24,7 +23,7 @@ from ..project_requirement_access import (
 )
 from ..project_todo_access import (
     can_view_project_todo,
-    filter_actionable_overview_pending,
+    get_actionable_overview_urgent_projects,
     get_requirement_todo_keys_by_state,
 )
 from ..question_tree_access import can_view_question_tree
@@ -375,26 +374,16 @@ def main_page():
             # --- 仅针对项目概述待办进行状态过滤 ---
             project_summary = app.storage.general.get("project_summary", {})
             overview_pending_by_user = app.storage.general.get("overview_charge_pending", {})
-            current_overview_pending = filter_actionable_overview_pending(
+            overview_urgent_projects = get_actionable_overview_urgent_projects(
                 overview_pending_by_user.get(current_user, {}),
                 app.storage.general.get("over_config_data_flat", {}),
+                {
+                    project_name: project.get("state", "未知")
+                    for project_name, project in project_summary.items()
+                },
                 current_role,
                 current_user,
             )
-            if current_overview_pending:
-                # 仅统计状态非“作废”且非“待定”的项目，确保与 information.py 逻辑一致
-                overview_project_states = {
-                    project_name: project_summary.get(project_name, {}).get("state", "未知")
-                    for project_name in current_overview_pending
-                }
-                overview_urgent_projects = get_urgent_overview_projects(
-                    current_overview_pending,
-                    overview_project_states,
-                )
-
-            # 销售角色的项目待办卡片不包含概述维护任务，避免显示无关紧急提示
-            if current_role in ["销售", "销售主管", "销售总监"]:
-                overview_urgent_projects = []
 
             overview_urgent_count = len(overview_urgent_projects)
             overview_max_warning_level = max(

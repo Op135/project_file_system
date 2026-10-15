@@ -332,7 +332,8 @@ class SampleIssueCollectionDataTests(unittest.TestCase):
         }
 
         self.assertEqual(sample_issue.get_sample_dashboard_pending_count(all_issues, "李四", "测试工程师"), 2)
-        self.assertEqual(sample_issue.get_sample_dashboard_pending_count(all_issues, "王五", "QE工程师"), 1)
+        self.assertEqual(sample_issue.get_sample_dashboard_pending_count(all_issues, "王五", "QE工程师"), 0)
+        self.assertFalse(sample_issue.is_sample_issue_pending_for_user(all_issues["SPI-3"], "王五", "QE工程师"))
         self.assertEqual(sample_issue.get_sample_dashboard_pending_count(all_issues, "经理", "研发经理"), 1)
         self.assertTrue(sample_issue.is_sample_issue_pending_for_user(all_issues["SPI-1"], "李四", "测试工程师"))
         self.assertFalse(sample_issue.is_sample_issue_pending_for_user(all_issues["SPI-3"], "李四", "测试工程师"))
@@ -770,6 +771,7 @@ class SampleIssueCollectionConcurrencyTests(unittest.IsolatedAsyncioTestCase):
             name="样品问题责任岗位",
             org_unit_ids=[org_unit_id],
         )
+        self.user_service.set_position_permissions(requester_position_id, ["sample_issue.view"])
         self.user_service.set_primary_membership(
             "李四",
             org_unit_id=org_unit_id,
@@ -813,6 +815,82 @@ class SampleIssueCollectionConcurrencyTests(unittest.IsolatedAsyncioTestCase):
         sample_issue.can_create_sample_issue = self.original_can_create_sample_issue
         sample_issue.can_view_sample_issue_collection = self.original_can_view_sample_issue_collection
         self.identity_temp.cleanup()
+
+    async def test_special_preparation_requires_exact_active_identity(self):
+        from src.pages import sample_issue_collection as sample_issue
+
+        view_group = self.user_service.create_security_role(
+            code="special.viewer", name="特殊准备测试查看", permission_codes=["sample_issue.view"],
+        )
+        self.user_service.set_user_security_roles("王五", [view_group])
+        self.user_service.modify_user("update", "王五", role="admin")
+        isolated = load_isolated_db_storage("special_identity_storage", Path(self.identity_temp.name) / "special.db")
+        await isolated.init_db()
+        try:
+            issue = sample_issue.generate_initial_sample_issue_data("张三", "普通用户")
+            issue["issue_id"] = "SPECIAL-1"
+            issue["special_preparation"].update(
+                active=True, owner_name="杨铁华",
+                actions=[{"id": "A1", "content": "准备工装", "completed": False}],
+            )
+            await isolated.set_item(sample_issue.SAMPLE_ISSUE_DATA_KEY, {"SPECIAL-1": issue})
+            with patch.object(sample_issue, "db_storage", isolated):
+                denied = await sample_issue.set_sample_special_action_completed("SPECIAL-1", "A1", True, "王五", "admin")
+                self.assertEqual(denied.code, "forbidden")
+                self.assertEqual(isolated.get_item(sample_issue.SAMPLE_ISSUE_DATA_KEY)["SPECIAL-1"], issue)
+
+                accepted = await sample_issue.set_sample_special_action_completed(
+                    "SPECIAL-1", "A1", True, "杨铁华", "已更名岗位",
+                )
+                self.assertTrue(accepted.changed)
+                assert accepted.record is not None
+                issue = accepted.record
+
+                self.user_service.modify_user("depart", "杨铁华")
+                denied = await sample_issue.set_sample_special_action_completed(
+                    "SPECIAL-1", "A1", False, "杨铁华", "NPI工程师",
+                )
+                self.assertEqual(denied.code, "forbidden")
+
+                issue["special_preparation"]["owner_name"] = ""
+                await isolated.set_item(sample_issue.SAMPLE_ISSUE_DATA_KEY, {"SPECIAL-1": issue})
+                denied = await sample_issue.set_sample_special_action_completed(
+                    "SPECIAL-1", "A1", False, "李四", "NPI工程师",
+                )
+                self.assertEqual(denied.code, "forbidden")
+                close_denied = await sample_issue.submit_sample_close_request("SPECIAL-1", "李四", "NPI工程师")
+                self.assertEqual(close_denied.code, "special_permission_changed")
+
+                accepted = await sample_issue.set_sample_special_action_completed(
+                    "SPECIAL-1", "A1", False, "admin", "普通岗位",
+                )
+                self.assertTrue(accepted.changed)
+        finally:
+            await isolated.close_db()
+
+    async def test_countermeasure_save_rejects_name_prefix_and_legacy_role(self):
+        from src.pages import sample_issue_collection as sample_issue
+
+        isolated = load_isolated_db_storage("owner_identity_storage", Path(self.identity_temp.name) / "owner.db")
+        await isolated.init_db()
+        try:
+            issue = sample_issue.generate_initial_sample_issue_data("李四", "测试工程师")
+            issue["issue_id"] = "OWNER-1"
+            issue["countermeasure"].update(owner="张三", reason_analysis="原分析")
+            await isolated.set_item(sample_issue.SAMPLE_ISSUE_DATA_KEY, {"OWNER-1": issue})
+            incoming = copy.deepcopy(issue)
+            incoming["countermeasure"]["reason_analysis"] = "新分析"
+            with patch.object(sample_issue, "db_storage", isolated):
+                for username, role in (("张三丰", "普通用户"), ("王五", "张三")):
+                    denied = await sample_issue.save_sample_issue_record(incoming, username, role, is_new=False)
+                    self.assertEqual(denied.code, "forbidden")
+                    self.assertEqual(isolated.get_item(sample_issue.SAMPLE_ISSUE_DATA_KEY)["OWNER-1"], issue)
+                accepted = await sample_issue.save_sample_issue_record(incoming, "张三", "其它岗位", is_new=False)
+                self.assertTrue(accepted.changed)
+                assert accepted.record is not None
+                self.assertEqual(accepted.record["countermeasure"]["reason_analysis"], "新分析")
+        finally:
+            await isolated.close_db()
 
     async def test_admin_delete_preserves_concurrent_record_and_rejects_other_roles(self):
         """admin 删除单张样品问题时应保留其它实例的并发新增，非 admin 不能删除。"""

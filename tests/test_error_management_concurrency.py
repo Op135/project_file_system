@@ -241,6 +241,14 @@ class ErrorManagementConcurrencyTests(unittest.IsolatedAsyncioTestCase):
                     )
                     self.assertEqual(missing_note.code, "missing_close_note")
 
+                    before = isolated_db.get_item(error_management.ERROR_DATA_KEY)
+                    for username, role in (("owner-a-extra", "普通用户"), ("other", "owner-a")):
+                        denied = await error_management.submit_error_preventive_close_request(
+                            "ERR-CLOSE", "action-1", username, role, "尝试代为关闭",
+                        )
+                        self.assertEqual(denied.code, "permission_changed")
+                        self.assertEqual(isolated_db.get_item(error_management.ERROR_DATA_KEY), before)
+
                     requested = await error_management.submit_error_preventive_close_request(
                         "ERR-CLOSE",
                         "action-1",

@@ -7,6 +7,7 @@ from collections.abc import Callable, Mapping
 from nicegui import app
 
 from .access_control import can
+from .overview_warning import get_urgent_overview_projects
 from .permission_catalog import PROJECT_TODO_VIEW_PERMISSION
 from .project_overview_access import can_edit_overview_item
 
@@ -58,6 +59,26 @@ def get_requirement_todo_keys_by_state(
                 result["待审"].add(key)
 
     return result
+
+
+def get_actionable_overview_urgent_projects(
+    pending_projects: object,
+    overview_config_flat: object,
+    project_states: Mapping[str, str],
+    current_role: object,
+    current_user: str,
+    *,
+    user_service=None,
+) -> list[tuple[str, int]]:
+    """首页概述提醒按本人权限及项目状态计算，不按旧角色隐藏。"""
+    actionable = filter_actionable_overview_pending(
+        pending_projects,
+        overview_config_flat,
+        current_role,
+        current_user,
+        user_service=user_service,
+    )
+    return get_urgent_overview_projects(actionable, project_states)
 
 
 def get_default_requirement_review_state(

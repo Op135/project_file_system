@@ -1,7 +1,5 @@
 """移交取消告知：事务内保存事件，后台逐收件人占用、去重和重试。"""
 
-import hashlib
-import json
 import logging
 import time
 import uuid
@@ -18,12 +16,6 @@ async def send_transfer_cancellations(ecn_id: str, record: dict, settings: dict,
     from . import notifications as notify
 
     sent, failed = 0, 0
-    route = hashlib.sha256(
-        json.dumps(
-            [bool(settings.get("cc_manager_enabled"))],
-            ensure_ascii=False,
-        ).encode()
-    ).hexdigest()
     for event_id, notice in record.get("execution_info", {}).get("transfer_notices", {}).items():
         name = str(notice["recipient"])
         if is_system_admin_username(name):
@@ -41,13 +33,14 @@ async def send_transfer_cancellations(ecn_id: str, record: dict, settings: dict,
                         await notify.resolve_wecom_recipients([{"position": "研发经理"}], fallback_touser="")
                     ).split("|")
                     if value and value != "@all"
-                }
+                } - set(targets)
                 for value in cc_ids:
                     targets[value] = [name]
             except Exception:
                 logger.exception("特定事项取消告知抄送解析失败")
         for recipient in targets:
-            path = [STATE_KEY, ecn_id, event_id, route, recipient]
+            # 抄送开关只改变本轮收件人，不改变同一事件的投递身份。
+            path = [STATE_KEY, ecn_id, event_id, recipient]
             token = uuid.uuid4().hex
             claimed = False
             now = time.time()
