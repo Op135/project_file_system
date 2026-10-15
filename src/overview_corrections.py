@@ -37,6 +37,16 @@ TEST_FIELD_DEFINITIONS = (
     ("instrument", "工具/仪器/治具", "instrument_options"),
 )
 
+# 激活状态及其显示、操作历史会被需求审批或工程师操作独立更新，不属于原记录纠错的业务对象。
+# 纠错审批的并发保护只忽略这些字段；正文、测试参数、文件信息等其它变化仍会触发冲突。
+CORRECTION_CONCURRENCY_IGNORED_FIELDS = {
+    "enabled",
+    "select_activ_dic",
+    "icon",
+    "bg_color",
+    "timestamp",
+}
+
 
 def correction_now() -> str:
     return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -77,6 +87,16 @@ def get_correction_pending_count(requests: dict, current_user: str, current_role
 def chip_snapshot_fingerprint(chip: dict) -> str:
     serialized = json.dumps(chip or {}, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+
+def chip_correction_guard_fingerprint(chip: dict) -> str:
+    """生成纠错执行并发指纹，排除与纠错正文无关的激活状态字段。"""
+    guarded_snapshot = {
+        key: value
+        for key, value in (chip or {}).items()
+        if key not in CORRECTION_CONCURRENCY_IGNORED_FIELDS
+    }
+    return chip_snapshot_fingerprint(guarded_snapshot)
 
 
 def build_test_field_changes(before_data: dict, after_data: dict, config: dict) -> list[dict]:
@@ -407,7 +427,7 @@ async def execute_correction_request(request: dict) -> dict:
         nonlocal correction_applied, actual_after
         overview_data = overview_data or {}
         current = overview_data.get(label, {}).get(chip_id)
-        if not current or chip_snapshot_fingerprint(current) != chip_snapshot_fingerprint(before):
+        if not current or chip_correction_guard_fingerprint(current) != chip_correction_guard_fingerprint(before):
             return db_storage.ATOMIC_NO_UPDATE
         if action == "delete":
             for target in delete_targets:
@@ -415,7 +435,9 @@ async def execute_correction_request(request: dict) -> dict:
                 target_id = str(target.get("chip_id") or "")
                 expected = target.get("snapshot") or {}
                 live_target = overview_data.get(target_label, {}).get(target_id)
-                if not live_target or chip_snapshot_fingerprint(live_target) != chip_snapshot_fingerprint(expected):
+                if not live_target or chip_correction_guard_fingerprint(
+                    live_target
+                ) != chip_correction_guard_fingerprint(expected):
                     return db_storage.ATOMIC_NO_UPDATE
             for target in delete_targets:
                 target_label = str(target.get("label") or "")
@@ -425,7 +447,7 @@ async def execute_correction_request(request: dict) -> dict:
         else:
             corrected = copy.deepcopy(current)
             corrected["content"] = after["content"]
-            for metadata_key in ("url_path", "file_type", "warehouse", "test_select_data", "icon"):
+            for metadata_key in ("url_path", "file_type", "warehouse", "test_select_data"):
                 if metadata_key in after:
                     corrected[metadata_key] = copy.deepcopy(after[metadata_key])
             overview_data.setdefault(label, {})[chip_id] = corrected

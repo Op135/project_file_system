@@ -14,6 +14,7 @@ from src.overview_corrections import (
     build_media_file_audit,
     build_test_field_changes,
     can_review_correction_request,
+    chip_correction_guard_fingerprint,
     chip_snapshot_fingerprint,
     execute_correction_request,
     get_correction_pending_count,
@@ -73,6 +74,39 @@ class OverviewCorrectionTests(unittest.TestCase):
         self.assertNotEqual(chip_snapshot_fingerprint(before), chip_snapshot_fingerprint(after))
         changes = build_correction_changes(before, after, {}, "correct")
         self.assertTrue(changes[0]["changed"])
+
+    def test_correction_guard_ignores_activation_state_but_not_business_content(self):
+        before = {
+            "id": "c1",
+            "type": "text",
+            "content": "原内容",
+            "enabled": True,
+            "select_activ_dic": {"2.0": True},
+            "icon": "description",
+            "bg_color": "bg-light-blue-1",
+            "timestamp": {"2026-10-01 10:00:00": {"creator": "张三"}},
+        }
+        state_changed = {
+            **before,
+            "enabled": None,
+            "select_activ_dic": {"2.0": True, "3.0": None},
+            "icon": "question_mark",
+            "bg_color": "bg-amber-5",
+            "timestamp": {
+                **before["timestamp"],
+                "2026-10-15 10:00:00": {"creator": "张三", "reason": "需求影响待确认"},
+            },
+        }
+        content_changed = {**state_changed, "content": "他人已修改"}
+
+        self.assertEqual(
+            chip_correction_guard_fingerprint(before),
+            chip_correction_guard_fingerprint(state_changed),
+        )
+        self.assertNotEqual(
+            chip_correction_guard_fingerprint(before),
+            chip_correction_guard_fingerprint(content_changed),
+        )
 
     def test_overview_return_url_keeps_correction_target(self):
         url = build_overview_page_url(
@@ -176,10 +210,148 @@ class OverviewCorrectionTests(unittest.TestCase):
         for key in ("notes", "creator", "req_ver", "enabled", "select_activ_dic", "timestamp"):
             self.assertEqual(corrected[key], before[key])
 
+    def test_text_correction_allows_activation_change_and_preserves_latest_state(self):
+        before = {
+            "id": "c1",
+            "type": "text",
+            "content": "错误文本",
+            "enabled": True,
+            "select_activ_dic": {"2.0": True},
+            "icon": "description",
+            "bg_color": "bg-light-blue-1",
+            "timestamp": {"2026-10-01 10:00:00": {"creator": "原操作人"}},
+        }
+        live = {
+            **before,
+            "enabled": None,
+            "select_activ_dic": {"2.0": True, "3.0": None},
+            "icon": "question_mark",
+            "bg_color": "bg-amber-5",
+            "timestamp": {
+                **before["timestamp"],
+                "2026-10-15 10:00:00": {"creator": "原操作人", "reason": "需求影响待确认"},
+            },
+        }
+        after = {**before, "content": "正确文本"}
+        stored = {"label-1": {"c1": copy.deepcopy(live)}}
+        config = {
+            "label": "label-1",
+            "processing_type": "text",
+            "content_regular": [],
+            "permission": {"edit_role": ["研发结构"]},
+        }
+        request = {
+            "project": "P1",
+            "label": "label-1",
+            "chip_id": "c1",
+            "action": "correct",
+            "submitter_role": "研发结构",
+            "payload": {
+                "before_snapshot": before,
+                "before_fingerprint": chip_snapshot_fingerprint(before),
+                "after_snapshot": after,
+                "config": config,
+            },
+        }
+        fake_app = SimpleNamespace(
+            storage=SimpleNamespace(
+                general={
+                    "over_config_data_flat": {"label-1": config},
+                    "project_summary": {"P1": {"state": "研发"}},
+                }
+            )
+        )
+
+        async def fake_atomic(_path, updater, *args, **kwargs):
+            nonlocal stored
+            result = updater(copy.deepcopy(stored), *args, **kwargs)
+            if result is not db_storage.ATOMIC_NO_UPDATE:
+                stored = result
+            return True
+
+        with (
+            patch("src.overview_corrections.app", fake_app),
+            patch("src.overview_corrections.db_storage.atomic_deep_update", new=fake_atomic),
+            patch("src.components.OverviewVersionManager.bump"),
+        ):
+            result = asyncio.run(execute_correction_request(request))
+
+        self.assertTrue(result["ok"])
+        corrected = stored["label-1"]["c1"]
+        self.assertEqual(corrected["content"], "正确文本")
+        for key in ("enabled", "select_activ_dic", "icon", "bg_color", "timestamp"):
+            self.assertEqual(corrected[key], live[key])
+
+    def test_text_correction_still_rejects_concurrent_content_change(self):
+        before = {"id": "c1", "type": "text", "content": "错误文本", "enabled": True}
+        live = {**before, "content": "他人已修改", "enabled": None}
+        after = {**before, "content": "申请纠正文本"}
+        stored = {"label-1": {"c1": live}}
+        config = {
+            "label": "label-1",
+            "processing_type": "text",
+            "content_regular": [],
+            "permission": {"edit_role": ["研发结构"]},
+        }
+        request = {
+            "project": "P1",
+            "label": "label-1",
+            "chip_id": "c1",
+            "action": "correct",
+            "submitter_role": "研发结构",
+            "payload": {
+                "before_snapshot": before,
+                "before_fingerprint": chip_snapshot_fingerprint(before),
+                "after_snapshot": after,
+                "config": config,
+            },
+        }
+        fake_app = SimpleNamespace(
+            storage=SimpleNamespace(
+                general={
+                    "over_config_data_flat": {"label-1": config},
+                    "project_summary": {"P1": {"state": "研发"}},
+                }
+            )
+        )
+
+        async def fake_atomic(_path, updater, *args, **kwargs):
+            result = updater(copy.deepcopy(stored), *args, **kwargs)
+            self.assertIs(result, db_storage.ATOMIC_NO_UPDATE)
+            return True
+
+        with (
+            patch("src.overview_corrections.app", fake_app),
+            patch("src.overview_corrections.db_storage.atomic_deep_update", new=fake_atomic),
+        ):
+            result = asyncio.run(execute_correction_request(request))
+
+        self.assertFalse(result["ok"])
+        self.assertIn("审批期间发生变化", result["message"])
+
     def test_table_first_column_delete_can_remove_the_snapshotted_whole_row_atomically(self):
         first = {"id": "first", "type": "text", "content": "基准", "row_id": "row-1"}
         child = {"id": "child", "type": "text", "content": "子项", "row_id": "row-1"}
-        stored = {"first-label": {"first": copy.deepcopy(first)}, "child-label": {"child": copy.deepcopy(child)}}
+        stored = {
+            "first-label": {
+                "first": {
+                    **first,
+                    "enabled": None,
+                    "select_activ_dic": {"2.0": True, "3.0": None},
+                    "icon": "question_mark",
+                    "bg_color": "bg-amber-5",
+                }
+            },
+            "child-label": {
+                "child": {
+                    **child,
+                    "enabled": False,
+                    "select_activ_dic": {"2.0": False, "3.0": False},
+                    "icon": "block",
+                    "bg_color": "bg-grey-5",
+                }
+            },
+        }
         config = {
             "label": "first-label",
             "processing_type": "text",

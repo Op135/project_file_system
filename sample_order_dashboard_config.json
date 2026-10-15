@@ -7,7 +7,6 @@
         "special_status_reason_required": "设置非正常特殊状态时是否强制填写原因，true为必须填写。",
         "delay_attention_threshold": "多次延期关注阈值；延期次数超过该数字时突出显示并提醒研发经理。",
         "wecom.notify_applicant_on_extension": "新增延期记录时是否发送企业微信通知。",
-        "wecom.notify_applicant_on_special_status": "设置订单特殊状态时是否发送企业微信通知。",
         "wecom.notify_applicant_on_special_status": "设置订单特殊状态时是否发送企业微信通知。"
     },
     "public_base_url": "http://192.168.1.102:8080",
