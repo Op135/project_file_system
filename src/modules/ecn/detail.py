@@ -11,6 +11,7 @@ from nicegui import (
     ui,
 )
 from nicegui.client import Client
+from nicegui.elements.button import Button
 
 from ... import (
     db_storage,
@@ -101,6 +102,42 @@ def sync_detail_scheme_snapshot(local_data: dict, participants: dict, fresh: dic
     participants.clear()
     participants.update(copy.deepcopy(fresh_participants))
     return True
+
+
+def get_current_approval_display(workflow: dict) -> tuple[list[str], list[str]]:
+    """返回当前节点的待审人和已同意人；已同意人必须读取流程节点快照。"""
+    pending = get_ecn_pending_approval_roles(workflow)
+    phase = workflow.get("current_phase")
+    assignment_key = (
+        ECN_ECR_ASSIGNMENT_KEY
+        if phase == "ECR_PHASE"
+        else ECN_SCHEME_ASSIGNMENT_KEY
+        if phase == "ECN_SCHEME_REVIEW_PHASE"
+        else ""
+    )
+    assignment = workflow.get(assignment_key, {}) if assignment_key else {}
+    if not isinstance(assignment, dict):
+        return pending, []
+    nodes = assignment.get("nodes", [])
+    node_index = assignment.get("current_node_index", 0)
+    if (
+        not isinstance(nodes, list)
+        or not isinstance(node_index, int)
+        or isinstance(node_index, bool)
+        or node_index < 0
+        or node_index >= len(nodes)
+    ):
+        return pending, []
+    node = nodes[node_index]
+    if not isinstance(node, dict):
+        return pending, []
+    approved_values = node.get("approved_usernames", [])
+    if not isinstance(approved_values, list):
+        return pending, []
+    approved = list(
+        dict.fromkeys(str(value).strip() for value in approved_values if str(value).strip())
+    )
+    return pending, approved
 
 
 async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, refresh_list):
@@ -1081,9 +1118,8 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
                                 )
                                 render_workflow_tab()
 
-                            if wf["pending_roles"]:
-                                pending_list = get_ecn_pending_approval_roles(wf)
-                                approved_list = [role for role in wf["pending_roles"] if role not in pending_list]
+                            pending_list, approved_list = get_current_approval_display(wf)
+                            if pending_list or approved_list:
                                 with ui.card().classes(
                                     "w-full shrink-0 bg-blue-50/50 shadow-none border border-blue-100 px-3 py-2 gap-0.5"
                                 ):
@@ -1306,17 +1342,35 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
         # ------------------------------------------
         # 底部操作栏及各类事件触发器
         # ------------------------------------------
+        db_action_buttons: list[Button] = []
+
+        def track_db_action_button(button: Button) -> Button:
+            db_action_buttons.append(button)
+            return button
+
         with ui.row().classes(
             "w-full bg-white p-4 border-t border-gray-300 justify-end items-center shrink-0 gap-4 shadow-[0_-5px_15px_rgba(0,0,0,0.05)]"
         ):
+            with ui.row().classes("mr-auto items-center gap-2 text-blue-700") as db_action_progress:
+                ui.spinner(size="sm")
+                ui.label("正在处理，请稍候…").classes("text-sm font-medium")
+            db_action_progress.set_visibility(False)
             if level_timing:
                 ui.button("判定等级", icon="rule", on_click=open_level_dialog).props(
                     "outline color=indigo no-caps"
                 )
             if is_draft_or_reject:
                 if can_create_request and (basic["applicant"] == current_user or is_new):
-                    ui.button("保存为草稿", on_click=lambda: execute_db_action("save_draft")).props("color=grey-7")
-                    ui.button("发起 ECR", on_click=lambda: execute_db_action("submit_ecr")).props("color=primary")
+                    track_db_action_button(
+                        ui.button("保存为草稿", on_click=lambda: execute_db_action("save_draft")).props(
+                            "color=grey-7"
+                        )
+                    )
+                    track_db_action_button(
+                        ui.button("发起 ECR", on_click=lambda: execute_db_action("submit_ecr")).props(
+                            "color=primary"
+                        )
+                    )
             else:
                 current_phase = wf.get("current_phase")
                 if current_phase == "ECR_PHASE":
@@ -1326,22 +1380,29 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
                 else:
                     is_pending_user = False
                 if wf["current_state"] == ECNState.ECR_REVIEWING and basic["applicant"] == current_user:
-                    ui.button("撤回修改", icon="undo", on_click=lambda: execute_db_action("withdraw")).props(
-                        "color=orange"
+                    track_db_action_button(
+                        ui.button(
+                            "撤回修改", icon="undo", on_click=lambda: execute_db_action("withdraw")
+                        ).props("color=orange")
                     )
-                    ui.button("作废", icon="delete_forever", on_click=lambda: execute_db_action("cancel")).props(
-                        "color=red"
+                    track_db_action_button(
+                        ui.button(
+                            "作废", icon="delete_forever", on_click=lambda: execute_db_action("cancel")
+                        ).props("color=red")
                     )
                 if is_scheming_phase and can_submit_scheme_review:
-                    ui.button("发起 ECN 方案评审", on_click=lambda: execute_db_action("initiate_scheme_review")).props(
-                        "color=purple"
-                    ).bind_enabled_from(
-                        local_data, "workflow", backward=lambda _: (
-                            is_ecn_scheme_ready_for_review(local_data)
-                            and isinstance(wf.get("trial_production"), dict)
-                            and isinstance(wf["trial_production"].get("required"), bool)
-                        )
-                    ).tooltip("需先判定是否试产、所有参与人确认完成，且变更要求、资料与物料均有完整方案")
+                    track_db_action_button(
+                        ui.button(
+                            "发起 ECN 方案评审",
+                            on_click=lambda: execute_db_action("initiate_scheme_review"),
+                        ).props("color=purple").bind_enabled_from(
+                            local_data, "workflow", backward=lambda _: (
+                                is_ecn_scheme_ready_for_review(local_data)
+                                and isinstance(wf.get("trial_production"), dict)
+                                and isinstance(wf["trial_production"].get("required"), bool)
+                            )
+                        ).tooltip("需先判定是否试产、所有参与人确认完成，且变更要求、资料与物料均有完整方案")
+                    )
                 elif is_pending_user and wf["current_state"] not in [
                     ECNState.CLOSED,
                     ECNState.CANCEL,
@@ -1349,41 +1410,68 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
                     ECNState.ECN_SCHEMING,
                 ]:
                     if wf["current_state"] == ECNState.ECN_REVIEWING:
-                        ui.button(
-                            "驳回 ECN 方案",
-                            color="red",
-                            on_click=open_scheme_reject_dialog,
+                        track_db_action_button(
+                            ui.button(
+                                "驳回 ECN 方案",
+                                color="red",
+                                on_click=open_scheme_reject_dialog,
+                            )
                         )
-                        ui.button(
-                            "通过 ECN 方案",
-                            color="green",
-                            on_click=lambda: execute_db_action("approve"),
+                        track_db_action_button(
+                            ui.button(
+                                "通过 ECN 方案",
+                                color="green",
+                                on_click=lambda: execute_db_action("approve"),
+                            )
                         )
                     else:
-                        note_input = ui.input("审批意见 (选填)").props("dense outlined").classes("w-64")
+                        note_input = ui.input("审批意见（驳回时必填）").props(
+                            "dense outlined"
+                        ).classes("w-64")
                         if wf.get("current_phase") == "ECR_PHASE":
-                            ui.button(
-                                "驳回 ECR 申请",
-                                color="red",
-                                on_click=lambda: execute_db_action("reject", note=note_input.value),
+                            async def submit_ecr_rejection() -> None:
+                                note = str(note_input.value or "").strip()
+                                if not note:
+                                    ui.notify("请填写驳回意见。", type="warning")
+                                    return
+                                await execute_db_action("reject", note=note)
+
+                            track_db_action_button(
+                                ui.button(
+                                    "驳回 ECR 申请",
+                                    color="red",
+                                    on_click=submit_ecr_rejection,
+                                )
                             )
                         else:
-                            ui.button(
-                                "驳回",
-                                color="red",
-                                on_click=lambda: open_scheme_reject_dialog(note_input.value),
+                            track_db_action_button(
+                                ui.button(
+                                    "驳回",
+                                    color="red",
+                                    on_click=lambda: open_scheme_reject_dialog(note_input.value),
+                                )
                             )
-                        ui.button(
-                            "同意 ECR 申请"
-                            if wf.get("current_phase") == "ECR_PHASE"
-                            else "通过 ECN 方案",
-                            color="green",
-                            on_click=lambda: execute_db_action("approve", note=note_input.value),
+                        track_db_action_button(
+                            ui.button(
+                                "同意 ECR 申请"
+                                if wf.get("current_phase") == "ECR_PHASE"
+                                else "通过 ECN 方案",
+                                color="green",
+                                on_click=lambda: execute_db_action("approve", note=note_input.value),
+                            )
                         )
 
         # ------------------------------------------
         # 提取的数据库与流转控制逻辑中心
         # ------------------------------------------
+        def set_db_action_processing(processing: bool) -> None:
+            db_action_progress.set_visibility(processing)
+            for button in db_action_buttons:
+                if processing:
+                    button.props("loading")
+                else:
+                    button.props(remove="loading")
+
         async def execute_db_action(action_type, note="", rejected_item_ids=None):
             if is_new and ecr_upload_busy["count"]:
                 ui.notify("附件仍在上传，请等待上传完成后再保存", type="warning")
@@ -1391,7 +1479,7 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
             if action_busy["value"]:
                 return
             action_busy["value"] = True
-            succeeded = False
+            set_db_action_processing(True)
             try:
                 result = await execute_action(
                     copy.deepcopy(local_data),
@@ -1405,15 +1493,14 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
                     project_sales=app.storage.general.get("project_sale", {}),
                 )
                 if result.ok and result.record is not None:
-                    succeeded = True
                     ui.notify(f"操作成功：{result.record['ecn_id']}", type="positive")
                     root_dialog.close()
                     refresh_list()
                 else:
                     ui.notify(result.message, type="warning", multi_line=True)
             finally:
-                if not succeeded:
-                    action_busy["value"] = False
+                action_busy["value"] = False
+                set_db_action_processing(False)
 
         # --- 协同同步定时器 ---
         async def sync_schemes():
@@ -1427,7 +1514,10 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
                 detail_version_tracker["stamp"] = current_stamp
                 # copy.deepcopy: Python标准库函数，用于递归复制对象，防止内存引用导致的数据污染
                 fresh = db_storage.get_deep_item(["ecn_management_data", ecn_id])
-                if not fresh:
+                if not isinstance(fresh, dict) or not fresh:
+                    root_dialog.close()
+                    refresh_list()
+                    ui.notify("该ECN单据已被删除，详情已自动关闭。", type="warning")
                     return
 
                 # 1. 同步工作流状态

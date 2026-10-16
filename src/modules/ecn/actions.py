@@ -311,6 +311,7 @@ async def update_material_codes(
 def transition(current, expected, baseline, action, user, role, note, rejected_ids, service, project_sales):
     """纯单据更新与延迟待办命令；调用方负责统一事务提交。"""
     require_current_context(current, expected)
+    note = str(note or "").strip()
     workflow = current["workflow"]
     state = workflow["current_state"]
     phase = workflow["current_phase"]
@@ -410,14 +411,15 @@ def transition(current, expected, baseline, action, user, role, note, rejected_i
         checker = is_ecr_assigned_approver if is_ecr else is_scheme_assigned_approver
         if not checker(current, user, user_service=service):
             raise ECNConflict("当前用户没有该节点的有效审批待办。")
-        if action == "reject" and not is_ecr:
-            if ECN_REQUIRE_REJECTED_ITEM_SELECTION and not rejected_ids:
-                raise ECNConflict("请至少选择一个需要改进的方案。")
-            valid_ids = {item.get("item_id") for item in current.get("change_items", [])}
-            if set(rejected_ids) - valid_ids:
-                raise ECNConflict("所选方案已变化，请刷新后重新选择。")
-            if not note.strip():
+        if action == "reject":
+            if not note:
                 raise ECNConflict("请填写驳回意见。")
+            if not is_ecr:
+                if ECN_REQUIRE_REJECTED_ITEM_SELECTION and not rejected_ids:
+                    raise ECNConflict("请至少选择一个需要改进的方案。")
+                valid_ids = {item.get("item_id") for item in current.get("change_items", [])}
+                if set(rejected_ids) - valid_ids:
+                    raise ECNConflict("所选方案已变化，请刷新后重新选择。")
         result = (finish_ecr_approval if is_ecr else finish_scheme_approval)(
             current,
             user,

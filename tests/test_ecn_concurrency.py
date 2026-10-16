@@ -29,6 +29,7 @@ from src.modules.ecn.approval_transaction import ApprovalTransaction
 from src.modules.ecn.approval_reassignment import reassign_ecn_approval_reviewer
 from src.modules.ecn.editing import ECNConflict, merge_fields, sync_review_snapshot
 from src.modules.ecn.models import get_ecn_template
+from src.modules.ecn.detail import get_current_approval_display
 from src.modules.ecn.repository import delete_record
 from src.user_service import UserService
 from tests.test_error_management_concurrency import load_isolated_db_storage
@@ -64,6 +65,22 @@ def record(state=ECNState.ECN_SCHEMING):
 
 
 class ECNConcurrencyTests(unittest.IsolatedAsyncioTestCase):
+    def test_current_approval_display_reads_approved_users_from_assignment_node(self):
+        workflow = {
+            "current_phase": "ECR_PHASE",
+            "pending_roles": ["李四"],
+            "step_approvals": {},
+            "ecr_workflow_assignment": {
+                "current_node_index": 0,
+                "nodes": [{"approved_usernames": ["张三"]}],
+            },
+        }
+
+        pending, approved = get_current_approval_display(workflow)
+
+        self.assertEqual(pending, ["李四"])
+        self.assertEqual(approved, ["张三"])
+
     def test_request_requirement_date_must_be_a_valid_calendar_date(self):
         value = record(ECNState.DRAFT)
 
@@ -758,6 +775,39 @@ class ECNDatabaseApprovalTests(unittest.IsolatedAsyncioTestCase):
             ),
             [],
         )
+
+    async def test_ecr_rejection_requires_a_nonempty_note(self):
+        created = await self.create()
+        self.assertTrue(created.ok, created.message)
+        assert created.record is not None
+
+        blank = await actions.execute_action(
+            created.record,
+            copy.deepcopy(created.record),
+            "reject",
+            "李四",
+            "审批岗位",
+            note="   ",
+            user_service=self.service,
+            storage=self.left,
+        )
+        self.assertFalse(blank.ok)
+        self.assertIn("驳回意见", blank.message)
+
+        rejected = await actions.execute_action(
+            created.record,
+            copy.deepcopy(created.record),
+            "reject",
+            "李四",
+            "审批岗位",
+            note="  需补充风险评估  ",
+            user_service=self.service,
+            storage=self.left,
+        )
+        self.assertTrue(rejected.ok, rejected.message)
+        assert rejected.record is not None
+        self.assertEqual(rejected.record["workflow"]["current_state"], ECNState.REJECTED)
+        self.assertEqual(rejected.record["approval_log"][-1]["note"], "需补充风险评估")
 
     async def test_ecr_level_change_to_simple_rebuilds_pending_workflow(self):
         from src.permission_catalog import (
