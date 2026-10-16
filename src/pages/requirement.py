@@ -83,14 +83,17 @@ from ..overview_admin_maintenance import (
 from ..overview_corrections import get_project_correction_archives
 from ..overview_conversion_review import (
     build_conversion_preview,
-    conversion_target_id,
     get_actionable_conversion_reviews,
-    reconcile_conversion_reviews,
 )
 from ..overview_conversion_review_ui import open_conversion_review_side_panel
-from ..overview_operation import append_overview_timestamp, get_automatic_overview_reason
+from ..overview_operation import append_overview_timestamp
 from ..overview_add_approval import OVERVIEW_ADD_REQUESTS_KEY
-from ..project_access import can_assign_all_project_engineers, can_edit_project_status
+from ..project_access import (
+    can_assign_all_project_engineers,
+    can_edit_any_project_status,
+    can_transition_project_status,
+)
+from ..project_state_transition import transition_project_state
 from ..project_overview_access import (
     can_edit_overview_item,
     can_manage_all_overview_content,
@@ -118,7 +121,6 @@ from ..utils import (
     format_overview_timestamp,
     get_cache_busted_path,
     get_max_numeric_key,
-    get_overview_latest_responsible,
     get_requirement_overview_impacts,
     handle_key,
     logout,
@@ -263,8 +265,8 @@ async def requirement_page(
         return
 
     def has_project_status_edit_permission() -> bool:
-        """概述页修改项目状态前复核独立状态权限。"""
-        return can_edit_project_status(
+        """概述页显示状态操作前复核全状态或阶段专项权限。"""
+        return can_edit_any_project_status(
             sync_current_user_role(),
             current_user,
             user_service=app.state.user_service,
@@ -322,9 +324,6 @@ async def requirement_page(
     # (在 main.py 中定义 "user_preferences")
     user_prefs = app.storage.general.get("user_preferences", {}).get(current_user, {})
     current_avatar_path = user_prefs.get("avatar", PRESET_AVATARS[0])  # 默认为第一个
-    # 用户研发经理切换项目状态为转产时，记录项目哪些类别的概述被改成待定状态
-    changed_labels = set()
-    conversion_target_origins: dict[str, str] = {}
     # 在 *显示* 前，应用缓存清除
     current_display_path = get_cache_busted_path(current_avatar_path)
     # 存储用户层级需求相关数据的变量初始化
@@ -497,158 +496,45 @@ async def requirement_page(
 
             # app.storage.client["key_state"]["enter"] = 0
 
-    # 遍历传入的整个概述资料，找到svn类型chip，如果其最高版本激活状态不是False，则将其设置成False
-    def set_overview_data_not_true(over_data, project_name):
-        changed_labels.clear()
-        conversion_target_origins.clear()
-        for label, label_dic in over_data.items():
-            label_updtae_bool = False
-            for id, chip_dic in label_dic.items():
-                req_max_ver = app.storage.general["project_req_max_ver"][project_name]
-                select_activ_state = chip_dic.get("select_activ_dic", {}).get(req_max_ver)
-                target_id = conversion_target_id(label, id, req_max_ver)
-                if req_max_ver in chip_dic.get("select_activ_dic", {}) and select_activ_state is None:
-                    conversion_target_origins[target_id] = "preexisting"
-                responsible = get_overview_latest_responsible(project_name, label, chip_dic)
-                # 只处理svn类型 且 非放在产品仓库的 chip
-                if chip_dic.get("type") == "svn" and chip_dic.get("warehouse") != "Product":
-                    # 最高激活状态不是False
-                    if select_activ_state or select_activ_state is None:
-                        label_updtae_bool = True
-                        # 项目状态切换为转产时，svn类失活掉
-                        # over_data[label][id]["select_activ_dic"][req_max_ver] = False
-                        # over_data[label][id]["icon"] = "block"
-                        # over_data[label][id]["enabled"] = False
-                        # over_data[label][id]["bg_color"] = "bg-grey-5"
-
-                        # 项目状态切换为转产时，svn类不再失活掉，而是改成待定状态，同步修改仓库位置，增加时间戳记录
-                        over_data[label][id]["select_activ_dic"][req_max_ver] = None
-                        over_data[label][id]["icon"] = "question_mark"
-                        over_data[label][id]["enabled"] = None
-                        over_data[label][id]["bg_color"] = "bg-amber-5"
-                        over_data[label][id]["warehouse"] = "Product"
-                        if select_activ_state is True:
-                            conversion_target_origins[target_id] = "conversion"
-                            append_overview_timestamp(
-                                over_data[label][id],
-                                creator=responsible,
-                                reason=get_automatic_overview_reason("conversion_pending"),
-                            )
-                # 其它类型的chip
-                elif chip_dic.get("type") != "svn":
-                    # 最高激活状态是True
-                    if select_activ_state:
-                        conversion_target_origins[target_id] = "conversion"
-                        label_updtae_bool = True
-                        over_data[label][id]["select_activ_dic"][req_max_ver] = None
-                        over_data[label][id]["icon"] = "question_mark"
-                        over_data[label][id]["enabled"] = None
-                        over_data[label][id]["bg_color"] = "bg-amber-5"
-                        append_overview_timestamp(
-                            over_data[label][id],
-                            creator=responsible,
-                            reason=get_automatic_overview_reason("conversion_pending"),
-                        )
-            if label_updtae_bool:
-                changed_labels.add(label)
-
-        return over_data
-
     # 编辑project_summary json文件
-    def edit_project_summary(project_name, state, recovery_bool):
-        if not has_project_status_edit_permission():
-            ui.notify("当前账号没有修改项目状态的权限", type="negative")
-            return False
+    async def edit_project_summary(project_name, state, recovery_bool):
+        """所有页面状态操作统一进入公共迁移服务，不直接写项目汇总文件。"""
         # 如果是恢复项目的操作附带导致该函数被调取，不用操作，跳过
         if recovery_bool:
             # 复位标记
             app.storage.client["recovery_bool"] = False
             return False
-        project_data = {}
-        with open(f"{BASE_DIR}/data/project_summary.json", "r", encoding="utf-8") as f:
-            project_data = json.load(f)
-            project_data[project_name]["state"] = state
-        # 将字典转换为 JSON 字符串
-        json_str = json.dumps(project_data, indent=4, ensure_ascii=False)
-        # 写入文件
+        processing_notice = ui.notification("正在切换项目状态，请稍候…", timeout=None, spinner=True)
+        await asyncio.sleep(0)
         try:
-            with open(f"{BASE_DIR}/data/project_summary.json", "w", encoding="utf-8") as f:
-                f.write(json_str)
-            app.storage.general["project_summary"][project_name]["state"] = state
-            ui.notify(
-                "修改项目状态成功。",
-                type="positive",
-                position="bottom",
-                timeout=1000,
-                progress=True,
-                close_button="✖",
+            result = await transition_project_state(
+                project_name,
+                str(state or ""),
+                actor=current_user,
+                current_role=sync_current_user_role(),
+                user_service=app.state.user_service,
             )
-            return True
-        except Exception as e:
-            ui.notify(
-                f"修改项目状态错误错误：{e}",
-                type="negative",
-                position="center",
-                timeout=0,
-                progress=False,
-                close_button="✖",
-            )
-            return False
+        finally:
+            processing_notice.dismiss()
+        ui.notify(
+            result.message,
+            type="positive" if result.ok else "negative",
+            position="bottom" if result.ok else "center",
+            timeout=5000 if result.ok else 0,
+            close_button="✖",
+            multi_line=True,
+        )
+        if result.notification_warning:
+            ui.notify(result.notification_warning, type="warning", timeout=0, close_button="✖")
+        return result.ok
 
     async def conversion_chip_state(project_name, state):
-        req_version_value = app.storage.general.get("project_req_max_ver", {}).get(project_name)
-        if req_version_value is None:
-            ui.notify("当前项目没有可用的最高需求版本，不能生成转产确认待办。", type="negative")
-            return
-        previews = build_conversion_preview(project_name, str(req_version_value))
-        missing_roles = [preview.role for preview in previews if not preview.assignee]
-        permission_issues = [
-            f"{preview.role}（{'、'.join(preview.permission_missing_titles)}）"
-            for preview in previews
-            if preview.permission_missing_titles
-        ]
-        if missing_roles:
-            ui.notify(
-                f"以下职能没有负责人，不能开始转产：{'、'.join(missing_roles)}",
-                type="negative",
-            )
-            return
-        if permission_issues:
-            ui.notify(
-                f"以下负责人缺少对应概述维护权限：{'；'.join(permission_issues)}",
-                type="negative",
-                multi_line=True,
-            )
-            return
-        # 先编辑json文件
-        if not edit_project_summary(
+        if not await edit_project_summary(
             project_name,
             state,
             app.storage.client.get("recovery_bool", False),
         ):
             return
-        # 将该项目所有svn类的chip失活
-        success = await db_storage.atomic_deep_update(
-            [f"{project_name}_over_data"], set_overview_data_not_true, project_name
-        )
-        if success:
-            for label in changed_labels:
-                OverviewVersionManager.bump(project_name, label)
-            overview_role_update(project_name, "all_update")
-            refresh_overview_pending_labels(project_name, set(changed_labels))
-            transition_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            review_success = await reconcile_conversion_reviews(
-                project_name,
-                initial_origins=conversion_target_origins,
-                transition_at=transition_at,
-                actor=str(app.storage.user.get("current_user") or ""),
-            )
-            if not review_success:
-                ui.notify("项目已转产，但职能汇总待办生成失败，请联系管理员处理。", type="negative")
-        # 必须在数据修改完成后，再激活概述特殊刷新标记
-        # app.storage.general["conversion_refresh"][project_name] = True
-        # 0.8秒比概述定时0.5秒刷新稍长情况下，关闭特殊刷新开关
-        # ui.timer(0.8, lambda: close_conversion_refresh(project_name), once=True)
         over_dialog.close()
 
     def set_project_conversion_dialog(project_name, state, on_cancel_action):
@@ -772,6 +658,9 @@ async def requirement_page(
 
     # 修改项目状态
     async def set_project_state(project_name, e):
+        if app.storage.client.get("recovery_bool", False):
+            app.storage.client["recovery_bool"] = False
+            return
         if not has_project_status_edit_permission():
             ui.notify("当前账号没有修改项目状态的权限", type="negative")
             return
@@ -779,6 +668,18 @@ async def requirement_page(
         # 获取下拉框组件对象，用于后续如果取消了，把值改回去
         select_element = e.sender
         previous_state = app.storage.general["project_summary"][project_name].get("state")
+
+        if not can_transition_project_status(
+            sync_current_user_role(),
+            current_user,
+            previous_state,
+            state,
+            user_service=app.state.user_service,
+        ):
+            app.storage.client["recovery_bool"] = True
+            select_element.value = previous_state
+            ui.notify("当前账号没有执行该状态切换的权限", type="negative")
+            return
 
         # 定义一个取消时的回调函数：把下拉框的值改回旧状态，并关闭弹窗
         def on_cancel_action():
@@ -812,25 +713,11 @@ async def requirement_page(
             )
         # 如果是从研发状态改为转产或量产，将所有svn概述全部失活掉，然后进行特殊刷新
         elif previous_state == "研发" and state == "转产":
-            if not has_project_status_edit_permission():
-                # 无权限时，也要把界面改回去
-                # 恢复标记打开，防止状态改回时按照正常修改状态操作文件和弹出提示信息
-                app.storage.client["recovery_bool"] = True
-                select_element.value = previous_state
-                ui.notify(
-                    "当前用户无权限修改项目状态！",
-                    type="info",
-                    position="bottom",
-                    timeout=2000,
-                    progress=True,
-                    close_button="✖",
-                )
-            else:
-                set_project_conversion_dialog(project_name, state, on_cancel_action)
+            set_project_conversion_dialog(project_name, state, on_cancel_action)
         elif previous_state == "转产" and state == "试产":
             set_project_trial_dialog(project_name, state, on_cancel_action)
         else:
-            edit_project_summary(project_name, state, app.storage.client.get("recovery_bool", False))
+            await edit_project_summary(project_name, state, app.storage.client.get("recovery_bool", False))
 
     # 显示传入数据的用户填写内容
     def show_user_output(data):

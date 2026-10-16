@@ -41,8 +41,14 @@ PROJECT_VIEW_PERMISSION = "project.view"
 PROJECT_ALL_STATES_VIEW_PERMISSION = "project.all_states.view"
 PROJECT_BASE_EDIT_PERMISSION = "project.base.edit"
 PROJECT_STATUS_EDIT_PERMISSION = "project.status.edit"
+PROJECT_STATUS_TRANSFER_TO_TRIAL_PERMISSION = "project.status.transfer_to_trial"
+PROJECT_STATUS_TRIAL_TO_MASS_PERMISSION = "project.status.trial_to_mass"
 PROJECT_ENGINEER_ASSIGN_ALL_PERMISSION = "project.engineer.assign_all"
 PROJECT_LEGACY_RECORD_MANAGE_PERMISSION = "project.record.manage"
+PROJECT_STATUS_RD_TO_TRANSFER_NOTIFY_PERMISSION = "notifications.project.status.rd_to_transfer"
+PROJECT_STATUS_TRANSFER_TO_TRIAL_NOTIFY_PERMISSION = "notifications.project.status.transfer_to_trial"
+PROJECT_STATUS_TRIAL_TO_MASS_NOTIFY_PERMISSION = "notifications.project.status.trial_to_mass"
+PROJECT_NOTIFICATION_MODULE = "项目资料 · 通知接收"
 
 
 PROJECT_PERMISSIONS = (
@@ -66,15 +72,45 @@ PROJECT_PERMISSIONS = (
     ),
     PermissionDefinition(
         PROJECT_STATUS_EDIT_PERMISSION,
-        "维护 — 项目状态",
+        "维护 — 项目全状态修改",
         "项目资料",
-        "允许独立修改项目状态；新建项目时未获此权限则固定使用默认研发状态",
+        "允许修改全部合法项目状态；新建项目时未获此权限则固定使用默认研发状态",
+    ),
+    PermissionDefinition(
+        PROJECT_STATUS_TRANSFER_TO_TRIAL_PERMISSION,
+        "专项 — 转产切换试产",
+        "项目资料",
+        "只允许把项目从转产状态切换为试产状态",
+    ),
+    PermissionDefinition(
+        PROJECT_STATUS_TRIAL_TO_MASS_PERMISSION,
+        "专项 — 试产切换量产",
+        "项目资料",
+        "只允许把项目从试产状态切换为量产状态",
     ),
     PermissionDefinition(
         PROJECT_ENGINEER_ASSIGN_ALL_PERMISSION,
         "指定 — 全部项目的项目工程师",
         "项目资料",
         "允许为任意项目指定或更换项目工程师负责人",
+    ),
+    PermissionDefinition(
+        PROJECT_STATUS_RD_TO_TRANSFER_NOTIFY_PERMISSION,
+        "提醒 — 项目研发转转产",
+        PROJECT_NOTIFICATION_MODULE,
+        "项目从研发状态切换为转产状态后接收企业微信通知",
+    ),
+    PermissionDefinition(
+        PROJECT_STATUS_TRANSFER_TO_TRIAL_NOTIFY_PERMISSION,
+        "提醒 — 项目转产转试产",
+        PROJECT_NOTIFICATION_MODULE,
+        "项目从转产状态切换为试产状态后接收企业微信通知",
+    ),
+    PermissionDefinition(
+        PROJECT_STATUS_TRIAL_TO_MASS_NOTIFY_PERMISSION,
+        "提醒 — 项目试产转量产",
+        PROJECT_NOTIFICATION_MODULE,
+        "项目从试产状态切换为量产状态后接收企业微信通知",
     ),
 )
 

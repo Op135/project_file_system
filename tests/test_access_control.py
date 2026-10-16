@@ -52,10 +52,13 @@ from src.permission_catalog import (
     PROJECT_BASE_EDIT_PERMISSION,
     PROJECT_ENGINEER_ASSIGN_ALL_PERMISSION,
     PROJECT_LEGACY_RECORD_MANAGE_PERMISSION,
+    PROJECT_NOTIFICATION_MODULE,
     PROJECT_OVERVIEW_BATCH_REVIEW_PERMISSION,
     PROJECT_OVERVIEW_BATCH_SUBMIT_PERMISSION,
     PROJECT_OVERVIEW_CORRECTION_REVIEW_PERMISSION,
     PROJECT_STATUS_EDIT_PERMISSION,
+    PROJECT_STATUS_TRANSFER_TO_TRIAL_PERMISSION,
+    PROJECT_STATUS_TRIAL_TO_MASS_PERMISSION,
     PROJECT_REQUIREMENT_DRAFT_MANAGE_ALL_PERMISSION,
     PROJECT_REQUIREMENT_EDIT_PERMISSION,
     PROJECT_REQUIREMENT_REVIEW_ALL_PERMISSION,
@@ -91,7 +94,12 @@ from src.pages.project_table import (
     can_view_all_project_states,
     can_view_project_table,
 )
-from src.project_access import can_assign_all_project_engineers, can_edit_project_status
+from src.project_access import (
+    can_assign_all_project_engineers,
+    can_edit_any_project_status,
+    can_edit_project_status,
+    can_transition_project_status,
+)
 from src.project_requirement_access import (
     can_edit_project_requirement,
     can_manage_all_project_requirement_drafts,
@@ -654,6 +662,54 @@ class AccessControlTests(unittest.TestCase):
             can_assign_all_project_engineers("普通岗位", "张三", user_service=self.service)
         )
 
+        self.service.set_position_permissions(
+            position_id,
+            [
+                PROJECT_VIEW_PERMISSION,
+                PROJECT_STATUS_TRANSFER_TO_TRIAL_PERMISSION,
+            ],
+            actor_username="admin",
+        )
+        self.assertFalse(
+            can_edit_project_status("普通岗位", "张三", user_service=self.service)
+        )
+        self.assertTrue(
+            can_edit_any_project_status("普通岗位", "张三", user_service=self.service)
+        )
+        self.assertTrue(
+            can_transition_project_status(
+                "普通岗位",
+                "张三",
+                "转产",
+                "试产",
+                user_service=self.service,
+            )
+        )
+        self.assertFalse(
+            can_transition_project_status(
+                "普通岗位",
+                "张三",
+                "试产",
+                "量产",
+                user_service=self.service,
+            )
+        )
+
+        self.service.set_position_permissions(
+            position_id,
+            [PROJECT_STATUS_TRIAL_TO_MASS_PERMISSION],
+            actor_username="admin",
+        )
+        self.assertTrue(
+            can_transition_project_status(
+                "普通岗位",
+                "张三",
+                "试产",
+                "量产",
+                user_service=self.service,
+            )
+        )
+
     def test_legacy_project_manage_grant_expands_to_three_independent_permissions(self):
         """上一版项目维护授权只迁移一次，拆为基础资料、状态和工程师指定。"""
         position_id = self.service.save_position(code="project.legacy.manager", name="旧项目管理员")
@@ -1087,6 +1143,7 @@ class AccessControlTests(unittest.TestCase):
                 SAMPLE_ORDER_NOTIFICATION_MODULE,
                 ERROR_NOTIFICATION_MODULE,
                 SAMPLE_ISSUE_NOTIFICATION_MODULE,
+                PROJECT_NOTIFICATION_MODULE,
             },
         )
 

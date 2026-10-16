@@ -24,7 +24,12 @@ from ..permission_catalog import (
     PROJECT_ALL_STATES_VIEW_PERMISSION,
     PROJECT_VIEW_PERMISSION,
 )
-from ..project_access import can_edit_project_status, can_manage_project_records
+from ..project_access import (
+    can_edit_any_project_status,
+    can_edit_project_status,
+    can_manage_project_records,
+)
+from ..project_state_transition import transition_project_state, update_project_details
 from ..project_catalog import build_project_select_options, get_project_table_category
 from ..project_overview_access import can_view_any_project_overview
 from ..project_requirement_access import can_view_project_requirement
@@ -267,8 +272,12 @@ def project_table_page():
         return can_manage_project_records(sync_current_user_role(), current_user)
 
     def has_project_status_permission() -> bool:
-        """修改项目状态前复核独立的项目状态权限。"""
+        """新建项目指定初始状态时要求项目全状态权限。"""
         return can_edit_project_status(sync_current_user_role(), current_user)
+
+    def has_any_project_status_permission() -> bool:
+        """既有项目状态入口允许全状态或阶段专项权限进入。"""
+        return can_edit_any_project_status(sync_current_user_role(), current_user)
 
     def has_project_test_summary_permission() -> bool:
         """打开生产测试项汇总前实时复核查看权限。"""
@@ -373,18 +382,41 @@ def project_table_page():
             return False
         try:
             save_data = copy.deepcopy(new_project_data)
-            if not has_project_status_permission():
-                project_name = str(save_data.get("project_name") or "")
-                save_data["state"] = (
-                    app.storage.general.get("project_summary", {})
-                    .get(
+            project_name = str(save_data.get("project_name") or "")
+            current_state = str(
+                app.storage.general.get("project_summary", {})
+                .get(project_name, {})
+                .get("state", "研发")
+            )
+            requested_state = str(save_data.get("state") or current_state)
+            if requested_state != current_state:
+                processing_notice = ui.notification("正在切换项目状态，请稍候…", timeout=None, spinner=True)
+                await asyncio.sleep(0)
+                try:
+                    result = await transition_project_state(
                         project_name,
-                        {},
+                        requested_state,
+                        actor=current_user,
+                        current_role=sync_current_user_role(),
+                        user_service=app.state.user_service,
+                        project_updates=save_data,
                     )
-                    .get("state", "研发")
+                finally:
+                    processing_notice.dismiss()
+                ui.notify(
+                    result.message,
+                    type="positive" if result.ok else "negative",
+                    timeout=5000 if result.ok else 0,
+                    close_button="✖",
+                    multi_line=True,
                 )
-            # === 性能优化：将文件读写推入后台线程执行 ===
-            success, msg = await asyncio.to_thread(_sync_process_project_save, save_data, False)
+                if result.notification_warning:
+                    ui.notify(result.notification_warning, type="warning", timeout=0, close_button="✖")
+                if result.ok:
+                    project_summary_update()
+                return result.ok
+            save_data["state"] = current_state
+            success, msg = await update_project_details(project_name, save_data)
             if not success:
                 ui.notify(
                     msg,
@@ -499,9 +531,9 @@ def project_table_page():
                         .bind_value(form_data, "state")
                         .classes("w-1/3")
                     )
-                    if not has_project_status_permission():
+                    if not has_any_project_status_permission():
                         state_select.disable()
-                        state_select.tooltip("需要“维护 — 项目状态”权限；新项目默认使用研发状态")
+                        state_select.tooltip("需要项目全状态权限或对应阶段专项权限；新项目默认使用研发状态")
                     # 日期
                     ui.input("立项日期", value=form_data["creation_date"]).bind_value(
                         form_data, "creation_date"

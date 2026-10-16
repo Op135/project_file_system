@@ -39,6 +39,7 @@
 | `overview_add_approval.py` | 配置驱动的关键概述新增申请、逐节点审批、上传暂存及通过后生效 |
 | `overview_conversion_review.py` | 研发转转产时按项目和职能生成概述汇总确认待办，合并特殊待定原因并按真实状态自动校准 |
 | `overview_conversion_review_ui.py` | 在项目需求概述页右侧展示不遮挡需求正文的转产职能快捷确认面板 |
+| `project_state_transition.py` | 统一执行项目状态权限、合法路径、阶段前置校验、转产概述处理及企业微信通知 |
 | `overview_admin_maintenance.py` | 固定 admin 账户按职能汇总当前项目各版本待定概述，并复用常规状态接口批量纠正 |
 | `notification_recipients.py` | 固定通知权限到企业微信收件人的解析 |
 | `workflow_notifications.py` | 审批完成额外抄送岗位解析、收件人去重和统一企业微信卡片发送 |
