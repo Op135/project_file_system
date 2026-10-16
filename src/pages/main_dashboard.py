@@ -16,6 +16,10 @@ from ..overview_batch_operations import (
 )
 from ..overview_add_approval import OVERVIEW_ADD_REQUESTS_KEY, get_overview_add_pending_count
 from ..overview_corrections import OVERVIEW_CORRECTION_REQUESTS_KEY, get_correction_pending_count
+from ..overview_conversion_review import (
+    get_conversion_covered_labels,
+    get_conversion_review_pending_count,
+)
 from ..project_overview_access import can_review_overview_correction
 from ..project_requirement_access import (
     can_edit_project_requirement,
@@ -375,8 +379,22 @@ def main_page():
             # --- 仅针对项目概述待办进行状态过滤 ---
             project_summary = app.storage.general.get("project_summary", {})
             overview_pending_by_user = app.storage.general.get("overview_charge_pending", {})
+            current_overview_pending = {
+                str(project_name): dict(states)
+                for project_name, states in overview_pending_by_user.get(current_user, {}).items()
+                if isinstance(states, dict)
+            }
+            for covered_project, labels in get_conversion_covered_labels(current_user).items():
+                covered_states = current_overview_pending.get(covered_project)
+                if covered_states is None:
+                    continue
+                for label in labels:
+                    if covered_states.get(label) == "有待定":
+                        covered_states.pop(label, None)
+                if not covered_states:
+                    current_overview_pending.pop(covered_project, None)
             overview_urgent_projects = get_actionable_overview_urgent_projects(
-                overview_pending_by_user.get(current_user, {}),
+                current_overview_pending,
                 app.storage.general.get("over_config_data_flat", {}),
                 {
                     project_name: project.get("state", "未知")
@@ -407,6 +425,7 @@ def main_page():
                 db_storage.get_item(OVERVIEW_ADD_REQUESTS_KEY, {}) or {},
                 current_user,
             )
+            conversion_review_task_count = get_conversion_review_pending_count(current_user)
 
             change_task_count = sum(
                 1
@@ -432,6 +451,7 @@ def main_page():
                         + batch_change_task_count
                         + correction_task_count
                         + overview_add_task_count
+                        + conversion_review_task_count
                     )
                     pending_count = len(requirement_pending_keys) + overview_pending_count
                 elif target == "/ecn_management":

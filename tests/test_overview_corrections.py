@@ -13,6 +13,7 @@ from src.overview_corrections import (
     build_correction_changes,
     build_media_file_audit,
     build_test_field_changes,
+    configured_test_display_values,
     configured_test_field_definitions,
     can_review_correction_request,
     chip_correction_guard_fingerprint,
@@ -26,6 +27,33 @@ from src.utils import build_overview_page_url
 
 
 class OverviewCorrectionTests(unittest.TestCase):
+    def test_test_display_values_are_read_from_nested_test_select_data(self):
+        config = {
+            "test_nature_options": ["抽检"],
+            "state_options": ["常温"],
+            "node_options": ["成品"],
+        }
+        chip = {
+            "test_nature_select": "错误的顶层值",
+            "test_select_data": {
+                "test_nature_select": "抽检",
+                "state_select": "常温",
+                "node_select": "成品",
+                "node_other_text": "驱动板",
+            },
+        }
+
+        values = configured_test_display_values(chip, config)
+
+        self.assertEqual(
+            values,
+            (
+                ("测试性质", "抽检"),
+                ("条件/状态", "常温"),
+                ("节点/位置", "成品 / 驱动板"),
+            ),
+        )
+
     def test_unconfigured_test_fields_are_hidden_even_when_snapshot_contains_none(self):
         config = {
             "test_nature_options": ["抽检"],
@@ -152,6 +180,18 @@ class OverviewCorrectionTests(unittest.TestCase):
         self.assertEqual(query["type"], ["overview"])
         self.assertEqual(query["project_name"], ["RFFM-1007-A"])
         self.assertEqual(query["add_request_id"], ["request 01"])
+
+    def test_overview_return_url_keeps_conversion_review_target(self):
+        url = build_overview_page_url(
+            review=False,
+            project_name="RFFM-1007-A",
+            conversion_review_id="conversion review 01",
+        )
+
+        query = parse_qs(urlparse(url).query)
+        self.assertEqual(query["type"], ["overview"])
+        self.assertEqual(query["project_name"], ["RFFM-1007-A"])
+        self.assertEqual(query["conversion_review_id"], ["conversion review 01"])
 
     def test_media_audit_records_original_and_staged_file_hashes(self):
         with tempfile.TemporaryDirectory() as temp_value:

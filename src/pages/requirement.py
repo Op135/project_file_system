@@ -81,6 +81,13 @@ from ..overview_admin_maintenance import (
     is_admin_overview_maintenance_user,
 )
 from ..overview_corrections import get_project_correction_archives
+from ..overview_conversion_review import (
+    build_conversion_preview,
+    conversion_target_id,
+    get_actionable_conversion_reviews,
+    reconcile_conversion_reviews,
+)
+from ..overview_conversion_review_ui import open_conversion_review_side_panel
 from ..overview_operation import append_overview_timestamp, get_automatic_overview_reason
 from ..overview_add_approval import OVERVIEW_ADD_REQUESTS_KEY
 from ..project_access import can_assign_all_project_engineers, can_edit_project_status
@@ -140,6 +147,7 @@ async def requirement_page(
     correction_label="",
     correction_chip_id="",
     add_request_id="",
+    conversion_review_id="",
     readonly="",
 ):
     ui.add_head_html("""
@@ -316,6 +324,7 @@ async def requirement_page(
     current_avatar_path = user_prefs.get("avatar", PRESET_AVATARS[0])  # 默认为第一个
     # 用户研发经理切换项目状态为转产时，记录项目哪些类别的概述被改成待定状态
     changed_labels = set()
+    conversion_target_origins: dict[str, str] = {}
     # 在 *显示* 前，应用缓存清除
     current_display_path = get_cache_busted_path(current_avatar_path)
     # 存储用户层级需求相关数据的变量初始化
@@ -491,11 +500,15 @@ async def requirement_page(
     # 遍历传入的整个概述资料，找到svn类型chip，如果其最高版本激活状态不是False，则将其设置成False
     def set_overview_data_not_true(over_data, project_name):
         changed_labels.clear()
+        conversion_target_origins.clear()
         for label, label_dic in over_data.items():
             label_updtae_bool = False
             for id, chip_dic in label_dic.items():
                 req_max_ver = app.storage.general["project_req_max_ver"][project_name]
                 select_activ_state = chip_dic.get("select_activ_dic", {}).get(req_max_ver)
+                target_id = conversion_target_id(label, id, req_max_ver)
+                if req_max_ver in chip_dic.get("select_activ_dic", {}) and select_activ_state is None:
+                    conversion_target_origins[target_id] = "preexisting"
                 responsible = get_overview_latest_responsible(project_name, label, chip_dic)
                 # 只处理svn类型 且 非放在产品仓库的 chip
                 if chip_dic.get("type") == "svn" and chip_dic.get("warehouse") != "Product":
@@ -515,6 +528,7 @@ async def requirement_page(
                         over_data[label][id]["bg_color"] = "bg-amber-5"
                         over_data[label][id]["warehouse"] = "Product"
                         if select_activ_state is True:
+                            conversion_target_origins[target_id] = "conversion"
                             append_overview_timestamp(
                                 over_data[label][id],
                                 creator=responsible,
@@ -524,6 +538,7 @@ async def requirement_page(
                 elif chip_dic.get("type") != "svn":
                     # 最高激活状态是True
                     if select_activ_state:
+                        conversion_target_origins[target_id] = "conversion"
                         label_updtae_bool = True
                         over_data[label][id]["select_activ_dic"][req_max_ver] = None
                         over_data[label][id]["icon"] = "question_mark"
@@ -581,6 +596,30 @@ async def requirement_page(
             return False
 
     async def conversion_chip_state(project_name, state):
+        req_version_value = app.storage.general.get("project_req_max_ver", {}).get(project_name)
+        if req_version_value is None:
+            ui.notify("当前项目没有可用的最高需求版本，不能生成转产确认待办。", type="negative")
+            return
+        previews = build_conversion_preview(project_name, str(req_version_value))
+        missing_roles = [preview.role for preview in previews if not preview.assignee]
+        permission_issues = [
+            f"{preview.role}（{'、'.join(preview.permission_missing_titles)}）"
+            for preview in previews
+            if preview.permission_missing_titles
+        ]
+        if missing_roles:
+            ui.notify(
+                f"以下职能没有负责人，不能开始转产：{'、'.join(missing_roles)}",
+                type="negative",
+            )
+            return
+        if permission_issues:
+            ui.notify(
+                f"以下负责人缺少对应概述维护权限：{'；'.join(permission_issues)}",
+                type="negative",
+                multi_line=True,
+            )
+            return
         # 先编辑json文件
         if not edit_project_summary(
             project_name,
@@ -596,6 +635,16 @@ async def requirement_page(
             for label in changed_labels:
                 OverviewVersionManager.bump(project_name, label)
             overview_role_update(project_name, "all_update")
+            refresh_overview_pending_labels(project_name, set(changed_labels))
+            transition_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            review_success = await reconcile_conversion_reviews(
+                project_name,
+                initial_origins=conversion_target_origins,
+                transition_at=transition_at,
+                actor=str(app.storage.user.get("current_user") or ""),
+            )
+            if not review_success:
+                ui.notify("项目已转产，但职能汇总待办生成失败，请联系管理员处理。", type="negative")
         # 必须在数据修改完成后，再激活概述特殊刷新标记
         # app.storage.general["conversion_refresh"][project_name] = True
         # 0.8秒比概述定时0.5秒刷新稍长情况下，关闭特殊刷新开关
@@ -603,12 +652,68 @@ async def requirement_page(
         over_dialog.close()
 
     def set_project_conversion_dialog(project_name, state, on_cancel_action):
+        req_version_value = app.storage.general.get("project_req_max_ver", {}).get(project_name)
+        previews = build_conversion_preview(project_name, str(req_version_value)) if req_version_value is not None else []
+        missing_roles = [preview.role for preview in previews if not preview.assignee]
+        permission_issues = [preview for preview in previews if preview.permission_missing_titles]
         over_card.clear()
         with over_card:
-            ui.label("确认项目开始转产？").classes("text-base text-red")
-            ui.label("所有svn概述将设置为失活状态，其它激活概述将设置为待定状态！").classes("text-base text-red")
+            ui.label("确认项目开始转产？").classes("text-lg font-bold text-red-700")
+            ui.label(
+                "当前激活概述将转为待确认，并按光学、结构、软件等职能分别生成一条汇总待办。"
+            ).classes("text-sm text-red-700")
+            if req_version_value is None:
+                ui.label("当前项目没有可用的最高需求版本，不能生成转产确认待办。").classes(
+                    "text-sm font-bold text-red-700"
+                )
+            elif not previews:
+                ui.label("当前版本没有需要确认的激活或待定概述，不会生成职能待办。").classes(
+                    "text-sm text-gray-600"
+                )
+            else:
+                with ui.column().classes("w-full gap-1 border rounded p-2 bg-gray-50"):
+                    for preview in previews:
+                        with ui.row().classes("w-full items-center justify-between gap-2"):
+                            with ui.column().classes("gap-0"):
+                                ui.label(
+                                    f"{preview.role}职能 · 共 {preview.total_count} 个"
+                                ).classes("text-sm font-bold")
+                                ui.label(
+                                    f"转产待确认 {preview.conversion_count} 个；"
+                                    f"转产前已有待定 {preview.existing_pending_count} 个"
+                                ).classes("text-xs text-gray-600")
+                            if preview.assignee:
+                                ui.badge(f"负责人：{preview.assignee}", color="blue")
+                            else:
+                                ui.badge("未设置负责人", color="red")
+                        if preview.permission_missing_titles:
+                            ui.label(
+                                f"负责人缺少维护权限：{'、'.join(preview.permission_missing_titles)}"
+                            ).classes("text-xs font-bold text-red-700")
+                        if preview.special_items:
+                            with ui.expansion(
+                                f"查看{preview.role}职能特殊待定原因（{len(preview.special_items)}项）",
+                                icon="warning",
+                            ).classes("w-full bg-orange-50"):
+                                for item in preview.special_items:
+                                    ui.label(f"{item.title}：{item.reasons[0].text}").classes(
+                                        "text-xs text-orange-800 whitespace-normal break-all"
+                                    )
+            if missing_roles:
+                ui.label(
+                    f"请先设置以下职能负责人：{'、'.join(missing_roles)}"
+                ).classes("text-sm font-bold text-red-700")
+            if permission_issues:
+                ui.label("请先补齐上述负责人的概述维护权限。").classes(
+                    "text-sm font-bold text-red-700"
+                )
             with ui.row().classes("w-full justify-end"):
-                ui.button("确认", on_click=lambda: conversion_chip_state(project_name, state))
+                confirm_button = ui.button(
+                    f"确认转产并生成 {len(previews)} 条职能待办",
+                    on_click=lambda: conversion_chip_state(project_name, state),
+                )
+                if req_version_value is None or missing_roles or permission_issues:
+                    confirm_button.disable()
                 ui.button("取消", on_click=on_cancel_action)
         over_dialog.open()
 
@@ -3194,6 +3299,7 @@ async def requirement_page(
                     app.storage.client["page_elements"]["img_row"] = img_row
                     # 检查缩略图对象存放字典，有对象则会创建缩略图
                     req_thumbnail_display()
+
             # 需求状态提醒
             if app.storage.general.get("wait_review", {}):
                 if app.storage.general["wait_review"].get(app.storage.client["project_name"], {}):
@@ -5800,6 +5906,59 @@ async def requirement_page(
                                 ui.switch("查阅失活概述").props("dense").classes("text-sm text-gray-600").bind_value(
                                     app.storage.client, "record_switch"
                                 )
+                    @ui.refreshable
+                    def render_conversion_review_banner() -> None:
+                        my_conversion_reviews = [
+                            review
+                            for review in get_actionable_conversion_reviews(current_user)
+                            if review.get("project") == project_name
+                        ]
+                        if not my_conversion_reviews:
+                            return
+                        role_names = [
+                            str(review.get("role") or "")
+                            for review in my_conversion_reviews
+                            if str(review.get("role") or "")
+                        ]
+
+                        def open_review(review_id: str) -> None:
+                            open_conversion_review_side_panel(
+                                review_id,
+                                current_user,
+                                project_name,
+                                on_updated=render_conversion_review_banner.refresh,
+                            )
+
+                        with ui.row().classes(
+                            "w-full items-center justify-between gap-3 flex-nowrap text-sm text-blue-800 "
+                            "bg-blue-50 border border-blue-100 rounded px-3 py-1.5"
+                        ):
+                            ui.label(
+                                f"本项目有你的转产职能汇总待办：{'、'.join(role_names)}。"
+                                "可打开汇总清单快捷确认，也可在本页逐个处理。"
+                            ).classes("min-w-0 grow")
+                            if len(my_conversion_reviews) == 1:
+                                review_id = str(my_conversion_reviews[0].get("id") or "")
+                                ui.button(
+                                    "打开汇总清单",
+                                    icon="fact_check",
+                                    on_click=lambda _event=None, rid=review_id: open_review(rid),
+                                ).props("outline dense no-caps color=primary").classes("shrink-0")
+                            else:
+                                with ui.button(
+                                    f"选择汇总清单（{len(my_conversion_reviews)}）",
+                                    icon="fact_check",
+                                ).props("outline dense no-caps color=primary").classes("shrink-0"):
+                                    with ui.menu().props("auto-close"):
+                                        for review in my_conversion_reviews:
+                                            review_id = str(review.get("id") or "")
+                                            role_name = str(review.get("role") or "未命名职能")
+                                            ui.menu_item(
+                                                f"{role_name}职能",
+                                                on_click=lambda _event=None, rid=review_id: open_review(rid),
+                                            )
+
+                    render_conversion_review_banner()
                     with ui.column().classes("w-full overflow-y-auto p-1 gap-2 rounded"):
                         overview_role_update(project_name, "initialize")
                         # 显示概述模块内容
@@ -6160,6 +6319,20 @@ async def requirement_page(
                     app.storage.client["page_elements"]["img_row"] = img_row
                     # 检查缩略图对象存放字典，有对象则会创建缩略图
                     req_thumbnail_display()
+
+            target_conversion_review_id = str(conversion_review_id or "").strip()
+            if not temp_bool and target_conversion_review_id:
+                ui.timer(
+                    0.4,
+                    lambda: open_conversion_review_side_panel(
+                        target_conversion_review_id,
+                        current_user,
+                        project_name,
+                        on_updated=render_conversion_review_banner.refresh,
+                    ),
+                    once=True,
+                    immediate=False,
+                )
 
     # [逻辑优化] 定义一个异步函数，用于在页面加载后执行检查
     async def check_autosave_after_load(project_name, json_data):

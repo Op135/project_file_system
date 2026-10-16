@@ -48,10 +48,21 @@ from ..overview_corrections import (
     can_review_correction_request,
     cleanup_correction_staged_files,
     configured_test_field_definitions,
+    configured_test_display_values,
     execute_correction_request,
     get_correction_pending_count,
     update_correction_request,
     validate_staged_path,
+)
+from ..overview_conversion_review import (
+    OPEN_REVIEW_STATUSES,
+    collect_review_pending_items,
+    get_actionable_conversion_reviews,
+    get_conversion_covered_labels,
+    get_conversion_reviews,
+    process_conversion_review_batch,
+    process_conversion_review_item,
+    reconcile_conversion_reviews,
 )
 from ..overview_warning import get_overview_counts, get_overview_warning, sort_overview_pending_items
 from ..project_overview_access import can_review_overview_correction
@@ -374,6 +385,7 @@ def information_page():
     """)
 
     dialog = ui.dialog().props("persistent").classes("")
+    conversion_review_dialog = ui.dialog().props("persistent")
     current_user = stored_current_user
     current_role = sync_current_user_role()
     if not can_view_project_todo(current_role, current_user):
@@ -2083,6 +2095,338 @@ def information_page():
                 ui.button("关闭", on_click=batch_request_dialog.close).props("flat color=grey")
         batch_request_dialog.open()
 
+    def _refresh_conversion_sections() -> None:
+        render_conversion_reviews.refresh()
+        render_overview_pending.refresh()
+
+    def open_conversion_review_detail(review_id: str) -> None:
+        reviews = get_conversion_reviews()
+        review = reviews.get(review_id)
+        if (
+            not isinstance(review, dict)
+            or review.get("status") not in OPEN_REVIEW_STATUSES
+            or review.get("assignee") != current_user
+        ):
+            ui.notify("该职能汇总待办已完成、已转交或不存在。", type="warning")
+            _refresh_conversion_sections()
+            return
+        items = collect_review_pending_items(review)
+        if not items:
+            project_name = str(review.get("project") or "")
+
+            async def finish_empty_review() -> None:
+                await reconcile_conversion_reviews(project_name)
+                conversion_review_dialog.close()
+                _refresh_conversion_sections()
+
+            schedule_background_task(finish_empty_review(), "完成空转产职能汇总待办")
+            return
+
+        project_name = str(review.get("project") or "")
+        role = str(review.get("role") or "")
+        exception_values = {
+            str(value) for value in review.get("exception_target_ids", []) if str(value)
+        }
+        exception_checks: dict[str, object] = {}
+        special_count = sum(1 for item in items if item.has_special_reason)
+
+        conversion_review_dialog.clear()
+        with conversion_review_dialog, ui.card().classes("w-[1050px] max-w-[96vw] max-h-[92vh] gap-3"):
+            with ui.row().classes("w-full items-start justify-between gap-3"):
+                with ui.column().classes("gap-0"):
+                    ui.label(f"{project_name}｜{role}职能转产概述确认").classes(
+                        "text-xl font-bold text-blue-900"
+                    )
+                    ui.label(
+                        f"待确认范围：项目需求版本 V{review.get('version', '')} · "
+                        f"待确认 {len(items)} 个 · "
+                        f"特殊原因 {special_count} 个"
+                    ).classes("text-sm text-gray-600")
+                status_text = "继续考虑" if review.get("status") == "exceptions" else "待确认"
+                ui.badge(status_text, color="orange" if review.get("status") == "exceptions" else "red")
+
+            ui.label(
+                "“保留待定”默认不勾选；提交后未勾选内容统一激活，勾选内容继续留在本汇总待办。"
+            ).classes("text-sm text-blue-800 bg-blue-50 border border-blue-100 rounded p-2 w-full")
+            ui.label(
+                "本页面用于快捷确认，不设置关联影响。若某个内容还需要评估或设置关联影响，"
+                "请先勾选“保留待定”，再前往项目需求概述页面仔细处理。"
+            ).classes(
+                "text-sm font-bold text-amber-900 bg-amber-50 border border-amber-200 rounded p-2 w-full"
+            )
+
+            if special_count:
+                ui.label(
+                    "以下列表已将转产前待定、转产后新增及关联影响等特殊项置顶，请重点核对。"
+                ).classes("text-sm font-bold text-orange-800")
+
+            with ui.scroll_area().classes("w-full h-[58vh] border rounded p-2"):
+                current_section = ""
+                for item in items:
+                    section = "重点核对" if item.has_special_reason else "常规转产确认"
+                    if section != current_section:
+                        current_section = section
+                        ui.label(section).classes(
+                            "w-full text-sm font-bold mt-1 "
+                            + ("text-red-700" if section == "重点核对" else "text-blue-700")
+                        )
+                    border_class = "border-orange-300 bg-orange-50" if item.has_special_reason else "border-gray-200 bg-white"
+                    with ui.card().classes(f"w-full shadow-none border {border_class} p-3 gap-2"):
+                        with ui.row().classes("w-full items-start justify-between flex-nowrap gap-3"):
+                            with ui.column().classes("min-w-0 gap-1 grow"):
+                                with ui.row().classes("items-center gap-1 flex-wrap"):
+                                    ui.label(f"{item.title} · {item.group_name}").classes(
+                                        "text-sm font-bold text-gray-900"
+                                    )
+                                    ui.badge(f"需求版本 V{item.version}", color="blue").props(
+                                        "outline"
+                                    ).tooltip(
+                                        "表示该概述在这个项目需求版本下的激活状态，不是概述内容版本"
+                                    )
+                                    if item.origin == "preexisting":
+                                        ui.badge("转产前已待定", color="orange")
+                                    elif item.origin == "post_conversion":
+                                        ui.badge("转产后新增", color="red")
+                                    else:
+                                        ui.badge("转产待确认", color="blue")
+                                ui.label(item.content).classes(
+                                    "text-sm text-gray-700 whitespace-normal break-all"
+                                )
+                                item_config = app.storage.general.get("over_config_data_flat", {}).get(
+                                    item.label,
+                                    {},
+                                )
+                                if (
+                                    isinstance(item_config, dict)
+                                    and item_config.get("processing_type") == "test"
+                                ):
+                                    chip_value = db_storage.get_deep_item(
+                                        [f"{project_name}_over_data", item.label, item.chip_id],
+                                        {},
+                                    )
+                                    if isinstance(chip_value, dict):
+                                        with ui.row().classes("w-full gap-2 flex-wrap"):
+                                            for field_title, field_value in configured_test_display_values(
+                                                chip_value,
+                                                item_config,
+                                            ):
+                                                ui.badge(
+                                                    f"{field_title}：{field_value}",
+                                                    color="grey-7",
+                                                ).props("outline")
+                                for reason in item.reasons:
+                                    color_class = {
+                                        "conversion": "text-blue-700 bg-blue-50",
+                                        "related": "text-red-700 bg-red-50",
+                                        "requirement": "text-orange-800 bg-orange-50",
+                                        "manual": "text-purple-700 bg-purple-50",
+                                    }.get(reason.category, "text-gray-700 bg-gray-50")
+                                    detail = f"待定原因：{reason.text}"
+                                    metadata = " ｜ ".join(
+                                        value
+                                        for value in [reason.operator, reason.time, reason.source]
+                                        if value
+                                    )
+                                    if metadata:
+                                        detail += f" ｜ {metadata}"
+                                    ui.label(detail).classes(
+                                        f"w-full text-xs rounded px-2 py-1 whitespace-normal break-all {color_class}"
+                                    )
+                            check = ui.checkbox(
+                                "保留待定",
+                                value=item.target_id in exception_values,
+                            ).props("dense color=orange")
+                            exception_checks[item.target_id] = check
+                        with ui.row().classes("w-full justify-end gap-1"):
+
+                            async def handle_single(
+                                target_state: bool,
+                                *,
+                                target_id: str = item.target_id,
+                            ) -> None:
+                                result = await process_conversion_review_item(
+                                    review_id,
+                                    target_id,
+                                    actor=current_user,
+                                    target_state=target_state,
+                                )
+                                if result.ok:
+                                    ui.notify(result.message, type="positive")
+                                else:
+                                    ui.notify(result.message, type="warning")
+                                latest_review = get_conversion_reviews().get(review_id)
+                                _refresh_conversion_sections()
+                                if (
+                                    isinstance(latest_review, dict)
+                                    and latest_review.get("status") in OPEN_REVIEW_STATUSES
+                                ):
+                                    open_conversion_review_detail(review_id)
+                                else:
+                                    conversion_review_dialog.close()
+
+                            ui.button(
+                                "激活",
+                                icon="check_circle",
+                                on_click=lambda _=None, handler=handle_single: handler(True),
+                            ).props("flat dense color=positive size=sm")
+                            ui.button(
+                                "失活",
+                                icon="block",
+                                on_click=lambda _=None, handler=handle_single: handler(False),
+                            ).props("flat dense color=grey-7 size=sm")
+
+            special_ack = None
+            if special_count:
+                special_ack = ui.checkbox(
+                    f"我已核对上方 {special_count} 个特殊待定原因",
+                    value=False,
+                ).props("dense color=orange")
+
+            is_submitting = False
+            submit_spinner = None
+            submit_status = None
+            close_button = None
+            submit_button = None
+
+            async def submit_role_review() -> None:
+                nonlocal is_submitting
+                if is_submitting:
+                    return
+                if special_ack is not None and special_ack.value is not True:
+                    ui.notify("请先确认已经核对特殊待定原因。", type="warning")
+                    return
+                exceptions = {
+                    target_id
+                    for target_id, checkbox in exception_checks.items()
+                    if getattr(checkbox, "value", False) is True
+                }
+                is_submitting = True
+                if submit_button is not None:
+                    submit_button.disable()
+                if close_button is not None:
+                    close_button.disable()
+                if special_ack is not None:
+                    special_ack.disable()
+                for checkbox in exception_checks.values():
+                    disable_checkbox = getattr(checkbox, "disable", None)
+                    if callable(disable_checkbox):
+                        disable_checkbox()
+                if submit_spinner is not None:
+                    submit_spinner.set_visibility(True)
+                if submit_status is not None:
+                    submit_status.set_visibility(True)
+                processing_notice = ui.notification(
+                    "正在批量处理职能概述，请稍候…",
+                    timeout=None,
+                    spinner=True,
+                )
+                # 先把禁用、加载状态推送到浏览器，再开始可能耗时的逐项写入。
+                await asyncio.sleep(0)
+                try:
+                    result = await process_conversion_review_batch(
+                        review_id,
+                        actor=current_user,
+                        exception_target_ids=exceptions,
+                    )
+                    detail = f"；{result.failures[0]}" if result.failures else ""
+                    ui.notify(
+                        f"{result.message}{detail}",
+                        type="positive" if result.ok else "warning",
+                        multi_line=True,
+                        timeout=0 if result.failures else 5000,
+                        close_button="✖" if result.failures else False,
+                    )
+                    conversion_review_dialog.close()
+                    _refresh_conversion_sections()
+                except Exception as exc:
+                    logger.error("批量处理转产职能概述失败: review_id=%s", review_id, exc_info=True)
+                    ui.notify(
+                        f"处理失败：{exc}",
+                        type="negative",
+                        timeout=0,
+                        close_button="✖",
+                    )
+                    is_submitting = False
+                    if submit_button is not None:
+                        submit_button.enable()
+                    if close_button is not None:
+                        close_button.enable()
+                    if special_ack is not None:
+                        special_ack.enable()
+                    for checkbox in exception_checks.values():
+                        enable_checkbox = getattr(checkbox, "enable", None)
+                        if callable(enable_checkbox):
+                            enable_checkbox()
+                    if submit_spinner is not None:
+                        submit_spinner.set_visibility(False)
+                    if submit_status is not None:
+                        submit_status.set_visibility(False)
+                finally:
+                    processing_notice.dismiss()
+
+            with ui.row().classes("w-full justify-between items-center"):
+                ui.button(
+                    "前往项目概述页",
+                    icon="open_in_new",
+                    on_click=lambda: get_overviow_page(project_name, False),
+                ).props("flat color=primary")
+                with ui.row().classes("gap-2 items-center"):
+                    submit_spinner = ui.spinner(
+                        type="hourglass",
+                        size="sm",
+                        color="amber-8",
+                        thickness=8.0,
+                    )
+                    submit_spinner.set_visibility(False)
+                    submit_status = ui.label("正在处理，请稍候…").classes(
+                        "text-sm font-medium text-amber-9"
+                    )
+                    submit_status.set_visibility(False)
+                    close_button = ui.button(
+                        "关闭",
+                        on_click=conversion_review_dialog.close,
+                    ).props("flat color=grey")
+                    submit_button = ui.button(
+                        "确认可激活内容并保留所选待定",
+                        icon="done_all",
+                        on_click=submit_role_review,
+                    ).props("color=primary")
+        conversion_review_dialog.open()
+
+    @ui.refreshable
+    def render_conversion_reviews() -> None:
+        reviews = get_actionable_conversion_reviews(current_user)
+        if not reviews:
+            return
+        with ui.card().classes("w-full rounded-xl shadow-sm border border-blue-100 bg-white mb-3"):
+            ui_card_header("转产概述职能确认", "fact_check", "blue-700")
+            with ui.column().classes("w-full gap-2 px-1 pr-2 max-h-[48vh] overflow-y-auto"):
+                for review in reviews:
+                    project_name = str(review.get("project") or "")
+                    role = str(review.get("role") or "")
+                    current_count = int(review.get("current_count") or 0)
+                    special_count = int(review.get("special_count") or 0)
+                    status_text = "继续考虑" if review.get("status") == "exceptions" else "待确认"
+                    with ui.row().classes(
+                        "w-full items-center justify-between p-3 rounded-lg border border-blue-200 bg-blue-50"
+                    ):
+                        with ui.column().classes("gap-0 min-w-0"):
+                            ui.label(f"{project_name}｜{role}职能").classes("font-bold text-gray-900")
+                            ui.label(
+                                f"{status_text} · 剩余 {current_count} 个 · 特殊原因 {special_count} 个"
+                            ).classes(
+                                "text-xs font-medium " + ("text-red-700" if special_count else "text-blue-700")
+                            )
+                        ui.button(
+                            "查看并处理",
+                            icon="arrow_forward",
+                            on_click=lambda _=None, rid=str(review.get("id") or ""), pn=project_name: get_overviow_page(
+                                pn,
+                                False,
+                                conversion_review_id=rid,
+                            ),
+                        ).props("flat dense color=primary size=sm")
+
     @ui.refreshable
     def render_overview_pending() -> None:
         # A. 待判断概述 (Priority Task)
@@ -2093,6 +2437,16 @@ def information_page():
             current_role,
             current_user,
         )
+        covered_labels = get_conversion_covered_labels(current_user)
+        for covered_project, labels in covered_labels.items():
+            project_states = my_pending.get(covered_project)
+            if not isinstance(project_states, dict):
+                continue
+            for label in labels:
+                if project_states.get(label) == "有待定":
+                    project_states.pop(label, None)
+            if not project_states:
+                my_pending.pop(covered_project, None)
         if my_pending:
             # 待办已按具体用户名分配，不再额外依赖旧角色名单控制显示。
             if isinstance(my_pending, dict):
@@ -2515,6 +2869,7 @@ def information_page():
                 # =========================================================
                 with ui.column().classes("col-span-12 lg:col-span-6 gap-4"):
                     with ui.column().classes("w-full gap-0"):
+                        render_conversion_reviews()
                         render_overview_pending()
 
                     # B. 需求评审队列 (Review Queue)
@@ -2601,3 +2956,16 @@ def information_page():
                                 ui.label("暂无草稿记录").classes("text-sm text-gray-400 p-2")
                     with ui.column().classes("w-full gap-0"):
                         render_overview_requests()
+
+    async def reconcile_visible_conversion_reviews() -> None:
+        project_summary = app.storage.general.get("project_summary", {})
+        if isinstance(project_summary, dict):
+            for project_name, project_value in project_summary.items():
+                if isinstance(project_value, dict) and project_value.get("state") == "转产":
+                    await reconcile_conversion_reviews(str(project_name))
+        _refresh_conversion_sections()
+
+    schedule_background_task(
+        reconcile_visible_conversion_reviews(),
+        "校准转产概述职能汇总待办",
+    )

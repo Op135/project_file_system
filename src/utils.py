@@ -866,6 +866,12 @@ def update_overview_charge_pending_dic(scope, des_user="", project_name="", des_
         if not pending_storage.get(des_user):
             pending_storage.pop(des_user, None)
 
+        # 转产职能汇总任务以概述真实状态为准；复用所有单项/批量状态入口都会经过的
+        # 本地待办刷新链路，使用户从项目概述页直接处理后也能自动完成或缩减汇总任务。
+        from .overview_conversion_review import schedule_conversion_review_reconciliation
+
+        schedule_conversion_review_reconciliation(project_name)
+
     app.storage.general.setdefault("overview_last_update", {})[project_name] = time.time()
 
 
@@ -2792,8 +2798,9 @@ def build_overview_page_url(
     correction_label: str = "",
     correction_chip_id: str = "",
     add_request_id: str = "",
+    conversion_review_id: str = "",
 ) -> str:
-    """构造概述页地址，并可携带一次性的纠错弹窗定位参数。"""
+    """构造概述页地址，并可携带一次性的纠错、重提或转产确认定位参数。"""
     query = {
         "type": "temp_overview" if review else "overview",
     }
@@ -2806,6 +2813,8 @@ def build_overview_page_url(
         query["correction_chip_id"] = correction_chip_id
     if add_request_id:
         query["add_request_id"] = add_request_id
+    if conversion_review_id:
+        query["conversion_review_id"] = conversion_review_id
     return f"/main/requirement?{urlencode(query)}"
 
 
@@ -2816,6 +2825,7 @@ async def get_overviow_page(
     correction_label: str = "",
     correction_chip_id: str = "",
     add_request_id: str = "",
+    conversion_review_id: str = "",
 ):
     """
     project_name： 项目名。
@@ -2831,6 +2841,7 @@ async def get_overviow_page(
                 correction_label=correction_label,
                 correction_chip_id=correction_chip_id,
                 add_request_id=add_request_id,
+                conversion_review_id=conversion_review_id,
             )
         )
     else:
@@ -2841,6 +2852,7 @@ async def get_overviow_page(
                 correction_label=correction_label,
                 correction_chip_id=correction_chip_id,
                 add_request_id=add_request_id,
+                conversion_review_id=conversion_review_id,
             )
         )
 

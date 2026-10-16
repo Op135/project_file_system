@@ -44,6 +44,24 @@ def configured_test_field_definitions(config: object) -> tuple[tuple[str, str, s
         return ()
     return tuple(field for field in TEST_FIELD_DEFINITIONS if config.get(field[2]))
 
+
+def configured_test_display_values(
+    chip: object,
+    config: object,
+) -> tuple[tuple[str, str], ...]:
+    """读取测试概述已配置字段的展示值；选择数据实际嵌套在 test_select_data 中。"""
+    if not isinstance(chip, dict):
+        return ()
+    test_data_value = chip.get("test_select_data")
+    test_data = test_data_value if isinstance(test_data_value, dict) else {}
+    values: list[tuple[str, str]] = []
+    for prefix, title, _ in configured_test_field_definitions(config):
+        selected = str(test_data.get(f"{prefix}_select") or "").strip()
+        other_text = str(test_data.get(f"{prefix}_other_text") or "").strip()
+        value = " / ".join(part for part in (selected, other_text) if part) or "未填写"
+        values.append((title, value))
+    return tuple(values)
+
 # 激活状态及其显示、操作历史会被需求审批或工程师操作独立更新，不属于原记录纠错的业务对象。
 # 纠错审批的并发保护只忽略这些字段；正文、测试参数、文件信息等其它变化仍会触发冲突。
 CORRECTION_CONCURRENCY_IGNORED_FIELDS = {
