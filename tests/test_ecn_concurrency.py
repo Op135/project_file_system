@@ -64,6 +64,21 @@ def record(state=ECNState.ECN_SCHEMING):
 
 
 class ECNConcurrencyTests(unittest.IsolatedAsyncioTestCase):
+    def test_request_requirement_date_must_be_a_valid_calendar_date(self):
+        value = record(ECNState.DRAFT)
+
+        value["basic_info"]["requirement_date"] = "2026-10-31"
+        actions.validate_request(value)
+
+        value["basic_info"]["requirement_date"] = ""
+        actions.validate_request(value)
+
+        for invalid_date in ("2026-02-30", "2026-1-2", "明天"):
+            with self.subTest(requirement_date=invalid_date):
+                value["basic_info"]["requirement_date"] = invalid_date
+                with self.assertRaisesRegex(ECNConflict, "需求日期格式无效"):
+                    actions.validate_request(value)
+
     async def test_trial_decision_permission_conflict_and_phase(self):
         value = record()
         value["workflow"]["trial_production"] = {}

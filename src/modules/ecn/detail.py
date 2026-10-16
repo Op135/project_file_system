@@ -385,8 +385,11 @@ async def open_ecn_detail_dialog(ecn_id=None, *, current_user, current_role, ref
                         ui.input("申请日期", value=basic["apply_date"].split(" ")[0]).props(
                             "outlined dense readonly bg-gray-100"
                         ).classes("w-full")
-                        ui.input("需求日期(可选)").bind_value(basic, "requirement_date").props(
-                            f"outlined dense {'readonly bg-gray-100' if not is_ecr_editable else 'bg-white'}"
+                        ui.input(
+                            "需求日期(可选)", value=basic.get("requirement_date", "")
+                        ).bind_value(basic, "requirement_date").props(
+                            f"outlined dense type=date "
+                            f"{'readonly bg-gray-100' if not is_ecr_editable else 'bg-white'}"
                         ).classes("w-full")
                         ui.input("文件编号", value=basic["file_no"] or "保存后生成").props(
                             "outlined dense readonly bg-gray-100"

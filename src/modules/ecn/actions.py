@@ -165,6 +165,14 @@ def validate_request(record):
             raise ECNConflict(message)
     if basic.get("reasons", {}).get("其他") and not str(basic.get("other_reason_desc") or "").strip():
         raise ECNConflict("请填写其他说明")
+    requirement_date = str(basic.get("requirement_date") or "").strip()
+    if requirement_date:
+        try:
+            parsed_requirement_date = datetime.strptime(requirement_date, "%Y-%m-%d")
+        except ValueError as exc:
+            raise ECNConflict("需求日期格式无效，请通过日历重新选择。") from exc
+        if parsed_requirement_date.strftime("%Y-%m-%d") != requirement_date:
+            raise ECNConflict("需求日期格式无效，请通过日历重新选择。")
 
 
 def validate_scheme_review(record):
