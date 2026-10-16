@@ -72,7 +72,6 @@ from ..permission_catalog import (
     ERROR_VIEW_PERMISSION,
 )
 from ..utils import (
-    apply_chinese_date_locale,
     get_cache_busted_path,
     logout,
     setup_global_activity_tracking,
@@ -1489,29 +1488,17 @@ async def error_management_page(error_id: str = "", view: str = ""):
             return field
 
         def bind_date(label, target, key, classes="w-full", readonly=None):
-            """创建只能通过日历选择的日期输入框，并把选择结果同步到当前表单快照。"""
+            """创建与项目立项页一致的原生日期输入框。"""
             field_readonly = read_only if readonly is None else readonly
-            field = (
-                ui.input(label, value=target.get(key, "")).props("outlined dense readonly").classes(f"{classes} mb-3")
-            )
-
+            props = "outlined dense type=date"
             if field_readonly:
-                return field
-
-            def set_date(e, input_field=field, data=target, data_key=key):
-                data[data_key] = e.value or ""
-                input_field.value = data[data_key]
-                input_field.update()
-                menu.close()
-
-            with ui.menu().props("no-parent-event") as menu:
-                apply_chinese_date_locale(ui.date(value=target.get(key, ""), mask="YYYY-MM-DD", on_change=set_date))
-
-            field.on("click", lambda _, m=menu: m.open())
-            with field.add_slot("append"):
-                ui.icon("event").classes("cursor-pointer").on("click", lambda _, m=menu: m.open())
-
-            return field
+                props += " readonly"
+            return (
+                ui.input(label, value=target.get(key, ""))
+                .bind_value(target, key)
+                .props(props)
+                .classes(f"{classes} mb-3")
+            )
 
         def bind_textarea(label, target, key, classes="w-full", readonly=None):
             field_readonly = read_only if readonly is None else readonly

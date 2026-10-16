@@ -117,36 +117,6 @@ online_users: dict[str, OnlineUserRecord] = {}
 # 页面元数据与在线记录分开保存，以便 Socket 短暂断线后恢复；客户端销毁时同步清理。
 _client_page_modules: dict[str, tuple[str, str, float]] = {}
 
-CHINESE_DATE_LOCALE = {
-    "days": ["星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"],
-    "daysShort": ["日", "一", "二", "三", "四", "五", "六"],
-    "months": [
-        "一月",
-        "二月",
-        "三月",
-        "四月",
-        "五月",
-        "六月",
-        "七月",
-        "八月",
-        "九月",
-        "十月",
-        "十一月",
-        "十二月",
-    ],
-    "monthsShort": ["1月", "2月", "3月", "4月", "5月", "6月", "7月", "8月", "9月", "10月", "11月", "12月"],
-    "firstDayOfWeek": 1,
-    "format24h": True,
-    "pluralDay": "天",
-}
-
-
-def apply_chinese_date_locale(date_element):
-    """给 Quasar QDate 设置中文月份和星期显示。"""
-    date_element.props["locale"] = copy.deepcopy(CHINESE_DATE_LOCALE)
-    return date_element
-
-
 def _timestamp(value: object) -> float:
     return float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else 0.0
 

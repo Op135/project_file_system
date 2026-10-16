@@ -265,20 +265,6 @@ class SampleIssueCollectionDataTests(unittest.TestCase):
             "SPI20260701004",
         )
 
-    def test_chinese_date_locale_helper(self):
-        """日期控件应能复用中文月份和星期配置。"""
-        from src.utils import apply_chinese_date_locale
-
-        class FakeDateElement:
-            def __init__(self):
-                self.props = {}
-
-        fake_date = FakeDateElement()
-
-        self.assertIs(apply_chinese_date_locale(fake_date), fake_date)
-        self.assertEqual(fake_date.props["locale"]["months"][0], "一月")
-        self.assertEqual(fake_date.props["locale"]["daysShort"], ["日", "一", "二", "三", "四", "五", "六"])
-
     def test_dashboard_pending_count(self):
         """对策责任人看未填完/待延期问题，审批角色看待审批延期申请。"""
         from src.pages import sample_issue_collection as sample_issue

@@ -79,7 +79,6 @@ from ..sample_issue_config import (
     SAMPLE_STATUS_TEMPORARY_ACTION_DONE,
 )
 from ..utils import (
-    apply_chinese_date_locale,
     get_cache_busted_path,
     handle_key,
     logout,
@@ -2294,23 +2293,9 @@ async def sample_issue_collection_page(issue_id: str = "", view: str = ""):
                         ).classes("text-xs text-gray-500")
 
             def statistics_date_input(label: str, key: str) -> None:
-                field = ui.input(label, value=statistics_state[key]).props("outlined dense readonly").classes("w-48")
-
-                def set_statistics_date(event: Any) -> None:
-                    statistics_state[key] = str(event.value or "")
-                    field.value = statistics_state[key]
-                    field.update()
-                    menu.close()
-
-                with ui.menu().props("no-parent-event") as menu:
-                    apply_chinese_date_locale(
-                        ui.date(value=statistics_state[key], mask="YYYY-MM-DD", on_change=set_statistics_date)
-                    )
-                field.on("click", lambda _, target_menu=menu: target_menu.open())
-                with field.add_slot("append"):
-                    ui.icon("event").classes("cursor-pointer").on(
-                        "click", lambda _, target_menu=menu: target_menu.open()
-                    )
+                ui.input(label, value=statistics_state[key]).bind_value(
+                    statistics_state, key
+                ).props("outlined dense type=date").classes("w-48")
 
             with ui.row().classes("w-full items-center gap-3 flex-wrap px-5 pt-4 pb-4"):
                 statistics_date_input("起始记录日期", "start_date")
@@ -2431,25 +2416,15 @@ async def sample_issue_collection_page(issue_id: str = "", view: str = ""):
             return field
 
         def bind_date(label, target, key, classes="w-full", readonly=False):
-            field = (
-                ui.input(label, value=target.get(key, "")).props("outlined dense readonly").classes(f"{classes} mb-3")
-            )
+            props = "outlined dense type=date"
             if readonly:
-                return field
-
-            def set_date(e, input_field=field, data=target, data_key=key):
-                data[data_key] = e.value or ""
-                input_field.value = data[data_key]
-                input_field.update()
-                menu.close()
-
-            with ui.menu().props("no-parent-event") as menu:
-                apply_chinese_date_locale(ui.date(value=target.get(key, ""), mask="YYYY-MM-DD", on_change=set_date))
-
-            field.on("click", lambda _, m=menu: m.open())
-            with field.add_slot("append"):
-                ui.icon("event").classes("cursor-pointer").on("click", lambda _, m=menu: m.open())
-            return field
+                props += " readonly"
+            return (
+                ui.input(label, value=target.get(key, ""))
+                .bind_value(target, key)
+                .props(props)
+                .classes(f"{classes} mb-3")
+            )
 
         def bind_textarea(label, target, key, classes="w-full", readonly=False):
             props = "outlined autogrow"
