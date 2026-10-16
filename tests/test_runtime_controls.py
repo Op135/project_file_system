@@ -123,6 +123,44 @@ class RuntimeControlTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("原收件人：real-user", sent_content)
         self.assertTrue(allows_background_task("ecn.reminders"))
 
+    async def test_redirect_uses_resolved_real_name_in_content(self):
+        state_path = Path(self.temp_dir.name) / "state.json"
+        with patch.dict("os.environ", {"DEV_WECOM_RECIPIENT_ALLOWLIST": "developer-a"}):
+            policy = LocalDevRuntimePolicy(
+                state_path,
+                recipient_label_resolver=lambda recipients: tuple(
+                    "王铁华" if value == "YangTieHua" else value
+                    for value in recipients
+                ),
+            )
+            policy.update(
+                wecom_mode="redirect",
+                redirect_recipients=("developer-a",),
+                background_tasks_enabled=False,
+            )
+            install_runtime_effect_policy(policy)
+            with (
+                patch.object(
+                    wecom_service,
+                    "_send_one_text_message",
+                    AsyncMock(return_value=(True, "sent")),
+                ) as sender,
+                patch.object(wecom_service, "_append_log", AsyncMock()),
+                patch.object(wecom_service, "_clear_retry_failure", AsyncMock()),
+            ):
+                success, _ = await wecom_service.send_wecom_text_message(
+                    "提醒内容",
+                    "YangTieHua|coo",
+                    module="test",
+                    business_key="record-1",
+                )
+
+        self.assertTrue(success)
+        sender_call = sender.await_args
+        assert sender_call is not None
+        sent_content, _sent_recipient = sender_call.args
+        self.assertIn("原收件人：王铁华、coo", sent_content)
+
     async def test_redirect_rewrites_card_link_away_from_production(self):
         state_path = Path(self.temp_dir.name) / "state.json"
         environment = {

@@ -8,7 +8,7 @@ import threading
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Literal
+from typing import Callable, Literal
 
 from ...runtime_controls import WeComDeliveryDecision
 from .guard import allowed_wecom_recipients
@@ -25,8 +25,14 @@ class DevRuntimeSettings:
 
 
 class LocalDevRuntimePolicy:
-    def __init__(self, state_path: Path):
+    def __init__(
+        self,
+        state_path: Path,
+        *,
+        recipient_label_resolver: Callable[[tuple[str, ...]], tuple[str, ...]] | None = None,
+    ):
         self.state_path = state_path
+        self._recipient_label_resolver = recipient_label_resolver
         self._lock = threading.RLock()
         self._settings = self._load()
 
@@ -131,7 +137,14 @@ class LocalDevRuntimePolicy:
                     recipients=(),
                     reason="本地调试转发模式没有可用的白名单收件人",
                 )
-            original = "|".join(recipients) or "-"
+            original_labels = recipients
+            if self._recipient_label_resolver is not None:
+                try:
+                    original_labels = self._recipient_label_resolver(recipients)
+                except Exception:
+                    # 姓名仅用于调试提示；反查失败不能阻断原有消息转发。
+                    original_labels = recipients
+            original = "、".join(original_labels) or "-"
             return WeComDeliveryDecision(
                 allowed=True,
                 recipients=redirect_recipients,

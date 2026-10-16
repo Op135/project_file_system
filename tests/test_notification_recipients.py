@@ -4,6 +4,31 @@ from src import notification_recipients
 
 
 class NotificationRecipientTests(unittest.IsolatedAsyncioTestCase):
+    def test_wecom_recipient_display_names_use_bound_real_names(self):
+        service = SimpleNamespace(
+            list_wecom_bindings=lambda: {
+                "zhangsan": {
+                    "external_userid": "wecom-zhangsan",
+                    "external_display_name": "张三",
+                },
+                "lisi": {
+                    "external_userid": "wecom-lisi",
+                    "external_display_name": "",
+                },
+            },
+            load_users=lambda: {
+                "zhangsan": {"display_name": "张三（系统）"},
+                "lisi": {"display_name": "李四"},
+            },
+        )
+
+        labels = notification_recipients.resolve_wecom_recipient_display_names(
+            ["wecom-zhangsan", "wecom-lisi", "unknown-user"],
+            user_service=service,
+        )
+
+        self.assertEqual(labels, ("张三", "李四", "unknown-user"))
+
     def test_position_recipients_exclude_system_admin(self):
         service = SimpleNamespace(
             load_users=lambda: {

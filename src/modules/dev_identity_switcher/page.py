@@ -9,6 +9,7 @@ from typing import Any, cast
 
 from nicegui import app, ui
 
+from ...notification_recipients import resolve_wecom_recipient_display_names
 from ...runtime_controls import install_runtime_effect_policy
 from ...wecom_service import send_wecom_text_message
 from .guard import allowed_wecom_recipients, assert_local_dev_environment, dev_tools_password
@@ -80,7 +81,10 @@ def install_dev_identity_switcher(*, listen_host: str, state_path: Path | None =
         return
     assert_local_dev_environment(listen_host)
     resolved_state_path = state_path or Path(__file__).parents[3] / ".local" / "dev_runtime_controls.json"
-    _policy = LocalDevRuntimePolicy(resolved_state_path)
+    _policy = LocalDevRuntimePolicy(
+        resolved_state_path,
+        recipient_label_resolver=resolve_wecom_recipient_display_names,
+    )
     install_runtime_effect_policy(_policy)
     _installed = True
 

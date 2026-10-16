@@ -29,6 +29,45 @@ def _unique_values(values: Iterable[Any]) -> list[str]:
     return result
 
 
+def resolve_wecom_recipient_display_names(
+    recipients: Iterable[Any],
+    *,
+    user_service=None,
+) -> tuple[str, ...]:
+    """把企业微信成员账号转换为绑定中的真实姓名，无法匹配时保留原账号。"""
+    normalized_recipients = _unique_values(recipients)
+    if not normalized_recipients:
+        return ()
+    service = user_service or getattr(app.state, "user_service", None)
+    if service is None:
+        return tuple(normalized_recipients)
+
+    try:
+        bindings = service.list_wecom_bindings()
+        users = service.load_users()
+    except Exception:
+        logger.exception("读取企业微信绑定失败，调试通知将保留原收件账号")
+        return tuple(normalized_recipients)
+
+    labels_by_userid: dict[str, str] = {}
+    for username, binding in bindings.items():
+        if not isinstance(binding, dict):
+            continue
+        external_userid = str(binding.get("external_userid") or "").strip()
+        if not external_userid:
+            continue
+        user = users.get(username, {}) if isinstance(users, dict) else {}
+        user_display_name = user.get("display_name") if isinstance(user, dict) else ""
+        label = str(
+            binding.get("external_display_name")
+            or user_display_name
+            or username
+        ).strip()
+        labels_by_userid[external_userid] = label or external_userid
+
+    return tuple(labels_by_userid.get(recipient, recipient) for recipient in normalized_recipients)
+
+
 async def resolve_permission_wecom_recipients(
     permission_code: str,
     *,
